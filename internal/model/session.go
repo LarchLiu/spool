@@ -50,6 +50,9 @@ type Turn struct {
 }
 
 type Session struct {
+	AutomationChat    bool          `json:"automation_chat,omitempty"`
+	CollaboratorIDs   []string      `json:"collaborator_ids,omitempty"`
+	Artifacts         []Artifact    `json:"artifacts,omitempty"`
 	UserID            string        `json:"user_id"`
 	ProjectID         string        `json:"project_id"`
 	ID                string        `json:"id"`
@@ -65,4 +68,9 @@ type Session struct {
 	Status            SessionStatus `json:"status"`
 	Transcript        Transcript    `json:"transcript"`
 	Turns             []Turn        `json:"turns"`
+}
+
+type Artifact struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
 }

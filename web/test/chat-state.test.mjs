@@ -2,9 +2,26 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   adoptCreatedChat,
+  canControlChat,
   optimisticChat,
   reconcile,
 } from "../.test-build/chat-state.js";
+
+test("all task assignees can control chat, while regular shared chats stay owner-only", () => {
+  const task = {
+    automation_chat: true,
+    user_id: "alice",
+    collaborator_ids: ["alice", "bob"],
+  };
+  assert.equal(canControlChat(task, "bob"), true);
+  assert.equal(canControlChat(task, "charlie"), false);
+  assert.equal(
+    canControlChat({ ...task, collaborator_ids: ["bob"] }, "alice"),
+    false,
+  );
+  assert.equal(canControlChat({ user_id: "alice" }, "bob"), false);
+  assert.equal(canControlChat({ user_id: "alice" }, "alice"), true);
+});
 
 const userPart = { role: "user", kind: "text", text: "Hello" };
 const answerPart = { role: "assistant", kind: "text", text: "Hi" };

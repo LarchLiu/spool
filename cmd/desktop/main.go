@@ -40,6 +40,7 @@ type panel struct {
 	status             workspace.ServiceStatus
 	user               workspace.UserInput
 	project            workspace.Project
+	issueInterval      string
 	directoryPicker    directoryPicker
 	members            map[string]bool
 	agentPaths         map[chatmodel.Backend]string
@@ -191,7 +192,8 @@ func runDesktop() (runErr error) {
 				case <-ticker.C:
 					status := service.Status()
 					agents, _ := service.Store.Agents()
-					p.window.Update(func() { p.status = status; p.agents = agents })
+					projects, _ := service.Store.Projects()
+					p.window.Update(func() { p.status = status; p.agents = agents; p.projects = projects })
 				}
 			}
 
@@ -375,7 +377,8 @@ func (p *panel) peopleView(c *ui.Context) {
 func (p *panel) projectView(c *ui.Context) {
 	ui.Row(c).Gap(8).Children(func() {
 		if ui.Button(c, p.tr("New project")).Disabled(p.directoryPicker.pending).Clicked() {
-			p.project = workspace.Project{}
+			p.project = workspace.Project{Issues: workspace.IssuesAutomation{IntervalMinutes: 60, Backend: chatmodel.BackendCodex}}
+			p.issueInterval = "60"
 			p.members = map[string]bool{}
 		}
 		for _, project := range p.projects {
@@ -383,6 +386,7 @@ func (p *panel) projectView(c *ui.Context) {
 			c.Key(project.ID)
 			if ui.Button(c, project.Name).Disabled(p.directoryPicker.pending).Clicked() {
 				p.project = project
+				p.issueInterval = strconv.Itoa(project.Issues.IntervalMinutes)
 				p.members = map[string]bool{}
 				for _, id := range project.Members {
 					p.members[id] = true
@@ -410,8 +414,17 @@ func (p *panel) projectView(c *ui.Context) {
 		p.members[u.ID] = checked
 	}
 	ui.Checkbox(c, &p.project.SharedChats, p.tr("Share chats with all project members"))
+	p.projectIssuesView(c)
 	if ui.PrimaryButton(c, p.tr("Save project")).Disabled(p.busy || p.directoryPicker.pending).Clicked() {
 		project := p.project
+		if project.Issues.Enabled {
+			interval, err := strconv.Atoi(p.issueInterval)
+			if err != nil || interval < 1 || interval > 10080 {
+				p.message = p.tr("Issue interval must be between 1 and 10080 minutes")
+				return
+			}
+			project.Issues.IntervalMinutes = interval
+		}
 		project.Members = nil
 		for id, enabled := range p.members {
 			if enabled {

@@ -1,5 +1,11 @@
 import type { Chat, Transcript, TranscriptPart, Turn } from "./types";
 
+export function canControlChat(chat: Chat | null, userID: string): boolean {
+  if (!chat) return true;
+  if (chat.automation_chat) return !!chat.collaborator_ids?.includes(userID);
+  return chat.user_id == null || chat.user_id === userID;
+}
+
 export function optimisticChat(
   chat: Chat | null,
   projectID: string,

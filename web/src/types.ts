@@ -88,6 +88,9 @@ export type Turn = {
   pending_approval?: ApprovalRequest;
 };
 export type Chat = {
+  automation_chat?: boolean;
+  collaborator_ids?: string[];
+  artifacts?: { type: "pull_request"; url: string }[];
   id: string;
   user_id?: string;
   project_id: string;

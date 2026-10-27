@@ -78,7 +78,7 @@ func (s *Store) UserNavigation(user string) (Navigation, error) {
 		JOIN project_members member ON member.project_id=s.project_id AND member.user_id=?
 		JOIN projects p ON p.id=s.project_id
 		JOIN users u ON u.id=s.user_id
-		WHERE (s.user_id=? OR p.shared_chats=1) AND p.archived=0 AND u.disabled=0 ORDER BY s.updated_at DESC,s.id`, user, user)
+		WHERE (s.user_id=? OR p.shared_chats=1 OR EXISTS(SELECT 1 FROM chat_collaborators WHERE session_id=s.id AND user_id=?)) AND p.archived=0 AND (u.disabled=0 OR EXISTS(SELECT 1 FROM automation_chats WHERE session_id=s.id)) ORDER BY s.updated_at DESC,s.id`, user, user, user)
 	if err != nil {
 		return Navigation{}, err
 	}

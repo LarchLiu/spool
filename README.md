@@ -24,7 +24,9 @@ bundle identifier is `com.cloudgeek.spool`.
   locales and icons. Keeping embeds beside their resource directories avoids
   duplicate assets and unsupported parent-directory `go:embed` paths.
 - `spool.sqlite`: users, projects, project membership, chats, turns, attachments, server
-  settings, agent settings/catalogs, and hashed login sessions.
+  settings, agent settings/catalogs, issue schedules/runs, task-chat assignees,
+  PR artifacts, and hashed login sessions. New tables are added on startup
+  without replacing existing projects or chats.
 
 Both entry points use `internal/workspace`, which coordinates `internal/agent`
 and `internal/model`. The CLI package does not import SQLite or HTTP handlers.
@@ -91,6 +93,107 @@ or offline behavior.
    local draft: no chat row is written to SQLite or added to history until Send.
    Switching away from an unsent draft or starting another discards that draft;
    empty drafts are not restored after a page reload.
+
+### Scheduled GitHub Issues
+
+In **Projects**, enable **Scheduled GitHub issues** and choose the GitHub
+`owner/repo`, interval (1–10080 minutes), Codex or Claude, and one or more
+responsible project members. All assignees can see and control task chats:
+send messages/files, stop responses and answer permission requests, even when
+project-wide chat sharing is disabled. Responsibility changes also update
+existing task chats; removing membership or disabling an account immediately
+revokes its controls. Regular chats remain owner-only, including shared ones.
+Human follow-ups use the same project lock so scheduled recoveries cannot overlap
+them. Model, reasoning level and native permission mode
+are optional. Configuration is per project; no repository/path is hardcoded.
+The project must point at the root of a checkout whose `origin` matches the
+configured GitHub.com repository. Install and authenticate `gh` on the service
+host, and ensure the repository has a `dev` branch.
+
+The Go scheduler runs in both desktop and headless services while the Web
+service is running (checks admitted within about 15 seconds of their due time).
+It does not wake a previous chat or replay missed intervals. Stopping the
+service cancels both preflight and accepted agent work and waits for actual
+cleanup before releasing the project lock. Disabling/archiving a project or
+changing its schedule affects future runs; it does not discard accepted work.
+An update cannot start while a scheduled preflight or agent turn is running.
+
+The Go backend, not the agent, performs admission (requirements 1–3):
+
+- Inspect Git state and worktrees, locate the **main checkout**, and acquire
+  `docs/.issues-automation.lock`. Its owner includes automation ID `issues`,
+  run ID, chat ID, service instance, host and PID. An advisory guard also
+  serializes stale-lock reclamation. Only proven-ended owners can be reclaimed;
+  age alone never expires a claim. Unknown/external owners are left alone.
+- Fully paginate REST issues (all states, excluding PR entries), timelines and
+  comments, query paginated Development connection events, and verify actual
+  linked PR state with `gh pr view --json`. Previously recorded branches are
+  also checked for PRs, recovering a PR created just before a crash.
+- Preserve and synchronize the main checkout's **only** shared local ledger,
+  `docs/issues.md`. Status is `close` only for a closed issue, `pr` for an open
+  linked PR (drafts included), `processing` for an unfinished claim, otherwise
+  `open`. Merged PRs do not close still-open issues locally.
+- Resume an unfinished `issues` claim only after proving its previous run has
+  ended. Otherwise claim at most one lowest-numbered eligible issue. Labels
+  match exactly `web`, `server`, `app`; a multi-label issue occupies every one
+  of its categories. Unknown or overlapping file scope is conservatively
+  serialized, even across categories. Unlabelled issues are synchronized only.
+- Write the complete claim before sending any code-editing task. No candidate
+  means no agent invocation, new empty chat, or periodic empty notification.
+
+Each actionable run creates a fresh owned Spool chat/native session with the
+selected issue, comments and execution contract (requirements 4–8). The agent
+must follow `AGENTS.md`, safely fetch/pull the latest `dev` with `--ff-only`,
+create or recover an isolated `codex/issue-N-fix` branch/worktree, run the
+project's actual tests/lint/typecheck/build and `git diff --check`, then commit,
+push without force and create/reuse a PR targeting `dev`. Failed or unavailable
+verification must retain `processing`, validation results and recovery notes;
+it must not push or create a PR. PRs are never automatically merged and issues
+are never automatically closed.
+
+The task includes a shell function named `attach_artifact` backed by a scoped,
+temporary Spool callback. It verifies that the PR is open with the claimed head
+branch and `dev` base, then attaches it to **this run's chat**. The capability
+cannot attach to another chat or repository and expires when the round ends.
+Confirmed PRs are also reconciled and attached after successful agent execution.
+Links appear below the chat header. Do not copy callback credentials into Git,
+the ledger, PRs or final messages.
+
+The ledger contains a `spool:issues:v1` marked JSON block. Human text outside the
+block, notes, owner, branch/worktree, validation, PR history and unknown JSON
+fields are preserved. Standard existing Markdown issue tables can be imported;
+unparseable in-progress records fail closed for manual migration rather than
+being stolen. The ledger is local automation state: do not commit it to `dev`
+or use a worktree/branch copy. Keep the `owner` object intact when recording
+progress. Explicitly abandoning a claim requires preserving history and clearing
+its owner/branch/worktree before resetting to `open`.
+
+Any failed GitHub page/query aborts preflight **before** writing the ledger or
+claiming work. DNS/timeouts are diagnosed as network problems, not invalid
+tokens. When the host environment is sandboxed, authorize external networking
+through that environment's normal approval process and retry; the scheduler
+does not bypass its sandbox. Only explicit invalid/expired credential responses
+are reported as authentication failures. Failures and the latest chat ID appear
+in Projects; repeated unchanged errors and idle checks do not produce empty
+periodic reports. Agent progress and required approvals remain in the new chat.
+
+For a headless host, configure an existing project while the service is stopped:
+
+```sh
+go run ./cmd/server -list-projects
+
+go run ./cmd/server -issues-project PROJECT_ID -issues-repo OWNER/REPO \
+  -issues-interval 15 -issues-agent codex -issues-assignees alex,bob
+
+go run ./cmd/server -issues-project PROJECT_ID -issues-enabled=false
+```
+
+`-issues-owner` can select the creating owner from the assignees (otherwise the
+first assignee is used); it also works alone for a single responsible person.
+`-issues-model`, `-issues-effort` and `-issues-permission` are optional. These
+commands only save configuration; they do not start a round. For example,
+`/Users/alex/Work/muyun/test` with `LarchLiu/test` can be configured as a test
+project without changing the behavior of other projects.
 
 ### User Avatars
 
@@ -224,7 +327,9 @@ Users only see projects they have been granted. Chats are private by default;
 the desktop Projects panel can enable **Share chats with all project members**
 for an individual project. When enabled, members can read one another's
 history and streams, but only the chat owner can send messages or control a
-run. Knowing another user's chat ID never bypasses current membership checks.
+run. Scheduled-task chats additionally allow all configured task assignees to
+send messages, stop turns and handle approvals. Knowing another user's chat ID
+never bypasses current membership and task-assignment checks.
 Native CLI session IDs and configured executable paths are not returned by the
 Web API. Online nicknames are visible to signed-in users.
 

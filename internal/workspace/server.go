@@ -16,6 +16,7 @@ import (
 	resources "spool"
 	"spool/internal/agent"
 	"spool/internal/i18n"
+	"spool/internal/issues"
 	chatmodel "spool/internal/model"
 )
 
@@ -48,6 +49,7 @@ type App struct {
 	approvals  map[string]*pendingApproval
 	shutdown   chan struct{}
 	closeOnce  sync.Once
+	automation *issueScheduler
 }
 
 type completedTurn struct {
@@ -111,6 +113,10 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimSuffix(r.URL.Path, "/")
+	if path == "/api/automation/attach-artifact" && r.Method == "POST" {
+		a.automationArtifact(w, r)
+		return
+	}
 	if path == "/api/login" && r.Method == "POST" {
 		if !a.sameOrigin(r) {
 			apiError(w, 403, "跨域登录被拒绝")
@@ -380,9 +386,9 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		a.attachmentResponse(w, r, chat)
 		return
 	}
-	// Shared project members can inspect another person's chat, but only its
-	// owner may send messages or control the agent run.
-	if chat.UserID != id.User.ID {
+	// Project sharing alone is read-only; scheduled-task assignees additionally
+	// have control rights, checked against current membership on every mutation.
+	if !a.store.CanControlChat(id.User.ID, chat.ID) {
 		apiError(w, 404, "聊天不存在")
 		return
 	}
@@ -434,7 +440,7 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 	}
 	if err := a.startTurnWithInput(chat, input, options); err != nil {
 		status := 400
-		if strings.Contains(err.Error(), "running turn") || errors.Is(err, errSessionConversion) {
+		if strings.Contains(err.Error(), "running turn") || errors.Is(err, errSessionConversion) || errors.Is(err, issues.ErrLocked) || errors.Is(err, issues.ErrLockOwnerUnknown) {
 			status = 409
 		}
 		if errors.Is(err, ErrUpdateInProgress) {
@@ -491,6 +497,12 @@ func (a *App) startTurn(chat chatmodel.Session, prompt string, options chatmodel
 	return a.startTurnWithInput(chat, messageInput{Message: prompt}, options)
 }
 func (a *App) startTurnWithInput(chat chatmodel.Session, input messageInput, options chatmodel.CodexOptions) error {
+	if chat.AutomationChat {
+		return a.startIssueFollowup(chat, input, options)
+	}
+	return a.startTurnWithCallback(chat, input, options, nil)
+}
+func (a *App) startTurnWithCallback(chat chatmodel.Session, input messageInput, options chatmodel.CodexOptions, finished func(error)) error {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
 	if a.closing {
@@ -531,8 +543,12 @@ func (a *App) startTurnWithInput(chat chatmodel.Session, input messageInput, opt
 	a.turns.Add(1)
 	go func() {
 		defer a.turns.Done()
-		defer a.releaseTurn(chat.ID, control)
-		if _, err := a.executeTurn(ctx, chat.ID, input.Message, turn, nil); err != nil {
+		_, err := a.executeTurn(ctx, chat.ID, input.Message, turn, nil)
+		a.releaseTurn(chat.ID, control)
+		if finished != nil {
+			finished(err)
+		}
+		if err != nil {
 			log.Printf("chat %s: %v", chat.ID, err)
 		}
 	}()

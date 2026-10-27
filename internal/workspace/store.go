@@ -41,6 +41,12 @@ CREATE TABLE IF NOT EXISTS attachments(id TEXT PRIMARY KEY,session_id TEXT NOT N
 CREATE INDEX IF NOT EXISTS attachments_session ON attachments(session_id);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS agents(backend TEXT PRIMARY KEY,body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS project_automations(project_id TEXT PRIMARY KEY REFERENCES projects(id),body TEXT NOT NULL,next_run_at INTEGER NOT NULL,last_run_at INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '',last_chat_id TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS automation_runs(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),instance TEXT NOT NULL,chat_id TEXT NOT NULL DEFAULT '',status TEXT NOT NULL,started_at INTEGER NOT NULL,finished_at INTEGER NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS automation_runs_chat ON automation_runs(chat_id,project_id);
+CREATE TABLE IF NOT EXISTS chat_artifacts(session_id TEXT NOT NULL REFERENCES sessions(id),type TEXT NOT NULL,url TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY KEY(session_id,type,url));
+CREATE TABLE IF NOT EXISTS automation_chats(session_id TEXT PRIMARY KEY REFERENCES sessions(id),project_id TEXT NOT NULL REFERENCES projects(id));
+CREATE TABLE IF NOT EXISTS chat_collaborators(session_id TEXT NOT NULL REFERENCES sessions(id),user_id TEXT NOT NULL REFERENCES users(id),PRIMARY KEY(session_id,user_id));
 CREATE TABLE IF NOT EXISTS auth_sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),csrf TEXT NOT NULL,expires_at INTEGER NOT NULL);
 `
 
@@ -164,6 +170,14 @@ func (s *Store) Get(id string) (chatmodel.Session, bool) {
 	// completed session is hydrated from its provider-owned native JSONL file.
 	v.Transcript = chatmodel.Transcript{Parts: []chatmodel.Part{}}
 	v.Turns = turns
+	v.Artifacts, err = s.ChatArtifacts(id)
+	if err != nil {
+		return chatmodel.Session{}, false
+	}
+	v.AutomationChat, v.CollaboratorIDs, err = s.chatCollaborators(id)
+	if err != nil {
+		return chatmodel.Session{}, false
+	}
 	v = s.hydrateSession(v)
 	for i := range v.Turns {
 		turn := &v.Turns[i]

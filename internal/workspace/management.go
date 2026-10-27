@@ -33,13 +33,14 @@ type UserInput struct {
 	Disabled bool
 }
 type Project struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Path        string   `json:"-"`
-	Archived    bool     `json:"archived"`
-	SharedChats bool     `json:"shared_chats"`
-	CreatedAt   int64    `json:"created_at"`
-	Members     []string `json:"-"`
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Path        string           `json:"-"`
+	Archived    bool             `json:"archived"`
+	SharedChats bool             `json:"shared_chats"`
+	CreatedAt   int64            `json:"created_at"`
+	Members     []string         `json:"-"`
+	Issues      IssuesAutomation `json:"-"`
 }
 type Settings struct {
 	Host        string `json:"host"`
@@ -203,6 +204,9 @@ func (s *Store) Projects() ([]Project, error) {
 		return nil, err
 	}
 	for i := range out {
+		if out[i].Issues, err = s.IssuesAutomation(out[i].ID); err != nil {
+			return nil, err
+		}
 		members, e := s.db.Query(`SELECT user_id FROM project_members WHERE project_id=?`, out[i].ID)
 		if e != nil {
 			return nil, e
@@ -237,6 +241,17 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 		return v, err
 	}
 	v.Path = path
+	if !v.Issues.Enabled {
+		if v.Issues.IntervalMinutes == 0 {
+			v.Issues.IntervalMinutes = 60
+		}
+		if v.Issues.Backend == "" {
+			v.Issues.Backend = chatmodel.BackendCodex
+		}
+	}
+	if err = v.Issues.Validate(v.Members); err != nil {
+		return v, err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return v, err
@@ -271,6 +286,9 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 			return v, err
 		}
 	}
+	if err = saveIssuesAutomation(tx, v.ID, v.Issues); err != nil {
+		return v, err
+	}
 	return v, tx.Commit()
 }
 func (s *Store) CanAccessProject(user, project string) bool {
@@ -279,17 +297,30 @@ func (s *Store) CanAccessProject(user, project string) bool {
 	return err == nil && n == 1
 }
 
-// CanAccessChat permits project members to read chats only when the project
-// owner explicitly enables shared chat visibility. Chat mutations remain
-// owner-only at the HTTP layer.
+// Task assignees can read/control their task chats without enabling project-wide
+// sharing. Regular shared chats remain read-only for non-owners.
 func (s *Store) CanAccessChat(user, chat string) bool {
 	var owner, project string
 	var shared bool
-	err := s.db.QueryRow(`SELECT s.user_id,s.project_id,p.shared_chats FROM sessions s JOIN projects p ON p.id=s.project_id JOIN users u ON u.id=s.user_id WHERE s.id=? AND p.archived=0 AND u.disabled=0`, chat).Scan(&owner, &project, &shared)
+	err := s.db.QueryRow(`SELECT s.user_id,s.project_id,p.shared_chats FROM sessions s JOIN projects p ON p.id=s.project_id JOIN users u ON u.id=s.user_id WHERE s.id=? AND p.archived=0 AND (u.disabled=0 OR EXISTS(SELECT 1 FROM automation_chats WHERE session_id=s.id))`, chat).Scan(&owner, &project, &shared)
 	if err != nil || !s.CanAccessProject(user, project) {
 		return false
 	}
-	return owner == user || shared
+	if owner == user || shared {
+		return true
+	}
+	var n int
+	err = s.db.QueryRow(`SELECT count(*) FROM chat_collaborators WHERE session_id=? AND user_id=?`, chat, user).Scan(&n)
+	return err == nil && n == 1
+}
+
+func (s *Store) CanControlChat(user, chat string) bool {
+	if !s.CanAccessChat(user, chat) {
+		return false
+	}
+	var n int
+	err := s.db.QueryRow(`SELECT count(*) FROM sessions s WHERE s.id=? AND ((s.user_id=? AND NOT EXISTS(SELECT 1 FROM automation_chats WHERE session_id=s.id)) OR EXISTS(SELECT 1 FROM chat_collaborators WHERE session_id=s.id AND user_id=?))`, chat, user, user).Scan(&n)
+	return err == nil && n == 1
 }
 func (s *Store) CreateChat(user, project string, backend chatmodel.Backend) (chatmodel.Session, error) {
 	if !s.CanAccessProject(user, project) {
@@ -321,8 +352,8 @@ func (s *Store) UserSessions(user, project string) ([]chatmodel.Session, error) 
 	query := `SELECT ` + sessionColumns + ` FROM sessions WHERE project_id=?`
 	args := []any{project}
 	if !p.SharedChats {
-		query += ` AND user_id=?`
-		args = append(args, user)
+		query += ` AND (user_id=? OR EXISTS(SELECT 1 FROM chat_collaborators WHERE session_id=sessions.id AND user_id=?))`
+		args = append(args, user, user)
 	}
 	query += ` ORDER BY updated_at DESC`
 	rows, err := s.db.Query(query, args...)

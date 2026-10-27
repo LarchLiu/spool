@@ -17,7 +17,7 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { api, setCSRF } from "./api";
-import { adoptCreatedChat, optimisticChat, reconcile } from "./chat-state";
+import { adoptCreatedChat, canControlChat, optimisticChat, reconcile } from "./chat-state";
 import { runningTurn, stopReply } from "./turn-control";
 import type {
   User,
@@ -386,8 +386,7 @@ function App() {
   const composerReady =
     projects.some((p) => p.id === project) && (!chatID || chat?.id === chatID);
   const composerWritable =
-    composerReady &&
-    (!chat || !user || chat.user_id == null || chat.user_id === user.id);
+    composerReady && !!user && canControlChat(chat, user.id);
   const activeTurn = runningTurn(chat);
   const activeSubmission =
     pendingSend.current &&
@@ -959,6 +958,20 @@ function App() {
             </details>
           </div>
         </header>
+        {!!chat?.artifacts?.length && (
+          <nav className="chat-artifacts" aria-label={t("Pull requests")}>
+            {chat.artifacts.map((artifact) => (
+              <a
+                key={artifact.url}
+                href={artifact.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t("Pull request")} #{artifact.url.split("/").pop()}
+              </a>
+            ))}
+          </nav>
+        )}
         {(!connected || !navigator.onLine) && chat && (
           <div className="connection">
             <WifiOff size={14} />
