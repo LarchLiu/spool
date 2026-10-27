@@ -134,6 +134,80 @@ func TestLegacyTableAndMalformedLedgerFailClosed(t *testing.T) {
 	}
 }
 
+func TestLegacyTableImportsAndVerifiesPRsBeforeSelection(t *testing.T) {
+	for _, state := range []string{"OPEN", "CLOSED"} {
+		t.Run(state, func(t *testing.T) {
+			root := t.TempDir()
+			_ = os.Mkdir(filepath.Join(root, "docs"), 0755)
+			link := "https://github.com/o/r/pull/81"
+			text := "| Issue | Status | PR | Notes |\n|---|---|---|---|\n| #41 | pr | [PR](" + link + ") | Keep <" + link + "> |\n"
+			_ = os.WriteFile(filepath.Join(root, "docs", "issues.md"), []byte(text), 0600)
+			ledger, err := Load(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			verified := 0
+			g := GitHub{Repository: "o/r", Run: func(_ context.Context, _ string, _ string, args ...string) ([]byte, error) {
+				call := strings.Join(args, " ")
+				switch {
+				case strings.HasPrefix(call, "pr view "+link):
+					verified++
+					return []byte(fmt.Sprintf(`{"url":%q,"state":%q,"headRefName":"existing","baseRefName":"dev"}`, link, state)), nil
+				case strings.Contains(call, "api graphql"):
+					return []byte(`[{"data":{"repository":{"issue":{"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}]`), nil
+				case strings.Contains(call, "/issues?state=all"):
+					return []byte(`[[{"number":41,"state":"open","html_url":"https://github.com/o/r/issues/41","labels":[{"name":"web"}]}]]`), nil
+				case strings.Contains(call, "/timeline?"):
+					return []byte(`[[]]`), nil
+				default:
+					return nil, fmt.Errorf("unexpected command: %s", call)
+				}
+			}}
+			snapshot, err := g.Snapshot(context.Background(), ledger)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if verified != 1 || len(ledger.Records[41].PRs) != 1 {
+				t.Fatalf("legacy PR was not imported and verified exactly once: %d, %#v", verified, ledger.Records[41])
+			}
+			ledger.Sync(snapshot)
+			selected, _ := ledger.Select(snapshot, func(Owner) bool { return true })
+			if state == "OPEN" && (selected != nil || ledger.Records[41].Status != "pr") {
+				t.Fatal("reclaimed an issue with a verified open PR")
+			}
+			if state == "CLOSED" && (selected == nil || selected.Number != 41) {
+				t.Fatal("closed PR prevented safe new work")
+			}
+			if err = ledger.Save(); err != nil {
+				t.Fatal(err)
+			}
+			body, _ := os.ReadFile(ledger.Path)
+			if !strings.HasPrefix(string(body), text) {
+				t.Fatal("legacy table text was lost")
+			}
+		})
+	}
+}
+
+func TestLegacyTableUnverifiablePRFailsClosed(t *testing.T) {
+	for _, value := range []string{"#81", "[PR](https://github.com/o/r/pull/not-a-number)", "https://github.com/o/r/pull/81?invalid", ""} {
+		t.Run(value, func(t *testing.T) {
+			root := t.TempDir()
+			_ = os.Mkdir(filepath.Join(root, "docs"), 0755)
+			path := filepath.Join(root, "docs", "issues.md")
+			text := "| Issue | Status | PR |\n|---|---|---|\n| #41 | pr | " + value + " |\n"
+			_ = os.WriteFile(path, []byte(text), 0600)
+			if _, err := Load(root); err == nil {
+				t.Fatal("accepted an unverifiable legacy PR")
+			}
+			body, _ := os.ReadFile(path)
+			if string(body) != text {
+				t.Fatal("failed import changed the legacy ledger")
+			}
+		})
+	}
+}
+
 func TestProjectLockNoReentryNoAgeBasedStealAndOwnReleaseOnly(t *testing.T) {
 	root := t.TempDir()
 	owner := NewOwner("instance", "run-1")

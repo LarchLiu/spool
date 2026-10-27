@@ -58,6 +58,18 @@ type completedTurn struct {
 	prior []chatmodel.Turn
 }
 
+type chatMetadata struct {
+	ID              string               `json:"id"`
+	UpdatedAt       int64                `json:"updated_at"`
+	AutomationChat  bool                 `json:"automation_chat,omitempty"`
+	CollaboratorIDs []string             `json:"collaborator_ids,omitempty"`
+	Artifacts       []chatmodel.Artifact `json:"artifacts,omitempty"`
+}
+
+func sessionMetadata(chat chatmodel.Session) chatMetadata {
+	return chatMetadata{chat.ID, chat.UpdatedAt, chat.AutomationChat, chat.CollaboratorIDs, chat.Artifacts}
+}
+
 func NewApp(store *Store, runner agent.AgentRunner, _, _ string) *App {
 	settings, _ := store.Settings()
 	assets, _ := fs.Sub(resources.Frontend(), "frontend")
@@ -855,6 +867,7 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 	var previous string
 	var cached chatmodel.Turn
 	var cachedUpdated int64 = -1
+	previousMetadata, _ := json.Marshal(sessionMetadata(chat))
 	for {
 		// Poll only indexed metadata. Never decode an entire conversation on every
 		// streaming frame; live replies are already available in memory.
@@ -870,45 +883,47 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 			}
 		}
 		a.liveMu.Unlock()
-		if !live || meta.Status != chatmodel.StatusRunning {
-			if cachedUpdated != meta.UpdatedAt {
-				latest, ok := a.store.Get(id)
-				if ok {
-					latest = a.historicalSnapshot(latest)
-					a.liveMu.Lock()
-					if finished, exists := a.completed[id]; exists {
-						var used bool
-						latest, used = mergeCompletedTurn(latest, finished)
-						if !used {
-							delete(a.completed, id)
-						}
+		if cachedUpdated != meta.UpdatedAt {
+			latest, ok := a.store.Get(id)
+			if !ok {
+				return
+			}
+			metadata := sessionMetadata(latest)
+			encoded, _ := json.Marshal(metadata)
+			if string(encoded) != string(previousMetadata) {
+				// Task metadata can change even when no turn is running or present.
+				if err := writeSSE(w, "metadata", metadata); err != nil {
+					return
+				}
+				previousMetadata = encoded
+			}
+			if !live || meta.Status != chatmodel.StatusRunning {
+				latest = a.historicalSnapshot(latest)
+				a.liveMu.Lock()
+				if finished, exists := a.completed[id]; exists {
+					var used bool
+					latest, used = mergeCompletedTurn(latest, finished)
+					if !used {
+						delete(a.completed, id)
 					}
-					a.liveMu.Unlock()
-					transcriptSnapshot = latest.Transcript
-					baseTranscript = latest.Transcript
-					if len(latest.Turns) > 0 {
-						cached = latest.Turns[len(latest.Turns)-1]
-					} else {
-						cached = chatmodel.Turn{}
-					}
+				}
+				a.liveMu.Unlock()
+				transcriptSnapshot = latest.Transcript
+				baseTranscript = latest.Transcript
+				if len(latest.Turns) > 0 {
+					cached = latest.Turns[len(latest.Turns)-1]
 				} else {
 					cached = chatmodel.Turn{}
 				}
-				cachedUpdated = meta.UpdatedAt
+			} else if len(latest.Transcript.Parts) > 0 {
+				// Keep the hydrated base when the running snapshot has no body.
+				baseTranscript = latest.Transcript
 			}
+			cachedUpdated = meta.UpdatedAt
+		}
+		if !live || meta.Status != chatmodel.StatusRunning {
 			current = cached
 		} else {
-			if cachedUpdated != meta.UpdatedAt {
-				if latest, ok := a.store.Get(id); ok {
-					// A running SQLite snapshot intentionally has no transcript
-					// body. Keep the hydrated base captured before this turn rather
-					// than replacing it with an empty transcript on every poll.
-					if len(latest.Transcript.Parts) > 0 {
-						baseTranscript = latest.Transcript
-					}
-				}
-				cachedUpdated = meta.UpdatedAt
-			}
 			transcriptSnapshot = runningTranscript(baseTranscript, current)
 		}
 		if current.ID != "" {
@@ -921,7 +936,8 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 				approval = current.PendingApproval.ID
 			}
 			partSignature, _ := json.Marshal(transcriptSnapshot.Parts)
-			signature := fmt.Sprintf("%s/%s/%s/%s/%x/%d/%s/%s", current.ID, status, current.Model, current.ReasoningEffort, partSignature, current.FinishedAt, current.Error, approval)
+			// Resend at the new revision if metadata overtook an older turn event.
+			signature := fmt.Sprintf("%s/%s/%s/%s/%x/%d/%s/%s/%d", current.ID, status, current.Model, current.ReasoningEffort, partSignature, current.FinishedAt, current.Error, approval, meta.UpdatedAt)
 			if signature != previous {
 				value := struct {
 					Turn       chatmodel.Turn          `json:"turn"`

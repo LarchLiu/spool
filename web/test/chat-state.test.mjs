@@ -5,6 +5,7 @@ import {
   canControlChat,
   optimisticChat,
   reconcile,
+  reconcileMetadata,
 } from "../.test-build/chat-state.js";
 
 test("all task assignees can control chat, while regular shared chats stay owner-only", () => {
@@ -47,6 +48,67 @@ function chat(turns, updated_at = 10, transcript = { parts: [] }) {
     updated_at,
   };
 }
+
+test("live metadata updates PRs and task controls without replacing streamed content", () => {
+  const previous = {
+    ...chat([running], 10, helloTranscript),
+    automation_chat: true,
+    collaborator_ids: ["alice"],
+  };
+  const artifacts = [
+    { type: "pull_request", url: "https://github.com/o/r/pull/81" },
+  ];
+  const next = reconcileMetadata(previous, {
+    id: previous.id,
+    updated_at: 11,
+    automation_chat: true,
+    collaborator_ids: ["bob"],
+    artifacts,
+  });
+  assert.deepEqual(next.artifacts, artifacts);
+  assert.equal(canControlChat(next, "bob"), true);
+  assert.equal(canControlChat(next, "alice"), false);
+  assert.equal(next.status, "running");
+  assert.equal(next.turns, previous.turns);
+  assert.equal(next.transcript, previous.transcript);
+  const cleared = reconcileMetadata(next, {
+    id: next.id,
+    updated_at: 12,
+    automation_chat: true,
+  });
+  assert.deepEqual(cleared.collaborator_ids, []);
+  assert.deepEqual(cleared.artifacts, []);
+  assert.equal(canControlChat(cleared, "bob"), false);
+});
+
+test("metadata ignores old revisions and other chats, and never creates a chat", () => {
+  const previous = chat([running]);
+  assert.equal(
+    reconcileMetadata(previous, { id: previous.id, updated_at: 9 }),
+    previous,
+  );
+  assert.equal(
+    reconcileMetadata(previous, { id: "other-chat", updated_at: 20 }),
+    previous,
+  );
+  assert.equal(reconcileMetadata(null, { id: previous.id, updated_at: 20 }), null);
+});
+
+test("a turn replay at the metadata revision still delivers a pending approval", () => {
+  const previous = chat([running], 10, helloTranscript);
+  const metadata = reconcileMetadata(previous, { id: previous.id, updated_at: 20 });
+  const turn = {
+    ...running,
+    pending_approval: { id: "approval-1", title: "Allow command?" },
+  };
+  assert.equal(
+    reconcile(metadata, { ...metadata, updated_at: 10, turns: [turn] }),
+    metadata,
+  );
+  const replay = reconcile(metadata, { ...metadata, turns: [turn] });
+  assert.equal(replay.turns[0].pending_approval.id, "approval-1");
+  assert.deepEqual(replay.transcript, metadata.transcript);
+});
 
 test("late REST acknowledgement cannot undo a completed SSE turn", () => {
   const completed = { ...running, status: "completed", finished_at: 20 };

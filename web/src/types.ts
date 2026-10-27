@@ -104,6 +104,10 @@ export type Chat = {
   turns: Turn[];
   updated_at: number;
 };
+export type ChatMetadata = Pick<
+  Chat,
+  "id" | "updated_at" | "automation_chat" | "collaborator_ids" | "artifacts"
+>;
 export type Online = {
   id: string;
   nickname: string;

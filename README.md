@@ -162,8 +162,10 @@ the ledger, PRs or final messages.
 The ledger contains a `spool:issues:v1` marked JSON block. Human text outside the
 block, notes, owner, branch/worktree, validation, PR history and unknown JSON
 fields are preserved. Standard existing Markdown issue tables can be imported;
-unparseable in-progress records fail closed for manual migration rather than
-being stolen. The ledger is local automation state: do not commit it to `dev`
+PR links in those rows are verified even without GitHub issue cross-references.
+Existing `pr` rows require full PR URLs. Unparseable in-progress records or PR
+references fail closed for manual migration rather than being reclaimed.
+The ledger is local automation state: do not commit it to `dev`
 or use a worktree/branch copy. Keep the `owner` object intact when recording
 progress. Explicitly abandoning a claim requires preserving history and clearing
 its owner/branch/worktree before resetting to `open`.

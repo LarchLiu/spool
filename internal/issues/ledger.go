@@ -122,6 +122,7 @@ func Load(root string) (*Ledger, error) {
 func validStatus(s string) bool { return s == "open" || s == "processing" || s == "pr" || s == "close" }
 
 var issueNumber = regexp.MustCompile(`(?:^#?|/issues/|\[#)([0-9]+)`)
+var ledgerURL = regexp.MustCompile("https?://[^\\s<>()\\[\\]`\"|]+")
 
 // Import common existing Markdown ledgers without removing their human text.
 // Unrecognized in-progress claims fail closed instead of silently losing owners.
@@ -178,6 +179,22 @@ func (l *Ledger) importTable(text string) error {
 			return fmt.Errorf("duplicate existing issue #%d", number)
 		}
 		r := &Record{Number: number, Status: status, Notes: line, Branch: values["branch"], Worktree: values["worktree"], Validation: values["validation"]}
+		// PRs may be recorded only in this table, without a GitHub cross-reference.
+		for _, link := range ledgerURL.FindAllString(line, -1) {
+			if !strings.Contains(link, "/pull/") {
+				continue
+			}
+			link = strings.TrimRight(strings.TrimRight(link, ".,;"), "/")
+			if !ValidPRURL(link) {
+				return fmt.Errorf("cannot verify existing PR for issue #%d: %s", number, link)
+			}
+			if !contains(r.PRs, link) {
+				r.PRs = append(r.PRs, link)
+			}
+		}
+		if status == "pr" && len(r.PRs) == 0 {
+			return fmt.Errorf("existing issue #%d has pr status without a verifiable PR URL; migrate the ledger before automation can claim issues", number)
+		}
 		// Legacy owners are intentionally opaque: never steal a human claim.
 		r.Owner.Automation = values["owner"]
 		l.Records[number] = r

@@ -33,9 +33,18 @@ func (a *App) startIssueFollowup(chat chatmodel.Session, input messageInput, opt
 	a.turnMu.Unlock()
 	var admission sync.Once
 	releaseAdmission := func() { admission.Do(func() { a.turnMu.Lock(); a.runningTurns--; a.turnMu.Unlock(); a.turns.Done() }) }
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		select {
+		case <-a.shutdown:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 	handedOff := false
 	defer func() {
 		if !handedOff {
+			cancel()
 			releaseAdmission()
 		}
 	}()
@@ -43,8 +52,11 @@ func (a *App) startIssueFollowup(chat chatmodel.Session, input messageInput, opt
 	if err != nil {
 		return err
 	}
-	checkout, err := issues.Inspect(context.Background(), a.automation.run, project.Path, config.Repository)
+	checkout, err := issues.Inspect(ctx, a.automation.run, project.Path, config.Repository)
 	if err != nil {
+		return err
+	}
+	if err = ctx.Err(); err != nil {
 		return err
 	}
 	owner := issues.NewOwner(a.automation.instance, chatmodel.NewID())
@@ -76,20 +88,11 @@ func (a *App) startIssueFollowup(chat chatmodel.Session, input messageInput, opt
 			break
 		}
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		select {
-		case <-a.shutdown:
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
 	token := ""
 	if record != nil && record.Branch != "" {
 		record.Owner = owner
 		record.History = append(record.History, time.Now().UTC().Format(time.RFC3339)+" 负责人主动继续任务聊天，run "+owner.Run)
 		if err = ledger.Save(); err != nil {
-			cancel()
 			return fail(err)
 		}
 		token = randomToken()

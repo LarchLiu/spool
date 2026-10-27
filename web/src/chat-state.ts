@@ -1,9 +1,24 @@
-import type { Chat, Transcript, TranscriptPart, Turn } from "./types";
+import type { Chat, ChatMetadata, Transcript, TranscriptPart, Turn } from "./types";
 
 export function canControlChat(chat: Chat | null, userID: string): boolean {
   if (!chat) return true;
   if (chat.automation_chat) return !!chat.collaborator_ids?.includes(userID);
   return chat.user_id == null || chat.user_id === userID;
+}
+
+export function reconcileMetadata(
+  previous: Chat | null,
+  next: ChatMetadata,
+): Chat | null {
+  if (previous?.id !== next.id || previous.updated_at > next.updated_at)
+    return previous;
+  return {
+    ...previous,
+    updated_at: next.updated_at,
+    automation_chat: next.automation_chat ?? false,
+    collaborator_ids: next.collaborator_ids ?? [],
+    artifacts: next.artifacts ?? [],
+  };
 }
 
 export function optimisticChat(

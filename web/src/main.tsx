@@ -22,6 +22,7 @@ import {
   canControlChat,
   optimisticChat,
   reconcile,
+  reconcileMetadata,
 } from "./chat-state";
 import { runningTurn, stopReply } from "./turn-control";
 import type {
@@ -29,6 +30,7 @@ import type {
   Project,
   Agent,
   Chat,
+  ChatMetadata,
   Turn,
   Online,
   Attachment,
@@ -339,6 +341,13 @@ function App() {
       setConnected(true);
       const v = JSON.parse((e as MessageEvent).data) as Chat;
       setChat((old) => reconcile(old, v));
+    });
+    source.addEventListener("metadata", (e) => {
+      if (cancelled || activeID.current !== chatID) return;
+      setConnected(true);
+      const v = JSON.parse((e as MessageEvent).data) as ChatMetadata;
+      setChat((old) => reconcileMetadata(old, v));
+      setChats((old) => old.map((item) => reconcileMetadata(item, v) ?? item));
     });
     source.addEventListener("turn", (e) => {
       if (cancelled || activeID.current !== chatID) return;

@@ -294,7 +294,7 @@ func (s *Store) beginTurnWithInput(id, prompt string, backend chatmodel.Backend,
 	}
 	t.InputEnd = len(v.Transcript.Parts)
 	t.PartEnd = t.InputEnd
-	if len(v.Turns) == 0 {
+	if len(v.Turns) == 0 && (v.Title == "" || v.Title == "New chat") {
 		v.Title = titleFor(prompt)
 		if strings.TrimSpace(prompt) == "" && len(files) > 0 {
 			v.Title = titleFor(files[0].Name)
