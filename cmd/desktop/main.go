@@ -47,6 +47,9 @@ type panel struct {
 }
 
 func main() {
+	if signedUpdatesError != nil {
+		log.Printf("Signed updates disabled: %v", signedUpdatesError)
+	}
 	root := flag.String("data-dir", workspace.DefaultDataDir(), "SQLite data directory")
 	flag.Parse()
 	mygo.App.SetName("Spool")

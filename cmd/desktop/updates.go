@@ -10,9 +10,12 @@ import (
 	"spool/internal/appupdate"
 )
 
+// Initialize before services start using HTTP; MyGo has a process-wide client.
+var signedUpdatesReady, signedUpdatesError = appupdate.RequireSignedManifests()
+
 func (p *panel) initUpdates() {
 	p.updates = appupdate.New(appupdate.Options{
-		Enabled: mygo.Updater.Enabled(),
+		Enabled: signedUpdatesReady && signedUpdatesError == nil && mygo.Updater.Enabled(),
 		Check: func(ctx context.Context) (*appupdate.Release, error) {
 			up, err := mygo.Updater.Check(ctx)
 			if err != nil || up == nil {

@@ -26,20 +26,34 @@ jobs:
     name: Verify and prepare release
     runs-on: macos-latest
     timeout-minutes: 30
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-go@v6
+      - name: Verify release source
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse HEAD)"
+          git merge-base --is-ancestor "$commit" origin/main
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 26
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Prepare installer security test dependencies
+        run: |
+          brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
+          echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"
       - name: Test release tooling
         run: node --test tools/*.test.mjs
       - name: Resolve published changelog base
@@ -60,10 +74,9 @@ jobs:
             from="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
           fi
           npx --yes changelogithub@14.0.0 --from "$from" --to "$RELEASE_TAG" --output "$RELEASE_NOTES_FILE"
-      - name: Validate release version and signing keys
+      - name: Validate release version and public key
         env:
           MYGO_UPDATER_PUBLIC_KEY: ${{ vars.MYGO_UPDATER_PUBLIC_KEY }}
-          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
         run: node tools/prepare-release.mjs --check
       - run: npm --prefix web ci
       - name: Build and test frontend
@@ -71,17 +84,17 @@ jobs:
           go run ./tools/branding.go
           npm --prefix web run build
           npm --prefix web test
-      - name: Test and vet Go packages
-        run: |
-          go test -race ./...
-          go vet ./...
-      - uses: actions/upload-artifact@v7
+      - name: Test Go packages with race detection
+        run: go test -race -v -timeout=10m ./...
+      - name: Vet Go packages
+        run: go vet ./...
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-notes
           path: RELEASE_NOTES.md
           if-no-files-found: error
           retention-days: 7
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-resources
           path: |
@@ -107,34 +120,37 @@ jobs:
           - { os: ubuntu-latest, platform: linux/amd64, target: linux-amd64 }
           - { os: ubuntu-latest, platform: linux/arm64, target: linux-arm64 }
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
+          ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 26
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-notes
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-resources
       - name: Install NSIS for Windows installers
         if: startsWith(matrix.target, 'windows-')
         run: sudo apt-get update && sudo apt-get install -y nsis
-      - name: Configure version, release notes and signed updates
+      - name: Configure version, release notes and update public key
         env:
           MYGO_UPDATER_PUBLIC_KEY: ${{ vars.MYGO_UPDATER_PUBLIC_KEY }}
-          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
         run: node tools/prepare-release.mjs
-      - name: Build installers and signed update archives
+      - name: Build installers without signing secrets
         env:
-          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+          MYGO_LDFLAGS: >-
+            -X spool/internal/appupdate.releaseRepository=${{ github.repository }}
+            -X spool/internal/appupdate.releasePublicKey=${{ vars.MYGO_UPDATER_PUBLIC_KEY }}
         run: go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -platform "${{ matrix.platform }}" -skip-build-command -sign - -skip-notarize
+      - name: Package unsigned update archive
+        run: node tools/package-release.mjs "${{ matrix.target }}"
       - name: Collect release assets
         env:
           TARGET: ${{ matrix.target }}
@@ -142,15 +158,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          find "build/$TARGET" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.delta' -o -name '*.dmg' -o -name '*.deb' -o -name '*Setup*.exe' -o -name 'update-*.json' \) -exec cp {} release-assets/ \;
-          if [[ "$TARGET" == linux-amd64 ]]; then
-            cp "build/$TARGET/install.sh" release-assets/
-          fi
-      - name: Verify target assets and update signature
+          find "build/$TARGET" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.dmg' -o -name '*.deb' -o -name '*Setup*.exe' \) -exec cp {} release-assets/ \;
+      - name: Verify unsigned target assets
         env:
           MYGO_UPDATER_PUBLIC_KEY: ${{ vars.MYGO_UPDATER_PUBLIC_KEY }}
-        run: node tools/release-assets.mjs release-assets "${{ matrix.target }}"
-      - uses: actions/upload-artifact@v7
+        run: node tools/release-assets.mjs release-assets "${{ matrix.target }}" --unsigned
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: packages-${{ matrix.target }}
           path: release-assets/*
@@ -159,7 +172,7 @@ jobs:
 
   publish:
     name: Publish complete release
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Serialize publication across tags so an older build cannot replace Latest.
@@ -169,32 +182,32 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
+          ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 26
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-notes
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: packages-*
           path: release-assets
           merge-multiple: true
-      - name: Verify all six targets and update signatures
+      - name: Sign and verify all six targets and metadata
         env:
           MYGO_UPDATER_PUBLIC_KEY: ${{ vars.MYGO_UPDATER_PUBLIC_KEY }}
-        run: node tools/release-assets.mjs
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: node tools/sign-release.mjs
       - name: Generate SHA256SUMS
         shell: bash
         run: |
           set -euo pipefail
           cd release-assets
           sha256sum * > SHA256SUMS
-          sha256sum --check SHA256SUMS
       - name: Recheck publication state and Latest version
         id: metadata
         env:
@@ -217,9 +230,7 @@ jobs:
             gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
               --notes-file "$RELEASE_NOTES_FILE" --prerelease="$PRERELEASE"
           fi
-          mapfile -d '' packages < <(find release-assets -type f ! -name 'update-*.json' -print0)
-          mapfile -d '' manifests < <(find release-assets -type f -name 'update-*.json' -print0)
-          gh release upload "$RELEASE_TAG" "${packages[@]}" --repo "$GITHUB_REPOSITORY" --clobber
-          gh release upload "$RELEASE_TAG" "${manifests[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          # The draft remains private until every upload succeeds.
+          gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --draft=false --prerelease="$PRERELEASE" --latest="$MAKE_LATEST"

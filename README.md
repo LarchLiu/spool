@@ -537,6 +537,8 @@ development configuration.
 ### Prepare A Version Locally
 
 Use the cross-platform Node.js helper after committing the changes to ship:
+prepare on `main`, or merge the resulting release commit into `main` before
+pushing the tag. CI rejects tags whose commits are not reachable from `main`.
 
 ```sh
 # Preview the next patch version without changing anything.
@@ -609,15 +611,17 @@ gh secret set MYGO_UPDATER_PRIVATE_KEY < /absolute/private/key-directory/mygo-up
 ```
 
 Keep the **same key pair** for later releases. The private key must never be
-committed, uploaded as an asset, or included in an app. The workflow validates
-that the keys match before building; only the public key is embedded in the
-app. The release repository must be public for unauthenticated client downloads.
-Never ship a GitHub access token in the client.
+committed, uploaded as an asset, or included in an app. Only the final signing
+step receives the private key and validates that it matches the public key.
+Verification, dependency installation and all six builds have no signing secret;
+only the public key is embedded in the app. The release repository must be public
+for unauthenticated client downloads. Never ship a GitHub access token in the client.
 
 Before building installers, CI runs the release tooling tests, frontend build
-and tests, `go test -race ./...`, and `go vet ./...`, and validates the signing
-keys. The verification job uses `tools/prepare-release.mjs --check` to validate
-the release version, signing keys and notes without changing `mygo.json`;
+and tests, `go test -race -v -timeout=10m ./...`, and a separate `go vet ./...`
+step. Verbose test progress distinguishes long-running tests from a stalled
+runner. The verification job uses `tools/prepare-release.mjs --check` to validate
+the release version, public key and notes without changing `mygo.json`;
 frontend metadata tests still check the original development build hook. Only
 the packaging jobs rewrite the config. CI builds the native desktop for macOS,
 Windows and Linux, each on amd64 and arm64. Branding and frontend resources are
@@ -626,19 +630,34 @@ ensures the ignored `frontend/` embed directory exists before MyGo compiles Go
 code. CI clears
 MyGo's `buildCommand` and skips its build hook: Spool uses embedded HTTP/PWA
 assets, not MyGo WebView bindings, so packaging must not run the desktop app
-to generate an unused TypeScript client or open the user's database.
+to generate an unused TypeScript client or open the user's database. The tag's
+commit must be reachable from `main`; all subsequent jobs check out that exact
+verified commit SHA, not a fresh resolution of a potentially moved tag.
 
-All six builds must succeed before publication. Each target,
-and the merged asset set, is checked for the expected nonempty installers,
-archive version/URL/size, release notes, and Ed25519 archive signature. Missing,
-unexpected or incorrectly signed files block publication.
+All six builds must succeed before publication. MyGo builds installers without
+the private key; `tools/package-release.mjs` creates unsigned update archives of
+the installed payload. Each target and the merged set are checked for exactly
+the expected nonempty installers and archives before signing.
 
-The publish job generates `SHA256SUMS`, uploads installers and signed `.tar.gz`
-archives to a **draft** Release first, then the six `update-<platform>.json`
-manifests, and only then publishes it. The previous Latest stays usable during
-the build and upload. This is compatible with GitHub's immutable releases:
-assets are complete before publication, and published releases are never
-overwritten. Only the publish job has repository write permission.
+The publish job's `tools/sign-release.mjs` signs every archive's SHA-256 digest,
+generates the six `update-<platform>.json` manifests, and signs each manifest's
+exact bytes into a detached, binary `update-<platform>.json.sig`. The signed
+manifest binds the version, repository, target, archive URL/size/signature and
+release notes. Both signatures and the final exact file set are verified before
+upload. Missing, unexpected or incorrectly signed files block publication.
+
+The publish job then generates `SHA256SUMS` and uploads all assets in one command
+to a **draft** Release. It publishes only after every upload succeeds. The previous
+Latest stays usable throughout. `SHA256SUMS` is a download-integrity convenience,
+not an independently authenticated signature. Only the publish job has repository
+write permission.
+
+Actions are pinned to full commit SHAs; Dependabot proposes grouped updates.
+The repository enables immutable releases for future publications and protects
+`v*` tags: only administrators can create them, and existing release tags cannot
+be moved or deleted. These are GitHub repository settings, not guarantees imposed
+by a local clone; preserve them when transferring/forking the repository. Enabling
+immutability does not retroactively lock the previously published `v0.1.1`.
 
 Stable releases become Latest unless a higher stable version is already
 published. Publication is serialized across tags and checks the versions again
@@ -648,9 +667,15 @@ Prereleases are marked automatically and never become Latest. Stable apps read
 separate auto-update channel. Delta generation remains disabled so builds do
 not depend on earlier release assets or a mutable Latest pointer.
 
-Linux also gets `install.sh`: a per-user installation made by this script can
-update itself; `.deb` installations are normally updated by the package manager
-instead. No headless-server update endpoint is exposed.
+Linux also gets `install.sh`, requiring Python 3, OpenSSL 3+ and curl or wget.
+It embeds the public key and verifies both the manifest and archive before
+extracting ordinary files into a private staging directory. Links, traversal,
+special files and excessive expanded sizes are rejected. Replacement preserves
+the old application until staging succeeds, and never removes user data. For
+offline installation, put the matching `update-linux-<arch>.json` and `.json.sig`
+beside the downloaded archive, then pass that archive to `sh install.sh`.
+A per-user installation can update itself; `.deb` installations are normally
+updated by the package manager instead. No headless-server update endpoint is exposed.
 
 Release builds do **not** use OS certificate signing: no Apple Developer ID,
 notarization, Windows Authenticode, certificates, or Apple credentials are
@@ -664,6 +689,25 @@ The Ed25519 **update archive signature** is separate and remains required.
 It uses the freely generated MyGo key pair above, not a purchased certificate,
 and lets installed apps verify that an update came from the same publisher.
 Only the public-key variable and private-key secret are required by CI.
+
+MyGo v0.6.4 authenticates archives but not their version metadata. Spool's
+`internal/appupdate/manifest.go` adds a narrow, fail-closed HTTP boundary for the
+exact compiled update-feed URL. It follows the asset redirects and verifies the
+detached signature and manifest identity **before those same bytes reach MyGo**;
+there is no check-then-refetch race. Other HTTP requests are untouched. MyGo keeps
+responsibility for archive verification and installation, avoiding a fork or a
+second installer implementation. Its process-wide HTTP client is wrapped once
+at desktop initialization, before any services start. Revisit this adapter when
+MyGo exposes an authenticated-manifest API. Builds missing Spool's release flags
+cannot silently fall back to the legacy updater.
+
+The legacy archive-signature field remains compatible with `0.1.1`, allowing it
+to install the security update. That old client cannot acquire the new metadata
+checks until it runs a new build. A genuine older signed manifest is rejected by
+normal version comparison; rewriting it as a higher version invalidates its
+signature. This does not implement a trusted timestamp/freshness service: an
+attacker controlling distribution can still withhold updates. Initial installation
+also requires trusting the source of the installer/script and its embedded key.
 
 The native control center has an **Updates** page and the tray has **Check for
 updates**. Official CI builds check shortly after launch and every 12 hours by

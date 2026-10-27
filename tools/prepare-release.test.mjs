@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { releaseConfig, releaseNotes, updaterReleaseNotes } from "./prepare-release.mjs";
+import { releaseConfig, releaseNotes, releaseSigningKey, updaterReleaseNotes } from "./prepare-release.mjs";
 
 const key = generateKeyPairSync("ed25519");
 const seed = key.privateKey.export({ format: "der", type: "pkcs8" }).subarray(-32);
@@ -28,8 +28,9 @@ test("release tag is the version and only the public key enters the config", () 
   assert.ok(!JSON.stringify(config).includes(env.MYGO_UPDATER_PRIVATE_KEY));
 });
 
-test("missing and mismatched signing keys fail closed", () => {
-  assert.throws(() => releaseConfig({}, { ...env, MYGO_UPDATER_PRIVATE_KEY: "" }), /Configure/);
+test("builds need only the public key; signing rejects missing and mismatched private keys", () => {
+  assert.equal(releaseConfig({}, { ...env, MYGO_UPDATER_PRIVATE_KEY: "" }).updates.publicKey, env.MYGO_UPDATER_PUBLIC_KEY);
+  assert.throws(() => releaseSigningKey({ ...env, MYGO_UPDATER_PRIVATE_KEY: "" }), /Configure/);
   assert.throws(() => releaseConfig({}, { ...env, MYGO_UPDATER_PUBLIC_KEY: Buffer.alloc(32).toString("base64") }), /do not match/);
 });
 
@@ -110,7 +111,7 @@ test("check mode fails closed on invalid keys, empty notes and unknown arguments
   await writeFile(join(directory, "mygo.json"), config);
   await writeFile(join(directory, "RELEASE_NOTES.md"), " \n");
   for (const [args, overrides, error] of [
-    [["--check"], { MYGO_UPDATER_PRIVATE_KEY: "" }, /Configure MYGO_UPDATER/],
+    [["--check"], { MYGO_UPDATER_PUBLIC_KEY: "" }, /Configure MYGO_UPDATER/],
     [["--check"], {}, /Release notes must not be empty/],
     [["--unknown"], {}, /Usage:/],
     [["--check", "extra"], {}, /Usage:/],

@@ -14,15 +14,18 @@ export function releaseVersion(tag) {
   return version;
 }
 
-export function releaseConfig(config, env) {
-  const version = releaseVersion(env.RELEASE_TAG);
-  const repository = env.GITHUB_REPOSITORY ?? "";
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) {
-    throw new Error("GITHUB_REPOSITORY must be owner/repository");
-  }
+export function releasePublicKey(env) {
   const publicKey = (env.MYGO_UPDATER_PUBLIC_KEY ?? "").trim();
+  if (!/^[A-Za-z0-9+/]{43}=$/.test(publicKey) || Buffer.from(publicKey, "base64").length !== 32) {
+    throw new Error("Configure MYGO_UPDATER_PUBLIC_KEY using mygo keygen");
+  }
+  return publicKey;
+}
+
+export function releaseSigningKey(env) {
+  const publicKey = releasePublicKey(env);
   const privateKey = Buffer.from((env.MYGO_UPDATER_PRIVATE_KEY ?? "").trim(), "base64");
-  if (Buffer.from(publicKey, "base64").length !== 32 || privateKey.length !== 64) {
+  if (privateKey.length !== 64) {
     throw new Error("Configure MYGO_UPDATER_PUBLIC_KEY (variable) and MYGO_UPDATER_PRIVATE_KEY (secret) using mygo keygen");
   }
   const key = createPrivateKey({
@@ -34,6 +37,17 @@ export function releaseConfig(config, env) {
   if (derived.toString("base64") !== publicKey || !derived.equals(privateKey.subarray(32))) {
     throw new Error("The update signing keys do not match; keep the same key pair across releases");
   }
+  return key;
+}
+
+export function releaseConfig(config, env) {
+  const version = releaseVersion(env.RELEASE_TAG);
+  const repository = env.GITHUB_REPOSITORY ?? "";
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) {
+    throw new Error("GITHUB_REPOSITORY must be owner/repository");
+  }
+  const publicKey = releasePublicKey(env);
+  if (env.MYGO_UPDATER_PRIVATE_KEY) releaseSigningKey(env);
   // Release builds need no OS certificates. macOS still needs an ad-hoc
   // signature for executable integrity, not a Developer ID or notarization.
   const macos = { ...config.macos, signingIdentity: "-" };
@@ -90,7 +104,7 @@ async function main() {
   // Verification jobs must retain the development config for metadata tests.
   // Only packaging jobs should replace it with the release configuration.
   if (args[0] === "--check") {
-    console.log(`Validated Spool ${config.version} with signing keys and release notes; no files changed`);
+    console.log(`Validated Spool ${config.version} with the public key and release notes; no files changed`);
     return;
   }
   await mkdir("build", { recursive: true });

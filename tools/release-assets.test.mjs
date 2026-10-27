@@ -22,6 +22,7 @@ async function fixture(t, { tag = options.tag, targets = releaseTargets } = {}) 
     const archive = `spool-${version}-${target}.tar.gz`;
     const content = Buffer.from(`archive for ${target}`);
     const manifest = {
+      schema: "spool-update-v1", repository: options.repository, target,
       version,
       notes: options.notes,
       url: `https://github.com/${options.repository}/releases/download/${tag}/${archive}`,
@@ -29,7 +30,9 @@ async function fixture(t, { tag = options.tag, targets = releaseTargets } = {}) 
       signature: sign(null, createHash("sha256").update(content).digest(), key.privateKey).toString("base64"),
     };
     await writeFile(join(directory, archive), content);
-    await writeFile(join(directory, `update-${target}.json`), JSON.stringify(manifest));
+    const data = Buffer.from(JSON.stringify(manifest));
+    await writeFile(join(directory, `update-${target}.json`), data);
+    await writeFile(join(directory, `update-${target}.json.sig`), sign(null, data, key.privateKey));
     await writeFile(join(directory, installerName(version, target)), "installer");
     if (target === "linux-amd64") await writeFile(join(directory, "install.sh"), "#!/bin/sh\n");
   }
@@ -38,7 +41,7 @@ async function fixture(t, { tag = options.tag, targets = releaseTargets } = {}) 
 
 test("accepts exactly six signed targets, installers and the Linux installation script", async (t) => {
   const directory = await fixture(t);
-  assert.equal((await verifyReleaseAssets(directory, options)).length, 19);
+  assert.equal((await verifyReleaseAssets(directory, options)).length, 25);
 });
 
 test("per-target checks work and prerelease Debian names follow MyGo's version conversion", async (t) => {
@@ -46,7 +49,7 @@ test("per-target checks work and prerelease Debian names follow MyGo's version c
   const targets = ["linux-arm64"];
   const directory = await fixture(t, { tag, targets });
   assert.equal(installerName(tag.slice(1), targets[0]), "spool_1.2.3~beta.test.1_arm64.deb");
-  assert.equal((await verifyReleaseAssets(directory, { ...options, tag, targets })).length, 3);
+  assert.equal((await verifyReleaseAssets(directory, { ...options, tag, targets })).length, 4);
 });
 
 test("rejects missing installers, empty assets and unexpected files", async (t) => {
