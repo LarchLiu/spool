@@ -81,8 +81,18 @@ export function updaterReleaseNotes(notes) {
 }
 
 async function main() {
+  const args = process.argv.slice(2);
+  if (args.length > 1 || (args.length === 1 && args[0] !== "--check")) {
+    throw new Error("Usage: node tools/prepare-release.mjs [--check]");
+  }
   const config = releaseConfig(JSON.parse(await readFile("mygo.json", "utf8")), process.env);
   const notes = await releaseNotes(process.env);
+  // Verification jobs must retain the development config for metadata tests.
+  // Only packaging jobs should replace it with the release configuration.
+  if (args[0] === "--check") {
+    console.log(`Validated Spool ${config.version} with signing keys and release notes; no files changed`);
+    return;
+  }
   await mkdir("build", { recursive: true });
   await writeFile("build/release-notes.md", `## ${config.version}\n\n${updaterReleaseNotes(notes)}\n`);
   await writeFile("mygo.json", `${JSON.stringify(config, null, 2)}\n`);

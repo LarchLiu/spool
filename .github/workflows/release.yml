@@ -64,7 +64,7 @@ jobs:
         env:
           MYGO_UPDATER_PUBLIC_KEY: ${{ vars.MYGO_UPDATER_PUBLIC_KEY }}
           MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
-        run: node tools/prepare-release.mjs
+        run: node tools/prepare-release.mjs --check
       - run: npm --prefix web ci
       - name: Build and test frontend
         run: |

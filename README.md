@@ -616,10 +616,14 @@ Never ship a GitHub access token in the client.
 
 Before building installers, CI runs the release tooling tests, frontend build
 and tests, `go test -race ./...`, and `go vet ./...`, and validates the signing
-keys. It then builds the native desktop for macOS, Windows and Linux, each on
-amd64 and arm64. Branding and frontend resources are built **once** in the
-verification job and reused by all six targets. This also ensures the ignored
-`frontend/` embed directory exists before MyGo compiles Go code. CI clears
+keys. The verification job uses `tools/prepare-release.mjs --check` to validate
+the release version, signing keys and notes without changing `mygo.json`;
+frontend metadata tests still check the original development build hook. Only
+the packaging jobs rewrite the config. CI builds the native desktop for macOS,
+Windows and Linux, each on amd64 and arm64. Branding and frontend resources are
+built **once** in the verification job and reused by all six targets. This also
+ensures the ignored `frontend/` embed directory exists before MyGo compiles Go
+code. CI clears
 MyGo's `buildCommand` and skips its build hook: Spool uses embedded HTTP/PWA
 assets, not MyGo WebView bindings, so packaging must not run the desktop app
 to generate an unused TypeScript client or open the user's database.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -85,6 +85,60 @@ test("MyGo notes preserve draft sections instead of truncating at level-two head
     "### Features\n\n- First\n\n### Fixes\n\n- Second");
 });
 
+test("check mode validates keys and notes without changing development metadata or creating build artifacts", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "spool-check-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const config = await readFile(new URL("../mygo.json", import.meta.url), "utf8");
+  await writeFile(join(directory, "mygo.json"), config);
+  await writeFile(join(directory, "RELEASE_NOTES.md"), "## Features\n\n- Signed updates\n");
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL("./prepare-release.mjs", import.meta.url)), "--check"], {
+    cwd: directory,
+    env: { ...env, RELEASE_NOTES_FILE: "RELEASE_NOTES.md" },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Validated Spool 1\.2\.3/);
+  assert.equal(await readFile(join(directory, "mygo.json"), "utf8"), config);
+  assert.match(JSON.parse(config).buildCommand, /go run \.\/tools\/branding\.go/);
+  assert.deepEqual((await readdir(directory)).sort(), ["RELEASE_NOTES.md", "mygo.json"]);
+});
+
+test("check mode fails closed on invalid keys, empty notes and unknown arguments without writing files", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "spool-check-invalid-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const config = '{"name":"Spool","version":"0.1.0","buildCommand":"go run ./tools/branding.go"}\n';
+  await writeFile(join(directory, "mygo.json"), config);
+  await writeFile(join(directory, "RELEASE_NOTES.md"), " \n");
+  for (const [args, overrides, error] of [
+    [["--check"], { MYGO_UPDATER_PRIVATE_KEY: "" }, /Configure MYGO_UPDATER/],
+    [["--check"], {}, /Release notes must not be empty/],
+    [["--unknown"], {}, /Usage:/],
+    [["--check", "extra"], {}, /Usage:/],
+  ]) {
+    const result = spawnSync(process.execPath, [fileURLToPath(new URL("./prepare-release.mjs", import.meta.url)), ...args], {
+      cwd: directory,
+      env: { ...env, RELEASE_NOTES_FILE: "RELEASE_NOTES.md", ...overrides },
+      encoding: "utf8",
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, error);
+    assert.equal(await readFile(join(directory, "mygo.json"), "utf8"), config);
+    assert.deepEqual((await readdir(directory)).sort(), ["RELEASE_NOTES.md", "mygo.json"]);
+  }
+});
+
+test("release workflow validates without mutations before frontend tests and only configures packaging jobs", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
+  const prepare = workflow.split("\n  prepare:\n")[1]?.split("\n  build:\n")[0];
+  const build = workflow.split("\n  build:\n")[1]?.split("\n  publish:\n")[0];
+  assert.ok(prepare, "prepare job exists");
+  assert.ok(build, "build job exists");
+  assert.match(prepare, /^        run: node tools\/prepare-release\.mjs --check$/m);
+  assert.doesNotMatch(prepare, /^        run: node tools\/prepare-release\.mjs$/m);
+  assert.match(prepare, /npm --prefix web test/);
+  assert.match(build, /^        run: node tools\/prepare-release\.mjs$/m);
+});
+
 test("CLI writes the same changelog into MyGo configuration without leaking the signing key", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "spool-prepare-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -98,6 +152,7 @@ test("CLI writes the same changelog into MyGo configuration without leaking the 
   assert.equal(result.status, 0, result.stderr);
   const config = JSON.parse(await readFile(join(directory, "mygo.json"), "utf8"));
   assert.equal(config.version, "1.2.3");
+  assert.equal(config.buildCommand, "");
   assert.equal(config.updates.deltas, 0);
   assert.equal(config.updates.changelog, "build/release-notes.md");
   assert.equal(await readFile(join(directory, config.updates.changelog), "utf8"),
