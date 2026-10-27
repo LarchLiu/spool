@@ -1,4 +1,4 @@
-.PHONY: web desktop server test package auto-format branding
+.PHONY: web desktop server test package auto-format branding release
 web: branding
 	npm --prefix web ci
 	npm --prefix web run build
@@ -13,7 +13,7 @@ server: web
 	go build -o build/spool-server ./cmd/server
 
 test:
-	node --test tools/prepare-release.test.mjs
+	node --test tools/*.test.mjs
 	npm --prefix web test
 	go test -race ./...
 	go vet ./...
@@ -24,3 +24,6 @@ auto-format:
 
 package: web
 	go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -skip-dmg
+
+release:
+	node tools/release.mjs "$(VERSION)"

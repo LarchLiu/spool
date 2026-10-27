@@ -1,12 +1,12 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build (vMAJOR.MINOR.PATCH)
+        description: Existing tag to build or retry before publication (vMAJOR.MINOR.PATCH)
         required: true
         type: string
 
@@ -14,15 +14,86 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event.release.tag_name || inputs.tag }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 env:
-  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  RELEASE_NOTES_FILE: RELEASE_NOTES.md
 
 jobs:
+  prepare:
+    name: Verify and prepare release
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Test release tooling
+        run: node --test tools/*.test.mjs
+      - name: Resolve published changelog base
+        id: metadata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/release-metadata.mjs
+      - name: Generate release changelog
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PREVIOUS_RELEASE_TAG: ${{ steps.metadata.outputs.previous_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          from="$PREVIOUS_RELEASE_TAG"
+          if [[ -z "$from" ]]; then
+            # Never let an unpublished tag become the changelog base.
+            from="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
+          fi
+          npx --yes changelogithub@14.0.0 --from "$from" --to "$RELEASE_TAG" --output "$RELEASE_NOTES_FILE"
+      - name: Validate release version and signing keys
+        env:
+          MYGO_UPDATER_PUBLIC_KEY: ${{ vars.MYGO_UPDATER_PUBLIC_KEY }}
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: node tools/prepare-release.mjs
+      - run: npm --prefix web ci
+      - name: Build and test frontend
+        run: |
+          go run ./tools/branding.go
+          npm --prefix web run build
+          npm --prefix web test
+      - name: Test and vet Go packages
+        run: |
+          go test -race ./...
+          go vet ./...
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: RELEASE_NOTES.md
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-resources
+          path: |
+            frontend/
+            assets/icon.png
+            tray.png
+          if-no-files-found: error
+          retention-days: 7
+
   build:
     name: Build ${{ matrix.target }}
+    needs: prepare
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -36,19 +107,22 @@ jobs:
           - { os: ubuntu-latest, platform: linux/amd64, target: linux-amd64 }
           - { os: ubuntu-latest, platform: linux/arm64, target: linux-arm64 }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: refs/tags/${{ env.RELEASE_TAG }}
           persist-credentials: false
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 26
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm --prefix web ci
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-notes
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-resources
       - name: Install NSIS for Windows installers
         if: startsWith(matrix.target, 'windows-')
         run: sudo apt-get update && sudo apt-get install -y nsis
@@ -60,7 +134,7 @@ jobs:
       - name: Build installers and signed update archives
         env:
           MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
-        run: go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -platform "${{ matrix.platform }}" -sign - -skip-notarize
+        run: go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -platform "${{ matrix.platform }}" -skip-build-command -sign - -skip-notarize
       - name: Collect release assets
         env:
           TARGET: ${{ matrix.target }}
@@ -72,37 +146,80 @@ jobs:
           if [[ "$TARGET" == linux-amd64 ]]; then
             cp "build/$TARGET/install.sh" release-assets/
           fi
-          test -s "release-assets/update-$TARGET.json"
-      - uses: actions/upload-artifact@v4
+      - name: Verify target assets and update signature
+        env:
+          MYGO_UPDATER_PUBLIC_KEY: ${{ vars.MYGO_UPDATER_PUBLIC_KEY }}
+        run: node tools/release-assets.mjs release-assets "${{ matrix.target }}"
+      - uses: actions/upload-artifact@v7
         with:
-          name: release-${{ matrix.target }}
+          name: packages-${{ matrix.target }}
           path: release-assets/*
           if-no-files-found: error
           retention-days: 7
 
-  upload:
-    name: Upload complete release
+  publish:
+    name: Publish complete release
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Serialize publication across tags so an older build cannot replace Latest.
+    concurrency:
+      group: release-publish
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
         with:
-          pattern: release-*
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 26
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-notes
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: packages-*
           path: release-assets
           merge-multiple: true
-      - name: Upload archives before advertising updates
+      - name: Verify all six targets and update signatures
         env:
-          GH_TOKEN: ${{ github.token }}
+          MYGO_UPDATER_PUBLIC_KEY: ${{ vars.MYGO_UPDATER_PUBLIC_KEY }}
+        run: node tools/release-assets.mjs
+      - name: Generate SHA256SUMS
         shell: bash
         run: |
           set -euo pipefail
-          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName
+          cd release-assets
+          sha256sum * > SHA256SUMS
+          sha256sum --check SHA256SUMS
+      - name: Recheck publication state and Latest version
+        id: metadata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/release-metadata.mjs
+      - name: Upload to draft, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRAFT_ID: ${{ steps.metadata.outputs.draft_id }}
+          PRERELEASE: ${{ steps.metadata.outputs.prerelease }}
+          MAKE_LATEST: ${{ steps.metadata.outputs.make_latest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$DRAFT_ID" ]]; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --draft --title "Spool $RELEASE_TAG" \
+              --notes-file "$RELEASE_NOTES_FILE" --prerelease="$PRERELEASE" --latest=false
+          else
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --notes-file "$RELEASE_NOTES_FILE" --prerelease="$PRERELEASE"
+          fi
           mapfile -d '' packages < <(find release-assets -type f ! -name 'update-*.json' -print0)
           mapfile -d '' manifests < <(find release-assets -type f -name 'update-*.json' -print0)
-          test "${#packages[@]}" -gt 0
-          test "${#manifests[@]}" -eq 6
           gh release upload "$RELEASE_TAG" "${packages[@]}" --repo "$GITHUB_REPOSITORY" --clobber
           gh release upload "$RELEASE_TAG" "${manifests[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --draft=false --prerelease="$PRERELEASE" --latest="$MAKE_LATEST"

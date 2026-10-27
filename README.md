@@ -527,12 +527,78 @@ SPOOL_TEST_NATIVE_RESUME=1 go test ./internal/agent -run TestConvertedNativeSess
 
 ## Releases And Desktop Updates
 
-`.github/workflows/release.yml` runs when a GitHub Release is **published**.
-It also supports a manual run with an existing release tag to retry a failed
-build. Tags must be `vMAJOR.MINOR.PATCH`, optionally with a prerelease suffix.
-The tag determines the packaged version; `tools/prepare-release.mjs` sets
-`mygo.json` in CI without changing the checked-in development configuration.
-The release's body becomes the update window's release notes.
+`.github/workflows/release.yml` runs when a **`v*` tag is pushed**. It builds and
+validates everything before publishing the GitHub Release; do not publish an
+empty Release first. Tags must be `vMAJOR.MINOR.PATCH`, optionally with a SemVer
+prerelease suffix such as `-beta.1`. The tag determines the packaged version;
+`tools/prepare-release.mjs` sets `mygo.json` in CI without changing the checked-in
+development configuration.
+
+### Prepare A Version Locally
+
+Use the cross-platform Node.js helper after committing the changes to ship:
+
+```sh
+# Preview the next patch version without changing anything.
+node tools/release.mjs patch --dry-run
+
+# Pick an explicit version (optional leading v is accepted).
+node tools/release.mjs 0.2.0
+# Or calculate the next version automatically:
+# node tools/release.mjs patch
+# node tools/release.mjs minor
+# node tools/release.mjs major
+# node tools/release.mjs 0.3.0-beta.1
+
+# Equivalent Make entry point:
+# make release VERSION=0.2.0
+
+# Review, then push the current branch and release tag together.
+git show --stat v0.2.0
+git push --atomic origin HEAD v0.2.0
+```
+
+The helper synchronizes `mygo.json`, `web/package.json`, and both root version
+entries in `web/package-lock.json`, without changing dependency versions or
+running an install. Go modules do not have a separate application version field;
+`go.mod` and `go.sum` are not changed. It creates a `chore: release v...` commit
+containing only version metadata and an annotated local tag. It **never pushes**
+or publishes. The tag remains authoritative for the CI package version.
+
+Like Sessio's release helper, it requires a clean working tree and a named
+branch. Commit or stash other changes first; the helper does not include them
+in the release commit. It checks tags both locally and on `origin`, rejects
+duplicate or older versions, and chooses automatic bumps from the higher of
+the current MyGo version and the latest known tag. Bumping a prerelease first
+promotes it when appropriate: `patch` turns `0.3.0-beta.1` into `0.3.0`.
+Use an explicit version for another beta/rc release. The initial release can
+use the existing `0.1.0` version; in that case an empty release commit is created
+before tagging.
+
+`--dry-run` is read-only and can preview even a dirty working tree, with a warning
+to commit first. `--offline` explicitly skips the remote tag check, so only use
+it when you know local tags are up to date. If origin is unavailable, the normal
+command fails before editing any version files. A failed Git hook/signing step
+leaves changes available for inspection rather than resetting them; inspect
+`git status` and `git log` before retrying. No release signing keys or builds are
+needed locally; the GitHub workflow validates keys, tests, and builds before
+publication.
+
+### CI Publication
+
+The workflow also supports a manual run with an **existing tag** to retry an
+unfinished release. Failed uploads leave an unpublished draft that can be
+retried. Already published releases are deliberately rejected: ship changes
+under a new version instead of replacing builds users have downloaded. Publishing
+a Release through the GitHub UI no longer starts a build.
+
+Release notes are generated with pinned `changelogithub@14.0.0` from the previous
+**published** release in the same stable/beta/rc channel, not merely the previous
+Git tag. The first release in a channel starts from the repository's initial
+commit. All targets and the published Release use the same generated notes
+artifact. If a draft exists from a failed upload, its notes and expected assets
+are replaced on retry. Level-two headings are demoted in MyGo's changelog input
+so they do not look like additional version sections.
 
 Before the first release, generate and securely back up an update signing key:
 
@@ -548,23 +614,39 @@ that the keys match before building; only the public key is embedded in the
 app. The release repository must be public for unauthenticated client downloads.
 Never ship a GitHub access token in the client.
 
-The workflow builds the native desktop for macOS, Windows and Linux, each on
-amd64 and arm64. All six builds must succeed before the upload job runs. It
-uploads installers and signed `.tar.gz` update archives first, then the six
-`update-<platform>.json` manifests. Linux also gets `install.sh`: a per-user
-installation made by this script can update itself; `.deb` installations are
-normally updated by the package manager instead. No headless-server update
-endpoint is exposed. Re-running the workflow replaces assets on the same
-release; prefer a new version for changes to an already distributed build.
+Before building installers, CI runs the release tooling tests, frontend build
+and tests, `go test -race ./...`, and `go vet ./...`, and validates the signing
+keys. It then builds the native desktop for macOS, Windows and Linux, each on
+amd64 and arm64. Branding and frontend resources are built **once** in the
+verification job and reused by all six targets. This also ensures the ignored
+`frontend/` embed directory exists before MyGo compiles Go code. CI clears
+MyGo's `buildCommand` and skips its build hook: Spool uses embedded HTTP/PWA
+assets, not MyGo WebView bindings, so packaging must not run the desktop app
+to generate an unused TypeScript client or open the user's database.
 
-Because this workflow starts **after publication**, a latest release briefly
-has no assets while it builds. Clients safely report a failed check and retry;
-they never install an unsigned/incomplete update. Do not enable GitHub's
-immutable-release setting with this post-publication upload flow. Stable apps
-read `releases/latest/download`, so mark completed stable releases as Latest;
-prereleases can be downloaded manually but are not a separate auto-update
-channel. Delta generation is disabled because Latest already points to the
-release being built, not to a usable previous manifest.
+All six builds must succeed before publication. Each target,
+and the merged asset set, is checked for the expected nonempty installers,
+archive version/URL/size, release notes, and Ed25519 archive signature. Missing,
+unexpected or incorrectly signed files block publication.
+
+The publish job generates `SHA256SUMS`, uploads installers and signed `.tar.gz`
+archives to a **draft** Release first, then the six `update-<platform>.json`
+manifests, and only then publishes it. The previous Latest stays usable during
+the build and upload. This is compatible with GitHub's immutable releases:
+assets are complete before publication, and published releases are never
+overwritten. Only the publish job has repository write permission.
+
+Stable releases become Latest unless a higher stable version is already
+published. Publication is serialized across tags and checks the versions again
+before uploading, so an older build finishing later does not roll back Latest.
+Prereleases are marked automatically and never become Latest. Stable apps read
+`releases/latest/download`; prereleases can be downloaded manually but are not a
+separate auto-update channel. Delta generation remains disabled so builds do
+not depend on earlier release assets or a mutable Latest pointer.
+
+Linux also gets `install.sh`: a per-user installation made by this script can
+update itself; `.deb` installations are normally updated by the package manager
+instead. No headless-server update endpoint is exposed.
 
 Release builds do **not** use OS certificate signing: no Apple Developer ID,
 notarization, Windows Authenticode, certificates, or Apple credentials are
@@ -599,6 +681,6 @@ starts. App updates never replace `~/.spool` or update the installed agent CLIs.
 Run the update regression tests with:
 
 ```sh
-node --test tools/prepare-release.test.mjs
+node --test tools/*.test.mjs
 go test -race ./internal/appupdate ./internal/workspace ./cmd/desktop
 ```

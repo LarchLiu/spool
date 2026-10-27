@@ -2,11 +2,20 @@ import { createPrivateKey, createPublicKey } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
-export function releaseConfig(config, env) {
-  const tag = env.RELEASE_TAG ?? "";
-  if (!/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(tag)) {
+export function releaseVersion(tag) {
+  if (typeof tag !== "string" || !/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(tag)) {
     throw new Error("Release tag must be vMAJOR.MINOR.PATCH, optionally with a prerelease suffix");
   }
+  const version = tag.slice(1);
+  const prerelease = version.split(/-(.*)/s)[1];
+  if (prerelease?.split(".").some((part) => /^0\d+$/.test(part))) {
+    throw new Error("Release tag prerelease numbers must not have leading zeroes");
+  }
+  return version;
+}
+
+export function releaseConfig(config, env) {
+  const version = releaseVersion(env.RELEASE_TAG);
   const repository = env.GITHUB_REPOSITORY ?? "";
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) {
     throw new Error("GITHUB_REPOSITORY must be owner/repository");
@@ -35,13 +44,16 @@ export function releaseConfig(config, env) {
   delete windows.signCommand;
   return {
     ...config,
-    version: tag.slice(1),
+    version,
+    // CI supplies the verified embedded Web assets. Leaving buildCommand set
+    // makes MyGo infer WebView bindings and run the desktop app during packaging.
+    buildCommand: "",
     updates: {
       github: repository,
       publicKey,
       changelog: "build/release-notes.md",
-      // Published-release builds cannot use latest/download as their delta base:
-      // it already points at this release, whose assets are not uploaded yet.
+      // Keep releases self-contained: no dependency on an earlier release's
+      // mutable Latest pointer or archive availability while building.
       deltas: 0,
     },
     macos,
@@ -49,15 +61,30 @@ export function releaseConfig(config, env) {
   };
 }
 
-async function main() {
-  const config = releaseConfig(JSON.parse(await readFile("mygo.json", "utf8")), process.env);
+export async function releaseNotes(env) {
+  if (env.RELEASE_NOTES_FILE) {
+    const notes = (await readFile(env.RELEASE_NOTES_FILE, "utf8")).trim();
+    if (!notes) throw new Error("Release notes must not be empty");
+    return notes;
+  }
   let notes = "See the GitHub release for details.";
-  if (process.env.GITHUB_EVENT_PATH) {
-    const event = JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH, "utf8"));
+  if (env.GITHUB_EVENT_PATH) {
+    const event = JSON.parse(await readFile(env.GITHUB_EVENT_PATH, "utf8"));
     notes = event.release?.body?.trim() || notes;
   }
+  return notes;
+}
+
+export function updaterReleaseNotes(notes) {
+  // MyGo treats every level-two heading as the start of another version.
+  return notes.replaceAll("\r\n", "\n").replace(/^## /gm, "### ").trim();
+}
+
+async function main() {
+  const config = releaseConfig(JSON.parse(await readFile("mygo.json", "utf8")), process.env);
+  const notes = await releaseNotes(process.env);
   await mkdir("build", { recursive: true });
-  await writeFile("build/release-notes.md", `## ${config.version}\n\n${notes}\n`);
+  await writeFile("build/release-notes.md", `## ${config.version}\n\n${updaterReleaseNotes(notes)}\n`);
   await writeFile("mygo.json", `${JSON.stringify(config, null, 2)}\n`);
   console.log(`Prepared Spool ${config.version} with signed updates from ${config.updates.github}`);
 }
