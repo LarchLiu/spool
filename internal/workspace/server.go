@@ -36,6 +36,7 @@ type App struct {
 	// current turn. SQLite intentionally omits transcript bodies, so a running
 	// resumed chat needs this base while its provider is streaming new parts.
 	liveBase   map[string]chatmodel.Transcript
+	liveTurns  map[string][]chatmodel.Turn
 	completed  map[string]completedTurn
 	streams    map[string]int
 	streamSeen map[string]bool
@@ -50,14 +51,15 @@ type App struct {
 }
 
 type completedTurn struct {
-	turn chatmodel.Turn
-	base chatmodel.Transcript
+	turn  chatmodel.Turn
+	base  chatmodel.Transcript
+	prior []chatmodel.Turn
 }
 
 func NewApp(store *Store, runner agent.AgentRunner, _, _ string) *App {
 	settings, _ := store.Settings()
 	assets, _ := fs.Sub(resources.Frontend(), "frontend")
-	return &App{store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, completed: map[string]completedTurn{}, streams: map[string]int{}, streamSeen: map[string]bool{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{}, assets: http.FileServer(http.FS(assets))}
+	return &App{store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, streams: map[string]int{}, streamSeen: map[string]bool{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{}, assets: http.FileServer(http.FS(assets))}
 }
 func apiJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -304,6 +306,7 @@ func (a *App) snapshot(chat chatmodel.Session) chatmodel.Session {
 			base = hydrated
 		}
 		chat.Transcript = runningTranscript(base, t)
+		restorePriorTurns(&chat, a.liveTurns[chat.ID])
 		// Metadata and the in-memory stream can briefly have different
 		// transcript bases (for example after a reconnect). Clamp the live
 		// offset before slicing so a malformed/stale offset cannot panic HTTP.
@@ -337,6 +340,7 @@ func mergeCompletedTurn(chat chatmodel.Session, finished completedTurn) (chatmod
 		return chat, false
 	}
 	chat.Transcript = candidate
+	restorePriorTurns(&chat, finished.prior)
 	turn := finished.turn
 	turn.PartStart = len(finished.base.Parts)
 	turn.Parts = append([]chatmodel.Part(nil), candidate.Parts[turn.PartStart:]...)
@@ -344,6 +348,14 @@ func mergeCompletedTurn(chat chatmodel.Session, finished completedTurn) (chatmod
 	chat.Turns[len(chat.Turns)-1] = turn
 	chat.Status = turn.Status
 	return chat, true
+}
+
+func restorePriorTurns(chat *chatmodel.Session, prior []chatmodel.Turn) {
+	for i, turn := range prior {
+		if i < len(chat.Turns)-1 && chat.Turns[i].ID == turn.ID {
+			chat.Turns[i] = turn
+		}
+	}
 }
 func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity, path string) {
 	parts := strings.Split(strings.TrimPrefix(path, "/api/chats/"), "/")
@@ -391,9 +403,8 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		return
 	}
 	if input.Backend != "" {
-		if len(chat.Turns) > 0 && input.Backend != chat.Backend {
-			apiError(w, 409, errChatAgentLocked.Error())
-			return
+		if input.Backend != chat.Backend {
+			chat.PermissionMode = ""
 		}
 		chat.Backend = input.Backend
 	}
@@ -423,7 +434,7 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 	}
 	if err := a.startTurnWithInput(chat, input, options); err != nil {
 		status := 400
-		if strings.Contains(err.Error(), "running turn") || errors.Is(err, errChatAgentLocked) {
+		if strings.Contains(err.Error(), "running turn") || errors.Is(err, errSessionConversion) {
 			status = 409
 		}
 		if errors.Is(err, ErrUpdateInProgress) {
@@ -513,6 +524,7 @@ func (a *App) startTurnWithInput(chat chatmodel.Session, input messageInput, opt
 		a.streamSeen[chat.ID] = true
 	}
 	a.liveBase[chat.ID] = base
+	a.liveTurns[chat.ID] = append([]chatmodel.Turn(nil), chat.Turns...)
 	a.live[chat.ID] = turn
 	a.liveMu.Unlock()
 	ctx, control := a.registerTurn(context.Background(), chat.ID, turn.ID)
@@ -586,11 +598,12 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 				terminal.Reply = result.Text
 			}
 			if a.streamSeen[id] {
-				a.completed[id] = completedTurn{turn: terminal, base: cloneTranscript(a.liveBase[id])}
+				a.completed[id] = completedTurn{turn: terminal, base: cloneTranscript(a.liveBase[id]), prior: a.liveTurns[id]}
 			}
 			delete(a.streamSeen, id)
 			delete(a.live, id)
 			delete(a.liveBase, id)
+			delete(a.liveTurns, id)
 			finishedID := terminal.ID
 			finishedAt := terminal.FinishedAt
 			time.AfterFunc(30*time.Second, func() {
@@ -629,6 +642,7 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 		directory = project.Path
 	}
 	request := agent.AgentRequest{ChatID: id, Backend: chat.Backend, Binary: binary, WorkingDirectory: directory, NativeSessionID: chat.NativeSessionID, Prompt: prompt, Model: turn.RequestedModel, ReasoningEffort: turn.ReasoningEffort}
+	request.NativeSessionPath = chat.NativeSessionPath
 	request.PermissionMode = turn.PermissionMode
 	request.Files, err = a.materializeAttachments(chat)
 	if err != nil {
@@ -647,8 +661,11 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 	}
 	lastSave := time.Now()
 	result, runErr := a.runner.Run(ctx, request, func(event agent.AgentEvent) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if event.Type == "session" {
-			if err := a.store.SetNativeSession(id, event.SessionID); err != nil {
+			if err := a.store.setTurnNativeSession(id, turn.ID, event.SessionID); err != nil {
 				return err
 			}
 		}
@@ -656,6 +673,9 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 		current, ok := a.live[id]
 		if !ok {
 			current = turn
+		} else if current.ID != turn.ID {
+			a.liveMu.Unlock()
+			return errTurnChanged
 		}
 		switch event.Type {
 		case "delta":
@@ -807,6 +827,11 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 		}
 		a.liveMu.Lock()
 		current, live := a.live[id]
+		if live {
+			if hydrated, exists := a.liveBase[id]; exists {
+				baseTranscript = hydrated
+			}
+		}
 		a.liveMu.Unlock()
 		if !live || meta.Status != chatmodel.StatusRunning {
 			if cachedUpdated != meta.UpdatedAt {

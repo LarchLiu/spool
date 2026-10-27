@@ -17,6 +17,12 @@ import (
 // treated as read-only; malformed or provider metadata records are ignored so
 // a partially-written session can still be displayed.
 func ParseSessionTranscript(backend chatmodel.Backend, path string) (chatmodel.Transcript, error) {
+	return ParseSessionTranscriptFrom(backend, path, 0)
+}
+
+// ParseSessionTranscriptFrom skips a converted context's imported prefix. The
+// Web history for that prefix is read from its original provider files instead.
+func ParseSessionTranscriptFrom(backend chatmodel.Backend, path string, offset int64) (chatmodel.Transcript, error) {
 	transcript := chatmodel.Transcript{Parts: []chatmodel.Part{}}
 	if path == "" {
 		return transcript, errors.New("session transcript path is empty")
@@ -29,6 +35,12 @@ func ParseSessionTranscript(backend chatmodel.Backend, path string) (chatmodel.T
 		return transcript, err
 	}
 	defer file.Close()
+	if offset < 0 {
+		return transcript, errors.New("invalid native transcript offset")
+	}
+	if _, err := file.Seek(offset, 0); err != nil {
+		return transcript, err
+	}
 
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), maxEventBytes)

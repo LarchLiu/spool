@@ -104,6 +104,11 @@ func Run(t *testing.T) {
 		}
 	}
 	thread := "native-session-123"
+	for i, arg := range os.Args {
+		if arg == "--resume" && i+1 < len(os.Args) {
+			thread = os.Args[i+1]
+		}
+	}
 	claudeModel := "test-model"
 	claudeEffort := "high"
 	claudeMode := "acceptEdits"

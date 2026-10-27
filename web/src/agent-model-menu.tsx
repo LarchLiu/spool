@@ -1,10 +1,9 @@
 import { Check } from "lucide-react";
 import { effortLabel, type Translator } from "./i18n";
-import type { Agent, Backend } from "./types";
+import type { Agent } from "./types";
 import {
   chooseModel,
   effortChoices,
-  selectableAgents,
   type ModelSelection,
 } from "./model-selection";
 import { AgentIcon } from "./agent-icon";
@@ -12,13 +11,13 @@ import { AgentIcon } from "./agent-icon";
 export function AgentModelMenu({
   agents,
   selection,
-  lockedBackend,
+  currentBackend,
   t,
   onChange,
 }: {
   agents: Agent[];
   selection: ModelSelection;
-  lockedBackend?: Backend;
+  currentBackend?: ModelSelection["backend"];
   t: Translator;
   onChange: (selection: ModelSelection) => void;
 }) {
@@ -38,7 +37,7 @@ export function AgentModelMenu({
       aria-label={t("Choose agent and model")}
     >
       <div className="agent-model-groups">
-        {selectableAgents(agents, lockedBackend).map((item) => {
+        {agents.map((item) => {
           const available = item.enabled && item.installed;
           const models = [...(item.catalog.models || [])];
           if (
@@ -144,11 +143,11 @@ export function AgentModelMenu({
       )}
       <p>{t("Applies to the next message. Context is preserved.")}</p>
       <p>
-        {lockedBackend
-          ? t(
-              "This chat uses a fixed agent. Create a new chat to use another agent.",
-            )
-          : t("The first message fixes the agent for this chat.")}
+        {t(
+          currentBackend && currentBackend !== selection.backend
+            ? "The next message converts this conversation and continues with the selected agent."
+            : "Switch agents to continue this chat. Conversation history is converted automatically.",
+        )}
       </p>
     </div>
   );

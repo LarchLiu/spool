@@ -7,8 +7,8 @@ import (
 	chatmodel "spool/internal/model"
 )
 
-// historicalSnapshot enriches the SQLite transcript with provider-owned
-// history. SQLite intentionally stores the normalized turn state, while the
+// historicalSnapshot enriches SQLite metadata with provider-owned
+// history. SQLite intentionally stores only normalized turn state, while the
 // native JSONL remains the source of truth for command output, diffs, and
 // readable reasoning summaries.
 func (a *App) historicalSnapshot(chat chatmodel.Session) chatmodel.Session {
@@ -46,14 +46,17 @@ func (s *Store) hydrateSession(chat chatmodel.Session) chatmodel.Session {
 	if chat.NativeSessionID == "" || chat.Status == chatmodel.StatusRunning || len(chat.Turns) == 0 {
 		return chat
 	}
+	workingDirectory := ""
+	if chat.ProjectID != "" {
+		if project, err := s.Project(chat.ProjectID); err == nil {
+			workingDirectory = project.Path
+		}
+	}
+	if histories, err := s.nativeHistories(chat); err == nil && len(histories) > 0 {
+		return s.hydrateConvertedSession(chat, histories, workingDirectory)
+	}
 	path := chat.NativeSessionPath
 	if path == "" {
-		workingDirectory := ""
-		if chat.ProjectID != "" {
-			if project, err := s.Project(chat.ProjectID); err == nil {
-				workingDirectory = project.Path
-			}
-		}
 		path, _ = agent.FindSessionTranscript(chat.Backend, chat.NativeSessionID, workingDirectory)
 	}
 	if path == "" {

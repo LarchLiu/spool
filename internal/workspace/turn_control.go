@@ -82,6 +82,7 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string) (chatmodel.Session
 			base = hydrated
 		}
 		latest.Transcript = runningTranscript(base, live)
+		restorePriorTurns(&latest, a.liveTurns[chat.ID])
 		start := max(0, min(live.PartStart, len(latest.Transcript.Parts)))
 		live.PartStart = start
 		live.Parts = append([]chatmodel.Part(nil), latest.Transcript.Parts[start:]...)
@@ -91,6 +92,7 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string) (chatmodel.Session
 		}
 		delete(a.live, chat.ID)
 		delete(a.liveBase, chat.ID)
+		delete(a.liveTurns, chat.ID)
 	}
 	a.liveMu.Unlock()
 	latest.NativeSessionID = ""

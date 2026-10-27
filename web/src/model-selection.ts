@@ -6,15 +6,6 @@ export type ModelSelection = {
   effort: string;
 };
 
-export function selectableAgents(
-  agents: Agent[],
-  lockedBackend?: Backend,
-): Agent[] {
-  return lockedBackend
-    ? agents.filter((agent) => agent.backend === lockedBackend)
-    : agents;
-}
-
 export function chooseModel(agent: Agent, model: string): ModelSelection {
   const entry = agent.catalog.models?.find((item) => item.model === model);
   const effort =

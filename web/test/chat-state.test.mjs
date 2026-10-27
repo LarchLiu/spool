@@ -156,3 +156,23 @@ test("later sends append to the existing chat without changing its identity or h
   assert.deepEqual(pending.transcript.parts, [...helloTranscript.parts, nextPart]);
   assert.equal(previous.turns.length, 1);
 });
+
+test("cross-agent continuation keeps the chat and earlier agent attribution", () => {
+  const earlier = { ...running, status: "completed", backend: "codex" };
+  const previous = { ...chat([earlier], 10, helloTranscript), backend: "codex" };
+  const next = { ...running, id: "pending-switch", backend: "claude", requested_model: "test-claude", permission_mode: "acceptEdits" };
+  const pending = optimisticChat(previous, previous.project_id, next, [userPart]);
+  assert.equal(pending.id, previous.id);
+  assert.equal(pending.backend, "claude");
+  assert.equal(pending.permission_mode, "acceptEdits");
+  assert.equal(pending.turns[0].backend, "codex");
+  assert.deepEqual(pending.transcript.parts.slice(0, 2), helloTranscript.parts);
+  const accepted = reconcile(pending, {
+    ...pending,
+    updated_at: 20,
+    turns: [earlier, { ...pending.turns[1], id: "accepted-switch" }],
+  });
+  assert.equal(accepted.backend, "claude");
+  assert.equal(accepted.turns.length, 2);
+  assert.equal(accepted.turns[0].backend, "codex");
+});

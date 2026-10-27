@@ -217,9 +217,6 @@
   "service is closed": "服务已关闭",
   "unsupported agent backend": "不支持的 agent 类型",
   "Choose agent and model": "选择 Agent 和模型",
-  "The agent is fixed after the first message. Create a new chat to use another agent.": "首条消息发送后 Agent 已固定；如需使用其他 Agent，请新建聊天。",
-  "This chat uses a fixed agent. Create a new chat to use another agent.": "此聊天已固定 Agent；如需更换 Agent，请新建聊天。",
-  "The first message fixes the agent for this chat.": "首条消息发送后将固定此聊天使用的 Agent。",
   "Attachments": "附件",
   "Add files or images": "添加文件或图片",
   "Preview {name}": "预览 {name}",
@@ -313,5 +310,8 @@
   "Chats are running. Wait for all responses to finish before updating.": "有聊天任务正在运行，请等待所有回复完成后再更新。",
   "An update is in progress. Try again shortly.": "正在更新应用，请稍后重试。",
   "Wait for the update to finish before quitting.": "请等待更新完成后再退出应用。",
-  "No installed update is ready to restart.": "没有等待重启的已安装更新。"
+  "No installed update is ready to restart.": "没有等待重启的已安装更新。",
+  "The next message converts this conversation and continues with the selected agent.": "发送下一条消息时，将转换会话并由所选 Agent 继续。",
+  "Switch agents to continue this chat. Conversation history is converted automatically.": "支持换 Agent 继续此聊天，会话历史将自动转换。",
+  "Could not convert this chat to another agent. Its native history must be available; the original chat is unchanged.": "无法转换会话：请确认原始 Agent 的会话历史文件可用。原聊天未改动。"
 }

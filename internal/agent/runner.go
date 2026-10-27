@@ -23,18 +23,19 @@ const (
 )
 
 type AgentRequest struct {
-	ChatID           string
-	Backend          chatmodel.Backend
-	Binary           string
-	WorkingDirectory string
-	NativeSessionID  string
-	Prompt           string
-	Model            string
-	ReasoningEffort  string
-	PermissionMode   string
-	Attachments      []chatmodel.AgentAttachment
-	Files            []chatmodel.AgentAttachment
-	Approve          chatmodel.ApprovalHandler
+	ChatID            string
+	Backend           chatmodel.Backend
+	Binary            string
+	WorkingDirectory  string
+	NativeSessionID   string
+	NativeSessionPath string
+	Prompt            string
+	Model             string
+	ReasoningEffort   string
+	PermissionMode    string
+	Attachments       []chatmodel.AgentAttachment
+	Files             []chatmodel.AgentAttachment
+	Approve           chatmodel.ApprovalHandler
 }
 
 type AgentEvent struct {

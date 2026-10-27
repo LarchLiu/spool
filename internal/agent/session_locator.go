@@ -129,7 +129,8 @@ func encodeClaudeProjectPath(path string) string {
 	if path == "" {
 		return ""
 	}
-	// Claude replaces path separators with dashes and retains the leading dash
-	// for absolute paths (for example /Users/alex/project -> -Users-alex-project).
-	return strings.ReplaceAll(filepath.Clean(path), string(filepath.Separator), "-")
+	if encoded, err := claudeProjectName(filepath.Clean(path)); err == nil {
+		return encoded
+	}
+	return ""
 }

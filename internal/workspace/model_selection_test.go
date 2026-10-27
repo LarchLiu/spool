@@ -25,7 +25,7 @@ func (r *selectionRunner) Run(_ context.Context, request agent.AgentRequest, emi
 	return agent.AgentResult{SessionID: id, Model: request.Model, Text: "Selected agent reply"}, nil
 }
 
-func TestGroupedModelSelectionBindsAgentAndAllowsSameAgentModels(t *testing.T) {
+func TestGroupedModelSelectionAndMissingHistoryGuard(t *testing.T) {
 	s := testStore(t)
 	u := testUser(t, s, "alice")
 	p := testProject(t, s, u)
@@ -88,8 +88,8 @@ func TestGroupedModelSelectionBindsAgentAndAllowsSameAgentModels(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	if _, err = reopened.beginTurn(chat.ID, "After restart", chatmodel.BackendCodex, chatmodel.CodexOptions{Model: "test-model"}); !errors.Is(err, errChatAgentLocked) {
-		t.Fatal("reopening SQLite lost the chat's fixed agent")
+	if _, err = reopened.beginTurn(chat.ID, "After restart", chatmodel.BackendCodex, chatmodel.CodexOptions{Model: "test-model"}); !errors.Is(err, errSessionConversion) {
+		t.Fatal("switch without native history was accepted after reopening SQLite")
 	}
 	resumed, _ := reopened.Get(chat.ID)
 	if resumed.NativeSessionID != "native-claude" {
@@ -118,7 +118,7 @@ func TestAgentSwitchRollbackAndRunningGuard(t *testing.T) {
 	}
 }
 
-func TestFirstFailedTurnStillFixesChatAgent(t *testing.T) {
+func TestFailedTurnWithoutNativeHistoryCannotBeConverted(t *testing.T) {
 	s := testStore(t)
 	chat, _ := s.createSession("", "", chatmodel.BackendCodex)
 	turn, err := s.beginTurn(chat.ID, "First message", chatmodel.BackendClaude, chatmodel.CodexOptions{Model: "test-claude"})
@@ -128,11 +128,11 @@ func TestFirstFailedTurnStillFixesChatAgent(t *testing.T) {
 	if err = s.FinishTurn(chat.ID, turn.ID, agent.AgentResult{}, errors.New("fixture failure"), chatmodel.StatusFailed); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.beginTurn(chat.ID, "Try another agent", chatmodel.BackendCodex, chatmodel.CodexOptions{}); !errors.Is(err, errChatAgentLocked) {
-		t.Fatal("a failed first task allowed changing agents")
+	if _, err = s.beginTurn(chat.ID, "Try another agent", chatmodel.BackendCodex, chatmodel.CodexOptions{}); !errors.Is(err, errSessionConversion) {
+		t.Fatal("a failed task with no history was converted")
 	}
 	if _, err = s.beginTurn(chat.ID, "Try another model", chatmodel.BackendClaude, chatmodel.CodexOptions{Model: "other-claude"}); err != nil {
-		t.Fatal("fixed agent could not change its own model:", err)
+		t.Fatal("agent could not change its own model:", err)
 	}
 }
 

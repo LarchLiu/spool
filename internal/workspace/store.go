@@ -17,7 +17,7 @@ import (
 	chatmodel "spool/internal/model"
 )
 
-var errChatAgentLocked = errors.New("The agent is fixed after the first message. Create a new chat to use another agent.")
+var errSessionConversion = errors.New("Could not convert this chat to another agent. Its native history must be available; the original chat is unchanged.")
 var errTurnChanged = errors.New("turn changed while agent was running")
 
 type Store struct {
@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS project_members(project_id TEXT NOT NULL REFERENCES p
 CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id),project_id TEXT REFERENCES projects(id),title TEXT NOT NULL,backend TEXT NOT NULL,native_session_id TEXT NOT NULL DEFAULT '',native_session_path TEXT NOT NULL DEFAULT '',model TEXT NOT NULL DEFAULT '',reasoning_effort TEXT NOT NULL DEFAULT '',status TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS sessions_owner ON sessions(user_id,project_id,updated_at DESC);
 CREATE TABLE IF NOT EXISTS turns(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),sequence INTEGER NOT NULL,body TEXT NOT NULL,UNIQUE(session_id,sequence));
+CREATE TABLE IF NOT EXISTS session_history(session_id TEXT NOT NULL REFERENCES sessions(id),turn_start INTEGER NOT NULL,backend TEXT NOT NULL,native_session_id TEXT NOT NULL,native_session_path TEXT NOT NULL,native_offset INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(session_id,turn_start));
 CREATE TABLE IF NOT EXISTS attachments(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),turn_id TEXT NOT NULL REFERENCES turns(id),name TEXT NOT NULL,media_type TEXT NOT NULL,data BLOB NOT NULL);
 CREATE INDEX IF NOT EXISTS attachments_session ON attachments(session_id);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
@@ -234,9 +235,6 @@ func (s *Store) beginTurnWithInput(id, prompt string, backend chatmodel.Backend,
 	if !backend.Valid() {
 		return chatmodel.Turn{}, fmt.Errorf("unsupported agent backend")
 	}
-	if backend != v.Backend && len(v.Turns) > 0 {
-		return chatmodel.Turn{}, errChatAgentLocked
-	}
 	if (strings.TrimSpace(prompt) == "" && len(files) == 0) || len(prompt) > chatmodel.MaxMessageBytes {
 		return chatmodel.Turn{}, fmt.Errorf("message must be nonempty and at most 128 KB")
 	}
@@ -288,16 +286,41 @@ func (s *Store) beginTurnWithInput(id, prompt string, backend chatmodel.Backend,
 			v.Title = titleFor(files[0].Name)
 		}
 	}
+	var conversion sessionConversion
+	if backend != v.Backend && len(v.Turns) > 0 {
+		var err error
+		conversion, err = s.convertSession(v, backend)
+		if err != nil {
+			return chatmodel.Turn{}, errSessionConversion
+		}
+	}
+	converted := conversion.native
+	committed := false
+	defer func() {
+		if !committed && converted.Path != "" {
+			_ = os.Remove(converted.Path)
+		}
+	}()
 	tx, err := s.db.Begin()
 	if err != nil {
 		return chatmodel.Turn{}, err
 	}
 	defer tx.Rollback()
 	if backend != v.Backend {
-		// Only an empty chat may choose a different provider. Never reuse a
-		// provider-specific resume ID with that initial selection.
-		v.NativeSessionID = ""
-		v.NativeSessionPath = ""
+		if converted.ID != "" {
+			// Retain source references so Web history keeps original reasoning,
+			// model attribution and tool rendering, not the converted notes.
+			source := conversion.source
+			_, err = tx.Exec(`INSERT INTO session_history(session_id,turn_start,backend,native_session_id,native_session_path,native_offset) VALUES(?,?,?,?,?,?) ON CONFLICT(session_id,turn_start) DO UPDATE SET native_session_id=excluded.native_session_id,native_session_path=excluded.native_session_path`, id, source.start, source.backend, source.id, source.path, source.offset)
+			if err != nil {
+				return chatmodel.Turn{}, err
+			}
+			_, err = tx.Exec(`INSERT INTO session_history(session_id,turn_start,backend,native_session_id,native_session_path,native_offset) VALUES(?,?,?,?,?,?)`, id, len(v.Turns), backend, converted.ID, converted.Path, conversion.importedBytes)
+			if err != nil {
+				return chatmodel.Turn{}, err
+			}
+		}
+		v.NativeSessionID, v.NativeSessionPath = converted.ID, converted.Path
 	}
 	res, err := tx.Exec(`UPDATE sessions SET title=?,status=?,updated_at=?,model=?,reasoning_effort=?,backend=?,native_session_id=?,native_session_path=? WHERE id=? AND status<>?`, v.Title, chatmodel.StatusRunning, t.StartedAt, choice.Model, choice.ReasoningEffort, backend, v.NativeSessionID, v.NativeSessionPath, id, chatmodel.StatusRunning)
 	if err != nil {
@@ -315,7 +338,11 @@ func (s *Store) beginTurnWithInput(id, prompt string, backend chatmodel.Backend,
 			return chatmodel.Turn{}, err
 		}
 	}
-	return t, tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return chatmodel.Turn{}, err
+	}
+	committed = true
+	return t, nil
 }
 func (s *Store) SetNativeSession(id, native string) error {
 	if !chatmodel.ValidID(native) {
@@ -323,6 +350,16 @@ func (s *Store) SetNativeSession(id, native string) error {
 	}
 	_, err := s.db.Exec(`UPDATE sessions SET native_session_id=? WHERE id=?`, native, id)
 	return err
+}
+
+func (s *Store) setTurnNativeSession(id, turnID, native string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	chat, ok := s.Get(id)
+	if !ok || chat.Status != chatmodel.StatusRunning || len(chat.Turns) == 0 || chat.Turns[len(chat.Turns)-1].ID != turnID {
+		return errTurnChanged
+	}
+	return s.SetNativeSession(id, native)
 }
 
 func (s *Store) SetNativeSessionPath(id, native, path string) error {

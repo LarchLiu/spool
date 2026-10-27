@@ -113,7 +113,7 @@ func (a *App) permissionResponse(w http.ResponseWriter, r *http.Request, user st
 	}
 	if id := r.URL.Query().Get("chat_id"); id != "" {
 		owned, ok := a.accessibleChat(user, id)
-		if !ok || owned.ProjectID != chat.ProjectID || (len(owned.Turns) > 0 && owned.Backend != chat.Backend) {
+		if !ok || owned.ProjectID != chat.ProjectID {
 			apiError(w, 404, "聊天不存在")
 			return
 		}

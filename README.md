@@ -275,12 +275,36 @@ the active CLI, and idle-release resume reapplies the selected options. Claude's
 supported effort names are separate from Codex's: Codex-only `none`, `minimal`,
 or `ultra` are never sent to Claude.
 
-An empty chat can choose any available agent. **The first accepted message fixes
-that chat's agent**, including when the task subsequently fails or is interrupted.
-Later turns can change models only within that agent, retaining the same native
-resume context. Other agents are removed from that chat's menu; the server also
-rejects forged cross-agent requests. Create another chat to use a different agent.
-Agent/model changes are disabled while a turn is running.
+Any chat can choose an available agent/model for its next message. Selecting a
+different agent does not start a process or change saved history until Send.
+Sending converts the current native session into a new target-agent session and
+resumes it **in the same Web chat**, retaining its ID, project, owner, title and
+attachments. Switching back converts the latest context again; it does not
+resume an outdated pre-switch conversation. Same-agent model changes still reuse
+the live CLI. Agent/model changes are disabled while a turn is running, and only
+the chat owner can submit a handoff.
+
+Conversion follows Magpie's native Claude/Codex carry-over format (MIT notice in
+`internal/agent/MAGPIE-LICENSE`). User and
+assistant messages, embedded user images, and tool results are retained. Shell
+calls translate to Claude's `Bash` or Codex's `exec_command`; other tools become
+historical assistant notes rather than calls to tools the target does not have.
+Claude's active parent chain and native compaction boundaries are respected.
+Provider instructions and signed/encrypted reasoning are not transferred. Target
+permission modes are discovered independently and default to that agent's normal
+mode; permissions from the source agent are not inherited.
+
+Source files remain read-only. Conversion requires available native history; if
+it cannot be read or converted, Send fails without changing the chat. A failed
+SQLite transaction removes the newly converted file and rolls back all metadata.
+Web history keeps references to each original native segment, so historical model
+attribution, reasoning summaries and tool displays survive reloads and repeated
+agent changes without displaying the imported history twice. SQLite stores only
+segment references and byte offsets, not conversation text or a second transcript.
+The target CLIs must be installed and signed in as usual.
+Like Magpie's converter, conversion to Claude rejects project paths requiring
+its hashed long-path naming (over 200 encoded characters), rather than writing
+a session that Claude cannot resume.
 
 ### Magpie-Compatible Session Transcripts
 
@@ -308,6 +332,8 @@ text used by the Web viewer.
 SQLite deliberately does **not** store a transcript or message body. Session
 rows keep lifecycle metadata and the provider's native session ID/path; turn
 rows keep only lifecycle, selection, range, attachment, and error metadata.
+The `session_history` table additionally references each native context segment
+when a chat changes agents, with the first turn and imported-prefix byte offset.
 `Prompt`, `Reply`, `Activities`, and normalized `Part` values are omitted from
 the persisted turn JSON. The live normalized transcript exists only in memory
 while a turn streams. When a completed chat is opened again,
@@ -490,6 +516,14 @@ rollback, ignored old JSON data, settings/users/projects/agents, project permiss
 login revocation, CSRF/origins, model discovery/catalog retention, CLI lifetime and
 resume, SSE reconnect, presence, and PWA resource serving. Frontend regression tests
 also cover optimistic messages and out-of-order REST/SSE responses.
+
+An opt-in compatibility check restores converted sessions through the installed
+Codex/Claude control protocols in isolated temporary homes, without sending any
+user prompt or making an inference request:
+
+```sh
+SPOOL_TEST_NATIVE_RESUME=1 go test ./internal/agent -run TestConvertedNativeSessionResumesWithoutPrompt -v
+```
 
 ## Releases And Desktop Updates
 

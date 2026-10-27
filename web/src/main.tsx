@@ -413,7 +413,7 @@ function App() {
     setModel(selected.model);
     setEffort(selected.effort);
     // Catalog refreshes must not discard an unsent model/agent choice.
-  }, [chat?.id]);
+  }, [chat?.id, chat?.backend]);
   useEffect(() => {
     const element = content.current;
     if (!element) return;
@@ -1222,16 +1222,11 @@ function App() {
                       <AgentModelMenu
                         agents={agents}
                         selection={{ backend, model, effort }}
-                        lockedBackend={
+                        currentBackend={
                           chat?.turns.length ? chat.backend : undefined
                         }
                         t={t}
                         onChange={(next) => {
-                          if (
-                            chat?.turns.length &&
-                            next.backend !== chat.backend
-                          )
-                            return;
                           setBackend(next.backend);
                           setPermissionOpen(false);
                           setModel(next.model);

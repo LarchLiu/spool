@@ -217,9 +217,6 @@
   "service is closed": "サービスは終了しています",
   "unsupported agent backend": "このエージェントの種類は未対応です",
   "Choose agent and model": "エージェントとモデルを選択",
-  "The agent is fixed after the first message. Create a new chat to use another agent.": "最初のメッセージ送信後はエージェントを変更できません。別のエージェントを使用するには新しいチャットを作成してください。",
-  "This chat uses a fixed agent. Create a new chat to use another agent.": "このチャットのエージェントは固定されています。変更するには新しいチャットを作成してください。",
-  "The first message fixes the agent for this chat.": "最初のメッセージ送信時に、このチャットのエージェントが固定されます。",
   "Attachments": "添付ファイル",
   "Add files or images": "ファイル・画像を追加",
   "Preview {name}": "{name}をプレビュー",
@@ -313,5 +310,8 @@
   "Chats are running. Wait for all responses to finish before updating.": "チャットが実行中です。すべての応答が完了してから更新してください。",
   "An update is in progress. Try again shortly.": "アップデート中です。しばらくしてから再試行してください。",
   "Wait for the update to finish before quitting.": "アップデートが完了するまで終了しないでください。",
-  "No installed update is ready to restart.": "再起動が必要な更新はありません。"
+  "No installed update is ready to restart.": "再起動が必要な更新はありません。",
+  "The next message converts this conversation and continues with the selected agent.": "次のメッセージ送信時に会話を変換し、選択したエージェントで続けます。",
+  "Switch agents to continue this chat. Conversation history is converted automatically.": "エージェントを切り替えてこのチャットを続けられます。会話履歴は自動変換されます。",
+  "Could not convert this chat to another agent. Its native history must be available; the original chat is unchanged.": "会話を変換できません。元のエージェントの履歴ファイルが必要です。元のチャットは変更されていません。"
 }

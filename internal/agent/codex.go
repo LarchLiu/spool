@@ -142,6 +142,9 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 		if request.NativeSessionID != "" {
 			method = "thread/resume"
 			params["threadId"] = request.NativeSessionID
+			if request.NativeSessionPath != "" {
+				params["path"] = request.NativeSessionPath
+			}
 			params["excludeTurns"] = true
 		}
 		response, err := p.codexRPC(ctx, method, params)
