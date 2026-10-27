@@ -586,10 +586,48 @@ leaves changes available for inspection rather than resetting them; inspect
 needed locally; the GitHub workflow validates keys, tests, and builds before
 publication.
 
+### Manual Build Verification
+
+Use the separate **Build** workflow (`.github/workflows/build.yml`) to verify a
+branch or commit **before creating a release tag**. It runs only on manual
+dispatch; pushing a branch does not trigger it. Commit the workflow to the
+default branch first so GitHub exposes the **Run workflow** button.
+
+In GitHub Actions, select **Build > Run workflow** and choose the branch in
+**Use workflow from**. Leave `ref` blank to build that branch, or enter another
+branch name or full commit SHA in `ref` to override the build source. The workflow
+resolves that source once and all packaging jobs use the same commit SHA,
+displayed in the run summary. The chosen source must contain the build tooling;
+old commits do not gain new scripts retroactively.
+
+Build runs the tooling/frontend tests, Go race tests and vet, then creates macOS,
+Windows and Linux packages for both amd64 and arm64. A six-target native smoke
+matrix runs the packaged apps and checks the version, window event loop, SQLite,
+Web health, embedded PWA and clean exit, just as in Release. Build is successful
+only when tests, packaging and all smoke probes pass. It uses the source's
+`mygo.json` version, builds the frontend once, and retains
+`test-packages-<target>` and `test-smoke-<target>` artifacts for seven days.
+`tools/prepare-build.mjs --check` validates without changing metadata; only
+packaging jobs run the mutating mode. `tools/prepare-build.mjs`
+modifies only the runner's packaging config, after metadata tests, to disable
+build hooks, automatic updates and certificate signing. No existing tag, release
+notes, repository variables or signing keys are required. These are unsigned
+test installers (macOS still uses ad-hoc signing), not official release assets.
+
+Build never creates tags, generates signed update metadata, creates/edits a
+Release or changes Latest. It has read-only repository permissions; its purpose
+is pre-release test, build and startup verification, not publication. Internally,
+the shared archive/smoke tools receive `RELEASE_TAG=v<source version>` as a version
+label, not as an existing Git tag or source ref.
+
 ### CI Publication
 
-The workflow also supports a manual run with an **existing tag** to retry an
-unfinished release. Failed uploads leave an unpublished draft that can be
+Pushing a new `v*` tag starts the **Release** workflow: verification, all six
+builds, native startup smoke tests, signing and publication. There is no
+build-only mode or `publish` checkbox in this workflow; use **Build** instead.
+
+Release also supports a manual run with an **existing, pushed tag** to retry an
+unfinished publication. Failed uploads leave an unpublished draft that can be
 retried. Already published releases are deliberately rejected: ship changes
 under a new version instead of replacing builds users have downloaded. Publishing
 a Release through the GitHub UI no longer starts a build.
@@ -638,6 +676,20 @@ All six builds must succeed before publication. MyGo builds installers without
 the private key; `tools/package-release.mjs` creates unsigned update archives of
 the installed payload. Each target and the merged set are checked for exactly
 the expected nonempty installers and archives before signing.
+
+Before signing, a separate six-target `smoke` matrix extracts each update archive
+and actually runs its packaged desktop on the matching OS and CPU architecture.
+`tools/smoke-release.mjs` requires native execution (not cross-compilation), checks
+the packaged version, native-window event-loop dispatch, SQLite initialization,
+Web `/healthz`, embedded index/PWA manifest, and clean exit. Linux runs under Xvfb
+with software GL; Windows and macOS use their runner's desktop. A failed probe
+blocks publication and retains its diagnostics, not the extracted executable.
+
+The desktop's `--release-smoke <report.json>` mode always makes a new temporary
+database, binds only loopback on a temporary port, disables agent discovery and
+automatic update checks, bypasses the installed app's single-instance lock, and
+exits after the probes. It never opens a supplied `--data-dir` or the usual
+`SPOOL_HOME` database. The runner enforces a 90-second process timeout.
 
 The publish job's `tools/sign-release.mjs` signs every archive's SHA-256 digest,
 generates the six `update-<platform>.json` manifests, and signs each manifest's
@@ -694,7 +746,9 @@ MyGo v0.6.4 authenticates archives but not their version metadata. Spool's
 `internal/appupdate/manifest.go` adds a narrow, fail-closed HTTP boundary for the
 exact compiled update-feed URL. It follows the asset redirects and verifies the
 detached signature and manifest identity **before those same bytes reach MyGo**;
-there is no check-then-refetch race. Other HTTP requests are untouched. MyGo keeps
+there is no check-then-refetch race. Only that feed and the exact archive URL
+authenticated by its signed metadata receive update-network handling; unrelated
+HTTP requests are untouched. MyGo keeps
 responsibility for archive verification and installation, avoiding a fork or a
 second installer implementation. Its process-wide HTTP client is wrapped once
 at desktop initialization, before any services start. Revisit this adapter when
@@ -725,6 +779,28 @@ once a minute after busy chats finish. After installation, chats can run again;
 **Restart to update** rechecks for active turns before relaunching. Shutdown
 closes the service and releases the database lease before the new process
 starts. App updates never replace `~/.spool` or update the installed agent CLIs.
+
+Checks and installations retry transient update-network errors at most twice,
+after two and four seconds: connection failures, interrupted/truncated HTTP
+downloads, and HTTP 408/429/500/502/503/504. An archive retry downloads it again
+from the beginning and MyGo verifies it again; this is not resumable downloading.
+Cancellation, missing assets, TLS trust errors, signature failures, disk errors
+and extraction errors do not use this retry loop. The installation lease remains
+held throughout. After a failed actual installation, the automatic poller does
+not keep reinstalling the same version; retry manually or wait for a different
+version. Busy-chat refusals still retry when idle. The Linux installer also uses
+bounded downloader retries and never retries or bypasses a failed signature.
+
+The Updates page shows the failure stage and a **Show update log** button.
+`<data-dir>/update.log` records checks, retries, installation results, shutdown and
+startup; it rotates at 256 KiB, retaining one previous file. Download/CDN URLs
+are redacted, and no chat content or credentials are recorded. Unix log files
+are created with mode 0600. Before a requested restart, `update-pending.json`
+records the expected version; a subsequent native-window-ready startup confirms
+that version and clears the pending record. An old version starting instead
+reports an unconfirmed restart. Startup failures are logged when possible.
+MyGo does not expose the child-launch result: if no process starts at all, the
+record stays pending until a later launch, rather than falsely claiming success.
 
 Run the update regression tests with:
 

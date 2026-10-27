@@ -1,0 +1,189 @@
+name: Build
+run-name: Build ${{ inputs.ref || github.ref_name }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or full commit SHA to build (blank uses the selected branch)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ inputs.ref || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Verify and prepare build
+    runs-on: macos-latest
+    timeout-minutes: 30
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
+      version: ${{ steps.config.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve build source
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse HEAD)"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          printf '### Build verification\n\nCommit: `%s`\n\nTest installers only; no tags or Releases are created.\n' "$commit" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Prepare installer security test dependencies
+        run: |
+          brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
+          echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"
+      - name: Test build and release tooling
+        run: node --test tools/*.test.mjs
+      - name: Validate test build configuration without changing metadata
+        id: config
+        run: node tools/prepare-build.mjs --check
+      - run: npm --prefix web ci
+      - name: Build and test frontend
+        run: |
+          go run ./tools/branding.go
+          npm --prefix web run build
+          npm --prefix web test
+      - name: Test Go packages with race detection
+        run: go test -race -v -timeout=10m ./...
+      - name: Vet Go packages
+        run: go vet ./...
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: build-resources
+          path: |
+            frontend/
+            assets/icon.png
+            tray.png
+          if-no-files-found: error
+          retention-days: 7
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      # Packaging tools use the source version; no Git tag is needed or created.
+      RELEASE_TAG: v${{ needs.prepare.outputs.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, platform: darwin/arm64, target: darwin-arm64 }
+          - { os: macos-latest, platform: darwin/amd64, target: darwin-amd64 }
+          - { os: ubuntu-latest, platform: windows/amd64, target: windows-amd64 }
+          - { os: ubuntu-latest, platform: windows/arm64, target: windows-arm64 }
+          - { os: ubuntu-latest, platform: linux/amd64, target: linux-amd64 }
+          - { os: ubuntu-latest, platform: linux/arm64, target: linux-arm64 }
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 26
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: build-resources
+      - name: Install NSIS for Windows installers
+        if: startsWith(matrix.target, 'windows-')
+        run: sudo apt-get update && sudo apt-get install -y nsis
+      - name: Disable update feeds, build hooks and certificate signing
+        run: node tools/prepare-build.mjs
+      - name: Build test installers without signing secrets
+        run: go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -platform "${{ matrix.platform }}" -skip-build-command -sign - -skip-notarize
+      - name: Package unsigned archive for native startup tests
+        run: node tools/package-release.mjs "${{ matrix.target }}"
+      - name: Collect test packages
+        env:
+          TARGET: ${{ matrix.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build-assets
+          find "build/$TARGET" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.dmg' -o -name '*.deb' -o -name '*Setup*.exe' \) -exec cp {} build-assets/ \;
+      - name: Verify unsigned target assets
+        run: node tools/release-assets.mjs build-assets "${{ matrix.target }}" --unsigned
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-packages-${{ matrix.target }}
+          path: build-assets/*
+          if-no-files-found: error
+          retention-days: 7
+
+  smoke:
+    name: Run ${{ matrix.target }} test package
+    needs: [prepare, build]
+    timeout-minutes: 10
+    env:
+      RELEASE_TAG: v${{ needs.prepare.outputs.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: darwin-arm64 }
+          - { os: macos-15-intel, target: darwin-amd64 }
+          - { os: windows-latest, target: windows-amd64 }
+          - { os: windows-11-arm, target: windows-arm64 }
+          - { os: ubuntu-24.04, target: linux-amd64 }
+          - { os: ubuntu-24.04-arm, target: linux-arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 26
+          architecture: ${{ endsWith(matrix.target, 'arm64') && 'arm64' || 'x64' }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: test-packages-${{ matrix.target }}
+          path: smoke-assets
+      - name: Install Linux native runtime
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-3-0t64 libgl1 libegl1 libgl1-mesa-dri libxkbcommon0 xvfb xauth dbus-x11
+      - name: Launch packaged desktop and probe Web service
+        env:
+          TARGET: ${{ matrix.target }}
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            xvfb-run -a dbus-run-session -- node tools/smoke-release.mjs smoke-assets "$TARGET"
+          else
+            node tools/smoke-release.mjs smoke-assets "$TARGET"
+          fi
+      - name: Keep smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: test-smoke-${{ matrix.target }}
+          path: smoke-results/
+          if-no-files-found: warn
+          retention-days: 7

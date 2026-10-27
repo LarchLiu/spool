@@ -39,7 +39,7 @@ test("beta, rc, numeric prereleases and stable releases stay in separate channel
   assert.equal(releaseMetadata(releases, "v2.0.0").make_latest, true);
 });
 
-test("first release has no base; drafts can be retried; published releases cannot be rebuilt", () => {
+test("first release has no base; drafts can be retried; published releases cannot be republished", () => {
   assert.deepEqual(releaseMetadata([], "v1.0.0"), {
     previous_tag: "", prerelease: false, make_latest: true, draft_id: "",
   });

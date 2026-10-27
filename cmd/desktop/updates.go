@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -16,6 +17,7 @@ var signedUpdatesReady, signedUpdatesError = appupdate.RequireSignedManifests()
 func (p *panel) initUpdates() {
 	p.updates = appupdate.New(appupdate.Options{
 		Enabled: signedUpdatesReady && signedUpdatesError == nil && mygo.Updater.Enabled(),
+		Log:     p.updateLog,
 		Check: func(ctx context.Context) (*appupdate.Release, error) {
 			up, err := mygo.Updater.Check(ctx)
 			if err != nil || up == nil {
@@ -31,6 +33,15 @@ func (p *panel) initUpdates() {
 	})
 }
 
+func (p *panel) updateLog(phase, version string, err error) {
+	log.Printf("update: %s %s %s", phase, version, appupdate.SafeError(err))
+	if p.updateDiagnostics != nil {
+		if e := p.updateDiagnostics.Record(phase, version, err); e != nil {
+			log.Printf("write update log: %v", e)
+		}
+	}
+}
+
 func (p *panel) showUpdates() {
 	p.tab = "Updates"
 	p.message = ""
@@ -42,6 +53,12 @@ func (p *panel) updatesView(c *ui.Context) {
 	state := p.updates.State()
 	ui.Text(c, p.tr("Current version: {version}", "version", mygo.App.Version())).Bold()
 	ui.Text(c, p.tr("Updates are signed and downloaded from GitHub Releases. Running chats always block installation and restart.")).Wrap().FontSize(12)
+	if p.updateDiagnostics != nil {
+		ui.Text(c, p.tr("Update log: {path}", "path", p.updateDiagnostics.Path)).Wrap().FontSize(11)
+		if ui.Button(c, p.tr("Show update log")).Clicked() {
+			mygo.Shell.ShowItemInFolder(p.updateDiagnostics.Path)
+		}
+	}
 	if !state.Enabled {
 		ui.Text(c, p.tr("Updates are unavailable in development builds or read-only installations. Install an official release in a writable location.")).Wrap()
 		return
@@ -50,7 +67,12 @@ func (p *panel) updatesView(c *ui.Context) {
 		ui.Text(c, p.tr("Last checked: {time}", "time", state.LastCheck.Local().Format("2006-01-02 15:04"))).FontSize(12)
 	}
 	if state.Error != "" {
+		phase := map[string]string{"check": "Update check failed.", "install": "Update installation failed.", "restart": "Update restart failed."}[state.ErrorPhase]
+		if phase != "" {
+			ui.Text(c, p.tr(phase)).Bold()
+		}
 		ui.Text(c, p.tr(state.Error)).Wrap()
+		ui.Text(c, p.tr("Check your network and installation permissions, then retry. Signature failures are never bypassed.")).Wrap().FontSize(12)
 	}
 	switch {
 	case state.Checking:
@@ -81,6 +103,13 @@ func (p *panel) updatesView(c *ui.Context) {
 			if ui.PrimaryButton(c, p.tr("Restart to update")).Disabled(p.updateRelease != nil).Clicked() {
 				release, err := p.updates.PrepareRestart()
 				if err == nil {
+					if p.updateDiagnostics != nil {
+						if e := p.updateDiagnostics.RequestRestart(state.Version); e != nil {
+							release()
+							p.updates.RestartFailed(e)
+							return
+						}
+					}
 					p.updateRelease = release
 					mygo.App.Relaunch()
 				}

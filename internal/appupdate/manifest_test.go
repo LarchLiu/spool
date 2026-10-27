@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -142,5 +143,46 @@ func TestManifestConfigurationAndSizeLimits(t *testing.T) {
 	}
 	if _, err := readLimited(io.NopCloser(strings.NewReader("too long")), 3); err == nil {
 		t.Fatal("oversized metadata accepted")
+	}
+}
+
+func TestOnlyAuthenticatedArchiveTrafficGetsNetworkClassification(t *testing.T) {
+	pub, key, manifest := manifestFixture(t)
+	data, _ := json.Marshal(manifest)
+	base := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := []byte("short")
+		if strings.HasSuffix(req.URL.Path, ".json") {
+			body = data
+		}
+		if strings.HasSuffix(req.URL.Path, ".sig") {
+			body = ed25519.Sign(key, data)
+		}
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(body)), Request: req}, nil
+	})}
+	client, err := manifestClient(base, manifest.Repository, base64.StdEncoding.EncodeToString(pub), manifest.Target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feed := "https://github.com/owner/spool/releases/latest/download/update-darwin-arm64.json"
+	res, err := client.Get(feed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	res, err = client.Get(manifest.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = readLimited(res.Body, 100)
+	var network *NetworkError
+	if !errors.As(err, &network) {
+		t.Fatalf("truncated authenticated download not classified: %v", err)
+	}
+	res, err = client.Get("https://other.test/ordinary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = readLimited(res.Body, 100); err != nil {
+		t.Fatal("unrelated request changed", err)
 	}
 }

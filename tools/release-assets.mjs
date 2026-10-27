@@ -25,13 +25,16 @@ async function digest(path) {
 
 export async function verifyReleaseAssets(directory, { tag, repository, publicKey, notes, targets = releaseTargets, unsigned = false }) {
   const version = releaseVersion(tag);
-  const rawKey = Buffer.from(publicKey ?? "", "base64");
-  if (rawKey.length !== 32) throw new Error("MYGO_UPDATER_PUBLIC_KEY must be a base64 Ed25519 public key");
-  const key = createPublicKey({
-    key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), rawKey]),
-    format: "der",
-    type: "spki",
-  });
+  let key;
+  if (!unsigned) {
+    const rawKey = Buffer.from(publicKey ?? "", "base64");
+    if (rawKey.length !== 32) throw new Error("MYGO_UPDATER_PUBLIC_KEY must be a base64 Ed25519 public key");
+    key = createPublicKey({
+      key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), rawKey]),
+      format: "der",
+      type: "spki",
+    });
+  }
   const expected = [];
   for (const target of targets) {
     if (!releaseTargets.includes(target)) throw new Error(`Unsupported release target: ${target}`);
@@ -83,7 +86,7 @@ async function main() {
     throw new Error("Usage: node tools/release-assets.mjs [directory] [target] [--unsigned]");
   }
   const [directory = "release-assets", target] = positional;
-  const notes = await readFile(process.env.RELEASE_NOTES_FILE, "utf8");
+  const notes = unsigned ? undefined : await readFile(process.env.RELEASE_NOTES_FILE, "utf8");
   const assets = await verifyReleaseAssets(directory, {
     tag: process.env.RELEASE_TAG,
     repository: process.env.GITHUB_REPOSITORY,

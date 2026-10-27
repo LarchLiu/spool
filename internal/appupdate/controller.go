@@ -24,6 +24,7 @@ type Options struct {
 	Check       func(context.Context) (*Release, error)
 	Acquire     func() (func(), error)
 	Preferences func() (Preferences, error)
+	Log         func(phase, version string, err error)
 }
 
 type State struct {
@@ -33,25 +34,34 @@ type State struct {
 	Installed         bool
 	Version, Notes    string
 	Error             string
+	ErrorPhase        string
 	LastCheck         time.Time
 	Downloaded, Total int64
 }
 
 type Controller struct {
-	mu      sync.Mutex
-	state   State
-	opts    Options
-	release *Release
-	ctx     context.Context
-	cancel  context.CancelFunc
-	closed  bool
-	started bool
-	workers sync.WaitGroup
+	mu              sync.Mutex
+	state           State
+	opts            Options
+	release         *Release
+	ctx             context.Context
+	cancel          context.CancelFunc
+	closed          bool
+	started         bool
+	workers         sync.WaitGroup
+	retryDelays     []time.Duration
+	autoInstallHeld bool
 }
 
 func New(opts Options) *Controller {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Controller{opts: opts, state: State{Enabled: opts.Enabled}, ctx: ctx, cancel: cancel}
+	return &Controller{opts: opts, state: State{Enabled: opts.Enabled}, ctx: ctx, cancel: cancel, retryDelays: []time.Duration{2 * time.Second, 4 * time.Second}}
+}
+
+func (c *Controller) log(phase, version string, err error) {
+	if c.opts.Log != nil {
+		c.opts.Log(phase, version, err)
+	}
 }
 
 func (c *Controller) State() State {
@@ -69,6 +79,7 @@ func (c *Controller) begin(install bool) bool {
 	c.state.Checking = !install
 	c.state.Installing = install
 	c.state.Error = ""
+	c.state.ErrorPhase = ""
 	c.workers.Add(1)
 	return true
 }
@@ -80,20 +91,31 @@ func (c *Controller) Check() {
 	defer c.workers.Done()
 	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
 	defer cancel()
-	release, err := c.opts.Check(ctx)
+	c.log("check_started", "", nil)
+	var release *Release
+	err := retryNetwork(ctx, c.retryDelays, func() error {
+		var err error
+		release, err = c.opts.Check(ctx)
+		return err
+	}, func(err error) { c.log("check_retry", "", err) })
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state.Checking = false
 	if err != nil {
-		c.state.Error = err.Error()
+		c.state.Error, c.state.ErrorPhase = SafeError(err), "check"
+		c.log("check_failed", "", err)
 		return
 	}
 	c.state.LastCheck = time.Now()
+	if release == nil || c.release == nil || release.Version != c.release.Version {
+		c.autoInstallHeld = false
+	}
 	c.release = release
 	c.state.Version, c.state.Notes = "", ""
 	if release != nil {
 		c.state.Version, c.state.Notes = release.Version, release.Notes
 	}
+	c.log("check_completed", c.state.Version, nil)
 }
 
 func (c *Controller) Install() {
@@ -108,18 +130,32 @@ func (c *Controller) Install() {
 		defer release()
 		ctx, cancel := context.WithTimeout(c.ctx, 30*time.Minute)
 		defer cancel()
-		err = c.release.Install(ctx, func(downloaded, total int64) {
+		c.log("install_started", c.release.Version, nil)
+		err = retryNetwork(ctx, c.retryDelays, func() error {
 			c.mu.Lock()
-			c.state.Downloaded, c.state.Total = downloaded, total
+			c.state.Downloaded, c.state.Total = 0, 0
 			c.mu.Unlock()
-		})
+			return c.release.Install(ctx, func(downloaded, total int64) {
+				c.mu.Lock()
+				c.state.Downloaded, c.state.Total = downloaded, total
+				c.mu.Unlock()
+			})
+		}, func(err error) { c.log("install_retry", c.release.Version, err) })
+		c.mu.Lock()
+		c.autoInstallHeld = err != nil
+		c.mu.Unlock()
+	} else {
+		c.log("install_waiting_for_idle", c.release.Version, err)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state.Installing = false
 	c.state.Installed = err == nil
 	if err != nil {
-		c.state.Error = err.Error()
+		c.state.Error, c.state.ErrorPhase = SafeError(err), "install"
+		c.log("install_failed", c.release.Version, err)
+	} else {
+		c.log("install_completed", c.release.Version, nil)
 	}
 }
 
@@ -164,7 +200,10 @@ func (c *Controller) poll(nextCheck time.Time) time.Time {
 		}
 		nextCheck = time.Now().Add(delay)
 	}
-	if p.AutomaticInstalls {
+	c.mu.Lock()
+	held := c.autoInstallHeld
+	c.mu.Unlock()
+	if p.AutomaticInstalls && !held {
 		c.Install()
 	}
 	return nextCheck
@@ -180,10 +219,21 @@ func (c *Controller) PrepareRestart() (func(), error) {
 	}
 	release, err := c.opts.Acquire()
 	c.state.Error = ""
+	c.state.ErrorPhase = ""
 	if err != nil {
-		c.state.Error = err.Error()
+		c.state.Error, c.state.ErrorPhase = SafeError(err), "restart"
+		c.log("restart_waiting_for_idle", c.state.Version, err)
 	}
 	return release, err
+}
+
+// RestartFailed keeps an installed update available when restart preparation
+// outside the controller (such as persisting its journal) fails.
+func (c *Controller) RestartFailed(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.state.Error, c.state.ErrorPhase = SafeError(err), "restart"
+	c.log("restart_failed", c.state.Version, err)
 }
 
 func (c *Controller) Close() {

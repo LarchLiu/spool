@@ -48,10 +48,10 @@ printf '%s' "$public_key_der" | openssl base64 -d -A >"$work/key.der"
 fetch() {
   case "$1" in https://*) ;; *) fail 'downloads must use HTTPS' ;; esac
   if command -v curl >/dev/null 2>&1; then
-    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --max-time 600 --max-filesize 1073741824 "$1" -o "$2"
+    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --connect-timeout 20 --max-time 180 --retry 2 --retry-connrefused --retry-delay 2 --retry-max-time 600 --max-filesize 1073741824 "$1" -o "$2"
   else
     command -v wget >/dev/null 2>&1 || fail 'install curl or wget first'
-    wget --https-only --timeout=60 --tries=2 -qO "$2" "$1"
+    wget --https-only --timeout=60 --tries=3 --retry-connrefused --retry-on-http-error=408,429,500,502,503,504 -qO "$2" "$1"
   fi
 }
 archive="${1:-}"

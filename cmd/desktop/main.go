@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -44,29 +47,64 @@ type panel struct {
 	updates            *appupdate.Controller
 	updatePreferences  workspace.UpdatePreferences
 	updateRelease      func()
+	updateDiagnostics  *appupdate.Diagnostics
 }
 
 func main() {
+	if err := runDesktop(); err != nil {
+		log.Print(err)
+		os.Exit(1)
+	}
+}
+
+func runDesktop() (runErr error) {
 	if signedUpdatesError != nil {
 		log.Printf("Signed updates disabled: %v", signedUpdatesError)
 	}
 	root := flag.String("data-dir", workspace.DefaultDataDir(), "SQLite data directory")
+	smoke := flag.String("release-smoke", "", "Probe the packaged desktop using fresh temporary data; write a JSON report")
 	flag.Parse()
+	if *smoke != "" {
+		temporary, err := smokeData()
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(temporary)
+		defer func() {
+			if data, e := os.ReadFile(filepath.Join(temporary, "update.log")); e == nil {
+				_ = os.WriteFile(*smoke+".log", data, 0o600)
+			}
+		}()
+		*root = temporary
+	}
 	mygo.App.SetName("Spool")
 	mygo.App.SetLanguages("en", "zh-CN", "ja")
-	if !mygo.App.RequestSingleInstanceLock() {
+	if *smoke == "" && !mygo.App.RequestSingleInstanceLock() {
 		log.Print("Spool is already running; focusing the existing desktop instance")
-		return
+		return nil
 	}
+	if err := os.MkdirAll(*root, 0o700); err != nil {
+		return err
+	}
+	diagnostics, err := appupdate.OpenDiagnostics(*root, mygo.App.Version())
+	if err != nil {
+		log.Printf("Update diagnostics unavailable: %v", err)
+	}
+	defer func() {
+		if runErr != nil && diagnostics != nil {
+			_ = diagnostics.Record("startup_failed", mygo.App.Version(), runErr)
+		}
+	}()
 	service, err := workspace.OpenService(*root)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer service.Close()
 	p := &panel{service: service, tab: "Service", members: map[string]bool{}, agentPaths: map[chatmodel.Backend]string{}, agentEnabled: map[chatmodel.Backend]bool{}}
+	p.updateDiagnostics = diagnostics
 	p.logo, err = ui.DecodeBitmap(spool.AppIcon())
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	p.load()
 	p.initUpdates()
@@ -77,12 +115,18 @@ func main() {
 		}
 	}
 	done := make(chan struct{})
+	smokeResult := make(chan error, 1)
+	var shutdownErr error
 	mygo.App.OnQuit(func() {
+		p.updateLog("shutdown_started", "", nil)
 		close(done)
 		p.updates.Close()
 		// MyGo relaunches after OnQuit, before main's deferred cleanup.
 		if err := service.Close(); err != nil {
-			log.Print(err)
+			shutdownErr = err
+			p.updateLog("shutdown_failed", "", err)
+		} else {
+			p.updateLog("shutdown_completed", "", nil)
 		}
 		if p.updateRelease != nil {
 			p.updateRelease()
@@ -120,7 +164,22 @@ func main() {
 		if e != nil {
 			p.message = p.tr("Tray unavailable") + ": " + e.Error()
 		}
-		p.updates.Start()
+		go func() {
+			p.window.Update(func() {
+				if diagnostics != nil {
+					if e := diagnostics.Ready(); e != nil {
+						p.message = e.Error()
+						log.Print(e)
+					}
+				}
+			})
+		}()
+		if *smoke == "" {
+			p.updates.Start()
+		} else {
+			p.window.Show()
+			go p.smoke(*smoke, smokeResult)
+		}
 
 		go func() {
 			ticker := time.NewTicker(3 * time.Second)
@@ -139,8 +198,20 @@ func main() {
 		}()
 	})
 	if err = mygo.App.Run(); err != nil {
-		log.Print(err)
+		return err
 	}
+	if *smoke != "" {
+		if shutdownErr != nil {
+			return shutdownErr
+		}
+		select {
+		case err = <-smokeResult:
+			return err
+		default:
+			return fmt.Errorf("desktop exited before the release probe completed")
+		}
+	}
+	return nil
 }
 func (p *panel) load() {
 	p.preferences, _ = p.service.Store.UIPreferences("")

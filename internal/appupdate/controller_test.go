@@ -54,6 +54,10 @@ func TestInstallAndRestartBothRequireIdleLease(t *testing.T) {
 		t.Fatal("restart did not hold a fresh lease")
 	}
 	release()
+	c.RestartFailed(errors.New("cannot persist restart journal"))
+	if state = c.State(); state.ErrorPhase != "restart" || !state.Installed || state.Error == "" {
+		t.Fatalf("restart failure lost the installed update or its failure stage: %+v", state)
+	}
 }
 
 func TestFailedInstallReleasesLeaseAndCanRetry(t *testing.T) {

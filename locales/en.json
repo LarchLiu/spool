@@ -313,5 +313,11 @@
   "No installed update is ready to restart.": "No installed update is ready to restart.",
   "The next message converts this conversation and continues with the selected agent.": "The next message converts this conversation and continues with the selected agent.",
   "Switch agents to continue this chat. Conversation history is converted automatically.": "Switch agents to continue this chat. Conversation history is converted automatically.",
-  "Could not convert this chat to another agent. Its native history must be available; the original chat is unchanged.": "Could not convert this chat to another agent. Its native history must be available; the original chat is unchanged."
+  "Could not convert this chat to another agent. Its native history must be available; the original chat is unchanged.": "Could not convert this chat to another agent. Its native history must be available; the original chat is unchanged.",
+  "Update log: {path}": "Update log: {path}",
+  "Show update log": "Show update log",
+  "Check your network and installation permissions, then retry. Signature failures are never bypassed.": "Check your network and installation permissions, then retry. Signature failures are never bypassed.",
+  "Update check failed.": "Update check failed.",
+  "Update installation failed.": "Update installation failed.",
+  "Update restart failed.": "Update restart failed."
 }

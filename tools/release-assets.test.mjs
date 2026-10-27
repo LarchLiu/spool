@@ -44,6 +44,23 @@ test("accepts exactly six signed targets, installers and the Linux installation 
   assert.equal((await verifyReleaseAssets(directory, options)).length, 25);
 });
 
+test("unsigned build checks need no keys or notes but still require the exact nonempty asset set", async (t) => {
+  const directory = await fixture(t);
+  for (const target of releaseTargets) {
+    await rm(join(directory, `update-${target}.json`));
+    await rm(join(directory, `update-${target}.json.sig`));
+  }
+  await rm(join(directory, "install.sh"));
+  const unsigned = { tag: options.tag, unsigned: true };
+  assert.equal((await verifyReleaseAssets(directory, unsigned)).length, 12);
+  await assert.rejects(verifyReleaseAssets(directory, { tag: options.tag }), /public key/);
+  const installer = join(directory, installerName("1.2.3", "darwin-arm64"));
+  await writeFile(installer, "");
+  await assert.rejects(verifyReleaseAssets(directory, unsigned), /nonempty/);
+  await rm(installer);
+  await assert.rejects(verifyReleaseAssets(directory, unsigned), /asset set/);
+});
+
 test("per-target checks work and prerelease Debian names follow MyGo's version conversion", async (t) => {
   const tag = "v1.2.3-beta-test.1";
   const targets = ["linux-arm64"];

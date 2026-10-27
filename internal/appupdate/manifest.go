@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 // Set by release builds, independently of MyGo's legacy archive-signing flags.
@@ -54,6 +55,9 @@ type manifestTransport struct {
 	base               *http.Client
 	feed, repo, target string
 	key                ed25519.PublicKey
+	mu                 sync.Mutex
+	archiveURL         string
+	archiveSize        int64
 }
 
 func manifestClient(base *http.Client, repo, publicKey, target string) (*http.Client, error) {
@@ -78,11 +82,21 @@ func manifestClient(base *http.Client, repo, publicKey, target string) (*http.Cl
 
 func (t *manifestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Method != http.MethodGet || req.URL.String() != t.feed {
+		t.mu.Lock()
+		archive, size := req.Method == http.MethodGet && req.URL.String() == t.archiveURL, t.archiveSize
+		t.mu.Unlock()
+		if archive {
+			response, err := updateResponse(t.base.Do(req.Clone(req.Context())))
+			if err == nil && response.StatusCode == http.StatusOK {
+				response.Body = &networkBody{ReadCloser: response.Body, remaining: size}
+			}
+			return response, err
+		}
 		return t.base.Transport.RoundTrip(req)
 	}
 	// Follow GitHub's asset redirects inside the unwrapped client, so the final
 	// CDN body is verified even though its URL no longer resembles the feed.
-	response, err := t.base.Do(req.Clone(req.Context()))
+	response, err := updateResponse(t.base.Do(req.Clone(req.Context())))
 	if err != nil {
 		return nil, err
 	}
@@ -91,13 +105,13 @@ func (t *manifestTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	}
 	data, err := readLimited(response.Body, maxManifestSize)
 	if err != nil {
-		return nil, err
+		return nil, networkFailure(err)
 	}
 	signatureRequest := req.Clone(req.Context())
 	url := *req.URL
 	url.Path += ".sig"
 	signatureRequest.URL = &url
-	signatureResponse, err := t.base.Do(signatureRequest)
+	signatureResponse, err := updateResponse(t.base.Do(signatureRequest))
 	if err != nil {
 		return nil, fmt.Errorf("fetch signed update metadata: %w", err)
 	}
@@ -107,11 +121,16 @@ func (t *manifestTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	}
 	signature, err := readLimited(signatureResponse.Body, ed25519.SignatureSize)
 	if err != nil {
-		return nil, err
+		return nil, networkFailure(err)
 	}
 	if err := verifyManifest(data, signature, t.key, t.repo, t.target); err != nil {
 		return nil, err
 	}
+	var manifest signedManifest
+	_ = json.Unmarshal(data, &manifest) // Already strictly decoded and verified.
+	t.mu.Lock()
+	t.archiveURL, t.archiveSize = manifest.URL, manifest.Size
+	t.mu.Unlock()
 	response.Body = io.NopCloser(bytes.NewReader(data))
 	response.ContentLength = int64(len(data))
 	return response, nil

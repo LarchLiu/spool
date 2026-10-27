@@ -313,5 +313,11 @@
   "No installed update is ready to restart.": "没有等待重启的已安装更新。",
   "The next message converts this conversation and continues with the selected agent.": "发送下一条消息时，将转换会话并由所选 Agent 继续。",
   "Switch agents to continue this chat. Conversation history is converted automatically.": "支持换 Agent 继续此聊天，会话历史将自动转换。",
-  "Could not convert this chat to another agent. Its native history must be available; the original chat is unchanged.": "无法转换会话：请确认原始 Agent 的会话历史文件可用。原聊天未改动。"
+  "Could not convert this chat to another agent. Its native history must be available; the original chat is unchanged.": "无法转换会话：请确认原始 Agent 的会话历史文件可用。原聊天未改动。",
+  "Update log: {path}": "更新日志：{path}",
+  "Show update log": "显示更新日志",
+  "Check your network and installation permissions, then retry. Signature failures are never bypassed.": "请检查网络和安装目录权限后重试。签名验证失败不会被绕过。",
+  "Update check failed.": "检查更新失败。",
+  "Update installation failed.": "安装更新失败。",
+  "Update restart failed.": "更新重启失败。"
 }

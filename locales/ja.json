@@ -313,5 +313,11 @@
   "No installed update is ready to restart.": "再起動が必要な更新はありません。",
   "The next message converts this conversation and continues with the selected agent.": "次のメッセージ送信時に会話を変換し、選択したエージェントで続けます。",
   "Switch agents to continue this chat. Conversation history is converted automatically.": "エージェントを切り替えてこのチャットを続けられます。会話履歴は自動変換されます。",
-  "Could not convert this chat to another agent. Its native history must be available; the original chat is unchanged.": "会話を変換できません。元のエージェントの履歴ファイルが必要です。元のチャットは変更されていません。"
+  "Could not convert this chat to another agent. Its native history must be available; the original chat is unchanged.": "会話を変換できません。元のエージェントの履歴ファイルが必要です。元のチャットは変更されていません。",
+  "Update log: {path}": "更新ログ：{path}",
+  "Show update log": "更新ログを表示",
+  "Check your network and installation permissions, then retry. Signature failures are never bypassed.": "ネットワークとインストール先の権限を確認して再試行してください。署名検証の失敗は無視されません。",
+  "Update check failed.": "更新の確認に失敗しました。",
+  "Update installation failed.": "更新のインストールに失敗しました。",
+  "Update restart failed.": "更新の再起動に失敗しました。"
 }
