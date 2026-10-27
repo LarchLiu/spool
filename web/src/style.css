@@ -1136,6 +1136,68 @@ a.attachment-open {
 .composer textarea::placeholder {
   color: var(--subtle);
 }
+.slash-command-menu {
+  position: absolute;
+  z-index: 12;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: min(390px, 100%);
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--elevated);
+  box-shadow: 0 8px 32px var(--shadow);
+}
+.slash-command-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  text-align: left;
+  border: 0;
+  border-radius: 8px;
+  background: var(--hover);
+  color: var(--text);
+}
+.slash-command-menu span {
+  display: grid;
+  gap: 4px;
+}
+.slash-command-menu small,
+.slash-command-menu kbd {
+  color: var(--subtle);
+  font-size: 11px;
+}
+.slash-command-menu kbd {
+  margin-left: auto;
+}
+.goal-command-hint {
+  padding: 0 19px 8px;
+  color: var(--subtle);
+  font-size: 11px;
+}
+.goal-command-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 900px;
+  max-height: 180px;
+  overflow: auto;
+  margin: 0 auto 10px;
+  padding: 12px 15px;
+  background: var(--elevated);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.goal-command-notice pre {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
 .composer-bottom {
   min-height: 49px;
   display: flex;

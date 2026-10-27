@@ -338,5 +338,17 @@
   "Pull requests": "Pull requests",
   "Pull request": "Pull request",
   "Task assignees (all can control task chats)": "Task assignees (all can control task chats)",
-  "Assignees can send messages, stop responses and answer approvals. Changes also apply to existing task chats; normal chats stay owner-only.": "Assignees can send messages, stop responses and answer approvals. Changes also apply to existing task chats; normal chats stay owner-only."
+  "Assignees can send messages, stop responses and answer approvals. Changes also apply to existing task chats; normal chats stay owner-only.": "Assignees can send messages, stop responses and answer approvals. Changes also apply to existing task chats; normal chats stay owner-only.",
+  "Chat commands": "Chat commands",
+  "Set a native agent goal": "Set a native agent goal",
+  "Goal commands do not accept attachments": "Goal commands do not accept attachments",
+  "Select this chat's current agent to view or clear its goal": "Select this chat's current agent to view or clear its goal",
+  "No goal set.": "No goal set.",
+  "Goal cleared.": "Goal cleared.",
+  "Goal conditions must be at most 4000 characters": "Goal conditions must be at most 4000 characters",
+  "/goal <condition> · /goal to view · /goal clear to remove": "/goal <condition> · /goal to view · /goal clear to remove",
+  "Dismiss": "Dismiss",
+  "Invalid goal command": "Invalid goal command",
+  "Wait for the running response before using goal commands": "Wait for the running response before using goal commands",
+  "Use the native goal control endpoint to view or clear a goal": "Use the native goal control endpoint to view or clear a goal"
 }

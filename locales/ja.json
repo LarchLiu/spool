@@ -338,5 +338,17 @@
   "Pull requests": "関連するプルリクエスト",
   "Pull request": "プルリクエスト",
   "Task assignees (all can control task chats)": "タスク担当者（全員がタスクチャットを操作可能）",
-  "Assignees can send messages, stop responses and answer approvals. Changes also apply to existing task chats; normal chats stay owner-only.": "担当者はメッセージの送信、応答の停止、権限要求の承認ができます。担当者の変更は既存のタスクチャットにも反映され、通常のチャットは所有者のみ操作できます。"
+  "Assignees can send messages, stop responses and answer approvals. Changes also apply to existing task chats; normal chats stay owner-only.": "担当者はメッセージの送信、応答の停止、権限要求の承認ができます。担当者の変更は既存のタスクチャットにも反映され、通常のチャットは所有者のみ操作できます。",
+  "Chat commands": "チャットコマンド",
+  "Set a native agent goal": "エージェントのネイティブ目標を設定",
+  "Goal commands do not accept attachments": "目標コマンドに添付ファイルは使用できません",
+  "Select this chat's current agent to view or clear its goal": "目標の表示・解除には、このチャットの現在のエージェントを選択してください",
+  "No goal set.": "目標は設定されていません。",
+  "Goal cleared.": "目標を解除しました。",
+  "Goal conditions must be at most 4000 characters": "目標条件は 4000 文字以内で入力してください",
+  "/goal <condition> · /goal to view · /goal clear to remove": "/goal <達成条件> · /goal で表示 · /goal clear で解除",
+  "Dismiss": "閉じる",
+  "Invalid goal command": "無効な目標コマンドです",
+  "Wait for the running response before using goal commands": "実行中の応答が終了してから目標コマンドを使用してください",
+  "Use the native goal control endpoint to view or clear a goal": "目標の表示・解除にはネイティブ目標の操作 API を使用してください"
 }

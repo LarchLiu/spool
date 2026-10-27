@@ -17,7 +17,12 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { api, setCSRF } from "./api";
-import { adoptCreatedChat, canControlChat, optimisticChat, reconcile } from "./chat-state";
+import {
+  adoptCreatedChat,
+  canControlChat,
+  optimisticChat,
+  reconcile,
+} from "./chat-state";
 import { runningTurn, stopReply } from "./turn-control";
 import type {
   User,
@@ -37,6 +42,8 @@ import { Sidebar } from "./sidebar";
 import { AgentModelMenu } from "./agent-model-menu";
 import { AgentIcon } from "./agent-icon";
 import { AutosizeTextarea } from "./autosize-textarea";
+import { SlashCommandMenu } from "./slash-command-menu";
+import { goalSuggestion, parseGoalCommand } from "./slash-commands";
 import { MarkdownMessage } from "./markdown-message";
 import { ToolActivityList } from "./tool-activity";
 import { chatSelection, chooseModel } from "./model-selection";
@@ -91,6 +98,13 @@ function App() {
     [update, setUpdate] = useState(false);
   const [files, setFiles] = useState<DraftAttachment[]>([]);
   const [draftVersion, setDraftVersion] = useState(0);
+  const [commandDismissed, setCommandDismissed] = useState(false);
+  const [commandFocused, setCommandFocused] = useState(false);
+  const [commandNotice, setCommandNotice] = useState<{
+    chatID: string;
+    project: string;
+    text: string;
+  } | null>(null);
   const [preparingFiles, setPreparingFiles] = useState(false);
   const [stoppingTurns, setStoppingTurns] = useState<Set<string>>(new Set());
   const stopRequests = useRef(new Set<string>());
@@ -296,6 +310,8 @@ function App() {
     setPicker(false);
     setPermissionOpen(false);
     setPreview(null);
+    setCommandNotice(null);
+    setCommandDismissed(false);
     // First-send adoption is not navigation: keep its optimistic turn and draft.
     if (adoptedChatID.current !== chatID || !chatID) {
       setError("");
@@ -387,6 +403,14 @@ function App() {
     projects.some((p) => p.id === project) && (!chatID || chat?.id === chatID);
   const composerWritable =
     composerReady && !!user && canControlChat(chat, user.id);
+  const commandOpen =
+    composerWritable &&
+    commandFocused &&
+    !posting &&
+    chat?.status !== "running" &&
+    !commandDismissed &&
+    goalSuggestion(draft);
+  const draftGoal = parseGoalCommand(draft);
   const activeTurn = runningTurn(chat);
   const activeSubmission =
     pendingSend.current &&
@@ -518,8 +542,67 @@ function App() {
     setChatID("");
     setChat(null);
     setDraftVersion((version) => version + 1);
+    setCommandNotice(null);
     setError("");
     setSidebar(false);
+  }
+  function selectGoalCommand() {
+    setDraft("/goal ");
+    setCommandDismissed(false);
+    requestAnimationFrame(() =>
+      document.getElementById("chat-message")?.focus(),
+    );
+  }
+  async function runGoalControl(action: "get" | "clear") {
+    const target = chatID,
+      owner = user?.id,
+      projectID = project,
+      message = draft;
+    if (files.length) {
+      setError(t("Goal commands do not accept attachments"));
+      return;
+    }
+    if (chat && backend !== chat.backend) {
+      setError(t("Select this chat's current agent to view or clear its goal"));
+      return;
+    }
+    if (!target) {
+      setCommandNotice({
+        chatID: target,
+        project: projectID,
+        text: t("No goal set."),
+      });
+      setDraft("");
+      return;
+    }
+    submission.current = true;
+    setPosting(true);
+    setError("");
+    setCommandNotice(null);
+    try {
+      const result = await api<{ message: string }>(
+        "/chats/" + target + "/goal",
+        { action },
+      );
+      if (
+        activeUser.current === owner &&
+        activeID.current === target &&
+        selection.current.project === projectID
+      ) {
+        setCommandNotice({
+          chatID: target,
+          project: projectID,
+          text: result.message,
+        });
+        setDraft((current) => (current === message ? "" : current));
+      }
+    } catch (error) {
+      if (activeUser.current === owner && activeID.current === target)
+        fail(error);
+    } finally {
+      submission.current = false;
+      setPosting(false);
+    }
   }
   async function send() {
     if (
@@ -533,6 +616,20 @@ function App() {
       preparingFiles
     )
       return;
+    const command = parseGoalCommand(draft);
+    if (command && files.length) {
+      setError(t("Goal commands do not accept attachments"));
+      return;
+    }
+    if (command?.objective && Array.from(command.objective).length > 4000) {
+      setError(t("Goal conditions must be at most 4000 characters"));
+      return;
+    }
+    if (command && command.action !== "set") {
+      await runGoalControl(command.action);
+      return;
+    }
+    setCommandNotice(null);
     submission.current = true;
     let id = chatID;
     const message = draft,
@@ -1034,7 +1131,9 @@ function App() {
                   turn.part_end,
                 );
                 const userText = parts
-                  .filter((part) => part.role === "user" && part.kind === "text")
+                  .filter(
+                    (part) => part.role === "user" && part.kind === "text",
+                  )
                   .map((part) => part.text)
                   .join("\n");
                 const answer = parts
@@ -1122,6 +1221,20 @@ function App() {
               {error}
             </div>
           )}
+          {commandNotice?.chatID === chatID &&
+            commandNotice.project === project && (
+              <div className="goal-command-notice" role="status">
+                <pre>{commandNotice.text}</pre>
+                <button
+                  type="button"
+                  className="icon"
+                  onClick={() => setCommandNotice(null)}
+                  aria-label={t("Dismiss")}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            )}
           <form
             className="composer"
             onSubmit={(e) => {
@@ -1129,6 +1242,9 @@ function App() {
               void send();
             }}
           >
+            {commandOpen && (
+              <SlashCommandMenu t={t} onSelect={selectGoalCommand} />
+            )}
             {!!files.length && (
               <div className="composer-attachments">
                 <AttachmentCards
@@ -1145,7 +1261,14 @@ function App() {
               </div>
             )}
             <AutosizeTextarea
+              id="chat-message"
               aria-label={t("Message")}
+              aria-haspopup="listbox"
+              aria-controls={commandOpen ? "slash-command-menu" : undefined}
+              aria-expanded={commandOpen}
+              aria-activedescendant={
+                commandOpen ? "slash-command-goal" : undefined
+              }
               placeholder={
                 project
                   ? t("Message {agent}", {
@@ -1155,8 +1278,44 @@ function App() {
               }
               value={draft}
               disabled={!composerWritable}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setCommandDismissed(false);
+              }}
+              onFocus={() => setCommandFocused(true)}
+              onBlur={(event) => {
+                if (
+                  !(event.relatedTarget instanceof Element) ||
+                  !event.relatedTarget.closest(".slash-command-menu")
+                )
+                  setCommandFocused(false);
+              }}
               onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing) return;
+                if (
+                  commandOpen &&
+                  (e.key === "Tab" ||
+                    (e.key === "Enter" &&
+                      !e.metaKey &&
+                      !e.altKey &&
+                      !e.shiftKey))
+                ) {
+                  e.preventDefault();
+                  selectGoalCommand();
+                  return;
+                }
+                if (
+                  commandOpen &&
+                  (e.key === "ArrowDown" || e.key === "ArrowUp")
+                ) {
+                  e.preventDefault();
+                  return;
+                }
+                if (commandOpen && e.key === "Escape") {
+                  e.preventDefault();
+                  setCommandDismissed(true);
+                  return;
+                }
                 if (
                   e.key === "Enter" &&
                   (e.metaKey || e.altKey) &&
@@ -1168,6 +1327,11 @@ function App() {
               }}
               maxLength={131072}
             />
+            {draftGoal && (
+              <div className="goal-command-hint">
+                {t("/goal <condition> · /goal to view · /goal clear to remove")}
+              </div>
+            )}
             <div className="composer-bottom">
               <div className="composer-tools">
                 <input

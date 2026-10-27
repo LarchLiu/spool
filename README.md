@@ -219,6 +219,17 @@ CC BY 4.0 attribution for Croodles (vijay verma) and Toon Head (Johan Melin).
 
 ### Chat Composer, Attachments And Permissions
 
+Type `/` in the chat composer to open the command menu; **Tab** or **Enter**
+completes `/goal`, and **Escape** dismisses the menu. Send `/goal <condition>`
+to set a native goal and start work with the selected agent. Send `/goal` to
+view its state, or `/goal clear` to remove it; these controls do not create
+ordinary chat turns. Goal commands do not accept attachments. Codex uses its
+native `thread/goal/*` API; Claude Code uses its built-in `/goal` command.
+The installed CLI must support native goals. Spool does not simulate goal
+state or implement a separate continuation loop; native limits and permissions
+still apply. Viewing or clearing a goal requires the chat's current agent and
+an idle conversation (stop the current response first if needed).
+
 User messages and streamed agent replies render Markdown, including headings,
 lists, quotes, fenced code, links, GFM tables, strikethrough and task lists.
 Raw HTML is disabled and unsafe link protocols are filtered. Markdown images

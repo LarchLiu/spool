@@ -338,5 +338,17 @@
   "Pull requests": "关联 PR",
   "Pull request": "PR",
   "Task assignees (all can control task chats)": "任务负责人（均可操控任务聊天）",
-  "Assignees can send messages, stop responses and answer approvals. Changes also apply to existing task chats; normal chats stay owner-only.": "负责人可以发送消息、停止执行和处理权限请求。负责人变更也会应用到已有任务聊天；普通聊天仍仅限创建者控制。"
+  "Assignees can send messages, stop responses and answer approvals. Changes also apply to existing task chats; normal chats stay owner-only.": "负责人可以发送消息、停止执行和处理权限请求。负责人变更也会应用到已有任务聊天；普通聊天仍仅限创建者控制。",
+  "Chat commands": "聊天指令",
+  "Set a native agent goal": "设置 Agent 原生目标",
+  "Goal commands do not accept attachments": "目标指令不支持附件",
+  "Select this chat's current agent to view or clear its goal": "请切回此聊天当前的 Agent，再查看或清除目标",
+  "No goal set.": "尚未设置目标。",
+  "Goal cleared.": "目标已清除。",
+  "Goal conditions must be at most 4000 characters": "目标条件最多 4000 个字符",
+  "/goal <condition> · /goal to view · /goal clear to remove": "/goal <目标条件> · /goal 查看 · /goal clear 清除",
+  "Dismiss": "关闭",
+  "Invalid goal command": "无效的目标指令",
+  "Wait for the running response before using goal commands": "请等待当前回复结束后再使用目标指令",
+  "Use the native goal control endpoint to view or clear a goal": "请通过原生目标控制接口查看或清除目标"
 }

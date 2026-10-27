@@ -113,6 +113,7 @@ func Run(t *testing.T) {
 	claudeEffort := "high"
 	claudeMode := "acceptEdits"
 	turn := 0
+	var goal any
 	var chatter sync.Once
 	scanner := scannerFor(os.Stdin)
 	for scanner.Scan() {
@@ -163,6 +164,17 @@ func Run(t *testing.T) {
 				send(map[string]any{"id": value["id"], "result": map[string]any{"thread": map[string]any{"id": thread}, "model": model, "approvalsReviewer": params["approvalsReviewer"]}})
 				// Replayed output must not be attached to the next user turn.
 				send(map[string]any{"method": "item/agentMessage/delta", "params": map[string]any{"threadId": thread, "turnId": "old-turn", "itemId": "old-item", "delta": "STALE"}})
+			case "thread/goal/set", "thread/goal/get", "thread/goal/clear":
+				if _, err := os.Stat("unsupported-goal"); err == nil {
+					send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32601, "message": "unsupported native goal"}})
+					continue
+				}
+				if method == "thread/goal/set" {
+					goal = map[string]any{"objective": params["objective"], "status": params["status"]}
+				} else if method == "thread/goal/clear" {
+					goal = nil
+				}
+				send(map[string]any{"id": value["id"], "result": map[string]any{"goal": goal}})
 			case "turn/start":
 				// Handled below.
 			default:
@@ -203,6 +215,11 @@ func Run(t *testing.T) {
 				}
 			}
 			body := map[string]any{"models": []any{map[string]any{"value": "test-claude", "displayName": "Test Claude", "supportedEffortLevels": []string{"low", "high"}}}}
+			if NestedString(value, "request", "subtype") == "initialize" {
+				if _, err := os.Stat("unsupported-goal"); os.IsNotExist(err) {
+					body["commands"] = []any{map[string]any{"name": "goal", "builtin": true}}
+				}
+			}
 			if NestedString(value, "request", "subtype") == "get_settings" {
 				effort := claudeEffort
 				if claudeModel == "clamp-effort" {
@@ -238,6 +255,24 @@ func Run(t *testing.T) {
 			send(map[string]any{"id": value["id"], "result": map[string]any{"turn": map[string]any{"id": turnID, "status": "inProgress"}}})
 		} else if turn == 1 {
 			send(map[string]any{"type": "system", "subtype": "init", "session_id": thread, "model": claudeModel})
+		}
+		if !codex {
+			command, _ := chatmodel.ParseGoalCommand(prompt)
+			if command != nil {
+				if command.Action == "set" {
+					goal = command.Objective
+				} else {
+					text := "No goal set."
+					if command.Action == "clear" {
+						goal, text = nil, "Goal cleared."
+					} else if goal != nil {
+						text = fmt.Sprint(goal)
+					}
+					send(map[string]any{"type": "assistant", "message": map[string]any{"model": "<synthetic>", "content": []any{map[string]any{"type": "text", "text": text}}}})
+					send(map[string]any{"type": "result", "subtype": "success", "session_id": thread, "result": text, "local_command": "goal"})
+					continue
+				}
+			}
 		}
 		if strings.Contains(prompt, "spawn-child") {
 			child := exec.Command("sleep", "30")

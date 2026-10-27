@@ -400,12 +400,20 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		a.stopTurnResponse(w, r, chat)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "goal" && r.Method == "POST" {
+		a.goalCommandResponse(w, r, chat)
+		return
+	}
 	if len(parts) != 2 || parts[1] != "messages" || r.Method != "POST" {
 		apiError(w, 404, "接口不存在")
 		return
 	}
 	input, valid := readMessageInput(w, r)
 	if !valid {
+		return
+	}
+	if err := validateGoalInput(input); err != nil {
+		apiError(w, 400, err.Error())
 		return
 	}
 	if input.Backend != "" {
@@ -503,8 +511,14 @@ func (a *App) startTurnWithInput(chat chatmodel.Session, input messageInput, opt
 	return a.startTurnWithCallback(chat, input, options, nil)
 }
 func (a *App) startTurnWithCallback(chat chatmodel.Session, input messageInput, options chatmodel.CodexOptions, finished func(error)) error {
+	if err := validateGoalInput(input); err != nil {
+		return err
+	}
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
+	if a.nativeCommandRunning(chat.ID) {
+		return fmt.Errorf("this chat already has a running turn")
+	}
 	if a.closing {
 		return fmt.Errorf("agent service is stopping")
 	}
@@ -557,7 +571,14 @@ func (a *App) startTurnWithCallback(chat chatmodel.Session, input messageInput, 
 
 // runTurn is the synchronous core used by process lifecycle tests and local callers.
 func (a *App) runTurn(ctx context.Context, id, prompt string, emit func(agent.AgentEvent) error, options ...chatmodel.CodexOptions) (agent.AgentResult, error) {
+	if err := validateGoalInput(messageInput{Message: prompt}); err != nil {
+		return agent.AgentResult{}, err
+	}
 	a.turnMu.Lock()
+	if a.nativeCommandRunning(id) {
+		a.turnMu.Unlock()
+		return agent.AgentResult{}, fmt.Errorf("this chat already has a running turn")
+	}
 	if a.closing {
 		a.turnMu.Unlock()
 		return agent.AgentResult{}, fmt.Errorf("agent service is stopping")

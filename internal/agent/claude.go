@@ -77,10 +77,21 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 	defer func() { p.approve = nil }()
 	result := AgentResult{SessionID: p.sessionID, Model: p.model}
 	if !p.initialized {
-		if _, err := p.claudeControl(ctx, map[string]any{"subtype": "initialize", "hooks": nil}); err != nil {
+		response, err := p.claudeControl(ctx, map[string]any{"subtype": "initialize", "hooks": nil})
+		if err != nil {
 			return result, err, false
 		}
+		commands, _ := response["commands"].([]any)
+		for _, entry := range commands {
+			command, _ := entry.(map[string]any)
+			if command["name"] == "goal" && command["builtin"] == true {
+				p.claudeGoalSupported = true
+			}
+		}
 		p.initialized = true
+	}
+	if command, _ := chatmodel.ParseGoalCommand(request.Prompt); command != nil && !p.claudeGoalSupported {
+		return result, fmt.Errorf("Installed Claude Code does not advertise native /goal support; update the CLI or check its policy (no prompt fallback)"), true
 	}
 	if p.sessionID == "" {
 		p.sessionID = request.NativeSessionID
@@ -227,7 +238,7 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 			}
 		case "assistant":
 			message, _ := value["message"].(map[string]any)
-			if model := stringValue(message["model"]); model != "" && model != result.Model {
+			if model := stringValue(message["model"]); model != "" && model != "<synthetic>" && model != result.Model {
 				p.model, result.Model = model, model
 				if err := emit(AgentEvent{Type: "model", Model: model, ReasoningEffort: p.effort}); err != nil {
 					return result, err, false

@@ -169,6 +169,26 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 		return result, err, false
 	}
 	p.queued = nil
+	command, err := chatmodel.ParseGoalCommand(request.Prompt)
+	if err != nil {
+		return result, err, true
+	}
+	if command != nil {
+		text, err := p.codexGoal(ctx, command)
+		if err != nil {
+			return result, err, false
+		}
+		if command.Action != "set" {
+			result.Text = text
+			if err := emit(AgentEvent{Type: "delta", Text: text}); err != nil {
+				return result, err, false
+			}
+			return result, nil, true
+		}
+		// The native goal owns continuation and persistence. This is only its
+		// initial user turn, not an application-maintained execution loop.
+		request.Prompt = command.Objective
+	}
 	input := []any{map[string]any{"type": "text", "text": agentTextInput(request), "text_elements": []any{}}}
 	for _, file := range request.Attachments {
 		if file.Image() {

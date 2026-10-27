@@ -155,6 +155,23 @@ func (r *CLIRunner) release(chatID string, chat *chatProcess, reusable bool) {
 }
 
 func (r *CLIRunner) Run(ctx context.Context, request AgentRequest, emit func(AgentEvent) error) (AgentResult, error) {
+	command, err := chatmodel.ParseGoalCommand(request.Prompt)
+	if err != nil {
+		return AgentResult{}, err
+	}
+	if command != nil {
+		if len(request.Attachments) > 0 {
+			return AgentResult{}, fmt.Errorf("Goal commands do not accept attachments")
+		}
+		// Historical file hints must not turn a local slash command into a prompt.
+		request.Files = nil
+		request.Prompt = "/goal"
+		if command.Action == "clear" {
+			request.Prompt += " clear"
+		} else if command.Action == "set" {
+			request.Prompt += " " + command.Objective
+		}
+	}
 	if (len(request.Prompt) == 0 && len(request.Attachments) == 0) || len(request.Prompt) > chatmodel.MaxMessageBytes {
 		return AgentResult{}, fmt.Errorf("message must be nonempty and at most 128 KB")
 	}
@@ -260,22 +277,23 @@ func (r *CLIRunner) Close() error {
 // Each provider has its own protocol state, but shares the pipe transport.
 // Only one turn owns these fields at a time; process termination is concurrent.
 type agentProcess struct {
-	cmd            *exec.Cmd
-	stdin          io.WriteCloser
-	messages       chan map[string]any
-	done           chan struct{}
-	ctx            context.Context
-	stderr         synchronizedBuffer
-	waitErr        error
-	initialized    bool
-	sessionID      string
-	model          string
-	selectedModel  string
-	effort         string
-	nextID         int
-	queued         []map[string]any
-	permissionMode string
-	approve        chatmodel.ApprovalHandler
+	cmd                 *exec.Cmd
+	stdin               io.WriteCloser
+	messages            chan map[string]any
+	done                chan struct{}
+	ctx                 context.Context
+	stderr              synchronizedBuffer
+	waitErr             error
+	initialized         bool
+	claudeGoalSupported bool
+	sessionID           string
+	model               string
+	selectedModel       string
+	effort              string
+	nextID              int
+	queued              []map[string]any
+	permissionMode      string
+	approve             chatmodel.ApprovalHandler
 }
 
 func startAgentProcess(ctx context.Context, request AgentRequest) (*agentProcess, error) {
