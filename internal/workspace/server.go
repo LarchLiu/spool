@@ -26,6 +26,8 @@ type App struct {
 	streamHeartbeat time.Duration
 	turnMu          sync.Mutex
 	closing         bool
+	updating        bool
+	runningTurns    int
 	turns           sync.WaitGroup
 	activeTurns     map[string]*turnControl
 	liveMu          sync.Mutex
@@ -424,6 +426,10 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		if strings.Contains(err.Error(), "running turn") || errors.Is(err, errChatAgentLocked) {
 			status = 409
 		}
+		if errors.Is(err, ErrUpdateInProgress) {
+			status = http.StatusServiceUnavailable
+			w.Header().Set("Retry-After", "30")
+		}
 		apiError(w, status, err.Error())
 		return
 	}
@@ -479,6 +485,9 @@ func (a *App) startTurnWithInput(chat chatmodel.Session, input messageInput, opt
 	if a.closing {
 		return fmt.Errorf("agent service is stopping")
 	}
+	if a.updating {
+		return ErrUpdateInProgress
+	}
 	project, err := a.store.Project(chat.ProjectID)
 	if err != nil {
 		return err
@@ -524,6 +533,10 @@ func (a *App) runTurn(ctx context.Context, id, prompt string, emit func(agent.Ag
 	if a.closing {
 		a.turnMu.Unlock()
 		return agent.AgentResult{}, fmt.Errorf("agent service is stopping")
+	}
+	if a.updating {
+		a.turnMu.Unlock()
+		return agent.AgentResult{}, ErrUpdateInProgress
 	}
 	turn, err := a.store.BeginTurn(id, prompt, options...)
 	if err != nil {

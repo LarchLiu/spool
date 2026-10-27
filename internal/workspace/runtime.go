@@ -28,6 +28,7 @@ type Service struct {
 	lease          string
 	lastError      string
 	closed         bool
+	updating       bool
 	runningAddress string
 }
 type ServiceStatus struct {
@@ -94,6 +95,9 @@ func (s *Service) Start() error {
 	defer s.mu.Unlock()
 	if s.closed {
 		return fmt.Errorf("service is closed")
+	}
+	if s.updating {
+		return ErrUpdateInProgress
 	}
 	if s.server != nil {
 		return nil

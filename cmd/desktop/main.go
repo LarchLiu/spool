@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"spool"
+	"spool/internal/appupdate"
 	chatmodel "spool/internal/model"
 	"spool/internal/workspace"
 )
@@ -40,6 +41,9 @@ type panel struct {
 	members            map[string]bool
 	agentPaths         map[chatmodel.Backend]string
 	agentEnabled       map[chatmodel.Backend]bool
+	updates            *appupdate.Controller
+	updatePreferences  workspace.UpdatePreferences
+	updateRelease      func()
 }
 
 func main() {
@@ -62,6 +66,7 @@ func main() {
 		log.Fatal(err)
 	}
 	p.load()
+	p.initUpdates()
 	mygo.Theme.SetSource(mygo.ThemeSource(p.preferences.Theme))
 	if p.settings.AutoStart {
 		if err = service.Start(); err != nil {
@@ -69,9 +74,27 @@ func main() {
 		}
 	}
 	done := make(chan struct{})
-	mygo.App.OnQuit(func() { close(done) })
+	mygo.App.OnQuit(func() {
+		close(done)
+		p.updates.Close()
+		// MyGo relaunches after OnQuit, before main's deferred cleanup.
+		if err := service.Close(); err != nil {
+			log.Print(err)
+		}
+		if p.updateRelease != nil {
+			p.updateRelease()
+		}
+	})
 	var quitting bool
-	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { quitting = true })
+	mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
+		if p.updates.State().Installing {
+			e.PreventDefault()
+			p.showUpdates()
+			p.message = "Wait for the update to finish before quitting."
+			return
+		}
+		quitting = true
+	})
 	mygo.App.WhenReady(func() {
 		p.applyPresentation()
 		mygo.App.OnLocaleChanged(func(string) { p.updateNativeLabels() })
@@ -94,6 +117,7 @@ func main() {
 		if e != nil {
 			p.message = p.tr("Tray unavailable") + ": " + e.Error()
 		}
+		p.updates.Start()
 
 		go func() {
 			ticker := time.NewTicker(3 * time.Second)
@@ -124,6 +148,7 @@ func (p *panel) load() {
 	p.projects, _ = p.service.Store.Projects()
 	p.agents, _ = p.service.Store.Agents()
 	p.status = p.service.Status()
+	p.updatePreferences, _ = p.service.Store.UpdatePreferences()
 	for _, a := range p.agents {
 		p.agentPaths[a.Backend] = a.Executable
 		p.agentEnabled[a.Backend] = a.Enabled
@@ -157,7 +182,7 @@ func (p *panel) view(c *ui.Context) {
 			}
 			ui.Text(c, "Spool").Bold().FontSize(16)
 			ui.Text(c, p.tr("Control Center")).FontSize(12)
-			for _, tab := range []string{"Service", "People", "Projects", "Agents", "Online", "Appearance"} {
+			for _, tab := range []string{"Service", "People", "Projects", "Agents", "Online", "Appearance", "Updates"} {
 				c.Key("tab-" + tab)
 				if ui.Button(c, p.tr(tab)).FillWidth().Clicked() {
 					p.tab = tab
@@ -172,6 +197,12 @@ func (p *panel) view(c *ui.Context) {
 				if p.message != "" {
 					ui.Text(c, p.tr(p.message)).Wrap().FontSize(12)
 				}
+				if state := p.updates.State(); state.Version != "" && p.tab != "Updates" {
+					ui.Text(c, p.tr("Update {version} is available.", "version", state.Version)).Wrap().FontSize(12)
+					if state.Error != "" {
+						ui.Text(c, p.tr(state.Error)).Wrap().FontSize(12)
+					}
+				}
 				switch p.tab {
 				case "Service":
 					p.serviceView(c)
@@ -185,6 +216,8 @@ func (p *panel) view(c *ui.Context) {
 					p.onlineView(c)
 				case "Appearance":
 					p.appearanceView(c)
+				case "Updates":
+					p.updatesView(c)
 				}
 			})
 		})

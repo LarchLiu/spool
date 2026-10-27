@@ -467,7 +467,7 @@ Package the desktop application with the pinned MyGo CLI:
 
 ```sh
 go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -skip-dmg
-# For a release on macOS, configure Developer ID signing/notarization in mygo.json.
+# Release builds do not use Developer ID signing or notarization.
 # Cross-build examples:
 # go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -platform windows/amd64
 # go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -platform linux/amd64
@@ -490,3 +490,81 @@ rollback, ignored old JSON data, settings/users/projects/agents, project permiss
 login revocation, CSRF/origins, model discovery/catalog retention, CLI lifetime and
 resume, SSE reconnect, presence, and PWA resource serving. Frontend regression tests
 also cover optimistic messages and out-of-order REST/SSE responses.
+
+## Releases And Desktop Updates
+
+`.github/workflows/release.yml` runs when a GitHub Release is **published**.
+It also supports a manual run with an existing release tag to retry a failed
+build. Tags must be `vMAJOR.MINOR.PATCH`, optionally with a prerelease suffix.
+The tag determines the packaged version; `tools/prepare-release.mjs` sets
+`mygo.json` in CI without changing the checked-in development configuration.
+The release's body becomes the update window's release notes.
+
+Before the first release, generate and securely back up an update signing key:
+
+```sh
+go run github.com/egoist/mygo/cmd/mygo@v0.6.4 keygen -o /absolute/private/key-directory
+gh variable set MYGO_UPDATER_PUBLIC_KEY < /absolute/private/key-directory/mygo-update.pub
+gh secret set MYGO_UPDATER_PRIVATE_KEY < /absolute/private/key-directory/mygo-update.key
+```
+
+Keep the **same key pair** for later releases. The private key must never be
+committed, uploaded as an asset, or included in an app. The workflow validates
+that the keys match before building; only the public key is embedded in the
+app. The release repository must be public for unauthenticated client downloads.
+Never ship a GitHub access token in the client.
+
+The workflow builds the native desktop for macOS, Windows and Linux, each on
+amd64 and arm64. All six builds must succeed before the upload job runs. It
+uploads installers and signed `.tar.gz` update archives first, then the six
+`update-<platform>.json` manifests. Linux also gets `install.sh`: a per-user
+installation made by this script can update itself; `.deb` installations are
+normally updated by the package manager instead. No headless-server update
+endpoint is exposed. Re-running the workflow replaces assets on the same
+release; prefer a new version for changes to an already distributed build.
+
+Because this workflow starts **after publication**, a latest release briefly
+has no assets while it builds. Clients safely report a failed check and retry;
+they never install an unsigned/incomplete update. Do not enable GitHub's
+immutable-release setting with this post-publication upload flow. Stable apps
+read `releases/latest/download`, so mark completed stable releases as Latest;
+prereleases can be downloaded manually but are not a separate auto-update
+channel. Delta generation is disabled because Latest already points to the
+release being built, not to a usable previous manifest.
+
+Release builds do **not** use OS certificate signing: no Apple Developer ID,
+notarization, Windows Authenticode, certificates, or Apple credentials are
+needed. macOS uses MyGo's minimal ad-hoc signature (`-sign -`) for executable
+integrity, not a trusted distribution signature; Gatekeeper can block the
+downloaded app on other Macs. Windows builds are unsigned and SmartScreen may
+warn. CI removes any OS certificate settings from the release configuration
+and explicitly skips notarization.
+
+The Ed25519 **update archive signature** is separate and remains required.
+It uses the freely generated MyGo key pair above, not a purchased certificate,
+and lets installed apps verify that an update came from the same publisher.
+Only the public-key variable and private-key secret are required by CI.
+
+The native control center has an **Updates** page and the tray has **Check for
+updates**. Official CI builds check shortly after launch and every 12 hours by
+default. Automatic installation is **opt-in**, stored locally in SQLite, and
+never forces a restart. Development builds and read-only installations explain
+why updates are unavailable instead of checking in the background.
+
+Installation and restart both acquire an exclusive service lease under the
+same mutex that admits chat turns. Any active turn, including pending approval
+or a stopped/superseded turn that is still cleaning up, rejects the operation
+with a visible explanation. No update download starts in that case. During
+installation, new message submissions receive a retryable HTTP 503 without
+starting a turn; existing history remains readable. Automatic installs retry
+once a minute after busy chats finish. After installation, chats can run again;
+**Restart to update** rechecks for active turns before relaunching. Shutdown
+closes the service and releases the database lease before the new process
+starts. App updates never replace `~/.spool` or update the installed agent CLIs.
+
+Run the update regression tests with:
+
+```sh
+node --test tools/prepare-release.test.mjs
+go test -race ./internal/appupdate ./internal/workspace ./cmd/desktop
+```

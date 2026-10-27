@@ -23,6 +23,7 @@ func (a *App) registerTurn(parent context.Context, chatID, turnID string) (conte
 		a.activeTurns = make(map[string]*turnControl)
 	}
 	a.activeTurns[chatID] = control
+	a.runningTurns++
 	return ctx, control
 }
 
@@ -31,6 +32,7 @@ func (a *App) releaseTurn(chatID string, control *turnControl) {
 	if a.activeTurns[chatID] == control {
 		delete(a.activeTurns, chatID)
 	}
+	a.runningTurns--
 	a.turnMu.Unlock()
 	control.cancel()
 	close(control.done)

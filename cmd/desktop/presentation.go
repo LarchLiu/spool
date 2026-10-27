@@ -40,6 +40,10 @@ func (p *panel) trayMenu() *mygo.Menu {
 	return mygo.NewMenu([]*mygo.MenuItem{
 		{Label: p.tr("Settings…"), Click: func(*mygo.MenuItem, *mygo.Window) { p.window.Show(); p.window.Focus() }},
 		{Label: p.tr("Open Web Chat"), Click: func(*mygo.MenuItem, *mygo.Window) { _ = mygo.Shell.OpenExternal(p.service.WebURL()) }},
+		{Label: p.tr("Check for updates"), Click: func(*mygo.MenuItem, *mygo.Window) {
+			p.showUpdates()
+			go p.updates.Check()
+		}},
 		mygo.Separator(),
 		{Role: mygo.RoleQuit},
 	})

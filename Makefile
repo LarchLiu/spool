@@ -13,6 +13,7 @@ server: web
 	go build -o build/spool-server ./cmd/server
 
 test:
+	node --test tools/prepare-release.test.mjs
 	npm --prefix web test
 	go test -race ./...
 	go vet ./...
