@@ -30,6 +30,9 @@ import type {
   TranscriptPart,
 } from "./types";
 import { AppearanceDialog } from "./appearance-dialog";
+import { AvatarDialog } from "./avatar-dialog";
+import { AvatarStack, UserAvatar } from "./user-avatar";
+import type { AvatarConfig } from "./avatar";
 import { Sidebar } from "./sidebar";
 import { AgentModelMenu } from "./agent-model-menu";
 import { AgentIcon } from "./agent-icon";
@@ -60,6 +63,7 @@ function App() {
   const [preferences, setPreferences] =
     useState<UIPreferences>(defaultPreferences);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [avatarOpen, setAvatarOpen] = useState(false);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const { t } = usePresentation(preferences);
   const effortLabel = (value: string) => formatEffort(value, t);
@@ -145,6 +149,7 @@ function App() {
       setProject("");
       setChatID("");
       setAppearanceOpen(false);
+      setAvatarOpen(false);
       setPreferences(defaultPreferences);
       setDraft("");
       setFiles((old) => {
@@ -492,6 +497,17 @@ function App() {
     } finally {
       setPosting(false);
     }
+  }
+  async function updateAvatar(avatar: AvatarConfig) {
+    const owner = user?.id;
+    const updated = await api<User>("/me/avatar", avatar);
+    if (activeUser.current !== owner) return;
+    setUser(updated);
+    setOnline((people) =>
+      people.map((person) =>
+        person.id === updated.id ? { ...person, avatar: updated.avatar } : person,
+      ),
+    );
   }
   function newChat(projectID = project) {
     if (!projects.some((item) => item.id === projectID) || submission.current)
@@ -867,6 +883,7 @@ function App() {
         onChat={openChat}
         onNew={newChat}
         onSettings={() => setAppearanceOpen(true)}
+        onAvatar={() => setAvatarOpen(true)}
         onLogout={logout}
       />
       {sidebar && (
@@ -915,13 +932,17 @@ function App() {
             )}
             <details className="online">
               <summary>
-                <span className="online-dot" />
-                <Users size={14} />
+                {online.length ? (
+                  <AvatarStack people={online} />
+                ) : (
+                  <Users size={14} aria-hidden="true" />
+                )}
                 {t("{count} online", { count: online.length })}
               </summary>
               <div className="online-list">
                 {online.map((u) => (
                   <div key={u.id}>
+                    <UserAvatar person={u} size={26} />
                     <span
                       className={
                         u.state === "online" ? "online-dot" : "away-dot"
@@ -1262,6 +1283,14 @@ function App() {
         </footer>
       </main>
       {appearance}
+      {avatarOpen && (
+        <AvatarDialog
+          user={user}
+          t={t}
+          onSave={updateAvatar}
+          onClose={() => setAvatarOpen(false)}
+        />
+      )}
       {preview && (
         <ImagePreview
           file={preview.file}

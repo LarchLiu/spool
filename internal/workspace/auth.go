@@ -43,7 +43,7 @@ func tokenHash(token string) string {
 func (s *Store) authenticate(token string) (authIdentity, error) {
 	var v authIdentity
 	v.TokenHash = tokenHash(token)
-	err := s.db.QueryRow(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,a.csrf FROM auth_sessions a JOIN users u ON u.id=a.user_id WHERE a.token_hash=? AND a.expires_at>? AND u.disabled=0`, v.TokenHash, time.Now().UnixMilli()).Scan(&v.User.ID, &v.User.Username, &v.User.Nickname, &v.User.Disabled, &v.User.CreatedAt, &v.CSRF)
+	err := s.db.QueryRow(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,a.csrf,COALESCE(av.style,?),COALESCE(av.seed,'') FROM auth_sessions a JOIN users u ON u.id=a.user_id LEFT JOIN user_avatars av ON av.user_id=u.id WHERE a.token_hash=? AND a.expires_at>? AND u.disabled=0`, DefaultAvatar().Style, v.TokenHash, time.Now().UnixMilli()).Scan(&v.User.ID, &v.User.Username, &v.User.Nickname, &v.User.Disabled, &v.User.CreatedAt, &v.CSRF, &v.User.Avatar.Style, &v.User.Avatar.Seed)
 	return v, err
 }
 func (s *Store) login(username, password string) (string, authIdentity, error) {

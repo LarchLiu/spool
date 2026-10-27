@@ -3,6 +3,7 @@ import { Folder, FolderOpen, LogOut, Plus, Settings2, X } from "lucide-react";
 import type { Translator } from "./i18n";
 import type { Backend, Chat, Project, User } from "./types";
 import { AgentIcon } from "./agent-icon";
+import { UserAvatar } from "./user-avatar";
 
 type Props = {
   user: User;
@@ -18,6 +19,7 @@ type Props = {
   onChat: (chat: Chat) => void;
   onNew: (project?: string) => void;
   onSettings: () => void;
+  onAvatar: () => void;
   onLogout: () => void;
 };
 
@@ -206,7 +208,15 @@ export function Sidebar(props: Props) {
         </section>
       </nav>
       <div className="side-foot">
-        <span className="avatar">{props.user.nickname.slice(0, 1)}</span>
+        <button
+          type="button"
+          className="avatar-button"
+          onClick={props.onAvatar}
+          aria-label={t("Change avatar")}
+          title={t("Change avatar")}
+        >
+          <UserAvatar person={props.user} />
+        </button>
         <div>
           {props.user.nickname}
           <small>{t("Project chat visibility follows project settings")}</small>

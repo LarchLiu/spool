@@ -30,6 +30,7 @@ type Store struct {
 const schema = `
 CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQUE COLLATE NOCASE,nickname TEXT NOT NULL,password_hash TEXT NOT NULL,disabled INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS user_avatars(user_id TEXT PRIMARY KEY REFERENCES users(id),style TEXT NOT NULL,seed TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,name TEXT NOT NULL,path TEXT NOT NULL UNIQUE,archived INTEGER NOT NULL DEFAULT 0,shared_chats INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS project_members(project_id TEXT NOT NULL REFERENCES projects(id),user_id TEXT NOT NULL REFERENCES users(id),PRIMARY KEY(project_id,user_id));
 CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id),project_id TEXT REFERENCES projects(id),title TEXT NOT NULL,backend TEXT NOT NULL,native_session_id TEXT NOT NULL DEFAULT '',native_session_path TEXT NOT NULL DEFAULT '',model TEXT NOT NULL DEFAULT '',reasoning_effort TEXT NOT NULL DEFAULT '',status TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
@@ -85,6 +86,10 @@ func OpenStore(root string) (*Store, error) {
 	}
 	if version != "" && version != "1" {
 		return fail(fmt.Errorf("unsupported database schema %s", version))
+	}
+	// Retired avatar styles adopt Clay without losing automatic or picked seeds.
+	if _, err = db.Exec(`UPDATE user_avatars SET style=? WHERE style IN ('bottts-neutral','shapes','initials')`, DefaultAvatar().Style); err != nil {
+		return fail(err)
 	}
 	if _, err = db.Exec(`INSERT INTO meta VALUES('schema_version','1') ON CONFLICT(key) DO UPDATE SET value='1'`); err != nil {
 		return fail(err)

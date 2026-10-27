@@ -323,17 +323,22 @@ button:disabled {
   color: var(--muted);
   margin-top: 4px;
 }
-.avatar {
-  display: grid;
-  place-items: center;
-  width: 31px;
-  height: 31px;
+.user-avatar {
+  display: block;
   flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--soft);
+  object-fit: cover;
+}
+.avatar-button {
+  flex-shrink: 0;
+  padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: 50%;
   background: var(--soft);
-  color: var(--muted);
-  font-size: 13px;
+}
+.avatar-button:hover {
+  box-shadow: 0 0 0 3px var(--hover);
 }
 .workspace {
   display: flex;
@@ -405,13 +410,39 @@ button:disabled {
 .online summary {
   display: flex;
   align-items: center;
-  gap: 6px;
+  min-height: 32px;
+  gap: 8px;
   cursor: pointer;
   list-style: none;
   color: var(--muted);
 }
 .online summary::-webkit-details-marker {
   display: none;
+}
+.avatar-stack {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  isolation: isolate;
+}
+.avatar-stack-item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 2px solid var(--elevated);
+  border-radius: 50%;
+  background: var(--soft);
+}
+.avatar-stack-item + .avatar-stack-item {
+  margin-left: -9px;
+}
+.avatar-stack-more {
+  width: 28px;
+  height: 28px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--muted);
 }
 .online-dot,
 .away-dot {
@@ -427,7 +458,7 @@ button:disabled {
 }
 .online-list {
   position: absolute;
-  top: 25px;
+  top: calc(100% + 8px);
   right: 0;
   z-index: 6;
   min-width: 210px;
@@ -1974,7 +2005,8 @@ option {
   top: 20px;
   z-index: 2;
 }
-.appearance-dialog {
+.appearance-dialog,
+.avatar-dialog {
   width: min(430px, calc(100vw - 32px));
   max-height: calc(100dvh - 40px);
   overflow: auto;
@@ -1985,7 +2017,8 @@ option {
   color: var(--text);
   box-shadow: 0 20px 100px #0004;
 }
-.appearance-dialog::backdrop {
+.appearance-dialog::backdrop,
+.avatar-dialog::backdrop {
   background: #0007;
 }
 .dialog-heading {
@@ -2053,6 +2086,191 @@ option {
   font-size: 11px;
   line-height: 1.8;
   color: var(--muted);
+}
+.avatar-dialog {
+  --avatar-dialog-padding: 24px;
+  width: min(460px, calc(100vw - 24px));
+  overflow: hidden;
+  padding: 0;
+}
+.avatar-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.avatar-dialog > .dialog-heading {
+  flex-shrink: 0;
+  margin: 0;
+  padding: var(--avatar-dialog-padding);
+}
+.avatar-dialog-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--avatar-dialog-padding);
+}
+.avatar-dialog > .error {
+  flex-shrink: 0;
+  margin: 12px var(--avatar-dialog-padding);
+}
+.avatar-preview {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 16px;
+  margin-bottom: 24px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(125deg, var(--soft), var(--elevated));
+}
+.avatar-preview > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.avatar-preview strong {
+  font-size: 16px;
+}
+.avatar-preview p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.avatar-dialog fieldset {
+  border: 0;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+}
+.avatar-dialog legend,
+.avatar-gallery-heading {
+  font-size: 12px;
+  font-weight: 500;
+}
+.avatar-dialog legend {
+  margin-bottom: 10px;
+}
+.avatar-styles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.avatar-styles button {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 12px 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--input);
+  font-size: 11px;
+}
+.avatar-styles button > span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.avatar-styles button[aria-pressed="true"],
+.avatar-grid button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--soft);
+}
+.avatar-automatic {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 16px 0 20px;
+  padding: 10px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--input);
+  font-size: 12px;
+}
+.avatar-automatic[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+.avatar-automatic > span {
+  flex: 1;
+}
+.avatar-automatic small {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.avatar-gallery-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.avatar-gallery-heading .quiet {
+  font-size: 11px;
+  padding: 6px 0 6px 6px;
+  flex-shrink: 0;
+}
+.avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+}
+.avatar-grid button {
+  display: grid;
+  place-items: center;
+  position: relative;
+  min-width: 0;
+  padding: 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--input);
+}
+.avatar-grid .user-avatar {
+  width: min(48px, 100%);
+  height: auto;
+}
+.avatar-grid button:hover,
+.avatar-styles button:hover {
+  background: var(--hover);
+}
+.avatar-credit {
+  margin: 18px 0;
+  font-size: 10px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+.avatar-credit a {
+  color: inherit;
+}
+.avatar-attribution {
+  display: block;
+  margin-top: 4px;
+}
+.avatar-dialog-actions {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 16px;
+  padding: 16px var(--avatar-dialog-padding);
+  border-top: 1px solid var(--line);
+  background: var(--elevated);
+}
+.avatar-dialog-actions .primary {
+  width: auto;
+  margin: 0;
+  padding: 10px 18px;
+  font-size: 12px;
+}
+.avatar-dialog-actions .quiet {
+  font-size: 12px;
+}
+@media (max-width: 400px) {
+  .avatar-dialog {
+    --avatar-dialog-padding: 20px;
+  }
+  .avatar-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 :root[data-theme="dark"] .login-story {
   background:

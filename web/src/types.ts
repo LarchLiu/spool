@@ -1,5 +1,12 @@
+import type { AvatarConfig } from "./avatar";
+
 export type Backend = "codex" | "claude";
-export type User = { id: string; username: string; nickname: string };
+export type User = {
+  id: string;
+  username: string;
+  nickname: string;
+  avatar?: AvatarConfig;
+};
 export type Project = {
   id: string;
   name: string;
@@ -99,4 +106,5 @@ export type Online = {
   nickname: string;
   state: string;
   devices: number;
+  avatar?: AvatarConfig;
 };

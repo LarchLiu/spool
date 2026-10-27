@@ -147,6 +147,21 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case path == "/api/me" && r.Method == "GET":
 		a.signedInResponse(w, id)
+	case path == "/api/me/avatar" && r.Method == "POST":
+		var avatar Avatar
+		if !decodeJSON(w, r, &avatar) {
+			return
+		}
+		if err := avatar.Validate(); err != nil {
+			apiError(w, 400, err.Error())
+			return
+		}
+		if err := a.store.SaveAvatar(id.User.ID, avatar); err != nil {
+			apiError(w, 500, "Could not save avatar")
+			return
+		}
+		id.User.Avatar = avatar
+		apiJSON(w, 200, id.User)
 	case path == "/api/preferences" && r.Method == "GET":
 		preferences, err := a.store.UIPreferences(id.User.ID)
 		if err != nil {

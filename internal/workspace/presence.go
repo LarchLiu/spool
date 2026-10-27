@@ -11,6 +11,7 @@ type PresenceUser struct {
 	Nickname string `json:"nickname"`
 	State    string `json:"state"`
 	Devices  int    `json:"devices"`
+	Avatar   Avatar `json:"avatar"`
 }
 type presenceClient struct {
 	User      User
@@ -49,10 +50,15 @@ func (p *Presence) Remove(token string) {
 	}
 }
 func (p *Presence) List(store *Store) []PresenceUser {
-	users, _ := store.Users()
-	enabled := map[string]bool{}
+	users, err := store.Users()
+	if err != nil {
+		return []PresenceUser{}
+	}
+	enabled := map[string]User{}
 	for _, u := range users {
-		enabled[u.ID] = !u.Disabled
+		if !u.Disabled {
+			enabled[u.ID] = u
+		}
 	}
 	validTokens := map[string]bool{}
 	rows, err := store.db.Query(`SELECT token_hash FROM auth_sessions WHERE expires_at>?`, time.Now().UnixMilli())
@@ -71,13 +77,14 @@ func (p *Presence) List(store *Store) []PresenceUser {
 	byUser := map[string]*PresenceUser{}
 	out := []PresenceUser{}
 	for key, value := range p.clients {
-		if time.Since(value.Seen) > 90*time.Second || !enabled[value.User.ID] || !validTokens[value.TokenHash] {
+		user, exists := enabled[value.User.ID]
+		if time.Since(value.Seen) > 90*time.Second || !exists || !validTokens[value.TokenHash] {
 			delete(p.clients, key)
 			continue
 		}
 		v := byUser[value.User.ID]
 		if v == nil {
-			v = &PresenceUser{ID: value.User.ID, Nickname: value.User.Nickname, State: "away"}
+			v = &PresenceUser{ID: user.ID, Nickname: user.Nickname, Avatar: user.Avatar, State: "away"}
 			byUser[value.User.ID] = v
 		}
 		v.Devices++

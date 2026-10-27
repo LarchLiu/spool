@@ -37,7 +37,7 @@ There is no separate frontend service in production and no Node.js runtime
 requirement. Installed and signed-in Codex/Claude CLIs are still required.
 MyGo is pinned to **v0.6.4**, which requires **Go 1.27.3+**. Go's automatic
 local toolchain selection downloads that version when necessary. Frontend builds
-need Node.js 20.19+ (or 22.12+) and npm.
+need Node.js 22.12+ and npm (DiceBear 10.x requires Node.js 22+).
 
 ## Development
 
@@ -91,6 +91,28 @@ or offline behavior.
    local draft: no chat row is written to SQLite or added to history until Send.
    Switching away from an unsent draft or starting another discards that draft;
    empty drafts are not restored after a page reload.
+
+### User Avatars
+
+Every account gets a deterministic [DiceBear](https://github.com/dicebear/dicebear)
+avatar generated from its display name (falling back to username). In Web Chat,
+click your avatar at the bottom of the sidebar to choose **Clay**, **Pixel Art**,
+**Croodles**, **Lorelei**, **Notionists**, **Toon Head**, **Voxel Art**, or **Thumbs**.
+Clay is the default. Pick a suggested avatar, use **More avatars** to browse another
+batch, then **Save avatar**. **Use my name** restores automatic generation in
+the selected style; automatic avatars follow display-name changes, while picked
+avatars stay unchanged. Canceling the picker leaves the saved avatar untouched.
+
+Avatars appear in the sidebar and online people list. Choices are stored per
+account in SQLite and restored on other devices. Existing databases receive the
+avatar table automatically; accounts and login credentials are unchanged. The
+version-pinned DiceBear SDK renders SVG locally: names are not sent to DiceBear,
+no external avatar service is required, and arbitrary SVG/URLs are not accepted.
+The former Robots, Shapes and Initials styles migrate to Clay on startup while
+preserving automatic/picked seeds; Thumbs choices remain selected. Only the eight
+selected style definitions from `@dicebear/styles` are bundled. Style credits
+and license links appear in the picker and remain embedded in each SVG, including
+CC BY 4.0 attribution for Croodles (vijay verma) and Toon Head (Johan Melin).
 
 ### Chat Composer, Attachments And Permissions
 

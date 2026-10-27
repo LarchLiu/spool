@@ -23,6 +23,7 @@ type User struct {
 	Nickname  string `json:"nickname"`
 	Disabled  bool   `json:"disabled"`
 	CreatedAt int64  `json:"created_at"`
+	Avatar    Avatar `json:"avatar"`
 }
 type UserInput struct {
 	ID       string
@@ -93,7 +94,7 @@ func (s *Store) SaveSettings(v Settings) error {
 	return err
 }
 func (s *Store) Users() ([]User, error) {
-	rows, err := s.db.Query(`SELECT id,username,nickname,disabled,created_at FROM users ORDER BY username`)
+	rows, err := s.db.Query(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,COALESCE(a.style,?),COALESCE(a.seed,'') FROM users u LEFT JOIN user_avatars a ON a.user_id=u.id ORDER BY u.username`, DefaultAvatar().Style)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +102,7 @@ func (s *Store) Users() ([]User, error) {
 	out := []User{}
 	for rows.Next() {
 		var v User
-		if err = rows.Scan(&v.ID, &v.Username, &v.Nickname, &v.Disabled, &v.CreatedAt); err != nil {
+		if err = rows.Scan(&v.ID, &v.Username, &v.Nickname, &v.Disabled, &v.CreatedAt, &v.Avatar.Style, &v.Avatar.Seed); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -161,8 +162,12 @@ func (s *Store) SaveUser(v UserInput) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
+	avatar := DefaultAvatar()
+	if err = tx.QueryRow(`SELECT style,seed FROM user_avatars WHERE user_id=?`, v.ID).Scan(&avatar.Style, &avatar.Seed); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return User{}, err
+	}
 	err = tx.Commit()
-	return User{v.ID, v.Username, v.Nickname, v.Disabled, now}, err
+	return User{ID: v.ID, Username: v.Username, Nickname: v.Nickname, Disabled: v.Disabled, CreatedAt: now, Avatar: avatar}, err
 }
 func (s *Store) DeleteUser(id string) error {
 	tx, err := s.db.Begin()
