@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import test from "node:test";
@@ -90,8 +90,8 @@ test("installer verifies both signatures before replacing an app and preserves u
   })) {
     await writeFile(join(mocks, name), script, { mode: 0o755 });
   }
-  const run = () => spawnSync("sh", [join(directory, "install.sh"), archive], {
-    env: { ...process.env, HOME: home, XDG_DATA_HOME: join(home, ".local/share"), PATH: mocks + delimiter + process.env.PATH }, encoding: "utf8",
+  const run = (input = archive, extraEnv = {}) => spawnSync("sh", [join(directory, "install.sh"), input], {
+    env: { ...process.env, HOME: home, XDG_DATA_HOME: join(home, ".local/share"), PATH: mocks + delimiter + process.env.PATH, ...extraEnv }, encoding: "utf8",
   });
   const manifestPath = join(directory, "update-linux-amd64.json");
   const signaturePath = `${manifestPath}.sig`;
@@ -148,6 +148,48 @@ with tarfile.open(sys.argv[1], 'w:gz') as archive:
   assert.equal(result.status, 0, result.stderr + result.stdout);
   assert.match(await readFile(join(app, "spool"), "utf8"), /new-app/);
   assert.equal(await readFile(join(home, ".spool", "settings"), "utf8"), "keep-data");
+
+  const replacement = join(root, "unsigned.tar.gz");
+  await writeFile(join(payload, "spool"), "#!/bin/sh\necho unsigned-app\n");
+  execFileSync("tar", ["-czf", replacement, "-C", payload, "spool"]);
+  // Replace the caller's path only after OpenSSL really verifies the archive
+  // digest, making the old verify-then-reopen race deterministic.
+  await writeFile(join(mocks, "openssl"), `#!/bin/sh
+set -eu
+'${openssl}' "$@" || exit $?
+input=''; previous=''
+for argument do
+  if [ "$previous" = -in ]; then input="$argument"; fi
+  previous="$argument"
+done
+case "$input" in
+  */digest)
+    case "$SPOOL_TEST_SWAP_MODE" in
+      file) cp "$SPOOL_TEST_REPLACEMENT" "$SPOOL_TEST_ARCHIVE.swap" ;;
+      symlink) ln -s "$SPOOL_TEST_REPLACEMENT" "$SPOOL_TEST_ARCHIVE.swap" ;;
+    esac
+    mv -f "$SPOOL_TEST_ARCHIVE.swap" "$SPOOL_TEST_ARCHIVE"
+    printf swapped > "$SPOOL_TEST_SWAP_MARKER"
+    ;;
+esac
+`, { mode: 0o755 });
+  for (const kind of ["file", "symlink"]) {
+    await t.test(`offline archive ${kind} replacement cannot alter verified installed bytes`, async () => {
+      await writeFile(archive, content);
+      const input = kind === "file" ? archive : join(directory, "offline-link.tar.gz");
+      if (kind === "symlink") await symlink(archive, input);
+      const marker = join(root, `swapped-${kind}`);
+      const result = run(input, {
+        SPOOL_TEST_SWAP_MODE: kind, SPOOL_TEST_ARCHIVE: input,
+        SPOOL_TEST_REPLACEMENT: replacement, SPOOL_TEST_SWAP_MARKER: marker,
+      });
+      assert.equal(result.status, 0, result.stderr + result.stdout);
+      assert.equal(await readFile(marker, "utf8"), "swapped");
+      assert.deepEqual(await readFile(input), await readFile(replacement));
+      assert.equal(await readFile(join(app, "spool"), "utf8"), "#!/bin/sh\necho new-app\n");
+      assert.equal(await readFile(join(home, ".spool", "settings"), "utf8"), "keep-data");
+    });
+  }
 });
 
 test("workflow pins actions, keeps private keys out of builds and uploads assets once", async () => {

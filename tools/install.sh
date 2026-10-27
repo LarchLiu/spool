@@ -86,7 +86,14 @@ if len(signature) != 64:
 (work / 'url').write_text(url)
 print(f"Verified Spool {version} for {target}")
 PY
-if [ -z "$archive" ]; then archive="$work/app.tar.gz"; fetch "$(cat "$work/url")" "$archive"; fi
+# Hash, verify and extract the same private copy, never reopen an offline
+# caller-owned path after verification (including replaceable symlinks).
+if [ -n "$archive" ]; then
+  cp "$archive" "$work/app.tar.gz"
+else
+  fetch "$(cat "$work/url")" "$work/app.tar.gz"
+fi
+archive="$work/app.tar.gz"
 python3 - "$work" "$archive" <<'PY'
 import hashlib, json, pathlib, sys
 work, archive = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])

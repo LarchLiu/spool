@@ -93,22 +93,39 @@ test("archive tampering fails both size and signature validation", async (t) => 
   await assert.rejects(verifyReleaseAssets(directory, options), /archive size/);
 });
 
+test("manifest tampering is rejected by its detached signature before semantic validation", async (t) => {
+  const directory = await fixture(t);
+  const path = join(directory, "update-darwin-arm64.json");
+  const manifest = JSON.parse(await readFile(path, "utf8"));
+  await writeFile(path, JSON.stringify({ ...manifest, version: "9.9.9" }));
+  await assert.rejects(verifyReleaseAssets(directory, options), /invalid manifest signature/);
+});
+
 test("rejects manifests for a different release, repository, signing key or changelog", async (t) => {
   const changes = [
-    { version: "9.9.9" }, { url: "https://example.test/archive.tar.gz" },
-    { signature: Buffer.alloc(64).toString("base64") }, { notes: "stale notes" }, { deltas: [{}] },
+    [{ schema: "unknown" }, /schema, repository or target does not match/],
+    [{ repository: "another/repo" }, /schema, repository or target does not match/],
+    [{ target: "linux-amd64" }, /schema, repository or target does not match/],
+    [{ version: "9.9.9" }, /version or archive URL does not match v1\.2\.3/],
+    [{ url: "https://example.test/archive.tar.gz" }, /version or archive URL does not match v1\.2\.3/],
+    [{ signature: Buffer.alloc(64).toString("base64") }, /invalid update archive signature/],
+    [{ notes: "stale notes" }, /notes do not match the release notes/],
+    [{ deltas: [{}] }, /delta updates must be disabled/],
+    [{ size: 1 }, /archive size does not match/],
   ];
-  for (const change of changes) {
+  for (const [change, error] of changes) {
     await t.test(Object.keys(change)[0], async (t) => {
       const directory = await fixture(t);
       const path = join(directory, "update-darwin-arm64.json");
       const manifest = JSON.parse(await readFile(path, "utf8"));
-      await writeFile(path, JSON.stringify({ ...manifest, ...change }));
-      await assert.rejects(verifyReleaseAssets(directory, options));
+      const data = Buffer.from(JSON.stringify({ ...manifest, ...change }));
+      await writeFile(path, data);
+      await writeFile(`${path}.sig`, sign(null, data, key.privateKey));
+      await assert.rejects(verifyReleaseAssets(directory, options), error);
     });
   }
   const directory = await fixture(t);
   await assert.rejects(verifyReleaseAssets(directory, { ...options, publicKey: "" }), /public key/);
-  await assert.rejects(verifyReleaseAssets(directory, { ...options, publicKey: Buffer.alloc(32).toString("base64") }), /signature/);
+  await assert.rejects(verifyReleaseAssets(directory, { ...options, publicKey: Buffer.alloc(32).toString("base64") }), /invalid manifest signature/);
   await assert.rejects(verifyReleaseAssets(directory, { ...options, targets: ["unknown"] }), /Unsupported/);
 });
