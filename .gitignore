@@ -1,0 +1,9 @@
+/build/
+/frontend/
+/web/node_modules/
+/web/.test-build/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+/mygo.ts
+.DS_Store

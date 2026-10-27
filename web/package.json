@@ -1,0 +1,33 @@
+{
+  "name": "spool-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "check": "tsc --noEmit",
+    "test": "tsc --target ES2022 --module ESNext --moduleResolution Bundler --jsx react-jsx --skipLibCheck --outDir .test-build src/chat-state.ts src/turn-control.ts src/types.ts src/preferences.ts src/model-selection.ts src/attachment-selection.ts src/markdown-message.tsx && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@lobehub/icons": "^6.13.0",
+    "@pierre/diffs": "^1.6.1",
+    "lucide-react": "^0.469.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true
+  }
+}
