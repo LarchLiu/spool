@@ -65,7 +65,8 @@ func runDesktop() (runErr error) {
 	if signedUpdatesError != nil {
 		log.Printf("Signed updates disabled: %v", signedUpdatesError)
 	}
-	root := flag.String("data-dir", workspace.DefaultDataDir(), "SQLite data directory")
+	development := mygo.IsDev()
+	root := flag.String("data-dir", workspace.DefaultDataDir(development), "Data directory (database in db/spool.sqlite)")
 	smoke := flag.String("release-smoke", "", "Probe the packaged desktop using fresh temporary data; write a JSON report")
 	flag.Parse()
 	if *smoke != "" {
@@ -82,6 +83,9 @@ func runDesktop() (runErr error) {
 		*root = temporary
 	}
 	mygo.App.SetName("Spool")
+	if development {
+		mygo.App.SetName("Spool Dev")
+	}
 	mygo.App.SetLanguages("en", "zh-CN", "ja")
 	if *smoke == "" && !mygo.App.RequestSingleInstanceLock() {
 		log.Print("Spool is already running; focusing the existing desktop instance")
@@ -153,7 +157,7 @@ func runDesktop() (runErr error) {
 	mygo.App.WhenReady(func() {
 		p.applyPresentation()
 		mygo.App.OnLocaleChanged(func(string) { p.updateNativeLabels() })
-		p.window = mygo.NewWindow(mygo.WindowOptions{Title: "Spool · " + p.tr("Control Center"), Width: 960, Height: 760, MinWidth: 740, MinHeight: 580, Content: ui.View(p.view)})
+		p.window = mygo.NewWindow(mygo.WindowOptions{Title: mygo.App.Name() + " · " + p.tr("Control Center"), Width: 960, Height: 760, MinWidth: 740, MinHeight: 580, Content: ui.View(p.view)})
 		p.refreshGitHubCLI()
 		p.window.OnClose(func(e *mygo.CloseEvent) {
 			if !quitting {
@@ -354,7 +358,7 @@ func (p *panel) serviceView(c *ui.Context) {
 		}
 	}
 	ui.Text(c, p.tr("Listen address and idle settings apply after Stop → Start. Stopping interrupts active tasks. Closing this window keeps the server in the tray; Quit stops it.")).Wrap().FontSize(12)
-	ui.Text(c, "SQLite · "+p.service.Store.Root()).Wrap().FontSize(12)
+	ui.Text(c, "SQLite · "+p.service.Store.DatabasePath()).Wrap().FontSize(12)
 	ui.Text(c, p.tr("Users can execute agent tools in granted projects. Only grant access to trusted people. HTTPS is required for remote PWA installation.")).Wrap().FontSize(12)
 }
 func (p *panel) peopleView(c *ui.Context) {

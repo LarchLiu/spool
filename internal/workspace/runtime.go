@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -223,14 +220,4 @@ func (s *Service) Close() error {
 		err = e
 	}
 	return err
-}
-func DefaultDataDir() string {
-	if path := strings.TrimSpace(os.Getenv("SPOOL_HOME")); path != "" {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return filepath.Join(os.TempDir(), "spool")
-	}
-	return filepath.Join(home, ".spool")
 }

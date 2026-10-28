@@ -64,7 +64,10 @@ func OpenStore(root string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(root, "spool.sqlite")
+	path, err := prepareDatabase(root)
+	if err != nil {
+		return nil, err
+	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, err
@@ -112,7 +115,8 @@ func (s *Store) Close() error {
 	s.historyCache.clear()
 	return errors.Join(checkpointErr, closeErr)
 }
-func (s *Store) Root() string { return s.root }
+func (s *Store) Root() string         { return s.root }
+func (s *Store) DatabasePath() string { return databasePath(s.root) }
 func insertSession(tx *sql.Tx, s chatmodel.Session) error {
 	var owner, project any
 	if s.UserID != "" {

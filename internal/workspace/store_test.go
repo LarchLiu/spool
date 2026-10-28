@@ -88,7 +88,7 @@ func TestStorePersistsSessionMetadataWithoutConversationBodies(t *testing.T) {
 	if err = loaded.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "2" {
 		t.Fatalf("schema version = %q, %v", version, err)
 	}
-	info, err := os.Stat(filepath.Join(root, "spool.sqlite"))
+	info, err := os.Stat(filepath.Join(root, "db", "spool.sqlite"))
 	if err != nil {
 		t.Fatal(err)
 	}

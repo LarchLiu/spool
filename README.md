@@ -23,8 +23,8 @@ bundle identifier is `com.cloudgeek.spool`.
 - `resources.go`: the root package's only Go source file, embedding frontend,
   locales and icons. Keeping embeds beside their resource directories avoids
   duplicate assets and unsupported parent-directory `go:embed` paths.
-- `spool.sqlite`: users, projects, project membership, chat metadata, server
-  settings, agent settings/catalogs, issue schedules/runs, task-chat assignees,
+- `db/spool.sqlite` inside the data directory: users, projects, project membership,
+  chat metadata, server settings, agent settings/catalogs, issue schedules/runs, task-chat assignees,
   PR artifacts, and hashed login sessions. New tables are added on startup
   without replacing existing projects or chats.
 
@@ -32,8 +32,10 @@ Both entry points use `internal/workspace`, which coordinates `internal/agent`
 and `internal/model`. The CLI package does not import SQLite or HTTP handlers.
 Tests live next to their implementation; cross-layer chat tests stay in
 `internal/workspace`. Schema version 2 removes SQLite turn/attachment history in
-favor of the CLIs' native sessions. It keeps the `~/.spool` data directory and
-CLI wire protocols, adding a backward-paginated HTTP history endpoint.
+favor of the CLIs' native sessions. Production uses `~/.spool`; development
+uses `~/.spool-dev` so testing cannot migrate an installed app's database.
+Both keep SQLite in `db/spool.sqlite` and preserve the CLI wire protocols,
+adding a backward-paginated HTTP history endpoint.
 
 There is no separate frontend service in production and no Node.js runtime
 requirement. Installed and signed-in Codex/Claude CLIs are still required.
@@ -67,6 +69,38 @@ or offline behavior.
 
 `go run .` is not an entry point: the root package only embeds resources. Use
 `go run ./cmd/desktop` or `go run ./cmd/server`; both commands are unchanged.
+
+### Development And Production Data
+
+Development (`go run`, plain `go build`, or `mygo dev`) defaults to
+`~/.spool-dev/db/spool.sqlite`. Installed MyGo builds and the production
+executables from `make desktop` / `make server` default to
+`~/.spool/db/spool.sqlite`. The development desktop is named **Spool Dev**,
+with a separate single-instance lock and native preferences.
+
+For a manual production build, use:
+
+```sh
+go build -ldflags "-X github.com/egoist/mygo.production=1" -o build/spool-desktop ./cmd/desktop
+go build -ldflags "-X main.production=1" -o build/spool-server ./cmd/server
+```
+
+`-data-dir` takes precedence over `SPOOL_HOME`; either explicitly selects a
+data root in both environments. For example,
+`SPOOL_HOME=/path/to/test-data go run ./cmd/server` uses
+`/path/to/test-data/db/spool.sqlite`. Do not point a
+development build at production data unless you intend to upgrade that data.
+Both services still default to port 8787; choose another port for development
+if running them concurrently.
+
+On the first launch after upgrading, an existing `<data-dir>/spool.sqlite`
+is automatically relocated to `<data-dir>/db/spool.sqlite`. Stop all older
+desktop/headless processes first (after a crash, allow up to 30 seconds for
+the database lease to expire). Migration checkpoints any SQLite WAL before
+moving the database, preserving committed writes. An active lease, busy
+database, or databases at both locations stops startup rather than replacing
+data. Development never imports or migrates `~/.spool` automatically.
+Logs and update state remain directly in the selected data root.
 
 ## First Desktop Setup
 
@@ -327,15 +361,19 @@ go run ./cmd/server -add-project Example -directory /absolute/project/path -gran
 go run ./cmd/server -host 127.0.0.1 -port 8787
 ```
 
-All entry points support `-data-dir /path` (default `~/.spool`), or
-`SPOOL_HOME`. `SPOOL_CODEX_BIN` and `SPOOL_CLAUDE_BIN`
+All entry points support `-data-dir /path`, or `SPOOL_HOME`. Production defaults
+to `~/.spool`; development defaults to `~/.spool-dev`, including the `go run`
+bootstrap commands above. To administer production data, use the production
+server binary, or explicitly select that root with `SPOOL_HOME` / `-data-dir`.
+`SPOOL_CODEX_BIN` and `SPOOL_CLAUDE_BIN`
 are fallback executable overrides when no explicit agent path is saved.
-The SQLite file is `spool.sqlite` inside that directory. The application only
+The SQLite file is `db/spool.sqlite` inside that directory. The application only
 uses the requested directory; it does not automatically discover or import data
 from a differently named directory. The previous `~/.tern` directory is left
 untouched; it is not read by Spool. An existing SQLite store can be relocated
 while all service/desktop processes are stopped, preserving the database and
-renaming its file to `spool.sqlite` (and any matching `-wal`/`-shm` sidecars).
+renaming its file to `db/spool.sqlite` (and any matching `-wal`/`-shm` sidecars
+in the same `db/` directory).
 Only one desktop/headless service may own a database at a time. A SQLite lease
 prevents accidentally running two managers and marking live tasks interrupted;
 after a forced crash, wait up to 30 seconds for the lease to expire.
@@ -632,7 +670,8 @@ TLS certificate provisioning and reverse-proxy setup are not automated here.
 
 ## SQLite Storage
 
-The data directory is private (0700); `spool.sqlite` is created private (0600).
+The data root and `db/` directory are private (0700); `db/spool.sqlite` is
+created private (0600).
 SQLite uses foreign keys, WAL, a busy timeout, transactions, and a versioned
 schema. Its `-wal`/`-shm` sidecars are normal SQLite files, not additional JSON
 stores. Stop the service before making a plain filesystem backup, or use

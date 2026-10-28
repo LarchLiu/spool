@@ -7,10 +7,10 @@ branding:
 	go run ./tools/branding.go
 
 desktop: web
-	go build -o build/spool-desktop ./cmd/desktop
+	go build -ldflags "-X github.com/egoist/mygo.production=1" -o build/spool-desktop ./cmd/desktop
 
 server: web
-	go build -o build/spool-server ./cmd/server
+	go build -ldflags "-X main.production=1" -o build/spool-server ./cmd/server
 
 test:
 	node --test tools/*.test.mjs

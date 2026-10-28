@@ -15,6 +15,9 @@ import (
 	"spool/internal/workspace"
 )
 
+// Set by production builds with -ldflags "-X main.production=1".
+var production string
+
 func main() {
 	if err := run(); err != nil {
 		log.Print(err)
@@ -22,7 +25,7 @@ func main() {
 	}
 }
 func run() error {
-	root := flag.String("data-dir", workspace.DefaultDataDir(), "SQLite data directory")
+	root := flag.String("data-dir", workspace.DefaultDataDir(production != "1"), "Data directory (database in db/spool.sqlite)")
 	user := flag.String("add-user", "", "create a local user (password from SPOOL_NEW_PASSWORD)")
 	nickname := flag.String("nickname", "", "display name for the new user")
 	projectName := flag.String("add-project", "", "create a project and grant it to --grant username(s)")
@@ -166,7 +169,7 @@ func run() error {
 		return err
 	}
 	log.Printf("Spool Web: %s", service.WebURL())
-	log.Printf("SQLite: %s/spool.sqlite", service.Store.Root())
+	log.Printf("SQLite: %s", service.Store.DatabasePath())
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	<-ctx.Done()
