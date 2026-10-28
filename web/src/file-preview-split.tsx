@@ -12,12 +12,10 @@ import {
 export function FilePreviewSplit({
   tree,
   preview,
-  hint,
   t,
 }: {
   tree: ReactNode;
   preview: ReactNode;
-  hint: ReactNode;
   t: Translator;
 }) {
   const container = useRef<HTMLDivElement>(null);
@@ -139,9 +137,7 @@ export function FilePreviewSplit({
             {preview}
           </div>
         </>
-      ) : (
-        hint
-      )}
+      ) : null}
     </div>
   );
 }

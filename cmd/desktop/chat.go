@@ -12,6 +12,19 @@ import (
 
 const desktopSettingsPath = "/__desktop/settings"
 
+func (p *panel) startOnLaunch() {
+	if !p.settings.AutoStart {
+		return
+	}
+	if err := p.service.Start(); err != nil {
+		p.message = err.Error()
+		log.Printf("event=service_autostart_failed error=%q", err)
+		return
+	}
+	p.status = p.service.Status()
+	p.tab = "Chat"
+}
+
 func (p *panel) openChat() {
 	if p.quitting {
 		return
@@ -128,6 +141,9 @@ func (p *panel) selectTab(tab string) {
 	p.tab = tab
 	p.message = ""
 	if p.window != nil {
+		if tab != "Chat" && p.settingsView != nil && !p.settingsFailed {
+			_ = settingsSection.EmitPage(p.settingsView.Page(), tab)
+		}
 		p.updateWindowTitle()
 		p.window.Invalidate()
 	}
@@ -151,9 +167,8 @@ func (p *panel) showControlCenter() {
 func (p *panel) chatError(err error) {
 	log.Printf("event=desktop_chat_failed error=%q", err)
 	p.window.Update(func() {
+		p.selectTab("Service")
 		p.message = p.tr("Could not open desktop chat.") + " " + p.tr(err.Error())
-		p.tab = "Service"
-		p.updateWindowTitle()
 		p.showControlCenter()
 	})
 }

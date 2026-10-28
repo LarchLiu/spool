@@ -336,13 +336,6 @@ function ProjectFiles({
             </section>
           ) : null
         }
-        hint={
-          <p className="file-panel-hint">
-            {t(
-              "Select a file or a link in the conversation to preview it here.",
-            )}
-          </p>
-        }
       />
     </>
   );

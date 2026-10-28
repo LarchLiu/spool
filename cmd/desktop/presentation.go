@@ -41,11 +41,15 @@ func (p *panel) updateWindowTitle() {
 	if p.window == nil {
 		return
 	}
+	p.window.SetTitle(p.windowTitle())
+}
+
+func (p *panel) windowTitle() string {
 	section := "Control Center"
 	if p.tab == "Chat" {
 		section = "Chat"
 	}
-	p.window.SetTitle(mygo.App.Name() + " · " + p.tr(section))
+	return mygo.App.Name() + " · " + p.tr(section)
 }
 
 func (p *panel) trayMenu() *mygo.Menu {

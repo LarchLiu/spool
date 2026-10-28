@@ -49,7 +49,7 @@ func (p *panel) showUpdates() {
 
 func (p *panel) updatesView(c *ui.Context) {
 	state := p.updates.State()
-	ui.Text(c, p.tr("Current version: {version}", "version", mygo.App.Version())).Bold()
+	ui.Text(c, p.tr("Current version: {version}", "version", desktopVersion())).Bold()
 	ui.Text(c, p.tr("Updates are signed and downloaded from GitHub Releases. Running chats always block installation and restart.")).Wrap().FontSize(12)
 	if p.updateDiagnostics != nil {
 		ui.Text(c, p.tr("Update log: {path}", "path", p.updateDiagnostics.Path)).Wrap().FontSize(11)
@@ -99,18 +99,7 @@ func (p *panel) updatesView(c *ui.Context) {
 		}
 		if state.Installed {
 			if ui.PrimaryButton(c, p.tr("Restart to update")).Disabled(p.updateRelease != nil).Clicked() {
-				release, err := p.updates.PrepareRestart()
-				if err == nil {
-					if p.updateDiagnostics != nil {
-						if e := p.updateDiagnostics.RequestRestart(state.Version); e != nil {
-							release()
-							p.updates.RestartFailed(e)
-							return
-						}
-					}
-					p.updateRelease = release
-					mygo.App.Relaunch()
-				}
+				_ = p.restartForUpdate()
 			}
 		}
 	})
@@ -128,4 +117,24 @@ func (p *panel) updatesView(c *ui.Context) {
 		ui.Text(c, p.tr("Release notes")).Bold()
 		ui.Text(c, state.Notes).Wrap().FontSize(13)
 	}
+}
+
+func (p *panel) restartForUpdate() error {
+	if p.updateRelease != nil {
+		return fmt.Errorf("update restart is already in progress")
+	}
+	release, err := p.updates.PrepareRestart()
+	if err != nil {
+		return err
+	}
+	if p.updateDiagnostics != nil {
+		if err := p.updateDiagnostics.RequestRestart(p.updates.State().Version); err != nil {
+			release()
+			p.updates.RestartFailed(err)
+			return err
+		}
+	}
+	p.updateRelease = release
+	mygo.App.Relaunch()
+	return nil
 }

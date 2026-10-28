@@ -4,9 +4,7 @@ type Props = Omit<ComponentPropsWithoutRef<"textarea">, "value"> & {
   value: string;
 };
 
-function resizeTextarea(textarea: HTMLTextAreaElement) {
-  textarea.style.height = "0px";
-  textarea.style.overflowY = "hidden";
+export function resizeTextarea(textarea: HTMLTextAreaElement) {
   const style = getComputedStyle(textarea);
   const padding =
     parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
@@ -15,7 +13,35 @@ function resizeTextarea(textarea: HTMLTextAreaElement) {
   const lineHeight = parseFloat(style.lineHeight);
   const minimum = Math.ceil(lineHeight + padding + border);
   const maximum = Math.ceil(6 * lineHeight + padding + border);
-  const content = textarea.scrollHeight + border;
+  // Collapsing the live input temporarily expands the history viewport and
+  // clamps its scroll position. Measure outside the layout instead.
+  const measure = textarea.cloneNode(false) as HTMLTextAreaElement;
+  measure.removeAttribute("id");
+  measure.removeAttribute("name");
+  measure.removeAttribute("autofocus");
+  measure.setAttribute("aria-hidden", "true");
+  measure.tabIndex = -1;
+  measure.value = textarea.value;
+  Object.assign(measure.style, {
+    position: "absolute",
+    visibility: "hidden",
+    pointerEvents: "none",
+    top: "0",
+    left: "0",
+    boxSizing: "border-box",
+    width: `${textarea.getBoundingClientRect().width}px`,
+    height: "0px",
+    minHeight: "0px",
+    maxHeight: "none",
+    overflow: "hidden",
+  });
+  textarea.after(measure);
+  let content: number;
+  try {
+    content = measure.scrollHeight + border;
+  } finally {
+    measure.remove();
+  }
   textarea.style.height = `${Math.max(minimum, Math.min(content, maximum))}px`;
   textarea.style.overflowY = content > maximum ? "auto" : "hidden";
 }

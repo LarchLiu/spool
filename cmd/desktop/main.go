@@ -30,6 +30,8 @@ type panel struct {
 	chatURL            string
 	chatFailed         bool
 	chatStarting       bool
+	settingsView       *mygo.WebView
+	settingsFailed     bool
 	quitting           bool
 	tray               *mygo.Tray
 	logo               *ui.Bitmap
@@ -151,13 +153,16 @@ func runDesktop() (runErr error) {
 	}
 	p.load()
 	p.initUpdates()
-	mygo.Theme.SetSource(mygo.ThemeSource(p.preferences.Theme))
-	if p.settings.AutoStart {
-		if err = service.Start(); err != nil {
-			p.message = err.Error()
-			log.Printf("event=service_autostart_failed error=%q", err)
-		}
+	assets, err := settingsAssets()
+	if err != nil {
+		return err
 	}
+	if err := mygo.Protocol.Handle("mygo", assets); err != nil {
+		return err
+	}
+	mygo.BindAs("DesktopSettings", &desktopSettings{panel: p})
+	mygo.Theme.SetSource(mygo.ThemeSource(p.preferences.Theme))
+	p.startOnLaunch()
 	done := make(chan struct{})
 	smokeResult := make(chan error, 1)
 	var shutdownErr error
@@ -189,7 +194,21 @@ func runDesktop() (runErr error) {
 	mygo.App.WhenReady(func() {
 		p.applyPresentation()
 		mygo.App.OnLocaleChanged(func(string) { p.updateNativeLabels() })
-		p.window = mygo.NewWindow(mygo.WindowOptions{Title: mygo.App.Name() + " · " + p.tr("Control Center"), Width: 1280, Height: 860, MinWidth: 840, MinHeight: 580, StateKey: "main", Content: ui.View(p.view)})
+		p.window = mygo.NewWindow(mygo.WindowOptions{Title: p.windowTitle(), Width: 1280, Height: 860, MinWidth: 840, MinHeight: 580, StateKey: "main", Content: ui.View(p.view)})
+		if err := p.loadSettingsView(); err != nil {
+			p.settingsFailed = true
+			p.message = err.Error()
+			log.Printf("event=desktop_settings_failed error=%q", err)
+		}
+		if p.tab == "Chat" {
+			address, err := service.LocalWebURL()
+			if err == nil {
+				err = p.loadChatView(address)
+			}
+			if err != nil {
+				p.chatError(err)
+			}
+		}
 		p.refreshGitHubCLI()
 		p.window.OnClose(func(e *mygo.CloseEvent) {
 			if !p.quitting {
@@ -303,6 +322,10 @@ func (p *panel) action(fn func() error) {
 func (p *panel) view(c *ui.Context) {
 	if p.tab == "Chat" {
 		p.chatContent(c)
+		return
+	}
+	if p.settingsView != nil && !p.settingsFailed {
+		ui.WebView(c, p.settingsView).Fill()
 		return
 	}
 	ui.Row(c).Fill().Children(func() {

@@ -41,3 +41,29 @@ test("all shared locale catalogs have matching keys and placeholders", () => {
     }
   }
 });
+
+test("member management uses User in English and 成员 throughout the Chinese interface", () => {
+  const read = (locale) =>
+    JSON.parse(
+      readFileSync(new URL(`../../locales/${locale}.json`, import.meta.url)),
+    );
+  const en = read("en"),
+    zh = read("zh-CN");
+  assert.equal(en.People, "User");
+  assert.equal(zh.People, "成员");
+  for (const [key, english, chinese] of [
+    ["New person", "New user", "新增成员"],
+    ["Edit person", "Edit user", "编辑成员"],
+    ["Save person", "Save user", "保存成员"],
+    ["{count} people", "{count} users", "{count} 位成员"],
+    [
+      "People allowed to use this project",
+      "Users allowed to use this project",
+      "允许使用此项目的成员",
+    ],
+  ]) {
+    assert.equal(en[key], english);
+    assert.equal(zh[key], chinese);
+  }
+  assert.doesNotMatch(Object.values(zh).join("\n"), /人员/);
+});

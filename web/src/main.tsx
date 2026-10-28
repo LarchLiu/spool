@@ -580,6 +580,7 @@ function App() {
         history.current.scrollTop = history.current.scrollHeight;
     });
     resize.observe(element);
+    if (history.current) resize.observe(history.current);
     return () => resize.disconnect();
   }, [chat?.id]);
   useLayoutEffect(() => {

@@ -7,8 +7,8 @@ bundle identifier is `com.cloudgeek.spool`.
 
 ## Architecture
 
-- `cmd/desktop`: one MyGo native window switching between the native control center
-  and full-window system-WebView chat, reusing the Web client and Go service, plus a tray.
+- `cmd/desktop`: one MyGo native window switching between WebView settings and
+  full-window WebView chat, reusing the Web client and Go service, plus a native tray.
 - `cmd/server`: optional headless HTTP server using the exact same services.
 - `internal/agent/`: persistent CLI processes, Codex/Claude protocols, model and
   permission discovery, and process cleanup on supported platforms.
@@ -145,7 +145,8 @@ an application crash report; consult the OS crash reports as well.
 
 ## First Desktop Setup
 
-1. Open **People**, enter a username, nickname, and password, then save.
+1. Use the bottom-left **Settings** action to open **User**, enter a username,
+   nickname, and password, then save.
    Passwords must be 12–72 bytes and are stored only as cost-12 bcrypt hashes.
    Existing users can be renamed, have their password reset, or be disabled.
    Editing a user revokes their existing Web login sessions; disabled users and
@@ -161,7 +162,7 @@ an application crash report; consult the OS crash reports as well.
 4. Open **Service** and choose the listen IP, external Web port, public origin,
    and idle release interval. Settings are persisted in SQLite. **Stop → Start**
    applies saved listener/origin/idle settings; stopping interrupts active tasks.
-5. Select **Chat** in the main window's sidebar (or **Open Chat** in the tray)
+5. Use the back icon in the settings footer (or **Open Chat** in the tray)
    and sign in, or choose
    **Open in Browser** to use the Web/PWA client. With an authorized project and no chats yet, type
    directly in the composer, choose an agent/model, and send: the first message
@@ -174,18 +175,21 @@ an application crash report; consult the OS crash reports as well.
 ### Desktop Chat
 
 **Chat** fills the main desktop window, not a popup or a second window.
+Normal launch starts the background service and opens Chat by default. The
+auto-start preference remains respected: if disabled, or if starting the service
+fails, settings stays available instead of forcing a service start or hiding the error.
 It embeds the same React chat UI, HTTP/SSE APIs, native CLI sessions and database
 as Web/PWA without an extra native navigation sidebar. Selecting **Chat** in the
 control center starts the existing service if stopped; it never opens a second
 database or agent manager. The **Settings** icon immediately left of **Sign out**
-in the chat sidebar switches back to the native control center in the same window.
+in the chat sidebar switches back to WebView settings in the same window.
 Before sign-in, the same action is at the bottom left. Desktop chat follows the
 control center's theme and language; it has no independent appearance dialog or
 extra settings row. Browser/PWA preferences remain independent. Switching to settings
 only hides the embedded WebView: returning to Chat keeps the same page and unsent
 draft. Closing the main window hides it without stopping tasks or destroying the chat page. Dock
 activation and a second launch restore that same window and selected tab.
-The tray's **Settings** action selects the native control center in the same
+The tray's **Settings** action selects WebView settings in the same
 window. Explicit Quit shuts down the window and the service. Main-window bounds
 are remembered by MyGo.
 
@@ -213,6 +217,47 @@ Desktop chat uses WKWebView on macOS, WebView2 on Windows, and WebKitGTK on Linu
 If the runtime is missing, the native control center stays usable and shows
 installation guidance; **Open in Browser** remains available. A failed page or
 renderer reports an error in the control center; **Open Chat** retries loading.
+
+### Desktop Settings
+
+The full control center uses a separate embedded WebView with a compact sidebar
+and grouped setting rows: **Service**, **User**, **Projects**, **Agents**,
+**Online**, **Appearance**, and **Updates**. Server start/stop, listener and runtime
+configuration, account management, project membership and scheduled GitHub issues,
+CLI discovery/configuration, online presence, diagnostics and signed updates all
+remain available. Form drafts survive section switches and background status polls.
+**User**, **Projects**, and **Agents** open with overview lists. Each row shows
+its name, identifying details and status; select a row to open its existing editor
+and use **Back to list** to return. **New user** and **New project** open a blank
+editor. Saving keeps the editor open and updates the existing item rather than
+creating duplicates.
+The global **GitHub CLI** path and installation/sign-in checks live below the
+project overview list, not in individual project editors or a separate sidebar tab.
+The executable path is collapsed by default; **Path settings** at the right of the
+status row reveals the native file picker and save action.
+User and Online show the same user avatars as chat; Agents show each CLI's own
+icon.
+Folder/executable selection, revealing local files, window/tray management, and
+updater restart continue to use native APIs.
+
+Settings assets load from a private application scheme, not the HTTP service, so
+the settings page works while the server is stopped. The small `DesktopSettings`
+bridge checks both the calling embedded page's identity and its exact private
+document URL on every call. Chat and ordinary browser pages cannot administer the
+workspace, including local chat pages in development builds. No HTTP management
+API is added. Settings disallows remote network content, scripts and frames via
+CSP, and blocks navigation away from its private document. Theme and language use
+the same desktop preference record and update both embedded views live. A native
+control-center fallback remains available if the system WebView cannot load.
+Chat and settings share the primary action palette in `web/src/style.css`
+(`--color-primary`, `--color-primary-hover`, `--color-on-primary` and
+`--color-primary-focus`), based on the chat Send button in light and dark themes.
+Primary button backgrounds, switches, checkboxes and progress indicators use those
+same tokens; ordinary button text stays neutral. Settings' main and sidebar
+scrollbars share the chat scrollbar rule.
+Icon-only controls use circular hover, pressed and focus outlines. The settings
+sidebar footer shares chat's height, with a back-to-chat icon on the left and
+service status on the right; the version remains in **Updates**.
 
 ### Scheduled GitHub Issues
 
@@ -795,12 +840,12 @@ device's `prefers-color-scheme` and ordered browser languages. MyGo uses its nat
 appearance and locale APIs, including title bars, native controls and tray labels.
 
 In Web, open the appearance icon beside your name in the sidebar footer. In the
-desktop chat, the icon beside **Sign out** opens native settings; open
-**Appearance** there to change theme or language for both native settings and
+desktop chat, the icon beside **Sign out** opens WebView settings; open
+**Appearance** there to change theme or language for both settings and
 embedded chat, including its sign-in screen. Native locale changes and the
 effective light/dark appearance (including **Follow system**) update chat live
 without losing drafts. Preferences are stored in SQLite: one local desktop
-record shared by the native UI and embedded chat, and an independent record for
+record shared by settings, native chrome and embedded chat, and an independent record for
 each browser/PWA user. Web user
 preferences follow that account on the next login or reload, without changing
 other users or the desktop. Logged-out choices are temporary; the offline fallback
@@ -1059,9 +1104,10 @@ Windows and Linux, each on amd64 and arm64. Branding and frontend resources are
 built **once** in the verification job and reused by all six targets. This also
 ensures the ignored `frontend/` embed directory exists before MyGo compiles Go
 code. CI clears
-MyGo's `buildCommand` and skips its build hook: Spool uses embedded HTTP/PWA
-assets, not MyGo WebView bindings, so packaging must not run the desktop app
-to generate an unused TypeScript client or open the user's database. The tag's
+MyGo's `buildCommand` and skips its build hook: Spool builds its HTTP/PWA and
+private settings entries together. The small settings bridge has an explicit typed
+client, so packaging must not run the desktop app to generate a second TypeScript
+client or open the user's database. The tag's
 commit must be reachable from `main`; all subsequent jobs check out that exact
 verified commit SHA, not a fresh resolution of a potentially moved tag.
 
@@ -1076,7 +1122,9 @@ and actually runs its packaged desktop on the matching OS and CPU architecture.
 the packaged version, native-window event-loop dispatch, SQLite initialization,
 Web `/healthz`, embedded index/PWA manifest, actual system-WebView React rendering,
 the full-window viewport, login screen and unauthenticated API guards with an HTTPS
-public URL configured, settings navigation, native theme/language changes before
+public URL configured, all settings sections, server start/stop while settings
+stays usable, user/project persistence through the native bridge, chat denial of
+management calls, settings form draft preservation, native theme/language changes before
 sign-in and while settings hide the chat, main-window hide/show without losing a
 draft or creating another window, and clean exit. Linux runs under Xvfb
 with software GL; Windows and macOS use their runner's desktop. A failed probe
@@ -1162,7 +1210,7 @@ signature. This does not implement a trusted timestamp/freshness service: an
 attacker controlling distribution can still withhold updates. Initial installation
 also requires trusting the source of the installer/script and its embedded key.
 
-The native control center has an **Updates** page and the tray has **Check for
+The WebView control center has an **Updates** page and the tray has **Check for
 updates**. Official CI builds check shortly after launch and every 12 hours by
 default. Automatic installation is **opt-in**, stored locally in SQLite, and
 never forces a restart. Development builds and read-only installations explain

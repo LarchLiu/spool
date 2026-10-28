@@ -86,6 +86,44 @@ test("sidebar widths clamp invalid persisted values and retain independent colla
   assert.equal(panelWidth("right", 450), 450);
 });
 
+test("sidebar separators keep fixed geometry while pressed and all resize handles use neutral feedback", async () => {
+  const css = await readFile(
+    new URL("../src/style.css", import.meta.url),
+    "utf8",
+  );
+  assert.match(css, /\.panel-resize-handle \{[^}]*width: 8px/);
+  assert.doesNotMatch(css, /\.panel-resize-handle\.resizing \{/);
+  for (const selector of [
+    "panel-resize-handle",
+    "file-preview-resize-handle",
+  ]) {
+    assert.match(
+      css,
+      new RegExp(
+        `\\.${selector}\\.resizing::after \\{[^}]*background: var\\(--muted\\)`,
+      ),
+    );
+    assert.doesNotMatch(
+      css,
+      new RegExp(
+        `\\.${selector}[^}]*\\{[^}]*background: var\\(--(?:focus-ring|color-primary)\\)`,
+      ),
+    );
+  }
+  const handle = await readFile(
+    new URL("../src/panel-resize-handle.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    handle,
+    /event\.clientX !== start\.current\.x \|\| start\.current\.moved/,
+  );
+  assert.match(
+    handle,
+    /onLostPointerCapture=\{\(event\) =>\s*event\.currentTarget\.classList\.remove\("resizing"\)/,
+  );
+});
+
 test("header sidebar open buttons are hidden while their sidebar is open", async () => {
   const main = await readFile(
     new URL("../src/main.tsx", import.meta.url),
@@ -244,14 +282,14 @@ test("file loading retains the displayed file and its own line target without a 
 test("file preview exposes a keyboard-focusable horizontal separator only when open", () => {
   const props = {
     tree: createElement("div", null, "Tree"),
-    hint: "Select a file",
     t: (key) => key,
   };
   const closed = renderToStaticMarkup(
     createElement(FilePreviewSplit, { ...props, preview: null }),
   );
   assert.doesNotMatch(closed, /role="separator"/);
-  assert.match(closed, /Select a file/);
+  assert.doesNotMatch(closed, /file-panel-hint|Select a file/);
+  assert.match(closed, /class="file-tree-pane"/);
   const open = renderToStaticMarkup(
     createElement(FilePreviewSplit, {
       ...props,

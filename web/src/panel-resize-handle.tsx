@@ -18,7 +18,7 @@ export function PanelResizeHandle({
   onResize: (width: number) => void;
   t: Translator;
 }) {
-  const start = useRef({ x: 0, width });
+  const start = useRef({ x: 0, width, moved: false });
   const label = t(
     side === "left" ? "Resize left sidebar" : "Resize right sidebar",
   );
@@ -41,12 +41,17 @@ export function PanelResizeHandle({
           width:
             event.currentTarget.parentElement?.getBoundingClientRect().width ||
             width,
+          moved: false,
         };
         event.currentTarget.setPointerCapture(event.pointerId);
         event.currentTarget.classList.add("resizing");
       }}
       onPointerMove={(event) => {
-        if (event.currentTarget.hasPointerCapture(event.pointerId))
+        if (
+          event.currentTarget.hasPointerCapture(event.pointerId) &&
+          (event.clientX !== start.current.x || start.current.moved)
+        ) {
+          start.current.moved = true;
           onResize(
             panelWidth(
               side,
@@ -54,6 +59,7 @@ export function PanelResizeHandle({
                 (event.clientX - start.current.x) * (side === "left" ? 1 : -1),
             ),
           );
+        }
       }}
       onPointerUp={(event) => {
         if (event.currentTarget.hasPointerCapture(event.pointerId))
@@ -61,6 +67,9 @@ export function PanelResizeHandle({
         event.currentTarget.classList.remove("resizing");
       }}
       onPointerCancel={(event) =>
+        event.currentTarget.classList.remove("resizing")
+      }
+      onLostPointerCapture={(event) =>
         event.currentTarget.classList.remove("resizing")
       }
       onDoubleClick={() => onResize(defaultPanelLayout[`${side}Width`])}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -81,7 +82,7 @@ func probeWeb(ctx context.Context, address string) error {
 }
 
 func (p *panel) smoke(report string, result chan<- error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
 	defer cancel()
 	// Confirm the native event loop still dispatches after window creation.
 	dispatched := make(chan struct{})
@@ -99,14 +100,50 @@ func (p *panel) smoke(report string, result chan<- error) {
 		err = ctx.Err()
 	}
 	if err == nil {
+		err = p.probeStartupChat(ctx)
+	}
+	if err == nil {
+		err = p.probeSettings(ctx, report)
+	}
+	if err == nil {
 		err = p.probeEmbeddedChat(ctx)
 	}
 	if err == nil {
-		data, _ := json.Marshal(map[string]any{"version": mygo.App.Version(), "target": runtime.GOOS + "-" + runtime.GOARCH, "native": true, "web": true, "chat_webview": true, "single_window": true, "full_window_chat": true, "shared_presentation": true})
+		data, _ := json.Marshal(map[string]any{"version": mygo.App.Version(), "target": runtime.GOOS + "-" + runtime.GOARCH, "native": true, "web": true, "chat_webview": true, "single_window": true, "full_window_chat": true, "shared_presentation": true, "settings_webview": true, "management_bridge": true})
 		err = os.WriteFile(report, data, 0o600)
 	}
 	result <- err
 	mygo.App.Quit()
+}
+
+func (p *panel) probeStartupChat(ctx context.Context) error {
+	ready := make(chan *mygo.WebView, 1)
+	p.window.Update(func() {
+		if p.tab != "Chat" || !p.service.Status().Running || len(mygo.Windows()) != 1 {
+			ready <- nil
+			return
+		}
+		ready <- p.chatView
+	})
+	var view *mygo.WebView
+	select {
+	case view = <-ready:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if view == nil {
+		return fmt.Errorf("desktop launch must show embedded chat with the background service running")
+	}
+	if err := waitChatScript(ctx, view.Page(), `return window.spoolDesktop === true && !!document.querySelector('input[name="password"]') && !!document.querySelector('a.desktop-settings');`); err != nil {
+		return err
+	}
+	if err := p.probeChatViewport(ctx, view.Page()); err != nil {
+		return err
+	}
+	if _, err := view.Page().EvalContext(ctx, `document.querySelector('a.desktop-settings').click();`); err != nil {
+		return err
+	}
+	return p.waitChatSettings(ctx, view)
 }
 
 func (p *panel) probeEmbeddedChat(ctx context.Context) error {
@@ -155,19 +192,20 @@ func (p *panel) probeEmbeddedChat(ctx context.Context) error {
 	if err := p.waitChatSettings(ctx, view); err != nil {
 		return err
 	}
-	if err := p.smokePresentation(ctx, workspace.UIPreferences{Theme: "light", Language: "zh-CN"}); err != nil {
+	if err := smokeSettingsCommand(ctx, p.settingsView.Page(), settingsCommand{Kind: "save-appearance", Preferences: workspace.UIPreferences{Theme: "light", Language: "zh-CN"}}); err != nil {
 		return err
 	}
 	if err := p.probeChatPresentation(ctx, page); err != nil {
 		return err
 	}
+	if _, err := p.settingsView.Page().EvalContext(ctx, `document.querySelector('.settings-sidebar-bottom button.icon').click();`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, p.settingsView.Page(), `return (await mygo.call('DesktopSettings.Snapshot')).section === 'Chat';`); err != nil {
+		return fmt.Errorf("settings footer did not return to chat: %w", err)
+	}
 	reopened := make(chan error, 1)
 	p.window.Update(func() {
-		p.selectTab("Chat")
-		if err := p.loadChatView(address); err != nil {
-			reopened <- err
-			return
-		}
 		if p.chatView != view || view.Window() != p.window || len(mygo.Windows()) != 1 {
 			reopened <- fmt.Errorf("switching back to chat created another page or window")
 			return
@@ -205,12 +243,443 @@ func (p *panel) probeEmbeddedChat(ctx context.Context) error {
 	value, err := page.EvalContext(ctx, `
 		const response = await fetch('/api/me');
 		const denied = await fetch('/api/preferences', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
-		return response.status === 401 && denied.status === 401;
+		let nativeDenied = !window.mygo?.call;
+		if (!nativeDenied) {
+			try { await window.mygo.call('DesktopSettings.Execute', {kind: 'stop-service'}); }
+			catch { nativeDenied = true; }
+		}
+		return response.status === 401 && denied.status === 401 && nativeDenied;
 	`)
 	if err != nil || value != true {
 		return fmt.Errorf("desktop authentication probe failed: %v (%v)", value, err)
 	}
 	return probeWeb(ctx, p.service.Status().Address)
+}
+
+func smokeSettingsCommand(ctx context.Context, page *mygo.Page, command settingsCommand) error {
+	body, err := json.Marshal(command)
+	if err != nil {
+		return err
+	}
+	_, err = page.EvalContext(ctx, fmt.Sprintf(`return await window.mygo.call('DesktopSettings.Execute', %s);`, body))
+	return err
+}
+
+func (p *panel) probeSettings(ctx context.Context, report string) error {
+	ready := make(chan *mygo.WebView, 1)
+	p.window.Update(func() { ready <- p.settingsView })
+	var view *mygo.WebView
+	select {
+	case view = <-ready:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if view == nil {
+		return fmt.Errorf("settings WebView was not created")
+	}
+	page := view.Page()
+	if err := waitChatScript(ctx, page, `return !!document.querySelector('[data-page="Service"] input') && !document.querySelector('.settings-content')?.disabled && !document.querySelector('.settings-brand, .settings-breadcrumb, .settings-search, .settings-version') && !!document.querySelector('.settings-sidebar-bottom button.icon') && !!document.querySelector('.settings-sidebar-status .settings-status-dot')`); err != nil {
+		return fmt.Errorf("settings render: %w", err)
+	}
+	// This exercises the real native bridge, not an HTTP management endpoint.
+	for _, kind := range []string{"stop-service", "start-service"} {
+		if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: kind}); err != nil {
+			return err
+		}
+		wantRunning := kind == "start-service"
+		if p.service.Status().Running != wantRunning {
+			return fmt.Errorf("settings %s did not change service state", kind)
+		}
+		if err := waitChatScript(ctx, page, `return !!document.querySelector('[data-section="Service"]') && (await mygo.call('DesktopSettings.Snapshot')).settings.port > 0`); err != nil {
+			return err
+		}
+	}
+	// Native navigation events and all seven pages must work in one window.
+	for _, section := range []string{"People", "Projects", "Agents", "Online", "Appearance", "Updates", "Service"} {
+		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-section="%s"]').click();`, section)); err != nil {
+			return err
+		}
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`return document.querySelector('[data-section="%s"]')?.getAttribute('aria-current') === 'page' && !document.querySelector('[data-page="%s"]').hidden && !document.querySelector('.settings-content').disabled`, section, section)); err != nil {
+			return err
+		}
+		if section == "People" || section == "Projects" || section == "Agents" {
+			if err := waitChatScript(ctx, page, fmt.Sprintf(`return !!document.querySelector('[data-page="%s"] .settings-list') && !document.querySelector('[data-page="%s"] form');`, section, section)); err != nil {
+				return fmt.Errorf("settings list-first %s: %w", section, err)
+			}
+		}
+	}
+	// React controlled inputs must keep unsaved drafts across navigation/polls.
+	if _, err := page.EvalContext(ctx, `
+		window.smokeSetInput = (input, value) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', {bubbles: true})); };
+		smokeSetInput(document.querySelector('[data-page="Service"] input'), 'localhost');
+		document.querySelector('[data-section="People"]').click();
+	`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, `return !document.querySelector('[data-page="People"]').hidden && !document.querySelector('.settings-content').disabled`); err != nil {
+		return err
+	}
+	if _, err := page.EvalContext(ctx, `document.querySelector('[data-page="People"] [data-new-entity]').click();`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, `return !!document.querySelector('[data-page="People"] form input');`); err != nil {
+		return err
+	}
+	if _, err := page.EvalContext(ctx, `
+		const inputs = document.querySelectorAll('[data-page="People"] input');
+		smokeSetInput(inputs[0], 'smoke-person'); smokeSetInput(inputs[1], 'Smoke Person'); smokeSetInput(inputs[2], 'smoke-password-123');
+	`); err != nil {
+		return err
+	}
+	// Submit in a later render, as an actual click would.
+	if _, err := page.EvalContext(ctx, `document.querySelector('[data-page="People"] form').requestSubmit();`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).users.some(u => u.username === 'smoke-person') && !document.querySelector('.settings-content').disabled && document.querySelector('[data-page="People"] input[type="password"]').value === ''`); err != nil {
+		return fmt.Errorf("settings person save: %w", err)
+	}
+	users, err := p.service.Store.Users()
+	if err != nil || len(users) != 1 {
+		return fmt.Errorf("settings person not persisted: %v", err)
+	}
+	directory := filepath.Join(filepath.Dir(p.service.Store.DatabasePath()), "smoke-project")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+	if _, err := page.EvalContext(ctx, `document.querySelector('[data-section="Projects"]').click();`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, `return !document.querySelector('[data-page="Projects"]').hidden && !document.querySelector('.settings-content').disabled`); err != nil {
+		return err
+	}
+	if _, err := page.EvalContext(ctx, `document.querySelector('[data-page="Projects"] [data-new-entity]').click();`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, `return !!document.querySelector('[data-page="Projects"] form input');`); err != nil {
+		return err
+	}
+	if _, err := page.EvalContext(ctx, fmt.Sprintf(`
+		const inputs = document.querySelectorAll('[data-page="Projects"] input');
+		smokeSetInput(inputs[0], 'Smoke Project'); smokeSetInput(inputs[1], %q);
+		document.querySelectorAll('[data-page="Projects"] button[role="switch"]')[1].click();
+	`, directory)); err != nil {
+		return err
+	}
+	if _, err := page.EvalContext(ctx, `document.querySelector('[data-page="Projects"] form').requestSubmit();`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).projects.length === 1 && !document.querySelector('.settings-content').disabled`); err != nil {
+		return fmt.Errorf("settings project form: %w", err)
+	}
+	if projects, err := p.service.Store.Projects(); err != nil || len(projects) != 1 || projects[0].Path != directory {
+		return fmt.Errorf("settings project not persisted: %v", err)
+	}
+	if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: "save-updates", UpdatePreferences: workspace.UpdatePreferences{AutomaticChecks: false, AutomaticInstalls: false}}); err != nil {
+		return err
+	}
+	if err := p.probeManagementLists(ctx, view, report); err != nil {
+		return err
+	}
+	if err := p.probeOnlineAvatar(ctx, view, report); err != nil {
+		return err
+	}
+	if _, err := page.EvalContext(ctx, `document.querySelector('[data-section="Service"]').click();`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, `return !document.querySelector('[data-page="Service"]').hidden && !document.querySelector('.settings-content').disabled && document.querySelector('[data-page="Service"] input').value === 'localhost'`); err != nil {
+		return fmt.Errorf("settings draft lost: %w", err)
+	}
+	// Save through the real service form, then verify SQLite.
+	if _, err := page.EvalContext(ctx, `document.querySelector('[data-page="Service"] form').requestSubmit();`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).settings.host === 'localhost' && !document.querySelector('.settings-content').disabled`); err != nil {
+		return err
+	}
+	for _, theme := range []string{"dark", "light"} {
+		if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: "save-appearance", Preferences: workspace.UIPreferences{Theme: theme, Language: "zh-CN"}}); err != nil {
+			return err
+		}
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`return document.documentElement.dataset.theme === %q && document.documentElement.lang === 'zh-CN' && document.querySelector('.settings-page-header h1').textContent === '服务' && document.documentElement.scrollWidth <= innerWidth`, theme)); err != nil {
+			return err
+		}
+		if _, err := page.EvalContext(ctx, `
+			await new Promise(resolve => setTimeout(resolve, 200));
+			const primary = document.createElement('button'); primary.className = 'send'; document.body.appendChild(primary);
+			const sendColor = getComputedStyle(primary).backgroundColor;
+			const button = document.querySelector('.settings-primary');
+			const toggle = document.querySelector('[data-page="Service"] [role="switch"][aria-checked="true"]');
+			const same = getComputedStyle(button).backgroundColor === sendColor && getComputedStyle(toggle).backgroundColor === sendColor;
+			primary.remove();
+			if (!same) throw new Error('chat and settings primary colors differ');
+			const ordinary = document.querySelector('[data-page="Service"] .settings-card-actions button:not(.settings-primary)');
+			if (getComputedStyle(ordinary).color !== getComputedStyle(document.querySelector('.desktop-settings-shell')).color) throw new Error('ordinary button text must stay neutral');
+			const scroll = getComputedStyle(document.querySelector('.settings-main'));
+			if (CSS.supports('scrollbar-width', 'thin') && scroll.scrollbarWidth !== 'thin') throw new Error('settings scrollbar differs from chat');
+			const footer = document.querySelector('.settings-sidebar-bottom');
+			const reference = document.createElement('div'); reference.className = 'side-foot'; reference.style.cssText = 'position:fixed;left:-1000px;bottom:0;width:244px'; document.body.appendChild(reference);
+			const bounds = footer.getBoundingClientRect();
+			const sidebarBounds = document.querySelector('.settings-sidebar').getBoundingClientRect();
+			const sameHeight = bounds.height === reference.getBoundingClientRect().height;
+			reference.remove();
+			const back = footer.querySelector('button'); const backBounds = back.getBoundingClientRect();
+			const state = footer.querySelector('[role="status"]').getBoundingClientRect();
+			if (!sameHeight || Math.abs(bounds.bottom - innerHeight) > 1 || Math.abs(bounds.left - sidebarBounds.left) > 1 || Math.abs(bounds.right - sidebarBounds.right) > 1 || backBounds.right >= state.left || state.right < bounds.right - 12) throw new Error('sidebar footer alignment differs from chat');
+			if (back.textContent.trim() || footer.querySelectorAll('button').length !== 1 || document.querySelector('.settings-version')) throw new Error('footer must show only a back icon and service status');
+			if (backBounds.width !== backBounds.height || getComputedStyle(back).borderRadius !== '50%') throw new Error('settings icon button must be circular');
+		`); err != nil {
+			return err
+		}
+		image, err := view.CapturePage()
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(report+"-settings-"+theme+".png", image, 0o600); err != nil {
+			return err
+		}
+	}
+	resized := make(chan struct{})
+	p.window.Update(func() { p.window.SetSize(840, 580); close(resized) })
+	select {
+	case <-resized:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := waitChatScript(ctx, page, `const main = document.querySelector('.settings-main'); const footer = document.querySelector('.settings-sidebar-bottom').getBoundingClientRect(); const sidebar = document.querySelector('.settings-sidebar').getBoundingClientRect(); return innerWidth <= 840 && main.scrollWidth <= main.clientWidth && document.documentElement.scrollWidth <= innerWidth && Math.abs(footer.bottom - innerHeight) <= 1 && Math.abs(footer.left - sidebar.left) <= 1 && Math.abs(footer.right - sidebar.right) <= 1;`); err != nil {
+		return fmt.Errorf("compact settings layout: %w", err)
+	}
+	if image, err := view.CapturePage(); err != nil {
+		return err
+	} else if err := os.WriteFile(report+"-settings-compact.png", image, 0o600); err != nil {
+		return err
+	}
+	for _, section := range []string{"Projects", "Appearance", "Service"} {
+		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-section="%s"]').click();`, section)); err != nil {
+			return err
+		}
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`const main = document.querySelector('.settings-main'); return !document.querySelector('[data-page="%s"]').hidden && !document.querySelector('.settings-content').disabled && main.scrollWidth <= main.clientWidth;`, section)); err != nil {
+			return err
+		}
+	}
+	restored := make(chan struct{})
+	p.window.Update(func() { p.window.SetSize(1280, 860); close(restored) })
+	select {
+	case <-restored:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	// Restore the original listen address before chat's origin is established.
+	settings, err := p.service.Store.Settings()
+	if err != nil {
+		return err
+	}
+	settings.Host = "127.0.0.1"
+	if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: "save-settings", Settings: settings}); err != nil {
+		return err
+	}
+	if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: "stop-service"}); err != nil {
+		return err
+	}
+	return smokeSettingsCommand(ctx, page, settingsCommand{Kind: "start-service"})
+}
+
+func (p *panel) probeManagementLists(ctx context.Context, view *mygo.WebView, report string) error {
+	page := view.Page()
+	for _, section := range []string{"People", "Projects", "Agents"} {
+		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-section="%s"]').click();`, section)); err != nil {
+			return err
+		}
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`return !document.querySelector('[data-page="%s"]').hidden && !document.querySelector('.settings-content').disabled;`, section)); err != nil {
+			return err
+		}
+		// Created entries remain in their editor until Back; no tabs or editors
+		// are mixed into the overview list.
+		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-page="%s"] .settings-back')?.click();`, section)); err != nil {
+			return err
+		}
+		count := 1
+		if section == "Agents" {
+			count = 2
+		}
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`return document.querySelectorAll('[data-page="%s"] .settings-list-item').length === %d && !document.querySelector('[data-page="%s"] form');`, section, count, section)); err != nil {
+			return err
+		}
+		if section == "People" {
+			if err := waitChatScript(ctx, page, `const avatar = document.querySelector('[data-page="People"] .settings-list-icon .user-avatar'); return avatar?.complete && avatar.naturalWidth > 0 && avatar.width === 34;`); err != nil {
+				return fmt.Errorf("people list avatar: %w", err)
+			}
+		}
+		if section == "Projects" {
+			if _, err := page.EvalContext(ctx, `const panel = document.getElementById('github-cli-path-settings'); const toggle = document.querySelector('[aria-controls="github-cli-path-settings"]'); if (!panel?.hidden || toggle?.getAttribute('aria-expanded') !== 'false' || panel.getClientRects().length) throw new Error('global GitHub CLI path must start collapsed'); toggle.click();`); err != nil {
+				return err
+			}
+			if err := waitChatScript(ctx, page, `const panel = document.getElementById('github-cli-path-settings'); return !panel.hidden && !!panel.querySelector('input')?.getClientRects().length && document.querySelector('[aria-controls="github-cli-path-settings"]').getAttribute('aria-expanded') === 'true';`); err != nil {
+				return fmt.Errorf("GitHub CLI path did not expand: %w", err)
+			}
+			if _, err := page.EvalContext(ctx, `smokeSetInput(document.querySelector('#github-cli-path-settings input'), '/smoke/global-gh-draft');`); err != nil {
+				return err
+			}
+			if _, err := page.EvalContext(ctx, `document.querySelector('[aria-controls="github-cli-path-settings"]').click();`); err != nil {
+				return err
+			}
+			if err := waitChatScript(ctx, page, `return document.getElementById('github-cli-path-settings').hidden && document.querySelector('[aria-controls="github-cli-path-settings"]').getAttribute('aria-expanded') === 'false';`); err != nil {
+				return fmt.Errorf("GitHub CLI path did not collapse: %w", err)
+			}
+			if _, err := page.EvalContext(ctx, `const status = document.querySelector('[data-page="Projects"] .settings-github-cli .settings-row-control'); if (status.lastElementChild?.getAttribute('aria-controls') !== 'github-cli-path-settings') throw new Error('path settings must be the rightmost status action');`); err != nil {
+				return err
+			}
+		}
+		if section == "Agents" {
+			if _, err := page.EvalContext(ctx, `const icons = [...document.querySelectorAll('[data-page="Agents"] .settings-list-icon .agent-icon')]; if (icons.length !== 2 || icons[0].innerHTML === icons[1].innerHTML) throw new Error('agent rows must show distinct CLI icons');`); err != nil {
+				return err
+			}
+		}
+		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-page="%s"] .settings-list-item').click();`, section)); err != nil {
+			return err
+		}
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`return !!document.querySelector('[data-page="%s"] .settings-back') && !!document.querySelector('[data-page="%s"] form input') && !document.querySelector('[data-page="%s"] .settings-list');`, section, section, section)); err != nil {
+			return err
+		}
+		if section == "Projects" {
+			if _, err := page.EvalContext(ctx, `if (document.querySelector('[data-page="Projects"] .settings-github-cli')) throw new Error('global GitHub CLI leaked into a project editor');`); err != nil {
+				return err
+			}
+		}
+		// Edit an existing item through the actual UI, and prove Save updates
+		// it rather than creating another person/project or losing its ID.
+		script := ""
+		switch section {
+		case "People":
+			script = `const inputs = document.querySelectorAll('[data-page="People"] input'); if (inputs[0].value !== 'smoke-person' || inputs[2].value !== '') throw new Error('person editor did not load safely'); smokeSetInput(inputs[1], 'Smoke Person Updated');`
+		case "Projects":
+			script = `const input = document.querySelector('[data-page="Projects"] input'); if (input.value !== 'Smoke Project') throw new Error('project editor did not load'); smokeSetInput(input, 'Smoke Project Updated');`
+		case "Agents":
+			script = `const toggle = document.querySelector('[data-page="Agents"] [role="switch"]'); if (toggle.getAttribute('aria-checked') === 'true') toggle.click();`
+		}
+		if _, err := page.EvalContext(ctx, script); err != nil {
+			return err
+		}
+		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-page="%s"] form').requestSubmit();`, section)); err != nil {
+			return err
+		}
+		condition := map[string]string{
+			"People":   `snapshot.users.length === 1 && snapshot.users[0].nickname === 'Smoke Person Updated'`,
+			"Projects": `snapshot.projects.length === 1 && snapshot.projects[0].name === 'Smoke Project Updated'`,
+			"Agents":   `snapshot.agents.find(agent => agent.backend === 'codex').enabled === false`,
+		}[section]
+		if err := waitChatScript(ctx, page, `const snapshot = await mygo.call('DesktopSettings.Snapshot'); return !document.querySelector('.settings-content').disabled && `+condition+`;`); err != nil {
+			return fmt.Errorf("settings edit %s: %w", section, err)
+		}
+		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-page="%s"] .settings-back').click();`, section)); err != nil {
+			return err
+		}
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`return document.querySelectorAll('[data-page="%s"] .settings-list-item').length === %d && !document.querySelector('[data-page="%s"] form');`, section, count, section)); err != nil {
+			return err
+		}
+		if section == "Projects" {
+			if _, err := page.EvalContext(ctx, `document.querySelector('[aria-controls="github-cli-path-settings"]').click();`); err != nil {
+				return err
+			}
+			if err := waitChatScript(ctx, page, `return !document.getElementById('github-cli-path-settings').hidden && document.querySelector('[data-page="Projects"] .settings-github-cli input')?.value === '/smoke/global-gh-draft';`); err != nil {
+				return fmt.Errorf("global GitHub CLI draft lost across project editing: %w", err)
+			}
+			if _, err := page.EvalContext(ctx, `smokeSetInput(document.querySelector('[data-page="Projects"] .settings-github-cli input'), ''); await new Promise(resolve => setTimeout(resolve, 200));`); err != nil {
+				return err
+			}
+			if image, err := view.CapturePage(); err != nil {
+				return err
+			} else if err := os.WriteFile(report+"-github-path-expanded.png", image, 0o600); err != nil {
+				return err
+			}
+			if _, err := page.EvalContext(ctx, `document.querySelector('[aria-controls="github-cli-path-settings"]').click();`); err != nil {
+				return err
+			}
+			if err := waitChatScript(ctx, page, `return document.getElementById('github-cli-path-settings').hidden;`); err != nil {
+				return err
+			}
+		}
+		for _, theme := range []string{"dark", "light"} {
+			if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: "save-appearance", Preferences: workspace.UIPreferences{Theme: theme, Language: "zh-CN"}}); err != nil {
+				return err
+			}
+			if err := waitChatScript(ctx, page, fmt.Sprintf(`return document.documentElement.dataset.theme === %q && document.documentElement.lang === 'zh-CN' && !document.querySelector('.settings-content').disabled;`, theme)); err != nil {
+				return err
+			}
+			if _, err := page.EvalContext(ctx, `await new Promise(resolve => setTimeout(resolve, 200)); const main = document.querySelector('.settings-main'); if (main.scrollWidth > main.clientWidth) throw new Error('management list overflows');`); err != nil {
+				return err
+			}
+			image, err := view.CapturePage()
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(report+"-list-"+section+"-"+theme+".png", image, 0o600); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (p *panel) probeOnlineAvatar(ctx context.Context, view *mygo.WebView, report string) error {
+	address, err := p.service.LocalWebURL()
+	if err != nil {
+		return err
+	}
+	// Use an isolated HTTP cookie jar, never the system WebView's shared cookies.
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Jar: jar, Transport: &http.Transport{Proxy: nil}, Timeout: 5 * time.Second}
+	defer client.CloseIdleConnections()
+	post := func(path, body, csrf string) ([]byte, error) {
+		req, err := http.NewRequestWithContext(ctx, "POST", address+path, bytes.NewBufferString(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Origin", address)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-CSRF-Token", csrf)
+		res, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer res.Body.Close()
+		data, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+		if res.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("online avatar smoke %s: HTTP %d: %s", path, res.StatusCode, data)
+		}
+		return data, err
+	}
+	data, err := post("/api/login", `{"username":"smoke-person","password":"smoke-password-123"}`, "")
+	if err != nil {
+		return err
+	}
+	var identity struct {
+		CSRF string `json:"csrf"`
+	}
+	if err := json.Unmarshal(data, &identity); err != nil {
+		return err
+	}
+	defer func() { _, _ = post("/api/logout", `{}`, identity.CSRF) }()
+	if _, err := post("/api/presence", `{"client_id":"desktop-smoke","visible":true}`, identity.CSRF); err != nil {
+		return err
+	}
+	page := view.Page()
+	if _, err := page.EvalContext(ctx, `document.querySelector('[data-section="Online"]').click();`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, `const section = document.querySelector('[data-page="Online"]'); const avatar = section.querySelector('.settings-row-icon .user-avatar'); const person = document.querySelector('[data-page="People"] .user-avatar'); return !section.hidden && avatar?.complete && avatar.naturalWidth > 0 && avatar.src === person?.src && section.textContent.includes('Smoke Person Updated');`); err != nil {
+		return fmt.Errorf("online avatar does not match people: %w", err)
+	}
+	if _, err := page.EvalContext(ctx, `await new Promise(resolve => setTimeout(resolve, 200));`); err != nil {
+		return err
+	}
+	image, err := view.CapturePage()
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(report+"-online-avatar.png", image, 0o600)
 }
 
 func (p *panel) smokePresentation(ctx context.Context, preferences workspace.UIPreferences) error {

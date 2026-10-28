@@ -36,7 +36,7 @@ test("native settings link is desktop-only, localized, and stays in the same pag
   globalThis.spoolDesktop = true;
   t.after(() => { delete globalThis.spoolDesktop; });
   const html = render();
-  assert.match(html, /class="icon desktop-settings test-settings"/);
+  assert.match(html, /class="icon desktop-settings test-settings desktop-settings-labeled"/);
   assert.ok(html.includes(`href="${desktopSettingsPath}"`));
   assert.match(html, /aria-label="设置"/);
   assert.match(html, /<span>设置<\/span>/);
@@ -74,6 +74,7 @@ test("footer settings replaces appearance in desktop but preserves the browser c
   assert.ok(desktop.includes(`href="${desktopSettingsPath}"`));
   assert.match(desktop, /aria-label="Settings"/);
   assert.doesNotMatch(desktop, /<button|<span>|Appearance and language/);
+  assert.doesNotMatch(desktop, /desktop-settings-labeled/);
 });
 
 test("desktop locale starts with the native setting and updates through MyGo events", () => {

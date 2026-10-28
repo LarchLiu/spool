@@ -4,8 +4,61 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net"
 	"testing"
+
+	"spool/internal/workspace"
 )
+
+func TestLaunchShowsChatOnlyAfterBackgroundServiceStarts(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		autoStart bool
+		blocked   bool
+	}{
+		{"normal launch", true, false},
+		{"auto-start disabled", false, false},
+		{"service port occupied", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service, err := workspace.OpenService(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = service.Close() })
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = listener.Close() })
+			settings := workspace.DefaultSettings()
+			settings.AutoStart = tc.autoStart
+			settings.Port = listener.Addr().(*net.TCPAddr).Port
+			if !tc.blocked {
+				_ = listener.Close()
+			}
+			if err := service.Store.SaveSettings(settings); err != nil {
+				t.Fatal(err)
+			}
+			p := &panel{service: service, settings: settings, tab: "Service"}
+			p.startOnLaunch()
+			wantRunning := tc.autoStart && !tc.blocked
+			if service.Status().Running != wantRunning {
+				t.Fatal("opening chat changed background service startup", service.Status())
+			}
+			wantTab := "Service"
+			if wantRunning {
+				wantTab = "Chat"
+			}
+			if p.tab != wantTab {
+				t.Fatalf("initial tab = %q, want %q", p.tab, wantTab)
+			}
+			if tc.blocked && p.message == "" {
+				t.Fatal("startup failure was not exposed in settings")
+			}
+		})
+	}
+}
 
 func TestChatNavigationStaysOnExactServiceOrigin(t *testing.T) {
 	for _, tc := range []struct {

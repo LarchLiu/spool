@@ -14,7 +14,7 @@ export function DesktopSettingsLink({
   if (!isDesktopChat()) return null;
   return (
     <a
-      className={`icon desktop-settings ${className}`}
+      className={`icon desktop-settings ${className}${iconOnly ? "" : " desktop-settings-labeled"}`}
       href={desktopSettingsPath}
       aria-label={t("Settings")}
       title={t("Settings")}
