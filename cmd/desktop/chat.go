@@ -62,7 +62,7 @@ func chatWebViewOptions() mygo.WebViewOptions {
 		BackgroundColor: "light-dark(#ffffff, #242423)",
 		// This is only a presentation hint. It grants no native methods or API
 		// privileges; login, project authorization and CSRF remain unchanged.
-		Page: mygo.PageOptions{PreloadScript: `Object.defineProperty(window, "spoolDesktop", {value: true});`},
+		Page: mygo.PageOptions{PreloadScript: desktopWindowPreload},
 	}
 }
 
@@ -98,6 +98,7 @@ func (p *panel) loadChatView(address string) error {
 			return nil
 		})
 		page.OnDidFinishLoad(func() {
+			p.sendWindowChrome(view)
 			p.chatFailed = false
 			if p.tab == "Chat" {
 				view.Focus()

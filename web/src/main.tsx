@@ -28,6 +28,8 @@ import {
 import { api, setCSRF } from "./api";
 import { isDesktopChat } from "./runtime";
 import { DesktopSettingsLink } from "./desktop-settings";
+import { DesktopWindowChrome } from "./desktop-window-chrome";
+import { LoginStory } from "./login-story";
 import { subscribeChatEvents } from "./chat-stream";
 import {
   adoptCreatedChat,
@@ -1067,27 +1069,7 @@ function App() {
               <Settings2 size={20} />
             </button>
           )}
-          <section className="login-story">
-            <div className="brand">
-              <img className="brand-mark" src="/logo.png" alt="" />
-              Spool
-              <span className="tag">{t("Local agent workspace")}</span>
-            </div>
-            <div>
-              <span className="eyebrow">
-                {t("Your projects. Your agents.")}
-              </span>
-              <h1>{t("Ideas, brought to life.")}</h1>
-              <p>
-                {t(
-                  "Return to your projects from any device. Let your local agent keep going.",
-                )}
-              </p>
-            </div>
-            <span className="login-foot">
-              {t("Private workspace · powered by your local CLI")}
-            </span>
-          </section>
+          <LoginStory t={t} />
           <section className="login-panel">
             <form onSubmit={login}>
               <span className="eyebrow">{t("Welcome back")}</span>
@@ -1838,4 +1820,9 @@ function makeInputTranscriptParts(
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
 }
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  <>
+    <DesktopWindowChrome />
+    <App />
+  </>,
+);

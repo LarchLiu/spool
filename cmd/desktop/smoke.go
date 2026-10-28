@@ -100,7 +100,7 @@ func (p *panel) smoke(report string, result chan<- error) {
 		err = ctx.Err()
 	}
 	if err == nil {
-		err = p.probeStartupChat(ctx)
+		err = p.probeStartupChat(ctx, report)
 	}
 	if err == nil {
 		err = p.probeSettings(ctx, report)
@@ -116,7 +116,41 @@ func (p *panel) smoke(report string, result chan<- error) {
 	mygo.App.Quit()
 }
 
-func (p *panel) probeStartupChat(ctx context.Context) error {
+func (p *panel) probeWindowChrome(ctx context.Context, view *mygo.WebView) error {
+	if runtime.GOOS != "darwin" {
+		return nil
+	}
+	width, height := p.window.Size()
+	contentWidth, contentHeight := p.window.ContentSize()
+	if width != contentWidth || height != contentHeight {
+		return fmt.Errorf("macOS must not reserve a separate system title bar: window %dx%d, content %dx%d", width, height, contentWidth, contentHeight)
+	}
+	probeContext, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	err := waitChatScript(probeContext, view.Page(), `
+		const brand = document.querySelector('.desktop-window-brand');
+		const logo = brand?.querySelector('img');
+		const left = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--desktop-controls-left'));
+		const rect = logo?.getBoundingClientRect();
+		const storyBrand = document.querySelector('.desktop-login .login-story > .brand');
+		if (storyBrand) {
+			const storyLogo = storyBrand.querySelector('img');
+			return document.documentElement.dataset.desktopPlatform === 'darwin' &&
+				getComputedStyle(brand).display === 'none' && storyBrand.getBoundingClientRect().top >= 70 &&
+				storyLogo.complete && storyLogo.naturalWidth > 0 && storyBrand.textContent.includes('Spool');
+		}
+		return document.documentElement.dataset.desktopPlatform === 'darwin' && left > 60 && left < 100 &&
+			logo?.complete && logo.naturalWidth > 0 && rect.width === 28 && rect.top === 13 && rect.left === left + 12 &&
+			getComputedStyle(brand).getPropertyValue('--app-region').trim() === 'drag' && !brand.textContent.trim();
+	`)
+	if err != nil {
+		detail, _ := view.Page().EvalContext(ctx, `const brand = document.querySelector('.desktop-window-brand'); const logo = brand?.querySelector('img'); return {platform: document.documentElement.dataset.desktopPlatform, inset: getComputedStyle(document.documentElement).getPropertyValue('--desktop-controls-left'), logo: logo?.getBoundingClientRect().toJSON(), loaded: logo?.complete, naturalWidth: logo?.naturalWidth, drag: brand && getComputedStyle(brand).getPropertyValue('--app-region')};`)
+		return fmt.Errorf("macOS window chrome: %w; layout: %v", err, detail)
+	}
+	return nil
+}
+
+func (p *panel) probeStartupChat(ctx context.Context, report string) error {
 	ready := make(chan *mygo.WebView, 1)
 	p.window.Update(func() {
 		if p.tab != "Chat" || !p.service.Status().Running || len(mygo.Windows()) != 1 {
@@ -140,10 +174,59 @@ func (p *panel) probeStartupChat(ctx context.Context) error {
 	if err := p.probeChatViewport(ctx, view.Page()); err != nil {
 		return err
 	}
+	if err := p.probeWindowChrome(ctx, view); err != nil {
+		return err
+	}
+	if image, err := view.CapturePage(); err != nil {
+		return err
+	} else if err := os.WriteFile(report+"-startup-chat.png", image, 0o600); err != nil {
+		return err
+	}
+	if err := p.probeLoginAppearance(ctx, view, report); err != nil {
+		return err
+	}
 	if _, err := view.Page().EvalContext(ctx, `document.querySelector('a.desktop-settings').click();`); err != nil {
 		return err
 	}
 	return p.waitChatSettings(ctx, view)
+}
+
+func (p *panel) probeLoginAppearance(ctx context.Context, view *mygo.WebView, report string) error {
+	preferences, err := p.service.Store.UIPreferences("")
+	if err != nil {
+		return err
+	}
+	for _, theme := range []string{"light", "dark"} {
+		if err := p.smokePresentation(ctx, workspace.UIPreferences{Theme: theme, Language: "zh-CN"}); err != nil {
+			return err
+		}
+		if err := waitChatScript(ctx, view.Page(), fmt.Sprintf(`
+			const copy = document.querySelector('.login-story-copy');
+			const story = document.querySelector('.login-story');
+			const input = document.querySelector('.login-panel input');
+			const copyRect = copy.getBoundingClientRect(), storyRect = story.getBoundingClientRect();
+			const inputRect = input.getBoundingClientRect();
+			const footerRect = document.querySelector('.login-foot').getBoundingClientRect();
+			return document.documentElement.dataset.theme === %q && document.documentElement.lang === 'zh-CN' &&
+				getComputedStyle(copy).textAlign === 'start' &&
+				Math.abs(copyRect.left - storyRect.left - parseFloat(getComputedStyle(story).paddingLeft)) <= 1 &&
+				Math.abs(copyRect.top + copyRect.height / 2 - storyRect.top - storyRect.height / 2) <= 35 &&
+				inputRect.height >= 40 && inputRect.height <= 44 && getComputedStyle(input).fontSize === '14px' &&
+				Math.abs(innerHeight - footerRect.bottom - parseFloat(getComputedStyle(story).paddingLeft)) <= 1 &&
+				document.documentElement.scrollWidth <= innerWidth;
+		`, theme)); err != nil {
+			return fmt.Errorf("login appearance %s: %w", theme, err)
+		}
+		if err := p.probeWindowChrome(ctx, view); err != nil {
+			return err
+		}
+		if image, err := view.CapturePage(); err != nil {
+			return err
+		} else if err := os.WriteFile(report+"-login-"+theme+".png", image, 0o600); err != nil {
+			return err
+		}
+	}
+	return p.smokePresentation(ctx, preferences)
 }
 
 func (p *panel) probeEmbeddedChat(ctx context.Context) error {
@@ -184,7 +267,7 @@ func (p *panel) probeEmbeddedChat(ctx context.Context) error {
 	if err := p.probeChatPresentation(ctx, page); err != nil {
 		return err
 	}
-	// Click the real bottom-left settings link. The native navigation guard
+	// Click the real login settings link. The native navigation guard
 	// must cancel it without unloading the page or creating another window.
 	if _, err := page.EvalContext(ctx, `document.querySelector('a.desktop-settings').click();`); err != nil {
 		return err
@@ -308,6 +391,9 @@ func (p *panel) probeSettings(ctx context.Context, report string) error {
 			}
 		}
 	}
+	if err := p.probeThemePicker(ctx, view, report); err != nil {
+		return err
+	}
 	// React controlled inputs must keep unsaved drafts across navigation/polls.
 	if _, err := page.EvalContext(ctx, `
 		window.smokeSetInput = (input, value) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', {bubbles: true})); };
@@ -403,6 +489,9 @@ func (p *panel) probeSettings(ctx context.Context, report string) error {
 		if err := waitChatScript(ctx, page, fmt.Sprintf(`return document.documentElement.dataset.theme === %q && document.documentElement.lang === 'zh-CN' && document.querySelector('.settings-page-header h1').textContent === '服务' && document.documentElement.scrollWidth <= innerWidth`, theme)); err != nil {
 			return err
 		}
+		if err := p.probeWindowChrome(ctx, view); err != nil {
+			return err
+		}
 		if _, err := page.EvalContext(ctx, `
 			await new Promise(resolve => setTimeout(resolve, 200));
 			const primary = document.createElement('button'); primary.className = 'send'; document.body.appendChild(primary);
@@ -481,6 +570,47 @@ func (p *panel) probeSettings(ctx context.Context, report string) error {
 		return err
 	}
 	return smokeSettingsCommand(ctx, page, settingsCommand{Kind: "start-service"})
+}
+
+func (p *panel) probeThemePicker(ctx context.Context, view *mygo.WebView, report string) error {
+	page := view.Page()
+	if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: "save-appearance", Preferences: workspace.UIPreferences{Theme: "system", Language: "zh-CN"}}); err != nil {
+		return err
+	}
+	if _, err := page.EvalContext(ctx, `document.querySelector('[data-section="Appearance"]').click();`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, `return !document.querySelector('[data-page="Appearance"]').hidden && !document.querySelector('.settings-content').disabled && document.querySelectorAll('.settings-theme-picker button').length === 3 && document.querySelectorAll('[data-page="Appearance"] select').length === 1;`); err != nil {
+		return err
+	}
+	for _, theme := range []string{"light", "dark", "system"} {
+		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-theme-choice="%s"]').click();`, theme)); err != nil {
+			return err
+		}
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`
+			const snapshot = await mygo.call('DesktopSettings.Snapshot');
+			const selected = document.querySelector('[data-theme-choice="%s"]');
+			const bounds = selected.getBoundingClientRect();
+			return !document.querySelector('.settings-content').disabled && snapshot.preferences.theme === %q &&
+				snapshot.preferences.language === 'zh-CN' && selected.getAttribute('aria-pressed') === 'true' &&
+				document.querySelectorAll('.settings-theme-picker [aria-pressed="true"]').length === 1 &&
+				bounds.width === bounds.height && getComputedStyle(selected).borderRadius === '50%%';
+		`, theme, theme)); err != nil {
+			return fmt.Errorf("settings theme icon %s: %w", theme, err)
+		}
+		if theme != "system" {
+			if err := waitChatScript(ctx, page, fmt.Sprintf(`return document.documentElement.dataset.theme === %q;`, theme)); err != nil {
+				return err
+			}
+			if image, err := view.CapturePage(); err != nil {
+				return err
+			} else if err := os.WriteFile(report+"-appearance-"+theme+".png", image, 0o600); err != nil {
+				return err
+			}
+		}
+	}
+	_, err := page.EvalContext(ctx, `document.querySelector('[data-section="Service"]').click();`)
+	return err
 }
 
 func (p *panel) probeManagementLists(ctx context.Context, view *mygo.WebView, report string) error {
@@ -719,9 +849,13 @@ func (p *panel) probeChatViewport(ctx context.Context, page *mygo.Page) error {
 	return waitChatScript(ctx, page, fmt.Sprintf(`
 		const link = document.querySelector('a.desktop-settings');
 		const bounds = link?.getBoundingClientRect();
+		const login = !!document.querySelector('.desktop-login');
+		const position = login
+			? bounds?.top <= 22 && bounds?.right >= innerWidth - 22 && bounds?.left > innerWidth / 2
+			: bounds?.left <= 22 && bounds?.bottom >= innerHeight - 22 && bounds?.right < innerWidth / 2;
 		return Math.abs(innerWidth - %d) <= 2 && Math.abs(innerHeight - %d) <= 2 &&
-			bounds && bounds.left <= 22 && bounds.bottom >= innerHeight - 22 &&
-			bounds.right < innerWidth / 2 && getComputedStyle(link).position === 'fixed';
+			position && getComputedStyle(link).position === 'fixed' &&
+			document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2)?.closest('a') === link;
 	`, width, height))
 }
 

@@ -19,6 +19,7 @@ import {
   type Backend,
 } from "./settings-client";
 import { SettingsBack, SettingsList } from "./settings-list";
+import { ThemePicker } from "./theme-picker";
 import {
   Card,
   Row,
@@ -469,17 +470,11 @@ export function AppearancePage({ data, run, t }: PageProps) {
           title={t("Theme")}
           help={t("One appearance for chat and settings.")}
         >
-          <select
-            aria-label={t("Theme")}
+          <ThemePicker
             value={data.preferences.theme}
-            onChange={(e) =>
-              save({ theme: e.target.value as UIPreferences["theme"] })
-            }
-          >
-            <option value="system">{t("Follow system")}</option>
-            <option value="light">{t("Light")}</option>
-            <option value="dark">{t("Dark")}</option>
-          </select>
+            onChange={(theme) => save({ theme })}
+            t={t}
+          />
         </Row>
         <Row title={t("Language")}>
           <select

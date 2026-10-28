@@ -145,6 +145,7 @@ func (p *panel) loadSettingsView() error {
 	page.OnDidFailLoad(func(err *mygo.LoadError) { fail(err) })
 	page.OnRenderProcessGone(func(reason string) { fail(fmt.Errorf("settings renderer stopped: %s", reason)) })
 	page.OnDidFinishLoad(func() {
+		p.sendWindowChrome(view)
 		if p.tab != "Chat" {
 			view.Focus()
 		}

@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ import (
 type panel struct {
 	service            *workspace.Service
 	window             *mygo.Window
+	windowChrome       windowChrome
 	chatView           *mygo.WebView
 	chatURL            string
 	chatFailed         bool
@@ -194,7 +196,9 @@ func runDesktop() (runErr error) {
 	mygo.App.WhenReady(func() {
 		p.applyPresentation()
 		mygo.App.OnLocaleChanged(func(string) { p.updateNativeLabels() })
-		p.window = mygo.NewWindow(mygo.WindowOptions{Title: p.windowTitle(), Width: 1280, Height: 860, MinWidth: 840, MinHeight: 580, StateKey: "main", Content: ui.View(p.view)})
+		opts := mygo.WindowOptions{Title: p.windowTitle(), Width: 1280, Height: 860, MinWidth: 840, MinHeight: 580, StateKey: "main", Content: ui.View(p.view)}
+		configureWindowChrome(&opts, runtime.GOOS)
+		p.window = mygo.NewWindow(opts)
 		if err := p.loadSettingsView(); err != nil {
 			p.settingsFailed = true
 			p.message = err.Error()
@@ -321,9 +325,11 @@ func (p *panel) action(fn func() error) {
 }
 func (p *panel) view(c *ui.Context) {
 	if p.tab == "Chat" {
+		p.syncWindowChrome(c.TitleBar())
 		p.chatContent(c)
 		return
 	}
+	p.syncWindowChrome(c.TitleBar())
 	if p.settingsView != nil && !p.settingsFailed {
 		ui.WebView(c, p.settingsView).Fill()
 		return

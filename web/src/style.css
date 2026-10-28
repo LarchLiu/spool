@@ -133,6 +133,70 @@ button:disabled {
   height: 32px;
   object-fit: contain;
 }
+.desktop-window-drag-strip,
+.desktop-window-brand {
+  --app-region: drag;
+  position: fixed;
+  top: 0;
+  z-index: 12;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.desktop-window-drag-strip {
+  left: 0;
+  right: 0;
+  height: 12px;
+}
+:root:has(.desktop-login, .loading) .desktop-window-drag-strip {
+  height: 54px;
+}
+:root:has(.desktop-login) .desktop-window-brand {
+  display: none;
+}
+:root[data-desktop-platform="darwin"] .desktop-login .login-story {
+  padding-top: 82px;
+}
+:root:has(.desktop-settings-shell) .desktop-window-drag-strip {
+  height: 32px;
+}
+.desktop-window-brand {
+  left: calc(var(--desktop-controls-left, 80px) + 12px);
+  height: 54px;
+  display: flex;
+  align-items: center;
+}
+.desktop-window-brand img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  -webkit-user-drag: none;
+}
+:root[data-desktop-platform="darwin"]
+  :is(
+    .sidebar > .brand,
+    .workspace > header,
+    .file-sidebar-header,
+    .settings-page-header
+  ) {
+  --app-region: drag;
+  user-select: none;
+  -webkit-user-select: none;
+}
+:root[data-desktop-platform="darwin"]
+  :is(button, a, input, select, textarea, summary, [role="separator"]) {
+  --app-region: no-drag;
+}
+:root[data-desktop-platform="darwin"]
+  .app.left-collapsed
+  > .workspace
+  > header {
+  padding-left: calc(var(--desktop-controls-left, 80px) + 64px);
+}
+@media (max-width: 900px) {
+  :root[data-desktop-platform="darwin"] .app > .workspace > header {
+    padding-left: calc(var(--desktop-controls-left, 80px) + 64px);
+  }
+}
 .eyebrow {
   font-size: 9px;
   letter-spacing: 0.13em;
@@ -363,8 +427,43 @@ button:disabled {
   z-index: 2;
   background: var(--sidebar);
 }
+.desktop-login > .desktop-settings-corner {
+  left: auto;
+  bottom: auto;
+  right: 20px;
+  top: 20px;
+  z-index: 13;
+}
 .desktop-login .login-story {
+  --login-story-inset: 48px;
+  --login-orbit-line: #a3b38680;
+  --login-orbit-inner: #b7c6a32e;
+  --login-orbit-outer: #b7c6a31a;
   padding-bottom: 80px;
+  padding-inline: var(--login-story-inset);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background:
+    radial-gradient(ellipse at 80% 80%, #c9d7b4a6, transparent 70%),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 47px,
+      #b7c6a330 48px
+    ),
+    var(--soft);
+}
+.desktop-login .login-story-copy {
+  align-self: center;
+}
+.desktop-login .login-panel label {
+  font-size: 12px;
+}
+.desktop-login .login-panel input {
+  min-height: 40px;
+  padding: 9px 12px;
+  font-size: 14px;
+  line-height: 1.4;
 }
 .user-avatar {
   display: block;
@@ -1780,6 +1879,9 @@ a.attachment-open {
   min-height: 100dvh;
 }
 .login-story {
+  --login-orbit-line: #b7c6a344;
+  --login-orbit-inner: #b7c6a30a;
+  --login-orbit-outer: #b7c6a306;
   padding: 40px 48px;
   display: flex;
   flex-direction: column;
@@ -1801,14 +1903,21 @@ a.attachment-open {
   position: absolute;
   width: 340px;
   height: 340px;
-  border: 1px solid #b7c6a344;
+  border: 1px solid var(--login-orbit-line);
   border-radius: 50%;
   right: -160px;
   bottom: 100px;
   box-shadow:
-    0 0 0 50px #b7c6a30a,
-    0 0 0 100px #b7c6a306;
+    0 0 0 50px var(--login-orbit-inner),
+    0 0 0 100px var(--login-orbit-outer);
   pointer-events: none;
+}
+.desktop-login .login-story > * {
+  position: relative;
+  z-index: 1;
+}
+.desktop-login .login-story > .login-foot {
+  top: calc(80px - var(--login-story-inset));
 }
 .tag {
   font-size: 7px;
@@ -1925,6 +2034,9 @@ a.attachment-open {
   }
   .login-story {
     padding: 30px;
+  }
+  .desktop-login .login-story {
+    --login-story-inset: 30px;
   }
   .login-panel {
     padding: 30px;
@@ -2059,6 +2171,9 @@ a.attachment-open {
   .login-story {
     min-height: 270px;
     padding: 25px 28px;
+  }
+  .desktop-login .login-story {
+    --login-story-inset: 28px;
   }
   .login-story > .brand {
     font-size: 16px;
@@ -2389,6 +2504,9 @@ option {
   }
 }
 :root[data-theme="dark"] .login-story {
+  --login-orbit-line: #b7c6a344;
+  --login-orbit-inner: #b7c6a30a;
+  --login-orbit-outer: #b7c6a306;
   background:
     radial-gradient(ellipse at 80% 80%, #3b4b3545, transparent 60%),
     repeating-linear-gradient(

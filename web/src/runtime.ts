@@ -1,4 +1,8 @@
-import { resolveLanguage, type Locale, type UIPreferences } from "./preferences.js";
+import {
+  resolveLanguage,
+  type Locale,
+  type UIPreferences,
+} from "./preferences.js";
 
 // A presentation-only hint injected by the desktop's page preload. It must
 // never be used for authentication or to grant API/native privileges.
@@ -14,6 +18,17 @@ export function isDesktopChat(
 }
 
 export const desktopSettingsPath = "/__desktop/settings";
+
+export function isMacDesktop(surface: unknown = globalThis): boolean {
+  return (
+    isDesktopChat(surface) &&
+    "mygo" in surface &&
+    typeof surface.mygo === "object" &&
+    surface.mygo !== null &&
+    "platform" in surface.mygo &&
+    surface.mygo.platform === "darwin"
+  );
+}
 
 type DesktopRuntime = {
   readonly locale: string;
@@ -35,7 +50,9 @@ function desktopRuntime(surface: unknown): DesktopRuntime | undefined {
   }
 }
 
-export function desktopLocale(surface: unknown = globalThis): Locale | undefined {
+export function desktopLocale(
+  surface: unknown = globalThis,
+): Locale | undefined {
   const runtime = desktopRuntime(surface);
   return runtime ? resolveLanguage("system", [runtime.locale]) : undefined;
 }

@@ -1,17 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  Folder,
-  FolderOpen,
-  LogOut,
-  PanelLeftClose,
-  Plus,
-} from "lucide-react";
+import { Folder, FolderOpen, LogOut, PanelLeftClose, Plus } from "lucide-react";
 import type { Translator } from "./i18n";
 import type { Backend, Chat, Project, User } from "./types";
 import { AgentIcon } from "./agent-icon";
 import { UserAvatar } from "./user-avatar";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { ChatSettingsControl } from "./desktop-settings";
+import { isMacDesktop } from "./runtime";
 
 type Props = {
   user: User;
@@ -111,8 +106,12 @@ export function Sidebar(props: Props) {
       inert={!props.active}
     >
       <div className="brand">
-        <img className="brand-mark" src="/logo.png" alt="" />
-        Spool
+        {!isMacDesktop() && (
+          <>
+            <img className="brand-mark" src="/logo.png" alt="" />
+            Spool
+          </>
+        )}
         <button
           className="icon sidebar-collapse"
           onClick={props.onClose}
