@@ -31,6 +31,7 @@ func run() error {
 	port := flag.Int("port", 0, "persist a new Web port")
 	host := flag.String("host", "", "persist a listen IP (default 127.0.0.1)")
 	publicURL := flag.String("public-url", "", "persist reverse proxy public origin (HTTPS for remote PWA)")
+	historyCache := flag.Int("history-cache-mib", 0, "persist shared history cache target in MiB (default 64)")
 	issuesProject := flag.String("issues-project", "", "configure issue automation for an existing project ID (service must be stopped)")
 	listProjects := flag.Bool("list-projects", false, "list local project IDs/names as JSON while service is stopped")
 	issuesEnabled := flag.Bool("issues-enabled", true, "enable issue automation; false pauses future checks")
@@ -153,6 +154,11 @@ func run() error {
 	if *publicURL != "" {
 		settings.PublicURL = *publicURL
 	}
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "history-cache-mib" {
+			settings.HistoryCacheMiB = *historyCache
+		}
+	})
 	if err = service.Store.SaveSettings(settings); err != nil {
 		return err
 	}

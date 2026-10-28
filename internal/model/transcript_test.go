@@ -18,47 +18,39 @@ func TestTranscriptJSONMatchesMagpieShape(t *testing.T) {
 	}
 }
 
-func TestAppendPartUsesMagpieTranscriptBounds(t *testing.T) {
+func TestAppendPartPreservesCompleteContent(t *testing.T) {
 	transcript := Transcript{Parts: []Part{}}
-	long := strings.Repeat("x", transcriptPartMax+3)
-	if !AppendPart(&transcript, Part{Role: "user", Kind: "text", Text: long}) {
-		t.Fatal("first part unexpectedly exhausted transcript")
+	long := " \n" + strings.Repeat("\u4e2d", 300_000) + "\n "
+	for range 3 {
+		AppendPart(&transcript, Part{Role: "assistant", Kind: "text", Text: long})
 	}
-	if len(transcript.Parts) != 1 || len([]rune(transcript.Parts[0].Text)) != transcriptPartMax || transcript.Parts[0].Cut != 3 {
-		t.Fatalf("unexpected clipped part: %#v", transcript.Parts)
+	if len(transcript.Parts) != 3 || transcript.Cut {
+		t.Fatal("complete parts were dropped or marked as truncated")
 	}
-	transcript.Parts = []Part{{Role: "user", Kind: "text", Text: strings.Repeat("x", transcriptMax)}}
-	if AppendPart(&transcript, Part{Role: "assistant", Kind: "text", Text: "overflow"}) || !transcript.Cut || len(transcript.Parts) != 1 {
-		t.Fatalf("transcript limit was not reported: %#v", transcript)
-	}
-}
-
-func TestAppendStreamTextUsesMagpiePartAndTranscriptBounds(t *testing.T) {
-	stream := Transcript{Parts: []Part{{
-		Role: "assistant", Kind: "text", Text: strings.Repeat("x", transcriptPartMax),
-	}}}
-	AppendStreamText(&stream, Part{Role: "assistant", Kind: "text", Text: "ab"})
-	AppendStreamText(&stream, Part{Role: "assistant", Kind: "text", Text: "c"})
-	if len(stream.Parts) != 1 || stream.Parts[0].Cut != 3 {
-		t.Fatalf("same streamed part was not clipped consistently: %#v", stream.Parts)
-	}
-
-	full := Transcript{Parts: []Part{}}
-	remaining := transcriptMax - 1
-	for remaining > 0 {
-		size := min(transcriptPartMax, remaining)
-		full.Parts = append(full.Parts, Part{Role: "assistant", Kind: "text", Text: strings.Repeat("x", size)})
-		remaining -= size
-	}
-	AppendStreamText(&full, Part{Role: "assistant", Kind: "text", Text: "yz"})
-	if size := transcriptSize(full.Parts); size != transcriptMax || !full.Cut || !strings.HasSuffix(full.Parts[len(full.Parts)-1].Text, "y") {
-		t.Fatalf("stream exceeded Magpie transcript bound: bytes=%d cut=%v last=%#v", size, full.Cut, full.Parts[len(full.Parts)-1])
+	for _, part := range transcript.Parts {
+		if part.Text != long || part.Cut != 0 {
+			t.Fatal("part content or whitespace was truncated")
+		}
 	}
 }
 
-func TestAppendPartRejectsMultibyteTextCrossingBudget(t *testing.T) {
-	transcript := Transcript{Parts: []Part{{Role: "assistant", Kind: "text", Text: strings.Repeat("x", transcriptMax-2)}}}
-	if AppendPart(&transcript, Part{Role: "assistant", Kind: "text", Text: "\u4e2d"}) || !transcript.Cut || len(transcript.Parts) != 1 {
-		t.Fatal("a multibyte part crossed the page budget")
+func TestAppendStreamTextPreservesAllDeltas(t *testing.T) {
+	stream := Transcript{Parts: []Part{}}
+	delta := strings.Repeat("x", 10_000) + " \n"
+	for range 100 {
+		AppendStreamText(&stream, Part{Role: "assistant", Kind: "text", Text: delta})
+	}
+	if len(stream.Parts) != 1 || stream.Parts[0].Text != strings.Repeat(delta, 100) || stream.Parts[0].Cut != 0 || stream.Cut {
+		t.Fatal("streamed content was dropped or truncated")
+	}
+}
+
+func TestAppendPartRetainsImagesAndSkipsOnlyEmptyParts(t *testing.T) {
+	transcript := Transcript{}
+	AppendPart(&transcript, Part{})
+	AppendPart(&transcript, Part{Role: "user", Kind: "image", ImageURL: "data:image/png;base64,eA=="})
+	AppendPart(&transcript, Part{Role: "assistant", Kind: "text", Text: " \n"})
+	if len(transcript.Parts) != 2 || transcript.Parts[0].ImageURL == "" || transcript.Parts[1].Text != " \n" {
+		t.Fatal("image or whitespace-only content was dropped")
 	}
 }

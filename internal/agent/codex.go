@@ -283,7 +283,7 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 			}
 			itemID := stringValue(params["itemId"])
 			if itemID != "" {
-				streamedThinking[itemID] = chatmodel.AppendBounded(streamedThinking[itemID], delta, chatmodel.MaxReplyBytes)
+				streamedThinking[itemID] += delta
 			}
 			part := chatmodel.Part{Role: "assistant", Kind: "thinking", Model: result.Model, Text: delta}
 			if err := emit(AgentEvent{Type: "part", Part: &part}); err != nil {
@@ -346,11 +346,8 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 			}
 		case "item/agentMessage/delta":
 			id, delta := stringValue(params["itemId"]), stringValue(params["delta"])
-			if len(items) >= 4096 && items[id] == "" {
-				return result, fmt.Errorf("too many Codex message items"), false
-			}
-			items[id] = chatmodel.AppendBounded(items[id], delta, chatmodel.MaxReplyBytes)
-			result.Text = chatmodel.AppendBounded(result.Text, delta, chatmodel.MaxReplyBytes)
+			items[id] += delta
+			result.Text += delta
 			if delta != "" {
 				if err := emit(AgentEvent{Type: "delta", Text: delta}); err != nil {
 					return result, err, false
@@ -363,8 +360,8 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 				previous := items[id]
 				if strings.HasPrefix(full, previous) && len(full) > len(previous) {
 					delta := full[len(previous):]
-					result.Text = chatmodel.AppendBounded(result.Text, delta, chatmodel.MaxReplyBytes)
-					items[id] = chatmodel.Clip(full, chatmodel.MaxReplyBytes)
+					result.Text += delta
+					items[id] = full
 					if err := emit(AgentEvent{Type: "delta", Text: delta}); err != nil {
 						return result, err, false
 					}

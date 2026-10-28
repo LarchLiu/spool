@@ -289,6 +289,9 @@ func Run(t *testing.T) {
 			send(map[string]any{"method": method, "params": params})
 		}
 		text := "Hello world"
+		if strings.Contains(prompt, "large-reply") {
+			text = strings.Repeat("x", 900_000)
+		}
 		if strings.Contains(prompt, "block-task") || strings.Contains(prompt, "exit-task") {
 			text = "Partial reply"
 		}

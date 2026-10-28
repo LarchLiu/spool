@@ -97,11 +97,14 @@ func sessionFileMatches(path, nativeID string) bool {
 		return false
 	}
 	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 4096), 1024*1024)
-	for scanner.Scan() {
+	reader := bufio.NewReader(file)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if len(line) == 0 && err != nil {
+			return false
+		}
 		var record map[string]any
-		if json.Unmarshal(scanner.Bytes(), &record) != nil {
+		if json.Unmarshal(line, &record) != nil {
 			continue
 		}
 		if stringValue(record["type"]) != "session_meta" && backendSessionID(record) == "" {
@@ -114,7 +117,6 @@ func sessionFileMatches(path, nativeID string) bool {
 			}
 		}
 	}
-	return false
 }
 
 func backendSessionID(record map[string]any) string {

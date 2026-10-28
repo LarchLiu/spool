@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ func TestSettingsUsersProjectsAndAgentsPersistInSQLite(t *testing.T) {
 	settings.Port = 18787
 	settings.Host = "0.0.0.0"
 	settings.PublicURL = "https://chat.example.test"
+	settings.HistoryCacheMiB = 128
 	if err := s.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +34,7 @@ func TestSettingsUsersProjectsAndAgentsPersistInSQLite(t *testing.T) {
 	saved, _ := other.Settings()
 	agents, _ := other.Agents()
 	projects, _ := other.UserProjects(u.ID)
-	if saved.Port != 18787 || agents[0].Enabled || agents[0].Executable != "/custom/codex" || len(projects) != 1 || projects[0].ID != p.ID {
+	if saved.Port != 18787 || saved.HistoryCacheMiB != 128 || other.historyCache.maxBytes != 128*1024*1024 || agents[0].Enabled || agents[0].Executable != "/custom/codex" || len(projects) != 1 || projects[0].ID != p.ID {
 		t.Fatal("management state did not persist")
 	}
 	if _, err = s.CreateChat(u.ID, p.ID, chatmodel.BackendCodex); err != nil {
@@ -55,6 +57,135 @@ func TestSettingsUsersProjectsAndAgentsPersistInSQLite(t *testing.T) {
 	}
 	if s.CanAccessProject(u.ID, p.ID) {
 		t.Fatal("revoked membership retained")
+	}
+}
+
+func TestHistoryCacheSettingsDefaultAndValidation(t *testing.T) {
+	s := testStore(t)
+	settings, err := s.Settings()
+	if err != nil || settings.HistoryCacheMiB != 64 || s.historyCache.maxBytes != 64*1024*1024 {
+		t.Fatal("default cache size was not applied", err)
+	}
+	// Existing settings JSON predates the cache field and must retain the default.
+	if _, err := s.db.Exec(`INSERT INTO settings VALUES('server','{"host":"127.0.0.1","port":8787,"idle_minutes":15,"auto_start":true}')`); err != nil {
+		t.Fatal(err)
+	}
+	other, err := OpenStore(s.Root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	legacy, err := other.Settings()
+	if err != nil || legacy.HistoryCacheMiB != 64 || other.historyCache.maxBytes != 64*1024*1024 {
+		t.Fatal("old settings did not inherit the default cache size", err)
+	}
+	for _, size := range []int{0, -1, int(^uint(0)>>1)/(1024*1024) + 1} {
+		invalid := settings
+		invalid.HistoryCacheMiB = size
+		if err := s.SaveSettings(invalid); err == nil {
+			t.Fatalf("invalid cache size %d accepted", size)
+		}
+		persisted, err := s.Settings()
+		if err != nil || persisted.HistoryCacheMiB != 64 || s.historyCache.maxBytes != 64*1024*1024 {
+			t.Fatal("invalid cache size changed settings or the live cache", err)
+		}
+	}
+}
+
+func TestHistoryCacheSettingsResizeImmediatelyEvictsWholeSessions(t *testing.T) {
+	s := testStore(t)
+	settings := DefaultSettings()
+	settings.HistoryCacheMiB = 2
+	if err := s.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	_, reads := countNativeHistoryReads(s)
+	root := t.TempDir()
+	paths := []string{filepath.Join(root, "first.jsonl"), filepath.Join(root, "second.jsonl"), filepath.Join(root, "third.jsonl")}
+	load := func(path string) {
+		t.Helper()
+		snapshot, err := s.readHistory(chatmodel.Session{ID: path, Backend: chatmodel.BackendCodex, NativeSessionPath: path})
+		if err != nil || len(snapshot.Turns) != 1 || len(snapshot.Transcript.Parts) != 52 {
+			t.Fatal("cache resize lost full session content", err)
+		}
+	}
+	for _, path := range paths {
+		appendNativeTurns(t, path, 0, 1, 50)
+		load(path)
+	}
+	if len(s.historyCache.files) != 3 || reads.Load() != 3 {
+		t.Fatal("initial cache size not applied")
+	}
+	load(paths[1]) // Make the second session most recently used.
+	settings.HistoryCacheMiB = 1
+	if err := s.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.historyCache.files) != 2 || s.historyCache.bytes > 1024*1024 || s.historyCache.maxBytes != 1024*1024 {
+		t.Fatal("saving a smaller target did not immediately trim the cache")
+	}
+	load(paths[1])
+	load(paths[2])
+	if reads.Load() != 3 {
+		t.Fatal("resize evicted a recent session")
+	}
+	load(paths[0])
+	if reads.Load() != 4 {
+		t.Fatal("resize did not evict the least recently used session")
+	}
+	settings.HistoryCacheMiB = 4
+	if err := s.SaveSettings(settings); err != nil || s.historyCache.maxBytes != 4*1024*1024 {
+		t.Fatal("larger target was not applied immediately", err)
+	}
+	oversized := filepath.Join(root, "oversized.jsonl")
+	appendNativeTurns(t, oversized, 0, 1, 160)
+	bigChat := chatmodel.Session{ID: "oversized", Backend: chatmodel.BackendCodex, NativeSessionPath: oversized}
+	if _, err := s.readHistory(bigChat); err != nil {
+		t.Fatal(err)
+	}
+	settings.HistoryCacheMiB = 1
+	if err := s.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := s.readHistory(bigChat)
+	if err != nil || len(snapshot.Transcript.Parts) != 162 || len(s.historyCache.files) != 1 || s.historyCache.bytes < 1280000 || reads.Load() != 5 {
+		t.Fatal("resize evicted or truncated the single oversized session", err)
+	}
+}
+
+func TestHistoryCacheSettingsConcurrentSavesAndReads(t *testing.T) {
+	s := testStore(t)
+	root := t.TempDir()
+	paths := []string{filepath.Join(root, "first.jsonl"), filepath.Join(root, "second.jsonl")}
+	for _, path := range paths {
+		appendNativeTurns(t, path, 0, 2, 40)
+	}
+	var wait sync.WaitGroup
+	for reader := range 4 {
+		wait.Go(func() {
+			for range 4 {
+				snapshot, err := s.readHistory(chatmodel.Session{ID: "concurrent", Backend: chatmodel.BackendCodex, NativeSessionPath: paths[reader%2]})
+				if err != nil || len(snapshot.Turns) != 2 || len(snapshot.Transcript.Parts) != 84 {
+					t.Errorf("concurrent resize lost history: %v", err)
+				}
+			}
+		})
+	}
+	for writer := range 2 {
+		wait.Go(func() {
+			settings := DefaultSettings()
+			settings.HistoryCacheMiB = writer + 1
+			for range 4 {
+				if err := s.SaveSettings(settings); err != nil {
+					t.Errorf("concurrent settings save: %v", err)
+				}
+			}
+		})
+	}
+	wait.Wait()
+	saved, err := s.Settings()
+	if err != nil || s.historyCache.maxBytes != saved.HistoryCacheMiB*1024*1024 {
+		t.Fatal("live cache target differs from persisted settings", err)
 	}
 }
 

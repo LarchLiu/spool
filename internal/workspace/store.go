@@ -21,6 +21,7 @@ var errTurnChanged = errors.New("turn changed while agent was running")
 
 type Store struct {
 	historyCache nativeHistoryCache
+	settingsMu   sync.Mutex
 	mu           sync.Mutex
 	agentMu      sync.Mutex
 	root         string
@@ -91,7 +92,16 @@ func OpenStore(root string) (*Store, error) {
 	if _, err = db.Exec(`UPDATE user_avatars SET style=? WHERE style IN ('bottts-neutral','shapes','initials')`, DefaultAvatar().Style); err != nil {
 		return fail(err)
 	}
-	return &Store{root: root, db: db, runtimeTurns: make(map[string]chatmodel.Turn)}, nil
+	store := &Store{root: root, db: db, runtimeTurns: make(map[string]chatmodel.Turn)}
+	settings, err := store.Settings()
+	if err != nil {
+		return fail(err)
+	}
+	if err := validateHistoryCacheMiB(settings.HistoryCacheMiB); err != nil {
+		return fail(err)
+	}
+	store.historyCache.setMaxBytes(settings.HistoryCacheMiB * 1024 * 1024)
+	return store, nil
 }
 func (s *Store) Close() error {
 	// WAL/SHM files are expected while SQLite is open. Checkpoint on a clean
@@ -252,7 +262,6 @@ func (s *Store) beginTurnWithInput(id, prompt string, backend chatmodel.Backend,
 	for _, file := range files {
 		t.Attachments = append(t.Attachments, file.Attachment)
 	}
-	// A full historical page must not consume this request's input budget.
 	input := chatmodel.Transcript{}
 	if strings.TrimSpace(prompt) != "" {
 		appendSessionPart(&input, &t, chatmodel.Part{Role: "user", Kind: "text", Text: prompt})
@@ -405,32 +414,26 @@ func nextSessionTime(previous int64) int64 {
 	return max(time.Now().UnixMilli(), previous+1)
 }
 
-func appendSessionPart(transcript *chatmodel.Transcript, turn *chatmodel.Turn, part chatmodel.Part) bool {
+func appendSessionPart(transcript *chatmodel.Transcript, turn *chatmodel.Turn, part chatmodel.Part) {
 	before := len(transcript.Parts)
-	more := chatmodel.AppendPart(transcript, part)
+	chatmodel.AppendPart(transcript, part)
 	if len(transcript.Parts) > before {
 		turn.Parts = append(turn.Parts, transcript.Parts[len(transcript.Parts)-1])
 		turn.PartEnd = turn.PartStart + len(turn.Parts)
 	}
-	return more
 }
 
-func appendTurnPart(turn *chatmodel.Turn, part chatmodel.Part) bool {
+func appendTurnPart(turn *chatmodel.Turn, part chatmodel.Part) {
 	transcript := chatmodel.Transcript{Parts: turn.Parts}
-	before := len(turn.Parts)
 	// Command output may arrive as multiple deltas. Merge adjacent result
 	// chunks so the live transcript keeps the same shape as native history.
-	more := true
 	if part.Kind == "tool_result" {
 		chatmodel.AppendStreamText(&transcript, part)
 	} else {
-		more = chatmodel.AppendPart(&transcript, part)
+		chatmodel.AppendPart(&transcript, part)
 	}
-	if len(transcript.Parts) > before {
-		turn.Parts = transcript.Parts
-		turn.PartEnd = turn.PartStart + len(turn.Parts)
-	}
-	return more
+	turn.Parts = transcript.Parts
+	turn.PartEnd = turn.PartStart + len(turn.Parts)
 }
 
 func appendTurnText(turn *chatmodel.Turn, part chatmodel.Part) {

@@ -378,7 +378,8 @@ func TestSSEReconnectIncludesCompletedHistory(t *testing.T) {
 		}
 	}
 	cancel()
-	if value := body.String(); !strings.Contains(value, "event: snapshot") || strings.Contains(value, "Reply") {
+	// Reconnects must retain complete live output while the native file lags.
+	if value := body.String(); !strings.Contains(value, "event: snapshot") || !strings.Contains(value, "Reply") {
 		t.Fatal(value)
 	}
 }

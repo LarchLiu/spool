@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,28 +41,28 @@ func ParseSessionTranscriptFrom(backend chatmodel.Backend, path string, offset i
 		return transcript, err
 	}
 
-	return parseTranscriptReader(backend, file, "", false)
+	carryNotes := backend == chatmodel.BackendCodex && offset > 0 && codexCarryAt(file, offset)
+	return parseTranscriptReader(backend, file, "", carryNotes)
 }
 
-func parseTranscriptReader(backend chatmodel.Backend, reader io.Reader, model string, tail bool) (chatmodel.Transcript, error) {
+func parseTranscriptReader(backend chatmodel.Backend, reader io.Reader, model string, carryNotes bool) (chatmodel.Transcript, error) {
 	transcript := chatmodel.Transcript{Parts: []chatmodel.Part{}}
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 64*1024), maxEventBytes)
 	codex := newCodexHistory()
-	for scanner.Scan() {
+	err := readJSONLines(reader, func(line []byte) error {
 		var record map[string]any
-		if json.Unmarshal(scanner.Bytes(), &record) != nil {
-			continue
+		if json.Unmarshal(line, &record) != nil {
+			return nil
 		}
 		var parts []chatmodel.Part
 		switch backend {
 		case chatmodel.BackendClaude:
 			parts = claudeSessionParts(record)
 		case chatmodel.BackendCodex:
+			carryNotes = codexCarryNotes(record, carryNotes)
 			if stringValue(record["type"]) == "turn_context" {
 				payload, _ := record["payload"].(map[string]any)
 				model = stringValue(payload["model"])
-				continue
+				return nil
 			}
 			switch stringValue(record["type"]) {
 			case "response_item":
@@ -74,69 +73,21 @@ func parseTranscriptReader(backend chatmodel.Backend, reader io.Reader, model st
 				parts = codex.addEvent(payload, model, &transcript)
 			}
 		default:
-			return transcript, fmt.Errorf("unsupported session backend %q", backend)
+			return fmt.Errorf("unsupported session backend %q", backend)
+		}
+		if backend == chatmodel.BackendCodex && carryNotes {
+			parts = restoreCarryNotes(parts)
 		}
 		for _, part := range parts {
-			if !chatmodel.AppendPart(&transcript, part) {
-				if !tail {
-					return transcript, nil
-				}
-				// Keep the input and the newest output of an oversized turn.
-				for !chatmodel.AppendPart(&transcript, part) {
-					index := 0
-					for index < len(transcript.Parts) && transcript.Parts[index].Role == "user" {
-						index++
-					}
-					if index == len(transcript.Parts) {
-						index = 0
-					}
-					delete(codex.pendingAgentMessages, transcript.Parts[index].Text)
-					transcript.Parts = append(transcript.Parts[:index], transcript.Parts[index+1:]...)
-					codex.dropPart(index)
-				}
-			}
+			chatmodel.AppendPart(&transcript, part)
 		}
-	}
-	if err := scanner.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return transcript, err
 	}
 	codex.finish(&transcript)
-	if tail {
-		bounded := chatmodel.Transcript{Parts: []chatmodel.Part{}, Cut: transcript.Cut}
-		for _, part := range transcript.Parts {
-			for !chatmodel.AppendPart(&bounded, part) {
-				index := oldestOutput(bounded.Parts)
-				bounded.Parts = append(bounded.Parts[:index], bounded.Parts[index+1:]...)
-			}
-		}
-		transcript = bounded
-	}
 	return transcript, nil
-}
-
-func oldestOutput(parts []chatmodel.Part) int {
-	for i, part := range parts {
-		if part.Role != "user" {
-			return i
-		}
-	}
-	return 0
-}
-
-func (h *codexHistory) dropPart(index int) {
-	for _, call := range h.calls {
-		for _, ref := range []*int{&call.useIndex, &call.resultIndex} {
-			if *ref == index {
-				*ref = -1
-			} else if *ref > index {
-				*ref--
-			}
-		}
-		if call.useIndex < 0 && call.resultIndex < 0 {
-			call.eventOutput = ""
-			delete(h.byCallID, call.callID)
-		}
-	}
 }
 
 // codexCallRef lets event_msg.item_completed records enrich the response_item
@@ -418,7 +369,8 @@ func claudeSessionParts(record map[string]any) []chatmodel.Part {
 		role = typ
 	}
 	model := stringValue(message["model"])
-	if model == "<synthetic>" {
+	carryNotes := model == "<synthetic>"
+	if carryNotes {
 		model = ""
 	}
 	parts := claudeTranscriptParts(role, message["content"], model)
@@ -441,6 +393,9 @@ func claudeSessionParts(record map[string]any) []chatmodel.Part {
 				}
 			}
 		}
+	}
+	if carryNotes {
+		parts = restoreCarryNotes(parts)
 	}
 	return parts
 }

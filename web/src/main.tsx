@@ -17,6 +17,7 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { api, setCSRF } from "./api";
+import { subscribeChatEvents } from "./chat-stream";
 import {
   adoptCreatedChat,
   canControlChat,
@@ -25,13 +26,17 @@ import {
   reconcileMetadata,
   prependHistory,
 } from "./chat-state";
+import {
+  fetchOlderHistory,
+  restoreHistoryScroll,
+  type HistoryAnchor,
+} from "./history-loading";
 import { runningTurn, stopReply } from "./turn-control";
 import type {
   User,
   Project,
   Agent,
   Chat,
-  ChatMetadata,
   Turn,
   Online,
   Attachment,
@@ -93,13 +98,9 @@ function App() {
     [sidebar, setSidebar] = useState(false),
     [showLatest, setShowLatest] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const historyRequest = useRef<string | null>(null);
-  const historyAnchor = useRef<{
-    id: string;
-    height: number;
-    top: number;
-  } | null>(null);
+  const [historyLoadError, setHistoryLoadError] = useState(false);
+  const historyAnchor = useRef<HistoryAnchor | null>(null);
+  const initialHistoryScroll = useRef("");
   const [model, setModel] = useState(""),
     [effort, setEffort] = useState(""),
     [picker, setPicker] = useState(false),
@@ -156,44 +157,6 @@ function App() {
   function fail(e: unknown) {
     setError(e instanceof Error ? e.message : t("Request failed"));
   }
-  async function loadOlderHistory() {
-    const id = chat?.id;
-    const before = chat?.history?.before;
-    if (!id || !before || !chat.history?.has_more || historyRequest.current)
-      return;
-    const request = id + ":" + before;
-    historyRequest.current = request;
-    setLoadingHistory(true);
-    try {
-      const page = await api<Chat>(
-        "/chats/" + id + "/history?before=" + encodeURIComponent(before),
-      );
-      if (activeID.current !== id || historyRequest.current !== request) return;
-      follow.current = false;
-      if (history.current)
-        historyAnchor.current = {
-          id,
-          height: history.current.scrollHeight,
-          top: history.current.scrollTop,
-        };
-      setChat((old) => (old?.id === id ? prependHistory(old, page) : old));
-    } catch (e) {
-      if (activeID.current === id) fail(e);
-    } finally {
-      if (historyRequest.current === request) {
-        historyRequest.current = null;
-        setLoadingHistory(false);
-      }
-    }
-  }
-  useLayoutEffect(() => {
-    const anchor = historyAnchor.current;
-    if (anchor && anchor.id === chat?.id && history.current) {
-      history.current.scrollTop =
-        anchor.top + history.current.scrollHeight - anchor.height;
-    }
-    historyAnchor.current = null;
-  }, [chat]);
   useEffect(() => {
     api<{ user: User; csrf: string; preferences: UIPreferences }>("/me")
       .then((v) => {
@@ -371,95 +334,124 @@ function App() {
       });
     }
     adoptedChatID.current = "";
-    historyRequest.current = null;
     historyAnchor.current = null;
-    setLoadingHistory(false);
+    initialHistoryScroll.current = chatID;
+    setHistoryLoadError(false);
     setConnected(true);
     follow.current = true;
     if (!chatID || !user) return;
-    let cancelled = false;
-    api<Chat>("/chats/" + chatID)
-      .then((v) => {
-        if (!cancelled && activeID.current === chatID)
+    return subscribeChatEvents(
+      chatID,
+      {
+        snapshot: (v) => {
+          if (activeID.current !== chatID) return;
           setChat((old) => reconcile(old, v));
-      })
-      .catch(fail);
-    const source = new EventSource("/api/chats/" + chatID + "/events");
-    source.addEventListener("snapshot", (e) => {
-      if (cancelled || activeID.current !== chatID) return;
-      setConnected(true);
-      const v = JSON.parse((e as MessageEvent).data) as Chat;
-      setChat((old) => reconcile(old, v));
-    });
-    source.addEventListener("metadata", (e) => {
-      if (cancelled || activeID.current !== chatID) return;
-      setConnected(true);
-      const v = JSON.parse((e as MessageEvent).data) as ChatMetadata;
-      setChat((old) => reconcileMetadata(old, v));
-      setChats((old) => old.map((item) => reconcileMetadata(item, v) ?? item));
-    });
-    source.addEventListener("turn", (e) => {
-      if (cancelled || activeID.current !== chatID) return;
-      setConnected(true);
-      const v = JSON.parse((e as MessageEvent).data) as {
-        turn: Turn;
-        turns?: Turn[];
-        history?: Chat["history"];
-        transcript: Chat["transcript"];
-        status: string;
-        title: string;
-        updated_at: number;
-        backend: "codex" | "claude";
-        model?: string;
-        reasoning_effort?: string;
-        permission_mode?: string;
-      };
-      setChat((old) => {
-        if (old?.id !== chatID) return old;
-        const turns =
-          v.turns || old.turns.filter((t) => !t.id.startsWith("pending-"));
-        const index = turns.findIndex((t) => t.id === v.turn.id);
-        if (index < 0) turns.push(v.turn);
-        else turns[index] = v.turn;
-        return reconcile(old, {
-          ...old,
-          title: v.title,
-          backend: v.backend,
-          model: v.model,
-          reasoning_effort: v.reasoning_effort,
-          permission_mode: v.permission_mode,
-          status: v.status,
-          transcript: v.transcript,
-          history: v.history,
-          updated_at: v.updated_at,
-          turns,
-        });
-      });
-      setChats((old) =>
-        old.map((c) =>
-          c.id === chatID
-            ? {
-                ...c,
-                title: v.title,
-                backend: v.backend,
-                model: v.model,
-                reasoning_effort: v.reasoning_effort,
-                status: v.status,
-                updated_at: v.updated_at,
-              }
-            : c,
-        ),
-      );
-    });
-    source.onerror = () => {
-      setConnected(false);
-      api("/me").catch(() => {});
-    };
-    return () => {
-      cancelled = true;
-      source.close();
-    };
+        },
+        metadata: (v) => {
+          if (activeID.current !== chatID) return;
+          setChat((old) => reconcileMetadata(old, v));
+          setChats((old) =>
+            old.map((item) => reconcileMetadata(item, v) ?? item),
+          );
+        },
+        turn: (v) => {
+          if (activeID.current !== chatID) return;
+          setChat((old) => {
+            if (old?.id !== chatID) return old;
+            const turns =
+              v.turns || old.turns.filter((t) => !t.id.startsWith("pending-"));
+            const index = turns.findIndex((t) => t.id === v.turn.id);
+            if (index < 0) turns.push(v.turn);
+            else turns[index] = v.turn;
+            return reconcile(old, {
+              ...old,
+              title: v.title,
+              backend: v.backend,
+              model: v.model,
+              reasoning_effort: v.reasoning_effort,
+              permission_mode: v.permission_mode,
+              status: v.status,
+              transcript: v.transcript,
+              history: v.history,
+              updated_at: v.updated_at,
+              turns,
+            });
+          });
+          setChats((old) =>
+            old.map((c) =>
+              c.id === chatID
+                ? {
+                    ...c,
+                    title: v.title,
+                    backend: v.backend,
+                    model: v.model,
+                    reasoning_effort: v.reasoning_effort,
+                    status: v.status,
+                    updated_at: v.updated_at,
+                  }
+                : c,
+            ),
+          );
+        },
+        connected: (value) => {
+          if (activeID.current === chatID) setConnected(value);
+        },
+        error: fail,
+      },
+      {
+        open: (path) => new EventSource(path),
+        snapshot: (signal) => api<Chat>("/chats/" + chatID, undefined, signal),
+        checkAuth: (signal) => api("/me", undefined, signal),
+      },
+    );
   }, [project, chatID, draftVersion, user?.id]);
+  useEffect(() => {
+    if (
+      !chat ||
+      chat.id !== chatID ||
+      !user ||
+      historyLoadError ||
+      !chat.history?.has_more ||
+      !chat.history.before ||
+      chat.history.error
+    )
+      return;
+    const controller = new AbortController();
+    const before = chat.history.before;
+    fetchOlderHistory(
+      chat,
+      (path, signal) => api<Chat>(path, undefined, signal),
+      controller.signal,
+    )
+      .then((page) => {
+        if (!page || controller.signal.aborted || activeID.current !== page.id)
+          return;
+        const element = history.current;
+        if (element)
+          historyAnchor.current = {
+            id: page.id,
+            height: element.scrollHeight,
+            top: element.scrollTop,
+          };
+        setChat((old) =>
+          old?.id === page.id && old.history?.before === before
+            ? prependHistory(old, page)
+            : old,
+        );
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setHistoryLoadError(true);
+      });
+    return () => controller.abort();
+  }, [
+    chat?.id,
+    chat?.history?.before,
+    chat?.history?.has_more,
+    chat?.history?.error,
+    chatID,
+    user?.id,
+    historyLoadError,
+  ]);
   const selectedAgent = agents.find((agent) => agent.backend === backend);
   const models = selectedAgent?.catalog.models || [];
   const selectedAvailable =
@@ -512,9 +504,20 @@ function App() {
     resize.observe(element);
     return () => resize.disconnect();
   }, [chat?.id]);
-  useEffect(() => {
-    if (follow.current && history.current)
-      history.current.scrollTop = history.current.scrollHeight;
+  useLayoutEffect(() => {
+    if (!chat || !history.current) return;
+    if (initialHistoryScroll.current === chat.id) {
+      initialHistoryScroll.current = "";
+      follow.current = true;
+      setShowLatest(false);
+    }
+    const anchor = historyAnchor.current;
+    restoreHistoryScroll(
+      history.current,
+      follow.current,
+      anchor?.id === chat.id ? anchor : null,
+    );
+    historyAnchor.current = null;
   }, [chat?.turns]);
   const turnRunning =
     chat?.turns.some((turn) => turn.status === "running") ?? false;
@@ -1182,15 +1185,17 @@ function App() {
                 {t("Native session history is unavailable")}
               </p>
             )}
-            {chat?.history?.has_more && (
+            {chat?.history?.has_more && !historyLoadError && (
+              <p role="status" className="history-error">
+                {t("Loading earlier messages…")}
+              </p>
+            )}
+            {historyLoadError && (
               <button
                 className="quiet history-older"
-                disabled={loadingHistory}
-                onClick={loadOlderHistory}
+                onClick={() => setHistoryLoadError(false)}
               >
-                {loadingHistory
-                  ? t("Loading earlier messages…")
-                  : t("Load earlier messages")}
+                {t("Retry loading earlier messages")}
               </button>
             )}
             {!chat?.turns.length ? (

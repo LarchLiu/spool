@@ -9,12 +9,17 @@ export function setAPILanguage(locale: Locale) {
 export function setCSRF(value: string) {
   csrf = value;
 }
-export async function api<T>(path: string, body?: unknown): Promise<T> {
+export async function api<T>(
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   const multipart = body instanceof FormData;
   const response = await fetch("/api" + path, {
     method: body === undefined ? "GET" : "POST",
     credentials: "same-origin",
     cache: "no-store",
+    signal,
     headers: {
       "X-UI-Language": language,
       ...(body === undefined

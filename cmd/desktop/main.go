@@ -34,6 +34,7 @@ type panel struct {
 	busy               bool
 	settings           workspace.Settings
 	port, idle         string
+	historyCache       string
 	users              []workspace.User
 	projects           []workspace.Project
 	agents             []workspace.AgentInfo
@@ -220,6 +221,7 @@ func (p *panel) load() {
 	p.settings, _ = p.service.Store.Settings()
 	p.port = strconv.Itoa(p.settings.Port)
 	p.idle = strconv.Itoa(p.settings.IdleMinutes)
+	p.historyCache = strconv.Itoa(p.settings.HistoryCacheMiB)
 	p.users, _ = p.service.Store.Users()
 	p.projects, _ = p.service.Store.Projects()
 	p.agents, _ = p.service.Store.Agents()
@@ -327,20 +329,24 @@ func (p *panel) serviceView(c *ui.Context) {
 	p.field(c, "Web port", &p.port)
 	p.field(c, "Public origin (HTTPS reverse proxy for remote PWA)", &p.settings.PublicURL)
 	p.field(c, "Release completed agents after idle minutes", &p.idle)
+	p.field(c, "History cache size (MiB)", &p.historyCache)
+	ui.Text(c, p.tr("Shared by all chats. Applies immediately after saving. A larger session is kept whole; history is never truncated.")).Wrap().FontSize(12)
 	ui.Checkbox(c, &p.settings.AutoStart, p.tr("Start Web service on application launch"))
 	if ui.PrimaryButton(c, p.tr("Save settings")).Disabled(p.busy).Clicked() {
 		settings := p.settings
 		port, e := strconv.Atoi(p.port)
 		idle, e2 := strconv.Atoi(p.idle)
-		if e != nil || e2 != nil {
-			p.message = "Port and idle minutes must be integers"
+		cache, e3 := strconv.Atoi(p.historyCache)
+		if e != nil || e2 != nil || e3 != nil {
+			p.message = "Port, idle minutes and history cache size must be integers"
 		} else {
 			settings.Port = port
 			settings.IdleMinutes = idle
+			settings.HistoryCacheMiB = cache
 			p.action(func() error { return p.service.Store.SaveSettings(settings) })
 		}
 	}
-	ui.Text(c, p.tr("Saved service settings apply after Stop → Start. Stopping interrupts active tasks. Closing this window keeps the server in the tray; Quit stops it.")).Wrap().FontSize(12)
+	ui.Text(c, p.tr("Listen address and idle settings apply after Stop → Start. Stopping interrupts active tasks. Closing this window keeps the server in the tray; Quit stops it.")).Wrap().FontSize(12)
 	ui.Text(c, "SQLite · "+p.service.Store.Root()).Wrap().FontSize(12)
 	ui.Text(c, p.tr("Users can execute agent tools in granted projects. Only grant access to trusted people. HTTPS is required for remote PWA installation.")).Wrap().FontSize(12)
 }

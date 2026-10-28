@@ -30,7 +30,7 @@ func countNativeHistoryReads(store *Store) (*atomic.Int64, *atomic.Int64) {
 	return indexes, reads
 }
 
-func TestNativeHistoryCacheSharesConcurrentViewersAndPages(t *testing.T) {
+func TestNativeHistoryCacheSharesConcurrentViewers(t *testing.T) {
 	store := testStore(t)
 	indexes, reads := countNativeHistoryReads(store)
 	path := filepath.Join(t.TempDir(), "native.jsonl")
@@ -42,29 +42,18 @@ func TestNativeHistoryCacheSharesConcurrentViewersAndPages(t *testing.T) {
 		wait.Go(func() {
 			<-start
 			chat := chatmodel.Session{ID: fmt.Sprintf("viewer-chat-%d", viewer), Backend: chatmodel.BackendCodex, NativeSessionID: "same-native", NativeSessionPath: path}
-			cursor, count := "", 0
-			for {
-				page, err := store.readHistoryPage(chat, cursor)
-				if err != nil {
-					t.Errorf("viewer history: %v", err)
-					return
-				}
-				count += len(page.Turns)
-				if len(page.Turns) == 0 || page.Turns[0].ID != historyTurnID(chat.ID, page.Turns[0].NativeTurnID) {
-					t.Error("shared cache reused another chat's turn identity")
-					return
-				}
-				// Mutating a response cannot poison another viewer's cached parts.
-				page.Transcript.Parts[0].Text = "viewer-only change"
-				page.Turns[0].Parts[0].Text = "viewer-only turn change"
-				if !page.History.HasMore {
-					break
-				}
-				cursor = page.History.Before
+			snapshot, err := store.readHistory(chat)
+			if err != nil {
+				t.Errorf("viewer history: %v", err)
+				return
 			}
-			if count != 25 {
-				t.Errorf("viewer got %d turns", count)
+			if len(snapshot.Turns) != 25 || snapshot.Turns[0].ID != historyTurnID(chat.ID, snapshot.Turns[0].NativeTurnID) {
+				t.Error("shared cache lost history or reused another chat's turn identity")
+				return
 			}
+			// Mutating a response cannot poison another viewer's cached parts.
+			snapshot.Transcript.Parts[0].Text = "viewer-only change"
+			snapshot.Turns[0].Parts[0].Text = "viewer-only turn change"
 		})
 	}
 	close(start)
@@ -72,8 +61,8 @@ func TestNativeHistoryCacheSharesConcurrentViewersAndPages(t *testing.T) {
 	if indexes.Load() != 1 || reads.Load() != 25 {
 		t.Fatalf("history was decoded repeatedly: indexes=%d reads=%d", indexes.Load(), reads.Load())
 	}
-	page, err := store.readHistoryPage(chatmodel.Session{ID: "fresh-chat", Backend: chatmodel.BackendCodex, NativeSessionID: "same-native", NativeSessionPath: path}, "")
-	if err != nil || page.Turns[0].Prompt != "prompt-015" || page.Transcript.Parts[0].Text != "prompt-015" {
+	page, err := store.readHistory(chatmodel.Session{ID: "fresh-chat", Backend: chatmodel.BackendCodex, NativeSessionID: "same-native", NativeSessionPath: path})
+	if err != nil || page.Turns[0].Prompt != "prompt-000" || page.Transcript.Parts[0].Text != "prompt-000" {
 		t.Fatal("response mutation corrupted shared history", err)
 	}
 	after, _ := os.ReadFile(path)
@@ -91,7 +80,7 @@ func TestNativeHistoryCacheReplacesChangedAndDeletedFiles(t *testing.T) {
 	chat := chatmodel.Session{ID: "cached-chat", Backend: chatmodel.BackendCodex, NativeSessionID: "cached-native", NativeSessionPath: path}
 	check := func(turns int, reply string) {
 		t.Helper()
-		page, err := store.readHistoryPage(chat, "")
+		page, err := store.readHistory(chat)
 		if err != nil || len(page.Turns) != turns || page.Turns[0].Reply != reply {
 			t.Fatalf("stale or invalid history: turns=%d error=%v", len(page.Turns), err)
 		}
@@ -138,7 +127,7 @@ func TestNativeHistoryCacheReplacesChangedAndDeletedFiles(t *testing.T) {
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.readHistoryPage(chat, ""); !os.IsNotExist(err) {
+	if _, err := store.readHistory(chat); !os.IsNotExist(err) {
 		t.Fatal("deleted source served stale cached history", err)
 	}
 	if len(store.historyCache.files) != 0 || store.historyCache.bytes != 0 {
@@ -172,7 +161,7 @@ func TestNativeHistoryCacheDoesNotPublishStaleInflightConversion(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		page, err := store.readHistoryPage(chat, "")
+		page, err := store.readHistory(chat)
 		done <- result{page, err}
 	}()
 	select {
@@ -189,7 +178,7 @@ func TestNativeHistoryCacheDoesNotPublishStaleInflightConversion(t *testing.T) {
 	if err := os.Chtimes(path, stamp, stamp); err != nil {
 		t.Fatal(err)
 	}
-	newer, err := store.readHistoryPage(chat, "")
+	newer, err := store.readHistory(chat)
 	if err != nil || newer.Turns[0].Reply != "edited-000" {
 		t.Fatal("new generation waited for or reused the old conversion", err)
 	}
@@ -202,7 +191,7 @@ func TestNativeHistoryCacheDoesNotPublishStaleInflightConversion(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("in-flight conversion did not finish")
 	}
-	_, _ = store.readHistoryPage(chat, "")
+	_, _ = store.readHistory(chat)
 	if reads.Load() != 2 {
 		t.Fatal("old conversion evicted or overwrote the newer cache", reads.Load())
 	}
@@ -211,7 +200,7 @@ func TestNativeHistoryCacheDoesNotPublishStaleInflightConversion(t *testing.T) {
 func TestNativeHistoryCacheBoundsMemoryAndEvictsLeastRecent(t *testing.T) {
 	store := testStore(t)
 	store.historyCache.maxFiles = 2
-	store.historyCache.maxBytes = 1024
+	store.historyCache.setMaxBytes(2048)
 	indexes, reads := countNativeHistoryReads(store)
 	root := t.TempDir()
 	chat := chatmodel.Session{ID: "cache-lru", Backend: chatmodel.BackendCodex, NativeSessionID: "cache-lru-native"}
@@ -222,10 +211,10 @@ func TestNativeHistoryCacheBoundsMemoryAndEvictsLeastRecent(t *testing.T) {
 	load := func(path string) {
 		t.Helper()
 		chat.NativeSessionPath = path
-		if _, err := store.readHistoryPage(chat, ""); err != nil {
+		if _, err := store.readHistory(chat); err != nil {
 			t.Fatal(err)
 		}
-		if store.historyCache.bytes > 1024 || len(store.historyCache.files) > 2 {
+		if store.historyCache.bytes > 2048 || len(store.historyCache.files) > 2 {
 			t.Fatal("cache grew beyond its bounds")
 		}
 	}
@@ -245,13 +234,22 @@ func TestNativeHistoryCacheBoundsMemoryAndEvictsLeastRecent(t *testing.T) {
 	if store.historyCache.bytes != 0 || len(store.historyCache.files) != 0 {
 		t.Fatal("cache cleanup retained history")
 	}
-	// A single response larger than the cache budget is served, not retained.
+	// A complete turn can exceed the target, but must still be cached intact.
+	store.historyCache.setMaxBytes(1024)
+	var oversizedReads int
 	store.historyCache.readTurn = func(chatmodel.Backend, string, agent.NativeTurn) (chatmodel.Transcript, error) {
+		oversizedReads++
 		return chatmodel.Transcript{Parts: []chatmodel.Part{{Role: "assistant", Kind: "text", Text: strings.Repeat("x", 2000)}}}, nil
 	}
-	load(paths[0])
-	if store.historyCache.bytes != 0 {
-		t.Fatal("oversized response was retained in cache")
+	for _, path := range []string{paths[0], paths[0], paths[1], paths[1], paths[0]} {
+		chat.NativeSessionPath = path
+		page, err := store.readHistory(chat)
+		if err != nil || page.Transcript.Parts[0].Text != strings.Repeat("x", 2000) || len(store.historyCache.files) != 1 || store.historyCache.bytes < 2000 {
+			t.Fatal("oversized response was not cached in full", err)
+		}
+	}
+	if oversizedReads != 3 {
+		t.Fatal("oversized turn cache did not reuse or evict whole turns", oversizedReads)
 	}
 }
 
@@ -272,7 +270,7 @@ func TestNativeHistoryCacheUnrelatedFilesDoNotBlock(t *testing.T) {
 	load := func(path string) <-chan error {
 		done := make(chan error, 1)
 		go func() {
-			_, err := store.readHistoryPage(chatmodel.Session{ID: path, Backend: chatmodel.BackendCodex, NativeSessionPath: path}, "")
+			_, err := store.readHistory(chatmodel.Session{ID: path, Backend: chatmodel.BackendCodex, NativeSessionPath: path})
 			done <- err
 		}()
 		return done
@@ -322,7 +320,7 @@ func TestNativeHistoryCacheSharesClaudeParts(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"viewer-one", "viewer-two"} {
-		page, err := store.readHistoryPage(chatmodel.Session{ID: id, Backend: chatmodel.BackendClaude, NativeSessionPath: path}, "")
+		page, err := store.readHistory(chatmodel.Session{ID: id, Backend: chatmodel.BackendClaude, NativeSessionPath: path})
 		if err != nil || len(page.Turns) != 1 || page.Turns[0].Prompt != "question" || page.Turns[0].Reply != "reply" || page.Turns[0].Model != "claude-test" {
 			t.Fatalf("invalid cached Claude history: %+v, %v", page.Turns, err)
 		}
@@ -332,39 +330,58 @@ func TestNativeHistoryCacheSharesClaudeParts(t *testing.T) {
 	}
 }
 
-func TestNativeHistoryCacheTurnContentLRU(t *testing.T) {
+func TestNativeHistoryCacheRetainsOversizedSessionAsAWhole(t *testing.T) {
 	store := testStore(t)
-	store.historyCache.maxBytes = 1024
+	store.historyCache.setMaxBytes(1024)
 	_, reads := countNativeHistoryReads(store)
+	root := t.TempDir()
+	first, second := filepath.Join(root, "first.jsonl"), filepath.Join(root, "second.jsonl")
+	for _, path := range []string{first, second} {
+		appendNativeTurns(t, path, 0, 3, 1)
+	}
+	load := func(path string) {
+		t.Helper()
+		snapshot, err := store.readHistory(chatmodel.Session{ID: "whole-session", Backend: chatmodel.BackendCodex, NativeSessionPath: path})
+		if err != nil || len(snapshot.Turns) != 3 || len(snapshot.Transcript.Parts) != 9 || snapshot.Turns[0].Prompt != "prompt-000" || snapshot.Turns[2].Reply != "answer-002" {
+			t.Fatal("oversized session lost content", err)
+		}
+		if len(store.historyCache.files) != 1 || store.historyCache.bytes < 24000 {
+			t.Fatal("oversized session was not cached intact")
+		}
+	}
+	load(first)
+	load(first)
+	if reads.Load() != 3 {
+		t.Fatal("oversized session evicted its own early turns")
+	}
+	load(second)
+	load(second)
+	load(first)
+	if reads.Load() != 9 {
+		t.Fatal("cache did not reuse and evict whole sessions", reads.Load())
+	}
+}
+
+func TestNativeHistoryCacheDoesNotPublishPartialDecode(t *testing.T) {
+	store := testStore(t)
 	path := filepath.Join(t.TempDir(), "native.jsonl")
 	appendNativeTurns(t, path, 0, 3, 0)
-	load := func(turn int) {
-		t.Helper()
-		err := store.historyCache.read(chatmodel.BackendCodex, path, func(file *nativeHistory) error {
-			_, err := store.historyCache.transcript(file, turn)
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
+	decodeErr := errors.New("failed to decode turn")
+	store.historyCache.readTurn = func(backend chatmodel.Backend, path string, turn agent.NativeTurn) (chatmodel.Transcript, error) {
+		if turn.ID == "native-turn-001" {
+			return chatmodel.Transcript{}, decodeErr
 		}
-		if store.historyCache.bytes > 1024 {
-			t.Fatal("turn content exceeded the shared memory budget")
-		}
+		return agent.ReadSessionTurn(backend, path, turn)
 	}
-	load(0)
-	load(1)
-	load(0)
-	if reads.Load() != 2 {
-		t.Fatal("two turns did not fit in the cache")
+	chat := chatmodel.Session{ID: "partial", Backend: chatmodel.BackendCodex, NativeSessionPath: path}
+	snapshot, err := store.readHistory(chat)
+	if !errors.Is(err, decodeErr) || len(snapshot.Turns) != 0 || len(snapshot.Transcript.Parts) != 0 || store.historyCache.bytes != 0 {
+		t.Fatal("failed parse returned or cached partial history", err)
 	}
-	load(2)
-	load(0)
-	if reads.Load() != 3 {
-		t.Fatal("recently viewed turn was evicted")
-	}
-	load(1)
-	if reads.Load() != 4 {
-		t.Fatal("least recently used turn was not evicted")
+	_, reads := countNativeHistoryReads(store)
+	snapshot, err = store.readHistory(chat)
+	if err != nil || len(snapshot.Turns) != 3 || reads.Load() != 3 {
+		t.Fatal("retry did not fully parse the session", err)
 	}
 }
 
@@ -382,7 +399,7 @@ func TestNativeHistoryCacheChangingSourceDoesNotReturnPartialHistory(t *testing.
 		}
 		return transcript, err
 	}
-	page, err := store.readHistoryPage(chatmodel.Session{ID: "unstable", Backend: chatmodel.BackendCodex, NativeSessionPath: path}, "")
+	page, err := store.readHistory(chatmodel.Session{ID: "unstable", Backend: chatmodel.BackendCodex, NativeSessionPath: path})
 	if !errors.Is(err, errHistoryChanged) || reads != 3 || len(page.Turns) != 0 || len(page.Transcript.Parts) != 0 {
 		t.Fatalf("unstable source returned stale or partial content: turns=%d reads=%d error=%v", len(page.Turns), reads, err)
 	}

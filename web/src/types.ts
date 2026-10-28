@@ -91,7 +91,7 @@ export type Turn = {
   pending_approval?: ApprovalRequest;
 };
 export type Chat = {
-  history?: { before?: string; has_more: boolean; error?: string };
+  history?: { before?: string; has_more?: boolean; error?: string };
   automation_chat?: boolean;
   collaborator_ids?: string[];
   artifacts?: { type: "pull_request"; url: string }[];

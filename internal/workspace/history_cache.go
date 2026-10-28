@@ -24,7 +24,6 @@ type nativeHistoryCache struct {
 	mu       sync.Mutex
 	files    map[string]*nativeHistory
 	fileLRU  list.List
-	partLRU  list.List
 	bytes    int
 	maxFiles int
 	maxBytes int
@@ -40,16 +39,9 @@ type nativeHistory struct {
 	info    os.FileInfo
 	indexed bool
 	index   []agent.NativeTurn
-	parts   map[int]*cachedNativeTranscript
+	parts   []chatmodel.Transcript
+	bytes   int
 	lru     *list.Element
-}
-
-type cachedNativeTranscript struct {
-	owner      *nativeHistory
-	turn       int
-	transcript chatmodel.Transcript
-	bytes      int
-	lru        *list.Element
 }
 
 func sameHistoryFile(a, b os.FileInfo) bool {
@@ -78,7 +70,7 @@ func (c *nativeHistoryCache) file(backend chatmodel.Backend, path string) (*nati
 	if c.files == nil {
 		c.files = make(map[string]*nativeHistory)
 	}
-	file := &nativeHistory{key: key, backend: backend, path: path, info: info, parts: make(map[int]*cachedNativeTranscript)}
+	file := &nativeHistory{key: key, backend: backend, path: path, info: info}
 	file.lru = c.fileLRU.PushFront(file)
 	c.files[key] = file
 	limit := c.maxFiles
@@ -131,59 +123,74 @@ func (c *nativeHistoryCache) read(backend chatmodel.Backend, path string, use fu
 }
 
 // The caller holds file.mu. Cached slices never escape into mutable responses.
-func (c *nativeHistoryCache) transcript(file *nativeHistory, turn int) (chatmodel.Transcript, error) {
+func (c *nativeHistoryCache) transcripts(file *nativeHistory) ([]chatmodel.Transcript, error) {
 	c.mu.Lock()
-	if cached := file.parts[turn]; cached != nil {
-		c.partLRU.MoveToFront(cached.lru)
-		transcript := cloneTranscript(cached.transcript)
+	if cached := file.parts; cached != nil {
 		c.mu.Unlock()
-		return transcript, nil
+		return cloneTranscripts(cached), nil
 	}
 	c.mu.Unlock()
 	read := c.readTurn
 	if read == nil {
 		read = agent.ReadSessionTurn
 	}
-	transcript, err := read(file.backend, file.path, file.index[turn])
-	if err != nil {
-		return transcript, err
-	}
-	bytes := 128
-	for _, part := range transcript.Parts {
-		bytes += 128 + len(part.Role) + len(part.Kind) + len(part.Name) + len(part.Model) + len(part.Text) + len(part.ImageURL)
+	transcripts := make([]chatmodel.Transcript, len(file.index))
+	bytes := 0
+	for i, turn := range file.index {
+		transcript, err := read(file.backend, file.path, turn)
+		if err != nil {
+			return nil, err
+		}
+		transcripts[i] = transcript
+		bytes += 128
+		for _, part := range transcript.Parts {
+			bytes += 128 + len(part.Role) + len(part.Kind) + len(part.Name) + len(part.Model) + len(part.Text) + len(part.ImageURL)
+		}
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	limit := c.maxBytes
 	if limit <= 0 {
 		limit = historyCacheBytes
 	}
-	if bytes > limit || c.files[file.key] != file {
-		return transcript, nil
+	if c.files[file.key] != file {
+		c.mu.Unlock()
+		return transcripts, nil
 	}
-	for c.bytes+bytes > limit {
-		c.removeTranscript(c.partLRU.Back().Value.(*cachedNativeTranscript))
+	// Retain an entire session together. Evicting its early turns while filling
+	// a large snapshot would make every subsequent full read decode it again.
+	c.fileLRU.MoveToFront(file.lru)
+	for c.bytes+bytes > limit && c.fileLRU.Len() > 1 {
+		c.removeFile(c.fileLRU.Back().Value.(*nativeHistory))
 	}
-	cached := &cachedNativeTranscript{owner: file, turn: turn, transcript: cloneTranscript(transcript), bytes: bytes}
-	cached.lru = c.partLRU.PushFront(cached)
-	file.parts[turn] = cached
+	file.parts, file.bytes = transcripts, bytes
 	c.bytes += bytes
-	return transcript, nil
+	c.mu.Unlock()
+	return cloneTranscripts(transcripts), nil
+}
+
+func cloneTranscripts(transcripts []chatmodel.Transcript) []chatmodel.Transcript {
+	clones := make([]chatmodel.Transcript, len(transcripts))
+	for i, transcript := range transcripts {
+		clones[i] = cloneTranscript(transcript)
+	}
+	return clones
 }
 
 // The caller holds c.mu for all LRU and cache membership changes.
-func (c *nativeHistoryCache) removeTranscript(cached *cachedNativeTranscript) {
-	delete(cached.owner.parts, cached.turn)
-	c.partLRU.Remove(cached.lru)
-	c.bytes -= cached.bytes
-}
-
 func (c *nativeHistoryCache) removeFile(file *nativeHistory) {
-	for _, cached := range file.parts {
-		c.removeTranscript(cached)
-	}
+	c.bytes -= file.bytes
+	file.parts, file.bytes = nil, 0
 	delete(c.files, file.key)
 	c.fileLRU.Remove(file.lru)
+}
+
+func (c *nativeHistoryCache) setMaxBytes(limit int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.maxBytes = limit
+	for c.bytes > limit && c.fileLRU.Len() > 1 {
+		c.removeFile(c.fileLRU.Back().Value.(*nativeHistory))
+	}
 }
 
 func (c *nativeHistoryCache) clear() {

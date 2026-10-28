@@ -53,7 +53,7 @@ type Turn struct {
 }
 
 type Session struct {
-	History           *HistoryPage  `json:"history,omitempty"`
+	History           *HistoryState `json:"history,omitempty"`
 	AutomationChat    bool          `json:"automation_chat,omitempty"`
 	CollaboratorIDs   []string      `json:"collaborator_ids,omitempty"`
 	Artifacts         []Artifact    `json:"artifacts,omitempty"`
@@ -74,7 +74,7 @@ type Session struct {
 	Turns             []Turn        `json:"turns"`
 }
 
-type HistoryPage struct {
+type HistoryState struct {
 	Before  string `json:"before,omitempty"`
 	HasMore bool   `json:"has_more"`
 	Error   string `json:"error,omitempty"`

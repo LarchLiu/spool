@@ -451,10 +451,16 @@ func TestSSEDoesNotCarryAttachmentsIntoFollowingTurn(t *testing.T) {
 						continue
 					}
 					var event struct {
-						Turn chatmodel.Turn `json:"turn"`
+						Turn  chatmodel.Turn   `json:"turn"`
+						Turns []chatmodel.Turn `json:"turns"`
 					}
-					if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event) == nil && event.Turn.ID != "" {
-						return event.Turn
+					if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event) == nil {
+						if event.Turn.ID != "" {
+							return event.Turn
+						}
+						if len(event.Turns) > 0 {
+							return event.Turns[len(event.Turns)-1]
+						}
 					}
 				}
 			}

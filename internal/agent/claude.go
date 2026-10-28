@@ -218,7 +218,7 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				switch deltaType {
 				case "text_delta":
 					text := nestedString(value, "event", "delta", "text")
-					result.Text = chatmodel.AppendBounded(result.Text, text, chatmodel.MaxReplyBytes)
+					result.Text += text
 					if text != "" {
 						streamed = true
 						if err := emit(AgentEvent{Type: "delta", Text: text}); err != nil {
@@ -227,7 +227,7 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 					}
 				case "thinking_delta":
 					text := nestedString(value, "event", "delta", "thinking")
-					streamedThinking = chatmodel.AppendBounded(streamedThinking, text, chatmodel.MaxReplyBytes)
+					streamedThinking += text
 					part := chatmodel.Part{Role: "assistant", Kind: "thinking", Model: result.Model, Text: text}
 					if part.Text != "" {
 						if err := emit(AgentEvent{Type: "part", Part: &part}); err != nil {
@@ -261,7 +261,7 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 					if strings.HasPrefix(text, streamedThinking) {
 						delta = text[len(streamedThinking):]
 					}
-					streamedThinking = chatmodel.Clip(text, chatmodel.MaxReplyBytes)
+					streamedThinking = text
 					if delta == "" {
 						continue
 					}
@@ -327,7 +327,7 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				if streamed {
 					text = full[len(result.Text):]
 				}
-				result.Text = chatmodel.AppendBounded(result.Text, text, chatmodel.MaxReplyBytes)
+				result.Text += text
 				if text != "" {
 					if err := emit(AgentEvent{Type: "delta", Text: text}); err != nil {
 						return result, err, false

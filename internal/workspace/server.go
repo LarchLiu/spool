@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,8 +40,6 @@ type App struct {
 	liveBase   map[string]chatmodel.Transcript
 	liveTurns  map[string][]chatmodel.Turn
 	completed  map[string]completedTurn
-	streams    map[string]int
-	streamSeen map[string]bool
 	presence   *Presence
 	limiter    loginLimiter
 	assets     http.Handler
@@ -54,9 +53,7 @@ type App struct {
 }
 
 type completedTurn struct {
-	turn  chatmodel.Turn
-	base  chatmodel.Transcript
-	prior []chatmodel.Turn
+	turn chatmodel.Turn
 }
 
 type chatMetadata struct {
@@ -74,7 +71,7 @@ func sessionMetadata(chat chatmodel.Session) chatMetadata {
 func NewApp(store *Store, runner agent.AgentRunner, _, _ string) *App {
 	settings, _ := store.Settings()
 	assets, _ := fs.Sub(resources.Frontend(), "frontend")
-	return &App{store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, streams: map[string]int{}, streamSeen: map[string]bool{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{}, assets: http.FileServer(http.FS(assets))}
+	return &App{store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{}, assets: http.FileServer(http.FS(assets))}
 }
 func apiJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -334,7 +331,11 @@ func (a *App) snapshot(chat chatmodel.Session) chatmodel.Session {
 		chat.Turns[len(chat.Turns)-1] = t
 		chat.Status = t.Status
 	} else if finished, exists := a.completed[chat.ID]; exists {
-		chat, _ = mergeCompletedTurn(chat, finished)
+		var used bool
+		chat, used = mergeCompletedTurn(chat, finished)
+		if !used {
+			delete(a.completed, chat.ID)
+		}
 	}
 	chat.NativeSessionID = ""
 	return chat
@@ -348,50 +349,88 @@ func mergeCompletedTurn(chat chatmodel.Session, finished completedTurn) (chatmod
 	if len(chat.Turns) == 0 || chat.Turns[len(chat.Turns)-1].ID != finished.turn.ID {
 		return chat, false
 	}
-	candidate := runningTranscript(finished.base, finished.turn)
-	if len(candidate.Parts) <= len(chat.Transcript.Parts) {
+	index := len(chat.Turns) - 1
+	native := chat.Turns[index]
+	replyCaughtUp := strings.HasPrefix(native.Reply, finished.turn.Reply)
+	inputCaughtUp := len(native.Parts) > 0 && strings.Contains(native.Prompt, finished.turn.Prompt)
+	if len(finished.turn.Parts) == 0 || (inputCaughtUp && replyCaughtUp && nativeOutputCovers(native.Parts, finished.turn.Parts)) {
 		return chat, false
 	}
-	chat.Transcript = candidate
-	restorePriorTurns(&chat, finished.prior)
+	// Native normalization can use different part boundaries than the live
+	// stream. Replace only this turn, leaving preceding turn ranges unchanged.
+	start := max(0, min(native.PartStart, len(chat.Transcript.Parts)))
 	turn := finished.turn
-	turn.PartStart = len(finished.base.Parts)
-	turn.Parts = append([]chatmodel.Part(nil), candidate.Parts[turn.PartStart:]...)
+	inputs := max(0, min(turn.InputEnd-turn.PartStart, len(turn.Parts)))
+	turn.PartStart, turn.InputEnd = start, start+inputs
+	turn.Parts = append([]chatmodel.Part(nil), finished.turn.Parts...)
+	if replyCaughtUp && len(native.Reply) > len(turn.Reply) {
+		appendTurnText(&turn, chatmodel.Part{Role: "assistant", Kind: "text", Model: native.Model, Text: native.Reply[len(turn.Reply):]})
+		turn.Reply = native.Reply
+	}
+	chat.Transcript.Parts = append(append([]chatmodel.Part(nil), chat.Transcript.Parts[:start]...), turn.Parts...)
 	turn.PartEnd = turn.PartStart + len(turn.Parts)
-	chat.Turns[len(chat.Turns)-1] = turn
+	chat.Turns[index] = turn
+	chat.Transcript.Captured = len(chat.Transcript.Parts)
 	chat.Status = turn.Status
 	return chat, true
 }
 
-func restorePriorTurns(chat *chatmodel.Session, prior []chatmodel.Turn) {
-	for i, turn := range prior {
-		if i < len(chat.Turns)-1 && chat.Turns[i].ID == turn.ID {
-			chat.Turns[i] = turn
+func nativeOutputCovers(native, live []chatmodel.Part) bool {
+	type outputKind struct{ role, kind string }
+	content := make(map[outputKind]*strings.Builder)
+	for _, part := range native {
+		if part.Kind != "tool_result" && part.Kind != "thinking" {
+			continue
 		}
+		key := outputKind{part.Role, part.Kind}
+		if content[key] == nil {
+			content[key] = &strings.Builder{}
+		}
+		content[key].WriteString(part.Text)
 	}
+	remaining := make(map[outputKind]string, len(content))
+	for key, text := range content {
+		remaining[key] = text.String()
+	}
+	// Native normalization can split or join parts and change tool/model labels.
+	// Require the streamed content in order, not matching part counts or labels.
+	uses := native
+	for _, part := range live {
+		if part.Kind == "tool_use" {
+			found := false
+			for len(uses) > 0 {
+				candidate := uses[0]
+				uses = uses[1:]
+				// Codex streams a file-change title but can persist a raw patch
+				// call instead. Its actual diff is checked as a result below.
+				fileChange := part.Name == "fileChange" && (candidate.Name == "fileChange" || candidate.Name == "apply_patch")
+				if candidate.Kind == part.Kind && candidate.Role == part.Role && (fileChange || strings.TrimSpace(candidate.Text) == strings.TrimSpace(part.Text)) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+			continue
+		}
+		if part.Kind != "tool_result" && part.Kind != "thinking" {
+			continue
+		}
+		key := outputKind{part.Role, part.Kind}
+		at := strings.Index(remaining[key], part.Text)
+		if at < 0 {
+			return false
+		}
+		remaining[key] = remaining[key][at+len(part.Text):]
+	}
+	return true
 }
+
 func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity, path string) {
 	parts := strings.Split(strings.TrimPrefix(path, "/api/chats/"), "/")
 	if len(parts) > 2 || !chatmodel.ValidID(parts[0]) {
 		apiError(w, 404, "聊天不存在")
-		return
-	}
-	if len(parts) == 2 && parts[1] == "history" && r.Method == "GET" {
-		if !a.store.CanAccessChat(id.User.ID, parts[0]) {
-			apiError(w, 404, "聊天不存在")
-			return
-		}
-		page, err := a.store.historyPage(parts[0], r.URL.Query().Get("before"))
-		if err != nil {
-			if errors.Is(err, errHistoryCursor) {
-				apiError(w, 400, "Invalid history cursor")
-			} else {
-				apiError(w, 503, "Native session history is unavailable")
-			}
-			return
-		}
-		page.NativeSessionID = ""
-		apiJSON(w, 200, page)
 		return
 	}
 	chat, ok := a.accessibleChat(id.User.ID, parts[0])
@@ -401,6 +440,20 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 	}
 	if len(parts) == 1 && r.Method == "GET" {
 		apiJSON(w, 200, historyWindow(a.snapshot(chat)))
+		return
+	}
+	if len(parts) == 2 && parts[1] == "history" && r.Method == "GET" {
+		chat = a.snapshot(chat)
+		if chat.History != nil && chat.History.Error != "" {
+			apiError(w, 503, "Native session history is unavailable")
+			return
+		}
+		page, err := historyPage(chat, r.URL.Query().Get("before"))
+		if err != nil {
+			apiError(w, 400, "Invalid history cursor")
+			return
+		}
+		apiJSON(w, 200, page)
 		return
 	}
 	if len(parts) == 2 && parts[1] == "events" && r.Method == "GET" {
@@ -443,7 +496,7 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 			return
 		}
 		fork.NativeSessionID = ""
-		apiJSON(w, 201, fork)
+		apiJSON(w, 201, historyWindow(fork))
 		return
 	}
 	if len(parts) == 2 && parts[1] == "approvals" && r.Method == "POST" {
@@ -627,9 +680,6 @@ func (a *App) seedLiveTurn(chat chatmodel.Session, turn chatmodel.Turn) chatmode
 	turn.PartEnd = turn.PartStart + len(turn.Parts)
 	a.liveMu.Lock()
 	delete(a.completed, chat.ID)
-	if a.streams[chat.ID] > 0 {
-		a.streamSeen[chat.ID] = true
-	}
 	a.liveBase[chat.ID] = base
 	a.liveTurns[chat.ID] = append([]chatmodel.Turn(nil), chat.Turns...)
 	a.live[chat.ID] = turn
@@ -686,6 +736,8 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 			terminal := turn
 			if current, ok := a.live[id]; ok && current.ID == turn.ID {
 				terminal = current
+			} else if stopped, ok := a.completed[id]; ok && stopped.turn.ID == turn.ID {
+				terminal = stopped.turn
 			}
 			if persisted, ok := a.store.runtimeTurn(id); ok && persisted.ID == turn.ID {
 				terminal.NativeTurnID = persisted.NativeTurnID
@@ -710,10 +762,7 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 				}
 				terminal.Reply = result.Text
 			}
-			if a.streamSeen[id] {
-				a.completed[id] = completedTurn{turn: terminal, base: cloneTranscript(a.liveBase[id]), prior: a.liveTurns[id]}
-			}
-			delete(a.streamSeen, id)
+			a.completed[id] = completedTurn{turn: terminal}
 			delete(a.live, id)
 			delete(a.liveBase, id)
 			delete(a.liveTurns, id)
@@ -797,7 +846,7 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 		case "turn":
 			current.NativeTurnID = event.TurnID
 		case "delta":
-			current.Reply = chatmodel.AppendBounded(current.Reply, event.Text, chatmodel.MaxReplyBytes)
+			current.Reply += event.Text
 			appendTurnText(&current, chatmodel.Part{Role: "assistant", Kind: "text", Model: current.Model, Text: event.Text})
 		case "part":
 			if event.Part != nil {
@@ -892,6 +941,17 @@ func writeSSE(w http.ResponseWriter, event string, v any) error {
 	}
 	return controller.Flush()
 }
+
+func chatStreamSignature(turn chatmodel.Turn, status chatmodel.SessionStatus, parts []chatmodel.Part, updated int64) [sha256.Size]byte {
+	data, _ := json.Marshal(struct {
+		Turn      chatmodel.Turn
+		Status    chatmodel.SessionStatus
+		Parts     []chatmodel.Part
+		UpdatedAt int64
+	}{turn, status, parts, updated})
+	return sha256.Sum256(data)
+}
+
 func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string) {
 	chat, ok := a.accessibleChat(user, id)
 	if !ok {
@@ -901,20 +961,9 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 	if !startSSE(w) {
 		return
 	}
-	a.liveMu.Lock()
-	a.streams[id]++
-	a.liveMu.Unlock()
-	defer func() {
-		a.liveMu.Lock()
-		if a.streams[id] <= 1 {
-			delete(a.streams, id)
-		} else {
-			a.streams[id]--
-		}
-		a.liveMu.Unlock()
-	}()
 	chat = a.snapshot(chat)
-	if err := writeSSE(w, "snapshot", historyWindow(chat)); err != nil {
+	initial := historyWindow(chat)
+	if err := writeSSE(w, "snapshot", initial); err != nil {
 		return
 	}
 	transcriptSnapshot := chat.Transcript
@@ -930,9 +979,13 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 	defer ticker.Stop()
 	heart := time.NewTicker(a.streamHeartbeat)
 	defer heart.Stop()
-	var previous string
+	var previous [sha256.Size]byte
 	var cached chatmodel.Turn
-	var cachedUpdated int64 = -1
+	if len(chat.Turns) > 0 {
+		cached = chat.Turns[len(chat.Turns)-1]
+		previous = chatStreamSignature(initial.Turns[len(initial.Turns)-1], initial.Status, initial.Transcript.Parts, initial.UpdatedAt)
+	}
+	cachedUpdated := chat.UpdatedAt
 	previousMetadata, _ := json.Marshal(sessionMetadata(chat))
 	for {
 		// Poll only indexed metadata. Never decode an entire conversation on every
@@ -949,7 +1002,8 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 			}
 		}
 		a.liveMu.Unlock()
-		if cachedUpdated != meta.UpdatedAt {
+		revisionChanged := cachedUpdated != meta.UpdatedAt
+		if revisionChanged {
 			latest, ok := a.store.Get(id)
 			if !ok {
 				return
@@ -968,15 +1022,6 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 				previousMetadata = encoded
 			}
 			if !live || meta.Status != chatmodel.StatusRunning {
-				a.liveMu.Lock()
-				if finished, exists := a.completed[id]; exists {
-					var used bool
-					latest, used = mergeCompletedTurn(latest, finished)
-					if !used {
-						delete(a.completed, id)
-					}
-				}
-				a.liveMu.Unlock()
 				transcriptSnapshot = latest.Transcript
 				baseTranscript = latest.Transcript
 				if len(latest.Turns) > 0 {
@@ -992,31 +1037,28 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 		} else {
 			transcriptSnapshot = runningTranscript(baseTranscript, current)
 		}
-		if current.ID != "" {
+		// Idle history already went out in the snapshot. Only live or revised
+		// state needs a window/signature; do not serialize it every 100 ms.
+		if current.ID != "" && (revisionChanged || (live && meta.Status == chatmodel.StatusRunning)) {
 			status := meta.Status
 			if live && meta.Status == chatmodel.StatusRunning {
 				status = current.Status
 			}
-			approval := ""
-			if current.PendingApproval != nil {
-				approval = current.PendingApproval.ID
+			window := chatmodel.Session{ID: id, History: streamHistory, Turns: append([]chatmodel.Turn(nil), streamTurns...), Transcript: transcriptSnapshot}
+			if len(window.Turns) > 0 && window.Turns[len(window.Turns)-1].ID == current.ID {
+				window.Turns[len(window.Turns)-1] = current
 			}
-			partSignature, _ := json.Marshal(transcriptSnapshot.Parts)
+			window = historyWindow(window)
+			if len(window.Turns) > 0 {
+				current = window.Turns[len(window.Turns)-1]
+			}
 			// Resend at the new revision if metadata overtook an older turn event.
-			signature := fmt.Sprintf("%s/%s/%s/%s/%x/%d/%s/%s/%d", current.ID, status, current.Model, current.ReasoningEffort, partSignature, current.FinishedAt, current.Error, approval, meta.UpdatedAt)
+			signature := chatStreamSignature(current, status, window.Transcript.Parts, meta.UpdatedAt)
 			if signature != previous {
-				window := chatmodel.Session{ID: id, History: streamHistory, Turns: append([]chatmodel.Turn(nil), streamTurns...), Transcript: transcriptSnapshot}
-				if len(window.Turns) > 0 && window.Turns[len(window.Turns)-1].ID == current.ID {
-					window.Turns[len(window.Turns)-1] = current
-				}
-				window = historyWindow(window)
-				if len(window.Turns) > 0 {
-					current = window.Turns[len(window.Turns)-1]
-				}
 				value := struct {
 					Turn       chatmodel.Turn          `json:"turn"`
 					Turns      []chatmodel.Turn        `json:"turns"`
-					History    *chatmodel.HistoryPage  `json:"history,omitempty"`
+					History    *chatmodel.HistoryState `json:"history,omitempty"`
 					Transcript chatmodel.Transcript    `json:"transcript"`
 					Status     chatmodel.SessionStatus `json:"status"`
 					Title      string                  `json:"title"`

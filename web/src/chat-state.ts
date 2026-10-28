@@ -125,29 +125,12 @@ function mergeTurn(previous: Turn | undefined, next: Turn): Turn {
 export function reconcile(previous: Chat | null, next: Chat): Chat {
   if (previous?.id !== next.id) return next;
   if (previous.updated_at > next.updated_at) return previous;
-  if (previous.history || next.history) return reconcilePaged(previous, next);
-  const oldByID = new Map(previous.turns.map((turn) => [turn.id, turn]));
-  const hasNewServerTurn = next.turns.some(
-    (turn) => !turn.id.startsWith("pending-") && !oldByID.has(turn.id),
-  );
-  const turns = next.turns.map((turn) => mergeTurn(oldByID.get(turn.id), turn));
-  const seen = new Set(turns.map((turn) => turn.id));
-  for (const turn of previous.turns) {
-    if (seen.has(turn.id)) continue;
-    if (turn.id.startsWith("pending-") && hasNewServerTurn) continue;
-    turns.push(turn);
-  }
-  return {
-    ...next,
-    turns,
-    transcript: mergeTranscript(previous.transcript, next.transcript),
-    status: turns.at(-1)?.status || next.status,
-  };
+  return reconcileTurns(previous, next);
 }
 
-// Page-local part offsets must be rebased by turn identity, never compared as
-// though REST pages and live snapshots shared a single transcript prefix.
-function reconcilePaged(previous: Chat, next: Chat, older = false): Chat {
+// Live and native normalization can yield different part layouts for the same
+// turn. Merge by identity, then rebase every range onto the resulting transcript.
+function reconcileTurns(previous: Chat, next: Chat, older = false): Chat {
   const byID = new Map<string, { turn: Turn; parts: TranscriptPart[] }>();
   const aliases = new Map<string, string>();
   for (const turn of previous.turns) {
@@ -175,14 +158,18 @@ function reconcilePaged(previous: Chat, next: Chat, older = false): Chat {
       turn.part_start,
       turn.part_end,
     );
-    const parts = old
-      ? mergeTranscript({ parts: old.parts }, { parts: incoming }).parts
-      : incoming;
-    const inputs = incoming.length
-      ? turn.input_end - turn.part_start
-      : old
+    const nativeComplete =
+      turn.status !== "running" &&
+      next.transcript.source?.endsWith("-native") &&
+      incoming.length > 0;
+    const parts =
+      old && !nativeComplete
+        ? mergeTranscript({ parts: old.parts }, { parts: incoming }).parts
+        : incoming;
+    const inputs =
+      old && parts === old.parts
         ? old.turn.input_end - old.turn.part_start
-        : 0;
+        : turn.input_end - turn.part_start;
     const merged = mergeTurn(
       old ? { ...old.turn, id: turn.id } : undefined,
       turn,
@@ -196,14 +183,34 @@ function reconcilePaged(previous: Chat, next: Chat, older = false): Chat {
   const incomingIDs = next.turns.map((turn) => turn.id);
   const incoming = new Set(incomingIDs);
   const missing = oldIDs.filter((id) => !incoming.has(id));
-  // File/page order is authoritative. Converted sessions may have zero or
+  // File order is authoritative. Converted sessions may have zero or
   // repeated timestamps, and clocks can move backwards between real turns.
+  const nativeSnapshot =
+    !older &&
+    next.transcript.source?.endsWith("-native") &&
+    !next.history?.error &&
+    !next.history?.has_more;
+  const keepMissing = missing.filter((id) => {
+    if (older) return true;
+    const turn = byID.get(id)!.turn;
+    if (id.startsWith("pending-") || turn.status === "running")
+      return !newServerTurn;
+    return !nativeSnapshot;
+  });
   const order = older
     ? [...incomingIDs, ...missing]
     : [
-        ...missing.filter((id) => !id.startsWith("pending-")),
+        ...keepMissing.filter(
+          (id) =>
+            !id.startsWith("pending-") &&
+            byID.get(id)!.turn.status !== "running",
+        ),
         ...incomingIDs,
-        ...missing.filter((id) => id.startsWith("pending-") && !newServerTurn),
+        ...keepMissing.filter(
+          (id) =>
+            id.startsWith("pending-") ||
+            byID.get(id)!.turn.status === "running",
+        ),
       ];
   const parts: TranscriptPart[] = [];
   const turns = [...new Set(order)].map((id) => {
@@ -213,7 +220,7 @@ function reconcilePaged(previous: Chat, next: Chat, older = false): Chat {
       entry.parts.length,
       entry.turn.input_end - entry.turn.part_start,
     );
-    parts.push(...entry.parts);
+    for (const part of entry.parts) parts.push(part);
     return {
       ...entry.turn,
       part_start: start,
@@ -221,21 +228,19 @@ function reconcilePaged(previous: Chat, next: Chat, older = false): Chat {
       part_end: parts.length,
     };
   });
-  const history =
-    older || turns[0]?.id === next.turns[0]?.id
-      ? next.history
-      : previous.history;
-  const metadata = older ? previous : next;
   return {
-    ...metadata,
-    history,
+    ...(older ? previous : next),
+    history:
+      older || turns[0]?.id === next.turns[0]?.id
+        ? next.history
+        : { ...previous.history, error: next.history?.error },
     turns,
-    transcript: { ...metadata.transcript, parts },
-    status: turns.at(-1)?.status || metadata.status,
+    transcript: { ...(older ? previous : next).transcript, parts },
+    status: turns.at(-1)?.status || (older ? previous : next).status,
   };
 }
 
 export function prependHistory(previous: Chat, page: Chat): Chat {
   if (previous.id !== page.id) return previous;
-  return reconcilePaged(previous, page, true);
+  return reconcileTurns(previous, page, true);
 }

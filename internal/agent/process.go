@@ -328,28 +328,27 @@ func startAgentProcess(ctx context.Context, request AgentRequest) (*agentProcess
 	go func() {
 		defer close(process.messages)
 		defer reader.Close()
-		scanner := newScanner(reader)
-		for scanner.Scan() {
+		err := readJSONLines(reader, func(line []byte) error {
 			var message map[string]any
-			if err := json.Unmarshal(scanner.Bytes(), &message); err != nil {
-				continue
+			if err := json.Unmarshal(line, &message); err != nil {
+				return nil
 			}
 			select {
 			case process.messages <- message:
 			case <-ctx.Done():
-				readDone <- ctx.Err()
-				return
+				return ctx.Err()
 			}
-		}
-		if scanner.Err() != nil {
-			// A malformed/oversized frame cannot leave a process stuck on stdout.
+			return nil
+		})
+		if err != nil {
+			// A failed read cannot leave a process stuck on stdout.
 			if cmd.Cancel != nil {
 				_ = cmd.Cancel()
 			} else {
 				_ = cmd.Process.Kill()
 			}
 		}
-		readDone <- scanner.Err()
+		readDone <- err
 	}()
 	go func() {
 		waitErr := cmd.Wait()

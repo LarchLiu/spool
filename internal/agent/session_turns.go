@@ -24,6 +24,7 @@ type NativeTurn struct {
 	End             int64
 	StartedAt       int64
 	Model           string
+	CarryNotes      bool
 	FinishedAt      int64
 	Status          chatmodel.SessionStatus
 	ReasoningEffort string
@@ -51,6 +52,7 @@ func IndexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 		return nil, err
 	}
 	defer file.Close()
+	carryNotes := offset > 0 && codexCarryAt(file, offset)
 	if _, err = file.Seek(offset, io.SeekStart); err != nil {
 		return nil, err
 	}
@@ -65,7 +67,8 @@ func IndexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 		start := position
 		position += int64(len(line))
 		var record map[string]any
-		if len(line) <= maxEventBytes && json.Unmarshal(line, &record) == nil {
+		if json.Unmarshal(line, &record) == nil {
+			carryNotes = codexCarryNotes(record, carryNotes)
 			stamp := nativeTimestamp(record["timestamp"])
 			typ := stringValue(record["type"])
 			payload, _ := record["payload"].(map[string]any)
@@ -102,7 +105,7 @@ func IndexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 						previous.FinishedAt, previous.Status = lastStamp, chatmodel.StatusCompleted
 					}
 				}
-				turns = append(turns, NativeTurn{ID: id, PromptID: prompt, Start: start, StartedAt: stamp, Model: model, ReasoningEffort: effort, Status: chatmodel.StatusRunning})
+				turns = append(turns, NativeTurn{ID: id, PromptID: prompt, Start: start, StartedAt: stamp, Model: model, CarryNotes: carryNotes, ReasoningEffort: effort, Status: chatmodel.StatusRunning})
 			}
 			if len(turns) > 0 && model != "" && typ == "turn_context" {
 				turns[len(turns)-1].Model, turns[len(turns)-1].ReasoningEffort = model, effort
@@ -138,7 +141,7 @@ func IndexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 		}
 	} else if position > offset {
 		// Old or output-only native files have no explicit input boundary.
-		turns = append(turns, NativeTurn{Start: offset, End: position, Status: chatmodel.StatusCompleted})
+		turns = append(turns, NativeTurn{Start: offset, End: position, CarryNotes: carryNotes, Status: chatmodel.StatusCompleted})
 	}
 	return turns, nil
 }
@@ -184,9 +187,9 @@ func ReadSessionTurn(backend chatmodel.Backend, path string, turn NativeTurn) (c
 			}
 			readers = append(readers, io.NewSectionReader(file, span.Start, span.End-span.Start))
 		}
-		return parseTranscriptReader(backend, io.MultiReader(readers...), turn.Model, true)
+		return parseTranscriptReader(backend, io.MultiReader(readers...), turn.Model, turn.CarryNotes)
 	}
-	return parseTranscriptReader(backend, io.NewSectionReader(file, turn.Start, turn.End-turn.Start), turn.Model, true)
+	return parseTranscriptReader(backend, io.NewSectionReader(file, turn.Start, turn.End-turn.Start), turn.Model, turn.CarryNotes)
 }
 
 func indexClaudeTurns(path string, offset, end int64) ([]NativeTurn, error) {
@@ -208,7 +211,7 @@ func indexClaudeTurns(path string, offset, end int64) ([]NativeTurn, error) {
 		start := position
 		position += int64(len(line))
 		var record map[string]any
-		if len(line) <= maxEventBytes && json.Unmarshal(line, &record) == nil && record["isSidechain"] != true {
+		if json.Unmarshal(line, &record) == nil && record["isSidechain"] != true {
 			id, parent, prompt := stringValue(record["uuid"]), stringValue(record["parentUuid"]), stringValue(record["promptId"])
 			message, _ := record["message"].(map[string]any)
 			owner := current

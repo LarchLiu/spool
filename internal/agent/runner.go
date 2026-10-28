@@ -17,10 +17,7 @@ import (
 	chatmodel "spool/internal/model"
 )
 
-const (
-	maxEventBytes  = 24 * 1024 * 1024
-	maxStderrBytes = 8 * 1024
-)
+const maxStderrBytes = 8 * 1024
 
 type AgentRequest struct {
 	ChatID            string
@@ -135,10 +132,22 @@ func WorkingDirectory(directory string) (string, error) {
 	return resolved, nil
 }
 
-func newScanner(reader io.Reader) *bufio.Scanner {
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 64*1024), maxEventBytes)
-	return scanner
+func readJSONLines(reader io.Reader, use func([]byte) error) error {
+	buffer := bufio.NewReaderSize(reader, 64*1024)
+	for {
+		line, err := buffer.ReadBytes('\n')
+		if len(line) > 0 {
+			if useErr := use(line); useErr != nil {
+				return useErr
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+	}
 }
 
 func codexActivity(item map[string]any) string {
@@ -652,9 +661,6 @@ func (b *limitedBuffer) Write(data []byte) (int, error) {
 
 // Never turn native local paths or arbitrary URLs into browser image fetches.
 func nativeImageURL(value string) string {
-	if len(value) > 6*1024*1024 {
-		return ""
-	}
 	for _, kind := range []string{"png", "jpeg", "gif", "webp"} {
 		if strings.HasPrefix(value, "data:image/"+kind+";base64,") {
 			return value

@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -8,6 +9,8 @@ import (
 	"spool/internal/agent"
 	chatmodel "spool/internal/model"
 )
+
+var errTaskSessionConversion = errors.New("Task chats cannot switch agents. Continue in the original chat to preserve its issue claim.")
 
 // A conversion is a new native session and a new chat, not a link to a mutable
 // source. Subsequent messages on either side cannot alter the other's context.
@@ -23,6 +26,9 @@ func (s *Store) forkChat(id string, backend chatmodel.Backend, options chatmodel
 	}
 	if !backend.Valid() || backend == source.Backend {
 		return source, fmt.Errorf("unsupported session conversion")
+	}
+	if source.AutomationChat {
+		return source, errTaskSessionConversion
 	}
 	if err := chatmodel.ValidateCodexOptions(options); err != nil {
 		return source, err
@@ -62,14 +68,6 @@ func (s *Store) forkChat(id string, backend chatmodel.Backend, options chatmodel
 	defer tx.Rollback()
 	if err = insertSession(tx, chat); err != nil {
 		return chat, err
-	}
-	if source.AutomationChat {
-		if _, err = tx.Exec(`INSERT INTO automation_chats(session_id,project_id) VALUES(?,?)`, chat.ID, chat.ProjectID); err != nil {
-			return chat, err
-		}
-		if _, err = tx.Exec(`INSERT INTO chat_collaborators(session_id,user_id) SELECT ?,user_id FROM chat_collaborators WHERE session_id=?`, chat.ID, id); err != nil {
-			return chat, err
-		}
 	}
 	if err = tx.Commit(); err != nil {
 		return chat, err

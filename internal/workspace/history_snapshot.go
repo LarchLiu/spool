@@ -2,18 +2,12 @@ package workspace
 
 import (
 	"crypto/sha256"
-	"errors"
 	"fmt"
-	"os"
 	"strconv"
 
 	"spool/internal/agent"
 	chatmodel "spool/internal/model"
 )
-
-const historyPageSize = 10
-
-var errHistoryCursor = errors.New("invalid history cursor")
 
 func nativeIdentity(sessionID string, turn agent.NativeTurn) string {
 	if turn.ID != "" {
@@ -29,21 +23,18 @@ func historyTurnID(chatID, identity string) string {
 }
 
 func (s *Store) hydrateSession(chat chatmodel.Session) chatmodel.Session {
-	page, err := s.readHistoryPage(chat, "")
+	snapshot, err := s.readHistory(chat)
 	if err != nil {
-		page.History = &chatmodel.HistoryPage{Error: "Native session history is unavailable"}
+		snapshot.History = &chatmodel.HistoryState{Error: "Native session history is unavailable"}
 	}
-	return page
+	return snapshot
 }
 
-func (s *Store) readHistoryPage(chat chatmodel.Session, before string) (chatmodel.Session, error) {
+func (s *Store) readHistory(chat chatmodel.Session) (chatmodel.Session, error) {
 	chat.Turns = []chatmodel.Turn{}
 	chat.Transcript = chatmodel.Transcript{Parts: []chatmodel.Part{}, Source: string(chat.Backend) + "-native"}
-	chat.History = &chatmodel.HistoryPage{}
+	chat.History = nil
 	if chat.NativeSessionID == "" && chat.NativeSessionPath == "" {
-		if before != "" {
-			return chat, errHistoryCursor
-		}
 		return chat, nil
 	}
 	path := chat.NativeSessionPath
@@ -59,70 +50,38 @@ func (s *Store) readHistoryPage(chat chatmodel.Session, before string) (chatmode
 		}
 	}
 	chat.NativeSessionPath = path
-	page := chat
+	snapshot := chat
 	err := s.historyCache.read(chat.Backend, path, func(file *nativeHistory) error {
 		var err error
-		page, err = s.readHistorySnapshot(chat, before, file)
+		snapshot, err = s.readHistorySnapshot(chat, file)
 		return err
 	})
 	if err != nil {
 		return chat, err
 	}
-	return page, nil
+	return snapshot, nil
 }
 
-func (s *Store) readHistorySnapshot(chat chatmodel.Session, before string, file *nativeHistory) (chatmodel.Session, error) {
+func (s *Store) readHistorySnapshot(chat chatmodel.Session, file *nativeHistory) (chatmodel.Session, error) {
 	chat.Turns = []chatmodel.Turn{}
 	chat.Transcript = chatmodel.Transcript{Parts: []chatmodel.Part{}, Source: string(chat.Backend) + "-native"}
-	chat.History = &chatmodel.HistoryPage{}
-	index := file.index
-	end := len(index)
-	if before != "" {
-		end = -1
-		for i, turn := range index {
-			id := historyTurnID(chat.ID, nativeIdentity(chat.NativeSessionID, turn))
-			if id == before {
-				end = i
-				break
-			}
-			if "after-"+id == before {
-				end = i + 1
-				break
-			}
-		}
-		if end < 0 {
-			return chat, errHistoryCursor
-		}
+	chat.History = nil
+	transcripts, err := s.historyCache.transcripts(file)
+	if err != nil {
+		return chat, err
 	}
-	start, size, imageBytes := end, 0, 0
-	// Decode/cache selected native turns backwards, then build a chat-local page.
-	for i := end - 1; i >= 0 && len(chat.Turns) < historyPageSize; i-- {
-		native := index[i]
-		transcript, err := s.historyCache.transcript(file, i)
-		if err != nil {
-			return chat, err
-		}
+	for i, native := range file.index {
+		transcript := transcripts[i]
 		parts := make([]chatmodel.Part, 0, len(transcript.Parts))
-		bytes := 0
 		for _, part := range transcript.Parts {
-			if imageBytes+len(part.ImageURL) > 8*1024*1024 {
-				part.ImageURL = ""
-			}
-			imageBytes += len(part.ImageURL)
 			if part.Role == "user" && part.Kind == "context" {
 				continue
 			}
 			parts = append(parts, part)
-			bytes += len(part.Text)
 		}
-		if size > 0 && size+bytes > 400_000 {
-			break
-		}
-		start = i
 		if len(parts) == 0 {
 			continue
 		}
-		size += bytes
 		identity := nativeIdentity(chat.NativeSessionID, native)
 		turn := chatmodel.Turn{ID: historyTurnID(chat.ID, identity), NativeTurnID: identity, NativePromptID: native.PromptID, SourceOffset: native.Start, Backend: chat.Backend, StartedAt: native.StartedAt, FinishedAt: native.FinishedAt, Status: native.Status, Model: native.Model, ReasoningEffort: native.ReasoningEffort, Error: native.Error, Parts: parts}
 		if turn.Status == "" {
@@ -136,9 +95,6 @@ func (s *Store) readHistorySnapshot(chat chatmodel.Session, before string, file 
 		chat.Turns = append(chat.Turns, turn)
 		chat.Transcript.Cut = chat.Transcript.Cut || transcript.Cut
 	}
-	for i, j := 0, len(chat.Turns)-1; i < j; i, j = i+1, j-1 {
-		chat.Turns[i], chat.Turns[j] = chat.Turns[j], chat.Turns[i]
-	}
 	for i := range chat.Turns {
 		turn := &chat.Turns[i]
 		turn.PartStart = len(chat.Transcript.Parts)
@@ -149,10 +105,6 @@ func (s *Store) readHistorySnapshot(chat chatmodel.Session, before string, file 
 		}
 	}
 	chat.Transcript.Captured = len(chat.Transcript.Parts)
-	chat.History.HasMore = start > 0
-	if start < len(index) {
-		chat.History.Before = historyTurnID(chat.ID, nativeIdentity(chat.NativeSessionID, index[start]))
-	}
 	return chat, nil
 }
 
@@ -174,6 +126,7 @@ func (s *Store) withRuntimeTurn(chat chatmodel.Session) chatmodel.Session {
 		native.ID = current.ID
 		native.Status, native.Error, native.PendingApproval = current.Status, current.Error, current.PendingApproval
 		native.PermissionMode, native.RequestedModel = current.PermissionMode, current.RequestedModel
+		native.Attachments = append([]chatmodel.Attachment(nil), current.Attachments...)
 		if native.StartedAt == 0 {
 			native.StartedAt = current.StartedAt
 		}
@@ -193,57 +146,4 @@ func (s *Store) withRuntimeTurn(chat chatmodel.Session) chatmodel.Session {
 		chat.Turns = append(chat.Turns, current)
 	}
 	return chat
-}
-
-func historyWindow(chat chatmodel.Session) chatmodel.Session {
-	start := max(0, len(chat.Turns)-historyPageSize)
-	size := 0
-	for i := len(chat.Turns) - 1; i >= start; i-- {
-		turn := chat.Turns[i]
-		bytes := 0
-		for _, part := range chat.Transcript.Parts[max(0, min(turn.PartStart, len(chat.Transcript.Parts))):max(0, min(turn.PartEnd, len(chat.Transcript.Parts)))] {
-			bytes += len(part.Text)
-		}
-		if size > 0 && size+bytes > 400_000 {
-			start = i + 1
-			break
-		}
-		size += bytes
-	}
-	if start == 0 {
-		return chat
-	}
-	previous := chat.Turns[start-1]
-	base := max(0, min(chat.Turns[start].PartStart, len(chat.Transcript.Parts)))
-	chat.Turns = append([]chatmodel.Turn(nil), chat.Turns[start:]...)
-	chat.Transcript.Parts = append([]chatmodel.Part(nil), chat.Transcript.Parts[base:]...)
-	for i := range chat.Turns {
-		chat.Turns[i].PartStart -= base
-		chat.Turns[i].InputEnd -= base
-		chat.Turns[i].PartEnd -= base
-	}
-	first := chat.Turns[0]
-	before := first.ID
-	if first.NativeTurnID != "" {
-		before = historyTurnID(chat.ID, first.NativeTurnID)
-	}
-	if (first.NativeTurnID == "" || first.Status == chatmodel.StatusRunning) && previous.NativeTurnID != "" {
-		// A live request may not yet have a native boundary (notably Claude).
-		// Resume after the preceding native turn so trimming cannot skip it.
-		before = "after-" + historyTurnID(chat.ID, previous.NativeTurnID)
-	}
-	chat.History = &chatmodel.HistoryPage{Before: before, HasMore: true}
-	return chat
-}
-
-func (s *Store) historyPage(id, before string) (chatmodel.Session, error) {
-	chat, ok := s.getSession(id)
-	if !ok {
-		return chat, os.ErrNotExist
-	}
-	page, err := s.readHistoryPage(chat, before)
-	if before == "" && err == nil {
-		page = historyWindow(s.withRuntimeTurn(page))
-	}
-	return page, err
 }

@@ -128,9 +128,6 @@ func TestIssueChatStreamPushesArtifactsAndAssignees(t *testing.T) {
 			if initial.Status != status || len(initial.Artifacts) != 0 {
 				t.Fatalf("unexpected initial snapshot: %#v", initial)
 			}
-			if status != chatmodel.StatusReady {
-				issueStreamEvent(t, stream, "turn")
-			}
 			link := "https://github.com/fixture/issues/pull/20"
 			if err = a.store.attachPR(chat.ID, link); err != nil {
 				t.Fatal(err)

@@ -304,7 +304,7 @@ test("cross-agent acknowledgement adopts a new independent chat without merging 
   assert.equal(previous.backend, "codex");
 });
 
-function page(ids, times = ids.map(() => 0), revision = 20) {
+function nativeSnapshot(ids, times = ids.map(() => 0), revision = 20) {
   const parts = ids.flatMap((id) => [
     { ...userPart, text: "input-" + id },
     { ...answerPart, text: "answer-" + id },
@@ -321,25 +321,109 @@ function page(ids, times = ids.map(() => 0), revision = 20) {
         part_end: i * 2 + 2,
       })),
       revision,
-      { parts },
+      { parts, source: "codex-native" },
     ),
-    history: { before: ids[0], has_more: true },
   };
 }
 
-test("native pagination preserves file order, not missing or backward timestamps", () => {
-  const latest = page(["three", "four"], [100, 90]);
-  const earlier = {
-    ...page(["one", "two"], [0, 200]),
-    history: { before: "one", has_more: false },
+function pagedSnapshot(ids, before, has_more = true, revision = 20) {
+  return {
+    ...nativeSnapshot(ids, undefined, revision),
+    history: { before, has_more },
   };
+}
+
+test("older pages prepend in file order and survive newer tail snapshots", () => {
+  const latest = pagedSnapshot(["three", "four"], "before-three");
+  const earlier = pagedSnapshot(["one", "two"], undefined, false);
   const merged = prependHistory(latest, earlier);
   assert.deepEqual(
     merged.turns.map((turn) => turn.id),
     ["one", "two", "three", "four"],
   );
+  assert.equal(merged.turns.at(-1).part_start, 6);
+  assert.equal(merged.history.has_more, false);
+  const next = reconcile(
+    merged,
+    pagedSnapshot(["four", "five"], "before-four", true, 21),
+  );
   assert.deepEqual(
-    merged.transcript.parts.map((part) => part.text),
+    next.turns.map((turn) => turn.id),
+    ["one", "two", "three", "four", "five"],
+  );
+  assert.equal(next.history.has_more, false);
+  assert.equal(next.turns.at(-1).part_start, 8);
+  assert.deepEqual(
+    next.transcript.parts.map((part) => part.text),
+    [
+      "input-one",
+      "answer-one",
+      "input-two",
+      "answer-two",
+      "input-three",
+      "answer-three",
+      "input-four",
+      "answer-four",
+      "input-five",
+      "answer-five",
+    ],
+  );
+});
+
+test("paging preserves the oldest cursor, optimistic input and live lifecycle metadata", () => {
+  const previous = pagedSnapshot(["one", "two"], "before-one");
+  const pending = optimisticChat(
+    previous,
+    previous.project_id,
+    { ...running, id: "pending-three" },
+    [{ ...userPart, text: "third" }],
+  );
+  const refreshed = reconcile(
+    pending,
+    pagedSnapshot(["two"], "before-two", true, 21),
+  );
+  assert.deepEqual(
+    refreshed.turns.map((turn) => turn.id),
+    ["one", "two", "pending-three"],
+  );
+  assert.equal(refreshed.history.before, "before-one");
+  const older = pagedSnapshot(["zero"], undefined, false, 10);
+  older.title = "stale title";
+  const merged = prependHistory(refreshed, older);
+  assert.deepEqual(
+    merged.turns.map((turn) => turn.id),
+    ["zero", "one", "two", "pending-three"],
+  );
+  assert.equal(merged.updated_at, 21);
+  assert.equal(merged.title, refreshed.title);
+  assert.equal(merged.status, "running");
+  assert.equal(merged.transcript.parts.at(-1).text, "third");
+  assert.equal(merged.history.has_more, false);
+});
+
+test("pages from another chat cannot change the active history", () => {
+  const latest = pagedSnapshot(["two"], "before-two");
+  assert.equal(
+    prependHistory(latest, {
+      ...pagedSnapshot(["one"], undefined, false),
+      id: "other",
+    }),
+    latest,
+  );
+});
+
+test("full native snapshots preserve file order, not missing or backward timestamps", () => {
+  const previous = nativeSnapshot(["one", "two"], [0, 200]);
+  const next = reconcile(
+    previous,
+    nativeSnapshot(["one", "two", "three", "four"], [0, 200, 100, 90], 21),
+  );
+  assert.deepEqual(
+    next.turns.map((turn) => turn.id),
+    ["one", "two", "three", "four"],
+  );
+  assert.deepEqual(
+    next.transcript.parts.map((part) => part.text),
     [
       "input-one",
       "answer-one",
@@ -351,20 +435,54 @@ test("native pagination preserves file order, not missing or backward timestamps
       "answer-four",
     ],
   );
-  const live = page(["three", "four", "five"], [100, 90, 300], 21);
-  const next = reconcile(merged, live);
+  assert.equal(next.turns.at(-1).part_start, 6);
+});
+
+test("a replaced or truncated native history removes obsolete completed turns", () => {
+  const previous = nativeSnapshot(["one", "two", "three"]);
+  const next = reconcile(previous, nativeSnapshot(["two"], [0], 21));
   assert.deepEqual(
     next.turns.map((turn) => turn.id),
-    ["one", "two", "three", "four", "five"],
+    ["two"],
   );
-  assert.deepEqual(next.history, earlier.history);
-  assert.equal(next.turns.at(-1).part_start, 8);
+  assert.deepEqual(
+    next.transcript.parts.map((part) => part.text),
+    ["input-two", "answer-two"],
+  );
+  const empty = reconcile(next, nativeSnapshot([], [], 22));
+  assert.deepEqual(empty.turns, []);
+  assert.deepEqual(empty.transcript.parts, []);
+});
+
+test("unavailable history does not erase previously loaded content", () => {
+  const previous = nativeSnapshot(["one", "two"]);
+  const unavailable = {
+    ...nativeSnapshot([], [], 21),
+    history: { error: "Native session history is unavailable" },
+  };
+  const next = reconcile(previous, unavailable);
+  assert.deepEqual(next.turns, previous.turns);
+  assert.deepEqual(next.transcript.parts, previous.transcript.parts);
+  assert.equal(next.history.error, unavailable.history.error);
+});
+
+test("a missing running turn remains after the complete native history", () => {
+  const previous = nativeSnapshot(["one", "two"]);
+  previous.turns[1].status = "running";
+  const next = reconcile(previous, nativeSnapshot(["one"], [0], 21));
+  assert.deepEqual(
+    next.turns.map((turn) => turn.id),
+    ["one", "two"],
+  );
+  assert.equal(next.status, "running");
+  assert.equal(next.transcript.parts.at(-1).text, "answer-two");
+  assert.equal(next.turns[1].input_end, 3);
 });
 
 test("native identity replaces a temporary live ID without duplicating its turn", () => {
-  const previous = page(["one", "live-two"]);
+  const previous = nativeSnapshot(["one", "live-two"]);
   previous.turns[1].native_turn_id = "native-two";
-  const native = page(["one", "history-two"], [0, 0], 21);
+  const native = nativeSnapshot(["one", "history-two"], [0, 0], 21);
   native.turns[1].native_turn_id = "native-two";
   const next = reconcile(previous, native);
   assert.deepEqual(
@@ -374,19 +492,56 @@ test("native identity replaces a temporary live ID without duplicating its turn"
   assert.equal(next.transcript.parts.length, 4);
 });
 
-test("a paged snapshot cannot erase optimistic input or already loaded history", () => {
-  const previous = page(["one", "two"]);
+test("a full native snapshot preserves optimistic input until acknowledgement", () => {
+  const previous = nativeSnapshot(["one", "two"]);
   const pending = optimisticChat(
     previous,
     previous.project_id,
     { ...running, id: "pending-three" },
     [{ ...userPart, text: "third" }],
   );
-  const next = reconcile(pending, page(["two"]));
+  const next = reconcile(pending, nativeSnapshot(["one", "two"]));
   assert.deepEqual(
     next.turns.map((turn) => turn.id),
     ["one", "two", "pending-three"],
   );
   assert.equal(next.transcript.parts.at(-1).text, "third");
   assert.equal(next.status, "running");
+});
+
+test("complete native turn replaces a longer live shape without losing the final answer", () => {
+  const previous = nativeSnapshot(["one"]);
+  previous.turns[0].status = "running";
+  previous.turns[0].part_end = 3;
+  previous.transcript.parts = [
+    userPart,
+    { role: "assistant", kind: "context", text: "working" },
+    { role: "tool", kind: "tool_result", text: "tool output" },
+  ];
+  const native = nativeSnapshot(["one"], [0], 21);
+  native.transcript.source = "codex-native";
+  native.transcript.parts = [userPart, answerPart];
+  const next = reconcile(previous, native);
+  assert.deepEqual(next.transcript.parts, [userPart, answerPart]);
+  assert.equal(next.turns[0].part_end, 2);
+  assert.equal(next.turns[0].status, "completed");
+});
+
+test("full-history reconciliation retains huge text and unlimited parts in a single turn", () => {
+  const next = nativeSnapshot(["one"], [0], 21);
+  const large = "x".repeat(900_000);
+  next.transcript.parts = [
+    userPart,
+    ...Array.from({ length: 150_000 }, () => ({
+      ...answerPart,
+      text: "chunk",
+    })),
+    { ...answerPart, text: large },
+  ];
+  next.turns[0].part_end = next.transcript.parts.length;
+  next.transcript.source = "codex-native";
+  const merged = reconcile(nativeSnapshot(["one"]), next);
+  assert.equal(merged.transcript.parts.length, 150_002);
+  assert.equal(merged.transcript.parts.at(-1).text, large);
+  assert.equal(merged.turns[0].part_end, 150_002);
 });

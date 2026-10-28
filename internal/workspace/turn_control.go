@@ -67,8 +67,8 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string) (chatmodel.Session
 		return chatmodel.Session{}, fmt.Errorf("chat disappeared while stopping")
 	}
 
-	// Keep the in-memory partial response in the stop response, then release
-	// it. Historical responses are reconstructed from the provider session.
+	// Keep complete partial output until the native session catches up, just
+	// as for a normally completed turn.
 	a.liveMu.Lock()
 	if live, ok := a.live[chat.ID]; ok && live.ID == turnID {
 		live.Status = chatmodel.StatusStopped
@@ -82,14 +82,16 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string) (chatmodel.Session
 			base = hydrated
 		}
 		latest.Transcript = runningTranscript(base, live)
-		restorePriorTurns(&latest, a.liveTurns[chat.ID])
+		latest.Turns = append(append([]chatmodel.Turn(nil), a.liveTurns[chat.ID]...), live)
 		start := max(0, min(live.PartStart, len(latest.Transcript.Parts)))
 		live.PartStart = start
+		live.InputEnd = max(start, min(live.InputEnd, len(latest.Transcript.Parts)))
 		live.Parts = append([]chatmodel.Part(nil), latest.Transcript.Parts[start:]...)
 		live.PartEnd = live.PartStart + len(live.Parts)
 		if len(latest.Turns) > 0 {
 			latest.Turns[len(latest.Turns)-1] = live
 		}
+		a.completed[chat.ID] = completedTurn{turn: live}
 		delete(a.live, chat.ID)
 		delete(a.liveBase, chat.ID)
 		delete(a.liveTurns, chat.ID)
@@ -134,7 +136,7 @@ func (a *App) stopTurnResponse(w http.ResponseWriter, r *http.Request, chat chat
 					apiError(w, 500, "Could not stop this turn")
 					return
 				}
-				apiJSON(w, 200, stopped)
+				apiJSON(w, 200, historyWindow(stopped))
 				return
 			}
 		}
@@ -156,5 +158,5 @@ func (a *App) stopTurnResponse(w http.ResponseWriter, r *http.Request, chat chat
 	if stopper, ok := a.runner.(interface{ Stop(string) }); ok {
 		stopper.Stop(chat.ID)
 	}
-	apiJSON(w, http.StatusOK, latest)
+	apiJSON(w, http.StatusOK, historyWindow(latest))
 }

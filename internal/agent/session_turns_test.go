@@ -75,6 +75,56 @@ func TestNativeImagePayloadSurvivesNormalization(t *testing.T) {
 	if nativeImageURL("file:///private/secret.png") != "" || nativeImageURL("https://example.com/a.png") != "" || nativeImageURL("data:image/svg+xml;base64,eA==") != "" {
 		t.Fatal("unsafe image URL exposed")
 	}
+	large := "data:image/png;base64," + strings.Repeat("eA==", 2*1024*1024)
+	if nativeImageURL(large) != large {
+		t.Fatal("large native image payload was discarded")
+	}
+}
+
+func TestNativeTurnsPreserveOversizedRecordsAndFollowingTurns(t *testing.T) {
+	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {
+		t.Run(string(backend), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "large.jsonl")
+			file, err := os.Create(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			encoder := json.NewEncoder(file)
+			large := strings.Repeat("x", 25*1024*1024)
+			reply := strings.Repeat("y", 700_000)
+			for i, text := range []string{large, reply, "next question", "next answer"} {
+				role := "user"
+				if i%2 == 1 {
+					role = "assistant"
+				}
+				var record map[string]any
+				if backend == chatmodel.BackendCodex {
+					record = map[string]any{"type": "response_item", "payload": map[string]any{"type": "message", "role": role, "content": []any{map[string]any{"type": "text", "text": text}}}}
+				} else {
+					record = map[string]any{"type": role, "uuid": []string{"u1", "a1", "u2", "a2"}[i], "parentUuid": []string{"", "u1", "a1", "u2"}[i], "message": map[string]any{"role": role, "content": text}}
+				}
+				if err := encoder.Encode(record); err != nil {
+					t.Fatal(err)
+				}
+			}
+			file.Close()
+			turns, err := IndexSessionTurns(backend, path, 0)
+			if err != nil || len(turns) != 2 {
+				t.Fatalf("oversized input lost a turn boundary: turns=%d error=%v", len(turns), err)
+			}
+			for i, turn := range turns {
+				transcript, err := ReadSessionTurn(backend, path, turn)
+				wantInput, wantReply := large, reply
+				if i == 1 {
+					wantInput, wantReply = "next question", "next answer"
+				}
+				if err != nil || transcript.Cut || len(transcript.Parts) != 2 || transcript.Parts[0].Text != wantInput || transcript.Parts[1].Text != wantReply {
+					t.Fatalf("turn %d was not parsed completely: parts=%d error=%v", i, len(transcript.Parts), err)
+				}
+			}
+		})
+	}
 }
 
 func TestClaudeToolUseDoesNotCompleteTurnOrCountBackgroundTime(t *testing.T) {

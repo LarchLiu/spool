@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -13,10 +13,13 @@ import {
   Brain,
   BookOpen,
 } from "lucide-react";
-import { PatchDiff } from "@pierre/diffs/react";
+import { FileDiff } from "@pierre/diffs/react";
 import type { Backend, TranscriptPart } from "./types";
 import type { Translator } from "./i18n";
-import { MarkdownMessage } from "./markdown-message";
+import { MarkdownMessage } from "./markdown-message.js";
+import { patchText, toolResultDiffs } from "./tool-diff.js";
+
+export { toolResultDiffs } from "./tool-diff.js";
 
 type ActivityKind =
   | "read"
@@ -76,10 +79,31 @@ function stringField(input: Record<string, unknown> | undefined, keys: string[])
   return "";
 }
 
+function patchFiles(part: TranscriptPart) {
+  const name = part.name?.trim().toLowerCase() || "";
+  if (!/(?:^|\.)(?:apply_?patch|patch|file_?change)$/.test(name)) return [];
+  return Array.from(
+    part.text.matchAll(/^\*\*\* (Add|Update|Delete) File: (.+)\r?$/gm),
+    ([, action, path]) => ({ action, path: path.trim() }),
+  );
+}
+
 function classify(part: TranscriptPart): ActivityKind {
   if (part.kind === "thinking") return "thinking";
   if (/^(reason|reasoning|think|thinking)$/i.test(part.name?.trim() || ""))
     return "thinking";
+  // Tool input may be source code containing words like find/cat/controls.
+  // Identify editing tools before inferring shell activity from their input.
+  const tool = part.name?.trim().toLowerCase().split(".").pop() || "";
+  if (/^(apply_?patch|patch|file_?change)$/.test(tool)) {
+    const files = patchFiles(part);
+    if (files.length && files.every(({ action }) => action === "Add")) return "create";
+    if (files.length && files.every(({ action }) => action === "Delete")) return "delete";
+    return "write";
+  }
+  if (/^(write|write_?file|create_?file)$/.test(tool)) return "create";
+  if (/^(edit|edit_?file|multi_?edit|replace)$/.test(tool)) return "write";
+  if (/^(delete_?file|remove_?file|unlink)$/.test(tool)) return "delete";
   const name = `${part.name || ""} ${part.text}`.toLowerCase();
   if (/(websearch|web.?fetch|browser|internet|search the web|lookup url)/.test(name))
     return "web";
@@ -117,6 +141,9 @@ function extractQuery(part: TranscriptPart, data: Record<string, unknown> | unde
 function extractPath(part: TranscriptPart, data: Record<string, unknown> | undefined) {
   const direct = stringField(data, pathKeys);
   if (direct) return direct;
+  const files = patchFiles(part);
+  if (files.length === 1) return files[0].path;
+  if (files.length > 1) return "";
   const match = part.text.match(/(?:^|\s)([\w./~-]+\.[\w-]+)(?:\s|$)/);
   return match?.[1] || "";
 }
@@ -136,7 +163,7 @@ function titleName(value: string) {
   return name ? name.charAt(0).toUpperCase() + name.slice(1) : name;
 }
 
-function displayActivity(
+export function displayActivity(
   part: TranscriptPart,
   backend: Backend | undefined,
   t: Translator,
@@ -203,7 +230,7 @@ function displayActivity(
   return { use: part, kind, label, detail: part.text, stats: inlineChangeStats(part.text) };
 }
 
-function activitiesFromParts(
+export function activitiesFromParts(
   parts: TranscriptPart[],
   backend: Backend | undefined,
   t: Translator,
@@ -296,21 +323,54 @@ function iconFor(kind: ActivityKind) {
   }
 }
 
-function patchText(value: string) {
-  const start = value.search(/(?:^|\n)(?:diff --git |--- [^\n]+\n\+\+\+ |\*\*\* Begin Patch)/);
-  if (start < 0) return "";
-  const patch = value.slice(start).replace(/^\n/, "").trim();
-  return patch.includes("@@") || patch.includes("*** Begin Patch") ? patch : "";
+export class ToolDiffBoundary extends Component<
+  { raw: string; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    return this.state.failed ? <pre>{this.props.raw}</pre> : this.props.children;
+  }
 }
 
-function changeStats(activities: Activity[]) {
+const contextPatchOptions = { disableLineNumbers: true, hunkSeparators: "simple" } as const;
+
+function ToolPatch({ text, t, input = false }: { text: string; t: Translator; input?: boolean }) {
+  const files = useMemo(() => toolResultDiffs(text), [text]);
+  if (!files.length) return <pre>{text}</pre>;
+  return (
+    <ToolDiffBoundary key={text} raw={text}>
+      {files.map((file, index) => (
+        <div className="tool-diff" key={`${index}:${file.name}`}>
+          <FileDiff
+            fileDiff={file}
+            options={file.lineNumbersUnavailable ? contextPatchOptions : undefined}
+            disableWorkerPool
+          />
+          {file.contentsUnavailable && <p className="tool-diff-note">{t("File contents are not included in this patch.")}</p>}
+        </div>
+      ))}
+      <details className="tool-result-source">
+        <summary>{t(input ? "Raw input" : "Raw output")}</summary>
+        <pre>{text}</pre>
+      </details>
+    </ToolDiffBoundary>
+  );
+}
+
+export function changeStats(activities: Activity[]) {
   if (!activities.every(({ kind }) => ["write", "create", "delete"].includes(kind)))
     return "";
   let additions = 0;
   let deletions = 0;
   for (const activity of activities) {
-    const value = activity.result?.text;
-    if (value && patchText(value)) {
+    const value = patchText(activity.result?.text || "") || patchText(activity.use?.text || "");
+    if (value) {
       for (const line of value.split(/\r?\n/)) {
         if (line.startsWith("+++") || line.startsWith("---")) continue;
         if (line.startsWith("+")) additions++;
@@ -332,34 +392,28 @@ function inlineChangeStats(value: string) {
   return match ? `${match[1]} ${match[2]}` : "";
 }
 
-function ActivityDetail({ activity, t }: { activity: Activity; t: Translator }) {
-  const command = activity.use?.text.trim();
-  const result = activity.result?.text.trim();
-  const diff = result ? patchText(result) : "";
+export function ActivityDetail({ activity, t }: { activity: Activity; t: Translator }) {
+  const command = activity.use?.text;
+  const result = activity.result?.text;
   return (
     <div className="tool-detail">
-      {command && (
+      {command?.trim() && (
         <div className="tool-detail-block">
           <span className="tool-detail-label">
             {activity.kind === "thinking" ? t("Thought") : t("Command")}
+            {activity.kind !== "thinking" && activity.use?.name && ` · ${activity.use.name}`}
           </span>
           {activity.kind === "thinking" ? (
             <MarkdownMessage>{command}</MarkdownMessage>
           ) : (
-            <pre>{command}</pre>
+            <ToolPatch text={command} t={t} input />
           )}
         </div>
       )}
       {result && (
         <div className="tool-detail-block">
           <span className="tool-detail-label">{t("Result")}</span>
-          {diff ? (
-            <div className="tool-diff">
-              <PatchDiff patch={diff} disableWorkerPool />
-            </div>
-          ) : (
-            <pre>{result}</pre>
-          )}
+          <ToolPatch text={result} t={t} />
         </div>
       )}
     </div>
@@ -405,6 +459,7 @@ function ActivityItem({
       <button
         type="button"
         className="tool-activity-item-summary"
+        title={activity.use?.name}
         aria-expanded={open}
         onClick={onToggle}
       >

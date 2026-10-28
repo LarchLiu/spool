@@ -43,15 +43,16 @@ type Project struct {
 	Issues      IssuesAutomation `json:"-"`
 }
 type Settings struct {
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	PublicURL   string `json:"public_url"`
-	IdleMinutes int    `json:"idle_minutes"`
-	AutoStart   bool   `json:"auto_start"`
+	Host            string `json:"host"`
+	Port            int    `json:"port"`
+	PublicURL       string `json:"public_url"`
+	IdleMinutes     int    `json:"idle_minutes"`
+	AutoStart       bool   `json:"auto_start"`
+	HistoryCacheMiB int    `json:"history_cache_mib"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{Host: "127.0.0.1", Port: 8787, IdleMinutes: 15, AutoStart: true}
+	return Settings{Host: "127.0.0.1", Port: 8787, IdleMinutes: 15, AutoStart: true, HistoryCacheMiB: 64}
 }
 func (s Settings) Address() string { return net.JoinHostPort(s.Host, fmt.Sprint(s.Port)) }
 func (s Settings) Validate() error {
@@ -64,11 +65,21 @@ func (s Settings) Validate() error {
 	if s.IdleMinutes < 1 || s.IdleMinutes > 10080 {
 		return fmt.Errorf("idle minutes must be between 1 and 10080")
 	}
+	if err := validateHistoryCacheMiB(s.HistoryCacheMiB); err != nil {
+		return err
+	}
 	if s.PublicURL != "" {
 		u, e := url.Parse(s.PublicURL)
 		if e != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 			return fmt.Errorf("public URL must be an http(s) origin without a path")
 		}
+	}
+	return nil
+}
+
+func validateHistoryCacheMiB(size int) error {
+	if size < 1 || size > int(^uint(0)>>1)/(1024*1024) {
+		return fmt.Errorf("history cache size must be a positive whole number of MiB within the platform range")
 	}
 	return nil
 }
@@ -91,7 +102,13 @@ func (s *Store) SaveSettings(v Settings) error {
 	}
 	v.PublicURL = strings.TrimSuffix(v.PublicURL, "/")
 	b, _ := json.Marshal(v)
+	// Keep persistence and the live cache target ordered across concurrent saves.
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
 	_, err := s.db.Exec(`INSERT INTO settings VALUES('server',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, string(b))
+	if err == nil {
+		s.historyCache.setMaxBytes(v.HistoryCacheMiB * 1024 * 1024)
+	}
 	return err
 }
 func (s *Store) Users() ([]User, error) {

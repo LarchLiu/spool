@@ -405,11 +405,15 @@ are disabled during a running turn; only users who can control a chat can switch
 The message API returns the new chat after Send. The explicit
 `POST /api/chats/:id/fork` endpoint can create a converted chat without submitting
 a model prompt, but the model picker never calls it.
+Task chats reject cross-agent conversion because their issue claim belongs to
+the original chat. Continue in that chat; same-agent model changes remain supported.
 Conversion follows Magpie's native Claude/Codex carry-over format (MIT notice in
 `internal/agent/MAGPIE-LICENSE`). User and
 assistant messages, embedded user images, and tool results are retained. Shell
 calls translate to Claude's `Bash` or Codex's `exec_command`; other tools become
 historical assistant notes rather than calls to tools the target does not have.
+The history viewer restores these converted notes to collapsible tool activities,
+including their input and result, without rewriting the native context.
 Claude's active parent chain and native compaction boundaries are respected.
 Provider instructions and signed/encrypted reasoning are not transferred. Target
 permission modes are discovered independently and default to that agent's normal
@@ -458,29 +462,43 @@ by retaining the last permission preference on the chat and removing the old
 `turns`, `attachments`, and `session_history` tables. No native session is changed.
 
 History uses an in-memory native turn index: Codex's task/turn IDs and Claude's
-prompt IDs, UUID parent chains and genuine user boundaries. Opening a chat reads
-the latest page; `GET /api/chats/:id/history?before=...` reads earlier turns by a
-stable native-identity cursor. Each page contains at most 10 turns and 400,000
-text bytes. An oversized single turn keeps its input and latest output, with a
-truncation marker. Transcript size limits never prevent indexing later turns.
-Part text remains limited to 8,000 runes. Live request IDs, timers, approvals and
-streamed content are process-local; restart recovery marks only chat-level
-running status as interrupted. Native files supply historical timing and models.
+prompt IDs, UUID parent chains and genuine user boundaries. Opening a chat parses
+and caches its entire native history. HTTP/SSE responses page that cached snapshot
+backwards in file order using a 200,000-byte soft content target (text and embedded
+image URLs). A page includes the entire turn that crosses the target, so a single
+turn can exceed 200 KB or 400 KB. There is no turn-count, part-size or single-turn
+content limit, and live output is retained in full without truncation.
+The browser paints the latest page first, opens at the bottom, and automatically
+fetches earlier pages in the background. Prepending history preserves the current
+viewport; REST refreshes and SSE updates do not discard already loaded pages.
+Switching chats aborts pending history requests. Failed background loads can be retried.
+Live request IDs, timers, approvals and streamed content are process-local;
+restart recovery marks only chat-level running status as interrupted. Native
+files supply historical timing and models.
 
-The Go service shares both native indexes and lazily decoded turn contents across
+The Go service shares native indexes and complete decoded histories across
 viewers. Cache hits still check file size, modification time and file identity;
 an append, edit, replacement or deletion invalidates that file's entire previous
 cache. Reads validate the source again after parsing and retry if it changed,
 so an older in-flight parse cannot overwrite newer cached data or return stale content.
-Concurrent readers of the same file reuse the first reader's work, while
+Concurrent readers of the same file reuse the first reader's complete parse, while
 unrelated files can parse in parallel. Responses use copies of cached parts;
 chat IDs, permissions and live state are never shared through the cache.
 
-The process-local cache retains at most 64 native files and approximately 64 MiB
-of decoded turn content, using least-recently-used eviction. Oversized turns are
-served without retaining them in the content cache. Shutdown clears the cache;
-the next process rebuilds it on demand. No Redis, cache files or SQLite history
-rows are required, and native sessions remain the sole source of truth.
+The process-local cache retains at most 64 native files, using least-recently-used
+eviction of whole native sessions. Its shared decoded-content target defaults to
+64 MiB. Customize **History cache size (MiB)** in the desktop Service settings;
+any positive whole number within the platform's integer range is accepted, saved
+in SQLite as `history_cache_mib`, and applied immediately without restarting.
+Reducing the target immediately evicts least-recently-used sessions as needed.
+For headless startup, pass `--history-cache-mib 128` to `cmd/server` to persist
+the same setting; later starts without that flag reuse the saved value.
+A single session larger than that target is cached in full after evicting other
+sessions; this is a cache target, not a hard process-memory or history-size limit.
+Eviction never keeps a partial history or truncates content. Evicted
+sessions can be reparsed from their native sources. Shutdown
+clears the cache; the next process rebuilds it on demand. No Redis, cache files or
+SQLite history rows are required, and native sessions remain the sole source of truth.
 
 Uploads are private temporary files for the current process, removed on shutdown,
 not a durable download archive. They are not recreated for later requests or after

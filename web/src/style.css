@@ -489,6 +489,7 @@ button:disabled {
   font-size: 10px;
 }
 .history {
+  overflow-anchor: none;
   min-height: 0;
   flex: 1;
   overflow-y: auto;
@@ -502,15 +503,16 @@ button:disabled {
   min-height: 100%;
   display: flow-root;
 }
-.history-older {
-  margin: 0 auto 24px;
-  padding: 8px 12px;
-}
 .history-error {
   color: var(--muted);
   font-size: 12px;
   text-align: center;
   margin: 0 0 24px;
+}
+.history-older {
+  display: block;
+  margin: 0 auto 24px;
+  padding: 8px 12px;
 }
 .welcome {
   padding: 12vh 0 35px;
@@ -1118,6 +1120,25 @@ a.attachment-open {
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 7px;
+}
+.tool-diff + .tool-diff {
+  margin-top: 8px;
+}
+.tool-diff-note {
+  margin: 10px 12px;
+  color: var(--subtle);
+  font-size: 12px;
+}
+.tool-result-source {
+  margin-top: 8px;
+}
+.tool-result-source summary {
+  color: var(--subtle);
+  cursor: pointer;
+  font-size: 11px;
+}
+.tool-result-source[open] summary {
+  margin-bottom: 6px;
 }
 .composer-wrap {
   padding: 0 max(4vw, 26px) max(12px, env(safe-area-inset-bottom));

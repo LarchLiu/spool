@@ -467,6 +467,27 @@ func TestProviderFullRepliesWithoutDeltas(t *testing.T) {
 	}
 }
 
+func TestProviderLargeRepliesPreserveAllTextWithoutDuplication(t *testing.T) {
+	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {
+		for _, mode := range []string{"large-reply", "large-reply full-only"} {
+			t.Run(string(backend)+"/"+mode, func(t *testing.T) {
+				request := newAgentFixture(t, backend)
+				request.Prompt = mode
+				result, events := runFixture(t, newTestRunner(t), request)
+				var streamed strings.Builder
+				for _, event := range events {
+					if event.Type == "delta" {
+						streamed.WriteString(event.Text)
+					}
+				}
+				if result.Text != strings.Repeat("x", 900_000) || streamed.String() != result.Text {
+					t.Fatalf("large reply was truncated or duplicated: result=%d streamed=%d", len(result.Text), streamed.Len())
+				}
+			})
+		}
+	}
+}
+
 func TestCodexQueuesNotificationsBeforeTurnStartAcknowledgement(t *testing.T) {
 	request := newAgentFixture(t, chatmodel.BackendCodex)
 	request.Prompt = "queued-delta"

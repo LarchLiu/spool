@@ -8,7 +8,6 @@ import (
 
 const (
 	MaxMessageBytes = 128 * 1024
-	MaxReplyBytes   = 512 * 1024
 )
 
 func NewID() string {
