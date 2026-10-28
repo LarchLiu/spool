@@ -111,7 +111,7 @@ export type Chat = {
 export type ChatMetadata = Pick<
   Chat,
   "id" | "updated_at" | "automation_chat" | "collaborator_ids" | "artifacts"
->;
+> & { title?: string };
 export type Online = {
   id: string;
   nickname: string;

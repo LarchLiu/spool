@@ -33,6 +33,19 @@ type NativeTurn struct {
 
 type NativeRange struct{ Start, End int64 }
 
+type NativeSessionIndex struct {
+	Turns []NativeTurn
+	Title string
+}
+
+// IndexSessionTo collects titles in the existing turn-indexing pass, without
+// scanning large transcripts a second time just for metadata.
+func IndexSessionTo(backend chatmodel.Backend, path string, offset, end int64) (NativeSessionIndex, error) {
+	var title nativeSessionTitle
+	turns, err := indexSessionTurnsTo(backend, path, offset, end, &title)
+	return NativeSessionIndex{Turns: turns, Title: title.text}, err
+}
+
 // IndexSessionTurns scans metadata independently of transcript display limits.
 // Offsets allow callers to read the newest turns first without replaying older text.
 func IndexSessionTurns(backend chatmodel.Backend, path string, offset int64) ([]NativeTurn, error) {
@@ -41,11 +54,15 @@ func IndexSessionTurns(backend chatmodel.Backend, path string, offset int64) ([]
 
 // A nonzero end indexes a fixed file snapshot, even if the source keeps growing.
 func IndexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int64) ([]NativeTurn, error) {
+	return indexSessionTurnsTo(backend, path, offset, end, nil)
+}
+
+func indexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int64, title *nativeSessionTitle) ([]NativeTurn, error) {
 	if !backend.Valid() || offset < 0 || (end > 0 && end < offset) {
 		return nil, fmt.Errorf("invalid native history request")
 	}
 	if backend == chatmodel.BackendClaude {
-		return indexClaudeTurns(path, offset, end)
+		return indexClaudeTurns(path, offset, end, title)
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -68,6 +85,7 @@ func IndexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 		position += int64(len(line))
 		var record map[string]any
 		if json.Unmarshal(line, &record) == nil {
+			title.collect(backend, record)
 			carryNotes = codexCarryNotes(record, carryNotes)
 			stamp := nativeTimestamp(record["timestamp"])
 			typ := stringValue(record["type"])
@@ -192,7 +210,7 @@ func ReadSessionTurn(backend chatmodel.Backend, path string, turn NativeTurn) (c
 	return parseTranscriptReader(backend, io.NewSectionReader(file, turn.Start, turn.End-turn.Start), turn.Model, turn.CarryNotes)
 }
 
-func indexClaudeTurns(path string, offset, end int64) ([]NativeTurn, error) {
+func indexClaudeTurns(path string, offset, end int64, title *nativeSessionTitle) ([]NativeTurn, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -212,6 +230,7 @@ func indexClaudeTurns(path string, offset, end int64) ([]NativeTurn, error) {
 		position += int64(len(line))
 		var record map[string]any
 		if json.Unmarshal(line, &record) == nil && record["isSidechain"] != true {
+			title.collect(chatmodel.BackendClaude, record)
 			id, parent, prompt := stringValue(record["uuid"]), stringValue(record["parentUuid"]), stringValue(record["promptId"])
 			message, _ := record["message"].(map[string]any)
 			owner := current

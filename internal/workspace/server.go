@@ -58,6 +58,7 @@ type completedTurn struct {
 
 type chatMetadata struct {
 	ID              string               `json:"id"`
+	Title           string               `json:"title"`
 	UpdatedAt       int64                `json:"updated_at"`
 	AutomationChat  bool                 `json:"automation_chat,omitempty"`
 	CollaboratorIDs []string             `json:"collaborator_ids,omitempty"`
@@ -65,7 +66,7 @@ type chatMetadata struct {
 }
 
 func sessionMetadata(chat chatmodel.Session) chatMetadata {
-	return chatMetadata{chat.ID, chat.UpdatedAt, chat.AutomationChat, chat.CollaboratorIDs, chat.Artifacts}
+	return chatMetadata{chat.ID, chat.Title, chat.UpdatedAt, chat.AutomationChat, chat.CollaboratorIDs, chat.Artifacts}
 }
 
 func NewApp(store *Store, runner agent.AgentRunner, _, _ string) *App {
@@ -986,6 +987,7 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 		previous = chatStreamSignature(initial.Turns[len(initial.Turns)-1], initial.Status, initial.Transcript.Parts, initial.UpdatedAt)
 	}
 	cachedUpdated := chat.UpdatedAt
+	cachedTitle := chat.Title
 	previousMetadata, _ := json.Marshal(sessionMetadata(chat))
 	for {
 		// Poll only indexed metadata. Never decode an entire conversation on every
@@ -1003,7 +1005,7 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 		}
 		a.liveMu.Unlock()
 		revisionChanged := cachedUpdated != meta.UpdatedAt
-		if revisionChanged {
+		if revisionChanged || cachedTitle != meta.Title {
 			latest, ok := a.store.Get(id)
 			if !ok {
 				return
@@ -1031,6 +1033,7 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 				}
 			}
 			cachedUpdated = meta.UpdatedAt
+			cachedTitle = meta.Title
 		}
 		if !live || meta.Status != chatmodel.StatusRunning {
 			current = cached

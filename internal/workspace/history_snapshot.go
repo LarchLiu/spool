@@ -59,6 +59,11 @@ func (s *Store) readHistory(chat chatmodel.Session) (chatmodel.Session, error) {
 	if err != nil {
 		return chat, err
 	}
+	if chat.Backend == chatmodel.BackendCodex {
+		if title := s.historyCache.titles.Title(path, chat.NativeSessionID); title != "" {
+			snapshot.Title = title
+		}
+	}
 	return snapshot, nil
 }
 
@@ -69,6 +74,9 @@ func (s *Store) readHistorySnapshot(chat chatmodel.Session, file *nativeHistory)
 	transcripts, err := s.historyCache.transcripts(file)
 	if err != nil {
 		return chat, err
+	}
+	if file.title != "" {
+		chat.Title = file.title
 	}
 	for i, native := range file.index {
 		transcript := transcripts[i]

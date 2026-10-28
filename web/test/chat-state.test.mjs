@@ -98,6 +98,28 @@ test("metadata ignores old revisions and other chats, and never creates a chat",
   );
 });
 
+test("native title metadata updates the heading/sidebar without replaying history", () => {
+  const previous = chat([running], 10, helloTranscript);
+  const next = reconcileMetadata(previous, {
+    id: previous.id,
+    title: "Title from the native session",
+    updated_at: previous.updated_at,
+  });
+  assert.equal(next.title, "Title from the native session");
+  assert.equal(next.updated_at, previous.updated_at);
+  assert.equal(next.turns, previous.turns);
+  assert.equal(next.transcript, previous.transcript);
+  assert.equal(next.status, previous.status);
+  assert.equal(
+    reconcileMetadata(next, { id: next.id, updated_at: 11 }).title,
+    next.title,
+  );
+  assert.equal(
+    reconcileMetadata(next, { id: next.id, title: "Stale", updated_at: 9 }),
+    next,
+  );
+});
+
 test("a turn replay at the metadata revision still delivers a pending approval", () => {
   const previous = chat([running], 10, helloTranscript);
   const metadata = reconcileMetadata(previous, {

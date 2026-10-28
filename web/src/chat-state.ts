@@ -20,6 +20,7 @@ export function reconcileMetadata(
     return previous;
   return {
     ...previous,
+    title: next.title ?? previous.title,
     updated_at: next.updated_at,
     automation_chat: next.automation_chat ?? false,
     collaborator_ids: next.collaborator_ids ?? [],

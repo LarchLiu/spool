@@ -139,7 +139,23 @@ func (s *Store) Get(id string) (chatmodel.Session, bool) {
 	if !ok {
 		return v, false
 	}
+	stored := v
 	v = s.hydrateSession(v)
+	if stored.AutomationChat {
+		// Issue chats deliberately retain their issue-number/title label.
+		v.Title = stored.Title
+	} else if v.Title != stored.Title {
+		// A native title is metadata, not new conversation activity. Preserve
+		// ordering and never overwrite a concurrently switched native session.
+		result, err := s.db.Exec(`UPDATE sessions SET title=? WHERE id=? AND title=? AND backend=? AND native_session_id=? AND native_session_path=?`, v.Title, id, stored.Title, stored.Backend, stored.NativeSessionID, stored.NativeSessionPath)
+		if err != nil {
+			v.Title = stored.Title
+		} else if n, _ := result.RowsAffected(); n == 0 {
+			if latest, found := s.getSession(id); found {
+				v.Title = latest.Title
+			}
+		}
+	}
 	v = s.withRuntimeTurn(v)
 	return v, true
 }

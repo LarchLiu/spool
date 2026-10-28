@@ -346,6 +346,13 @@ function App() {
         snapshot: (v) => {
           if (activeID.current !== chatID) return;
           setChat((old) => reconcile(old, v));
+          setChats((old) =>
+            old.map((item) =>
+              item.id === v.id && item.updated_at <= v.updated_at
+                ? { ...item, title: v.title }
+                : item,
+            ),
+          );
         },
         metadata: (v) => {
           if (activeID.current !== chatID) return;

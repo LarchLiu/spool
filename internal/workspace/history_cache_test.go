@@ -19,9 +19,9 @@ import (
 
 func countNativeHistoryReads(store *Store) (*atomic.Int64, *atomic.Int64) {
 	indexes, reads := &atomic.Int64{}, &atomic.Int64{}
-	store.historyCache.index = func(backend chatmodel.Backend, path string, start, end int64) ([]agent.NativeTurn, error) {
+	store.historyCache.index = func(backend chatmodel.Backend, path string, start, end int64) (agent.NativeSessionIndex, error) {
 		indexes.Add(1)
-		return agent.IndexSessionTurnsTo(backend, path, start, end)
+		return agent.IndexSessionTo(backend, path, start, end)
 	}
 	store.historyCache.readTurn = func(backend chatmodel.Backend, path string, turn agent.NativeTurn) (chatmodel.Transcript, error) {
 		reads.Add(1)

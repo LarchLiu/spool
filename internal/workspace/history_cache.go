@@ -27,8 +27,9 @@ type nativeHistoryCache struct {
 	bytes    int
 	maxFiles int
 	maxBytes int
-	index    func(chatmodel.Backend, string, int64, int64) ([]agent.NativeTurn, error)
+	index    func(chatmodel.Backend, string, int64, int64) (agent.NativeSessionIndex, error)
 	readTurn func(chatmodel.Backend, string, agent.NativeTurn) (chatmodel.Transcript, error)
+	titles   agent.CodexSessionTitles
 }
 
 type nativeHistory struct {
@@ -39,6 +40,7 @@ type nativeHistory struct {
 	info    os.FileInfo
 	indexed bool
 	index   []agent.NativeTurn
+	title   string
 	parts   []chatmodel.Transcript
 	bytes   int
 	lru     *list.Element
@@ -95,9 +97,11 @@ func (c *nativeHistoryCache) read(backend chatmodel.Backend, path string, use fu
 		if !file.indexed {
 			index := c.index
 			if index == nil {
-				index = agent.IndexSessionTurnsTo
+				index = agent.IndexSessionTo
 			}
-			file.index, err = index(backend, file.path, 0, file.info.Size())
+			var snapshot agent.NativeSessionIndex
+			snapshot, err = index(backend, file.path, 0, file.info.Size())
+			file.index, file.title = snapshot.Turns, snapshot.Title
 			file.indexed = err == nil
 		}
 		if err == nil {
