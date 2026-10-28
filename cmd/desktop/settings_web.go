@@ -146,6 +146,7 @@ func (p *panel) loadSettingsView() error {
 	page.OnRenderProcessGone(func(reason string) { fail(fmt.Errorf("settings renderer stopped: %s", reason)) })
 	page.OnDidFinishLoad(func() {
 		p.sendWindowChrome(view)
+		p.sendDesktopAppearance(view)
 		if p.tab != "Chat" {
 			view.Focus()
 		}

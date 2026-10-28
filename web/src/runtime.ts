@@ -57,6 +57,32 @@ export function desktopLocale(
   return runtime ? resolveLanguage("system", [runtime.locale]) : undefined;
 }
 
+export function desktopTheme(
+  surface: unknown = globalThis,
+): "light" | "dark" | undefined {
+  if (!isDesktopChat(surface) || !("spoolDesktopTheme" in surface)) return;
+  const theme = surface.spoolDesktopTheme;
+  return theme === "light" || theme === "dark" ? theme : undefined;
+}
+
+export function subscribeDesktopTheme(
+  listener: () => void,
+  surface: unknown = globalThis,
+): () => void {
+  if (
+    !isDesktopChat(surface) ||
+    !("addEventListener" in surface) ||
+    typeof surface.addEventListener !== "function" ||
+    !("removeEventListener" in surface) ||
+    typeof surface.removeEventListener !== "function"
+  ) {
+    return () => {};
+  }
+  const removeEventListener = surface.removeEventListener.bind(surface);
+  surface.addEventListener("spool:appearance-changed", listener);
+  return () => removeEventListener("spool:appearance-changed", listener);
+}
+
 export function subscribeDesktopLocale(
   listener: () => void,
   surface: unknown = globalThis,

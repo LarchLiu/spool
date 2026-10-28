@@ -200,20 +200,31 @@ func (p *panel) probeLoginAppearance(ctx context.Context, view *mygo.WebView, re
 		if err := p.smokePresentation(ctx, workspace.UIPreferences{Theme: theme, Language: "zh-CN"}); err != nil {
 			return err
 		}
-		if err := waitChatScript(ctx, view.Page(), fmt.Sprintf(`
+		if err := waitChatChecks(ctx, view.Page(), fmt.Sprintf(`
 			const copy = document.querySelector('.login-story-copy');
 			const story = document.querySelector('.login-story');
 			const input = document.querySelector('.login-panel input');
 			const copyRect = copy.getBoundingClientRect(), storyRect = story.getBoundingClientRect();
 			const inputRect = input.getBoundingClientRect();
 			const footerRect = document.querySelector('.login-foot').getBoundingClientRect();
-			return document.documentElement.dataset.theme === %q && document.documentElement.lang === 'zh-CN' &&
-				getComputedStyle(copy).textAlign === 'start' &&
-				Math.abs(copyRect.left - storyRect.left - parseFloat(getComputedStyle(story).paddingLeft)) <= 1 &&
-				Math.abs(copyRect.top + copyRect.height / 2 - storyRect.top - storyRect.height / 2) <= 35 &&
-				inputRect.height >= 40 && inputRect.height <= 44 && getComputedStyle(input).fontSize === '14px' &&
-				Math.abs(innerHeight - footerRect.bottom - parseFloat(getComputedStyle(story).paddingLeft)) <= 1 &&
-				document.documentElement.scrollWidth <= innerWidth;
+			const copyOffset = copyRect.left - storyRect.left - parseFloat(getComputedStyle(story).paddingLeft);
+			const centerOffset = copyRect.top + copyRect.height / 2 - storyRect.top - storyRect.height / 2;
+			const footerOffset = innerHeight - footerRect.bottom - parseFloat(getComputedStyle(story).paddingLeft);
+			const checks = {
+				theme: document.documentElement.dataset.theme === %q,
+				language: document.documentElement.lang === 'zh-CN',
+				textAlign: getComputedStyle(copy).textAlign === 'start',
+				leftInset: Math.abs(copyOffset) <= 1,
+				verticalCenter: Math.abs(centerOffset) <= 35,
+				inputSize: inputRect.height >= 40 && inputRect.height <= 44 && getComputedStyle(input).fontSize === '14px',
+				footerInset: Math.abs(footerOffset) <= 1,
+				noOverflow: document.documentElement.scrollWidth <= innerWidth
+			};
+			return {ready: Object.values(checks).every(Boolean), checks,
+				measurements: {theme: document.documentElement.dataset.theme, language: document.documentElement.lang,
+				textAlign: getComputedStyle(copy).textAlign, copyOffset, centerOffset, footerOffset,
+				inputHeight: inputRect.height, inputFontSize: getComputedStyle(input).fontSize,
+				viewportWidth: innerWidth, scrollWidth: document.documentElement.scrollWidth}};
 		`, theme)); err != nil {
 			return fmt.Errorf("login appearance %s: %w", theme, err)
 		}
@@ -894,6 +905,29 @@ func waitChatScript(ctx context.Context, page *mygo.Page, script string) error {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("desktop chat did not become ready: %w (last result %v, %v)", ctx.Err(), value, err)
+		case <-ticker.C:
+		}
+	}
+}
+
+// Preserve layout measurements when a platform-specific assertion times out.
+func waitChatChecks(ctx context.Context, page *mygo.Page, script string) error {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	var last any
+	var lastErr error
+	for {
+		value, err := page.EvalContext(ctx, script)
+		if err == nil {
+			last = value
+		}
+		lastErr = err
+		if result, ok := value.(map[string]any); err == nil && ok && result["ready"] == true {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("desktop chat layout did not become ready: %w (last result %v, %v)", ctx.Err(), last, lastErr)
 		case <-ticker.C:
 		}
 	}

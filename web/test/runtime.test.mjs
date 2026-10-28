@@ -7,7 +7,9 @@ import {
   isDesktopChat,
   desktopSettingsPath,
   desktopLocale,
+  desktopTheme,
   subscribeDesktopLocale,
+  subscribeDesktopTheme,
   chatPreferences,
 } from "../.test-build/runtime.js";
 import { resolveLanguage, resolveTheme } from "../.test-build/preferences.js";
@@ -106,6 +108,31 @@ test("desktop locale starts with the native setting and updates through MyGo eve
   }
 });
 
+test("embedded Windows appearance overrides stale media queries without affecting browsers", () => {
+  const listeners = new Map();
+  const surface = {
+    spoolDesktop: true,
+    addEventListener(name, listener) { listeners.set(name, listener); },
+    removeEventListener(name, listener) {
+      if (listeners.get(name) === listener) listeners.delete(name);
+    },
+  };
+  assert.equal(desktopTheme(surface), undefined);
+  const seen = [];
+  const off = subscribeDesktopTheme(() => seen.push(desktopTheme(surface)), surface);
+  surface.spoolDesktopTheme = "light";
+  listeners.get("spool:appearance-changed")();
+  surface.spoolDesktopTheme = "dark";
+  listeners.get("spool:appearance-changed")();
+  assert.deepEqual(seen, ["light", "dark"]);
+  off();
+  assert.equal(listeners.size, 0);
+  surface.spoolDesktopTheme = "invalid";
+  assert.equal(desktopTheme(surface), undefined);
+  assert.equal(desktopTheme({ spoolDesktopTheme: "dark" }), undefined);
+  subscribeDesktopTheme(() => assert.fail("browser subscribed to native theme"), { spoolDesktopTheme: "dark" })();
+});
+
 test("desktop ignores account and logged-out preferences while browser settings remain independent", () => {
   for (const theme of ["system", "dark", "light"]) {
     for (const language of ["system", "en", "zh-CN", "ja"]) {
@@ -127,8 +154,10 @@ test("desktop ignores account and logged-out preferences while browser settings 
 test("presentation subscribes to native locale without waiting for login or reloading chat", async () => {
   const source = await readFile(new URL("../src/use-presentation.ts", import.meta.url), "utf8");
   assert.match(source, /useSyncExternalStore\(\s*subscribeDesktopLocale,\s*desktopLocale,/);
+  assert.match(source, /useSyncExternalStore\(\s*subscribeDesktopTheme,\s*desktopTheme,/);
   assert.match(source, /chatPreferences\(preferences, nativeLocale\)/);
   assert.match(source, /resolveLanguage\(effective\.language, systemLanguages\)/);
   assert.match(source, /resolveTheme\(effective\.theme, systemDark\)/);
+  assert.match(source, /nativeTheme \?\? resolveTheme/);
   assert.match(source, /setAPILanguage\(locale\)/);
 });

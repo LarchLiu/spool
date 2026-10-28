@@ -99,6 +99,7 @@ func (p *panel) loadChatView(address string) error {
 		})
 		page.OnDidFinishLoad(func() {
 			p.sendWindowChrome(view)
+			p.sendDesktopAppearance(view)
 			p.chatFailed = false
 			if p.tab == "Chat" {
 				view.Focus()

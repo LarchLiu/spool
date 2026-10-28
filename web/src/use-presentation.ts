@@ -9,13 +9,20 @@ import {
 import {
   chatPreferences,
   desktopLocale,
+  desktopTheme,
   subscribeDesktopLocale,
+  subscribeDesktopTheme,
 } from "./runtime";
 
 export function usePresentation(preferences: UIPreferences) {
   const nativeLocale = useSyncExternalStore(
     subscribeDesktopLocale,
     desktopLocale,
+    () => undefined,
+  );
+  const nativeTheme = useSyncExternalStore(
+    subscribeDesktopTheme,
+    desktopTheme,
     () => undefined,
   );
   const effective = chatPreferences(preferences, nativeLocale);
@@ -38,7 +45,7 @@ export function usePresentation(preferences: UIPreferences) {
     };
   }, []);
   const locale = resolveLanguage(effective.language, systemLanguages);
-  const theme = resolveTheme(effective.theme, systemDark);
+  const theme = nativeTheme ?? resolveTheme(effective.theme, systemDark);
   const t = useMemo(() => translator(locale), [locale]);
   // Updating the request locale during render also covers requests from sibling
   // effects in the same frame, rather than waiting for a later effect.

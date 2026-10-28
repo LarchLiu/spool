@@ -20,6 +20,7 @@ func (p *panel) applyPresentation() {
 		return
 	}
 	mygo.Theme.SetSource(mygo.ThemeSource(p.preferences.Theme))
+	p.broadcastDesktopAppearance()
 	locale := p.preferences.Language
 	if locale == "system" {
 		locale = ""

@@ -82,6 +82,35 @@ test("preload retains native insets before DOM creation and updates them for ful
   assert.equal(properties.get("--desktop-controls-left"), "82px");
 });
 
+test("Windows preload forwards native appearance changes to embedded pages", async () => {
+  const source = await readFile(
+    new URL("../../cmd/desktop/window_chrome.go", import.meta.url),
+    "utf8",
+  );
+  const script = source.match(/const desktopWindowPreload = `([\s\S]*?)`/)[1];
+  const listeners = new Map();
+  const notifications = [];
+  const window = {
+    mygo: {
+      platform: "win32",
+      on(event, listener) { listeners.set(event, listener); },
+    },
+    dispatchEvent(event) { notifications.push(event.type); },
+  };
+  vm.runInNewContext(script, { window, Event: class { constructor(type) { this.type = type; } } });
+  assert.equal(window.spoolDesktop, true);
+  assert.equal(window.spoolDesktopTheme, undefined);
+  const update = listeners.get("spool:appearance");
+  assert.equal(typeof update, "function");
+  update("light");
+  assert.equal(window.spoolDesktopTheme, "light");
+  update("dark");
+  assert.equal(window.spoolDesktopTheme, "dark");
+  update("system");
+  assert.equal(window.spoolDesktopTheme, "dark");
+  assert.deepEqual(notifications, ["spool:appearance-changed", "spool:appearance-changed"]);
+});
+
 test("only Mac desktop renders a logo-only window brand with a native drag strip", (t) => {
   const render = () => renderToStaticMarkup(createElement(DesktopWindowChrome));
   assert.equal(render(), "");

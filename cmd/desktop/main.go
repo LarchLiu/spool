@@ -199,6 +199,7 @@ func runDesktop() (runErr error) {
 		opts := mygo.WindowOptions{Title: p.windowTitle(), Width: 1280, Height: 860, MinWidth: 840, MinHeight: 580, StateKey: "main", Content: ui.View(p.view)}
 		configureWindowChrome(&opts, runtime.GOOS)
 		p.window = mygo.NewWindow(opts)
+		mygo.Theme.OnUpdated(p.broadcastDesktopAppearance)
 		if err := p.loadSettingsView(); err != nil {
 			p.settingsFailed = true
 			p.message = err.Error()

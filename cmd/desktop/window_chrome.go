@@ -8,8 +8,16 @@ import (
 )
 
 var titlebarChanged = mygo.NewEvent[windowChrome]("spool:titlebar")
+var desktopAppearance = mygo.NewEvent[string]("spool:appearance")
 
 const desktopWindowPreload = `Object.defineProperty(window, "spoolDesktop", {value: true});
+if (window.mygo?.platform === "win32") {
+  window.mygo.on("spool:appearance", theme => {
+    if (theme !== "light" && theme !== "dark") return;
+    window.spoolDesktopTheme = theme;
+    window.dispatchEvent(new Event("spool:appearance-changed"));
+  });
+}
 if (window.mygo?.platform === "darwin") {
   let left = 80;
   const apply = () => {
@@ -53,5 +61,23 @@ func (p *panel) syncWindowChrome(bar ui.TitleBar) {
 func (p *panel) sendWindowChrome(view *mygo.WebView) {
 	if runtime.GOOS == "darwin" && view != nil {
 		_ = titlebarChanged.EmitPage(view.Page(), p.windowChrome)
+	}
+}
+
+func (p *panel) sendDesktopAppearance(view *mygo.WebView) {
+	if runtime.GOOS != "windows" || view == nil {
+		return
+	}
+	theme := "light"
+	if mygo.Theme.IsDark() {
+		theme = "dark"
+	}
+	_ = desktopAppearance.EmitPage(view.Page(), theme)
+}
+
+func (p *panel) broadcastDesktopAppearance() {
+	// MyGo 0.6.4 updates top-level WebView2 windows, but not embedded views.
+	for _, view := range []*mygo.WebView{p.chatView, p.settingsView} {
+		p.sendDesktopAppearance(view)
 	}
 }
