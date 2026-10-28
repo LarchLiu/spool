@@ -28,6 +28,7 @@ type Service struct {
 	closed         bool
 	updating       bool
 	runningAddress string
+	localAddress   string
 }
 type ServiceStatus struct {
 	Running bool
@@ -118,9 +119,25 @@ func (s *Service) Start() error {
 		s.lastError = err.Error()
 		return err
 	}
+	localAddress := loopbackAddress(listener.Addr().String())
+	var localListener net.Listener
+	if localAddress == "" {
+		// A LAN-only binding cannot serve a secure-context desktop page. Share
+		// this server and App through a loopback listener, not a second backend.
+		localListener, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			listener.Close()
+			s.lastError = err.Error()
+			return err
+		}
+		localAddress = localListener.Addr().String()
+	}
 	agents, err := s.Store.Agents()
 	if err != nil {
 		listener.Close()
+		if localListener != nil {
+			localListener.Close()
+		}
 		return err
 	}
 	runner := agent.NewCLIRunner()
@@ -134,16 +151,23 @@ func (s *Service) Start() error {
 	s.runner = runner
 	s.lastError = ""
 	s.runningAddress = listener.Addr().String()
-	s.workers.Add(1)
-	go func() {
-		defer s.workers.Done()
-		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			log.Printf("event=http_server_failed error=%q", err)
-			s.mu.Lock()
-			s.lastError = err.Error()
-			s.mu.Unlock()
-		}
-	}()
+	s.localAddress = localAddress
+	listeners := []net.Listener{listener}
+	if localListener != nil {
+		listeners = append(listeners, localListener)
+	}
+	for _, listener := range listeners {
+		s.workers.Add(1)
+		go func() {
+			defer s.workers.Done()
+			if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+				log.Printf("event=http_server_failed error=%q", err)
+				s.mu.Lock()
+				s.lastError = err.Error()
+				s.mu.Unlock()
+			}
+		}()
+	}
 	log.Printf("event=service_started address=%q", s.runningAddress)
 	return nil
 }
@@ -157,6 +181,7 @@ func (s *Service) Stop() error {
 	s.server = nil
 	s.app = nil
 	s.runner = nil
+	s.localAddress = ""
 	_ = server.Close()
 	return app.Close()
 }
@@ -193,6 +218,37 @@ func (s *Service) WebURL() string {
 		host = "127.0.0.1"
 	}
 	return "http://" + net.JoinHostPort(host, fmt.Sprint(settings.Port))
+}
+
+// LocalWebURL is the active service's same-origin desktop endpoint. Saved
+// listener settings and a public reverse-proxy URL must not redirect it.
+func (s *Service) LocalWebURL() (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.server == nil {
+		return "", fmt.Errorf("chat service is not running")
+	}
+	return "http://" + s.localAddress, nil
+}
+
+func loopbackAddress(address string) string {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return ""
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return ""
+	}
+	if ip.IsUnspecified() {
+		host = "::1"
+		if ip.To4() != nil {
+			host = "127.0.0.1"
+		}
+	} else if !ip.IsLoopback() {
+		return ""
+	}
+	return net.JoinHostPort(host, port)
 }
 func (s *Service) SaveAgent(backend chatmodel.Backend, enabled bool, path string) error {
 	if err := s.Store.ConfigureAgent(backend, enabled, path); err != nil {

@@ -1,1 +1,1 @@
-{"name":"Spool","slug":"spool","identifier":"com.cloudgeek.spool","version":"0.1.4","icon":"assets/icon.png","main":"./cmd/desktop","buildCommand":"go run ./tools/branding.go && npm --prefix web run build","out":"build","linux":{"webview":false}}
+{"name":"Spool","slug":"spool","identifier":"com.cloudgeek.spool","version":"0.1.4","icon":"assets/icon.png","main":"./cmd/desktop","buildCommand":"go run ./tools/branding.go && npm --prefix web run build","out":"build","linux":{"webview":true}}

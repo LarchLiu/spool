@@ -26,6 +26,11 @@ import (
 type panel struct {
 	service            *workspace.Service
 	window             *mygo.Window
+	chatView           *mygo.WebView
+	chatURL            string
+	chatFailed         bool
+	chatStarting       bool
+	quitting           bool
 	tray               *mygo.Tray
 	logo               *ui.Bitmap
 	preferences        workspace.UIPreferences
@@ -89,6 +94,10 @@ func runDesktop() (runErr error) {
 	mygo.App.SetName("Spool")
 	if development {
 		mygo.App.SetName("Spool Dev")
+	}
+	if *smoke != "" {
+		mygo.App.SetName("Spool Smoke")
+		mygo.App.SetPath(mygo.PathUserData, filepath.Join(*root, "native"))
 	}
 	mygo.App.SetLanguages("en", "zh-CN", "ja")
 	if *smoke == "" && !mygo.App.RequestSingleInstanceLock() {
@@ -168,7 +177,6 @@ func runDesktop() (runErr error) {
 			p.updateRelease()
 		}
 	})
-	var quitting bool
 	mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
 		if p.updates.State().Installing {
 			e.PreventDefault()
@@ -176,24 +184,23 @@ func runDesktop() (runErr error) {
 			p.message = "Wait for the update to finish before quitting."
 			return
 		}
-		quitting = true
+		p.quitting = true
 	})
 	mygo.App.WhenReady(func() {
 		p.applyPresentation()
 		mygo.App.OnLocaleChanged(func(string) { p.updateNativeLabels() })
-		p.window = mygo.NewWindow(mygo.WindowOptions{Title: mygo.App.Name() + " · " + p.tr("Control Center"), Width: 960, Height: 760, MinWidth: 740, MinHeight: 580, Content: ui.View(p.view)})
+		p.window = mygo.NewWindow(mygo.WindowOptions{Title: mygo.App.Name() + " · " + p.tr("Control Center"), Width: 1280, Height: 860, MinWidth: 840, MinHeight: 580, StateKey: "main", Content: ui.View(p.view)})
 		p.refreshGitHubCLI()
 		p.window.OnClose(func(e *mygo.CloseEvent) {
-			if !quitting {
+			if !p.quitting {
 				e.PreventDefault()
 				p.window.Hide()
 			}
 		})
-		mygo.App.OnSecondInstance(func([]string, string) { p.window.Show(); p.window.Focus() })
+		mygo.App.OnSecondInstance(func([]string, string) { p.showMainWindow() })
 		mygo.App.OnActivate(func(visible bool) {
 			if !visible {
-				p.window.Show()
-				p.window.Focus()
+				p.showMainWindow()
 			}
 		})
 		var e error
@@ -294,6 +301,10 @@ func (p *panel) action(fn func() error) {
 	}()
 }
 func (p *panel) view(c *ui.Context) {
+	if p.tab == "Chat" {
+		p.chatContent(c)
+		return
+	}
 	ui.Row(c).Fill().Children(func() {
 		ui.Column(c).Width(176).FillHeight().Padding(22).Gap(10).Children(func() {
 			if p.logo != nil {
@@ -301,14 +312,21 @@ func (p *panel) view(c *ui.Context) {
 			}
 			ui.Text(c, "Spool").Bold().FontSize(16)
 			ui.Text(c, p.tr("Control Center")).FontSize(12)
-			for _, tab := range []string{"Service", "People", "Projects", "Agents", "Online", "Appearance", "Updates"} {
+			for _, tab := range []string{"Chat", "Service", "People", "Projects", "Agents", "Online", "Appearance", "Updates"} {
 				c.Key("tab-" + tab)
-				if ui.Button(c, p.tr(tab)).FillWidth().Clicked() {
-					p.tab = tab
-					p.message = ""
+				button := ui.Button
+				if p.tab == tab {
+					button = ui.PrimaryButton
+				}
+				if button(c, p.tr(tab)).FillWidth().Clicked() {
+					if tab == "Chat" {
+						p.openChat()
+					} else {
+						p.selectTab(tab)
+					}
 				}
 			}
-			ui.Text(c, p.tr("Desktop administration only")).FontSize(11)
+			ui.Text(c, p.tr("Local agent workspace")).Wrap().FontSize(11)
 		})
 		ui.Scroll(c).Fill().Children(func() {
 			ui.Column(c).FillWidth().Padding(28).Gap(16).Children(func() {
@@ -362,8 +380,11 @@ func (p *panel) serviceView(c *ui.Context) {
 		if ui.Button(c, p.tr("Stop service")).Disabled(p.busy || !p.status.Running).Clicked() {
 			p.action(p.service.Stop)
 		}
-		if ui.Button(c, p.tr("Open Web Chat")).Clicked() {
-			_ = mygo.Shell.OpenExternal(p.service.WebURL())
+		if ui.Button(c, p.tr("Open Chat")).Disabled(p.chatStarting).Clicked() {
+			p.openChat()
+		}
+		if ui.Button(c, p.tr("Open in Browser")).Clicked() {
+			p.openBrowser()
 		}
 	})
 	p.field(c, "Listen IP (127.0.0.1 / 0.0.0.0)", &p.settings.Host)

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { setAPILanguage } from "./api";
 import { translator } from "./i18n";
 import {
@@ -6,8 +6,19 @@ import {
   resolveTheme,
   type UIPreferences,
 } from "./preferences";
+import {
+  chatPreferences,
+  desktopLocale,
+  subscribeDesktopLocale,
+} from "./runtime";
 
 export function usePresentation(preferences: UIPreferences) {
+  const nativeLocale = useSyncExternalStore(
+    subscribeDesktopLocale,
+    desktopLocale,
+    () => undefined,
+  );
+  const effective = chatPreferences(preferences, nativeLocale);
   const [systemDark, setSystemDark] = useState(
     () => matchMedia("(prefers-color-scheme: dark)").matches,
   );
@@ -19,14 +30,15 @@ export function usePresentation(preferences: UIPreferences) {
     const themeChanged = () => setSystemDark(media.matches);
     const languageChanged = () => setSystemLanguages([...navigator.languages]);
     media.addEventListener("change", themeChanged);
+    themeChanged();
     window.addEventListener("languagechange", languageChanged);
     return () => {
       media.removeEventListener("change", themeChanged);
       window.removeEventListener("languagechange", languageChanged);
     };
   }, []);
-  const locale = resolveLanguage(preferences.language, systemLanguages);
-  const theme = resolveTheme(preferences.theme, systemDark);
+  const locale = resolveLanguage(effective.language, systemLanguages);
+  const theme = resolveTheme(effective.theme, systemDark);
   const t = useMemo(() => translator(locale), [locale]);
   // Updating the request locale during render also covers requests from sibling
   // effects in the same frame, rather than waiting for a later effect.

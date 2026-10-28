@@ -324,6 +324,22 @@ button:disabled {
   color: var(--muted);
   margin-top: 4px;
 }
+.desktop-settings {
+  gap: 8px;
+  flex-shrink: 0;
+  font-size: 12px;
+  text-decoration: none;
+}
+.desktop-settings-corner {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 2;
+  background: var(--sidebar);
+}
+.desktop-login .login-story {
+  padding-bottom: 80px;
+}
 .user-avatar {
   display: block;
   flex-shrink: 0;

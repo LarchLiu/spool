@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { releaseVersion } from "./prepare-release.mjs";
 
 export function verifySmokeReport(result, version, target) {
-  assert.deepEqual(result, { version, target, native: true, web: true });
+  assert.deepEqual(result, { version, target, native: true, web: true, chat_webview: true, single_window: true, full_window_chat: true, shared_presentation: true });
 }
 
 export function extractSmokeArchive(directory, filename, destination, run = execFileSync) {
@@ -44,7 +44,7 @@ export async function smokeRelease(directory, target, env = process.env) {
     assert.equal(code, 0, `packaged app failed: ${output}`);
     const result = JSON.parse(await readFile(report, "utf8"));
     verifySmokeReport(result, version, target);
-    console.log(`PASS ${target}: native window, SQLite, Web health, embedded PWA and clean exit (${version})`);
+    console.log(`PASS ${target}: single native window, SQLite, Web health, full-window chat rendering/authentication/settings navigation, shared theme/language and clean exit (${version})`);
   } finally {
     clearTimeout(timer);
     await writeFile(join(results, "startup.log"), output);

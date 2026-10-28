@@ -42,7 +42,7 @@ test("smoke extraction unpacks real archives from paths with spaces and colons",
 });
 
 test("release smoke accepts only the expected version, target, native loop and Web probes", () => {
-  const valid = { version: "1.2.3", target: "windows-arm64", native: true, web: true };
+  const valid = { version: "1.2.3", target: "windows-arm64", native: true, web: true, chat_webview: true, single_window: true, full_window_chat: true, shared_presentation: true };
   assert.doesNotThrow(() => verifySmokeReport(valid, valid.version, valid.target));
   for (const field of Object.keys(valid)) {
     const wrong = { ...valid, [field]: typeof valid[field] === "boolean" ? false : "different" };

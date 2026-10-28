@@ -7,7 +7,8 @@ bundle identifier is `com.cloudgeek.spool`.
 
 ## Architecture
 
-- `cmd/desktop`: MyGo native control center and tray, without a WebView.
+- `cmd/desktop`: one MyGo native window switching between the native control center
+  and full-window system-WebView chat, reusing the Web client and Go service, plus a tray.
 - `cmd/server`: optional headless HTTP server using the exact same services.
 - `internal/agent/`: persistent CLI processes, Codex/Claude protocols, model and
   permission discovery, and process cleanup on supported platforms.
@@ -160,13 +161,58 @@ an application crash report; consult the OS crash reports as well.
 4. Open **Service** and choose the listen IP, external Web port, public origin,
    and idle release interval. Settings are persisted in SQLite. **Stop → Start**
    applies saved listener/origin/idle settings; stopping interrupts active tasks.
-5. Open Web Chat and sign in. With an authorized project and no chats yet, type
+5. Select **Chat** in the main window's sidebar (or **Open Chat** in the tray)
+   and sign in, or choose
+   **Open in Browser** to use the Web/PWA client. With an authorized project and no chats yet, type
    directly in the composer, choose an agent/model, and send: the first message
    automatically creates a chat in the current project. Click **+** beside a
    project whenever you want another chat in that project. **+** only opens a
    local draft: no chat row is written to SQLite or added to history until Send.
    Switching away from an unsent draft or starting another discards that draft;
    empty drafts are not restored after a page reload.
+
+### Desktop Chat
+
+**Chat** fills the main desktop window, not a popup or a second window.
+It embeds the same React chat UI, HTTP/SSE APIs, native CLI sessions and database
+as Web/PWA without an extra native navigation sidebar. Selecting **Chat** in the
+control center starts the existing service if stopped; it never opens a second
+database or agent manager. The **Settings** icon immediately left of **Sign out**
+in the chat sidebar switches back to the native control center in the same window.
+Before sign-in, the same action is at the bottom left. Desktop chat follows the
+control center's theme and language; it has no independent appearance dialog or
+extra settings row. Browser/PWA preferences remain independent. Switching to settings
+only hides the embedded WebView: returning to Chat keeps the same page and unsent
+draft. Closing the main window hides it without stopping tasks or destroying the chat page. Dock
+activation and a second launch restore that same window and selected tab.
+The tray's **Settings** action selects the native control center in the same
+window. Explicit Quit shuts down the window and the service. Main-window bounds
+are remembered by MyGo.
+
+The embedded chat page loads the active local HTTP listener, ignoring a configured
+public reverse-proxy URL and listener settings not yet applied by Stop/Start.
+Wildcard bindings use loopback of the matching IPv4/IPv6 family. For a specific
+non-loopback binding, the same HTTP server also listens on an ephemeral loopback
+port so desktop pages retain a secure context; both listeners stop together.
+Remote browser access still uses the configured Web URL. Authentication,
+membership checks, per-chat controls and CSRF validation are unchanged; there is
+no automatic desktop login. When an HTTPS public origin is configured, only
+same-origin loopback requests from a loopback peer use non-Secure local HTTP cookies;
+public/proxied requests retain Secure cookies.
+
+External HTTP(S) links open in the default browser instead of navigating the chat
+window. Other external schemes and unsolicited off-origin navigations are
+blocked. The desktop preload only marks presentation mode; it grants no extra
+native bindings or API privileges. The chat uses MyGo's existing native locale
+events and theme-aware media query to follow settings without reloading or
+writing Web-account preferences. Desktop skips PWA installation and Service
+Worker registration because its Web assets update with the application. Web/PWA
+behavior is unchanged, including its independent login and appearance settings.
+
+Desktop chat uses WKWebView on macOS, WebView2 on Windows, and WebKitGTK on Linux.
+If the runtime is missing, the native control center stays usable and shows
+installation guidance; **Open in Browser** remains available. A failed page or
+renderer reports an error in the control center; **Open Chat** retries loading.
 
 ### Scheduled GitHub Issues
 
@@ -749,8 +795,13 @@ device's `prefers-color-scheme` and ordered browser languages. MyGo uses its nat
 appearance and locale APIs, including title bars, native controls and tray labels.
 
 In Web, open the appearance icon beside your name in the sidebar footer. In the
-desktop control center, open **Appearance**. Preferences are stored in SQLite:
-one local desktop record, and an independent record for each Web user. Web user
+desktop chat, the icon beside **Sign out** opens native settings; open
+**Appearance** there to change theme or language for both native settings and
+embedded chat, including its sign-in screen. Native locale changes and the
+effective light/dark appearance (including **Follow system**) update chat live
+without losing drafts. Preferences are stored in SQLite: one local desktop
+record shared by the native UI and embedded chat, and an independent record for
+each browser/PWA user. Web user
 preferences follow that account on the next login or reload, without changing
 other users or the desktop. Logged-out choices are temporary; the offline fallback
 uses device preferences because it cannot retrieve SQLite settings. No personal
@@ -835,8 +886,8 @@ go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -skip-dmg
 # go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -platform linux/amd64
 ```
 
-`mygo.json` points at `cmd/desktop`, builds Web assets before packaging, and marks
-Linux as native-UI-only (GTK needed, no WebKitGTK). Windows installer generation
+`mygo.json` points at `cmd/desktop`, builds Web assets before packaging, and enables
+Linux WebView dependencies (GTK and WebKitGTK). Windows installer generation
 may require NSIS. MyGo's normal OS requirements and code-signing requirements
 apply. Builds are per platform/architecture, not one executable for all OSes.
 The macOS output is `build/darwin-arm64/Spool.app` on Apple Silicon. Headless and
@@ -1023,7 +1074,11 @@ Before signing, a separate six-target `smoke` matrix extracts each update archiv
 and actually runs its packaged desktop on the matching OS and CPU architecture.
 `tools/smoke-release.mjs` requires native execution (not cross-compilation), checks
 the packaged version, native-window event-loop dispatch, SQLite initialization,
-Web `/healthz`, embedded index/PWA manifest, and clean exit. Linux runs under Xvfb
+Web `/healthz`, embedded index/PWA manifest, actual system-WebView React rendering,
+the full-window viewport, login screen and unauthenticated API guards with an HTTPS
+public URL configured, settings navigation, native theme/language changes before
+sign-in and while settings hide the chat, main-window hide/show without losing a
+draft or creating another window, and clean exit. Linux runs under Xvfb
 with software GL; Windows and macOS use their runner's desktop. A failed probe
 blocks publication and retains its diagnostics, not the extracted executable.
 
@@ -1031,7 +1086,9 @@ The desktop's `--release-smoke <report.json>` mode always makes a new temporary
 database, binds only loopback on a temporary port, disables agent discovery and
 automatic update checks, bypasses the installed app's single-instance lock, and
 exits after the probes. It never opens a supplied `--data-dir` or the usual
-`SPOOL_HOME` database. The runner enforces a 90-second process timeout.
+`SPOOL_HOME` database. Native window/locale state is also isolated in that
+temporary root. The probe never signs in or replaces installed-app cookies.
+The runner enforces a 90-second process timeout.
 
 The publish job's `tools/sign-release.mjs` signs every archive's SHA-256 digest,
 generates the six `update-<platform>.json` manifests, and signs each manifest's

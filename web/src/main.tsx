@@ -26,6 +26,8 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { api, setCSRF } from "./api";
+import { isDesktopChat } from "./runtime";
+import { DesktopSettingsLink } from "./desktop-settings";
 import { subscribeChatEvents } from "./chat-stream";
 import {
   adoptCreatedChat,
@@ -255,6 +257,8 @@ function App() {
     return () => window.removeEventListener("auth-expired", expire);
   }, []);
   useEffect(() => {
+    // Desktop updates ship these assets with the executable, not a PWA.
+    if (isDesktopChat()) return;
     const handler = (e: Event) => {
       e.preventDefault();
       setInstall(e as BeforeInstallPromptEvent);
@@ -971,7 +975,7 @@ function App() {
     }
   }
   async function updatePreferences(next: UIPreferences) {
-    if (savingPreferences) return;
+    if (isDesktopChat() || savingPreferences) return;
     const previous = preferences;
     const owner = user?.id;
     setPreferences(next);
@@ -1031,7 +1035,7 @@ function App() {
       );
     }
   }, [currentModel, effort, backend]);
-  const appearance = appearanceOpen && (
+  const appearance = !isDesktopChat() && appearanceOpen && (
     <AppearanceDialog
       preferences={preferences}
       saving={savingPreferences}
@@ -1045,19 +1049,23 @@ function App() {
       <main className="loading">
         <img className="brand-mark" src="/logo.png" alt="Spool" />
         <p>{t("Connecting to your workspace…")}</p>
+        <DesktopSettingsLink t={t} className="desktop-settings-corner" />
       </main>
     );
   if (!user)
     return (
       <>
-        <main className="login">
-          <button
-            className="icon login-preferences"
-            onClick={() => setAppearanceOpen(true)}
-            aria-label={t("Appearance and language")}
-          >
-            <Settings2 size={20} />
-          </button>
+        <main className={isDesktopChat() ? "login desktop-login" : "login"}>
+          <DesktopSettingsLink t={t} className="desktop-settings-corner" />
+          {!isDesktopChat() && (
+            <button
+              className="icon login-preferences"
+              onClick={() => setAppearanceOpen(true)}
+              aria-label={t("Appearance and language")}
+            >
+              <Settings2 size={20} />
+            </button>
+          )}
           <section className="login-story">
             <div className="brand">
               <img className="brand-mark" src="/logo.png" alt="" />

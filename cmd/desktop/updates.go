@@ -43,10 +43,8 @@ func (p *panel) updateLog(phase, version string, err error) {
 }
 
 func (p *panel) showUpdates() {
-	p.tab = "Updates"
-	p.message = ""
-	p.window.Show()
-	p.window.Focus()
+	p.selectTab("Updates")
+	p.showMainWindow()
 }
 
 func (p *panel) updatesView(c *ui.Context) {

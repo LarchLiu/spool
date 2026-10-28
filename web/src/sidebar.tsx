@@ -5,13 +5,13 @@ import {
   LogOut,
   PanelLeftClose,
   Plus,
-  Settings2,
 } from "lucide-react";
 import type { Translator } from "./i18n";
 import type { Backend, Chat, Project, User } from "./types";
 import { AgentIcon } from "./agent-icon";
 import { UserAvatar } from "./user-avatar";
 import { PanelResizeHandle } from "./panel-resize-handle";
+import { ChatSettingsControl } from "./desktop-settings";
 
 type Props = {
   user: User;
@@ -236,14 +236,7 @@ export function Sidebar(props: Props) {
           {props.user.nickname}
           <small>{t("Project chat visibility follows project settings")}</small>
         </div>
-        <button
-          className="icon"
-          onClick={props.onSettings}
-          aria-label={t("Appearance and language")}
-          title={t("Settings")}
-        >
-          <Settings2 size={16} />
-        </button>
+        <ChatSettingsControl t={t} onAppearance={props.onSettings} />
         <button
           className="icon"
           onClick={props.onLogout}

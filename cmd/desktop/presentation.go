@@ -30,19 +30,29 @@ func (p *panel) applyPresentation() {
 }
 
 func (p *panel) updateNativeLabels() {
-	if p.window != nil {
-		p.window.SetTitle(mygo.App.Name() + " · " + p.tr("Control Center"))
-	}
+	p.updateWindowTitle()
 	if p.tray != nil {
 		p.tray.SetMenu(p.trayMenu())
 		p.tray.SetToolTip("Spool · " + p.tr("Web service"))
 	}
 }
 
+func (p *panel) updateWindowTitle() {
+	if p.window == nil {
+		return
+	}
+	section := "Control Center"
+	if p.tab == "Chat" {
+		section = "Chat"
+	}
+	p.window.SetTitle(mygo.App.Name() + " · " + p.tr(section))
+}
+
 func (p *panel) trayMenu() *mygo.Menu {
 	return mygo.NewMenu([]*mygo.MenuItem{
-		{Label: p.tr("Settings…"), Click: func(*mygo.MenuItem, *mygo.Window) { p.window.Show(); p.window.Focus() }},
-		{Label: p.tr("Open Web Chat"), Click: func(*mygo.MenuItem, *mygo.Window) { _ = mygo.Shell.OpenExternal(p.service.WebURL()) }},
+		{Label: p.tr("Open Chat"), Click: func(*mygo.MenuItem, *mygo.Window) { p.openChat() }},
+		{Label: p.tr("Open in Browser"), Click: func(*mygo.MenuItem, *mygo.Window) { p.openBrowser() }},
+		{Label: p.tr("Settings…"), Click: func(*mygo.MenuItem, *mygo.Window) { p.showControlCenter() }},
 		{Label: p.tr("Check for updates"), Click: func(*mygo.MenuItem, *mygo.Window) {
 			p.showUpdates()
 			go p.updates.Check()
