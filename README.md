@@ -110,6 +110,13 @@ The project must point at the root of a checkout whose `origin` matches the
 configured GitHub.com repository. Install and authenticate `gh` on the service
 host, and ensure the repository has a `dev` branch.
 
+At desktop launch, a background check verifies that `gh` can run and make an
+authenticated GitHub.com API request. New issue automation cannot be enabled
+until this check succeeds. The project panel shows installation, sign-in or
+network guidance and a **Recheck GitHub CLI** button; existing schedules remain
+editable and can still be disabled. Repository access is verified separately
+during each scheduled run.
+
 The Go scheduler runs in both desktop and headless services while the Web
 service is running (checks admitted within about 15 seconds of their due time).
 It does not wake a previous chat or replay missed intervals. Stopping the

@@ -8,7 +8,10 @@ import (
 )
 
 func (p *panel) tr(key string, values ...string) string {
-	locale := i18n.ResolveLanguage(p.preferences.Language, mygo.App.Locale())
+	locale := p.preferences.Language
+	if locale == "" || locale == "system" {
+		locale = mygo.App.Locale()
+	}
 	return i18n.Translate(locale, key, values...)
 }
 

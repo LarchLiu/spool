@@ -4,7 +4,9 @@ package issues
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -39,16 +41,28 @@ func Run(ctx context.Context, directory, name string, args ...string) ([]byte, e
 	return out, nil
 }
 
-func RemoteError(err error) error {
-	if err == nil {
-		return nil
+func networkError(err error) bool {
+	var network net.Error
+	if errors.Is(err, context.DeadlineExceeded) || errors.As(err, &network) {
+		return true
 	}
 	text := strings.ToLower(err.Error())
 	for _, marker := range []string{"could not resolve", "no such host", "dial tcp", "timeout", "timed out", "network is unreachable", "connection refused", "connection reset", "error connecting", "tls handshake"} {
 		if strings.Contains(text, marker) {
-			return fmt.Errorf("GitHub 网络不可达，台账未变更、未认领任务。若受沙箱限制，请按环境权限流程批准沙箱外联网后重试；不要据此重新登录：%w", err)
+			return true
 		}
 	}
+	return false
+}
+
+func RemoteError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if networkError(err) {
+		return fmt.Errorf("GitHub 网络不可达，台账未变更、未认领任务。若受沙箱限制，请按环境权限流程批准沙箱外联网后重试；不要据此重新登录：%w", err)
+	}
+	text := strings.ToLower(err.Error())
 	if strings.Contains(text, "http 401") || strings.Contains(text, "bad credentials") || strings.Contains(text, "token has expired") {
 		return fmt.Errorf("GitHub 明确返回凭据无效或过期，台账未变更；请检查凭据：%w", err)
 	}

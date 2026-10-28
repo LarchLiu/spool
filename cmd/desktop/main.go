@@ -42,6 +42,7 @@ type panel struct {
 	user               workspace.UserInput
 	project            workspace.Project
 	issueInterval      string
+	github             githubCLICheck
 	directoryPicker    directoryPicker
 	members            map[string]bool
 	agentPaths         map[chatmodel.Backend]string
@@ -103,6 +104,9 @@ func runDesktop() (runErr error) {
 	}
 	defer service.Close()
 	p := &panel{service: service, tab: "Service", members: map[string]bool{}, agentPaths: map[chatmodel.Backend]string{}, agentEnabled: map[chatmodel.Backend]bool{}}
+	githubContext, cancelGitHub := context.WithCancel(context.Background())
+	defer cancelGitHub()
+	p.github.ctx = githubContext
 	p.updateDiagnostics = diagnostics
 	p.logo, err = ui.DecodeBitmap(spool.AppIcon())
 	if err != nil {
@@ -121,6 +125,7 @@ func runDesktop() (runErr error) {
 	var shutdownErr error
 	mygo.App.OnQuit(func() {
 		p.updateLog("shutdown_started", "", nil)
+		cancelGitHub()
 		close(done)
 		p.updates.Close()
 		// MyGo relaunches after OnQuit, before main's deferred cleanup.
@@ -148,6 +153,7 @@ func runDesktop() (runErr error) {
 		p.applyPresentation()
 		mygo.App.OnLocaleChanged(func(string) { p.updateNativeLabels() })
 		p.window = mygo.NewWindow(mygo.WindowOptions{Title: "Spool · " + p.tr("Control Center"), Width: 960, Height: 760, MinWidth: 740, MinHeight: 580, Content: ui.View(p.view)})
+		p.refreshGitHubCLI()
 		p.window.OnClose(func(e *mygo.CloseEvent) {
 			if !quitting {
 				e.PreventDefault()
@@ -423,6 +429,10 @@ func (p *panel) projectView(c *ui.Context) {
 	p.projectIssuesView(c)
 	if ui.PrimaryButton(c, p.tr("Save project")).Disabled(p.busy || p.directoryPicker.pending).Clicked() {
 		project := p.project
+		if err := p.validateIssueEnablement(project); err != nil {
+			p.message = err.Error()
+			return
+		}
 		if project.Issues.Enabled {
 			interval, err := strconv.Atoi(p.issueInterval)
 			if err != nil || interval < 1 || interval > 10080 {
