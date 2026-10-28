@@ -1,23 +1,67 @@
-import { memo, type ReactNode } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import { memo, useContext, type ReactNode } from "react";
+import ReactMarkdown, {
+  defaultUrlTransform,
+  type Components,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { LocalFileContext } from "./local-file-context.js";
+import { localFileTarget } from "./local-file-links.js";
+
+function MarkdownLink({
+  href,
+  title,
+  children,
+}: {
+  href?: string;
+  title?: string;
+  children?: ReactNode;
+}) {
+  const { openFile, basePath } = useContext(LocalFileContext);
+  const file = href ? localFileTarget(href, basePath) : null;
+  if (file)
+    return (
+      <button
+        type="button"
+        className="local-file-link"
+        title={href}
+        disabled={!openFile}
+        onClick={() => openFile?.(file)}
+      >
+        {children}
+      </button>
+    );
+  return href ? (
+    <a
+      href={href}
+      title={title}
+      target={href.startsWith("#") ? undefined : "_blank"}
+      rel="noopener noreferrer"
+    >
+      {children}
+    </a>
+  ) : (
+    <span>{children}</span>
+  );
+}
+
+function messageURL(url: string) {
+  if (localFileTarget(url)) return url;
+  try {
+    return defaultUrlTransform(decodeURIComponent(url))
+      ? defaultUrlTransform(url)
+      : "";
+  } catch {
+    return "";
+  }
+}
 
 const plugins = [remarkGfm];
 const components: Components = {
-  a: ({ href, title, children }) =>
-    href ? (
-      <a href={href} title={title} target="_blank" rel="noopener noreferrer">
-        {children}
-      </a>
-    ) : (
-      <span>{children}</span>
-    ),
+  a: MarkdownLink,
   // Agent output must not silently load remote images or tracking pixels.
   img: ({ src, alt }) =>
     src ? (
-      <a href={src} target="_blank" rel="noopener noreferrer">
-        {alt || src}
-      </a>
+      <MarkdownLink href={src}>{alt || src}</MarkdownLink>
     ) : (
       <span>{alt}</span>
     ),
@@ -89,7 +133,12 @@ export const MarkdownMessage = memo(function MarkdownMessage({
 }) {
   return (
     <div className="markdown">
-      <ReactMarkdown remarkPlugins={plugins} components={components} skipHtml>
+      <ReactMarkdown
+        remarkPlugins={plugins}
+        components={components}
+        urlTransform={messageURL}
+        skipHtml
+      >
         {children}
       </ReactMarkdown>
     </div>

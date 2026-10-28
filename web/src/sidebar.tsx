@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { Folder, FolderOpen, LogOut, Plus, Settings2, X } from "lucide-react";
+import {
+  Folder,
+  FolderOpen,
+  LogOut,
+  PanelLeftClose,
+  Plus,
+  Settings2,
+} from "lucide-react";
 import type { Translator } from "./i18n";
 import type { Backend, Chat, Project, User } from "./types";
 import { AgentIcon } from "./agent-icon";
 import { UserAvatar } from "./user-avatar";
+import { PanelResizeHandle } from "./panel-resize-handle";
 
 type Props = {
   user: User;
@@ -13,9 +21,12 @@ type Props = {
   chatID: string;
   activeBackend?: Backend;
   open: boolean;
+  active: boolean;
   posting: boolean;
+  width: number;
   t: Translator;
   onClose: () => void;
+  onResize: (width: number) => void;
   onChat: (chat: Chat) => void;
   onNew: (project?: string) => void;
   onSettings: () => void;
@@ -95,16 +106,20 @@ export function Sidebar(props: Props) {
     );
   }
   return (
-    <aside className={"sidebar " + (props.open ? "open" : "")}>
+    <aside
+      className={"sidebar " + (props.open ? "open" : "")}
+      inert={!props.active}
+    >
       <div className="brand">
         <img className="brand-mark" src="/logo.png" alt="" />
         Spool
         <button
-          className="icon mobile"
+          className="icon sidebar-collapse"
           onClick={props.onClose}
-          aria-label={t("Close sidebar")}
+          aria-label={t("Collapse sidebar")}
+          title={t("Collapse sidebar")}
         >
-          <X size={18} />
+          <PanelLeftClose size={18} />
         </button>
       </div>
       <nav className="sidebar-scroll" aria-label={t("Workspace")}>
@@ -237,6 +252,12 @@ export function Sidebar(props: Props) {
           <LogOut size={16} />
         </button>
       </div>
+      <PanelResizeHandle
+        side="left"
+        width={props.width}
+        onResize={props.onResize}
+        t={t}
+      />
     </aside>
   );
 }

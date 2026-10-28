@@ -1,4 +1,12 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { createRoot } from "react-dom/client";
 import {
   ArrowUp,
@@ -7,7 +15,8 @@ import {
   Settings2,
   Folder,
   Users,
-  Menu,
+  PanelLeftOpen,
+  PanelRightOpen,
   X,
   WifiOff,
   Download,
@@ -47,6 +56,10 @@ import { AvatarDialog } from "./avatar-dialog";
 import { AvatarStack, UserAvatar } from "./user-avatar";
 import type { AvatarConfig } from "./avatar";
 import { Sidebar } from "./sidebar";
+import { FileSidebar, type FileSelection } from "./file-sidebar";
+import { LocalFileContext } from "./local-file-context";
+import type { LocalFileTarget } from "./local-file-links";
+import { panelStorageKey, parsePanelLayout } from "./panel-layout";
 import { AgentModelMenu } from "./agent-model-menu";
 import { AgentIcon } from "./agent-icon";
 import { AutosizeTextarea } from "./autosize-textarea";
@@ -80,7 +93,7 @@ function App() {
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [savingPreferences, setSavingPreferences] = useState(false);
-  const { t } = usePresentation(preferences);
+  const { t, theme } = usePresentation(preferences);
   const effortLabel = (value: string) => formatEffort(value, t);
   const [user, setUser] = useState<User | null>(null),
     [ready, setReady] = useState(false),
@@ -97,6 +110,60 @@ function App() {
     [connected, setConnected] = useState(true),
     [sidebar, setSidebar] = useState(false),
     [showLatest, setShowLatest] = useState(false);
+  const [panels, setPanels] = useState(() => {
+    try {
+      return parsePanelLayout(localStorage.getItem(panelStorageKey));
+    } catch {
+      return parsePanelLayout(null);
+    }
+  });
+  const [fileSidebarMobile, setFileSidebarMobile] = useState(false);
+  const [narrowLayout, setNarrowLayout] = useState(
+    () => matchMedia("(max-width: 900px)").matches,
+  );
+  const [fileSelection, setFileSelection] = useState<FileSelection | null>(
+    null,
+  );
+  const openLocalFile = useCallback((target: LocalFileTarget) => {
+    setFileSelection((old) => ({ target, request: (old?.request || 0) + 1 }));
+    setPanels((old) => ({ ...old, rightOpen: true }));
+    setFileSidebarMobile(matchMedia("(max-width: 900px)").matches);
+    setSidebar(false);
+  }, []);
+  const localFileContext = useMemo(
+    () => ({ openFile: project ? openLocalFile : undefined }),
+    [project, openLocalFile],
+  );
+  useEffect(() => {
+    try {
+      localStorage.setItem(panelStorageKey, JSON.stringify(panels));
+    } catch {
+      /* Storage can be disabled. */
+    }
+  }, [panels]);
+  useEffect(() => {
+    setFileSelection(null);
+  }, [project]);
+  useEffect(() => {
+    const media = matchMedia("(max-width: 900px)");
+    const changed = () => {
+      setNarrowLayout(media.matches);
+      setSidebar(false);
+      setFileSidebarMobile(false);
+    };
+    media.addEventListener("change", changed);
+    return () => media.removeEventListener("change", changed);
+  }, []);
+  useEffect(() => {
+    const closePanels = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSidebar(false);
+        setFileSidebarMobile(false);
+      }
+    };
+    window.addEventListener("keydown", closePanels);
+    return () => window.removeEventListener("keydown", closePanels);
+  }, []);
   const [clock, setClock] = useState(() => Date.now());
   const [historyLoadError, setHistoryLoadError] = useState(false);
   const historyAnchor = useRef<HistoryAnchor | null>(null);
@@ -1056,8 +1123,16 @@ function App() {
         {appearance}
       </>
     );
-  return (
-    <div className="app">
+  const workspace = (
+    <div
+      className={`app ${panels.leftOpen ? "" : "left-collapsed"} ${panels.rightOpen ? "" : "right-collapsed"}`}
+      style={
+        {
+          "--left-panel-width": `${panels.leftWidth}px`,
+          "--right-panel-width": `${panels.rightWidth}px`,
+        } as CSSProperties
+      }
+    >
       <Sidebar
         user={user}
         projects={projects}
@@ -1066,35 +1141,52 @@ function App() {
         chatID={chatID}
         activeBackend={chat?.turns.length === 0 ? backend : undefined}
         open={sidebar}
+        active={narrowLayout ? sidebar : panels.leftOpen}
         posting={posting}
+        width={panels.leftWidth}
         t={t}
-        onClose={() => setSidebar(false)}
+        onClose={() => {
+          setSidebar(false);
+          setPanels((old) => ({ ...old, leftOpen: false }));
+        }}
+        onResize={(width) => setPanels((old) => ({ ...old, leftWidth: width }))}
         onChat={openChat}
         onNew={newChat}
         onSettings={() => setAppearanceOpen(true)}
         onAvatar={() => setAvatarOpen(true)}
         onLogout={logout}
       />
-      {sidebar && (
+      {(sidebar || fileSidebarMobile) && (
         <button
           className="scrim"
           aria-label={t("Close sidebar")}
-          onClick={() => setSidebar(false)}
+          onClick={() => {
+            setSidebar(false);
+            setFileSidebarMobile(false);
+          }}
         />
       )}
       <main className="workspace">
         <header>
           <div className="heading">
-            <button
-              className="icon mobile"
-              onClick={() => setSidebar(true)}
-              aria-label={t("Open sidebar")}
-            >
-              <Menu size={20} />
-            </button>
+            {!(narrowLayout ? sidebar : panels.leftOpen) && (
+              <button
+                className="icon panel-toggle-left"
+                onClick={() => {
+                  if (narrowLayout) {
+                    setSidebar(true);
+                    setFileSidebarMobile(false);
+                  } else setPanels((old) => ({ ...old, leftOpen: true }));
+                }}
+                aria-label={t("Open sidebar")}
+                title={t("Open sidebar")}
+              >
+                <PanelLeftOpen size={18} />
+              </button>
+            )}
             <div className={chat ? "heading-copy has-agent" : "heading-copy"}>
               <div className="chat-heading">
-                {chat && <AgentIcon backend={backend} size={17} />}
+                {chat && <AgentIcon backend={backend} size={14} />}
                 <strong>
                   {(chat?.title === "New chat" ? t("New chat") : chat?.title) ||
                     (project ? t("New chat") : t("Workspace"))}
@@ -1146,6 +1238,21 @@ function App() {
                 {!online.length && <small>{t("Updating presence…")}</small>}
               </div>
             </details>
+            {!(narrowLayout ? fileSidebarMobile : panels.rightOpen) && (
+              <button
+                className="icon"
+                aria-label={t("Open file sidebar")}
+                title={t("Open file sidebar")}
+                onClick={() => {
+                  if (narrowLayout) {
+                    setFileSidebarMobile(true);
+                    setSidebar(false);
+                  } else setPanels((old) => ({ ...old, rightOpen: true }));
+                }}
+              >
+                <PanelRightOpen size={18} />
+              </button>
+            )}
           </div>
         </header>
         {!!chat?.artifacts?.length && (
@@ -1578,6 +1685,24 @@ function App() {
           </form>
         </footer>
       </main>
+      <FileSidebar
+        project={projects.find((item) => item.id === project)}
+        active={narrowLayout ? fileSidebarMobile : panels.rightOpen}
+        mobileOpen={fileSidebarMobile}
+        width={panels.rightWidth}
+        selection={fileSelection}
+        t={t}
+        theme={theme}
+        onOpen={openLocalFile}
+        onClear={() => setFileSelection(null)}
+        onClose={() => {
+          setFileSidebarMobile(false);
+          setPanels((old) => ({ ...old, rightOpen: false }));
+        }}
+        onResize={(width) =>
+          setPanels((old) => ({ ...old, rightWidth: width }))
+        }
+      />
       {appearance}
       {avatarOpen && (
         <AvatarDialog
@@ -1596,6 +1721,11 @@ function App() {
         />
       )}
     </div>
+  );
+  return (
+    <LocalFileContext.Provider value={localFileContext}>
+      {workspace}
+    </LocalFileContext.Provider>
   );
 }
 function worked(turn: Turn, t: Translator) {

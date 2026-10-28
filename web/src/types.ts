@@ -13,6 +13,26 @@ export type Project = {
   archived: boolean;
   shared_chats: boolean;
 };
+export type ProjectFileEntry = {
+  name: string;
+  path: string;
+  kind: "file" | "directory";
+  size?: number;
+};
+export type ProjectDirectory = {
+  path: string;
+  entries: ProjectFileEntry[];
+  truncated: boolean;
+};
+export type ProjectFile = {
+  path: string;
+  name: string;
+  size: number;
+  kind: "text" | "image" | "binary";
+  media_type: string;
+  content: string | null;
+  truncated: boolean;
+};
 export type Effort = { reasoningEffort: string; description: string };
 export type Model = {
   model: string;

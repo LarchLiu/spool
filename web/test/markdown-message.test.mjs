@@ -2,7 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MarkdownMessage, MarkdownPreview } from "../.test-build/markdown-message.js";
+import {
+  MarkdownMessage,
+  MarkdownPreview,
+} from "../.test-build/markdown-message.js";
+import { LocalFileContext } from "../.test-build/local-file-context.js";
 
 function render(content) {
   return renderToStaticMarkup(createElement(MarkdownMessage, null, content));
@@ -77,6 +81,36 @@ test("Markdown images are safe links, not automatic remote requests", () => {
   assert.match(html, /<span>Blocked<\/span>/);
 });
 
+test("local links become file actions, never URLs relative to the website", () => {
+  const text =
+    "[开发计划](/Users/k/code/muye/docs/development-plan.md:55) [source](src/main.tsx#L12C3) [file](file:///Users/k/code/muye/README.md) [external](https://example.com/plan)";
+  const html = renderToStaticMarkup(
+    createElement(
+      LocalFileContext.Provider,
+      { value: { openFile() {} } },
+      createElement(MarkdownMessage, null, text),
+    ),
+  );
+  assert.equal((html.match(/class="local-file-link"/g) || []).length, 3);
+  assert.match(html, /<button[^>]*>开发计划<\/button>/);
+  assert.doesNotMatch(html, /href="(?:\/Users|src\/|file:)/);
+  assert.match(html, /href="https:\/\/example.com\/plan"/);
+  assert.doesNotMatch(html, /disabled/);
+});
+
+test("local images never auto-load and encoded unsafe schemes stay inert", () => {
+  const html = render(
+    "![Local](/Users/k/code/muye/diagram.png) [bad](javascript%3Aalert%281%29) [badfile](file://remote-host/etc/passwd)",
+  );
+  assert.doesNotMatch(html, /<img|href="(?:javascript|file|\/Users)/);
+  assert.match(html, /class="local-file-link"/);
+});
+
+test("external links keep their encoded query and path semantics", () => {
+  const html = render("[Website](https://example.com/a%2Fb?q=a%26b)");
+  assert.match(html, /href="https:\/\/example\.com\/a%2Fb\?q=a%26b"/);
+});
+
 test("plain text and newlines remain readable without Markdown syntax", () => {
   const html = render("First line\n第二行\n\nNext paragraph & text");
   assert.match(html, /<p>First line\n第二行<\/p>/);
@@ -89,7 +123,9 @@ function preview(content) {
 
 test("Markdown previews parse full emphasis before visual truncation", () => {
   const title = "A long thought title ".repeat(30).trim();
-  const html = preview(`**${title}** and *emphasis* with \`inline code\` and ~~old~~`);
+  const html = preview(
+    `**${title}** and *emphasis* with \`inline code\` and ~~old~~`,
+  );
   assert.match(html, /^<span class="markdown markdown-preview">/);
   assert.ok(html.includes(`<strong>${title}</strong>`));
   assert.match(html, /<em>emphasis<\/em>/);
@@ -103,18 +139,45 @@ test("Markdown previews flatten blocks, hard breaks, tables and code into inline
     "# Heading\n\nParagraph  \nNext line\n\n> Quote\n\n- First\n  - Nested\n- Second\n\n| Name | Status |\n| --- | --- |\n| Spool | Ready |\n\n```js\nconst x = 1;\nconst y = 2;\n```\n\n---\n\nLast paragraph",
   );
   assert.match(html, /<strong>Heading <\/strong>/);
-  assert.doesNotMatch(html, /<(?:div|p|h[1-6]|blockquote|ul|ol|li|table|thead|tbody|tr|th|td|pre|br|hr)\b/);
-  for (const text of ["Heading", "Paragraph", "Next line", "Quote", "First", "Nested", "Second", "Name", "Status", "Spool", "Ready", "const x = 1;", "const y = 2;", "Last paragraph"])
+  assert.doesNotMatch(
+    html,
+    /<(?:div|p|h[1-6]|blockquote|ul|ol|li|table|thead|tbody|tr|th|td|pre|br|hr)\b/,
+  );
+  for (const text of [
+    "Heading",
+    "Paragraph",
+    "Next line",
+    "Quote",
+    "First",
+    "Nested",
+    "Second",
+    "Name",
+    "Status",
+    "Spool",
+    "Ready",
+    "const x = 1;",
+    "const y = 2;",
+    "Last paragraph",
+  ])
     assert.ok(html.includes(text), text);
-  const text = html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
-  assert.equal(text, "Heading Paragraph Next line Quote First Nested Second Name Status Spool Ready const x = 1; const y = 2; Last paragraph");
+  const text = html
+    .replace(/<[^>]*>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  assert.equal(
+    text,
+    "Heading Paragraph Next line Quote First Nested Second Name Status Spool Ready const x = 1; const y = 2; Last paragraph",
+  );
 });
 
 test("Markdown previews cannot create nested controls or load remote content", () => {
   const html = preview(
     "[Reference](https://example.com)\n\n![Diagram](https://example.com/track.png)\n\n- [x] Done\n- [ ] Next\n\n<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>",
   );
-  assert.doesNotMatch(html, /<(?:a|input|button|img|script|div)\b|href=|src=|onerror=/);
+  assert.doesNotMatch(
+    html,
+    /<(?:a|input|button|img|script|div)\b|href=|src=|onerror=/,
+  );
   for (const text of ["Reference", "Diagram", "Done", "Next"])
     assert.ok(html.includes(text), text);
 });
