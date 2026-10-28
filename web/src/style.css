@@ -502,6 +502,16 @@ button:disabled {
   min-height: 100%;
   display: flow-root;
 }
+.history-older {
+  margin: 0 auto 24px;
+  padding: 8px 12px;
+}
+.history-error {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  margin: 0 0 24px;
+}
 .welcome {
   padding: 12vh 0 35px;
   text-align: center;
@@ -1092,7 +1102,11 @@ a.attachment-open {
   max-height: 260px;
   overflow: auto;
   color: var(--text);
-  font: 12px/1.6 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font:
+    12px/1.6 "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

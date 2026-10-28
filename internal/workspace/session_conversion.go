@@ -1,129 +1,122 @@
 package workspace
 
 import (
-	"errors"
+	"fmt"
 	"os"
+	"time"
 
 	"spool/internal/agent"
 	chatmodel "spool/internal/model"
 )
 
-type nativeHistory struct {
-	start   int
-	backend chatmodel.Backend
-	id      string
-	path    string
-	offset  int64
-}
-
-type sessionConversion struct {
-	native        agent.ConvertedSession
-	source        nativeHistory
-	importedBytes int64
-}
-
-func (s *Store) nativeHistories(chat chatmodel.Session) ([]nativeHistory, error) {
-	rows, err := s.db.Query(`SELECT turn_start,backend,native_session_id,native_session_path,native_offset FROM session_history WHERE session_id=? ORDER BY turn_start`, chat.ID)
-	if err != nil {
-		return nil, err
+// A conversion is a new native session and a new chat, not a link to a mutable
+// source. Subsequent messages on either side cannot alter the other's context.
+func (s *Store) forkChat(id string, backend chatmodel.Backend, options chatmodel.CodexOptions) (chatmodel.Session, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	source, ok := s.getSession(id)
+	if !ok {
+		return source, os.ErrNotExist
 	}
-	defer rows.Close()
-	var out []nativeHistory
-	for rows.Next() {
-		var item nativeHistory
-		if err := rows.Scan(&item.start, &item.backend, &item.id, &item.path, &item.offset); err != nil {
-			return nil, err
+	if source.Status == chatmodel.StatusRunning {
+		return source, fmt.Errorf("this chat already has a running turn")
+	}
+	if !backend.Valid() || backend == source.Backend {
+		return source, fmt.Errorf("unsupported session conversion")
+	}
+	if err := chatmodel.ValidateCodexOptions(options); err != nil {
+		return source, err
+	}
+	if backend == chatmodel.BackendClaude {
+		if err := chatmodel.ValidateClaudeEffort(options.ReasoningEffort); err != nil {
+			return source, err
 		}
-		out = append(out, item)
 	}
-	return out, rows.Err()
-}
-
-// Called with the turn-admission/store locks held, after input validation but
-// before opening SQLite's transaction. A failed transaction deletes only the
-// newly converted file, never the source native session.
-func (s *Store) convertSession(chat chatmodel.Session, backend chatmodel.Backend) (sessionConversion, error) {
-	var empty sessionConversion
-	project, err := s.Project(chat.ProjectID)
+	project, err := s.Project(source.ProjectID)
 	if err != nil {
-		return empty, err
+		return source, err
 	}
-	path := chat.NativeSessionPath
+	path := source.NativeSessionPath
 	if path == "" {
-		path, err = agent.FindSessionTranscript(chat.Backend, chat.NativeSessionID, project.Path)
-		if err != nil {
-			return empty, err
+		path, err = agent.FindSessionTranscript(source.Backend, source.NativeSessionID, project.Path)
+	}
+	if err != nil {
+		return source, errSessionConversion
+	}
+	converted, err := agent.ConvertSession(source.Backend, backend, path, project.Path)
+	if err != nil {
+		return source, errSessionConversion
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = os.Remove(converted.Path)
+		}
+	}()
+	now := time.Now().UnixMilli()
+	chat := chatmodel.Session{ID: chatmodel.NewID(), UserID: source.UserID, ProjectID: source.ProjectID, Title: source.Title, Backend: backend, NativeSessionID: converted.ID, NativeSessionPath: converted.Path, Model: options.Model, ReasoningEffort: options.ReasoningEffort, PermissionMode: chatmodel.DefaultPermissionMode(backend), CreatedAt: now, UpdatedAt: now, Status: chatmodel.StatusReady}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return chat, err
+	}
+	defer tx.Rollback()
+	if err = insertSession(tx, chat); err != nil {
+		return chat, err
+	}
+	if source.AutomationChat {
+		if _, err = tx.Exec(`INSERT INTO automation_chats(session_id,project_id) VALUES(?,?)`, chat.ID, chat.ProjectID); err != nil {
+			return chat, err
+		}
+		if _, err = tx.Exec(`INSERT INTO chat_collaborators(session_id,user_id) SELECT ?,user_id FROM chat_collaborators WHERE session_id=?`, chat.ID, id); err != nil {
+			return chat, err
 		}
 	}
-	histories, err := s.nativeHistories(chat)
-	if err != nil {
-		return empty, err
+	if err = tx.Commit(); err != nil {
+		return chat, err
 	}
-	start, offset := 0, int64(0)
-	if len(histories) > 0 {
-		latest := histories[len(histories)-1]
-		start, offset = latest.start, latest.offset
-	}
-	if start >= len(chat.Turns) {
-		return empty, errors.New("invalid native history boundary")
-	}
-	converted, err := agent.ConvertSession(chat.Backend, backend, path, project.Path)
-	if err != nil {
-		return empty, err
-	}
-	info, err := os.Stat(converted.Path)
-	if err != nil {
-		_ = os.Remove(converted.Path)
-		return empty, err
-	}
-	return sessionConversion{
-		native:        converted,
-		source:        nativeHistory{start: start, offset: offset, backend: chat.Backend, id: chat.NativeSessionID, path: path},
-		importedBytes: info.Size(),
-	}, nil
+	committed = true
+	chat, _ = s.getSession(chat.ID)
+	return s.hydrateSession(chat), nil
 }
 
-func (s *Store) hydrateConvertedSession(chat chatmodel.Session, histories []nativeHistory, directory string) chatmodel.Session {
-	merged := chat
-	merged.Transcript = chatmodel.Transcript{Parts: []chatmodel.Part{}, Source: "multi-agent-native"}
-	merged.Turns = append([]chatmodel.Turn(nil), chat.Turns...)
-	for i, history := range histories {
-		end := len(chat.Turns)
-		if i+1 < len(histories) {
-			end = histories[i+1].start
-		} else {
-			history.backend, history.id, history.path = chat.Backend, chat.NativeSessionID, chat.NativeSessionPath
-		}
-		if history.start < 0 || end < history.start || end > len(chat.Turns) {
-			return chat
-		}
-		path := history.path
-		if path == "" {
-			path, _ = agent.FindSessionTranscript(history.backend, history.id, directory)
-		}
-		native, err := agent.ParseSessionTranscriptFrom(history.backend, path, history.offset)
-		segment := chatmodel.Session{Turns: append([]chatmodel.Turn(nil), chat.Turns[history.start:end]...)}
-		if err == nil {
-			segment, _ = mergeHistoricalTurns(segment, native)
-		}
-		base := len(merged.Transcript.Parts)
-		for _, part := range segment.Transcript.Parts {
-			if !chatmodel.AppendPart(&merged.Transcript, part) {
-				break
-			}
-		}
-		merged.Transcript.Cut = merged.Transcript.Cut || native.Cut
-		limit := len(merged.Transcript.Parts)
-		for j, turn := range segment.Turns {
-			if len(segment.Transcript.Parts) == 0 {
-				turn.PartStart, turn.InputEnd, turn.PartEnd = 0, 0, 0
-			}
-			turn.PartStart = clamp(turn.PartStart+base, base, limit)
-			turn.InputEnd = clamp(turn.InputEnd+base, turn.PartStart, limit)
-			turn.PartEnd = clamp(turn.PartEnd+base, turn.InputEnd, limit)
-			merged.Turns[history.start+j] = turn
-		}
+func (a *App) forkChat(id string, backend chatmodel.Backend, options chatmodel.CodexOptions) (chatmodel.Session, error) {
+	a.turnMu.Lock()
+	defer a.turnMu.Unlock()
+	if a.closing {
+		return chatmodel.Session{}, fmt.Errorf("agent service is stopping")
 	}
-	merged.Transcript.Captured = len(merged.Transcript.Parts)
-	return merged
+	if a.updating {
+		return chatmodel.Session{}, ErrUpdateInProgress
+	}
+	if a.nativeCommandRunning(id) {
+		return chatmodel.Session{}, fmt.Errorf("this chat already has a running turn")
+	}
+	return a.store.forkChat(id, backend, options)
+}
+
+// Only for a newly created conversion whose first request failed admission.
+func (s *Store) discardFork(chat chatmodel.Session) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+	var status chatmodel.SessionStatus
+	if tx.QueryRow(`SELECT status FROM sessions WHERE id=? AND native_session_id=?`, chat.ID, chat.NativeSessionID).Scan(&status) != nil || status != chatmodel.StatusReady {
+		return
+	}
+	if _, err = tx.Exec(`DELETE FROM chat_collaborators WHERE session_id=?`, chat.ID); err != nil {
+		return
+	}
+	if _, err = tx.Exec(`DELETE FROM automation_chats WHERE session_id=?`, chat.ID); err != nil {
+		return
+	}
+	if _, err = tx.Exec(`DELETE FROM sessions WHERE id=?`, chat.ID); err != nil {
+		return
+	}
+	if tx.Commit() == nil {
+		_ = os.Remove(chat.NativeSessionPath)
+	}
 }

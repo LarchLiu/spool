@@ -54,7 +54,7 @@ func TestGroupedModelSelectionAndMissingHistoryGuard(t *testing.T) {
 			t.Fatal(w.Body.String())
 		}
 		saved := waitChat(t, s, chat.ID)
-		if saved.Backend != backend || saved.Model != model || len(saved.Turns) != i+1 || saved.Turns[i].Backend != backend {
+		if saved.Backend != backend || saved.Model != model || len(saved.Turns) != 1 || saved.Turns[0].Backend != backend {
 			t.Fatalf("selection was not saved: %#v", saved)
 		}
 		runner.mu.Lock()
@@ -70,13 +70,13 @@ func TestGroupedModelSelectionAndMissingHistoryGuard(t *testing.T) {
 	}
 	w = apiRequest(a, "POST", "/api/chats/"+chat.ID+"/messages", `{"message":"Cross-agent rejected","backend":"codex","model":"test-model"}`, cookie, csrf)
 	saved, _ := s.Get(chat.ID)
-	if w.Code != 409 || saved.Backend != chatmodel.BackendClaude || len(saved.Turns) != 2 {
+	if w.Code != 409 || saved.Backend != chatmodel.BackendClaude || len(saved.Turns) != 1 {
 		t.Fatal("chat switched agents after the first message")
 	}
 	s.ConfigureAgent(chatmodel.BackendClaude, false, "")
 	w = apiRequest(a, "POST", "/api/chats/"+chat.ID+"/messages", `{"message":"Rejected","backend":"claude","model":"test-claude"}`, cookie, csrf)
 	saved, _ = s.Get(chat.ID)
-	if w.Code != 409 || saved.Backend != chatmodel.BackendClaude || len(saved.Turns) != 2 {
+	if w.Code != 409 || saved.Backend != chatmodel.BackendClaude || len(saved.Turns) != 1 {
 		t.Fatal("disabled agent accepted another message")
 	}
 	w = apiRequest(a, "GET", "/api/chats/"+chat.ID, "", cookie, csrf)
@@ -101,7 +101,7 @@ func TestAgentSwitchRollbackAndRunningGuard(t *testing.T) {
 	s := testStore(t)
 	chat, _ := s.createSession("", "", chatmodel.BackendCodex)
 	s.SetNativeSession(chat.ID, "codex-native")
-	s.db.Exec(`CREATE TRIGGER reject_switch BEFORE INSERT ON turns BEGIN SELECT RAISE(ABORT,'fixture write failure'); END`)
+	s.db.Exec(`CREATE TRIGGER reject_switch BEFORE UPDATE ON sessions BEGIN SELECT RAISE(ABORT,'fixture write failure'); END`)
 	if _, err := s.beginTurn(chat.ID, "Switch", chatmodel.BackendClaude, chatmodel.CodexOptions{Model: "test-claude"}); err == nil {
 		t.Fatal("expected insert failure")
 	}

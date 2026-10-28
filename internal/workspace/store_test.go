@@ -73,11 +73,8 @@ func TestStorePersistsSessionMetadataWithoutConversationBodies(t *testing.T) {
 	if !ok {
 		t.Fatal("session missing after reload")
 	}
-	if got.Title != "Draw a tiny fox" || got.NativeSessionID != result.SessionID || len(got.Turns) != 1 {
+	if got.Title != "Draw a tiny fox" || got.NativeSessionID != result.SessionID || len(got.Turns) != 0 {
 		t.Fatalf("unexpected session after reload: %#v", got)
-	}
-	if turn := got.Turns[0]; turn.Reply != "" || turn.Prompt != "" || turn.Status != chatmodel.StatusCompleted || turn.Model != "sonnet" {
-		t.Fatalf("unexpected turn after reload: %#v", turn)
 	}
 	if len(got.Transcript.Parts) != 0 {
 		t.Fatalf("conversation body was persisted in SQLite: %#v", got.Transcript)
@@ -86,15 +83,9 @@ func TestStorePersistsSessionMetadataWithoutConversationBodies(t *testing.T) {
 	if err = loaded.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='transcripts'`).Scan(&transcriptTables); err != nil || transcriptTables != 0 {
 		t.Fatalf("unexpected transcript table: count=%d err=%v", transcriptTables, err)
 	}
-	var body string
-	if err = loaded.db.QueryRow(`SELECT body FROM turns WHERE session_id=?`, session.ID).Scan(&body); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(body, "Draw a tiny fox") || strings.Contains(body, "Done") {
-		t.Fatalf("turn metadata contains conversation text: %s", body)
-	}
+	assertNoTurnTables(t, loaded)
 	var version string
-	if err = loaded.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "1" {
+	if err = loaded.db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version); err != nil || version != "2" {
 		t.Fatalf("schema version = %q, %v", version, err)
 	}
 	info, err := os.Stat(filepath.Join(root, "spool.sqlite"))
@@ -193,5 +184,13 @@ func TestSetInterruptedMarksOnlyRunningTurns(t *testing.T) {
 	}
 	if !strings.Contains(got.Turns[0].Error, "restarted") {
 		t.Fatalf("missing restart explanation: %q", got.Turns[0].Error)
+	}
+}
+
+func assertNoTurnTables(t *testing.T, store *Store) {
+	t.Helper()
+	var count int
+	if err := store.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('turns','attachments','session_history','session_sources','transcripts')`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("unexpected durable history tables: %d %v", count, err)
 	}
 }

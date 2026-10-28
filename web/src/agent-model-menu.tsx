@@ -145,8 +145,8 @@ export function AgentModelMenu({
       <p>
         {t(
           currentBackend && currentBackend !== selection.backend
-            ? "The next message converts this conversation and continues with the selected agent."
-            : "Switch agents to continue this chat. Conversation history is converted automatically.",
+            ? "The next message creates a new chat with the selected agent and converted context."
+            : "Only sending with another agent creates a new chat. The original chat stays unchanged.",
         )}
       </p>
     </div>

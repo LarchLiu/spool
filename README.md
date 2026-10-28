@@ -23,7 +23,7 @@ bundle identifier is `com.cloudgeek.spool`.
 - `resources.go`: the root package's only Go source file, embedding frontend,
   locales and icons. Keeping embeds beside their resource directories avoids
   duplicate assets and unsupported parent-directory `go:embed` paths.
-- `spool.sqlite`: users, projects, project membership, chats, turns, attachments, server
+- `spool.sqlite`: users, projects, project membership, chat metadata, server
   settings, agent settings/catalogs, issue schedules/runs, task-chat assignees,
   PR artifacts, and hashed login sessions. New tables are added on startup
   without replacing existing projects or chats.
@@ -31,9 +31,9 @@ bundle identifier is `com.cloudgeek.spool`.
 Both entry points use `internal/workspace`, which coordinates `internal/agent`
 and `internal/model`. The CLI package does not import SQLite or HTTP handlers.
 Tests live next to their implementation; cross-layer chat tests stay in
-`internal/workspace`. The transcript change keeps SQLite at schema version 1;
-it does not change the `~/.spool` data directory, HTTP routes, or CLI wire
-protocols.
+`internal/workspace`. Schema version 2 removes SQLite turn/attachment history in
+favor of the CLIs' native sessions. It keeps the `~/.spool` data directory and
+CLI wire protocols, adding a backward-paginated HTTP history endpoint.
 
 There is no separate frontend service in production and no Node.js runtime
 requirement. Installed and signed-in Codex/Claude CLIs are still required.
@@ -74,7 +74,7 @@ or offline behavior.
    Passwords must be 12–72 bytes and are stored only as cost-12 bcrypt hashes.
    Existing users can be renamed, have their password reset, or be disabled.
    Editing a user revokes their existing Web login sessions; disabled users and
-   their history remain in the database.
+   their chat metadata remain in the database and native session history is untouched.
 2. Open **Projects**, choose an existing local directory, name the project, and
    check the people authorized to use it. Save the project.
    The native directory picker runs asynchronously, starts at the current path,
@@ -243,7 +243,8 @@ followed by the native agent's permission selector. Agent/model selection and
 Send remain on the right. Attached images appear as thumbnails above the text;
 click to open a full-size preview. File cards show the name and a small text/code
 excerpt where possible. Remove an attachment before sending with its **x**.
-Images in chat history can also be previewed; other files can be downloaded.
+Images embedded in native history can also be previewed. Uploaded originals are
+downloadable only while their temporary copies exist in the current process.
 Files-only messages are supported, and failed submissions keep their draft and
 attachments for retry.
 
@@ -257,10 +258,9 @@ ID before stopping; closing the browser alone still does not cancel accepted wor
 - Native image inputs support PNG, JPEG, GIF and WebP, at most 25 megapixels.
   Other formats are regular files; active image formats such as SVG are not
   accepted as images.
-- Attachment bytes and metadata are stored in SQLite, not in an `agents/`
-  directory or project folder. Native CLIs receive private temporary copies of
-  the files. Historical files are rematerialized on each turn so resumed chats
-  get current paths; temporary copies are removed when the service stops.
+- Attachment bytes and metadata are not stored in SQLite. Native CLIs receive
+  private temporary copies of the current request's files, removed when the
+  service stops. Historical originals are not rematerialized on later turns.
 - Codex receives native `localImage` input; Claude receives native base64 image
   blocks. Both get file paths for regular attachments. File contents are user
   data, not system/developer instructions.
@@ -270,8 +270,9 @@ ID before stopping; closing the browser alone still does not cancel accepted wor
 
 Permission choices are discovered by the Go service in the project's working
 directory and checked again on submission. Unavailable choices show a policy or
-CLI capability reason. Each accepted turn records its selection in SQLite;
-reopening a chat restores it. Changing modes between turns reuses the live CLI.
+CLI capability reason. SQLite stores only the chat's current permission
+preference; reopening a chat restores it. Changing modes between turns reuses
+the live CLI.
 
 - **Claude:** Manual, Auto, Accept Edits (default), Plan, Don't Ask, and Bypass
   Permissions, subject to native CLI/account/project restrictions. Mode changes
@@ -377,8 +378,7 @@ CLI configuration; individual projects can still have provider-specific config.
 The Web composer offers Codex and Claude model/level selection with model-specific
 slider stops. Only levels advertised by the selected agent/model are shown.
 Claude also offers **Default** to leave the level to its native CLI; models without
-advertised effort support have no adjustable slider. Selections apply to the next submitted turn and are saved on the chat and
-turn. Known unsupported combinations are rejected before history/task creation.
+advertised effort support have no adjustable slider. Selections apply to the next submitted turn and are saved as the chat's current preferences; historical choices come from native sessions. Known unsupported combinations are rejected before history/task creation.
 The composer menu groups detected models under **Codex** and **Claude**. Selecting
 a model selects its agent for the next message; chat creation itself launches no
 CLI process. Uninstalled/disabled groups remain visible but cannot be selected.
@@ -394,14 +394,17 @@ supported effort names are separate from Codex's: Codex-only `none`, `minimal`,
 or `ultra` are never sent to Claude.
 
 Any chat can choose an available agent/model for its next message. Selecting a
-different agent does not start a process or change saved history until Send.
-Sending converts the current native session into a new target-agent session and
-resumes it **in the same Web chat**, retaining its ID, project, owner, title and
-attachments. Switching back converts the latest context again; it does not
-resume an outdated pre-switch conversation. Same-agent model changes still reuse
-the live CLI. Agent/model changes are disabled while a turn is running, and only
-the chat owner can submit a handoff.
-
+different agent only changes the unsent selection: no chat or native session is
+created until Send, so accidental selections can be changed back freely.
+Sending converts the current native session and creates an **independent Web
+chat** with a new ID. The original chat and native
+session remain unchanged and can both be continued. Each further agent switch
+creates another independent chat from the current context; it never reopens an
+older pre-switch session. Same-agent model changes reuse the live CLI. Changes
+are disabled during a running turn; only users who can control a chat can switch.
+The message API returns the new chat after Send. The explicit
+`POST /api/chats/:id/fork` endpoint can create a converted chat without submitting
+a model prompt, but the model picker never calls it.
 Conversion follows Magpie's native Claude/Codex carry-over format (MIT notice in
 `internal/agent/MAGPIE-LICENSE`). User and
 assistant messages, embedded user images, and tool results are retained. Shell
@@ -415,10 +418,11 @@ mode; permissions from the source agent are not inherited.
 Source files remain read-only. Conversion requires available native history; if
 it cannot be read or converted, Send fails without changing the chat. A failed
 SQLite transaction removes the newly converted file and rolls back all metadata.
-Web history keeps references to each original native segment, so historical model
-attribution, reasoning summaries and tool displays survive reloads and repeated
-agent changes without displaying the imported history twice. SQLite stores only
-segment references and byte offsets, not conversation text or a second transcript.
+The new native session contains the converted history itself. SQLite records no
+source session, parent chat, turn boundary or imported-prefix offset. New history
+is read directly from the target's file, including its imported context. As in
+Magpie, the imported context is not a lossless archive: original reasoning and
+historical model attribution are not copied. They remain in the original chat.
 The target CLIs must be installed and signed in as usual.
 Like Magpie's converter, conversion to Claude rejects project paths requiring
 its hashed long-path naming (over 200 encoded characters), rather than writing
@@ -428,18 +432,18 @@ a session that Claude cannot resume.
 
 Every chat exposes one ordered `transcript` with Magpie's JSON structure:
 `parts` plus optional `cut`, `source`, and `captured`; each part contains
-`role`, `kind`, `text`, and optional `name`, `cut`, and `model`. The Go Codex
+`role`, `kind`, `text`, and optional `name`, `cut`, `model`, and `image_url`. The Go Codex
 app-server and Claude stream-json readers normalize their native events into
 those shared part kinds (`text`, `thinking`, `tool_use`, `tool_result`,
 `context`, and `image`) as they arrive. Adding an agent therefore requires an
 adapter from its native events to the same part type, not a new Web/API shape.
-The public session's `turns` remain Spool-specific lifecycle metadata and point
-into this transcript by part ranges; they are not a second copy of chat text.
+The public session's `turns` are derived from native records (or the active
+in-memory request) and point into this page's transcript by part ranges.
 
 `internal/agent.ParseSessionTranscript` also reads native Codex rollout and
 Claude Code JSONL files without modifying them. It applies the same filtering
 as Magpie (drops provider metadata/developer wrappers, preserves user/tool
-parts, records assistant models, and ignores Claude synthetic messages). The
+parts, records assistant models, and omits Claude's synthetic model labels). The
 parser tests use the checked-in fixtures under
 `internal/agent/testdata/`; they do not require another checkout at test time.
 The bundled tool fixtures cover Codex `function_call`, `custom_tool_call`,
@@ -447,20 +451,41 @@ reasoning, and paginated results, plus Claude `Bash`, `Write`, `Read`, and
 `Edit` records. Claude structured patches are converted to the shared diff
 text used by the Web viewer.
 
-SQLite deliberately does **not** store a transcript or message body. Session
-rows keep lifecycle metadata and the provider's native session ID/path; turn
-rows keep only lifecycle, selection, range, attachment, and error metadata.
-The `session_history` table additionally references each native context segment
-when a chat changes agents, with the first turn and imported-prefix byte offset.
-`Prompt`, `Reply`, `Activities`, and normalized `Part` values are omitted from
-the persisted turn JSON. The live normalized transcript exists only in memory
-while a turn streams. When a completed chat is opened again,
-`internal/agent.ParseSessionTranscript` reads the provider-owned Codex/Claude
-JSONL and rebuilds the Magpie-compatible transcript, including command output,
-file diffs, tool results, and readable reasoning summaries. Streaming and
-historical parsing use the same 8,000-rune part and 400,000-byte transcript
-limits. The SQLite schema remains version 1; there is no v1-to-v2 migration
-for uncommitted test data.
+SQLite deliberately stores **no turn rows, attachment metadata/BLOBs, or
+transcripts**. Session rows keep chat-level configuration, status, and the
+provider's native session ID/path. Schema version 2 migrates existing databases
+by retaining the last permission preference on the chat and removing the old
+`turns`, `attachments`, and `session_history` tables. No native session is changed.
+
+History uses an in-memory native turn index: Codex's task/turn IDs and Claude's
+prompt IDs, UUID parent chains and genuine user boundaries. Opening a chat reads
+the latest page; `GET /api/chats/:id/history?before=...` reads earlier turns by a
+stable native-identity cursor. Each page contains at most 10 turns and 400,000
+text bytes. An oversized single turn keeps its input and latest output, with a
+truncation marker. Transcript size limits never prevent indexing later turns.
+Part text remains limited to 8,000 runes. Live request IDs, timers, approvals and
+streamed content are process-local; restart recovery marks only chat-level
+running status as interrupted. Native files supply historical timing and models.
+
+The Go service shares both native indexes and lazily decoded turn contents across
+viewers. Cache hits still check file size, modification time and file identity;
+an append, edit, replacement or deletion invalidates that file's entire previous
+cache. Reads validate the source again after parsing and retry if it changed,
+so an older in-flight parse cannot overwrite newer cached data or return stale content.
+Concurrent readers of the same file reuse the first reader's work, while
+unrelated files can parse in parallel. Responses use copies of cached parts;
+chat IDs, permissions and live state are never shared through the cache.
+
+The process-local cache retains at most 64 native files and approximately 64 MiB
+of decoded turn content, using least-recently-used eviction. Oversized turns are
+served without retaining them in the content cache. Shutdown clears the cache;
+the next process rebuilds it on demand. No Redis, cache files or SQLite history
+rows are required, and native sessions remain the sole source of truth.
+
+Uploads are private temporary files for the current process, removed on shutdown,
+not a durable download archive. They are not recreated for later requests or after
+restart. Images embedded in native sessions remain previewable directly from
+those records. Local paths and remote image URLs are never fetched by the viewer.
 
 Agent icons come from `@lobehub/icons` (direct, tree-shaken Codex/Claude SVG
 components). They appear in model group headings, the composer model selector,
@@ -590,10 +615,10 @@ new chats are stored only in SQLite. Start by creating users and projects in the
 desktop control center. The CLIs still maintain their own native resume data
 outside this application's database.
 
-While the Go app is pre-commit and remains at schema version 1, development
-SQLite contents are disposable test data: schema edits do not include a v1
-migration. Start with a fresh database when testing a changed v1 schema; the app
-rejects other explicit schema versions rather than attempting an upgrade.
+Schema version 2 migrates version 1 stores to native-session-only history,
+removing legacy turn and attachment tables while retaining chat metadata and
+the chat's own native session reference. Back up existing stores before an
+upgrade; unsupported explicit schema versions are rejected.
 
 ## Build And Verify
 

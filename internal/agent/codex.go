@@ -215,6 +215,10 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 	if !chatmodel.ValidID(turnID) {
 		return result, fmt.Errorf("Codex returned an invalid turn ID"), false
 	}
+	result.TurnID = turnID
+	if err := emit(AgentEvent{Type: "turn", TurnID: turnID}); err != nil {
+		return result, err, false
+	}
 	if request.Model != "" {
 		p.model = request.Model
 	}

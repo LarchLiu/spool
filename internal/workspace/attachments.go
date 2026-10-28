@@ -60,13 +60,37 @@ func readAttachment(part *multipart.Part) (uploadedAttachment, error) {
 
 func (a *App) attachmentResponse(w http.ResponseWriter, r *http.Request, chat chatmodel.Session) {
 	id := r.URL.Query().Get("id")
-	var name, mediaType string
-	var data []byte
-	err := a.store.db.QueryRow(`SELECT name,media_type,data FROM attachments WHERE id=? AND session_id=?`, id, chat.ID).Scan(&name, &mediaType, &data)
+	a.filesMu.Lock()
+	file, ok := a.uploads[id]
+	rootPath := a.filesRoot
+	a.filesMu.Unlock()
+	if !ok || file.chatID != chat.ID {
+		apiError(w, 404, "Attachment not found")
+		return
+	}
+	root, err := os.OpenRoot(rootPath)
 	if err != nil {
 		apiError(w, 404, "Attachment not found")
 		return
 	}
+	defer root.Close()
+	relative, err := filepath.Rel(rootPath, file.file.Path)
+	if err != nil {
+		apiError(w, 404, "Attachment not found")
+		return
+	}
+	f, err := root.Open(relative)
+	if err != nil {
+		apiError(w, 404, "Attachment not found")
+		return
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxAttachmentBytes+1))
+	if err != nil || len(data) > maxAttachmentBytes {
+		apiError(w, 404, "Attachment not found")
+		return
+	}
+	name, mediaType := file.file.Name, file.file.MediaType
 	disposition := "attachment"
 	if strings.HasPrefix(mediaType, "image/") {
 		disposition = "inline"
@@ -79,23 +103,24 @@ func (a *App) attachmentResponse(w http.ResponseWriter, r *http.Request, chat ch
 	}
 }
 
-// SQLite is the only durable attachment store. Native tools get private,
-// temporary files; all historical paths are refreshed when resuming a chat.
-func (a *App) materializeAttachments(chat chatmodel.Session) ([]chatmodel.AgentAttachment, error) {
+type temporaryAttachment struct {
+	chatID string
+	file   chatmodel.AgentAttachment
+}
+
+// Uploads live only in private temporary files for this process. Native
+// sessions own any historical image/content; old files are not rematerialized.
+func (a *App) materializeAttachments(chatID string, files []uploadedAttachment) ([]chatmodel.AgentAttachment, error) {
 	a.filesMu.Lock()
 	defer a.filesMu.Unlock()
-	rows, err := a.store.db.Query(`SELECT id,name,media_type,data FROM attachments WHERE session_id=? ORDER BY rowid`, chat.ID)
-	if err != nil {
-		return nil, err
+	if a.uploads == nil {
+		a.uploads = make(map[string]temporaryAttachment)
 	}
-	defer rows.Close()
 	var attachments []chatmodel.AgentAttachment
-	for rows.Next() {
-		var file chatmodel.AgentAttachment
-		var data []byte
-		if err := rows.Scan(&file.ID, &file.Name, &file.MediaType, &data); err != nil {
-			return nil, err
-		}
+	for _, upload := range files {
+		file := chatmodel.AgentAttachment{Attachment: upload.Attachment}
+		data := upload.Data
+		var err error
 		if a.filesRoot == "" {
 			a.filesRoot, err = os.MkdirTemp("", "spool-attachments-")
 			if err != nil {
@@ -106,7 +131,7 @@ func (a *App) materializeAttachments(chat chatmodel.Session) ([]chatmodel.AgentA
 		if err != nil {
 			return nil, err
 		}
-		directory := filepath.Join(chat.ID, file.ID)
+		directory := filepath.Join(chatID, file.ID)
 		if err := root.MkdirAll(directory, 0700); err != nil {
 			root.Close()
 			return nil, err
@@ -134,7 +159,8 @@ func (a *App) materializeAttachments(chat chatmodel.Session) ([]chatmodel.AgentA
 			return nil, err
 		}
 		root.Close()
+		a.uploads[file.ID] = temporaryAttachment{chatID, file}
 		attachments = append(attachments, file)
 	}
-	return attachments, rows.Err()
+	return attachments, nil
 }

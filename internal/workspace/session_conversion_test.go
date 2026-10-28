@@ -29,8 +29,17 @@ func (r *historyRunner) Run(_ context.Context, request agent.AgentRequest, emit 
 	r.mu.Unlock()
 	id, path := request.NativeSessionID, request.NativeSessionPath
 	if id == "" {
-		id = "11111111-1111-4111-8111-111111111111"
-		path = filepath.Join(request.WorkingDirectory, string(request.Backend)+"-"+id+".jsonl")
+		id = chatmodel.NewID()
+	}
+	if path == "" {
+		if request.Backend == chatmodel.BackendCodex {
+			path = filepath.Join(os.Getenv("CODEX_HOME"), "sessions", "2026", "10", "28", "rollout-test-"+id+".jsonl")
+		} else {
+			path = filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", "-"+strings.ReplaceAll(strings.TrimPrefix(request.WorkingDirectory, "/"), "/", "-"), id+".jsonl")
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			return agent.AgentResult{}, err
+		}
 	}
 	parent := ""
 	if data, err := os.ReadFile(path); err == nil {
@@ -49,33 +58,39 @@ func (r *historyRunner) Run(_ context.Context, request agent.AgentRequest, emit 
 	encoder := json.NewEncoder(f)
 	reply := "Reply from " + string(request.Backend) + ": " + request.Prompt
 	thought := "Private reasoning for " + request.Prompt
+	turnID := chatmodel.NewID()
+	stamp := time.Now().UTC().Format(time.RFC3339Nano)
 	if request.Backend == chatmodel.BackendCodex {
-		_ = encoder.Encode(map[string]any{"type": "turn_context", "payload": map[string]any{"model": request.Model}})
+		_ = encoder.Encode(map[string]any{"timestamp": stamp, "type": "event_msg", "payload": map[string]any{"type": "task_started", "turn_id": turnID}})
+		_ = encoder.Encode(map[string]any{"timestamp": stamp, "type": "turn_context", "payload": map[string]any{"turn_id": turnID, "model": request.Model}})
 		for _, payload := range []any{
 			map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": request.Prompt}}},
 			map[string]any{"type": "reasoning", "summary": []any{map[string]any{"text": thought}}},
 			map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": reply}}},
 		} {
-			_ = encoder.Encode(map[string]any{"type": "response_item", "payload": payload})
+			_ = encoder.Encode(map[string]any{"timestamp": stamp, "type": "response_item", "payload": payload})
 		}
+		_ = encoder.Encode(map[string]any{"timestamp": stamp, "type": "event_msg", "payload": map[string]any{"type": "task_complete", "turn_id": turnID}})
 	} else {
-		userID := chatmodel.NewID()
-		_ = encoder.Encode(map[string]any{"uuid": userID, "parentUuid": parent, "sessionId": id, "type": "user", "message": map[string]any{"role": "user", "content": request.Prompt}})
-		_ = encoder.Encode(map[string]any{"uuid": chatmodel.NewID(), "parentUuid": userID, "sessionId": id, "type": "assistant", "message": map[string]any{"role": "assistant", "model": request.Model, "content": []any{map[string]any{"type": "thinking", "thinking": thought}, map[string]any{"type": "text", "text": reply}}}})
+		userID := turnID
+		_ = encoder.Encode(map[string]any{"timestamp": stamp, "promptId": turnID, "uuid": userID, "parentUuid": parent, "sessionId": id, "type": "user", "message": map[string]any{"role": "user", "content": request.Prompt}})
+		_ = encoder.Encode(map[string]any{"timestamp": stamp, "uuid": chatmodel.NewID(), "parentUuid": userID, "sessionId": id, "type": "assistant", "message": map[string]any{"role": "assistant", "model": request.Model, "stop_reason": "end_turn", "content": []any{map[string]any{"type": "thinking", "thinking": thought}, map[string]any{"type": "text", "text": reply}}}})
+	}
+	if err := f.Sync(); err != nil {
+		return agent.AgentResult{}, err
 	}
 	if err := emit(agent.AgentEvent{Type: "session", SessionID: id}); err != nil {
 		return agent.AgentResult{}, err
 	}
-	return agent.AgentResult{SessionID: id, Model: request.Model, Text: reply}, nil
+	return agent.AgentResult{TurnID: turnID, SessionID: id, Model: request.Model, Text: reply}, nil
 }
 
-func TestChatConvertsRepeatedlyAndReopensOriginalHistory(t *testing.T) {
+func TestAgentSwitchCreatesIndependentChatsWithoutSourceLinks(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CODEX_HOME", filepath.Join(root, "codex"))
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(root, "claude"))
 	store := testStore(t)
-	u := testUser(t, store, "alice")
-	bob := testUser(t, store, "bob")
+	u, bob := testUser(t, store, "alice"), testUser(t, store, "bob")
 	project := testProject(t, store, u, bob)
 	project.SharedChats = true
 	if _, err := store.SaveProject(project); err != nil {
@@ -87,109 +102,104 @@ func TestChatConvertsRepeatedlyAndReopensOriginalHistory(t *testing.T) {
 	app := NewApp(store, runner, "", "")
 	t.Cleanup(func() { app.Close() })
 	cookie, csrf := loginRequest(t, app, "alice")
-	chat, err := store.CreateChat(u.ID, project.ID, chatmodel.BackendCodex)
-	if err != nil {
-		t.Fatal(err)
-	}
-	backends := []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendCodex, chatmodel.BackendClaude, chatmodel.BackendClaude, chatmodel.BackendCodex, chatmodel.BackendClaude}
-	for i, backend := range backends {
-		prompt := "message-" + string(rune('A'+i))
+	original, _ := store.CreateChat(u.ID, project.ID, chatmodel.BackendCodex)
+	send := func(id string, backend chatmodel.Backend, prompt string) chatmodel.Session {
+		t.Helper()
 		model := "test-model"
-		permission := "ask"
 		if backend == chatmodel.BackendClaude {
-			model, permission = "test-claude", "acceptEdits"
+			model = "test-claude"
 		}
-		w := apiRequest(app, "GET", "/api/permissions?project_id="+project.ID+"&chat_id="+chat.ID+"&backend="+string(backend), "", cookie, csrf)
-		if w.Code != 200 {
-			t.Fatal("target permissions unavailable", w.Code, w.Body.String())
-		}
-		payload, _ := json.Marshal(map[string]string{"backend": string(backend), "model": model, "permission_mode": permission, "message": prompt})
-		w = apiRequest(app, "POST", "/api/chats/"+chat.ID+"/messages", string(payload), cookie, csrf)
+		payload, _ := json.Marshal(map[string]string{"backend": string(backend), "model": model, "message": prompt})
+		w := apiRequest(app, "POST", "/api/chats/"+id+"/messages", string(payload), cookie, csrf)
 		if w.Code != 202 {
 			t.Fatal(w.Code, w.Body.String())
 		}
-		saved := waitChat(t, store, chat.ID)
-		runner.mu.Lock()
-		request := runner.requests[i]
-		runner.mu.Unlock()
-		if request.NativeSessionID == "" && i > 0 {
-			t.Fatal("continuation lost its native context")
+		var accepted chatmodel.Session
+		if err := json.Unmarshal(w.Body.Bytes(), &accepted); err != nil {
+			t.Fatal(err)
 		}
-		// The fixture's first file is outside the normal provider directory;
-		// production locates this from the CLI's native ID after completion.
-		if i == 0 {
-			path := filepath.Join(project.Path, "codex-"+saved.NativeSessionID+".jsonl")
-			if err := store.SetNativeSessionPath(chat.ID, saved.NativeSessionID, path); err != nil {
-				t.Fatal(err)
-			}
-			saved, _ = store.Get(chat.ID)
-		}
-		if saved.ID != chat.ID || saved.Backend != backend || len(saved.Turns) != i+1 || saved.PermissionMode != permission {
-			t.Fatalf("wrong conversation selection: %+v", saved)
-		}
-		for j, turn := range saved.Turns {
-			want := "message-" + string(rune('A'+j))
-			if turn.Prompt != want || turn.Backend != backends[j] || turn.Reply != "Reply from "+string(backends[j])+": "+want {
-				t.Fatalf("history duplicated, lost, or attributed to another agent at %d: %+v", j, turn)
-			}
-			foundThinking := false
-			for _, part := range turn.Parts {
-				foundThinking = foundThinking || part.Kind == "thinking"
-			}
-			if !foundThinking {
-				t.Fatal("Web lost original reasoning after handoff", j)
-			}
-		}
-		if i > 0 && backend != backends[i-1] {
-			data, _ := os.ReadFile(request.NativeSessionPath)
-			if strings.Contains(string(data), "Private reasoning for message-"+string(rune('A'+i-1))) {
-				t.Fatal("provider reasoning was imported into target context")
-			}
+		return waitChat(t, store, accepted.ID)
+	}
+	a := send(original.ID, chatmodel.BackendCodex, "message-A")
+	if len(a.Turns) != 1 || a.Turns[0].Prompt != "message-A" {
+		t.Fatalf("native history missing: %+v", a)
+	}
+	before, _ := os.ReadFile(a.NativeSessionPath)
+	b := send(a.ID, chatmodel.BackendClaude, "message-B")
+	if b.ID == a.ID || b.NativeSessionID == a.NativeSessionID || b.Backend != chatmodel.BackendClaude {
+		t.Fatal("switch reused original chat/session")
+	}
+	after, _ := os.ReadFile(a.NativeSessionPath)
+	if !bytes.Equal(before, after) {
+		t.Fatal("conversion modified original native file")
+	}
+	unchanged, _ := store.Get(a.ID)
+	if unchanged.Backend != chatmodel.BackendCodex || unchanged.NativeSessionID != a.NativeSessionID || len(unchanged.Turns) != 1 {
+		t.Fatal("original chat mutated")
+	}
+	if len(b.Turns) != 2 || b.Turns[0].Prompt != "message-A" || b.Turns[1].Prompt != "message-B" {
+		t.Fatalf("converted context missing/duplicated: %+v", b.Turns)
+	}
+	for _, part := range b.Turns[0].Parts {
+		if part.Kind == "thinking" {
+			t.Fatal("old reasoning imported into another provider")
 		}
 	}
-	// Reopening a running converted chat must retain earlier ranges as well
-	// as text; otherwise the Web transcript exists but prior turns look empty.
-	previous, _ := store.Get(chat.ID)
-	gate := &gatedRunner{started: make(chan struct{}), release: make(chan struct{})}
-	liveApp := NewApp(store, gate, "", "")
-	t.Cleanup(func() { liveApp.Close() })
-	previous.Backend = chatmodel.BackendCodex
-	if err := liveApp.startTurnWithInput(previous, messageInput{Message: "message-G"}, chatmodel.CodexOptions{Model: "test-model"}); err != nil {
-		t.Fatal(err)
+	a = send(a.ID, chatmodel.BackendCodex, "original-only")
+	b = send(b.ID, chatmodel.BackendClaude, "branch-only")
+	c := send(b.ID, chatmodel.BackendCodex, "message-C")
+	d := send(c.ID, chatmodel.BackendClaude, "message-D")
+	if c.ID == a.ID || c.ID == b.ID || d.ID == b.ID || d.ID == c.ID {
+		t.Fatal("repeated switch reused an earlier chat")
 	}
-	select {
-	case <-gate.started:
-	case <-time.After(2 * time.Second):
-		t.Fatal("converted turn never started")
+	for _, chat := range []chatmodel.Session{b, c, d} {
+		for _, turn := range chat.Turns {
+			if turn.Prompt == "original-only" {
+				t.Fatal("later original messages leaked into converted chat")
+			}
+		}
 	}
-	running, _ := store.Get(chat.ID)
-	running = liveApp.snapshot(running)
-	if running.Turns[0].PartEnd == 0 || running.Transcript.Parts[0].Text != "message-A" {
-		t.Fatal("reconnecting during handoff lost earlier turn ranges")
+	if len(a.Turns) != 2 || len(b.Turns) != 3 || len(c.Turns) != 4 || len(d.Turns) != 5 {
+		t.Fatal("independent histories have wrong length", len(a.Turns), len(b.Turns), len(c.Turns), len(d.Turns))
 	}
-	// Reject a delayed session event from a superseded turn.
-	if err := store.setTurnNativeSession(chat.ID, running.Turns[0].ID, "obsolete-session"); err == nil {
-		t.Fatal("old provider event replaced a new agent context")
-	}
-	close(gate.release)
-	waitChat(t, store, chat.ID)
-	w := apiRequest(app, "GET", "/api/chats/"+chat.ID, "", cookie, csrf)
-	if strings.Contains(w.Body.String(), root) || strings.Contains(w.Body.String(), "native_session") {
-		t.Fatal("native session details leaked to Web")
-	}
-	bobCookie, bobCSRF := loginRequest(t, app, "bob")
-	w = apiRequest(app, "POST", "/api/chats/"+chat.ID+"/messages", `{"backend":"codex","message":"not mine"}`, bobCookie, bobCSRF)
-	if w.Code != 404 {
-		t.Fatal("shared viewer converted another owner's chat")
-	}
+	// The target's native file alone is sufficient after restart.
 	reopened, err := OpenStore(store.Root())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	saved, _ := reopened.Get(chat.ID)
-	if len(saved.Turns) != len(backends)+1 || saved.Turns[0].Prompt != "message-A" || saved.Turns[len(backends)-1].Prompt != "message-F" {
-		t.Fatalf("conversion history lost after restart: %+v", saved)
+	saved, _ := reopened.Get(d.ID)
+	if len(saved.Turns) != 5 || saved.Turns[0].Prompt != "message-A" || saved.Turns[4].Prompt != "message-D" {
+		t.Fatal("native-only reload lost context")
+	}
+	assertNoTurnTables(t, reopened)
+	bobCookie, bobCSRF := loginRequest(t, app, "bob")
+	w := apiRequest(app, "POST", "/api/chats/"+a.ID+"/fork", `{"backend":"claude"}`, bobCookie, bobCSRF)
+	if w.Code != 404 {
+		t.Fatal("shared viewer forked another owner's chat")
+	}
+	w = apiRequest(app, "GET", "/api/chats/"+d.ID, "", cookie, csrf)
+	if strings.Contains(w.Body.String(), root) || strings.Contains(w.Body.String(), "native_session") {
+		t.Fatal("native paths leaked to web")
+	}
+	runner.mu.Lock()
+	requests := len(runner.requests)
+	runner.mu.Unlock()
+	w = apiRequest(app, "POST", "/api/chats/"+d.ID+"/fork", `{"backend":"codex","model":"test-model"}`, cookie, csrf)
+	if w.Code != 201 {
+		t.Fatal("explicit agent switch failed", w.Code, w.Body.String())
+	}
+	var converted chatmodel.Session
+	if err := json.Unmarshal(w.Body.Bytes(), &converted); err != nil {
+		t.Fatal(err)
+	}
+	if converted.ID == d.ID || converted.Status != chatmodel.StatusReady || len(converted.Turns) != len(d.Turns) {
+		t.Fatal("explicit switch did not create an independent ready chat")
+	}
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if len(runner.requests) != requests {
+		t.Fatal("switching agents submitted an inference request")
 	}
 }
 
@@ -200,67 +210,26 @@ func TestConvertedSessionRollbackRemovesOnlyNewNativeFile(t *testing.T) {
 	u := testUser(t, store, "alice")
 	project := testProject(t, store, u)
 	chat, _ := store.CreateChat(u.ID, project.ID, chatmodel.BackendCodex)
-	turn, _ := store.BeginTurn(chat.ID, "first")
 	source, _ := filepath.Abs("../agent/testdata/carry/codex-tools.jsonl")
 	_ = store.SetNativeSessionPath(chat.ID, "original-session", source)
-	_ = store.FinishTurn(chat.ID, turn.ID, agent.AgentResult{}, nil, chatmodel.StatusCompleted)
 	before, _ := os.ReadFile(source)
-	_, _ = store.db.Exec(`CREATE TRIGGER reject_conversion BEFORE INSERT ON turns BEGIN SELECT RAISE(ABORT,'fixture write failure'); END`)
-	if _, err := store.beginTurn(chat.ID, "continue", chatmodel.BackendClaude); err == nil {
+	_, err := store.db.Exec(`CREATE TRIGGER reject_conversion BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT,'fixture write failure'); END`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.forkChat(chat.ID, chatmodel.BackendClaude, chatmodel.CodexOptions{}); err == nil {
 		t.Fatal("expected transaction failure")
 	}
 	saved, _ := store.Get(chat.ID)
-	if saved.Backend != chatmodel.BackendCodex || saved.NativeSessionID != "original-session" || len(saved.Turns) != 1 {
-		t.Fatal("failed conversion changed the original chat")
-	}
-	var count int
-	_ = store.db.QueryRow(`SELECT count(*) FROM session_history WHERE session_id=?`, chat.ID).Scan(&count)
-	if count != 0 {
-		t.Fatal("failed conversion retained partial history references")
+	if saved.Backend != chatmodel.BackendCodex || saved.NativeSessionID != "original-session" {
+		t.Fatal("failed conversion changed original")
 	}
 	files, _ := filepath.Glob(filepath.Join(root, "claude", "projects", "*", "*.jsonl"))
 	if len(files) != 0 {
-		t.Fatal("failed transaction left a converted session")
+		t.Fatal("failed conversion left a new native file")
 	}
 	after, _ := os.ReadFile(source)
 	if !bytes.Equal(before, after) {
-		t.Fatal("rollback modified the source")
-	}
-}
-
-func TestConvertedHistoryKeepsGlobalTranscriptBounds(t *testing.T) {
-	store := testStore(t)
-	root := t.TempDir()
-	chat := chatmodel.Session{ID: "bounded-conversation", Backend: chatmodel.BackendCodex}
-	var histories []nativeHistory
-	for segment := 0; segment < 2; segment++ {
-		path := filepath.Join(root, string(rune('a'+segment))+".jsonl")
-		f, err := os.Create(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		encoder := json.NewEncoder(f)
-		for turn := 0; turn < 15; turn++ {
-			chat.Turns = append(chat.Turns, chatmodel.Turn{ID: chatmodel.NewID(), Backend: chatmodel.BackendCodex})
-			for _, role := range []string{"user", "assistant"} {
-				_ = encoder.Encode(map[string]any{"type": "response_item", "payload": map[string]any{"type": "message", "role": role, "content": []any{map[string]any{"type": "text", "text": strings.Repeat("x", 8000)}}}})
-			}
-		}
-		f.Close()
-		histories = append(histories, nativeHistory{start: segment * 15, backend: chatmodel.BackendCodex, path: path})
-		chat.NativeSessionID, chat.NativeSessionPath = "bounded-native-id", path
-	}
-	merged := store.hydrateConvertedSession(chat, histories, root)
-	size := 0
-	for _, part := range merged.Transcript.Parts {
-		size += len(part.Text)
-	}
-	if !merged.Transcript.Cut || size > 400_000 {
-		t.Fatal("multiple native segments bypassed the shared transcript limit", size)
-	}
-	for _, turn := range merged.Turns {
-		if turn.PartStart < 0 || turn.InputEnd < turn.PartStart || turn.PartEnd < turn.InputEnd || turn.PartEnd > len(merged.Transcript.Parts) {
-			t.Fatal("truncation left invalid turn ranges", turn)
-		}
+		t.Fatal("rollback modified source")
 	}
 }

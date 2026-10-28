@@ -135,7 +135,7 @@ func TestRegistrySavesDynamicModelsWithoutUserPromptAndRetainsOnFailure(t *testi
 func TestSQLiteTurnWriteRollsBackAtomically(t *testing.T) {
 	s := testStore(t)
 	v, _ := s.createSession("", "", chatmodel.BackendCodex)
-	s.db.Exec(`CREATE TRIGGER reject_turn BEFORE INSERT ON turns BEGIN SELECT RAISE(ABORT,'fixture write failure'); END`)
+	s.db.Exec(`CREATE TRIGGER reject_turn BEFORE UPDATE ON sessions BEGIN SELECT RAISE(ABORT,'fixture write failure'); END`)
 	if _, err := s.BeginTurn(v.ID, "No write", chatmodel.CodexOptions{Model: "test-model", ReasoningEffort: "high"}); err == nil {
 		t.Fatal("expected database failure")
 	}

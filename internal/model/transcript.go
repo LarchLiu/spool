@@ -7,12 +7,13 @@ import (
 
 // Part is one normalized piece of a session transcript.
 type Part struct {
-	Role  string `json:"role"`
-	Kind  string `json:"kind"`
-	Name  string `json:"name,omitempty"`
-	Text  string `json:"text"`
-	Cut   int    `json:"cut,omitempty"`
-	Model string `json:"model,omitempty"`
+	Role     string `json:"role"`
+	Kind     string `json:"kind"`
+	Name     string `json:"name,omitempty"`
+	Text     string `json:"text"`
+	Cut      int    `json:"cut,omitempty"`
+	Model    string `json:"model,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
 }
 
 // Transcript is a session's conversation in the order it was said.
@@ -43,7 +44,7 @@ func AppendPart(t *Transcript, part Part) bool {
 	for _, existing := range t.Parts {
 		size += len(existing.Text)
 	}
-	if size >= transcriptMax {
+	if size+len(part.Text) > transcriptMax {
 		t.Cut = true
 		return false
 	}

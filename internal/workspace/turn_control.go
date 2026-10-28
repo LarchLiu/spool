@@ -122,7 +122,7 @@ func (a *App) stopTurnResponse(w http.ResponseWriter, r *http.Request, chat chat
 		if ok && len(latest.Turns) > 0 {
 			last := latest.Turns[len(latest.Turns)-1]
 			if last.ID == input.TurnID && last.Status != chatmodel.StatusRunning {
-				apiJSON(w, 200, a.snapshot(latest))
+				apiJSON(w, 200, historyWindow(a.snapshot(latest)))
 				return
 			}
 			// The process may have disappeared while the server was still alive

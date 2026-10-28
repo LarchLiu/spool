@@ -170,15 +170,20 @@ func (s *Store) createAutomationChat(v IssuesAutomation, project string) (chatmo
 	return chat, tx.Commit()
 }
 
-func (s *Store) chatCollaborators(chat string) (bool, []string, error) {
+type chatMetadataReader interface {
+	Query(string, ...any) (*sql.Rows, error)
+	QueryRow(string, ...any) *sql.Row
+}
+
+func readChatCollaborators(db chatMetadataReader, chat string) (bool, []string, error) {
 	var task bool
-	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM automation_chats WHERE session_id=?)`, chat).Scan(&task); err != nil {
+	if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM automation_chats WHERE session_id=?)`, chat).Scan(&task); err != nil {
 		return false, nil, err
 	}
 	if !task {
 		return false, nil, nil
 	}
-	rows, err := s.db.Query(`SELECT user_id FROM chat_collaborators WHERE session_id=? ORDER BY user_id`, chat)
+	rows, err := db.Query(`SELECT user_id FROM chat_collaborators WHERE session_id=? ORDER BY user_id`, chat)
 	if err != nil {
 		return true, nil, err
 	}
@@ -195,7 +200,11 @@ func (s *Store) chatCollaborators(chat string) (bool, []string, error) {
 }
 
 func (s *Store) ChatArtifacts(chat string) ([]chatmodel.Artifact, error) {
-	rows, err := s.db.Query(`SELECT type,url FROM chat_artifacts WHERE session_id=? ORDER BY created_at,url`, chat)
+	return readChatArtifacts(s.db, chat)
+}
+
+func readChatArtifacts(db chatMetadataReader, chat string) ([]chatmodel.Artifact, error) {
+	rows, err := db.Query(`SELECT type,url FROM chat_artifacts WHERE session_id=? ORDER BY created_at,url`, chat)
 	if err != nil {
 		return nil, err
 	}

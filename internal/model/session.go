@@ -28,7 +28,10 @@ const (
 )
 
 type Turn struct {
+	SourceOffset    int64            `json:"-"`
 	ID              string           `json:"id"`
+	NativeTurnID    string           `json:"native_turn_id,omitempty"`
+	NativePromptID  string           `json:"native_prompt_id,omitempty"`
 	Backend         Backend          `json:"backend,omitempty"`
 	PartStart       int              `json:"part_start"`
 	InputEnd        int              `json:"input_end"`
@@ -50,6 +53,7 @@ type Turn struct {
 }
 
 type Session struct {
+	History           *HistoryPage  `json:"history,omitempty"`
 	AutomationChat    bool          `json:"automation_chat,omitempty"`
 	CollaboratorIDs   []string      `json:"collaborator_ids,omitempty"`
 	Artifacts         []Artifact    `json:"artifacts,omitempty"`
@@ -68,6 +72,12 @@ type Session struct {
 	Status            SessionStatus `json:"status"`
 	Transcript        Transcript    `json:"transcript"`
 	Turns             []Turn        `json:"turns"`
+}
+
+type HistoryPage struct {
+	Before  string `json:"before,omitempty"`
+	HasMore bool   `json:"has_more"`
+	Error   string `json:"error,omitempty"`
 }
 
 type Artifact struct {

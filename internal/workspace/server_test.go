@@ -187,7 +187,7 @@ func TestAuthenticatedChatUsesProjectDirectoryAndPersistsChoices(t *testing.T) {
 	}
 	defer reopened.Close()
 	saved, _ := reopened.Get(chat.ID)
-	if saved.Turns[0].Reply != "" || len(saved.Transcript.Parts) != 0 {
+	if len(saved.Turns) != 0 || len(saved.Transcript.Parts) != 0 {
 		t.Fatal("conversation body unexpectedly persisted in SQLite")
 	}
 }

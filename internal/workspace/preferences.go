@@ -95,4 +95,4 @@ func (s *Store) UserNavigation(user string) (Navigation, error) {
 	return Navigation{Projects: projects, Chats: chats}, rows.Err()
 }
 
-const qualifiedSessionColumns = `s.id,COALESCE(s.user_id,''),COALESCE(s.project_id,''),s.title,s.backend,s.native_session_id,s.native_session_path,s.model,s.reasoning_effort,s.status,s.created_at,s.updated_at`
+const qualifiedSessionColumns = `s.id,COALESCE(s.user_id,''),COALESCE(s.project_id,''),s.title,s.backend,s.native_session_id,s.native_session_path,s.model,s.reasoning_effort,s.permission_mode,s.status,s.created_at,s.updated_at`

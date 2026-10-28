@@ -1,4 +1,10 @@
-import type { Chat, ChatMetadata, Transcript, TranscriptPart, Turn } from "./types";
+import type {
+  Chat,
+  ChatMetadata,
+  Transcript,
+  TranscriptPart,
+  Turn,
+} from "./types";
 
 export function canControlChat(chat: Chat | null, userID: string): boolean {
   if (!chat) return true;
@@ -90,7 +96,11 @@ function mergeTranscript(previous: Transcript, next: Transcript): Transcript {
 }
 
 function mergeTurn(previous: Turn | undefined, next: Turn): Turn {
-  if (previous?.id === next.id && previous.status !== "running" && next.status === "running") {
+  if (
+    previous?.id === next.id &&
+    previous.status !== "running" &&
+    next.status === "running"
+  ) {
     return previous;
   }
   if (
@@ -98,7 +108,7 @@ function mergeTurn(previous: Turn | undefined, next: Turn): Turn {
     previous.part_end > previous.part_start &&
     next.part_end === next.part_start
   ) {
-    // SQLite intentionally omits transcript ranges. Keep the live ranges
+    // A native session can lag the live stream. Keep the live ranges
     // while applying the newer lifecycle status and completion timestamp.
     return {
       ...next,
@@ -115,6 +125,7 @@ function mergeTurn(previous: Turn | undefined, next: Turn): Turn {
 export function reconcile(previous: Chat | null, next: Chat): Chat {
   if (previous?.id !== next.id) return next;
   if (previous.updated_at > next.updated_at) return previous;
+  if (previous.history || next.history) return reconcilePaged(previous, next);
   const oldByID = new Map(previous.turns.map((turn) => [turn.id, turn]));
   const hasNewServerTurn = next.turns.some(
     (turn) => !turn.id.startsWith("pending-") && !oldByID.has(turn.id),
@@ -132,4 +143,99 @@ export function reconcile(previous: Chat | null, next: Chat): Chat {
     transcript: mergeTranscript(previous.transcript, next.transcript),
     status: turns.at(-1)?.status || next.status,
   };
+}
+
+// Page-local part offsets must be rebased by turn identity, never compared as
+// though REST pages and live snapshots shared a single transcript prefix.
+function reconcilePaged(previous: Chat, next: Chat, older = false): Chat {
+  const byID = new Map<string, { turn: Turn; parts: TranscriptPart[] }>();
+  const aliases = new Map<string, string>();
+  for (const turn of previous.turns) {
+    byID.set(turn.id, {
+      turn,
+      parts: previous.transcript.parts.slice(turn.part_start, turn.part_end),
+    });
+    if (turn.native_turn_id) aliases.set(turn.native_turn_id, turn.id);
+  }
+  const renamed = new Map<string, string>();
+  let newServerTurn = false;
+  for (const turn of next.turns) {
+    const oldID = byID.has(turn.id)
+      ? turn.id
+      : turn.native_turn_id
+        ? aliases.get(turn.native_turn_id)
+        : undefined;
+    const old = oldID ? byID.get(oldID) : undefined;
+    if (!old && !turn.id.startsWith("pending-")) newServerTurn = true;
+    if (oldID && oldID !== turn.id) {
+      byID.delete(oldID);
+      renamed.set(oldID, turn.id);
+    }
+    const incoming = next.transcript.parts.slice(
+      turn.part_start,
+      turn.part_end,
+    );
+    const parts = old
+      ? mergeTranscript({ parts: old.parts }, { parts: incoming }).parts
+      : incoming;
+    const inputs = incoming.length
+      ? turn.input_end - turn.part_start
+      : old
+        ? old.turn.input_end - old.turn.part_start
+        : 0;
+    const merged = mergeTurn(
+      old ? { ...old.turn, id: turn.id } : undefined,
+      turn,
+    );
+    byID.set(turn.id, {
+      turn: { ...merged, part_start: 0, input_end: inputs },
+      parts,
+    });
+  }
+  const oldIDs = previous.turns.map((turn) => renamed.get(turn.id) || turn.id);
+  const incomingIDs = next.turns.map((turn) => turn.id);
+  const incoming = new Set(incomingIDs);
+  const missing = oldIDs.filter((id) => !incoming.has(id));
+  // File/page order is authoritative. Converted sessions may have zero or
+  // repeated timestamps, and clocks can move backwards between real turns.
+  const order = older
+    ? [...incomingIDs, ...missing]
+    : [
+        ...missing.filter((id) => !id.startsWith("pending-")),
+        ...incomingIDs,
+        ...missing.filter((id) => id.startsWith("pending-") && !newServerTurn),
+      ];
+  const parts: TranscriptPart[] = [];
+  const turns = [...new Set(order)].map((id) => {
+    const entry = byID.get(id)!;
+    const start = parts.length;
+    const inputs = Math.min(
+      entry.parts.length,
+      entry.turn.input_end - entry.turn.part_start,
+    );
+    parts.push(...entry.parts);
+    return {
+      ...entry.turn,
+      part_start: start,
+      input_end: start + inputs,
+      part_end: parts.length,
+    };
+  });
+  const history =
+    older || turns[0]?.id === next.turns[0]?.id
+      ? next.history
+      : previous.history;
+  const metadata = older ? previous : next;
+  return {
+    ...metadata,
+    history,
+    turns,
+    transcript: { ...metadata.transcript, parts },
+    status: turns.at(-1)?.status || metadata.status,
+  };
+}
+
+export function prependHistory(previous: Chat, page: Chat): Chat {
+  if (previous.id !== page.id) return previous;
+  return reconcilePaged(previous, page, true);
 }

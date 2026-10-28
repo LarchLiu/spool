@@ -2,7 +2,6 @@ package workspace
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -21,10 +20,13 @@ var errSessionConversion = errors.New("Could not convert this chat to another ag
 var errTurnChanged = errors.New("turn changed while agent was running")
 
 type Store struct {
-	mu      sync.Mutex
-	agentMu sync.Mutex
-	root    string
-	db      *sql.DB
+	historyCache nativeHistoryCache
+	mu           sync.Mutex
+	agentMu      sync.Mutex
+	root         string
+	db           *sql.DB
+	runtimeMu    sync.Mutex
+	runtimeTurns map[string]chatmodel.Turn
 }
 
 const schema = `
@@ -33,12 +35,8 @@ CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQ
 CREATE TABLE IF NOT EXISTS user_avatars(user_id TEXT PRIMARY KEY REFERENCES users(id),style TEXT NOT NULL,seed TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,name TEXT NOT NULL,path TEXT NOT NULL UNIQUE,archived INTEGER NOT NULL DEFAULT 0,shared_chats INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS project_members(project_id TEXT NOT NULL REFERENCES projects(id),user_id TEXT NOT NULL REFERENCES users(id),PRIMARY KEY(project_id,user_id));
-CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id),project_id TEXT REFERENCES projects(id),title TEXT NOT NULL,backend TEXT NOT NULL,native_session_id TEXT NOT NULL DEFAULT '',native_session_path TEXT NOT NULL DEFAULT '',model TEXT NOT NULL DEFAULT '',reasoning_effort TEXT NOT NULL DEFAULT '',status TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id),project_id TEXT REFERENCES projects(id),title TEXT NOT NULL,backend TEXT NOT NULL,native_session_id TEXT NOT NULL DEFAULT '',native_session_path TEXT NOT NULL DEFAULT '',model TEXT NOT NULL DEFAULT '',reasoning_effort TEXT NOT NULL DEFAULT '',permission_mode TEXT NOT NULL DEFAULT '',status TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS sessions_owner ON sessions(user_id,project_id,updated_at DESC);
-CREATE TABLE IF NOT EXISTS turns(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),sequence INTEGER NOT NULL,body TEXT NOT NULL,UNIQUE(session_id,sequence));
-CREATE TABLE IF NOT EXISTS session_history(session_id TEXT NOT NULL REFERENCES sessions(id),turn_start INTEGER NOT NULL,backend TEXT NOT NULL,native_session_id TEXT NOT NULL,native_session_path TEXT NOT NULL,native_offset INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(session_id,turn_start));
-CREATE TABLE IF NOT EXISTS attachments(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id),turn_id TEXT NOT NULL REFERENCES turns(id),name TEXT NOT NULL,media_type TEXT NOT NULL,data BLOB NOT NULL);
-CREATE INDEX IF NOT EXISTS attachments_session ON attachments(session_id);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS agents(backend TEXT PRIMARY KEY,body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS project_automations(project_id TEXT PRIMARY KEY REFERENCES projects(id),body TEXT NOT NULL,next_run_at INTEGER NOT NULL,last_run_at INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '',last_chat_id TEXT NOT NULL DEFAULT '');
@@ -86,22 +84,14 @@ func OpenStore(root string) (*Store, error) {
 	if _, err = db.Exec(schema); err != nil {
 		return fail(err)
 	}
-	var version string
-	err = db.QueryRow(`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err = migrateHistorySchema(db); err != nil {
 		return fail(err)
-	}
-	if version != "" && version != "1" {
-		return fail(fmt.Errorf("unsupported database schema %s", version))
 	}
 	// Retired avatar styles adopt Clay without losing automatic or picked seeds.
 	if _, err = db.Exec(`UPDATE user_avatars SET style=? WHERE style IN ('bottts-neutral','shapes','initials')`, DefaultAvatar().Style); err != nil {
 		return fail(err)
 	}
-	if _, err = db.Exec(`INSERT INTO meta VALUES('schema_version','1') ON CONFLICT(key) DO UPDATE SET value='1'`); err != nil {
-		return fail(err)
-	}
-	return &Store{root: root, db: db}, nil
+	return &Store{root: root, db: db, runtimeTurns: make(map[string]chatmodel.Turn)}, nil
 }
 func (s *Store) Close() error {
 	// WAL/SHM files are expected while SQLite is open. Checkpoint on a clean
@@ -109,6 +99,7 @@ func (s *Store) Close() error {
 	// behind; SQLite will recreate them automatically on the next write.
 	_, checkpointErr := s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
 	closeErr := s.db.Close()
+	s.historyCache.clear()
 	return errors.Join(checkpointErr, closeErr)
 }
 func (s *Store) Root() string { return s.root }
@@ -120,74 +111,47 @@ func insertSession(tx *sql.Tx, s chatmodel.Session) error {
 	if s.ProjectID != "" {
 		project = s.ProjectID
 	}
-	_, err := tx.Exec(`INSERT INTO sessions(id,user_id,project_id,title,backend,native_session_id,native_session_path,model,reasoning_effort,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, s.ID, owner, project, s.Title, s.Backend, s.NativeSessionID, s.NativeSessionPath, s.Model, s.ReasoningEffort, s.Status, s.CreatedAt, s.UpdatedAt)
-	return err
-}
-func saveTurn(tx *sql.Tx, id string, sequence int, t chatmodel.Turn) error {
-	b, err := json.Marshal(t)
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(`INSERT INTO turns(id,session_id,sequence,body) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body`, t.ID, id, sequence, string(b))
+	_, err := tx.Exec(`INSERT INTO sessions(id,user_id,project_id,title,backend,native_session_id,native_session_path,model,reasoning_effort,permission_mode,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, s.ID, owner, project, s.Title, s.Backend, s.NativeSessionID, s.NativeSessionPath, s.Model, s.ReasoningEffort, s.PermissionMode, s.Status, s.CreatedAt, s.UpdatedAt)
 	return err
 }
 
-const sessionColumns = `id,COALESCE(user_id,''),COALESCE(project_id,''),title,backend,native_session_id,native_session_path,model,reasoning_effort,status,created_at,updated_at`
+const sessionColumns = `id,COALESCE(user_id,''),COALESCE(project_id,''),title,backend,native_session_id,native_session_path,model,reasoning_effort,permission_mode,status,created_at,updated_at`
 
 func scanSession(row interface{ Scan(...any) error }) (chatmodel.Session, error) {
 	var s chatmodel.Session
-	err := row.Scan(&s.ID, &s.UserID, &s.ProjectID, &s.Title, &s.Backend, &s.NativeSessionID, &s.NativeSessionPath, &s.Model, &s.ReasoningEffort, &s.Status, &s.CreatedAt, &s.UpdatedAt)
+	err := row.Scan(&s.ID, &s.UserID, &s.ProjectID, &s.Title, &s.Backend, &s.NativeSessionID, &s.NativeSessionPath, &s.Model, &s.ReasoningEffort, &s.PermissionMode, &s.Status, &s.CreatedAt, &s.UpdatedAt)
 	s.Turns = []chatmodel.Turn{}
 	s.Transcript.Parts = []chatmodel.Part{}
 	return s, err
 }
 func (s *Store) Get(id string) (chatmodel.Session, bool) {
-	v, err := scanSession(s.db.QueryRow(`SELECT `+sessionColumns+` FROM sessions WHERE id=?`, id))
-	if err != nil {
-		return chatmodel.Session{}, false
-	}
-	rows, err := s.db.Query(`SELECT body FROM turns WHERE session_id=? ORDER BY sequence`, id)
-	if err != nil {
-		return chatmodel.Session{}, false
-	}
-	var turns []chatmodel.Turn
-	for rows.Next() {
-		var b string
-		var t chatmodel.Turn
-		if rows.Scan(&b) != nil || json.Unmarshal([]byte(b), &t) != nil {
-			rows.Close()
-			return chatmodel.Session{}, false
-		}
-		turns = append(turns, t)
-		v.PermissionMode = t.PermissionMode
-	}
-	rowsErr := rows.Err()
-	rows.Close()
-	if rowsErr != nil {
-		return chatmodel.Session{}, false
-	}
-	// Chat text and tool output are intentionally not stored in SQLite. A
-	// completed session is hydrated from its provider-owned native JSONL file.
-	v.Transcript = chatmodel.Transcript{Parts: []chatmodel.Part{}}
-	v.Turns = turns
-	v.Artifacts, err = s.ChatArtifacts(id)
-	if err != nil {
-		return chatmodel.Session{}, false
-	}
-	v.AutomationChat, v.CollaboratorIDs, err = s.chatCollaborators(id)
-	if err != nil {
-		return chatmodel.Session{}, false
+	v, ok := s.getSession(id)
+	if !ok {
+		return v, false
 	}
 	v = s.hydrateSession(v)
-	for i := range v.Turns {
-		turn := &v.Turns[i]
-		if turn.PartStart < 0 || turn.PartEnd < turn.PartStart || turn.PartEnd > len(v.Transcript.Parts) {
-			turn.Parts = nil
-			populateTurnContent(turn)
-			continue
-		}
-		turn.Parts = append([]chatmodel.Part(nil), v.Transcript.Parts[turn.PartStart:turn.PartEnd]...)
-		populateTurnContent(turn)
+	v = s.withRuntimeTurn(v)
+	return v, true
+}
+
+func (s *Store) getSession(id string) (chatmodel.Session, bool) {
+	// Read metadata and its SSE revision from one SQLite snapshot.
+	tx, err := s.db.Begin()
+	if err != nil {
+		return chatmodel.Session{}, false
+	}
+	defer tx.Rollback()
+	v, err := scanSession(tx.QueryRow(`SELECT `+sessionColumns+` FROM sessions WHERE id=?`, id))
+	if err != nil {
+		return chatmodel.Session{}, false
+	}
+	v.Artifacts, err = readChatArtifacts(tx, id)
+	if err != nil {
+		return chatmodel.Session{}, false
+	}
+	v.AutomationChat, v.CollaboratorIDs, err = readChatCollaborators(tx, id)
+	if err != nil {
+		return chatmodel.Session{}, false
 	}
 	return v, true
 }
@@ -249,6 +213,9 @@ func (s *Store) beginTurnWithInput(id, prompt string, backend chatmodel.Backend,
 	if !backend.Valid() {
 		return chatmodel.Turn{}, fmt.Errorf("unsupported agent backend")
 	}
+	if backend != v.Backend && (v.NativeSessionID != "" || v.Status != chatmodel.StatusReady) {
+		return chatmodel.Turn{}, errSessionConversion
+	}
 	if (strings.TrimSpace(prompt) == "" && len(files) == 0) || len(prompt) > chatmodel.MaxMessageBytes {
 		return chatmodel.Turn{}, fmt.Errorf("message must be nonempty and at most 128 KB")
 	}
@@ -278,21 +245,26 @@ func (s *Store) beginTurnWithInput(id, prompt string, backend chatmodel.Backend,
 	}
 	t := chatmodel.Turn{ID: chatmodel.NewID(), Backend: backend, PartStart: len(v.Transcript.Parts), StartedAt: nextSessionTime(v.UpdatedAt), Status: chatmodel.StatusRunning, RequestedModel: choice.Model, ReasoningEffort: choice.ReasoningEffort}
 	t.Prompt = prompt
+	if info, e := os.Stat(v.NativeSessionPath); e == nil {
+		t.SourceOffset = info.Size()
+	}
 	t.PermissionMode = permission
 	for _, file := range files {
 		t.Attachments = append(t.Attachments, file.Attachment)
 	}
+	// A full historical page must not consume this request's input budget.
+	input := chatmodel.Transcript{}
 	if strings.TrimSpace(prompt) != "" {
-		appendSessionPart(&v.Transcript, &t, chatmodel.Part{Role: "user", Kind: "text", Text: prompt})
+		appendSessionPart(&input, &t, chatmodel.Part{Role: "user", Kind: "text", Text: prompt})
 	}
 	for _, file := range files {
 		part := chatmodel.Part{Role: "user", Kind: "context", Name: file.Name, Text: file.Name}
 		if file.MediaType != "" && strings.HasPrefix(file.MediaType, "image/") {
 			part.Kind, part.Text = "image", "[image]"
 		}
-		appendSessionPart(&v.Transcript, &t, part)
+		appendSessionPart(&input, &t, part)
 	}
-	t.InputEnd = len(v.Transcript.Parts)
+	t.InputEnd = t.PartStart + len(t.Parts)
 	t.PartEnd = t.InputEnd
 	if len(v.Turns) == 0 && (v.Title == "" || v.Title == "New chat") {
 		v.Title = titleFor(prompt)
@@ -300,43 +272,12 @@ func (s *Store) beginTurnWithInput(id, prompt string, backend chatmodel.Backend,
 			v.Title = titleFor(files[0].Name)
 		}
 	}
-	var conversion sessionConversion
-	if backend != v.Backend && len(v.Turns) > 0 {
-		var err error
-		conversion, err = s.convertSession(v, backend)
-		if err != nil {
-			return chatmodel.Turn{}, errSessionConversion
-		}
-	}
-	converted := conversion.native
-	committed := false
-	defer func() {
-		if !committed && converted.Path != "" {
-			_ = os.Remove(converted.Path)
-		}
-	}()
 	tx, err := s.db.Begin()
 	if err != nil {
 		return chatmodel.Turn{}, err
 	}
 	defer tx.Rollback()
-	if backend != v.Backend {
-		if converted.ID != "" {
-			// Retain source references so Web history keeps original reasoning,
-			// model attribution and tool rendering, not the converted notes.
-			source := conversion.source
-			_, err = tx.Exec(`INSERT INTO session_history(session_id,turn_start,backend,native_session_id,native_session_path,native_offset) VALUES(?,?,?,?,?,?) ON CONFLICT(session_id,turn_start) DO UPDATE SET native_session_id=excluded.native_session_id,native_session_path=excluded.native_session_path`, id, source.start, source.backend, source.id, source.path, source.offset)
-			if err != nil {
-				return chatmodel.Turn{}, err
-			}
-			_, err = tx.Exec(`INSERT INTO session_history(session_id,turn_start,backend,native_session_id,native_session_path,native_offset) VALUES(?,?,?,?,?,?)`, id, len(v.Turns), backend, converted.ID, converted.Path, conversion.importedBytes)
-			if err != nil {
-				return chatmodel.Turn{}, err
-			}
-		}
-		v.NativeSessionID, v.NativeSessionPath = converted.ID, converted.Path
-	}
-	res, err := tx.Exec(`UPDATE sessions SET title=?,status=?,updated_at=?,model=?,reasoning_effort=?,backend=?,native_session_id=?,native_session_path=? WHERE id=? AND status<>?`, v.Title, chatmodel.StatusRunning, t.StartedAt, choice.Model, choice.ReasoningEffort, backend, v.NativeSessionID, v.NativeSessionPath, id, chatmodel.StatusRunning)
+	res, err := tx.Exec(`UPDATE sessions SET title=?,status=?,updated_at=?,model=?,reasoning_effort=?,permission_mode=?,backend=? WHERE id=? AND status<>?`, v.Title, chatmodel.StatusRunning, t.StartedAt, choice.Model, choice.ReasoningEffort, permission, backend, id, chatmodel.StatusRunning)
 	if err != nil {
 		return chatmodel.Turn{}, err
 	}
@@ -344,18 +285,10 @@ func (s *Store) beginTurnWithInput(id, prompt string, backend chatmodel.Backend,
 	if n != 1 {
 		return chatmodel.Turn{}, fmt.Errorf("this chat already has a running turn")
 	}
-	if err = saveTurn(tx, id, len(v.Turns), t); err != nil {
-		return chatmodel.Turn{}, err
-	}
-	for _, file := range files {
-		if _, err = tx.Exec(`INSERT INTO attachments(id,session_id,turn_id,name,media_type,data) VALUES(?,?,?,?,?,?)`, file.ID, id, t.ID, file.Name, file.MediaType, file.Data); err != nil {
-			return chatmodel.Turn{}, err
-		}
-	}
 	if err = tx.Commit(); err != nil {
 		return chatmodel.Turn{}, err
 	}
-	committed = true
+	s.setRuntimeTurn(id, t)
 	return t, nil
 }
 func (s *Store) SetNativeSession(id, native string) error {
@@ -369,8 +302,9 @@ func (s *Store) SetNativeSession(id, native string) error {
 func (s *Store) setTurnNativeSession(id, turnID, native string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	chat, ok := s.Get(id)
-	if !ok || chat.Status != chatmodel.StatusRunning || len(chat.Turns) == 0 || chat.Turns[len(chat.Turns)-1].ID != turnID {
+	chat, ok := s.getSession(id)
+	t, active := s.runtimeTurn(id)
+	if !ok || !active || chat.Status != chatmodel.StatusRunning || t.ID != turnID {
 		return errTurnChanged
 	}
 	return s.SetNativeSession(id, native)
@@ -386,92 +320,83 @@ func (s *Store) SetNativeSessionPath(id, native, path string) error {
 func (s *Store) FinishTurn(id, turnID string, result agent.AgentResult, runErr error, status chatmodel.SessionStatus) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	v, ok := s.Get(id)
-	if !ok || len(v.Turns) == 0 {
+	v, ok := s.getSession(id)
+	if !ok {
 		return os.ErrNotExist
 	}
-	t := v.Turns[len(v.Turns)-1]
-	if t.ID != turnID {
+	t, ok := s.runtimeTurn(id)
+	if !ok || t.ID != turnID {
 		return errTurnChanged
 	}
-	// A stop request may persist the terminal state before the provider
-	// process has returned. The provider goroutine will still call FinishTurn;
-	// do not let that late result overwrite the explicit stopped state.
 	if t.Status != chatmodel.StatusRunning {
 		return nil
 	}
-	// The response itself remains in the provider's native session. Keep only
-	// turn metadata in SQLite; the live in-memory turn is what the SSE stream
-	// uses until the provider finishes writing its JSONL record.
-	t.Parts = nil
+	t.Parts, t.Prompt, t.Reply, t.Activities = nil, "", "", nil
 	t.PartStart, t.InputEnd, t.PartEnd = 0, 0, 0
-	t.Prompt, t.Reply, t.Activities = "", "", nil
 	t.PendingApproval = nil
+	if result.TurnID != "" {
+		t.NativeTurnID = result.TurnID
+	}
 	t.Model = chatmodel.Clip(result.Model, 240)
 	if result.ReasoningEffort != "" {
 		t.ReasoningEffort = result.ReasoningEffort
 	}
-	t.Activities = boundedActivities(result.Activities)
-	t.Status = status
-	t.FinishedAt = nextSessionTime(v.UpdatedAt)
+	t.Status, t.FinishedAt = status, nextSessionTime(v.UpdatedAt)
 	if runErr != nil {
 		t.Error = chatmodel.Clip(runErr.Error(), 8192)
 	}
 	if chatmodel.ValidID(result.SessionID) {
 		v.NativeSessionID = result.SessionID
 	}
-	// Resolve the project path before opening the write transaction. The
-	// database uses one connection; querying the store again while the
-	// transaction is active would wait forever for that same connection and
-	// leave the chat permanently marked as running.
 	nativePath := v.NativeSessionPath
-	workingDirectory := ""
-	if chatmodel.ValidID(v.NativeSessionID) {
-		if v.ProjectID != "" {
-			if project, e := s.Project(v.ProjectID); e == nil {
-				workingDirectory = project.Path
-			}
+	if v.NativeSessionID != "" {
+		directory := ""
+		if project, e := s.Project(v.ProjectID); e == nil {
+			directory = project.Path
 		}
-		if path, e := agent.FindSessionTranscript(v.Backend, v.NativeSessionID, workingDirectory); e == nil {
+		if path, e := agent.FindSessionTranscript(v.Backend, v.NativeSessionID, directory); e == nil {
 			nativePath = path
 		}
 	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
+	if nativePath != "" {
+		if index, e := s.indexHistory(v.Backend, nativePath); e == nil && len(index) > 0 {
+			last := index[len(index)-1]
+			if last.Start >= t.SourceOffset {
+				t.NativeTurnID = nativeIdentity(v.NativeSessionID, last)
+			}
+		}
 	}
-	defer tx.Rollback()
-	if err = saveTurn(tx, id, len(v.Turns)-1, t); err != nil {
-		return err
+	_, err := s.db.Exec(`UPDATE sessions SET native_session_id=?,native_session_path=?,status=?,updated_at=? WHERE id=?`, v.NativeSessionID, nativePath, status, t.FinishedAt, id)
+	if err == nil {
+		s.setRuntimeTurn(id, t)
 	}
-	if _, err = tx.Exec(`UPDATE sessions SET native_session_id=?,native_session_path=?,status=?,updated_at=? WHERE id=?`, v.NativeSessionID, nativePath, status, t.FinishedAt, id); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return err
 }
 
-// SaveRunningTurn checkpoints lifecycle metadata while a CLI is still
-// streaming. The normalized transcript stays in App.live and is never copied
-// into SQLite.
+// Live lifecycle state is process-local; native JSONL is the only turn history.
 func (s *Store) SaveRunningTurn(id string, turn chatmodel.Turn) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	v, ok := s.Get(id)
-	if !ok || len(v.Turns) == 0 || v.Turns[len(v.Turns)-1].ID != turn.ID {
-		return os.ErrNotExist
+	current, ok := s.runtimeTurn(id)
+	if !ok || current.ID != turn.ID || current.Status != chatmodel.StatusRunning {
+		return errTurnChanged
 	}
-	if v.Status != chatmodel.StatusRunning {
-		return fmt.Errorf("turn is no longer running")
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err = saveTurn(tx, id, len(v.Turns)-1, turn); err != nil {
-		return err
-	}
-	return tx.Commit()
+	s.setRuntimeTurn(id, turn)
+	return nil
+}
+
+func (s *Store) runtimeTurn(id string) (chatmodel.Turn, bool) {
+	s.runtimeMu.Lock()
+	defer s.runtimeMu.Unlock()
+	t, ok := s.runtimeTurns[id]
+	return t, ok
+}
+
+func (s *Store) setRuntimeTurn(id string, turn chatmodel.Turn) {
+	s.runtimeMu.Lock()
+	defer s.runtimeMu.Unlock()
+	turn.Parts = append([]chatmodel.Part(nil), turn.Parts...)
+	s.runtimeTurns[id] = turn
 }
 
 // updated_at also serves as the SSE cache revision, so every transition must
@@ -515,29 +440,13 @@ func appendTurnText(turn *chatmodel.Turn, part chatmodel.Part) {
 	turn.PartEnd = turn.PartStart + len(turn.Parts)
 }
 
-func replacePartRange(parts []chatmodel.Part, start, end int, replacement []chatmodel.Part) []chatmodel.Part {
-	start = max(0, min(start, len(parts)))
-	end = max(start, min(end, len(parts)))
-	out := make([]chatmodel.Part, 0, len(parts)-(end-start)+len(replacement))
-	out = append(out, parts[:start]...)
-	out = append(out, replacement...)
-	out = append(out, parts[end:]...)
-	return out
-}
-
 func runningTranscript(previous chatmodel.Transcript, turn chatmodel.Turn) chatmodel.Transcript {
 	start := max(0, min(turn.PartStart, len(previous.Parts)))
 	transcript := chatmodel.Transcript{
 		Parts: append([]chatmodel.Part(nil), previous.Parts[:start]...),
 		Cut:   previous.Cut,
 	}
-	for _, part := range turn.Parts {
-		if part.Role == "assistant" && part.Kind == "text" {
-			chatmodel.AppendStreamText(&transcript, part)
-		} else if !chatmodel.AppendPart(&transcript, part) {
-			break
-		}
-	}
+	transcript.Parts = append(transcript.Parts, turn.Parts...)
 	return transcript
 }
 
@@ -574,17 +483,17 @@ func populateTurnContent(turn *chatmodel.Turn) {
 }
 
 func (s *Store) SetInterrupted() error {
-	for _, v := range s.Sessions() {
-		if v.Status == chatmodel.StatusRunning && len(v.Turns) > 0 {
-			t := v.Turns[len(v.Turns)-1]
-			output := []chatmodel.Part{}
-			start := max(0, min(t.InputEnd-t.PartStart, len(t.Parts)))
-			if start < len(t.Parts) {
-				output = append(output, t.Parts[start:]...)
-			}
-			if err := s.FinishTurn(v.ID, t.ID, agent.AgentResult{Text: t.Reply, Model: t.Model, Activities: t.Activities, Parts: output}, fmt.Errorf("Go agent server restarted before this turn finished"), chatmodel.StatusInterrupted); err != nil {
-				return err
-			}
+	_, err := s.db.Exec(`UPDATE sessions SET status=?,updated_at=MAX(updated_at+1,?) WHERE status=?`, chatmodel.StatusInterrupted, time.Now().UnixMilli(), chatmodel.StatusRunning)
+	if err != nil {
+		return err
+	}
+	s.runtimeMu.Lock()
+	defer s.runtimeMu.Unlock()
+	for id, t := range s.runtimeTurns {
+		if t.Status == chatmodel.StatusRunning {
+			t.Status, t.FinishedAt, t.PendingApproval = chatmodel.StatusInterrupted, time.Now().UnixMilli(), nil
+			t.Error = "Go agent server restarted before this turn finished"
+			s.runtimeTurns[id] = t
 		}
 	}
 	return nil

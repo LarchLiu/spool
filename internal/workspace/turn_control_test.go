@@ -110,8 +110,9 @@ func TestStopResponseCancelsOnlyOwnedTurnAndPreservesResume(t *testing.T) {
 			}
 			resumed := waitChat(t, s, chat.ID)
 			// Completed response text is intentionally not persisted in SQLite;
-			// history hydration reads it from the provider-owned transcript.
-			if resumed.Status != chatmodel.StatusCompleted || resumed.NativeSessionID != saved.NativeSessionID || len(resumed.Turns) != 2 || resumed.Turns[1].Status != chatmodel.StatusCompleted {
+			// history hydration reads it from the provider-owned transcript. This
+			// CLI fixture writes no native file, so only the latest runtime turn exists.
+			if resumed.Status != chatmodel.StatusCompleted || resumed.NativeSessionID != saved.NativeSessionID || len(resumed.Turns) != 1 || resumed.Turns[0].Status != chatmodel.StatusCompleted {
 				t.Fatalf("could not continue stopped chat: %#v", resumed)
 			}
 			newTurn := start(chat.ID, "block-task")

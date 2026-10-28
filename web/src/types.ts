@@ -59,6 +59,7 @@ export type ApprovalRequest = {
 export type TranscriptPart = {
   role: "user" | "assistant" | "tool";
   kind: "text" | "thinking" | "tool_use" | "tool_result" | "context" | "image";
+  image_url?: string;
   name?: string;
   text: string;
   cut?: number;
@@ -72,6 +73,8 @@ export type Transcript = {
 };
 export type Turn = {
   id: string;
+  native_turn_id?: string;
+  native_prompt_id?: string;
   backend?: Backend;
   part_start: number;
   input_end: number;
@@ -88,6 +91,7 @@ export type Turn = {
   pending_approval?: ApprovalRequest;
 };
 export type Chat = {
+  history?: { before?: string; has_more: boolean; error?: string };
   automation_chat?: boolean;
   collaborator_ids?: string[];
   artifacts?: { type: "pull_request"; url: string }[];

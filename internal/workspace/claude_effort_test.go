@@ -42,7 +42,7 @@ func TestClaudeEffortAPIValidatesCatalogAndPersistsSelections(t *testing.T) {
 			t.Fatal(w.Body.String())
 		}
 		saved := waitChat(t, s, chat.ID)
-		if saved.ReasoningEffort != effort || saved.Turns[i].ReasoningEffort != effort {
+		if saved.ReasoningEffort != effort || saved.Turns[len(saved.Turns)-1].ReasoningEffort != effort {
 			t.Fatalf("effort not saved: %#v", saved)
 		}
 		runner.mu.Lock()
@@ -58,7 +58,7 @@ func TestClaudeEffortAPIValidatesCatalogAndPersistsSelections(t *testing.T) {
 	}
 	defer reopened.Close()
 	saved, _ := reopened.Get(chat.ID)
-	if len(saved.Turns) != 3 || saved.Turns[0].ReasoningEffort != "low" || saved.Turns[1].ReasoningEffort != "high" || saved.Turns[2].ReasoningEffort != "" {
-		t.Fatal("SQLite reopen lost per-turn effort or the reset to default")
+	if len(saved.Turns) != 0 || saved.ReasoningEffort != "" || saved.Model != "test-claude" {
+		t.Fatal("SQLite must retain the current selection, not per-turn effort history")
 	}
 }

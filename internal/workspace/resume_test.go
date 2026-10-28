@@ -47,7 +47,7 @@ func TestInterruptedChatResumesPersistedSessionAfterReload(t *testing.T) {
 				t.Fatal(err)
 			}
 			saved, _ := store.Get(session.ID)
-			if saved.NativeSessionID != "native-session-123" || saved.Status == chatmodel.StatusRunning || saved.Turns[0].Reply != "" || len(saved.Transcript.Parts) != 0 {
+			if saved.NativeSessionID != "native-session-123" || saved.Status == chatmodel.StatusRunning || len(saved.Turns) != 0 || len(saved.Transcript.Parts) != 0 {
 				t.Fatalf("lost interrupted turn: %#v", saved)
 			}
 			ctx, cancel2 := context.WithTimeout(context.Background(), 8*time.Second)

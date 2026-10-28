@@ -350,5 +350,12 @@
   "Dismiss": "閉じる",
   "Invalid goal command": "無効な目標コマンドです",
   "Wait for the running response before using goal commands": "実行中の応答が終了してから目標コマンドを使用してください",
-  "Use the native goal control endpoint to view or clear a goal": "目標の表示・解除にはネイティブ目標の操作 API を使用してください"
+  "Use the native goal control endpoint to view or clear a goal": "目標の表示・解除にはネイティブ目標の操作 API を使用してください",
+  "Load earlier messages": "以前のメッセージを読み込む",
+  "Loading earlier messages…": "以前のメッセージを読み込み中…",
+  "The next message creates a new chat with the selected agent and converted context.": "次のメッセージで、変換したコンテキストを引き継ぐ新しいチャットを作成します。",
+  "Only sending with another agent creates a new chat. The original chat stays unchanged.": "選択だけでは作成せず、別のエージェントで送信したときに新しいチャットを作成します。元のチャットは変更されません。",
+  "Native session history is unavailable": "元のセッション履歴を読み込めません",
+  "Invalid history cursor": "履歴のページ位置が無効です",
+  "Completed": "完了"
 }

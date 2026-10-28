@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ArrowUp,
@@ -23,6 +23,7 @@ import {
   optimisticChat,
   reconcile,
   reconcileMetadata,
+  prependHistory,
 } from "./chat-state";
 import { runningTurn, stopReply } from "./turn-control";
 import type {
@@ -92,6 +93,13 @@ function App() {
     [sidebar, setSidebar] = useState(false),
     [showLatest, setShowLatest] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const historyRequest = useRef<string | null>(null);
+  const historyAnchor = useRef<{
+    id: string;
+    height: number;
+    top: number;
+  } | null>(null);
   const [model, setModel] = useState(""),
     [effort, setEffort] = useState(""),
     [picker, setPicker] = useState(false),
@@ -148,6 +156,44 @@ function App() {
   function fail(e: unknown) {
     setError(e instanceof Error ? e.message : t("Request failed"));
   }
+  async function loadOlderHistory() {
+    const id = chat?.id;
+    const before = chat?.history?.before;
+    if (!id || !before || !chat.history?.has_more || historyRequest.current)
+      return;
+    const request = id + ":" + before;
+    historyRequest.current = request;
+    setLoadingHistory(true);
+    try {
+      const page = await api<Chat>(
+        "/chats/" + id + "/history?before=" + encodeURIComponent(before),
+      );
+      if (activeID.current !== id || historyRequest.current !== request) return;
+      follow.current = false;
+      if (history.current)
+        historyAnchor.current = {
+          id,
+          height: history.current.scrollHeight,
+          top: history.current.scrollTop,
+        };
+      setChat((old) => (old?.id === id ? prependHistory(old, page) : old));
+    } catch (e) {
+      if (activeID.current === id) fail(e);
+    } finally {
+      if (historyRequest.current === request) {
+        historyRequest.current = null;
+        setLoadingHistory(false);
+      }
+    }
+  }
+  useLayoutEffect(() => {
+    const anchor = historyAnchor.current;
+    if (anchor && anchor.id === chat?.id && history.current) {
+      history.current.scrollTop =
+        anchor.top + history.current.scrollHeight - anchor.height;
+    }
+    historyAnchor.current = null;
+  }, [chat]);
   useEffect(() => {
     api<{ user: User; csrf: string; preferences: UIPreferences }>("/me")
       .then((v) => {
@@ -325,6 +371,9 @@ function App() {
       });
     }
     adoptedChatID.current = "";
+    historyRequest.current = null;
+    historyAnchor.current = null;
+    setLoadingHistory(false);
     setConnected(true);
     follow.current = true;
     if (!chatID || !user) return;
@@ -354,15 +403,21 @@ function App() {
       setConnected(true);
       const v = JSON.parse((e as MessageEvent).data) as {
         turn: Turn;
+        turns?: Turn[];
+        history?: Chat["history"];
         transcript: Chat["transcript"];
         status: string;
         title: string;
         updated_at: number;
         backend: "codex" | "claude";
+        model?: string;
+        reasoning_effort?: string;
+        permission_mode?: string;
       };
       setChat((old) => {
         if (old?.id !== chatID) return old;
-        const turns = old.turns.filter((t) => !t.id.startsWith("pending-"));
+        const turns =
+          v.turns || old.turns.filter((t) => !t.id.startsWith("pending-"));
         const index = turns.findIndex((t) => t.id === v.turn.id);
         if (index < 0) turns.push(v.turn);
         else turns[index] = v.turn;
@@ -370,11 +425,12 @@ function App() {
           ...old,
           title: v.title,
           backend: v.backend,
-          model: v.turn.requested_model,
-          reasoning_effort: v.turn.reasoning_effort,
-          permission_mode: v.turn.permission_mode,
+          model: v.model,
+          reasoning_effort: v.reasoning_effort,
+          permission_mode: v.permission_mode,
           status: v.status,
           transcript: v.transcript,
+          history: v.history,
           updated_at: v.updated_at,
           turns,
         });
@@ -386,8 +442,8 @@ function App() {
                 ...c,
                 title: v.title,
                 backend: v.backend,
-                model: v.turn.requested_model,
-                reasoning_effort: v.turn.reasoning_effort,
+                model: v.model,
+                reasoning_effort: v.reasoning_effort,
                 status: v.status,
                 updated_at: v.updated_at,
               }
@@ -460,7 +516,8 @@ function App() {
     if (follow.current && history.current)
       history.current.scrollTop = history.current.scrollHeight;
   }, [chat?.turns]);
-  const turnRunning = chat?.turns.some((turn) => turn.status === "running") ?? false;
+  const turnRunning =
+    chat?.turns.some((turn) => turn.status === "running") ?? false;
   useEffect(() => {
     if (!turnRunning) return;
     setClock(Date.now());
@@ -537,7 +594,9 @@ function App() {
     setUser(updated);
     setOnline((people) =>
       people.map((person) =>
-        person.id === updated.id ? { ...person, avatar: updated.avatar } : person,
+        person.id === updated.id
+          ? { ...person, avatar: updated.avatar }
+          : person,
       ),
     );
   }
@@ -718,9 +777,24 @@ function App() {
           body.set(key, value);
         for (const file of attached) body.append("files", file.file, file.name);
       }
+
       const v = await api<Chat>("/chats/" + id + "/messages", body);
       acknowledge(v);
-      if (isCurrent()) setChat((old) => reconcile(old, v));
+      const stillCurrent = isCurrent();
+      if (v.id !== id) {
+        if (activeUser.current !== owner) return;
+        setChats((old) => [v, ...old.filter((item) => item.id !== v.id)]);
+        id = v.id;
+        sending.chatID = id;
+        if (stillCurrent) {
+          permissions.adoptChat(id);
+          adoptedChatID.current = id;
+          activeID.current = id;
+          selection.current = { project: projectID, chatID: id, draftVersion };
+          setChat(v);
+          setChatID(id);
+        }
+      } else if (stillCurrent) setChat((old) => reconcile(old, v));
     } catch (e) {
       if (isCurrent()) {
         setDraft(message);
@@ -1103,6 +1177,22 @@ function App() {
           }}
         >
           <div className="history-inner" ref={content}>
+            {chat?.history?.error && (
+              <p role="status" className="history-error">
+                {t("Native session history is unavailable")}
+              </p>
+            )}
+            {chat?.history?.has_more && (
+              <button
+                className="quiet history-older"
+                disabled={loadingHistory}
+                onClick={loadOlderHistory}
+              >
+                {loadingHistory
+                  ? t("Loading earlier messages…")
+                  : t("Load earlier messages")}
+              </button>
+            )}
             {!chat?.turns.length ? (
               <section className="welcome">
                 <img className="welcome-mark" src="/logo.png" alt="Spool" />
@@ -1145,6 +1235,29 @@ function App() {
                   )
                   .map((part) => part.text)
                   .join("\n");
+
+                const nativeImages: Attachment[] = parts.flatMap(
+                  (part, index) =>
+                    part.role === "user" &&
+                    part.kind === "image" &&
+                    part.image_url
+                      ? [
+                          {
+                            id: turn.id + "-image-" + index,
+                            name: part.name || "image",
+                            media_type: part.image_url.slice(
+                              5,
+                              part.image_url.indexOf(";"),
+                            ),
+                            size: 0,
+                            preview_url: part.image_url,
+                          },
+                        ]
+                      : [],
+                );
+                const turnFiles = turn.attachments?.length
+                  ? turn.attachments
+                  : nativeImages;
                 const answer = parts
                   .filter(
                     (part) => part.role === "assistant" && part.kind === "text",
@@ -1158,59 +1271,61 @@ function App() {
                       part.kind === "tool_result" ||
                       part.kind === "thinking"),
                 );
-                return <article className="turn" key={turn.id}>
-                  <div className="user-row">
-                    <div className="user-message">
-                      {!!turn.attachments?.length && (
-                        <AttachmentCards
-                          files={turn.attachments}
-                          chatID={chat.id}
-                          t={t}
-                          onPreview={(file, url) => setPreview({ file, url })}
-                        />
-                      )}
-                      {userText && (
-                        <div className="user-bubble">
-                          <MarkdownMessage>{userText}</MarkdownMessage>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {activities.length ? (
-                    <ToolActivityList
-                      parts={activities}
-                      backend={turn.backend}
-                      t={t}
-                      live={turn.status === "running"}
-                      summary={workSummary(turn, t, clock, effortLabel)}
-                    />
-                  ) : (
-                    <div className="work-label">
-                      {workSummary(turn, t, clock, effortLabel)}
-                    </div>
-                  )}
-                  {answer && (
-                    <div className="assistant">
-                      <div className="assistant-text">
-                        <MarkdownMessage>{answer}</MarkdownMessage>
+                return (
+                  <article className="turn" key={turn.id}>
+                    <div className="user-row">
+                      <div className="user-message">
+                        {!!turnFiles.length && (
+                          <AttachmentCards
+                            files={turnFiles}
+                            chatID={chat.id}
+                            t={t}
+                            onPreview={(file, url) => setPreview({ file, url })}
+                          />
+                        )}
+                        {userText && (
+                          <div className="user-bubble">
+                            <MarkdownMessage>{userText}</MarkdownMessage>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )}
-                  {turn.pending_approval && (
-                    <ApprovalCard
-                      key={turn.pending_approval.id}
-                      request={turn.pending_approval}
-                      chatID={chat.id}
-                      turnID={turn.id}
-                      t={t}
-                      onError={fail}
-                    />
-                  )}
-                  {turn.error && turn.status !== "stopped" && (
-                    <p className="error">{turn.error}</p>
-                  )}
-                  {turn.status === "running" && <ChatStatusIndicator t={t} />}
-                </article>;
+                    {activities.length ? (
+                      <ToolActivityList
+                        parts={activities}
+                        backend={turn.backend}
+                        t={t}
+                        live={turn.status === "running"}
+                        summary={workSummary(turn, t, clock, effortLabel)}
+                      />
+                    ) : (
+                      <div className="work-label">
+                        {workSummary(turn, t, clock, effortLabel)}
+                      </div>
+                    )}
+                    {answer && (
+                      <div className="assistant">
+                        <div className="assistant-text">
+                          <MarkdownMessage>{answer}</MarkdownMessage>
+                        </div>
+                      </div>
+                    )}
+                    {turn.pending_approval && (
+                      <ApprovalCard
+                        key={turn.pending_approval.id}
+                        request={turn.pending_approval}
+                        chatID={chat.id}
+                        turnID={turn.id}
+                        t={t}
+                        onError={fail}
+                      />
+                    )}
+                    {turn.error && turn.status !== "stopped" && (
+                      <p className="error">{turn.error}</p>
+                    )}
+                    {turn.status === "running" && <ChatStatusIndicator t={t} />}
+                  </article>
+                );
               })
             )}
           </div>
@@ -1390,7 +1505,9 @@ function App() {
                       aria-label={t("Choose agent and model")}
                       aria-expanded={picker}
                       disabled={
-                        !composerWritable || chat?.status === "running" || posting
+                        !composerWritable ||
+                        chat?.status === "running" ||
+                        posting
                       }
                       onClick={() => {
                         setPicker(!picker);
@@ -1484,7 +1601,7 @@ function App() {
   );
 }
 function worked(turn: Turn, t: Translator) {
-  if (!turn.finished_at) return "";
+  if (!turn.started_at || !turn.finished_at) return t("Completed");
   return durationLabel(turn.finished_at - turn.started_at, t, "worked");
 }
 
@@ -1547,7 +1664,11 @@ function durationLabel(
 
 function ChatStatusIndicator({ t }: { t: Translator }) {
   return (
-    <div className="chat-status-grid-beat" role="status" aria-label={t("Working")}>
+    <div
+      className="chat-status-grid-beat"
+      role="status"
+      aria-label={t("Working")}
+    >
       {Array.from({ length: 9 }, (_, index) => (
         <span key={index} aria-hidden="true" />
       ))}

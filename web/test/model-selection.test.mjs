@@ -112,11 +112,22 @@ test("an undiscovered catalog still allows a safe CLI-default selection", () => 
 });
 
 test("existing chats offer both agent groups and explain automatic conversion", async () => {
-  const menu = await readFile(new URL("../src/agent-model-menu.tsx", import.meta.url), "utf8");
-  const main = await readFile(new URL("../src/main.tsx", import.meta.url), "utf8");
+  const menu = await readFile(
+    new URL("../src/agent-model-menu.tsx", import.meta.url),
+    "utf8",
+  );
+  const main = await readFile(
+    new URL("../src/main.tsx", import.meta.url),
+    "utf8",
+  );
   assert.match(menu, /agents\.map\(/);
-  assert.doesNotMatch(menu + main, /lockedBackend|next\.backend !== chat\.backend/);
-  assert.match(menu, /The next message converts this conversation/);
+  assert.doesNotMatch(menu + main, /lockedBackend/);
+  assert.match(menu, /The next message creates a new chat/);
+  assert.doesNotMatch(main, /"\/fork"|async function changeModel/);
+  assert.match(main, /onChange=\{\(next\) => \{\s+setBackend\(next\.backend\)/);
   assert.match(menu, /disabled=\{!available\}/);
-  assert.match(main, /!composerWritable \|\| chat\?\.status === "running" \|\| posting/);
+  assert.match(
+    main,
+    /!composerWritable \|\| chat\?\.status === "running" \|\| posting/,
+  );
 });

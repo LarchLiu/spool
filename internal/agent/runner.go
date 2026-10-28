@@ -40,6 +40,7 @@ type AgentRequest struct {
 
 type AgentEvent struct {
 	Type            string          `json:"type"`
+	TurnID          string          `json:"turn_id,omitempty"`
 	Text            string          `json:"text,omitempty"`
 	SessionID       string          `json:"session_id,omitempty"`
 	Model           string          `json:"model,omitempty"`
@@ -48,6 +49,7 @@ type AgentEvent struct {
 }
 
 type AgentResult struct {
+	TurnID          string
 	SessionID       string
 	Model           string
 	ReasoningEffort string
@@ -232,7 +234,7 @@ func codexTranscriptParts(item map[string]any, model string) []chatmodel.Part {
 					parts = append(parts, transcriptTextPart(role, text, model))
 				}
 			case "image", "input_image":
-				parts = append(parts, transcriptModelPart(chatmodel.Part{Role: role, Kind: "image", Text: "[image]"}, model))
+				parts = append(parts, transcriptModelPart(chatmodel.Part{Role: role, Kind: "image", Text: "[image]", ImageURL: nativeImageURL(stringValue(block["image_url"]))}, model))
 			}
 		}
 		return parts
@@ -584,7 +586,12 @@ func claudeTranscriptParts(role string, content any, model string) []chatmodel.P
 				parts = append(parts, chatmodel.Part{Role: "tool", Kind: "tool_result", Text: text})
 			}
 		case "image":
-			parts = append(parts, transcriptModelPart(chatmodel.Part{Role: role, Kind: "image", Text: "[image]"}, model))
+			source, _ := block["source"].(map[string]any)
+			url := ""
+			if source["type"] == "base64" {
+				url = nativeImageURL("data:" + stringValue(source["media_type"]) + ";base64," + stringValue(source["data"]))
+			}
+			parts = append(parts, transcriptModelPart(chatmodel.Part{Role: role, Kind: "image", Text: "[image]", ImageURL: url}, model))
 		}
 	}
 	return parts
@@ -641,4 +648,17 @@ func (b *limitedBuffer) Write(data []byte) (int, error) {
 		_, _ = b.Buffer.Write(data)
 	}
 	return n, nil
+}
+
+// Never turn native local paths or arbitrary URLs into browser image fetches.
+func nativeImageURL(value string) string {
+	if len(value) > 6*1024*1024 {
+		return ""
+	}
+	for _, kind := range []string{"png", "jpeg", "gif", "webp"} {
+		if strings.HasPrefix(value, "data:image/"+kind+";base64,") {
+			return value
+		}
+	}
+	return ""
 }

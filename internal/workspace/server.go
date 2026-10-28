@@ -46,6 +46,7 @@ type App struct {
 	assets     http.Handler
 	filesMu    sync.Mutex
 	filesRoot  string
+	uploads    map[string]temporaryAttachment
 	approvals  map[string]*pendingApproval
 	shutdown   chan struct{}
 	closeOnce  sync.Once
@@ -312,36 +313,30 @@ func (a *App) enabled(backend chatmodel.Backend) bool {
 	return false
 }
 func (a *App) accessibleChat(user, id string) (chatmodel.Session, bool) {
+	if !a.store.CanAccessChat(user, id) {
+		return chatmodel.Session{}, false
+	}
 	chat, ok := a.store.Get(id)
-	return chat, ok && a.store.CanAccessChat(user, id)
+	return chat, ok
 }
 func (a *App) snapshot(chat chatmodel.Session) chatmodel.Session {
 	a.liveMu.Lock()
 	defer a.liveMu.Unlock()
-	if t, ok := a.live[chat.ID]; ok && chat.Status == chatmodel.StatusRunning && len(chat.Turns) > 0 && chat.Turns[len(chat.Turns)-1].ID == t.ID {
-		base := chat.Transcript
-		if hydrated, exists := a.liveBase[chat.ID]; exists {
-			base = hydrated
-		}
+	if t, ok := a.live[chat.ID]; ok && chat.Status == chatmodel.StatusRunning {
+		base := a.liveBase[chat.ID]
 		chat.Transcript = runningTranscript(base, t)
-		restorePriorTurns(&chat, a.liveTurns[chat.ID])
-		// Metadata and the in-memory stream can briefly have different
-		// transcript bases (for example after a reconnect). Clamp the live
-		// offset before slicing so a malformed/stale offset cannot panic HTTP.
+		chat.Turns = append(append([]chatmodel.Turn(nil), a.liveTurns[chat.ID]...), t)
 		start := max(0, min(t.PartStart, len(chat.Transcript.Parts)))
 		t.PartStart = start
 		t.InputEnd = max(start, min(t.InputEnd, len(chat.Transcript.Parts)))
 		t.Parts = append([]chatmodel.Part(nil), chat.Transcript.Parts[start:]...)
-		t.PartEnd = t.PartStart + len(t.Parts)
+		t.PartEnd = len(chat.Transcript.Parts)
 		chat.Turns[len(chat.Turns)-1] = t
 		chat.Status = t.Status
 	} else if finished, exists := a.completed[chat.ID]; exists {
 		chat, _ = mergeCompletedTurn(chat, finished)
 	}
 	chat.NativeSessionID = ""
-	if len(chat.Turns) > 0 {
-		chat.PermissionMode = chat.Turns[len(chat.Turns)-1].PermissionMode
-	}
 	return chat
 }
 
@@ -381,13 +376,31 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		apiError(w, 404, "聊天不存在")
 		return
 	}
+	if len(parts) == 2 && parts[1] == "history" && r.Method == "GET" {
+		if !a.store.CanAccessChat(id.User.ID, parts[0]) {
+			apiError(w, 404, "聊天不存在")
+			return
+		}
+		page, err := a.store.historyPage(parts[0], r.URL.Query().Get("before"))
+		if err != nil {
+			if errors.Is(err, errHistoryCursor) {
+				apiError(w, 400, "Invalid history cursor")
+			} else {
+				apiError(w, 503, "Native session history is unavailable")
+			}
+			return
+		}
+		page.NativeSessionID = ""
+		apiJSON(w, 200, page)
+		return
+	}
 	chat, ok := a.accessibleChat(id.User.ID, parts[0])
 	if !ok {
 		apiError(w, 404, "聊天不存在")
 		return
 	}
 	if len(parts) == 1 && r.Method == "GET" {
-		apiJSON(w, 200, a.snapshot(a.historicalSnapshot(chat)))
+		apiJSON(w, 200, historyWindow(a.snapshot(chat)))
 		return
 	}
 	if len(parts) == 2 && parts[1] == "events" && r.Method == "GET" {
@@ -402,6 +415,35 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 	// have control rights, checked against current membership on every mutation.
 	if !a.store.CanControlChat(id.User.ID, chat.ID) {
 		apiError(w, 404, "聊天不存在")
+		return
+	}
+	if len(parts) == 2 && parts[1] == "fork" && r.Method == "POST" {
+		var input struct {
+			Backend chatmodel.Backend `json:"backend"`
+			Model   string            `json:"model"`
+			Effort  string            `json:"reasoning_effort"`
+		}
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		selection := chat
+		selection.Backend = input.Backend
+		options := chatmodel.CodexOptions{Model: input.Model, ReasoningEffort: input.Effort}
+		if !a.enabled(input.Backend) {
+			apiError(w, 409, "agent 未启用或尚未安装")
+			return
+		}
+		if err := a.validateSelection(r.Context(), selection, options); err != nil {
+			apiError(w, 400, err.Error())
+			return
+		}
+		fork, err := a.forkChat(chat.ID, input.Backend, options)
+		if err != nil {
+			apiError(w, 409, err.Error())
+			return
+		}
+		fork.NativeSessionID = ""
+		apiJSON(w, 201, fork)
 		return
 	}
 	if len(parts) == 2 && parts[1] == "approvals" && r.Method == "POST" {
@@ -428,6 +470,7 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		apiError(w, 400, err.Error())
 		return
 	}
+	source := chat
 	if input.Backend != "" {
 		if input.Backend != chat.Backend {
 			chat.PermissionMode = ""
@@ -458,6 +501,14 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 			return
 		}
 	}
+	if chat.Backend != source.Backend && (source.NativeSessionID != "" || source.Status != chatmodel.StatusReady) {
+		forked, err := a.forkChat(source.ID, chat.Backend, options)
+		if err != nil {
+			apiError(w, 409, err.Error())
+			return
+		}
+		chat = forked
+	}
 	if err := a.startTurnWithInput(chat, input, options); err != nil {
 		status := 400
 		if strings.Contains(err.Error(), "running turn") || errors.Is(err, errSessionConversion) || errors.Is(err, issues.ErrLocked) || errors.Is(err, issues.ErrLockOwnerUnknown) {
@@ -467,11 +518,14 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 			status = http.StatusServiceUnavailable
 			w.Header().Set("Retry-After", "30")
 		}
+		if chat.ID != source.ID {
+			a.store.discardFork(chat)
+		}
 		apiError(w, status, err.Error())
 		return
 	}
 	latest, _ := a.store.Get(chat.ID)
-	apiJSON(w, 202, a.snapshot(latest))
+	apiJSON(w, 202, historyWindow(a.snapshot(latest)))
 }
 func (a *App) validateSelection(ctx context.Context, chat chatmodel.Session, options chatmodel.CodexOptions) error {
 	if err := chatmodel.ValidateCodexOptions(options); err != nil {
@@ -548,9 +602,24 @@ func (a *App) startTurnWithCallback(chat chatmodel.Session, input messageInput, 
 	if err != nil {
 		return err
 	}
-	// beginTurnWithInput reads SQLite, which intentionally has no transcript
-	// body. Restore the hydrated history offset for the in-memory stream so a
-	// resumed chat can append deltas instead of replacing the whole transcript.
+	turn = a.seedLiveTurn(chat, turn)
+	ctx, control := a.registerTurn(context.Background(), chat.ID, turn.ID)
+	a.turns.Add(1)
+	go func() {
+		defer a.turns.Done()
+		_, err := a.executeTurn(ctx, chat.ID, input.Message, turn, nil, input.files)
+		a.releaseTurn(chat.ID, control)
+		if finished != nil {
+			finished(err)
+		}
+		if err != nil {
+			log.Printf("chat %s: %v", chat.ID, err)
+		}
+	}()
+	return nil
+}
+
+func (a *App) seedLiveTurn(chat chatmodel.Session, turn chatmodel.Turn) chatmodel.Turn {
 	base := cloneTranscript(chat.Transcript)
 	inputParts := max(0, turn.InputEnd-turn.PartStart)
 	turn.PartStart = len(base.Parts)
@@ -565,20 +634,7 @@ func (a *App) startTurnWithCallback(chat chatmodel.Session, input messageInput, 
 	a.liveTurns[chat.ID] = append([]chatmodel.Turn(nil), chat.Turns...)
 	a.live[chat.ID] = turn
 	a.liveMu.Unlock()
-	ctx, control := a.registerTurn(context.Background(), chat.ID, turn.ID)
-	a.turns.Add(1)
-	go func() {
-		defer a.turns.Done()
-		_, err := a.executeTurn(ctx, chat.ID, input.Message, turn, nil)
-		a.releaseTurn(chat.ID, control)
-		if finished != nil {
-			finished(err)
-		}
-		if err != nil {
-			log.Printf("chat %s: %v", chat.ID, err)
-		}
-	}()
-	return nil
+	return turn
 }
 
 // runTurn is the synchronous core used by process lifecycle tests and local callers.
@@ -599,11 +655,13 @@ func (a *App) runTurn(ctx context.Context, id, prompt string, emit func(agent.Ag
 		a.turnMu.Unlock()
 		return agent.AgentResult{}, ErrUpdateInProgress
 	}
+	chat, _ := a.store.Get(id)
 	turn, err := a.store.BeginTurn(id, prompt, options...)
 	if err != nil {
 		a.turnMu.Unlock()
 		return agent.AgentResult{}, err
 	}
+	turn = a.seedLiveTurn(chat, turn)
 	ctx, control := a.registerTurn(ctx, id, turn.ID)
 	a.turns.Add(1)
 	a.turnMu.Unlock()
@@ -611,7 +669,7 @@ func (a *App) runTurn(ctx context.Context, id, prompt string, emit func(agent.Ag
 	defer a.releaseTurn(id, control)
 	return a.executeTurn(ctx, id, prompt, turn, emit)
 }
-func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel.Turn, emit func(agent.AgentEvent) error) (agent.AgentResult, error) {
+func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel.Turn, emit func(agent.AgentEvent) error, uploads ...[]uploadedAttachment) (agent.AgentResult, error) {
 	chat, _ := a.store.Get(id)
 	finish := func(result agent.AgentResult, runErr error) (agent.AgentResult, error) {
 		a.liveMu.Lock()
@@ -629,8 +687,14 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 			if current, ok := a.live[id]; ok && current.ID == turn.ID {
 				terminal = current
 			}
+			if persisted, ok := a.store.runtimeTurn(id); ok && persisted.ID == turn.ID {
+				terminal.NativeTurnID = persisted.NativeTurnID
+			}
 			terminal.Status = statusForAgentError(runErr)
 			terminal.FinishedAt = time.Now().UnixMilli()
+			if saved, ok := a.store.runtimeTurn(id); ok && saved.ID == turn.ID {
+				terminal.Status, terminal.FinishedAt, terminal.Error = saved.Status, saved.FinishedAt, saved.Error
+			}
 			if runErr != nil {
 				terminal.Error = chatmodel.Clip(runErr.Error(), 8192)
 			}
@@ -693,7 +757,11 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 	request := agent.AgentRequest{ChatID: id, Backend: chat.Backend, Binary: binary, WorkingDirectory: directory, NativeSessionID: chat.NativeSessionID, Prompt: prompt, Model: turn.RequestedModel, ReasoningEffort: turn.ReasoningEffort}
 	request.NativeSessionPath = chat.NativeSessionPath
 	request.PermissionMode = turn.PermissionMode
-	request.Files, err = a.materializeAttachments(chat)
+	var files []uploadedAttachment
+	if len(uploads) > 0 {
+		files = uploads[0]
+	}
+	request.Files, err = a.materializeAttachments(id, files)
 	if err != nil {
 		return finish(agent.AgentResult{}, err)
 	}
@@ -708,7 +776,6 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 	request.Approve = func(ctx context.Context, request chatmodel.ApprovalRequest) (bool, error) {
 		return a.requestApproval(ctx, id, turn.ID, request)
 	}
-	lastSave := time.Now()
 	result, runErr := a.runner.Run(ctx, request, func(event agent.AgentEvent) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -727,6 +794,8 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 			return errTurnChanged
 		}
 		switch event.Type {
+		case "turn":
+			current.NativeTurnID = event.TurnID
 		case "delta":
 			current.Reply = chatmodel.AppendBounded(current.Reply, event.Text, chatmodel.MaxReplyBytes)
 			appendTurnText(&current, chatmodel.Part{Role: "assistant", Kind: "text", Model: current.Model, Text: event.Text})
@@ -759,15 +828,9 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 		}
 		current.PartEnd = current.PartStart + len(current.Parts)
 		a.live[id] = current
-		persistTurn := current
-		persistTurn.Parts = append([]chatmodel.Part(nil), current.Parts...)
-		persistTurn.Activities = append([]string(nil), current.Activities...)
 		a.liveMu.Unlock()
-		if time.Since(lastSave) > time.Second {
-			if err := a.store.SaveRunningTurn(id, persistTurn); err != nil {
-				return err
-			}
-			lastSave = time.Now()
+		if err := a.store.SaveRunningTurn(id, current); err != nil {
+			return err
 		}
 		if emit != nil {
 			return emit(event)
@@ -794,6 +857,7 @@ func (a *App) Close() error {
 		_ = os.RemoveAll(a.filesRoot)
 		a.filesRoot = ""
 	}
+	a.uploads = nil
 	a.filesMu.Unlock()
 	return err
 }
@@ -849,11 +913,13 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 		}
 		a.liveMu.Unlock()
 	}()
-	chat = a.snapshot(a.historicalSnapshot(chat))
-	if err := writeSSE(w, "snapshot", chat); err != nil {
+	chat = a.snapshot(chat)
+	if err := writeSSE(w, "snapshot", historyWindow(chat)); err != nil {
 		return
 	}
 	transcriptSnapshot := chat.Transcript
+	streamTurns := chat.Turns
+	streamHistory := chat.History
 	baseTranscript := chat.Transcript
 	a.liveMu.Lock()
 	if hydrated, exists := a.liveBase[id]; exists {
@@ -888,6 +954,10 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 			if !ok {
 				return
 			}
+			latest = a.snapshot(latest)
+			meta = latest
+			streamTurns = latest.Turns
+			streamHistory = latest.History
 			metadata := sessionMetadata(latest)
 			encoded, _ := json.Marshal(metadata)
 			if string(encoded) != string(previousMetadata) {
@@ -898,7 +968,6 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 				previousMetadata = encoded
 			}
 			if !live || meta.Status != chatmodel.StatusRunning {
-				latest = a.historicalSnapshot(latest)
 				a.liveMu.Lock()
 				if finished, exists := a.completed[id]; exists {
 					var used bool
@@ -915,9 +984,6 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 				} else {
 					cached = chatmodel.Turn{}
 				}
-			} else if len(latest.Transcript.Parts) > 0 {
-				// Keep the hydrated base when the running snapshot has no body.
-				baseTranscript = latest.Transcript
 			}
 			cachedUpdated = meta.UpdatedAt
 		}
@@ -939,14 +1005,27 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 			// Resend at the new revision if metadata overtook an older turn event.
 			signature := fmt.Sprintf("%s/%s/%s/%s/%x/%d/%s/%s/%d", current.ID, status, current.Model, current.ReasoningEffort, partSignature, current.FinishedAt, current.Error, approval, meta.UpdatedAt)
 			if signature != previous {
+				window := chatmodel.Session{ID: id, History: streamHistory, Turns: append([]chatmodel.Turn(nil), streamTurns...), Transcript: transcriptSnapshot}
+				if len(window.Turns) > 0 && window.Turns[len(window.Turns)-1].ID == current.ID {
+					window.Turns[len(window.Turns)-1] = current
+				}
+				window = historyWindow(window)
+				if len(window.Turns) > 0 {
+					current = window.Turns[len(window.Turns)-1]
+				}
 				value := struct {
 					Turn       chatmodel.Turn          `json:"turn"`
+					Turns      []chatmodel.Turn        `json:"turns"`
+					History    *chatmodel.HistoryPage  `json:"history,omitempty"`
 					Transcript chatmodel.Transcript    `json:"transcript"`
 					Status     chatmodel.SessionStatus `json:"status"`
 					Title      string                  `json:"title"`
 					UpdatedAt  int64                   `json:"updated_at"`
 					Backend    chatmodel.Backend       `json:"backend"`
-				}{current, transcriptSnapshot, status, meta.Title, meta.UpdatedAt, meta.Backend}
+					Model      string                  `json:"model,omitempty"`
+					Effort     string                  `json:"reasoning_effort,omitempty"`
+					Permission string                  `json:"permission_mode,omitempty"`
+				}{current, window.Turns, window.History, window.Transcript, status, meta.Title, meta.UpdatedAt, meta.Backend, meta.Model, meta.ReasoningEffort, meta.PermissionMode}
 				if err := writeSSE(w, "turn", value); err != nil {
 					return
 				}

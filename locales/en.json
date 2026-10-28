@@ -350,5 +350,12 @@
   "Dismiss": "Dismiss",
   "Invalid goal command": "Invalid goal command",
   "Wait for the running response before using goal commands": "Wait for the running response before using goal commands",
-  "Use the native goal control endpoint to view or clear a goal": "Use the native goal control endpoint to view or clear a goal"
+  "Use the native goal control endpoint to view or clear a goal": "Use the native goal control endpoint to view or clear a goal",
+  "Load earlier messages": "Load earlier messages",
+  "Loading earlier messages…": "Loading earlier messages…",
+  "The next message creates a new chat with the selected agent and converted context.": "The next message creates a new chat with the selected agent and converted context.",
+  "Only sending with another agent creates a new chat. The original chat stays unchanged.": "Only sending with another agent creates a new chat. The original chat stays unchanged.",
+  "Native session history is unavailable": "Native session history is unavailable",
+  "Invalid history cursor": "Invalid history cursor",
+  "Completed": "Completed"
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -20,8 +21,7 @@ func ParseSessionTranscript(backend chatmodel.Backend, path string) (chatmodel.T
 	return ParseSessionTranscriptFrom(backend, path, 0)
 }
 
-// ParseSessionTranscriptFrom skips a converted context's imported prefix. The
-// Web history for that prefix is read from its original provider files instead.
+// ParseSessionTranscriptFrom reads native records starting at a byte offset.
 func ParseSessionTranscriptFrom(backend chatmodel.Backend, path string, offset int64) (chatmodel.Transcript, error) {
 	transcript := chatmodel.Transcript{Parts: []chatmodel.Part{}}
 	if path == "" {
@@ -42,9 +42,13 @@ func ParseSessionTranscriptFrom(backend chatmodel.Backend, path string, offset i
 		return transcript, err
 	}
 
-	scanner := bufio.NewScanner(file)
+	return parseTranscriptReader(backend, file, "", false)
+}
+
+func parseTranscriptReader(backend chatmodel.Backend, reader io.Reader, model string, tail bool) (chatmodel.Transcript, error) {
+	transcript := chatmodel.Transcript{Parts: []chatmodel.Part{}}
+	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), maxEventBytes)
-	model := ""
 	codex := newCodexHistory()
 	for scanner.Scan() {
 		var record map[string]any
@@ -74,7 +78,22 @@ func ParseSessionTranscriptFrom(backend chatmodel.Backend, path string, offset i
 		}
 		for _, part := range parts {
 			if !chatmodel.AppendPart(&transcript, part) {
-				return transcript, nil
+				if !tail {
+					return transcript, nil
+				}
+				// Keep the input and the newest output of an oversized turn.
+				for !chatmodel.AppendPart(&transcript, part) {
+					index := 0
+					for index < len(transcript.Parts) && transcript.Parts[index].Role == "user" {
+						index++
+					}
+					if index == len(transcript.Parts) {
+						index = 0
+					}
+					delete(codex.pendingAgentMessages, transcript.Parts[index].Text)
+					transcript.Parts = append(transcript.Parts[:index], transcript.Parts[index+1:]...)
+					codex.dropPart(index)
+				}
 			}
 		}
 	}
@@ -82,7 +101,42 @@ func ParseSessionTranscriptFrom(backend chatmodel.Backend, path string, offset i
 		return transcript, err
 	}
 	codex.finish(&transcript)
+	if tail {
+		bounded := chatmodel.Transcript{Parts: []chatmodel.Part{}, Cut: transcript.Cut}
+		for _, part := range transcript.Parts {
+			for !chatmodel.AppendPart(&bounded, part) {
+				index := oldestOutput(bounded.Parts)
+				bounded.Parts = append(bounded.Parts[:index], bounded.Parts[index+1:]...)
+			}
+		}
+		transcript = bounded
+	}
 	return transcript, nil
+}
+
+func oldestOutput(parts []chatmodel.Part) int {
+	for i, part := range parts {
+		if part.Role != "user" {
+			return i
+		}
+	}
+	return 0
+}
+
+func (h *codexHistory) dropPart(index int) {
+	for _, call := range h.calls {
+		for _, ref := range []*int{&call.useIndex, &call.resultIndex} {
+			if *ref == index {
+				*ref = -1
+			} else if *ref > index {
+				*ref--
+			}
+		}
+		if call.useIndex < 0 && call.resultIndex < 0 {
+			call.eventOutput = ""
+			delete(h.byCallID, call.callID)
+		}
+	}
 }
 
 // codexCallRef lets event_msg.item_completed records enrich the response_item
@@ -255,7 +309,7 @@ func (h *codexHistory) addCommandExecution(item map[string]any, model string, tr
 	// event.
 	for i := len(h.calls) - 1; i >= h.eventCursor; i-- {
 		candidate := h.calls[i]
-		if candidate.eventKind == "" {
+		if candidate.eventKind == "" && candidate.useIndex >= 0 {
 			call = candidate
 			h.eventCursor = i + 1
 			break
@@ -263,7 +317,7 @@ func (h *codexHistory) addCommandExecution(item map[string]any, model string, tr
 	}
 	if call == nil {
 		for i := len(h.calls) - 1; i >= 0; i-- {
-			if h.calls[i].eventKind == "" {
+			if h.calls[i].eventKind == "" && h.calls[i].useIndex >= 0 {
 				call = h.calls[i]
 				break
 			}
@@ -355,7 +409,7 @@ func claudeSessionParts(record map[string]any) []chatmodel.Part {
 	if typ != "user" && typ != "assistant" {
 		return nil
 	}
-	if typ == "user" && record["isMeta"] == true {
+	if record["isSidechain"] == true || (typ == "user" && (record["isMeta"] == true || record["isCompactSummary"] == true || record["isVisibleInTranscriptOnly"] == true)) {
 		return nil
 	}
 	message, _ := record["message"].(map[string]any)
@@ -368,6 +422,16 @@ func claudeSessionParts(record map[string]any) []chatmodel.Part {
 		model = ""
 	}
 	parts := claudeTranscriptParts(role, message["content"], model)
+	if typ == "user" {
+		filtered := parts[:0]
+		for _, part := range parts {
+			if part.Kind == "text" && !genuineUserText(part.Text) {
+				continue
+			}
+			filtered = append(filtered, part)
+		}
+		parts = filtered
+	}
 	if typ == "user" {
 		if diff := claudeToolResultDiff(record["toolUseResult"]); diff != "" {
 			for i := range parts {

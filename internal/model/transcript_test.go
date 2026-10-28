@@ -55,3 +55,10 @@ func TestAppendStreamTextUsesMagpiePartAndTranscriptBounds(t *testing.T) {
 		t.Fatalf("stream exceeded Magpie transcript bound: bytes=%d cut=%v last=%#v", size, full.Cut, full.Parts[len(full.Parts)-1])
 	}
 }
+
+func TestAppendPartRejectsMultibyteTextCrossingBudget(t *testing.T) {
+	transcript := Transcript{Parts: []Part{{Role: "assistant", Kind: "text", Text: strings.Repeat("x", transcriptMax-2)}}}
+	if AppendPart(&transcript, Part{Role: "assistant", Kind: "text", Text: "\u4e2d"}) || !transcript.Cut || len(transcript.Parts) != 1 {
+		t.Fatal("a multibyte part crossed the page budget")
+	}
+}

@@ -75,7 +75,7 @@ func uploadRequest(t *testing.T, a *App, chat string, cookie *http.Cookie, csrf 
 	return w
 }
 
-func TestAttachmentsPersistInSQLiteWithOwnerScopedDownloads(t *testing.T) {
+func TestAttachmentsStayTemporaryWithOwnerScopedPreviews(t *testing.T) {
 	s := testStore(t)
 	alice, bob := testUser(t, s, "alice"), testUser(t, s, "bob")
 	p := testProject(t, s, alice, bob)
@@ -133,7 +133,7 @@ func TestAttachmentsPersistInSQLiteWithOwnerScopedDownloads(t *testing.T) {
 	if w.Code != 403 {
 		t.Fatal("upload bypassed CSRF")
 	}
-	// Files-only messages work, and resumed prompts get historical file paths.
+	// Files-only messages work, without rematerializing historical uploads.
 	w = uploadRequest(t, a, chat.ID, cookie, csrf, nil, text)
 	if w.Code != 202 {
 		t.Fatal(w.Body.String())
@@ -142,17 +142,17 @@ func TestAttachmentsPersistInSQLiteWithOwnerScopedDownloads(t *testing.T) {
 	runner.mu.Lock()
 	request = runner.requests[1]
 	runner.mu.Unlock()
-	if len(request.Attachments) != 1 || len(request.Files) != 3 {
-		t.Fatal("history files were not rematerialized")
+	if len(request.Attachments) != 1 || len(request.Files) != 1 {
+		t.Fatal("previous uploads leaked into the next request")
 	}
 	reopened, err := OpenStore(s.Root())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	var persisted []byte
-	if err := reopened.db.QueryRow(`SELECT data FROM attachments WHERE id=?`, files[0].ID).Scan(&persisted); err != nil || !bytes.Equal(persisted, image.Data) {
-		t.Fatal("SQLite attachment lost")
+	assertNoTurnTables(t, reopened)
+	if loaded, _ := reopened.Get(chat.ID); len(loaded.Turns) != 0 {
+		t.Fatal("upload metadata survived reopening")
 	}
 	if err := a.Close(); err != nil {
 		t.Fatal(err)
@@ -190,9 +190,8 @@ func TestInvalidAttachmentsNeverCreateTurnsOrBlobs(t *testing.T) {
 		t.Fatal("too many files accepted")
 	}
 	saved, _ := s.Get(chat.ID)
-	var count int
-	_ = s.db.QueryRow(`SELECT count(*) FROM attachments`).Scan(&count)
-	if len(saved.Turns) != 0 || count != 0 {
+	assertNoTurnTables(t, s)
+	if len(saved.Turns) != 0 {
 		t.Fatal("invalid uploads left durable state")
 	}
 }
@@ -474,7 +473,7 @@ func TestSSEDoesNotCarryAttachmentsIntoFollowingTurn(t *testing.T) {
 	if w := apiRequest(a, "POST", "/api/chats/"+chat.ID+"/messages", `{"message":"second"}`, cookie, csrf); w.Code != 202 {
 		t.Fatal(w.Body.String())
 	}
-	second := waitChat(t, s, chat.ID).Turns[1]
+	second := waitChat(t, s, chat.ID).Turns[0]
 	for {
 		turn := readTurn()
 		if turn.ID == second.ID && turn.Status == chatmodel.StatusCompleted {
