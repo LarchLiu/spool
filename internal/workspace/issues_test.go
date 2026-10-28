@@ -94,7 +94,12 @@ func issueFixture(t *testing.T) (*App, Project, *issueCommands, *issueTestRunner
 	u := testUser(t, s, "automation")
 	p := testProject(t, s, u)
 	testAgent(t, s)
-	p.Issues = IssuesAutomation{Enabled: true, IntervalMinutes: 5, Repository: "fixture/issues", UserID: u.ID, Backend: chatmodel.BackendCodex, Model: "test-model", Permission: "auto"}
+	for _, args := range [][]string{{"init", "-b", "dev"}, {"remote", "add", "origin", "git@github.com:fixture/issues.git"}} {
+		if _, err := issues.Run(context.Background(), p.Path, "git", args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p.Issues = IssuesAutomation{Enabled: true, IntervalMinutes: 5, UserID: u.ID, Backend: chatmodel.BackendCodex, Model: "test-model", Permission: "auto"}
 	var err error
 	p, err = s.SaveProject(p)
 	if err != nil {
@@ -114,7 +119,7 @@ func TestIssuesSettingsPersistValidateAndDoNotDelayUnchangedSchedules(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !v.Enabled || v.IntervalMinutes != 5 || v.Backend != chatmodel.BackendCodex || v.NextRunAt == 0 {
+	if !v.Enabled || v.IntervalMinutes != 5 || v.Repository != "fixture/issues" || v.Backend != chatmodel.BackendCodex || v.NextRunAt == 0 {
 		t.Fatalf("configuration lost: %#v", v)
 	}
 	if _, err = a.store.SaveProject(p); err != nil {
@@ -124,7 +129,7 @@ func TestIssuesSettingsPersistValidateAndDoNotDelayUnchangedSchedules(t *testing
 	if unchanged.NextRunAt != v.NextRunAt {
 		t.Fatal("saving unchanged config delayed the schedule")
 	}
-	for _, mutate := range []func(*IssuesAutomation){func(v *IssuesAutomation) { v.IntervalMinutes = 0 }, func(v *IssuesAutomation) { v.UserID = "outsider" }, func(v *IssuesAutomation) { v.Repository = "https://github.com/a/b" }, func(v *IssuesAutomation) { v.Backend = "other" }, func(v *IssuesAutomation) { v.Permission = "bypass" }} {
+	for _, mutate := range []func(*IssuesAutomation){func(v *IssuesAutomation) { v.IntervalMinutes = 0 }, func(v *IssuesAutomation) { v.UserID = "outsider" }, func(v *IssuesAutomation) { v.Backend = "other" }, func(v *IssuesAutomation) { v.Permission = "bypass" }} {
 		bad := p
 		mutate(&bad.Issues)
 		if _, err = a.store.SaveProject(bad); err == nil {
@@ -133,6 +138,68 @@ func TestIssuesSettingsPersistValidateAndDoNotDelayUnchangedSchedules(t *testing
 	}
 	if _, err = a.store.SaveProject(Project{ID: p.ID, Name: p.Name, Path: p.Path, Members: p.Members}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestIssuesSettingsDeriveRepositoryInsteadOfTrustingInput(t *testing.T) {
+	a, p, _, _ := issueFixture(t)
+	for _, repository := range []string{"", "another/repository", "https://github.com/a/b"} {
+		p.Issues.Repository = repository
+		saved, err := a.store.SaveProject(p)
+		if err != nil || saved.Issues.Repository != "fixture/issues" {
+			t.Fatalf("input %q: saved repository = %q, error = %v", repository, saved.Issues.Repository, err)
+		}
+		stored, err := a.store.IssuesAutomation(p.ID)
+		if err != nil || stored.Repository != "fixture/issues" {
+			t.Fatalf("derived repository not persisted: %#v, %v", stored, err)
+		}
+	}
+}
+
+func TestIssuesSettingsRequireProjectGitAndGitHubOrigin(t *testing.T) {
+	a, p, _, _ := issueFixture(t)
+	for _, state := range []string{"no git", "no origin", "non-GitHub origin", "subdirectory"} {
+		t.Run(state, func(t *testing.T) {
+			bad := p
+			bad.ID, bad.Path = "", t.TempDir()
+			git := func(args ...string) {
+				t.Helper()
+				if _, err := issues.Run(context.Background(), bad.Path, "git", args...); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if state != "no git" {
+				git("init", "-b", "dev")
+			}
+			switch state {
+			case "non-GitHub origin":
+				git("remote", "add", "origin", "git@gitlab.com:fixture/issues.git")
+			case "subdirectory":
+				git("remote", "add", "origin", "https://github.com/fixture/issues.git")
+				bad.Path = filepath.Join(bad.Path, "subdirectory")
+				if err := os.Mkdir(bad.Path, 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Even a manually supplied, well-formed owner/repo cannot bypass Git.
+			if _, err := a.store.SaveProject(bad); err == nil {
+				t.Fatal("enabled automation without a project GitHub origin")
+			}
+			bad.Issues.Enabled = false
+			if _, err := a.store.SaveProject(bad); err != nil {
+				t.Fatalf("ordinary projects must not require Git: %v", err)
+			}
+		})
+	}
+	if _, err := issues.Run(context.Background(), p.Path, "git", "remote", "remove", "origin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.store.SaveProject(p); err == nil {
+		t.Fatal("saved enabled automation after origin was removed")
+	}
+	p.Issues.Enabled = false
+	if _, err := a.store.SaveProject(p); err != nil {
+		t.Fatalf("missing origin prevented disabling an existing schedule: %v", err)
 	}
 }
 
@@ -210,6 +277,58 @@ func TestIssueRoundFailureRecoveryUsesNewChatsAndSameSharedClaim(t *testing.T) {
 	}
 	if len(requests) != 2 {
 		t.Fatal("opened another task for an issue with an existing draft PR")
+	}
+}
+
+func TestIssueRoundUsesDetectedRepositoryWhenStoredRepositoryIsEmpty(t *testing.T) {
+	a, p, _, runner := issueFixture(t)
+	p.Issues.Repository = ""
+	runner.work = func(_ context.Context, request agent.AgentRequest) (agent.AgentResult, error) {
+		if !strings.Contains(request.Prompt, `"repository": "fixture/issues"`) {
+			t.Error("agent prompt did not use the project Git origin")
+		}
+		a.automation.mu.Lock()
+		defer a.automation.mu.Unlock()
+		for _, scope := range a.automation.scopes {
+			if scope.repository != "fixture/issues" {
+				t.Errorf("artifact capability uses repository %q", scope.repository)
+			}
+		}
+		return agent.AgentResult{}, errors.New("verification unavailable")
+	}
+	if err := a.runIssueRound(context.Background(), p); err == nil || !strings.Contains(err.Error(), "verification unavailable") {
+		t.Fatalf("round did not reach the agent with the detected repository: %v", err)
+	}
+}
+
+func TestIssueRoundRejectsMissingOrChangedGitBeforeGitHubAccess(t *testing.T) {
+	for _, remote := range []string{"", "https://github.com/another/repository.git", "git@gitlab.com:fixture/issues.git"} {
+		t.Run(remote, func(t *testing.T) {
+			a, p, commands, runner := issueFixture(t)
+			runner.work = func(context.Context, agent.AgentRequest) (agent.AgentResult, error) {
+				t.Error("agent started without matching project Git information")
+				return agent.AgentResult{}, nil
+			}
+			a.automation.run = func(ctx context.Context, directory, name string, args ...string) ([]byte, error) {
+				if name == "gh" {
+					t.Error("queried GitHub before validating project Git information")
+				}
+				if name == "git" && strings.Join(args, " ") == "remote get-url origin" {
+					return []byte(remote), nil
+				}
+				return commands.command(ctx, directory, name, args...)
+			}
+			if err := a.runIssueRound(context.Background(), p); err == nil {
+				t.Fatal("admitted automation with missing or changed Git information")
+			}
+			chats, err := a.store.UserSessions(p.Issues.UserID, p.ID)
+			if err != nil || len(chats) != 0 {
+				t.Fatalf("invalid Git information created a chat: %v, %v", chats, err)
+			}
+			if _, err := os.Stat(filepath.Join(p.Path, "docs")); !os.IsNotExist(err) {
+				t.Fatalf("invalid Git information touched local automation state: %v", err)
+			}
+		})
 	}
 }
 

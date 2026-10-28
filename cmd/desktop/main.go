@@ -43,6 +43,7 @@ type panel struct {
 	project            workspace.Project
 	issueInterval      string
 	github             githubCLICheck
+	projectGit         githubRepositoryCheck
 	directoryPicker    directoryPicker
 	members            map[string]bool
 	agentPaths         map[chatmodel.Backend]string

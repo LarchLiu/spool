@@ -164,6 +164,7 @@ func (a *App) runIssueRound(ctx context.Context, p Project) (runErr error) {
 	if err != nil {
 		return err
 	}
+	v.Repository = checkout.Repository
 	lock, err := issues.Acquire(checkout.Root, owner, ended)
 	if err != nil {
 		return err

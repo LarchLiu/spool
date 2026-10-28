@@ -349,7 +349,7 @@ func TestInspectLinkedWorktreeUsesMainCheckoutAndDoesNotModifyFiles(t *testing.T
 		t.Fatal(err)
 	}
 	canonical, _ := filepath.EvalSymlinks(root)
-	if checkout.Root != canonical || checkout.Branch != "(detached)" || !strings.Contains(checkout.Status, "user-file.txt") {
+	if checkout.Root != canonical || checkout.Repository != "fixture/issues" || checkout.Branch != "(detached)" || !strings.Contains(checkout.Status, "user-file.txt") {
 		t.Fatalf("wrong checkout inspection: %#v", checkout)
 	}
 	body, _ := os.ReadFile(marker)
@@ -358,6 +358,9 @@ func TestInspectLinkedWorktreeUsesMainCheckoutAndDoesNotModifyFiles(t *testing.T
 	}
 	if _, err = Inspect(ctx, Run, linked, "another/repository"); err == nil {
 		t.Fatal("mismatched origin accepted")
+	}
+	if checkout, err = Inspect(ctx, Run, linked, ""); err != nil || checkout.Repository != "fixture/issues" {
+		t.Fatalf("repository was not inferred: %#v, %v", checkout, err)
 	}
 }
 

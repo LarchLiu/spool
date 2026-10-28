@@ -15,7 +15,7 @@ import (
 type IssuesAutomation struct {
 	Enabled         bool              `json:"enabled"`
 	IntervalMinutes int               `json:"interval_minutes"`
-	Repository      string            `json:"repository"`
+	Repository      string            `json:"repository"` // Derived from origin on save; pins subsequent run checks.
 	UserID          string            `json:"user_id"`
 	AssigneeIDs     []string          `json:"assignee_ids,omitempty"`
 	Backend         chatmodel.Backend `json:"backend"`

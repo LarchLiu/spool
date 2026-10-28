@@ -64,10 +64,16 @@ func (p *panel) refreshGitHubCLI() {
 }
 
 func (p *panel) validateIssueEnablement(project workspace.Project) error {
-	if !project.Issues.Enabled || p.github.ready() {
+	if !project.Issues.Enabled {
 		return nil
 	}
-	// A failed check must not prevent editing or disabling an existing schedule.
+	if !p.projectGit.ready(project.Path) {
+		return errors.New("Issue automation requires a detected GitHub repository from the project Git origin.")
+	}
+	if p.github.ready() {
+		return nil
+	}
+	// A failed CLI check must not prevent editing an existing schedule.
 	for _, saved := range p.projects {
 		if saved.ID == project.ID && saved.Issues.Enabled {
 			return nil

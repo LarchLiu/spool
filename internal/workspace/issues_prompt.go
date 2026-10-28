@@ -56,7 +56,7 @@ func issuePrompt(project Project, checkout issues.Checkout, issue issues.Issue, 
 		Resume       bool          `json:"resume"`
 		Issue        issues.Issue  `json:"issue"`
 		Claim        issues.Record `json:"claim"`
-	}{project.Name, project.Issues.Repository, checkout.Root, checkout.Root + "/docs/issues.md", resume, issue, record}, "", "  ")
+	}{project.Name, checkout.Repository, checkout.Root, checkout.Root + "/docs/issues.md", resume, issue, record}, "", "  ")
 	if err != nil {
 		return "", err
 	}

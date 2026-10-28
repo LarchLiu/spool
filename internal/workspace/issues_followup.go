@@ -56,6 +56,7 @@ func (a *App) startIssueFollowup(chat chatmodel.Session, input messageInput, opt
 	if err != nil {
 		return err
 	}
+	config.Repository = checkout.Repository
 	if err = ctx.Err(); err != nil {
 		return err
 	}

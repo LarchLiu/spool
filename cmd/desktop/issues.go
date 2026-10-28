@@ -9,18 +9,24 @@ import (
 
 func (p *panel) projectIssuesView(c *ui.Context) {
 	v := &p.project.Issues
+	if p.projectGit.directory != p.project.Path && p.window != nil {
+		p.refreshProjectGit()
+	}
 	ui.Text(c, p.tr("Scheduled GitHub issues")).Bold()
 	ui.Row(c).Gap(10).Children(func() {
-		ui.Checkbox(c, &v.Enabled, p.tr("Enable issue automation")).Disabled(!v.Enabled && !p.github.ready())
+		ui.Checkbox(c, &v.Enabled, p.tr("Enable issue automation")).Disabled(!v.Enabled && (!p.github.ready() || !p.projectGit.ready(p.project.Path)))
 		if ui.Button(c, p.tr("Recheck GitHub CLI")).Disabled(p.github.pending).Clicked() {
 			p.refreshGitHubCLI()
 		}
 	})
 	ui.Text(c, p.tr(p.github.message(), "user", p.github.status.Login)).Wrap().FontSize(12)
+	ui.Text(c, p.tr(p.projectGit.message(p.project.Path), "repository", p.projectGit.repository)).Wrap().FontSize(12)
+	if ui.Button(c, p.tr("Recheck project Git")).Disabled(p.projectGit.pending || p.project.Path == "").Clicked() {
+		p.refreshProjectGit()
+	}
 	if !v.Enabled {
 		return
 	}
-	p.field(c, "GitHub repository (owner/repo)", &v.Repository)
 	if p.issueInterval == "" {
 		p.issueInterval = "60"
 	}
@@ -86,7 +92,7 @@ func (p *panel) projectIssuesView(c *ui.Context) {
 	ui.Text(c, p.tr("Each actionable run starts a new chat, prioritizing unfinished work. For new issues, the agent creates a separate codex/issue-N-fix branch from the latest dev and works in a safe checkout/worktree.")).Wrap().FontSize(12)
 	ui.Text(c, p.tr("Only after validation passes does the agent push the fix branch and create or reuse a PR targeting dev. PRs are not merged automatically.")).Wrap().FontSize(12)
 	ui.Text(c, p.tr("Interrupted or failed work retains its branch, worktree and progress for a later run. No catch-up runs while the service is stopped.")).Wrap().FontSize(12)
-	ui.Text(c, p.tr("Requires gh login, a matching origin and a remote dev branch. Only exact web/server/app labels are eligible. Shared local ledger: main checkout docs/issues.md.")).Wrap().FontSize(12)
+	ui.Text(c, p.tr("Requires gh login, a GitHub.com origin and a remote dev branch. Only exact web/server/app labels are eligible. Shared local ledger: main checkout docs/issues.md.")).Wrap().FontSize(12)
 	status := *v
 	for _, project := range p.projects {
 		if project.ID == p.project.ID {

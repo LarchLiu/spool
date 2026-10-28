@@ -96,8 +96,8 @@ or offline behavior.
 
 ### Scheduled GitHub Issues
 
-In **Projects**, enable **Scheduled GitHub issues** and choose the GitHub
-`owner/repo`, interval (1–10080 minutes), Codex or Claude, and one or more
+In **Projects**, enable **Scheduled GitHub issues** and choose the
+interval (1–10080 minutes), Codex or Claude, and one or more
 responsible project members. All assignees can see and control task chats:
 send messages/files, stop responses and answer permission requests, even when
 project-wide chat sharing is disabled. Responsibility changes also update
@@ -106,16 +106,22 @@ revokes its controls. Regular chats remain owner-only, including shared ones.
 Human follow-ups use the same project lock so scheduled recoveries cannot overlap
 them. Model, reasoning level and native permission mode
 are optional. Configuration is per project; no repository/path is hardcoded.
-The project must point at the root of a checkout whose `origin` matches the
-configured GitHub.com repository. Install and authenticate `gh` on the service
-host, and ensure the repository has a `dev` branch.
+The GitHub `owner/repo` is read automatically from the project's Git `origin`
+(HTTPS or SSH); it is not entered manually. The project must point at the root
+of a Git checkout with a GitHub.com `origin`. Without this Git information,
+automation cannot be enabled; the backend also checks it when saving. Install
+and authenticate `gh` on the service host, and ensure the repository has a `dev`
+branch.
 
 At desktop launch, a background check verifies that `gh` can run and make an
 authenticated GitHub.com API request. New issue automation cannot be enabled
 until this check succeeds. The project panel shows installation, sign-in or
 network guidance and a **Recheck GitHub CLI** button; existing schedules remain
-editable and can still be disabled. Repository access is verified separately
-during each scheduled run.
+editable and can still be disabled. The repository is detected in the background
+when the project directory changes, with a **Recheck project Git** button for
+local Git configuration changes. Existing schedules can still be disabled if
+Git information is missing. Each scheduled run verifies the current origin
+against the repository detected at save time before accessing GitHub.
 
 The Go scheduler runs in both desktop and headless services while the Web
 service is running (checks admitted within about 15 seconds of their due time).

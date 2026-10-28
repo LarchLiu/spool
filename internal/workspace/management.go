@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"spool/internal/agent"
+	"spool/internal/issues"
 	chatmodel "spool/internal/model"
 )
 
@@ -258,7 +260,12 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 		return v, err
 	}
 	v.Path = path
-	if !v.Issues.Enabled {
+	if v.Issues.Enabled {
+		v.Issues.Repository, err = issues.DetectRepository(context.Background(), issues.Run, v.Path)
+		if err != nil {
+			return v, fmt.Errorf("cannot enable issue automation: %w", err)
+		}
+	} else {
 		if v.Issues.IntervalMinutes == 0 {
 			v.Issues.IntervalMinutes = 60
 		}

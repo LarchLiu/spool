@@ -106,6 +106,8 @@ func TestIssueAutomationCheckboxRequiresReadyGitHubCLI(t *testing.T) {
 	for _, state := range []issues.CLIState{"", issues.CLIMissing, issues.CLIUnavailable, issues.CLILoginRequired, issues.CLIInvalidCredentials, issues.CLINetworkUnavailable, issues.CLIVerificationFailed, issues.CLIReady} {
 		t.Run(string(state), func(t *testing.T) {
 			p := &panel{preferences: workspace.UIPreferences{Language: "en"}, github: githubCLICheck{status: issues.CLIStatus{State: state, Login: "octocat"}}}
+			p.project.Path = "/project"
+			p.projectGit = githubRepositoryCheck{directory: p.project.Path, repository: "fixture/issues"}
 			view := ui.NewTester(func(c *ui.Context) {
 				ui.Column(c).FillWidth().Children(func() { p.projectIssuesView(c) })
 			}, 900, 1400)
@@ -125,6 +127,8 @@ func TestIssueAutomationCheckboxRequiresReadyGitHubCLI(t *testing.T) {
 
 func TestIssueAutomationCheckboxStaysDisabledDuringRecheck(t *testing.T) {
 	p := &panel{preferences: workspace.UIPreferences{Language: "en"}, github: githubCLICheck{pending: true, status: issues.CLIStatus{State: issues.CLIReady, Login: "octocat"}}}
+	p.project.Path = "/project"
+	p.projectGit = githubRepositoryCheck{directory: p.project.Path, repository: "fixture/issues"}
 	view := ui.NewTester(func(c *ui.Context) {
 		ui.Column(c).FillWidth().Children(func() { p.projectIssuesView(c) })
 	}, 900, 600)
@@ -176,10 +180,11 @@ func TestIssueEnablementValidation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &panel{github: githubCLICheck{status: issues.CLIStatus{State: tc.state}, pending: tc.pending}}
+			p.projectGit = githubRepositoryCheck{directory: "/project", repository: "fixture/issues"}
 			if tc.saved {
 				p.projects = []workspace.Project{{ID: "project", Issues: workspace.IssuesAutomation{Enabled: true}}}
 			}
-			err := p.validateIssueEnablement(workspace.Project{ID: "project", Issues: workspace.IssuesAutomation{Enabled: tc.enabled}})
+			err := p.validateIssueEnablement(workspace.Project{ID: "project", Path: "/project", Issues: workspace.IssuesAutomation{Enabled: tc.enabled}})
 			if (err != nil) != tc.blocked {
 				t.Fatalf("unexpected enablement result: %v", err)
 			}
