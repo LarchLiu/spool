@@ -1,3 +1,5 @@
+version ?= patch
+
 .PHONY: web desktop server test package auto-format branding release
 web: branding
 	npm --prefix web ci
@@ -26,4 +28,4 @@ package: web
 	go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -skip-dmg
 
 release:
-	node tools/release.mjs "$(VERSION)"
+	node tools/release.mjs "$(version)"

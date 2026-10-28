@@ -888,13 +888,19 @@ node tools/release.mjs 0.2.0
 # node tools/release.mjs major
 # node tools/release.mjs 0.3.0-beta.1
 
-# Equivalent Make entry point:
-# make release VERSION=0.2.0
+# Equivalent Make entry point (defaults to patch):
+# make release
+# make release version=0.2.0
 
 # Review, then push the current branch and release tag together.
 git show --stat v0.2.0
 git push --atomic origin HEAD v0.2.0
 ```
+
+Omitting the version or passing an empty string defaults to `patch`:
+`make release`, `make release version=`, `node tools/release.mjs`, and
+`node tools/release.mjs ""` all prepare the next patch version. Preview it with
+`node tools/release.mjs --dry-run` before creating a release commit or tag.
 
 The helper synchronizes `mygo.json`, `web/package.json`, and both root version
 entries in `web/package-lock.json`, without changing dependency versions or

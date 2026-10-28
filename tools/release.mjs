@@ -8,13 +8,15 @@ import { compareTags } from "./release-metadata.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
 const versionFiles = ["mygo.json", "web/package.json", "web/package-lock.json"];
-const usage = `Usage: node tools/release.mjs <version|patch|minor|major> [--dry-run] [--offline]
+const usage = `Usage: node tools/release.mjs [version|patch|minor|major] [--dry-run] [--offline]
 
 Examples:
+  node tools/release.mjs
   node tools/release.mjs 0.2.0
   node tools/release.mjs 0.3.0-beta.1
   node tools/release.mjs patch --dry-run
 
+Defaults to patch when the version argument is omitted or empty.
 Synchronizes version files, commits them, and creates an annotated local tag.
 Checks origin tags unless --offline is set. Never pushes or publishes.
 `;
@@ -29,7 +31,7 @@ export function parseReleaseArgs(args) {
     else if (options.input !== undefined) throw new Error("Pass exactly one version or bump type");
     else options.input = arg;
   }
-  if (!options.input) throw new Error("Pass a version or bump type (patch, minor, major)");
+  options.input ||= "patch";
   return options;
 }
 

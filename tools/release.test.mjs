@@ -50,8 +50,33 @@ test("CLI accepts explicit versions and bump types, with opt-in preview and offl
   assert.deepEqual(parseReleaseArgs(["0.2.0"]), { input: "0.2.0", dryRun: false, offline: false });
   assert.deepEqual(parseReleaseArgs(["--dry-run", "minor", "--offline"]), { input: "minor", dryRun: true, offline: true });
   assert.deepEqual(parseReleaseArgs(["--help"]), { help: true });
-  for (const args of [[], ["--dry-run"], ["--push", "patch"], ["patch", "minor"]]) {
+  for (const args of [["--push", "patch"], ["patch", "minor"], ["", "patch"], ["patch", ""], ["", ""]]) {
     assert.throws(() => parseReleaseArgs(args));
+  }
+});
+
+test("CLI defaults omitted or empty versions to patch, including with flags", () => {
+  for (const args of [[], [""]]) {
+    assert.deepEqual(parseReleaseArgs(args), { input: "patch", dryRun: false, offline: false });
+  }
+  assert.deepEqual(parseReleaseArgs(["--dry-run"]), { input: "patch", dryRun: true, offline: false });
+  assert.deepEqual(parseReleaseArgs(["", "--offline"]), { input: "patch", dryRun: false, offline: true });
+  assert.deepEqual(parseReleaseArgs(["--offline", "", "--dry-run"]), { input: "patch", dryRun: true, offline: true });
+});
+
+test("default CLI versions prepare patch releases without pushing", async (t) => {
+  for (const args of [[], [""]]) {
+    await t.test(args.length === 0 ? "omitted" : "empty", async (t) => {
+      const repo = await fixture(t);
+      const remoteBefore = repo.git("ls-remote", "origin");
+      const { input, ...options } = parseReleaseArgs(args);
+      const result = await prepareLocalRelease(input, { ...repo, ...options });
+      assert.equal(result.version, "0.1.1");
+      assert.equal(repo.git("log", "-1", "--format=%s"), "chore: release v0.1.1");
+      assert.equal(repo.git("cat-file", "-t", "v0.1.1"), "tag");
+      assert.equal(repo.git("status", "--porcelain"), "");
+      assert.equal(repo.git("ls-remote", "origin"), remoteBefore);
+    });
   }
 });
 
