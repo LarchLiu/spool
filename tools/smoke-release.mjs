@@ -10,6 +10,11 @@ export function verifySmokeReport(result, version, target) {
   assert.deepEqual(result, { version, target, native: true, web: true });
 }
 
+export function extractSmokeArchive(directory, filename, destination, run = execFileSync) {
+  // GNU tar treats a Windows drive letter in the archive path as a remote host.
+  run("tar", ["-xzf", filename, "-C", resolve(destination)], { cwd: resolve(directory) });
+}
+
 export async function smokeRelease(directory, target, env = process.env) {
   const native = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`;
   assert.equal(target, native, "smoke tests must run on the target OS and architecture");
@@ -22,7 +27,7 @@ export async function smokeRelease(directory, target, env = process.env) {
   let output = "";
   let timer;
   try {
-    execFileSync("tar", ["-xzf", resolve(directory, `spool-${version}-${target}.tar.gz`), "-C", app]);
+    extractSmokeArchive(directory, `spool-${version}-${target}.tar.gz`, app);
     const executable = join(app, target.startsWith("darwin-") ? "Spool.app/Contents/MacOS/Spool" : target.startsWith("windows-") ? "Spool.exe" : "spool");
     if (!target.startsWith("windows-")) await chmod(executable, 0o755);
     if (target.startsWith("darwin-")) execFileSync("codesign", ["--verify", "--deep", "--strict", join(app, "Spool.app")]);
