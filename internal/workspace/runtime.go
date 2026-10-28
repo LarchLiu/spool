@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -78,9 +79,15 @@ func OpenService(root string) (*Service, error) {
 				}
 				if e != nil || affected != 1 {
 					s.mu.Lock()
+					firstFailure := s.lastError != "database lease renewal failed; service stopped"
 					s.lastError = "database lease renewal failed; service stopped"
 					s.mu.Unlock()
-					s.Stop()
+					if firstFailure {
+						log.Printf("event=database_lease_lost affected=%d error=%v", affected, e)
+					}
+					if err := s.Stop(); err != nil {
+						log.Printf("event=service_stop_failed error=%q", err)
+					}
 				}
 			}
 		}
@@ -131,11 +138,13 @@ func (s *Service) Start() error {
 	go func() {
 		defer s.workers.Done()
 		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			log.Printf("event=http_server_failed error=%q", err)
 			s.mu.Lock()
 			s.lastError = err.Error()
 			s.mu.Unlock()
 		}
 	}()
+	log.Printf("event=service_started address=%q", s.runningAddress)
 	return nil
 }
 func (s *Service) Stop() error {

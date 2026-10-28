@@ -31,7 +31,7 @@ func (p *panel) applyPresentation() {
 
 func (p *panel) updateNativeLabels() {
 	if p.window != nil {
-		p.window.SetTitle("Spool · " + p.tr("Control Center"))
+		p.window.SetTitle(mygo.App.Name() + " · " + p.tr("Control Center"))
 	}
 	if p.tray != nil {
 		p.tray.SetMenu(p.trayMenu())

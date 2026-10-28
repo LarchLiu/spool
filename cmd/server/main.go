@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"spool/internal/diagnostics"
 	chatmodel "spool/internal/model"
 	"spool/internal/workspace"
 )
@@ -19,12 +20,15 @@ import (
 var production string
 
 func main() {
+	if diagnostics.RunCrashMonitor() {
+		return
+	}
 	if err := run(); err != nil {
 		log.Print(err)
 		os.Exit(1)
 	}
 }
-func run() error {
+func run() (runErr error) {
 	root := flag.String("data-dir", workspace.DefaultDataDir(production != "1"), "Data directory (database in db/spool.sqlite)")
 	user := flag.String("add-user", "", "create a local user (password from SPOOL_NEW_PASSWORD)")
 	nickname := flag.String("nickname", "", "display name for the new user")
@@ -47,11 +51,32 @@ func run() error {
 	issuesEffort := flag.String("issues-effort", "", "issue automation reasoning level")
 	issuesPermission := flag.String("issues-permission", "", "native permission mode for issue automation")
 	flag.Parse()
+	logs, err := diagnostics.Start(*root, "server", "", production != "1")
+	if err != nil {
+		log.Printf("event=file_logging_unavailable error=%q", err)
+	}
+	defer func() {
+		if runErr != nil {
+			log.Printf("event=server_failed error=%q", runErr)
+		} else {
+			log.Print("event=server_exited")
+		}
+		if logs != nil {
+			_ = logs.Close()
+		}
+	}()
 	service, err := workspace.OpenService(*root)
 	if err != nil {
 		return err
 	}
-	defer service.Close()
+	defer func() {
+		if err := service.Close(); err != nil {
+			log.Printf("event=service_shutdown_failed error=%q", err)
+			if runErr == nil {
+				runErr = err
+			}
+		}
+	}()
 	if *listProjects {
 		projects, e := service.Store.Projects()
 		if e != nil {

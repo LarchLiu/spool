@@ -25,7 +25,17 @@ type Diagnostics struct {
 }
 
 func OpenDiagnostics(root, current string) (*Diagnostics, error) {
-	d := &Diagnostics{Path: filepath.Join(root, "update.log"), pendingPath: filepath.Join(root, "update-pending.json"), current: current}
+	directory := filepath.Join(root, "log")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(directory, 0o700); err != nil {
+		return nil, err
+	}
+	d := &Diagnostics{Path: filepath.Join(directory, "update.log"), pendingPath: filepath.Join(root, "update-pending.json"), current: current}
+	if err := migrateUpdateLogs(root, directory); err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(d.pendingPath)
 	if err == nil {
 		var pending pendingUpdate
@@ -45,6 +55,27 @@ func OpenDiagnostics(root, current string) (*Diagnostics, error) {
 	return d, nil
 }
 
+func migrateUpdateLogs(root, directory string) error {
+	for _, name := range []string{"update.log.1", "update.log"} {
+		legacy := filepath.Join(root, name)
+		if _, err := os.Lstat(legacy); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return err
+		}
+		destination := filepath.Join(directory, name)
+		if _, err := os.Lstat(destination); err == nil {
+			return fmt.Errorf("both legacy and current update logs exist: %s and %s", legacy, destination)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := os.Rename(legacy, destination); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (d *Diagnostics) Record(phase, version string, cause error) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -52,14 +83,6 @@ func (d *Diagnostics) Record(phase, version string, cause error) error {
 }
 
 func (d *Diagnostics) record(phase, version string, cause error) error {
-	if info, err := os.Stat(d.Path); err == nil && info.Size() >= 256<<10 {
-		if err := os.Remove(d.Path + ".1"); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if err := os.Rename(d.Path, d.Path+".1"); err != nil {
-			return err
-		}
-	}
 	entry := struct {
 		Time    time.Time `json:"time"`
 		Phase   string    `json:"phase"`
@@ -73,8 +96,23 @@ func (d *Diagnostics) record(phase, version string, cause error) error {
 	if err != nil {
 		return err
 	}
+	if len(data)+1 > 256<<10 {
+		return errors.New("update diagnostic entry exceeds log size limit")
+	}
+	if info, err := os.Stat(d.Path); err == nil && info.Size()+int64(len(data)+1) > 256<<10 {
+		if err := os.Remove(d.Path + ".1"); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := os.Rename(d.Path, d.Path+".1"); err != nil {
+			return err
+		}
+	}
 	file, err := os.OpenFile(d.Path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
+		return err
+	}
+	if err := file.Chmod(0o600); err != nil {
+		file.Close()
 		return err
 	}
 	_, err = file.Write(append(data, '\n'))

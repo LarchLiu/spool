@@ -80,6 +80,9 @@ func apiJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 func apiError(w http.ResponseWriter, status int, message string) {
+	if status >= 500 {
+		log.Printf("event=http_request_failed status=%d message=%q", status, message)
+	}
 	apiJSON(w, status, map[string]string{"error": i18n.Translate(w.Header().Get("Content-Language"), message)})
 }
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {

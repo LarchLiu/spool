@@ -117,3 +117,49 @@ func TestDiagnosticsReplacePendingAndRetainLoggingAfterCorruption(t *testing.T) 
 		t.Fatalf("corruption was not reported: %s, %v", data, err)
 	}
 }
+
+func TestUpdateLogsMoveIntoLogDirectoryWithoutLosingHistory(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"update.log", "update.log.1"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("existing-"+name+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d, err := OpenDiagnostics(root, "0.1.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Path != filepath.Join(root, "log", "update.log") {
+		t.Fatal("update log escaped log/", d.Path)
+	}
+	for _, name := range []string{"update.log", "update.log.1"} {
+		data, err := os.ReadFile(filepath.Join(root, "log", name))
+		if err != nil || !strings.Contains(string(data), "existing-"+name) {
+			t.Fatalf("legacy log was not preserved: %s, %s, %v", name, data, err)
+		}
+		if _, err := os.Stat(filepath.Join(root, name)); !os.IsNotExist(err) {
+			t.Fatal("legacy log was left outside log/", name, err)
+		}
+	}
+	if _, err := OpenDiagnostics(root, "0.1.2"); err != nil {
+		t.Fatal("log migration is not idempotent", err)
+	}
+}
+
+func TestUpdateLogsStayWithinSizeCap(t *testing.T) {
+	d, err := OpenDiagnostics(t.TempDir(), "0.1.2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 300 {
+		if err := d.Record("failed", "0.1.2", errors.New(strings.Repeat("x", 2048))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{d.Path, d.Path + ".1"} {
+		info, err := os.Stat(path)
+		if err != nil || info.Size() > 256<<10 {
+			t.Fatalf("update log exceeds size cap: %s, %v, %v", path, info, err)
+		}
+	}
+}

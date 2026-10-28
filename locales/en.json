@@ -385,5 +385,20 @@
   "Loading earlier messages…": "Loading earlier messages…",
   "Retry loading earlier messages": "Retry loading earlier messages",
   "Invalid history cursor": "Invalid history cursor",
-  "Completed": "Completed"
+  "Completed": "Completed",
+  "Spool could not open its data": "Spool could not open its data",
+  "The app is still running. The Web service and agents have not been started.": "The app is still running. The Web service and agents have not been started.",
+  "This database was created by a newer Spool version. Install a compatible newer app; do not change the schema version or delete the database.": "This database was created by a newer Spool version. Install a compatible newer app; do not change the schema version or delete the database.",
+  "Stop other Spool desktop/server instances using this directory. After a crash, wait at least 30 seconds, then retry.": "Stop other Spool desktop/server instances using this directory. After a crash, wait at least 30 seconds, then retry.",
+  "Check that the data directory is writable by your account. You can explicitly choose another directory with -data-dir.": "Check that the data directory is writable by your account. You can explicitly choose another directory with -data-dir.",
+  "Keep the database and its sidecar files intact. Check the error and logs before restoring a backup or changing the data directory.": "Keep the database and its sidecar files intact. Check the error and logs before restoring a backup or changing the data directory.",
+  "Data directory": "Data directory",
+  "Application log": "Application log",
+  "File logging is unavailable. Diagnostic output is sent to stderr.": "File logging is unavailable. Diagnostic output is sent to stderr.",
+  "Retry startup": "Retry startup",
+  "Show data directory": "Show data directory",
+  "Show application log": "Show application log",
+  "Copy diagnostics": "Copy diagnostics",
+  "A previous crash report is available.": "A previous crash report is available.",
+  "Show crash report": "Show crash report"
 }

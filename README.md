@@ -100,7 +100,47 @@ the database lease to expire). Migration checkpoints any SQLite WAL before
 moving the database, preserving committed writes. An active lease, busy
 database, or databases at both locations stops startup rather than replacing
 data. Development never imports or migrates `~/.spool` automatically.
-Logs and update state remain directly in the selected data root.
+All application logs are stored in `<data-dir>/log/`; update state such as
+`update-pending.json` remains directly in the selected data root.
+
+### Startup Errors And Diagnostics
+
+An unreadable, incompatible, corrupt, locked or conflicting database does not
+silently close the desktop. A native recovery window displays the exact error,
+data/database paths and recovery guidance, with **Retry startup**, **Show data
+directory**, **Show application log**, **Copy diagnostics** and **Quit** actions.
+The Web service and agents are not started when opening the database fails.
+Retry relaunches with the same arguments. The app never automatically deletes,
+resets or downgrades a database to hide an error. Release smoke probes still
+return a failure rather than waiting in an interactive recovery window.
+
+Desktop and headless services initialize file logging before opening SQLite:
+
+- `log/desktop.log` and `log/server.log`: startup metadata, service/agent errors,
+  desktop action failures, HTTP server failures and standard Go log output.
+- `log/desktop-crash.log` and `log/server-crash.log`: unhandled Go panics and
+  fatal Go runtime reports, including stacks. A separate private crash-monitor
+  process drains these reports even after the app's goroutines have stopped.
+- `log/update.log`: signed-update checks, retries, installation/restart results
+  and desktop startup/shutdown events. Existing root-level `update.log` and
+  `update.log.1` are moved into `log/` without overwriting conflicting files.
+
+Each application/crash log file is capped at **1 MiB**, with at most **three
+rotated backups** (`.1` to `.3`); even a single oversized write is split and
+rotated. The update log is capped at **256 KiB**, with **one backup**. Log
+directories are private (0700) and files are private (0600) on Unix. Logs record
+timestamps and process context, not request bodies or intentionally copied chat
+transcripts; crash stacks and third-party errors can still contain sensitive
+information, so inspect reports before sharing them. Download URLs in update
+diagnostics are redacted.
+
+If the selected data root is not writable, application/crash logging falls back
+to the user cache (`spool/log/` or `spool-dev/log/`), then to a private temporary
+directory containing `log/`. The recovery window shows the actual application
+log path. If no directory can be written, stderr remains the last resort.
+Go crash capture is best-effort: forced termination such as SIGKILL, power loss,
+or a native/OS failure that cannot enter the Go runtime cannot reliably produce
+an application crash report; consult the OS crash reports as well.
 
 ## First Desktop Setup
 
@@ -1027,7 +1067,7 @@ version. Busy-chat refusals still retry when idle. The Linux installer also uses
 bounded downloader retries and never retries or bypasses a failed signature.
 
 The Updates page shows the failure stage and a **Show update log** button.
-`<data-dir>/update.log` records checks, retries, installation results, shutdown and
+`<data-dir>/log/update.log` records checks, retries, installation results, shutdown and
 startup; it rotates at 256 KiB, retaining one previous file. Download/CDN URLs
 are redacted, and no chat content or credentials are recorded. Unix log files
 are created with mode 0600. Before a requested restart, `update-pending.json`

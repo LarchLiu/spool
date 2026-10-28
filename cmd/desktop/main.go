@@ -18,6 +18,7 @@ import (
 
 	"spool"
 	"spool/internal/appupdate"
+	"spool/internal/diagnostics"
 	chatmodel "spool/internal/model"
 	"spool/internal/workspace"
 )
@@ -53,9 +54,13 @@ type panel struct {
 	updatePreferences  workspace.UpdatePreferences
 	updateRelease      func()
 	updateDiagnostics  *appupdate.Diagnostics
+	runtimeDiagnostics *diagnostics.Session
 }
 
 func main() {
+	if diagnostics.RunCrashMonitor() {
+		return
+	}
 	if err := runDesktop(); err != nil {
 		log.Print(err)
 		os.Exit(1)
@@ -63,9 +68,6 @@ func main() {
 }
 
 func runDesktop() (runErr error) {
-	if signedUpdatesError != nil {
-		log.Printf("Signed updates disabled: %v", signedUpdatesError)
-	}
 	development := mygo.IsDev()
 	root := flag.String("data-dir", workspace.DefaultDataDir(development), "Data directory (database in db/spool.sqlite)")
 	smoke := flag.String("release-smoke", "", "Probe the packaged desktop using fresh temporary data; write a JSON report")
@@ -77,7 +79,7 @@ func runDesktop() (runErr error) {
 		}
 		defer os.RemoveAll(temporary)
 		defer func() {
-			if data, e := os.ReadFile(filepath.Join(temporary, "update.log")); e == nil {
+			if data, e := os.ReadFile(filepath.Join(temporary, "log", "update.log")); e == nil {
 				_ = os.WriteFile(*smoke+".log", data, 0o600)
 			}
 		}()
@@ -92,28 +94,47 @@ func runDesktop() (runErr error) {
 		log.Print("Spool is already running; focusing the existing desktop instance")
 		return nil
 	}
-	if err := os.MkdirAll(*root, 0o700); err != nil {
-		return err
+	logs, logErr := diagnostics.Start(*root, "desktop", mygo.App.Version(), development)
+	if logErr != nil {
+		log.Printf("event=file_logging_unavailable error=%q", logErr)
 	}
-	diagnostics, err := appupdate.OpenDiagnostics(*root, mygo.App.Version())
+	defer func() {
+		if runErr != nil {
+			log.Printf("event=desktop_failed error=%q", runErr)
+		}
+		if logs != nil {
+			_ = logs.Close()
+		}
+	}()
+	if signedUpdatesError != nil {
+		log.Printf("Signed updates disabled: %v", signedUpdatesError)
+	}
+	updateLog, err := appupdate.OpenDiagnostics(*root, mygo.App.Version())
 	if err != nil {
 		log.Printf("Update diagnostics unavailable: %v", err)
 	}
 	defer func() {
-		if runErr != nil && diagnostics != nil {
-			_ = diagnostics.Record("startup_failed", mygo.App.Version(), runErr)
+		if runErr != nil && updateLog != nil {
+			_ = updateLog.Record("startup_failed", mygo.App.Version(), runErr)
 		}
 	}()
 	service, err := workspace.OpenService(*root)
 	if err != nil {
-		return err
+		if updateLog != nil {
+			_ = updateLog.Record("startup_failed", mygo.App.Version(), err)
+		}
+		if *smoke != "" {
+			return err
+		}
+		return showStartupFailure(*root, err, logs)
 	}
 	defer service.Close()
 	p := &panel{service: service, tab: "Service", members: map[string]bool{}, agentPaths: map[chatmodel.Backend]string{}, agentEnabled: map[chatmodel.Backend]bool{}}
 	githubContext, cancelGitHub := context.WithCancel(context.Background())
 	defer cancelGitHub()
 	p.github.ctx = githubContext
-	p.updateDiagnostics = diagnostics
+	p.updateDiagnostics = updateLog
+	p.runtimeDiagnostics = logs
 	p.logo, err = ui.DecodeBitmap(spool.AppIcon())
 	if err != nil {
 		return err
@@ -124,6 +145,7 @@ func runDesktop() (runErr error) {
 	if p.settings.AutoStart {
 		if err = service.Start(); err != nil {
 			p.message = err.Error()
+			log.Printf("event=service_autostart_failed error=%q", err)
 		}
 	}
 	done := make(chan struct{})
@@ -177,11 +199,13 @@ func runDesktop() (runErr error) {
 		p.tray, e = mygo.NewTray(mygo.TrayOptions{Icon: spool.TrayIcon(), IconIsTemplate: false, ToolTip: "Spool · " + p.tr("Web service"), Menu: p.trayMenu()})
 		if e != nil {
 			p.message = p.tr("Tray unavailable") + ": " + e.Error()
+			log.Printf("event=tray_creation_failed error=%q", e)
 		}
 		go func() {
 			p.window.Update(func() {
-				if diagnostics != nil {
-					if e := diagnostics.Ready(); e != nil {
+				log.Print("event=desktop_ready")
+				if updateLog != nil {
+					if e := updateLog.Ready(); e != nil {
 						p.message = e.Error()
 						log.Print(e)
 					}
@@ -253,6 +277,9 @@ func (p *panel) action(fn func() error) {
 	p.message = "Working…"
 	go func() {
 		err := fn()
+		if err != nil {
+			log.Printf("event=desktop_action_failed error=%q", err)
+		}
 		p.window.Update(func() {
 			p.busy = false
 			if err != nil {
@@ -361,6 +388,18 @@ func (p *panel) serviceView(c *ui.Context) {
 	}
 	ui.Text(c, p.tr("Listen address and idle settings apply after Stop → Start. Stopping interrupts active tasks. Closing this window keeps the server in the tray; Quit stops it.")).Wrap().FontSize(12)
 	ui.Text(c, "SQLite · "+p.service.Store.DatabasePath()).Wrap().FontSize(12)
+	if p.runtimeDiagnostics != nil {
+		ui.Text(c, p.tr("Application log")+": "+p.runtimeDiagnostics.Path).Selectable().Wrap().FontSize(12)
+		if ui.Button(c, p.tr("Show application log")).Clicked() {
+			mygo.Shell.ShowItemInFolder(p.runtimeDiagnostics.Path)
+		}
+		if p.runtimeDiagnostics.PreviousCrashPath != "" {
+			ui.Text(c, p.tr("A previous crash report is available.")).Wrap()
+			if ui.Button(c, p.tr("Show crash report")).Clicked() {
+				mygo.Shell.ShowItemInFolder(p.runtimeDiagnostics.PreviousCrashPath)
+			}
+		}
+	}
 	ui.Text(c, p.tr("Users can execute agent tools in granted projects. Only grant access to trusted people. HTTPS is required for remote PWA installation.")).Wrap().FontSize(12)
 }
 func (p *panel) peopleView(c *ui.Context) {

@@ -385,5 +385,20 @@
   "Loading earlier messages…": "以前のメッセージを読み込み中…",
   "Retry loading earlier messages": "以前のメッセージを再読み込み",
   "Invalid history cursor": "履歴のページ位置が無効です",
-  "Completed": "完了"
+  "Completed": "完了",
+  "Spool could not open its data": "Spool のデータを開けませんでした",
+  "The app is still running. The Web service and agents have not been started.": "アプリは動作しています。Web サービスとエージェントは起動していません。",
+  "This database was created by a newer Spool version. Install a compatible newer app; do not change the schema version or delete the database.": "このデータベースは新しい Spool で作成されました。対応する新しいアプリをインストールしてください。スキーマのバージョン変更やデータベースの削除はしないでください。",
+  "Stop other Spool desktop/server instances using this directory. After a crash, wait at least 30 seconds, then retry.": "このディレクトリを使用する他の Spool デスクトップ／サーバーを停止してください。クラッシュ後は 30 秒以上待って再試行してください。",
+  "Check that the data directory is writable by your account. You can explicitly choose another directory with -data-dir.": "データディレクトリへの書き込み権限を確認してください。-data-dir で別のディレクトリを指定することもできます。",
+  "Keep the database and its sidecar files intact. Check the error and logs before restoring a backup or changing the data directory.": "データベースと関連ファイルをそのまま保持してください。バックアップの復元やデータディレクトリの変更前に、エラーとログを確認してください。",
+  "Data directory": "データディレクトリ",
+  "Application log": "アプリケーションログ",
+  "File logging is unavailable. Diagnostic output is sent to stderr.": "ログファイルに書き込めません。診断情報は標準エラー出力に送信されます。",
+  "Retry startup": "起動を再試行",
+  "Show data directory": "データディレクトリを表示",
+  "Show application log": "アプリケーションログを表示",
+  "Copy diagnostics": "診断情報をコピー",
+  "A previous crash report is available.": "前回のクラッシュレポートがあります。",
+  "Show crash report": "クラッシュレポートを表示"
 }

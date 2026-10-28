@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -107,6 +108,7 @@ func (r *Registry) Refresh(ctx context.Context) error {
 		if err = ctx.Err(); err != nil {
 			return err
 		}
+		previousError := v.Error
 		v.CheckedAt = time.Now().UnixMilli()
 		v.Error = ""
 		path, e := runner.Binary(v.Backend)
@@ -133,6 +135,9 @@ func (r *Registry) Refresh(ctx context.Context) error {
 		}
 		if e != nil {
 			v.Error = chatmodel.Clip(e.Error(), 1024)
+			if v.Error != previousError && ctx.Err() == nil {
+				log.Printf("event=agent_discovery_failed backend=%s error=%q", v.Backend, v.Error)
+			}
 		}
 		// A slow probe must never overwrite a path or enabled flag edited in
 		// the desktop while discovery was in progress.
@@ -153,7 +158,12 @@ func (r *Registry) Refresh(ctx context.Context) error {
 	return nil
 }
 func (r *Registry) Run(ctx context.Context) {
-	_ = r.Refresh(ctx)
+	refresh := func() {
+		if err := r.Refresh(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("event=agent_registry_failed error=%q", err)
+		}
+	}
+	refresh()
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	for {
@@ -161,7 +171,7 @@ func (r *Registry) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_ = r.Refresh(ctx)
+			refresh()
 		}
 	}
 }

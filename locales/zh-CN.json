@@ -385,5 +385,20 @@
   "Loading earlier messages…": "正在加载更早的消息…",
   "Retry loading earlier messages": "重试加载更早的消息",
   "Invalid history cursor": "历史分页位置无效",
-  "Completed": "已完成"
+  "Completed": "已完成",
+  "Spool could not open its data": "Spool 无法打开数据",
+  "The app is still running. The Web service and agents have not been started.": "应用仍在运行，Web 服务和代理尚未启动。",
+  "This database was created by a newer Spool version. Install a compatible newer app; do not change the schema version or delete the database.": "此数据库由较新版本的 Spool 创建。请安装兼容的新版本，不要修改数据库版本号或删除数据库。",
+  "Stop other Spool desktop/server instances using this directory. After a crash, wait at least 30 seconds, then retry.": "请停止使用此目录的其他 Spool 桌面版或服务端实例。若刚发生崩溃，请至少等待 30 秒后重试。",
+  "Check that the data directory is writable by your account. You can explicitly choose another directory with -data-dir.": "请确认当前账户对数据目录有写入权限。也可以使用 -data-dir 指定其他目录。",
+  "Keep the database and its sidecar files intact. Check the error and logs before restoring a backup or changing the data directory.": "请保留数据库及其伴随文件。在恢复备份或更改数据目录前，先检查错误和日志。",
+  "Data directory": "数据目录",
+  "Application log": "应用日志",
+  "File logging is unavailable. Diagnostic output is sent to stderr.": "无法写入日志文件，诊断信息将输出到标准错误流。",
+  "Retry startup": "重试启动",
+  "Show data directory": "查看数据目录",
+  "Show application log": "查看应用日志",
+  "Copy diagnostics": "复制诊断信息",
+  "A previous crash report is available.": "发现上次崩溃的报告。",
+  "Show crash report": "查看崩溃报告"
 }
