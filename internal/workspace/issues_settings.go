@@ -15,6 +15,7 @@ import (
 type IssuesAutomation struct {
 	Enabled         bool              `json:"enabled"`
 	IntervalMinutes int               `json:"interval_minutes"`
+	Labels          []string          `json:"labels"`
 	Repository      string            `json:"repository"` // Derived from origin on save; pins subsequent run checks.
 	UserID          string            `json:"user_id"`
 	AssigneeIDs     []string          `json:"assignee_ids,omitempty"`
@@ -26,6 +27,7 @@ type IssuesAutomation struct {
 	LastRunAt       int64             `json:"-"`
 	LastError       string            `json:"-"`
 	LastChatID      string            `json:"-"`
+	body            string
 }
 
 func (v IssuesAutomation) Validate(members []string) error {
@@ -34,6 +36,11 @@ func (v IssuesAutomation) Validate(members []string) error {
 	}
 	if v.IntervalMinutes < 1 || v.IntervalMinutes > 10080 {
 		return fmt.Errorf("issue interval must be between 1 and 10080 minutes")
+	}
+	for _, label := range v.IssueLabels() {
+		if strings.ContainsAny(label, "\r\n\x00") {
+			return fmt.Errorf("issue labels must not contain newlines or NUL")
+		}
 	}
 	if !issues.ValidRepository(v.Repository) {
 		return fmt.Errorf("GitHub repository must be owner/repo")
@@ -76,6 +83,11 @@ func (v IssuesAutomation) Validate(members []string) error {
 	return nil
 }
 
+// Empty labels ignore GitHub labels and reserve a single project-wide slot.
+func (v IssuesAutomation) IssueLabels() []string {
+	return issues.NormalizeLabels(v.Labels)
+}
+
 func (v IssuesAutomation) Controllers() []string {
 	if len(v.AssigneeIDs) > 0 {
 		return append([]string(nil), v.AssigneeIDs...)
@@ -87,7 +99,7 @@ func (v IssuesAutomation) Controllers() []string {
 }
 
 func (s *Store) IssuesAutomation(project string) (IssuesAutomation, error) {
-	v := IssuesAutomation{IntervalMinutes: 60, Backend: chatmodel.BackendCodex}
+	v := IssuesAutomation{IntervalMinutes: 60, Backend: chatmodel.BackendCodex, Labels: []string{}}
 	var body string
 	err := s.db.QueryRow(`SELECT body,next_run_at,last_run_at,last_error,last_chat_id FROM project_automations WHERE project_id=?`, project).Scan(&body, &v.NextRunAt, &v.LastRunAt, &v.LastError, &v.LastChatID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -97,6 +109,7 @@ func (s *Store) IssuesAutomation(project string) (IssuesAutomation, error) {
 		return v, err
 	}
 	err = json.Unmarshal([]byte(body), &v)
+	v.body = body
 	return v, err
 }
 

@@ -174,7 +174,7 @@ func TestAuthenticatedChatUsesProjectDirectoryAndPersistsChoices(t *testing.T) {
 	runner.mu.Lock()
 	request := runner.requests[0]
 	runner.mu.Unlock()
-	if request.WorkingDirectory != project.Path || request.Prompt != prompt || request.Model != "test-model" {
+	if request.WorkingDirectory != project.Path || request.Prompt != prompt || request.Model != "test-model" || len(request.WritableDirectories) != 0 {
 		t.Fatalf("wrong agent request: %#v", request)
 	}
 	w = apiRequest(a, "GET", "/api/chats/"+chat.ID, "", cookie, csrf)

@@ -44,6 +44,11 @@ func run() (runErr error) {
 	issuesEnabled := flag.Bool("issues-enabled", true, "enable issue automation; false pauses future checks")
 	issuesRepo := flag.String("issues-repo", "", "GitHub owner/repo for issue automation")
 	issuesInterval := flag.Int("issues-interval", 60, "issue check interval in minutes (1-10080)")
+	var issueLabels []string
+	flag.Func("issues-label", "eligible issue label (repeat once per label; default: no filter, one task per project)", func(label string) error {
+		issueLabels = append(issueLabels, label)
+		return nil
+	})
 	issuesAgent := flag.String("issues-agent", "codex", "issue automation agent: codex or claude")
 	issuesOwner := flag.String("issues-owner", "", "project member username owning each new automation chat")
 	issuesAssignees := flag.String("issues-assignees", "", "comma-separated project member usernames allowed to control task chats")
@@ -123,7 +128,7 @@ func run() (runErr error) {
 					if owner == "" && *issuesOwner == "" && len(assignees) > 0 {
 						owner = assignees[0]
 					}
-					p.Issues = workspace.IssuesAutomation{Enabled: true, IntervalMinutes: *issuesInterval, Repository: *issuesRepo, UserID: owner, AssigneeIDs: assignees, Backend: chatmodel.Backend(*issuesAgent), Model: *issuesModel, Effort: *issuesEffort, Permission: *issuesPermission}
+					p.Issues = workspace.IssuesAutomation{Enabled: true, IntervalMinutes: *issuesInterval, Labels: issueLabels, Repository: *issuesRepo, UserID: owner, AssigneeIDs: assignees, Backend: chatmodel.Backend(*issuesAgent), Model: *issuesModel, Effort: *issuesEffort, Permission: *issuesPermission}
 				}
 				_, e = service.Store.SaveProject(p)
 				if e == nil {

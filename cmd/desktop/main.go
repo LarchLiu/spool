@@ -43,6 +43,7 @@ type panel struct {
 	user               workspace.UserInput
 	project            workspace.Project
 	issueInterval      string
+	issueLabel         string
 	github             githubCLICheck
 	githubPath         string
 	projectGit         githubRepositoryCheck
@@ -437,6 +438,7 @@ func (p *panel) projectView(c *ui.Context) {
 		if ui.Button(c, p.tr("New project")).Disabled(p.directoryPicker.pending).Clicked() {
 			p.project = workspace.Project{Issues: workspace.IssuesAutomation{IntervalMinutes: 60, Backend: chatmodel.BackendCodex}}
 			p.issueInterval = "60"
+			p.issueLabel = ""
 			p.members = map[string]bool{}
 		}
 		for _, project := range p.projects {
@@ -444,6 +446,8 @@ func (p *panel) projectView(c *ui.Context) {
 			c.Key(project.ID)
 			if ui.Button(c, project.Name).Disabled(p.directoryPicker.pending).Clicked() {
 				p.project = project
+				p.project.Issues.Labels = project.Issues.IssueLabels()
+				p.issueLabel = ""
 				p.issueInterval = strconv.Itoa(project.Issues.IntervalMinutes)
 				p.members = map[string]bool{}
 				for _, id := range project.Members {

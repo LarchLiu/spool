@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"slices"
 	"sync"
 	"time"
 
@@ -39,15 +40,16 @@ type CLIRunner struct {
 }
 
 type chatProcess struct {
-	backend   chatmodel.Backend
-	binary    string
-	directory string
-	ctx       context.Context
-	cancel    context.CancelFunc
-	process   *agentProcess
-	busy      bool
-	timer     *time.Timer
-	deadline  time.Time
+	backend             chatmodel.Backend
+	binary              string
+	directory           string
+	writableDirectories []string
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	process             *agentProcess
+	busy                bool
+	timer               *time.Timer
+	deadline            time.Time
 }
 
 func NewCLIRunner() *CLIRunner {
@@ -88,14 +90,14 @@ func (r *CLIRunner) reserve(request AgentRequest) (*chatProcess, error) {
 			default:
 			}
 		}
-		if chat != nil && (dead || chat.ctx.Err() != nil || chat.backend != request.Backend || chat.binary != request.Binary || chat.directory != request.WorkingDirectory) {
+		if chat != nil && (dead || chat.ctx.Err() != nil || chat.backend != request.Backend || chat.binary != request.Binary || chat.directory != request.WorkingDirectory || !slices.Equal(chat.writableDirectories, request.WritableDirectories)) {
 			chat.cancel()
 			chat = nil
 		}
 	}
 	if chat == nil {
 		ctx, cancel := context.WithCancel(context.Background())
-		chat = &chatProcess{backend: request.Backend, binary: request.Binary, directory: request.WorkingDirectory, ctx: ctx, cancel: cancel}
+		chat = &chatProcess{backend: request.Backend, binary: request.Binary, directory: request.WorkingDirectory, writableDirectories: slices.Clone(request.WritableDirectories), ctx: ctx, cancel: cancel}
 		r.chats[request.ChatID] = chat
 	}
 	chat.busy = true
@@ -206,6 +208,13 @@ func (r *CLIRunner) Run(ctx context.Context, request AgentRequest, emit func(Age
 		return AgentResult{}, err
 	}
 	request.WorkingDirectory = directory
+	request.WritableDirectories = slices.Clone(request.WritableDirectories)
+	for i, path := range request.WritableDirectories {
+		request.WritableDirectories[i], err = WorkingDirectory(path)
+		if err != nil {
+			return AgentResult{}, fmt.Errorf("agent writable directory: %w", err)
+		}
+	}
 	chat, err := r.reserve(request)
 	if err != nil {
 		return AgentResult{}, err
@@ -301,6 +310,9 @@ func startAgentProcess(ctx context.Context, request AgentRequest) (*agentProcess
 	if request.Backend == chatmodel.BackendClaude {
 		args = []string{"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
 			"--include-partial-messages", "--permission-mode", "acceptEdits", "--permission-prompts", "host", "--allow-dangerously-skip-permissions"}
+		for _, directory := range request.WritableDirectories {
+			args = append(args, "--add-dir", directory)
+		}
 		if request.NativeSessionID != "" {
 			args = append(args, "--resume", request.NativeSessionID)
 		}

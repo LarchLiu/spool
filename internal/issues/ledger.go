@@ -7,15 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 )
 
-const ledgerStart = "<!-- spool:issues:v1 -->\n```json\n"
-const ledgerEnd = "\n```\n<!-- /spool:issues -->"
+const ledgerVersion = 1
 
 type Record struct {
 	Number     int                        `json:"number"`
@@ -70,162 +66,105 @@ func (r Record) MarshalJSON() ([]byte, error) {
 }
 
 type Ledger struct {
-	Path          string
-	Records       map[int]*Record
-	before, after string
-	original      []byte
+	Path     string
+	Records  map[int]*Record
+	extra    map[string]json.RawMessage
+	original []byte
 }
 
-func (l *Ledger) SameRevision(other *Ledger) bool { return bytes.Equal(l.original, other.original) }
+type ledgerDocument struct {
+	Version int       `json:"version"`
+	Records []*Record `json:"records"`
+}
 
-func Load(root string) (*Ledger, error) {
-	l := &Ledger{Path: filepath.Join(root, "docs", "issues.md"), Records: map[int]*Record{}}
-	if info, err := os.Lstat(l.Path); err == nil && (!info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0) {
-		return nil, fmt.Errorf("ledger must be a regular file, not a symlink")
-	}
-	body, err := os.ReadFile(l.Path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+func (l *Ledger) SameRevision(other *Ledger) bool {
+	return l.Path == other.Path && sameLedgerContents(l.original, other.original)
+}
+
+func sameLedgerContents(a, b []byte) bool {
+	return (a == nil) == (b == nil) && bytes.Equal(a, b)
+}
+
+func readLedgerFile(path string) ([]byte, error) {
+	if info, err := os.Lstat(path); err != nil {
 		return nil, err
+	} else if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("ledger %s must be a regular file, not a symlink", path)
+	}
+	return os.ReadFile(path)
+}
+
+func Load(directory string) (*Ledger, error) {
+	l := &Ledger{Path: filepath.Join(directory, "issues.json"), Records: map[int]*Record{}}
+	body, err := readLedgerFile(l.Path)
+	if errors.Is(err, os.ErrNotExist) {
+		return l, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("read issues ledger: %w", err)
 	}
 	l.original = body
-	text := string(body)
-	start := strings.Index(text, ledgerStart)
-	if start < 0 {
-		if strings.Contains(text, "spool:issues:") {
-			return nil, fmt.Errorf("unrecognized ledger version/format; refusing to overwrite")
-		}
-		l.before = text
-		if err := l.importTable(text); err != nil {
-			return nil, err
-		}
-		return l, nil
+	var document ledgerDocument
+	if err = json.Unmarshal(body, &document); err != nil {
+		return nil, fmt.Errorf("invalid issues ledger JSON in %s; refusing to overwrite: %w", l.Path, err)
 	}
-	tail := text[start+len(ledgerStart):]
-	end := strings.Index(tail, ledgerEnd)
-	if end < 0 || strings.Contains(tail[end+len(ledgerEnd):], "spool:issues:") {
-		return nil, fmt.Errorf("malformed or duplicate ledger block")
+	if document.Version != ledgerVersion || document.Records == nil {
+		return nil, fmt.Errorf("unrecognized issues ledger version/format in %s; refusing to overwrite", l.Path)
 	}
-	var records []*Record
-	if err = json.Unmarshal([]byte(tail[:end]), &records); err != nil || records == nil {
-		return nil, fmt.Errorf("invalid ledger JSON; refusing to overwrite")
+	if err = l.importRecords(document.Records); err != nil {
+		return nil, err
 	}
-	for _, record := range records {
-		if record == nil || record.Number <= 0 || l.Records[record.Number] != nil || !validStatus(record.Status) {
-			return nil, fmt.Errorf("invalid/duplicate issue record")
-		}
-		l.Records[record.Number] = record
+	if err = json.Unmarshal(body, &l.extra); err != nil {
+		return nil, err
 	}
-	l.before, l.after = text[:start], tail[end+len(ledgerEnd):]
+	for _, key := range []string{"version", "records"} {
+		delete(l.extra, key)
+	}
 	return l, nil
 }
 
-func validStatus(s string) bool { return s == "open" || s == "processing" || s == "pr" || s == "close" }
-
-var issueNumber = regexp.MustCompile(`(?:^#?|/issues/|\[#)([0-9]+)`)
-var ledgerURL = regexp.MustCompile("https?://[^\\s<>()\\[\\]`\"|]+")
-
-// Import common existing Markdown ledgers without removing their human text.
-// Unrecognized in-progress claims fail closed instead of silently losing owners.
-func (l *Ledger) importTable(text string) error {
-	var header []string
-	for _, line := range strings.Split(text, "\n") {
-		if !strings.Contains(line, "|") {
-			if strings.Contains(line, "processing") {
-				return fmt.Errorf("existing processing record needs a structured ledger/table before automation can claim issues")
-			}
-			continue
+func (l *Ledger) importRecords(records []*Record) error {
+	for _, record := range records {
+		if record == nil || record.Number <= 0 || l.Records[record.Number] != nil || !validStatus(record.Status) {
+			return fmt.Errorf("invalid/duplicate issue record")
 		}
-		cells := strings.Split(strings.Trim(strings.TrimSpace(line), "|"), "|")
-		for i := range cells {
-			cells[i] = strings.Trim(strings.TrimSpace(cells[i]), "`")
-		}
-		isHeader := false
-		for _, cell := range cells {
-			if strings.EqualFold(cell, "status") || cell == "状态" {
-				isHeader = true
-			}
-		}
-		if isHeader {
-			header = cells
-			continue
-		}
-		values := map[string]string{}
-		for i, cell := range cells {
-			if i < len(header) {
-				values[strings.ToLower(header[i])] = cell
-			}
-		}
-		status := values["status"]
-		if status == "" {
-			status = values["状态"]
-		}
-		if !validStatus(status) {
-			if strings.Contains(line, "processing") {
-				return fmt.Errorf("cannot parse an existing processing claim")
-			}
-			continue
-		}
-		var number int
-		for _, key := range []string{"issue", "number", "#", "编号", "issue 编号"} {
-			if match := issueNumber.FindStringSubmatch(values[key]); len(match) > 1 {
-				number, _ = strconv.Atoi(match[1])
-				break
-			}
-		}
-		if number <= 0 {
-			return fmt.Errorf("cannot identify existing issue row: %s", line)
-		}
-		if l.Records[number] != nil {
-			return fmt.Errorf("duplicate existing issue #%d", number)
-		}
-		r := &Record{Number: number, Status: status, Notes: line, Branch: values["branch"], Worktree: values["worktree"], Validation: values["validation"]}
-		// PRs may be recorded only in this table, without a GitHub cross-reference.
-		for _, link := range ledgerURL.FindAllString(line, -1) {
-			if !strings.Contains(link, "/pull/") {
-				continue
-			}
-			link = strings.TrimRight(strings.TrimRight(link, ".,;"), "/")
-			if !ValidPRURL(link) {
-				return fmt.Errorf("cannot verify existing PR for issue #%d: %s", number, link)
-			}
-			if !contains(r.PRs, link) {
-				r.PRs = append(r.PRs, link)
-			}
-		}
-		if status == "pr" && len(r.PRs) == 0 {
-			return fmt.Errorf("existing issue #%d has pr status without a verifiable PR URL; migrate the ledger before automation can claim issues", number)
-		}
-		// Legacy owners are intentionally opaque: never steal a human claim.
-		r.Owner.Automation = values["owner"]
-		l.Records[number] = r
+		l.Records[record.Number] = record
 	}
 	return nil
 }
 
+func validStatus(s string) bool { return s == "open" || s == "processing" || s == "pr" || s == "close" }
+
 func (l *Ledger) Save() error {
-	current, err := os.ReadFile(l.Path)
+	current, err := readLedgerFile(l.Path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if !bytes.Equal(current, l.original) {
+	if !sameLedgerContents(current, l.original) {
 		return fmt.Errorf("shared ledger changed outside the project lock; refusing to overwrite")
 	}
 	records := make([]*Record, 0, len(l.Records))
-	for _, record := range l.Records {
+	for number, record := range l.Records {
+		if record == nil || number <= 0 || record.Number != number || !validStatus(record.Status) {
+			return fmt.Errorf("invalid issue record #%d; refusing to save", number)
+		}
 		records = append(records, record)
 	}
 	sort.Slice(records, func(i, j int) bool { return records[i].Number < records[j].Number })
-	body, err := json.MarshalIndent(records, "", "  ")
+	body, err := json.Marshal(ledgerDocument{Version: ledgerVersion, Records: records})
 	if err != nil {
 		return err
 	}
-	prefix := l.before
-	if prefix == "" {
-		prefix = "# Issues automation\n\nLocal shared ledger. Do not commit this file to dev. Preserve owner/history when editing.\n\n"
-	} else if !strings.HasSuffix(prefix, "\n\n") {
-		prefix += "\n\n"
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal(body, &fields); err != nil {
+		return err
 	}
-	body = []byte(prefix + ledgerStart + string(body) + ledgerEnd + l.after)
+	for key, value := range l.extra {
+		fields[key] = value
+	}
+	if body, err = json.MarshalIndent(fields, "", "  "); err != nil {
+		return err
+	}
+	body = append(body, '\n')
 	if bytes.Equal(body, l.original) {
 		return nil
 	}
@@ -251,7 +190,7 @@ func (l *Ledger) Save() error {
 	return nil
 }
 
-func (l *Ledger) Sync(snapshot []Issue) {
+func (l *Ledger) Sync(snapshot []Issue, labels []string) {
 	for _, issue := range snapshot {
 		r := l.Records[issue.Number]
 		if r == nil {
@@ -261,11 +200,16 @@ func (l *Ledger) Sync(snapshot []Issue) {
 		previous := r.Status
 		r.Title, r.URL = issue.Title, issue.URL
 		// Existing claims keep their occupied categories even if labels change.
-		categories := Categories(issue)
-		if previous == "processing" {
-			for _, c := range r.Categories {
-				if !contains(categories, c) {
-					categories = append(categories, c)
+		categories := Categories(issue, labels)
+		if previous == "processing" || r.Owner.Run != "" {
+			if len(r.Categories) == 0 {
+				// An unfiltered run keeps its global slot across settings changes.
+				categories = []string{}
+			} else {
+				for _, c := range r.Categories {
+					if !contains(categories, c) {
+						categories = append(categories, c)
+					}
 				}
 			}
 		}
@@ -302,73 +246,60 @@ func contains(values []string, value string) bool {
 	return false
 }
 
-// Select resumes our oldest verifiably ended claim first. Unknown file scope
-// on any other claim serializes all categories rather than risking overlap.
-func (l *Ledger) Select(snapshot []Issue, ended func(Owner) bool) (*Issue, bool) {
-	busy := map[string]int{}
-	unknownScope := false
-	for _, r := range l.Records {
-		if r.Status == "processing" {
-			for _, c := range r.Categories {
-				busy[c]++
-			}
-			unknownScope = unknownScope || len(r.Files) == 0
-		}
-	}
-	for _, issue := range snapshot {
-		r := l.Records[issue.Number]
-		if r.Status != "processing" || r.Owner.Automation != "issues" || !ended(r.Owner) || len(Categories(issue)) == 0 {
+// Empty categories reserve the whole project. Live executors keep reservations
+// even after GitHub reports a PR or closed issue; elapsed time never frees them.
+func (l *Ledger) CanClaim(record *Record, ended func(Owner) bool) bool {
+	resuming := record.Status == "processing" && record.Owner.Automation == "issues" && ended(record.Owner)
+	for _, other := range l.Records {
+		if other.Number == record.Number {
 			continue
 		}
-		blocked := false
-		for _, other := range l.Records {
-			if other.Number == r.Number || other.Status != "processing" {
+		live := other.Owner.Run != "" && !ended(other.Owner)
+		if other.Status != "processing" && !live {
+			continue
+		}
+		// Ended automated claims reserve priority over new work, not over each
+		// other's recovery (e.g. when several label slots become one global slot).
+		if !live && other.Owner.Automation == "issues" && ended(other.Owner) {
+			if resuming || (len(other.Categories) == 0 && len(record.Categories) > 0) {
+				// An ended global executor cannot block newly configured labels.
 				continue
 			}
-			if len(other.Files) == 0 || len(r.Files) == 0 {
-				blocked = true
-			}
-			for _, c := range r.Categories {
-				if contains(other.Categories, c) {
-					blocked = true
-				}
-			}
-			for _, a := range r.Files {
-				for _, b := range other.Files {
-					if a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/") {
-						blocked = true
-					}
-				}
+		}
+		if len(record.Categories) == 0 || len(other.Categories) == 0 {
+			return false
+		}
+		for _, label := range record.Categories {
+			if contains(other.Categories, label) {
+				return false
 			}
 		}
-		if !blocked {
+	}
+	return true
+}
+
+func (l *Ledger) Select(snapshot []Issue, labels []string, ended func(Owner) bool) (*Issue, bool) {
+	for _, issue := range snapshot {
+		r := l.Records[issue.Number]
+		if r == nil || r.Status != "processing" || r.Owner.Automation != "issues" || !ended(r.Owner) || (len(labels) > 0 && len(Categories(issue, labels)) == 0) {
+			continue
+		}
+		candidate := *r
+		if len(labels) == 0 || len(candidate.Categories) == 0 {
+			candidate.Categories = Categories(issue, labels)
+		}
+		if l.CanClaim(&candidate, ended) {
 			return &issue, true
 		}
 	}
-	// A pending claim owned by this automation must be resolved before new work.
-	for _, r := range l.Records {
-		if r.Status == "processing" && r.Owner.Automation == "issues" {
-			return nil, false
-		}
-	}
-	if unknownScope {
-		return nil, false
-	}
 	for _, issue := range snapshot {
 		r := l.Records[issue.Number]
-		if r.Status != "open" || len(Categories(issue)) == 0 {
+		if r == nil || r.Status != "open" || (len(labels) > 0 && len(Categories(issue, labels)) == 0) || (r.Owner.Run != "" && !ended(r.Owner)) {
 			continue
 		}
-		blocked := false
-		for _, c := range r.Categories {
-			blocked = blocked || busy[c] > 0
-		}
-		// New issues have unknown file scope until investigated. Defer them
-		// while any independent task is processing, even in another category.
-		if len(busy) > 0 {
-			blocked = true
-		}
-		if !blocked {
+		candidate := *r
+		candidate.Categories = Categories(issue, labels)
+		if l.CanClaim(&candidate, ended) {
 			return &issue, false
 		}
 	}

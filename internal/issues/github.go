@@ -289,9 +289,20 @@ func (g GitHub) Comments(ctx context.Context, number int) ([]Comment, error) {
 	return pages[Comment](ctx, g, fmt.Sprintf("repos/%s/issues/%d/comments?per_page=100", g.Repository, number))
 }
 
-func Categories(issue Issue) []string {
+func NormalizeLabels(labels []string) []string {
 	out := []string{}
-	for _, name := range []string{"web", "server", "app"} {
+	for _, label := range labels {
+		label = strings.TrimSpace(label)
+		if label != "" && !contains(out, label) {
+			out = append(out, label)
+		}
+	}
+	return out
+}
+
+func Categories(issue Issue, configured []string) []string {
+	out := []string{}
+	for _, name := range configured {
 		for _, label := range issue.Labels {
 			if label.Name == name {
 				out = append(out, name)

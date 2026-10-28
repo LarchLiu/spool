@@ -89,7 +89,7 @@ func TestRunIssueCommandUsesLiveSavedGitHubCLIPath(t *testing.T) {
 	if err != nil || !strings.Contains(hint, string(encoded)) || !strings.Contains(hint, "PowerShell") {
 		t.Fatalf("agent instructions lost the configured path or cross-platform quoting: %q, %v", hint, err)
 	}
-	prompt, err := issuePrompt(Project{Name: "fixture"}, issues.Checkout{Root: directory, Repository: "fixture/issues"}, issues.Issue{Number: 1}, issues.Record{}, false, hint, "http://127.0.0.1/callback", "fixture-token")
+	prompt, err := issuePrompt(Project{Name: "fixture"}, issues.Checkout{Root: directory, Repository: "fixture/issues"}, issues.Issue{Number: 1}, issues.Record{}, false, hint, filepath.Join(issues.Directory(s.Root(), directory), "issues.json"), filepath.Join(issues.Directory(s.Root(), directory), "runs", "fixture-run", "issues.json"))
 	if err != nil || !strings.HasPrefix(prompt, hint) {
 		t.Fatalf("scheduled agent prompt omitted the executable hint: %v", err)
 	}

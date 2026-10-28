@@ -2,10 +2,8 @@ package workspace
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,7 +97,7 @@ func issueFixture(t *testing.T) (*App, Project, *issueCommands, *issueTestRunner
 			t.Fatal(err)
 		}
 	}
-	p.Issues = IssuesAutomation{Enabled: true, IntervalMinutes: 5, UserID: u.ID, Backend: chatmodel.BackendCodex, Model: "test-model", Permission: "auto"}
+	p.Issues = IssuesAutomation{Enabled: true, IntervalMinutes: 5, Labels: []string{"web", "server", "app"}, UserID: u.ID, Backend: chatmodel.BackendCodex, Model: "test-model", Permission: "auto"}
 	var err error
 	p, err = s.SaveProject(p)
 	if err != nil {
@@ -109,7 +107,7 @@ func issueFixture(t *testing.T) (*App, Project, *issueCommands, *issueTestRunner
 	a := NewApp(s, runner, "", "")
 	t.Cleanup(func() { _ = a.Close() })
 	f := &issueCommands{root: p.Path}
-	a.automation = &issueScheduler{instance: "test-instance", run: f.command, active: map[string]bool{}, scopes: map[string]*issueArtifactScope{}, callbackURL: "http://127.0.0.1:8787/api/automation/attach-artifact"}
+	a.automation = &issueScheduler{instance: "test-instance", run: f.command, active: map[string]bool{}}
 	return a, p, f, runner
 }
 
@@ -205,10 +203,20 @@ func TestIssuesSettingsRequireProjectGitAndGitHubOrigin(t *testing.T) {
 
 func TestIssueRoundFailureRecoveryUsesNewChatsAndSameSharedClaim(t *testing.T) {
 	a, p, f, runner := issueFixture(t)
+	if _, err := a.store.db.Exec(`CREATE TRIGGER reject_issue_artifacts BEFORE INSERT ON chat_artifacts BEGIN SELECT RAISE(ABORT,'issue automation must not write artifacts'); END`); err != nil {
+		t.Fatal(err)
+	}
 	var requests []agent.AgentRequest
 	runner.work = func(_ context.Context, request agent.AgentRequest) (agent.AgentResult, error) {
 		requests = append(requests, request)
-		ledger, err := issues.Load(p.Path)
+		directory := issues.Directory(a.store.Root(), p.Path)
+		if len(request.WritableDirectories) != 1 || !strings.HasPrefix(request.WritableDirectories[0], filepath.Join(directory, "runs")+string(os.PathSeparator)) {
+			t.Fatalf("agent must only get its project's issues directory: %v", request.WritableDirectories)
+		}
+		if !strings.Contains(request.Prompt, filepath.Join(issues.Directory(a.store.Root(), p.Path), "issues.json")) || !strings.Contains(request.Prompt, "records 数组") || !strings.Contains(request.Prompt, "notes、validation 是字符串") || strings.Contains(request.Prompt, "spool:issues:v1") {
+			t.Fatal("agent did not receive the standalone JSON ledger contract")
+		}
+		ledger, err := issues.Load(request.WritableDirectories[0])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -216,7 +224,7 @@ func TestIssueRoundFailureRecoveryUsesNewChatsAndSameSharedClaim(t *testing.T) {
 		if r.Status != "processing" || r.Owner.Automation != "issues" || r.Owner.Chat != request.ChatID || r.Branch != "codex/issue-1-fix" || r.Worktree == "" {
 			t.Fatalf("editing began before a complete claim: %#v", r)
 		}
-		if _, err = os.Stat(filepath.Join(p.Path, "docs", ".issues-automation.lock", "owner.json")); err != nil {
+		if _, err = os.Stat(filepath.Join(request.WritableDirectories[0], ".issues-automation.lock", "owner.json")); err != nil {
 			t.Fatal("project lock not held during agent execution")
 		}
 		if len(requests) == 1 {
@@ -243,7 +251,7 @@ func TestIssueRoundFailureRecoveryUsesNewChatsAndSameSharedClaim(t *testing.T) {
 	if err := a.runIssueRound(context.Background(), p); err == nil {
 		t.Fatal("failed verification treated as successful")
 	}
-	ledger, err := issues.Load(p.Path)
+	ledger, err := issues.Load(issues.Directory(a.store.Root(), p.Path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,13 +259,13 @@ func TestIssueRoundFailureRecoveryUsesNewChatsAndSameSharedClaim(t *testing.T) {
 	if ledger.Records[1].Status != "processing" {
 		t.Fatal("failure released processing claim")
 	}
-	if _, err = os.Stat(filepath.Join(p.Path, "docs", ".issues-automation.lock")); !os.IsNotExist(err) {
+	if _, err = os.Stat(filepath.Join(issues.Directory(a.store.Root(), p.Path), ".issues-automation.lock")); !os.IsNotExist(err) {
 		t.Fatal("lock not safely released")
 	}
 	if err = a.runIssueRound(context.Background(), p); err != nil {
 		t.Fatal(err)
 	}
-	ledger, _ = issues.Load(p.Path)
+	ledger, _ = issues.Load(issues.Directory(a.store.Root(), p.Path))
 	record := ledger.Records[1]
 	if record.Status != "pr" || record.Owner.Run == first.Run || record.Owner.Chat == first.Chat || len(record.PRs) != 1 {
 		t.Fatalf("recovery state incorrect: %#v", record)
@@ -266,10 +274,10 @@ func TestIssueRoundFailureRecoveryUsesNewChatsAndSameSharedClaim(t *testing.T) {
 		t.Fatal("reused a previous native chat or lost configured agent options")
 	}
 	chat, ok := a.store.Get(record.Owner.Chat)
-	if !ok || len(chat.Artifacts) != 1 {
-		t.Fatal("confirmed PR not attached to this round's chat")
+	if !ok || len(chat.Artifacts) != 0 {
+		t.Fatal("issue automation wrote PR attachments instead of using the JSON ledger")
 	}
-	if !strings.Contains(requests[1].Prompt, "git pull --ff-only origin dev") || !strings.Contains(requests[1].Prompt, "attach_artifact()") || !strings.Contains(requests[1].Prompt, "沙箱外联网") {
+	if !strings.Contains(requests[1].Prompt, "git pull --ff-only origin dev") || strings.Contains(requests[1].Prompt, "attach_artifact") || strings.Contains(requests[1].Prompt, "Authorization: Bearer") || !strings.Contains(requests[1].Prompt, "prs 数组") || !strings.Contains(requests[1].Prompt, "沙箱外联网") {
 		t.Fatal("agent execution contract incomplete")
 	}
 	if err = a.runIssueRound(context.Background(), p); err != nil {
@@ -277,6 +285,9 @@ func TestIssueRoundFailureRecoveryUsesNewChatsAndSameSharedClaim(t *testing.T) {
 	}
 	if len(requests) != 2 {
 		t.Fatal("opened another task for an issue with an existing draft PR")
+	}
+	if _, err := os.Stat(filepath.Join(p.Path, "docs")); !os.IsNotExist(err) {
+		t.Fatal("automation created state inside the source checkout")
 	}
 }
 
@@ -286,13 +297,6 @@ func TestIssueRoundUsesDetectedRepositoryWhenStoredRepositoryIsEmpty(t *testing.
 	runner.work = func(_ context.Context, request agent.AgentRequest) (agent.AgentResult, error) {
 		if !strings.Contains(request.Prompt, `"repository": "fixture/issues"`) {
 			t.Error("agent prompt did not use the project Git origin")
-		}
-		a.automation.mu.Lock()
-		defer a.automation.mu.Unlock()
-		for _, scope := range a.automation.scopes {
-			if scope.repository != "fixture/issues" {
-				t.Errorf("artifact capability uses repository %q", scope.repository)
-			}
 		}
 		return agent.AgentResult{}, errors.New("verification unavailable")
 	}
@@ -328,6 +332,9 @@ func TestIssueRoundRejectsMissingOrChangedGitBeforeGitHubAccess(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(p.Path, "docs")); !os.IsNotExist(err) {
 				t.Fatalf("invalid Git information touched local automation state: %v", err)
 			}
+			if _, err := os.Stat(issues.Directory(a.store.Root(), p.Path)); !os.IsNotExist(err) {
+				t.Fatalf("invalid Git information created project data: %v", err)
+			}
 		})
 	}
 }
@@ -338,10 +345,14 @@ func TestIssueNetworkFailureKeepsLedgerByteIdenticalAndDoesNotCreateChat(t *test
 		t.Fatal("agent started after failed remote read")
 		return agent.AgentResult{}, nil
 	}
-	_ = os.Mkdir(filepath.Join(p.Path, "docs"), 0755)
-	path := filepath.Join(p.Path, "docs", "issues.md")
-	original := "# Human notes\nKeep these exactly.\n"
-	_ = os.WriteFile(path, []byte(original), 0600)
+	original := `{"version":1,"records":[],"custom":"Keep these exactly."}`
+	path := filepath.Join(issues.Directory(a.store.Root(), p.Path), "issues.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
 	f.fail = "dial tcp: lookup api.github.com: no such host"
 	err := a.runIssueRound(context.Background(), p)
 	if err == nil || !strings.Contains(err.Error(), "沙箱外联网") {
@@ -355,7 +366,7 @@ func TestIssueNetworkFailureKeepsLedgerByteIdenticalAndDoesNotCreateChat(t *test
 	if len(chats) != 0 {
 		t.Fatal("network failure created chat/claim")
 	}
-	if _, err = os.Stat(filepath.Join(p.Path, "docs", ".issues-automation.lock")); !os.IsNotExist(err) {
+	if _, err = os.Stat(filepath.Join(issues.Directory(a.store.Root(), p.Path), ".issues-automation.lock")); !os.IsNotExist(err) {
 		t.Fatal("network failure leaked project lock")
 	}
 }
@@ -366,7 +377,7 @@ func TestNoEligibleLabelsOnlySyncsAndNoChatIsCreated(t *testing.T) {
 	if err := a.runIssueRound(context.Background(), p); err != nil {
 		t.Fatal(err)
 	}
-	ledger, err := issues.Load(p.Path)
+	ledger, err := issues.Load(issues.Directory(a.store.Root(), p.Path))
 	if err != nil || ledger.Records[1].Status != "open" {
 		t.Fatal("unlabelled issue not synchronized")
 	}
@@ -374,77 +385,108 @@ func TestNoEligibleLabelsOnlySyncsAndNoChatIsCreated(t *testing.T) {
 	if len(chats) != 0 {
 		t.Fatal("empty periodic chat created")
 	}
+	if _, err := os.Stat(filepath.Join(p.Path, "docs")); !os.IsNotExist(err) {
+		t.Fatal("sync-only round created repository-local state")
+	}
 }
 
-func TestIssueRoundLockHeldUntilActualAgentExitAndReleasedOnStop(t *testing.T) {
+func TestIssueNetworkFailureDoesNotCreateJSONLedger(t *testing.T) {
+	a, p, f, _ := issueFixture(t)
+	f.fail = "dial tcp: lookup api.github.com: no such host"
+	if err := a.runIssueRound(context.Background(), p); err == nil {
+		t.Fatal("network failure treated as an empty GitHub snapshot")
+	}
+	if _, err := os.Stat(filepath.Join(issues.Directory(a.store.Root(), p.Path), "issues.json")); !os.IsNotExist(err) {
+		t.Fatal("failed initial synchronization created JSON")
+	}
+	chats, err := a.store.UserSessions(p.Issues.UserID, p.ID)
+	if err != nil || len(chats) != 0 {
+		t.Fatalf("failed initial synchronization created a chat: %#v, %v", chats, err)
+	}
+}
+
+func TestIssueRoundIgnoresOldMarkdownAndCreatesOnlyJSONLedger(t *testing.T) {
+	a, p, f, _ := issueFixture(t)
+	f.noLabels = true
+	path := filepath.Join(p.Path, "docs", "issues.md")
+	text := "# Old instructions\nissue #1 processing owned by somebody\n<!-- spool:issues:v2 -->"
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	oldJSON := filepath.Join(p.Path, "docs", "issues.json")
+	if err := os.WriteFile(oldJSON, []byte("invalid obsolete copy"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.runIssueRound(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	ledger, err := issues.Load(issues.Directory(a.store.Root(), p.Path))
+	if err != nil || ledger.Records[1].Status != "open" || ledger.Records[1].Owner != (issues.Owner{}) {
+		t.Fatalf("Markdown claim affected new JSON: %#v, %v", ledger, err)
+	}
+	body, err := os.ReadFile(ledger.Path)
+	if err != nil || strings.Contains(string(body), "Old instructions") || strings.Contains(string(body), "processing owned") {
+		t.Fatalf("Markdown content copied to JSON: %s, %v", body, err)
+	}
+	body, err = os.ReadFile(path)
+	if err != nil || string(body) != text {
+		t.Fatal("automation touched old Markdown")
+	}
+	body, err = os.ReadFile(oldJSON)
+	if err != nil || string(body) != "invalid obsolete copy" {
+		t.Fatal("automation used or updated the obsolete repo-local ledger")
+	}
+}
+
+func TestIssueLabelReservationHeldUntilActualAgentExitAndReleasedOnStop(t *testing.T) {
 	a, p, _, runner := issueFixture(t)
-	started := make(chan struct{})
-	cleanup := make(chan struct{})
-	exited := make(chan struct{})
-	runner.work = func(ctx context.Context, _ agent.AgentRequest) (agent.AgentResult, error) {
+	started, cleanup := make(chan struct{}), make(chan struct{})
+	var release sync.Once
+	unblock := func() { release.Do(func() { close(cleanup) }) }
+	t.Cleanup(unblock)
+	var taskDirectory string
+	runner.work = func(ctx context.Context, request agent.AgentRequest) (agent.AgentResult, error) {
+		taskDirectory = request.WritableDirectories[0]
 		close(started)
 		<-ctx.Done()
 		<-cleanup
-		close(exited)
 		return agent.AgentResult{}, ctx.Err()
 	}
 	result := make(chan error, 1)
 	go func() { result <- a.runIssueRound(context.Background(), p) }()
 	<-started
-	if err := a.runIssueRound(context.Background(), p); !errors.Is(err, issues.ErrLocked) {
-		t.Fatalf("overlapping round entered: %v", err)
+	if err := a.runIssueRound(context.Background(), p); err != nil {
+		t.Fatal(err)
 	}
 	closing := make(chan struct{})
 	go func() { _ = a.Close(); close(closing) }()
 	time.Sleep(10 * time.Millisecond)
-	if _, err := os.Stat(filepath.Join(p.Path, "docs", ".issues-automation.lock")); err != nil {
-		t.Fatal("stopped status prematurely released lock")
+	if _, err := os.Stat(filepath.Join(taskDirectory, ".issues-automation.lock")); err != nil {
+		t.Fatal("stopped status prematurely released execution lock")
 	}
-	close(cleanup)
-	<-exited
+	ledger, err := issues.Load(issues.Directory(a.store.Root(), p.Path))
+	if err != nil || a.issueOwnerEnded(ledger.Records[1].Owner) {
+		t.Fatal("still-exiting executor was considered finished")
+	}
+	unblock()
 	<-closing
 	if err := <-result; err == nil {
 		t.Fatal("stopped task reported success")
 	}
-	if _, err := os.Stat(filepath.Join(p.Path, "docs", ".issues-automation.lock")); !os.IsNotExist(err) {
-		t.Fatal("cleanup leaked lock")
+	if _, err := os.Stat(filepath.Join(taskDirectory, ".issues-automation.lock")); !os.IsNotExist(err) {
+		t.Fatal("cleanup leaked execution lock")
 	}
 }
 
-func TestAttachArtifactCapabilityScopedVerifiedIdempotentAndExpires(t *testing.T) {
-	a, p, _, _ := issueFixture(t)
-	chat, err := a.store.CreateChat(p.Issues.UserID, p.ID, chatmodel.BackendCodex)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a.automation.scopes["run-secret"] = &issueArtifactScope{chat: chat.ID, branch: "codex/issue-1-fix", repository: "fixture/issues", directory: p.Path, ctx: context.Background()}
-	post := func(token, url, origin string) int {
-		body, _ := json.Marshal(map[string]string{"artifact_type": "pull_request", "url": url})
-		r := httptest.NewRequest("POST", "/api/automation/attach-artifact", strings.NewReader(string(body)))
-		r.Header.Set("Content-Type", "application/json")
-		r.Header.Set("Authorization", "Bearer "+token)
-		if origin != "" {
-			r.Header.Set("Origin", origin)
-		}
-		w := httptest.NewRecorder()
-		a.ServeHTTP(w, r)
-		return w.Code
-	}
-	url := "https://github.com/fixture/issues/pull/20"
-	for i := 0; i < 2; i++ {
-		if code := post("run-secret", url, ""); code != 200 {
-			t.Fatalf("attach: %d", code)
-		}
-	}
-	if artifacts, _ := a.store.ChatArtifacts(chat.ID); len(artifacts) != 1 {
-		t.Fatal("duplicate PR artifact")
-	}
-	if post("wrong", url, "") != 403 || post("run-secret", url, "https://evil.example") != 403 || post("run-secret", "https://github.com/other/repo/pull/20", "") != 400 {
-		t.Fatal("attachment scope escaped")
-	}
-	delete(a.automation.scopes, "run-secret")
-	if post("run-secret", url, "") != 403 {
-		t.Fatal("expired capability still accepted")
+func TestIssueArtifactCallbackIsNoLongerAvailable(t *testing.T) {
+	a, _, _, _ := issueFixture(t)
+	cookie, csrf := loginRequest(t, a, "automation")
+	w := apiRequest(a, "POST", "/api/automation/attach-artifact", `{"artifact_type":"pull_request","url":"https://github.com/fixture/issues/pull/20"}`, cookie, csrf)
+	if w.Code != 404 {
+		t.Fatalf("obsolete callback is still available: %d %s", w.Code, w.Body.String())
 	}
 }
 
@@ -520,7 +562,7 @@ func TestTaskAssigneesCanSeeSendStopAndApproveWithoutProjectWideSharing(t *testi
 	}
 	// Wait for the follow-up's project-lock cleanup, not just persisted completion.
 	for time.Now().Before(deadline) {
-		if _, err = os.Stat(filepath.Join(p.Path, "docs", ".issues-automation.lock")); os.IsNotExist(err) {
+		if _, err = os.Stat(filepath.Join(issues.Directory(a.store.Root(), p.Path), ".issues-automation.lock")); os.IsNotExist(err) {
 			break
 		}
 		time.Sleep(time.Millisecond)
@@ -567,7 +609,7 @@ func TestSchedulerDueTimePauseAndUpdateAdmission(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		a.automation.mu.Lock()
-		active := a.automation.active[p.ID]
+		active := len(a.automation.active) != 0
 		a.automation.mu.Unlock()
 		if !active {
 			break
@@ -575,12 +617,12 @@ func TestSchedulerDueTimePauseAndUpdateAdmission(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	_ = a.store.db.QueryRow(`SELECT count(*) FROM automation_runs`).Scan(&count)
-	if count != 1 {
-		t.Fatalf("due round count = %d", count)
+	if count != len(p.Issues.IssueLabels()) {
+		t.Fatalf("due label check count = %d", count)
 	}
 	a.scheduleIssues(context.Background(), time.Now())
 	_ = a.store.db.QueryRow(`SELECT count(*) FROM automation_runs`).Scan(&count)
-	if count != 1 {
+	if count != len(p.Issues.IssueLabels()) {
 		t.Fatal("duplicate/catch-up run")
 	}
 	// A live scheduled worker blocks application updates, including preflight.
@@ -602,14 +644,14 @@ func TestSchedulerDueTimePauseAndUpdateAdmission(t *testing.T) {
 	}
 	_, _ = a.store.db.Exec(`UPDATE project_automations SET next_run_at=1 WHERE project_id=?`, p.ID)
 	a.scheduleIssues(context.Background(), time.Now())
-	_ = a.store.db.QueryRow(`SELECT count(*) FROM automation_runs`).Scan(&count)
-	if count != 2 {
+	_ = a.store.db.QueryRow(`SELECT count(*) FROM automation_runs WHERE chat_id<>''`).Scan(&count)
+	if count != 1 {
 		t.Fatal("overlapping worker admitted")
 	}
 	close(release)
 }
 
-func TestAssigneeFollowupRefreshesClaimAndTemporaryArtifactCapability(t *testing.T) {
+func TestAssigneeFollowupRefreshesClaimWithoutArtifactCapability(t *testing.T) {
 	a, p, _, runner := issueFixture(t)
 	runner.work = func(context.Context, agent.AgentRequest) (agent.AgentResult, error) {
 		return agent.AgentResult{}, errors.New("tests unavailable")
@@ -617,27 +659,24 @@ func TestAssigneeFollowupRefreshesClaimAndTemporaryArtifactCapability(t *testing
 	if err := a.runIssueRound(context.Background(), p); err == nil {
 		t.Fatal("expected interrupted claim")
 	}
-	ledger, err := issues.Load(p.Path)
+	ledger, err := issues.Load(issues.Directory(a.store.Root(), p.Path))
 	if err != nil {
 		t.Fatal(err)
 	}
 	previous := ledger.Records[1].Owner
 	runner.work = func(_ context.Context, request agent.AgentRequest) (agent.AgentResult, error) {
-		latest, err := issues.Load(p.Path)
+		latest, err := issues.Load(issues.Directory(a.store.Root(), p.Path))
 		if err != nil {
 			t.Fatal(err)
 		}
 		if latest.Records[1].Owner.Run == previous.Run || latest.Records[1].Owner.Chat != previous.Chat {
 			t.Fatal("manual followup did not renew only the run owner")
 		}
-		if !strings.Contains(request.Prompt, "负责人主动") || !strings.Contains(request.Prompt, "attach_artifact()") || !strings.Contains(request.Prompt, "manual continuation") {
-			t.Fatal("manual followup lost current scope or user prompt")
+		if len(request.WritableDirectories) != 1 || !strings.HasPrefix(request.WritableDirectories[0], filepath.Join(filepath.Dir(latest.Path), "runs")+string(os.PathSeparator)) || !strings.Contains(request.Prompt, latest.Path) {
+			t.Fatal("manual followup lost its scoped ledger access")
 		}
-		a.automation.mu.Lock()
-		count := len(a.automation.scopes)
-		a.automation.mu.Unlock()
-		if count != 1 {
-			t.Fatal("missing fresh artifact capability")
+		if !strings.Contains(request.Prompt, "负责人主动") || strings.Contains(request.Prompt, "attach_artifact") || strings.Contains(request.Prompt, "Authorization: Bearer") || !strings.Contains(request.Prompt, "prs 数组") || !strings.Contains(request.Prompt, "notes、validation 是字符串") || !strings.Contains(request.Prompt, "manual continuation") {
+			t.Fatal("manual followup lost current scope or user prompt")
 		}
 		return agent.AgentResult{}, errors.New("still unable to verify")
 	}
@@ -648,15 +687,12 @@ func TestAssigneeFollowupRefreshesClaimAndTemporaryArtifactCapability(t *testing
 	}
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, err = os.Stat(filepath.Join(p.Path, "docs", ".issues-automation.lock")); os.IsNotExist(err) {
+		if _, err = os.Stat(filepath.Join(issues.Directory(a.store.Root(), p.Path), ".issues-automation.lock")); os.IsNotExist(err) {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
-	a.automation.mu.Lock()
-	count := len(a.automation.scopes)
-	a.automation.mu.Unlock()
-	if count != 0 {
-		t.Fatal("manual followup capability did not expire")
+	if _, err = os.Stat(filepath.Join(issues.Directory(a.store.Root(), p.Path), ".issues-automation.lock")); !os.IsNotExist(err) {
+		t.Fatal("manual followup did not release the project lock")
 	}
 }

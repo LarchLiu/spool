@@ -198,7 +198,7 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 	params := map[string]any{
 		"threadId": p.sessionID, "cwd": request.WorkingDirectory,
 		"approvalPolicy": "on-request", "approvalsReviewer": reviewer,
-		"sandboxPolicy": map[string]any{"type": "workspaceWrite", "writableRoots": []string{request.WorkingDirectory}, "networkAccess": false},
+		"sandboxPolicy": map[string]any{"type": "workspaceWrite", "writableRoots": append([]string{request.WorkingDirectory}, request.WritableDirectories...), "networkAccess": false},
 		"input":         input,
 	}
 	if request.Model != "" {

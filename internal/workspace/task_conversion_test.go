@@ -34,12 +34,15 @@ func TestTaskChatRejectsAgentForkWithoutChangingItsClaim(t *testing.T) {
 	if _, err := app.store.db.Exec(`UPDATE sessions SET status='completed' WHERE id=?`, chat.ID); err != nil {
 		t.Fatal(err)
 	}
-	ledger, err := issues.Load(project.Path)
+	ledger, err := issues.Load(issues.Directory(app.store.Root(), project.Path))
 	if err != nil {
 		t.Fatal(err)
 	}
 	owner := issues.NewOwner(app.automation.instance, "previous-run")
 	owner.Chat = chat.ID
+	if _, err := app.store.db.Exec(`INSERT INTO automation_runs(id,project_id,instance,chat_id,status,started_at) VALUES(?,?,?,?,'failed',1)`, owner.Run, project.ID, owner.Instance, chat.ID); err != nil {
+		t.Fatal(err)
+	}
 	ledger.Records[1] = &issues.Record{Number: 1, Title: "Fixture", Status: "processing", Owner: owner, Branch: "codex/issue-1-fix"}
 	if err := os.MkdirAll(filepath.Dir(ledger.Path), 0755); err != nil {
 		t.Fatal(err)
@@ -83,7 +86,7 @@ func TestTaskChatRejectsAgentForkWithoutChangingItsClaim(t *testing.T) {
 	if err := app.store.db.QueryRow(`SELECT count(*) FROM sessions`).Scan(&chats); err != nil || chats != 1 {
 		t.Fatalf("rejected conversion created a chat: count=%d error=%v", chats, err)
 	}
-	if err := app.store.db.QueryRow(`SELECT count(*) FROM automation_runs`).Scan(&runs); err != nil || runs != 0 {
+	if err := app.store.db.QueryRow(`SELECT count(*) FROM automation_runs WHERE id<>?`, owner.Run).Scan(&runs); err != nil || runs != 0 {
 		t.Fatalf("rejected conversion created a run: count=%d error=%v", runs, err)
 	}
 	files, err := filepath.Glob(filepath.Join(root, "claude", "projects", "*", "*.jsonl"))
@@ -106,8 +109,8 @@ func TestTaskChatRejectsAgentForkWithoutChangingItsClaim(t *testing.T) {
 	}
 	select {
 	case request := <-requests:
-		if request.ChatID != chat.ID || request.Model != "test-model" || !strings.Contains(request.Prompt, "attach_artifact()") || !strings.Contains(request.Prompt, "manual continuation") {
-			t.Fatal("same-agent continuation lost its claim, model or artifact capability")
+		if request.ChatID != chat.ID || request.Model != "test-model" || strings.Contains(request.Prompt, "attach_artifact") || !strings.Contains(request.Prompt, "prs 数组") || !strings.Contains(request.Prompt, "manual continuation") {
+			t.Fatal("same-agent continuation lost its claim, model or JSON ledger contract")
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("same-agent continuation did not start")

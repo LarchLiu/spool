@@ -46,16 +46,15 @@ type Lock struct {
 	guard *os.File
 }
 
-func Acquire(root string, owner Owner, ended func(Owner) bool) (*Lock, error) {
-	docs := filepath.Join(root, "docs")
-	if err := os.MkdirAll(docs, 0755); err != nil {
+func Acquire(directory string, owner Owner, ended func(Owner) bool) (*Lock, error) {
+	if err := os.MkdirAll(directory, 0700); err != nil {
 		return nil, err
 	}
-	info, err := os.Lstat(docs)
+	info, err := os.Lstat(directory)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("automation docs directory must not be a symlink")
+		return nil, fmt.Errorf("automation state directory must not be a symlink")
 	}
-	guardPath := filepath.Join(docs, ".issues-automation.guard")
+	guardPath := filepath.Join(directory, ".issues-automation.guard")
 	if info, e := os.Lstat(guardPath); e == nil && (!info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0) {
 		return nil, fmt.Errorf("automation guard must be a regular file")
 	} else if e != nil && !errors.Is(e, os.ErrNotExist) {
@@ -70,7 +69,7 @@ func Acquire(root string, owner Owner, ended func(Owner) bool) (*Lock, error) {
 		guard.Close()
 		return nil, err
 	}
-	l := &Lock{Path: filepath.Join(docs, ".issues-automation.lock"), Owner: owner, guard: guard}
+	l := &Lock{Path: filepath.Join(directory, ".issues-automation.lock"), Owner: owner, guard: guard}
 	fail := func(err error) (*Lock, error) { unlockFile(guard); guard.Close(); return nil, err }
 	if err = os.Mkdir(l.Path, 0700); errors.Is(err, os.ErrExist) {
 		if info, e := os.Lstat(l.Path); e != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -39,6 +41,31 @@ func (p *panel) projectIssuesView(c *ui.Context) {
 		p.issueInterval = "60"
 	}
 	p.field(c, "Run interval (minutes, 1–10080)", &p.issueInterval)
+	if v.Labels == nil {
+		v.Labels = v.IssueLabels()
+	}
+	ui.Text(c, p.tr("Issue labels")).Bold()
+	remove := -1
+	for i := range v.Labels {
+		c.Key("issue-label-" + strconv.Itoa(i))
+		ui.Row(c).Gap(8).Children(func() {
+			ui.TextInput(c, &v.Labels[i]).FillWidth().Label(p.tr("Issue label"))
+			if ui.Button(c, p.tr("Remove label")).Clicked() {
+				remove = i
+			}
+		})
+	}
+	if remove >= 0 {
+		v.Labels = append(v.Labels[:remove:remove], v.Labels[remove+1:]...)
+	}
+	ui.Row(c).Gap(8).Children(func() {
+		ui.TextInput(c, &p.issueLabel).FillWidth().Label(p.tr("New issue label"))
+		if ui.Button(c, p.tr("Add label")).Disabled(strings.TrimSpace(p.issueLabel) == "").Clicked() {
+			v.Labels = issues.NormalizeLabels(append(v.Labels, p.issueLabel))
+			p.issueLabel = ""
+		}
+	})
+	ui.Text(c, p.tr("Labels are optional and empty by default: ignore issue labels and run one task at a time per project. Add any labels to run one task per label; matching is exact, and multi-label issues reserve all matching labels. Running tasks continue across check intervals.")).Wrap().FontSize(12)
 	agents := []string{"Codex", "Claude Code"}
 	selected := v.Backend.Label()
 	ui.Select(c, &selected, agents).Label(p.tr("Automation agent"))
@@ -100,7 +127,7 @@ func (p *panel) projectIssuesView(c *ui.Context) {
 	ui.Text(c, p.tr("Each actionable run starts a new chat, prioritizing unfinished work. For new issues, the agent creates a separate codex/issue-N-fix branch from the latest dev and works in a safe checkout/worktree.")).Wrap().FontSize(12)
 	ui.Text(c, p.tr("Only after validation passes does the agent push the fix branch and create or reuse a PR targeting dev. PRs are not merged automatically.")).Wrap().FontSize(12)
 	ui.Text(c, p.tr("Interrupted or failed work retains its branch, worktree and progress for a later run. No catch-up runs while the service is stopped.")).Wrap().FontSize(12)
-	ui.Text(c, p.tr("Requires gh login, a GitHub.com origin and a remote dev branch. Only exact web/server/app labels are eligible. Shared local ledger: main checkout docs/issues.md.")).Wrap().FontSize(12)
+	ui.Text(c, p.tr("Requires gh login, a GitHub.com origin and a remote dev branch. Filter by configured labels, or leave empty to consider all issues. Shared ledger: data/projects/<encoded-working-directory>/issues/issues.json; each task writes isolated progress for Go to validate and merge.")).Wrap().FontSize(12)
 	status := *v
 	for _, project := range p.projects {
 		if project.ID == p.project.ID {

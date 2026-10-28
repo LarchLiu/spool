@@ -25,7 +25,7 @@ bundle identifier is `com.cloudgeek.spool`.
   duplicate assets and unsupported parent-directory `go:embed` paths.
 - `db/spool.sqlite` inside the data directory: users, projects, project membership,
   chat metadata, server settings, agent settings/catalogs, issue schedules/runs, task-chat assignees,
-  PR artifacts, and hashed login sessions. New tables are added on startup
+  previously recorded PR-link metadata, and hashed login sessions. New tables are added on startup
   without replacing existing projects or chats.
 
 Both entry points use `internal/workspace`, which coordinates `internal/agent`
@@ -171,14 +171,14 @@ an application crash report; consult the OS crash reports as well.
 ### Scheduled GitHub Issues
 
 In **Projects**, enable **Scheduled GitHub issues** and choose the
-interval (1–10080 minutes), Codex or Claude, and one or more
+interval (1–10080 minutes), editable issue labels, Codex or Claude, and one or more
 responsible project members. All assignees can see and control task chats:
 send messages/files, stop responses and answer permission requests, even when
 project-wide chat sharing is disabled. Responsibility changes also update
 existing task chats; removing membership or disabling an account immediately
 revokes its controls. Regular chats remain owner-only, including shared ones.
-Human follow-ups use the same project lock so scheduled recoveries cannot overlap
-them. Model, reasoning level and native permission mode
+Human follow-ups atomically reserve the same issue slots so scheduled recoveries
+cannot overlap them, while unrelated labels continue when labels are configured. Model, reasoning level and native permission mode
 are optional. Configuration is per project; no repository/path is hardcoded.
 The GitHub `owner/repo` is read automatically from the project's Git `origin`
 (HTTPS or SSH); it is not entered manually. The project must point at the root
@@ -223,30 +223,42 @@ The Go scheduler runs in both desktop and headless services while the Web
 service is running (checks admitted within about 15 seconds of their due time).
 It does not wake a previous chat or replay missed intervals. Stopping the
 service cancels both preflight and accepted agent work and waits for actual
-cleanup before releasing the project lock. Disabling/archiving a project or
+cleanup and progress import before releasing label reservations. Disabling/archiving a project or
 changing its schedule affects future runs; it does not discard accepted work.
 An update cannot start while a scheduled preflight or agent turn is running.
 
 The Go backend, not the agent, performs admission (requirements 1–3):
 
 - Inspect Git state and worktrees, locate the **main checkout**, and acquire
-  `docs/.issues-automation.lock`. Its owner includes automation ID `issues`,
-  run ID, chat ID, service instance, host and PID. An advisory guard also
-  serializes stale-lock reclamation. Only proven-ended owners can be reclaimed;
+  `<data-dir>/projects/<encoded-working-directory>/issues/.issues-automation.lock`.
+  Its owner includes automation ID `issues`,
+  run ID, chat ID, service instance, host and PID. This is a state transaction
+  lock, not an execution-wide project lock. An advisory guard also serializes
+  stale-lock reclamation. Only proven-ended owners can be reclaimed;
   age alone never expires a claim. Unknown/external owners are left alone.
 - Fully paginate REST issues (all states, excluding PR entries), timelines and
   comments, query paginated Development connection events, and verify actual
   linked PR state with `gh pr view --json`. Previously recorded branches are
   also checked for PRs, recovering a PR created just before a crash.
-- Preserve and synchronize the main checkout's **only** shared local ledger,
-  `docs/issues.md`. Status is `close` only for a closed issue, `pr` for an open
+- Preserve and synchronize the project's **only** shared local ledger,
+  `<data-dir>/projects/<encoded-working-directory>/issues/issues.json`.
+  Status is `close` only for a closed issue, `pr` for an open
   linked PR (drafts included), `processing` for an unfinished claim, otherwise
   `open`. Merged PRs do not close still-open issues locally.
 - Resume an unfinished `issues` claim only after proving its previous run has
-  ended. Otherwise claim at most one lowest-numbered eligible issue. Labels
-  match exactly `web`, `server`, `app`; a multi-label issue occupies every one
-  of its categories. Unknown or overlapping file scope is conservatively
-  serialized, even across categories. Unlabelled issues are synchronized only.
+  ended. Labels are optional and empty by default: without configured labels,
+  ignore issue labels and run at most one task per project. With configured
+  labels, each label can run one task concurrently, choosing the
+  lowest-numbered eligible issue and prioritizing ended unfinished work within
+  that label. Labels are freely editable and have no fixed count;
+  matching is exact and case-sensitive.
+  Spaces, punctuation and Unicode names are preserved. A multi-label issue
+  reserves every matching configured label atomically. A live executor keeps its
+  reservation across timer checks, even if its issue has gained a PR or closed.
+  Unrelated labels continue; when filtering, no matching label means synchronization only.
+  Changing labels affects future admission, never interrupts accepted work.
+  Clearing labels waits for existing tasks to end before admitting a global task;
+  a running global task also blocks newly configured label slots until it ends.
 - Write the complete claim before sending any code-editing task. No candidate
   means no agent invocation, new empty chat, or periodic empty notification.
 
@@ -260,20 +272,61 @@ verification must retain `processing`, validation results and recovery notes;
 it must not push or create a PR. PRs are never automatically merged and issues
 are never automatically closed.
 
-The task includes a shell function named `attach_artifact` backed by a scoped,
-temporary Spool callback. It verifies that the PR is open with the claimed head
-branch and `dev` base, then attaches it to **this run's chat**. The capability
-cannot attach to another chat or repository and expires when the round ends.
-Confirmed PRs are also reconciled and attached after successful agent execution.
-Links appear below the chat header. Do not copy callback credentials into Git,
-the ledger, PRs or final messages.
+The agent records full PR URLs in the claimed JSON record's `prs` array and
+includes links in its reply. The Go backend independently verifies linked and
+recorded PRs and checks the recorded branch for PRs, recovering creation that
+succeeded just before a crash. Issue automation does not attach PRs to chats or
+write PR attachment metadata to SQLite. There is no attachment callback, shell
+function or temporary credential in the agent prompt; PR synchronization does
+not depend on an attachment API.
 
-The ledger contains a `spool:issues:v1` marked JSON block. Human text outside the
-block, notes, owner, branch/worktree, validation, PR history and unknown JSON
-fields are preserved. Standard existing Markdown issue tables can be imported;
-PR links in those rows are verified even without GitHub issue cross-references.
-Existing `pr` rows require full PR URLs. Unparseable in-progress records or PR
-references fail closed for manual migration rather than being reclaimed.
+State is outside the source repository, under
+`<data-dir>/projects/<encoded-working-directory>/issues/`. The encoded directory
+uses the full canonical main-checkout path, replacing each non-letter/non-number
+character with `-` (without collapsing or trimming). For example,
+`/Users/alex/Work/muyun/test` becomes `-Users-alex-Work-muyun-test`. Linked
+worktrees share their main checkout's state. A `.project-directory` identity file
+in the encoded project folder rejects path-encoding collisions instead of mixing
+unrelated projects. The ledger, `.issues-automation.guard`, and active
+`.issues-automation.lock/owner.json` all live in the same `issues/` directory.
+Each agent writes only `runs/<run-id>/issues.json`, a single-record task document,
+with additional write access scoped to that run directory, not the shared state
+or entire data root. Go validates the issue number, owner and field types, then
+merges progress under the short state lock after actual executor cleanup. It
+also imports ended task files on crash recovery. Malformed task JSON remains in
+its run directory for diagnosis and does not corrupt the shared ledger or block
+unrelated labels. Execution guards/locks live in the run directory; the project
+lock is held only during state transactions. Use separate issue worktrees for
+all concurrent code changes, including changes in the same source file; any
+integration conflicts are resolved during review, never by sharing a checkout.
+Do not copy or commit automation state into the repo.
+
+The ledger is a standalone JSON object in `issues.json`, with `version: 1`
+and a `records` array keyed logically by each record's `number`. Notes, owner,
+branch/worktree, validation, PR history and unknown JSON fields are preserved.
+The `notes` and `validation` fields are strings (multiple results use multiline
+text); keep these optional fields to short validation and recovery summaries,
+not full execution logs. `history`, `prs`, `files` and `categories` are arrays of strings.
+Writes are atomic and reject concurrent changes, malformed data, duplicate issue
+numbers and unsupported versions rather than overwriting them.
+
+Only Go reads and writes the shared data-directory `issues.json`; agents write
+their isolated single-record task documents. If it does not exist,
+synchronization starts with an empty ledger and creates it after the required
+GitHub reads succeed. Repo-local `docs/issues.json` copies are not used; move an
+existing JSON ledger into the data directory while the old service is stopped.
+Old `docs/issues.md` files, Markdown tables, embedded JSON blocks and
+their contents are not read, imported, copied or updated. Existing local claims
+that must remain occupied need to be recorded explicitly in JSON before enabling
+the schedule.
+
+```json
+{
+  "version": 1,
+  "records": []
+}
+```
+
 The ledger is local automation state: do not commit it to `dev`
 or use a worktree/branch copy. Keep the `owner` object intact when recording
 progress. Explicitly abandoning a claim requires preserving history and clearing
@@ -294,10 +347,18 @@ For a headless host, configure an existing project while the service is stopped:
 go run ./cmd/server -list-projects
 
 go run ./cmd/server -issues-project PROJECT_ID -issues-repo OWNER/REPO \
-  -issues-interval 15 -issues-agent codex -issues-assignees alex,bob
+  -issues-interval 15 -issues-agent codex -issues-assignees alex,bob \
+  -issues-label web -issues-label server -issues-label "priority / urgent"
 
 go run ./cmd/server -issues-project PROJECT_ID -issues-enabled=false
 ```
+
+`-issues-label` can be repeated any number of times; commas inside names are
+literal, not separators. Omit it to ignore issue labels and process one issue at
+a time per project. The desktop Projects settings have editable label rows and
+Add/Remove buttons; remove all rows for the same unfiltered, single-task mode.
+Missing or empty label settings both use this default; saved nonempty lists
+continue to filter by those labels.
 
 `-issues-owner` can select the creating owner from the assignees (otherwise the
 first assignee is used); it also works alone for a single responsible person.

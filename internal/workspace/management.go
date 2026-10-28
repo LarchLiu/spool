@@ -260,6 +260,7 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 		return v, err
 	}
 	v.Path = path
+	v.Issues.Labels = v.Issues.IssueLabels()
 	if v.Issues.Enabled {
 		v.Issues.Repository, err = issues.DetectRepository(context.Background(), issues.Run, v.Path)
 		if err != nil {

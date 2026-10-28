@@ -127,10 +127,6 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimSuffix(r.URL.Path, "/")
-	if path == "/api/automation/attach-artifact" && r.Method == "POST" {
-		a.automationArtifact(w, r)
-		return
-	}
 	if path == "/api/login" && r.Method == "POST" {
 		if !a.sameOrigin(r) {
 			apiError(w, 403, "跨域登录被拒绝")
@@ -666,7 +662,7 @@ func (a *App) startTurnWithCallback(chat chatmodel.Session, input messageInput, 
 	a.turns.Add(1)
 	go func() {
 		defer a.turns.Done()
-		_, err := a.executeTurn(ctx, chat.ID, input.Message, turn, nil, input.files)
+		_, err := a.executeTurn(ctx, chat.ID, input.Message, turn, nil, input.files, input.writableDirectories)
 		a.releaseTurn(chat.ID, control)
 		if finished != nil {
 			finished(err)
@@ -723,9 +719,9 @@ func (a *App) runTurn(ctx context.Context, id, prompt string, emit func(agent.Ag
 	a.turnMu.Unlock()
 	defer a.turns.Done()
 	defer a.releaseTurn(id, control)
-	return a.executeTurn(ctx, id, prompt, turn, emit)
+	return a.executeTurn(ctx, id, prompt, turn, emit, nil, nil)
 }
-func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel.Turn, emit func(agent.AgentEvent) error, uploads ...[]uploadedAttachment) (agent.AgentResult, error) {
+func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel.Turn, emit func(agent.AgentEvent) error, files []uploadedAttachment, writableDirectories []string) (agent.AgentResult, error) {
 	chat, _ := a.store.Get(id)
 	finish := func(result agent.AgentResult, runErr error) (agent.AgentResult, error) {
 		a.liveMu.Lock()
@@ -812,10 +808,7 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 	request := agent.AgentRequest{ChatID: id, Backend: chat.Backend, Binary: binary, WorkingDirectory: directory, NativeSessionID: chat.NativeSessionID, Prompt: prompt, Model: turn.RequestedModel, ReasoningEffort: turn.ReasoningEffort}
 	request.NativeSessionPath = chat.NativeSessionPath
 	request.PermissionMode = turn.PermissionMode
-	var files []uploadedAttachment
-	if len(uploads) > 0 {
-		files = uploads[0]
-	}
+	request.WritableDirectories = writableDirectories
 	request.Files, err = a.materializeAttachments(id, files)
 	if err != nil {
 		return finish(agent.AgentResult{}, err)

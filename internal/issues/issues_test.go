@@ -24,9 +24,6 @@ func testIssue(n int, state string, labels ...string) Issue {
 
 func TestLedgerSyncPreservesNotesOwnersHistoryAndPRStates(t *testing.T) {
 	root := t.TempDir()
-	_ = os.Mkdir(filepath.Join(root, "docs"), 0755)
-	manual := "# Human notes\n\nDo not erase this.\n"
-	_ = os.WriteFile(filepath.Join(root, "docs", "issues.md"), []byte(manual), 0600)
 	l, err := Load(root)
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +35,7 @@ func TestLedgerSyncPreservesNotesOwnersHistoryAndPRStates(t *testing.T) {
 	snapshot[0].PRs = []PR{{URL: "https://github.com/o/r/pull/11", State: "MERGED", MergedAt: &merged}}
 	snapshot[1].PRs = []PR{{URL: "https://github.com/o/r/pull/12", State: "OPEN", Draft: true}}
 	snapshot[3].PRs = []PR{{URL: "https://github.com/o/r/pull/14", State: "CLOSED"}}
-	l.Sync(snapshot)
+	l.Sync(snapshot, []string{"web", "server", "app"})
 	if err = l.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -58,8 +55,8 @@ func TestLedgerSyncPreservesNotesOwnersHistoryAndPRStates(t *testing.T) {
 		}
 	}
 	body, _ := os.ReadFile(l.Path)
-	if !strings.HasPrefix(string(body), manual) {
-		t.Fatal("human text lost")
+	if !json.Valid(body) {
+		t.Fatal("ledger is not standalone JSON")
 	}
 	before := string(body)
 	if err = l.Save(); err != nil {
@@ -75,73 +72,47 @@ func TestLedgerSyncPreservesNotesOwnersHistoryAndPRStates(t *testing.T) {
 	}
 }
 
-func TestSelectionResumesOwnEndedRunNeverStealsAndHonorsAllLabels(t *testing.T) {
-	snapshot := []Issue{testIssue(1, "open", "web", "server"), testIssue(2, "open", "app"), testIssue(3, "open", "Web"), testIssue(4, "open")}
+func TestSelectionResumesEndedClaimsWithoutBlockingUnrelatedLabels(t *testing.T) {
+	labels := []string{"frontend", "API / v2", "custom label"}
+	snapshot := []Issue{testIssue(1, "open", "frontend"), testIssue(2, "open", "API / v2"), testIssue(3, "open", "custom label"), testIssue(4, "open", "Frontend")}
 	l := &Ledger{Records: map[int]*Record{}}
-	l.Sync(snapshot)
-	selected, resume := l.Select(snapshot, func(Owner) bool { return false })
+	l.Sync(snapshot, labels)
+	selected, resume := l.Select(snapshot, labels, func(Owner) bool { return false })
 	if selected == nil || selected.Number != 1 || resume {
-		t.Fatal("did not choose smallest numbered eligible issue")
+		t.Fatal("did not choose the smallest eligible issue")
+	}
+	l.Records[1].Status = "processing"
+	l.Records[1].Owner = NewOwner("instance", "live")
+	selected, resume = l.Select(snapshot, labels, func(Owner) bool { return false })
+	if selected == nil || selected.Number != 2 || resume {
+		t.Fatal("live processing blocked an unrelated label")
+	}
+	selected, resume = l.Select(snapshot, labels, func(Owner) bool { return true })
+	if selected == nil || selected.Number != 1 || !resume {
+		t.Fatal("ended claim was not resumed first")
 	}
 	l.Records[2].Status = "processing"
 	l.Records[2].Owner = Owner{Automation: "human"}
-	if selected, _ = l.Select(snapshot, func(Owner) bool { return true }); selected != nil {
-		t.Fatal("risked overlapping unknown file scope")
+	l.Records[1].Categories = []string{"frontend", "API / v2"}
+	selected, resume = l.Select(snapshot, labels, func(o Owner) bool { return o.Automation == "issues" })
+	if selected == nil || selected.Number != 3 || resume {
+		t.Fatal("overlapping multi-label claim resumed, or unrelated label was blocked")
 	}
-	l.Records[2].Owner = NewOwner("instance", "old")
-	if selected, _ = l.Select(snapshot, func(Owner) bool { return false }); selected != nil {
-		t.Fatal("stole a live automation claim")
-	}
-	selected, resume = l.Select(snapshot, func(Owner) bool { return true })
-	if selected == nil || selected.Number != 2 || !resume {
-		t.Fatal("own prior claim not resumed first")
-	}
-	l.Records[1].Status = "processing"
-	l.Records[1].Owner = Owner{Automation: "another"}
-	l.Records[1].Files = []string{"shared"}
-	l.Records[2].Files = []string{"shared/config.go"}
-	if selected, _ = l.Select(snapshot, func(Owner) bool { return true }); selected != nil {
-		t.Fatal("overlapping file ranges admitted")
-	}
-	l.Records[1].Files = []string{"web"}
-	l.Records[2].Files = []string{"app"}
-	selected, resume = l.Select(snapshot, func(Owner) bool { return true })
-	if selected == nil || !resume {
-		t.Fatal("disjoint existing claim should resume")
-	}
-	l.Records[2].Categories = []string{"web", "app"}
-	if selected, _ = l.Select(snapshot, func(Owner) bool { return true }); selected != nil {
-		t.Fatal("multi-category occupancy ignored")
+	l.Records[1].Status = "pr"
+	l.Records[1].Owner = NewOwner("instance", "live")
+	snapshot[2] = testIssue(3, "open", "frontend")
+	if selected, _ := l.Select(snapshot, labels, func(Owner) bool { return false }); selected != nil {
+		t.Fatal("pr status released labels while executor was still running")
 	}
 }
 
-func TestLegacyTableAndMalformedLedgerFailClosed(t *testing.T) {
-	for _, text := range []string{"issue #1 processing owned by somebody", ledgerStart + "invalid" + ledgerEnd, "<!-- spool:issues:v2 -->"} {
-		root := t.TempDir()
-		_ = os.Mkdir(filepath.Join(root, "docs"), 0755)
-		_ = os.WriteFile(filepath.Join(root, "docs", "issues.md"), []byte(text), 0600)
-		if _, err := Load(root); err == nil {
-			t.Errorf("accepted unsafe ledger %q", text)
-		}
-	}
-	root := t.TempDir()
-	_ = os.Mkdir(filepath.Join(root, "docs"), 0755)
-	text := "| Issue | Status | Owner | Notes |\n|---|---|---|---|\n| #41 | processing | human | keep |\n"
-	_ = os.WriteFile(filepath.Join(root, "docs", "issues.md"), []byte(text), 0600)
-	l, err := Load(root)
-	if err != nil || l.Records[41].Status != "processing" || l.Records[41].Owner.Automation != "human" {
-		t.Fatalf("legacy claim lost: %#v %v", l, err)
-	}
-}
-
-func TestLegacyTableImportsAndVerifiesPRsBeforeSelection(t *testing.T) {
+func TestJSONLedgerVerifiesPRsBeforeSelection(t *testing.T) {
 	for _, state := range []string{"OPEN", "CLOSED"} {
 		t.Run(state, func(t *testing.T) {
 			root := t.TempDir()
-			_ = os.Mkdir(filepath.Join(root, "docs"), 0755)
 			link := "https://github.com/o/r/pull/81"
-			text := "| Issue | Status | PR | Notes |\n|---|---|---|---|\n| #41 | pr | [PR](" + link + ") | Keep <" + link + "> |\n"
-			_ = os.WriteFile(filepath.Join(root, "docs", "issues.md"), []byte(text), 0600)
+			text := fmt.Sprintf(`{"version":1,"records":[{"number":41,"status":"pr","prs":[%q],"notes":"keep"}]}`, link)
+			writeLedgerFixture(t, root, "issues.json", text)
 			ledger, err := Load(root)
 			if err != nil {
 				t.Fatal(err)
@@ -168,10 +139,10 @@ func TestLegacyTableImportsAndVerifiesPRsBeforeSelection(t *testing.T) {
 				t.Fatal(err)
 			}
 			if verified != 1 || len(ledger.Records[41].PRs) != 1 {
-				t.Fatalf("legacy PR was not imported and verified exactly once: %d, %#v", verified, ledger.Records[41])
+				t.Fatalf("recorded PR was not verified exactly once: %d, %#v", verified, ledger.Records[41])
 			}
-			ledger.Sync(snapshot)
-			selected, _ := ledger.Select(snapshot, func(Owner) bool { return true })
+			ledger.Sync(snapshot, []string{"web", "server", "app"})
+			selected, _ := ledger.Select(snapshot, []string{"web", "server", "app"}, func(Owner) bool { return true })
 			if state == "OPEN" && (selected != nil || ledger.Records[41].Status != "pr") {
 				t.Fatal("reclaimed an issue with a verified open PR")
 			}
@@ -181,28 +152,9 @@ func TestLegacyTableImportsAndVerifiesPRsBeforeSelection(t *testing.T) {
 			if err = ledger.Save(); err != nil {
 				t.Fatal(err)
 			}
-			body, _ := os.ReadFile(ledger.Path)
-			if !strings.HasPrefix(string(body), text) {
-				t.Fatal("legacy table text was lost")
-			}
-		})
-	}
-}
-
-func TestLegacyTableUnverifiablePRFailsClosed(t *testing.T) {
-	for _, value := range []string{"#81", "[PR](https://github.com/o/r/pull/not-a-number)", "https://github.com/o/r/pull/81?invalid", ""} {
-		t.Run(value, func(t *testing.T) {
-			root := t.TempDir()
-			_ = os.Mkdir(filepath.Join(root, "docs"), 0755)
-			path := filepath.Join(root, "docs", "issues.md")
-			text := "| Issue | Status | PR |\n|---|---|---|\n| #41 | pr | " + value + " |\n"
-			_ = os.WriteFile(path, []byte(text), 0600)
-			if _, err := Load(root); err == nil {
-				t.Fatal("accepted an unverifiable legacy PR")
-			}
-			body, _ := os.ReadFile(path)
-			if string(body) != text {
-				t.Fatal("failed import changed the legacy ledger")
+			reloaded, err := Load(root)
+			if err != nil || reloaded.Records[41].Notes != "keep" || len(reloaded.Records[41].PRs) != 1 {
+				t.Fatal("JSON ledger lost notes or verified PR")
 			}
 		})
 	}
@@ -221,7 +173,7 @@ func TestProjectLockNoReentryNoAgeBasedStealAndOwnReleaseOnly(t *testing.T) {
 	if err = l.Release(); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(root, "docs", ".issues-automation.lock")
+	path := filepath.Join(root, ".issues-automation.lock")
 	_ = os.Mkdir(path, 0700)
 	body, _ := json.Marshal(owner)
 	_ = os.WriteFile(filepath.Join(path, "owner.json"), body, 0600)
@@ -321,7 +273,7 @@ func TestGitHubReadOnlyIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, issue := range snapshot {
-		t.Logf("#%d state=%s categories=%v linkedPRs=%d", issue.Number, issue.State, Categories(issue), len(issue.PRs))
+		t.Logf("#%d state=%s categories=%v linkedPRs=%d", issue.Number, issue.State, Categories(issue, []string{"web", "server", "app"}), len(issue.PRs))
 	}
 	t.Logf("read %d issues without mutating GitHub or a local checkout", len(snapshot))
 }
@@ -352,6 +304,15 @@ func TestInspectLinkedWorktreeUsesMainCheckoutAndDoesNotModifyFiles(t *testing.T
 	if checkout.Root != canonical || checkout.Repository != "fixture/issues" || checkout.Branch != "(detached)" || !strings.Contains(checkout.Status, "user-file.txt") {
 		t.Fatalf("wrong checkout inspection: %#v", checkout)
 	}
+	data := t.TempDir()
+	mainState, err := PrepareDirectory(data, canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linkedState, err := PrepareDirectory(data, checkout.Root)
+	if err != nil || linkedState != mainState {
+		t.Fatalf("linked worktree did not share main checkout state: %q, %v", linkedState, err)
+	}
 	body, _ := os.ReadFile(marker)
 	if string(body) != "untouched dirty user file" {
 		t.Fatal("inspection changed user work")
@@ -366,14 +327,15 @@ func TestInspectLinkedWorktreeUsesMainCheckoutAndDoesNotModifyFiles(t *testing.T
 
 func TestLockRejectsSymlinkStateDirectory(t *testing.T) {
 	root, elsewhere := t.TempDir(), t.TempDir()
-	if err := os.Symlink(elsewhere, filepath.Join(root, "docs")); err != nil {
+	directory := filepath.Join(root, "issues")
+	if err := os.Symlink(elsewhere, directory); err != nil {
 		t.Skip(err)
 	}
-	if _, err := Acquire(root, NewOwner("instance", "run"), func(Owner) bool { return true }); err == nil {
-		t.Fatal("followed symlink docs directory")
+	if _, err := Acquire(directory, NewOwner("instance", "run"), func(Owner) bool { return true }); err == nil {
+		t.Fatal("followed symlink state directory")
 	}
 	entries, _ := os.ReadDir(elsewhere)
 	if len(entries) != 0 {
-		t.Fatal("wrote automation state outside the main checkout")
+		t.Fatal("wrote automation state through a symlink")
 	}
 }

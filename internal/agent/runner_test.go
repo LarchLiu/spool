@@ -412,6 +412,10 @@ func assertNoCodexPromptOverrides(t *testing.T, params map[string]any) {
 
 func TestCodexUsesAppServerSandboxAndFiltersReplayedTurns(t *testing.T) {
 	request := newAgentFixture(t, chatmodel.BackendCodex)
+	directory, err := WorkingDirectory(request.WorkingDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
 	request.NativeSessionID = "existing-native-session"
 	request.Prompt = "multiple-items"
 	result, _ := runFixture(t, newTestRunner(t), request)
@@ -441,7 +445,73 @@ func TestCodexUsesAppServerSandboxAndFiltersReplayedTurns(t *testing.T) {
 			if policy["type"] != "workspaceWrite" || policy["networkAccess"] != false {
 				t.Fatalf("unsafe sandbox parameters: %#v", policy)
 			}
+			roots, _ := policy["writableRoots"].([]any)
+			if len(roots) != 1 || roots[0] != directory {
+				t.Fatalf("ordinary turn received extra writable roots: %#v", roots)
+			}
 		}
+	}
+}
+
+func TestProviderScopedWritableDirectoriesAndProcessReuse(t *testing.T) {
+	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {
+		t.Run(string(backend), func(t *testing.T) {
+			request := newAgentFixture(t, backend)
+			workingDirectory, err := WorkingDirectory(request.WorkingDirectory)
+			if err != nil {
+				t.Fatal(err)
+			}
+			directory, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			runner := newTestRunner(t)
+			request.WritableDirectories = []string{directory}
+			runFixture(t, runner, request)
+			runFixture(t, runner, request)
+			spawns, starts := 0, 0
+			for _, entry := range fixtureLog(t, request) {
+				if entry["method"] == "spawn" {
+					spawns++
+					if backend == chatmodel.BackendClaude {
+						args, _ := entry["args"].([]any)
+						found := false
+						for i := 0; i+1 < len(args); i++ {
+							if args[i] == "--add-dir" && args[i+1] == directory {
+								found = true
+							}
+						}
+						if !found {
+							t.Fatalf("Claude did not receive its scoped directory: %#v", args)
+						}
+					}
+				}
+				if entry["method"] == "turn/start" {
+					starts++
+					value, _ := entry["value"].(map[string]any)
+					params, _ := value["params"].(map[string]any)
+					policy, _ := params["sandboxPolicy"].(map[string]any)
+					roots, _ := policy["writableRoots"].([]any)
+					if len(roots) != 2 || roots[0] != workingDirectory || roots[1] != directory || policy["networkAccess"] != false {
+						t.Fatalf("unexpected scoped roots: %#v", policy)
+					}
+				}
+			}
+			if spawns != 1 || (backend == chatmodel.BackendCodex && starts != 2) {
+				t.Fatalf("same scope was not reused: spawns=%d, turns=%d", spawns, starts)
+			}
+			request.WritableDirectories = nil
+			runFixture(t, runner, request)
+			spawns = 0
+			for _, entry := range fixtureLog(t, request) {
+				if entry["method"] == "spawn" {
+					spawns++
+				}
+			}
+			if spawns != 2 {
+				t.Fatal("provider process retained the previous directory grant")
+			}
+		})
 	}
 }
 

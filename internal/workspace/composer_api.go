@@ -17,6 +17,8 @@ type messageInput struct {
 	Backend        chatmodel.Backend `json:"backend"`
 	PermissionMode string            `json:"permission_mode"`
 	files          []uploadedAttachment
+	// Only trusted server-side automation can grant additional writable roots.
+	writableDirectories []string
 }
 
 func readMessageInput(w http.ResponseWriter, r *http.Request) (messageInput, bool) {
