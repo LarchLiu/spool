@@ -57,6 +57,8 @@ export type ApprovalRequest = {
   reason?: string;
 };
 export type TranscriptPart = {
+  id?: string;
+  phase?: "commentary" | "final_answer";
   role: "user" | "assistant" | "tool";
   kind: "text" | "thinking" | "tool_use" | "tool_result" | "context" | "image";
   image_url?: string;

@@ -939,6 +939,14 @@ a.attachment-open {
 .tool-activity {
   min-width: 0;
 }
+.tool-progress-message {
+  min-width: 0;
+  padding: 6px 5px 10px;
+  overflow-wrap: anywhere;
+}
+.tool-progress-message .markdown {
+  font-size: 14px;
+}
 .tool-activity-summary {
   display: flex;
   align-items: center;

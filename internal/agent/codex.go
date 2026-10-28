@@ -232,6 +232,11 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 		}
 	}
 	items := make(map[string]string)
+	messagePhases := make(map[string]string)
+	emitMessage := func(id, delta string) error {
+		part := chatmodel.Part{ID: id, Phase: messagePhases[id], Role: "assistant", Kind: "text", Model: result.Model, Text: delta}
+		return emit(AgentEvent{Type: "delta", Text: delta, Part: &part})
+	}
 	startedItems := make(map[string]bool)
 	streamedThinking := make(map[string]string)
 	streamedToolOutput := make(map[string]string)
@@ -349,20 +354,31 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 			items[id] += delta
 			result.Text += delta
 			if delta != "" {
-				if err := emit(AgentEvent{Type: "delta", Text: delta}); err != nil {
+				if err := emitMessage(id, delta); err != nil {
 					return result, err, false
 				}
 			}
 		case "item/started", "item/completed":
 			item, _ := params["item"].(map[string]any)
-			if isCodexAgentMessage(item["type"]) && method == "item/completed" {
-				id, full := stringValue(item["id"]), stringValue(item["text"])
+			if isCodexAgentMessage(item["type"]) {
+				id := stringValue(item["id"])
+				if phase := stringValue(item["phase"]); phase != "" {
+					messagePhases[id] = phase
+					part := chatmodel.Part{ID: id, Phase: phase, Role: "assistant", Kind: "text"}
+					if err := emit(AgentEvent{Type: "message", Part: &part}); err != nil {
+						return result, err, false
+					}
+				}
+				if method != "item/completed" {
+					continue
+				}
+				full := stringValue(item["text"])
 				previous := items[id]
 				if strings.HasPrefix(full, previous) && len(full) > len(previous) {
 					delta := full[len(previous):]
 					result.Text += delta
 					items[id] = full
-					if err := emit(AgentEvent{Type: "delta", Text: delta}); err != nil {
+					if err := emitMessage(id, delta); err != nil {
 						return result, err, false
 					}
 				}

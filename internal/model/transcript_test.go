@@ -54,3 +54,19 @@ func TestAppendPartRetainsImagesAndSkipsOnlyEmptyParts(t *testing.T) {
 		t.Fatal("image or whitespace-only content was dropped")
 	}
 }
+
+func TestAppendStreamTextPreservesMessageBoundaries(t *testing.T) {
+	var transcript Transcript
+	for _, part := range []Part{
+		{ID: "progress", Phase: "commentary", Role: "assistant", Kind: "text", Text: "Checking"},
+		{ID: "progress", Phase: "commentary", Role: "assistant", Kind: "text", Text: "."},
+		{ID: "answer", Phase: "final_answer", Role: "assistant", Kind: "text", Text: "Done"},
+		{ID: "answer", Phase: "final_answer", Role: "assistant", Kind: "text", Text: "."},
+		{ID: "answer", Phase: "commentary", Role: "assistant", Kind: "text", Text: "Follow-up"},
+	} {
+		AppendStreamText(&transcript, part)
+	}
+	if len(transcript.Parts) != 3 || transcript.Parts[0].Text != "Checking." || transcript.Parts[1].Text != "Done." || transcript.Parts[2].Text != "Follow-up" {
+		t.Fatalf("messages or phases were merged: %#v", transcript.Parts)
+	}
+}

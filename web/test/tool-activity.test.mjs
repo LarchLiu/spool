@@ -8,13 +8,92 @@ import {
   changeStats,
   displayActivity,
   ToolActivityList,
+  TurnResponse,
   ToolDiffBoundary,
   toolResultDiffs,
 } from "../.test-build/components/web/src/tool-activity.js";
+import { turnPresentation } from "../.test-build/components/web/src/turn-presentation.js";
 
 const t = (message, values = {}) =>
   message.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? key));
 const tool = (name, text) => ({ role: "assistant", kind: "tool_use", name, text });
+const message = (text, phase, id) => ({ role: "assistant", kind: "text", text, phase, id });
+
+test("progress messages stay between tools and do not merge tool groups across them", () => {
+  const parts = [
+    message("First progress", "commentary", "first"),
+    tool("Read", '{"file_path":"a.txt"}'),
+    { role: "tool", kind: "tool_result", text: "contents" },
+    message("Second progress", "commentary", "second"),
+    tool("Read", '{"file_path":"b.txt"}'),
+    message(" \n", undefined, "ack"),
+  ];
+  const presentation = turnPresentation(parts, true);
+  assert.equal(presentation.answer, "");
+  assert.equal(presentation.expanded, true);
+  const activities = activitiesFromParts(presentation.process, "claude", t);
+  assert.deepEqual(activities.map((item) => item.kind), ["message", "read", "message", "read"]);
+  assert.equal(activities[1].result.text, "contents");
+  const html = renderToStaticMarkup(createElement(TurnResponse, {
+    parts, backend: "claude", t, running: true, summary: "Working for 5s",
+  }));
+  const positions = ["First progress", "Read a.txt", "Second progress", "Read b.txt"].map((text) => html.indexOf(text));
+  assert.ok(positions.every((position) => position >= 0));
+  assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
+  assert.equal((html.match(/class="tool-progress-message"/g) || []).length, 2);
+  assert.doesNotMatch(html, /class="assistant"/);
+});
+
+test("final_answer collapses the process before turn completion and renders only the final outside it", () => {
+  const progress = message("Hidden progress", "commentary", "progress");
+  const final = message("**Final answer**", "final_answer", "final");
+  const parts = [progress, tool("Read", '{"file_path":"a.txt"}'), final];
+  for (const running of [true, false]) {
+    const presentation = turnPresentation(parts, running);
+    assert.deepEqual(presentation.process, parts.slice(0, 2));
+    assert.equal(presentation.answer, final.text);
+    assert.equal(presentation.expanded, false);
+    const html = renderToStaticMarkup(createElement(TurnResponse, {
+      parts, backend: "codex", t, running, summary: "Worked for 5s",
+    }));
+    assert.match(html, /aria-expanded="false"/);
+    assert.match(html, /<strong>Final answer<\/strong>/);
+    assert.doesNotMatch(html, /Hidden progress|Read a\.txt/);
+    assert.equal((html.match(/Final answer/g) || []).length, 1);
+  }
+});
+
+test("unphased Claude and legacy replies use trailing text only after the turn ends", () => {
+  const progress = message("Checking", undefined, "progress");
+  const final = message("Done", undefined, "final");
+  const parts = [progress, tool("Read", '{"file_path":"a.txt"}'), final];
+  assert.equal(turnPresentation(parts, true).answer, "");
+  const complete = turnPresentation(parts, false);
+  assert.equal(complete.answer, "Done");
+  assert.deepEqual(complete.process, parts.slice(0, 2));
+  const noAnswer = turnPresentation(parts.slice(0, 2), false);
+  assert.equal(noAnswer.answer, "");
+  assert.equal(noAnswer.expanded, false);
+  assert.equal(turnPresentation([message("Progress only", "commentary")], false).answer, "");
+});
+
+test("answer chunks from the same message join without inventing spaces but separate messages retain boundaries", () => {
+  const parts = [
+    message("Hello ", "final_answer", "one"),
+    message("world", "final_answer", "one"),
+    message("Another message", "final_answer", "two"),
+  ];
+  assert.equal(turnPresentation(parts, false).answer, "Hello world\n\nAnother message");
+  assert.equal(turnPresentation([message(" \n", "final_answer")], true).expanded, true);
+});
+
+test("tool output after a progress message does not become that message's result", () => {
+  const parts = [tool("Read", '{"file_path":"a.txt"}'), message("Still working"), { role: "tool", kind: "tool_result", text: "output" }];
+  const activities = activitiesFromParts(parts, "claude", t);
+  assert.equal(activities[1].kind, "message");
+  assert.equal(activities[1].result, undefined);
+  assert.equal(activities[2].result.text, "output");
+});
 
 test("apply_patch is a named file activity even when its code mentions shell commands", () => {
   const patch = [

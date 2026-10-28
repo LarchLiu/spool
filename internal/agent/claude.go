@@ -170,7 +170,33 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 			return result, err, false
 		}
 	}
-	streamed := false
+	messageTexts := make(map[string]string)
+	messagePhases := make(map[string]string)
+	currentMessage, lastTextMessage := "", ""
+	messageStarted := false
+	messageNumber := 0
+	newMessage := func() string {
+		messageNumber++
+		return fmt.Sprintf("claude-message-%d", messageNumber)
+	}
+	emitText := func(id, text string) error {
+		if text == "" {
+			return nil
+		}
+		messageTexts[id] += text
+		lastTextMessage = id
+		result.Text += text
+		part := chatmodel.Part{ID: id, Phase: messagePhases[id], Role: "assistant", Kind: "text", Model: result.Model, Text: text}
+		return emit(AgentEvent{Type: "delta", Text: text, Part: &part})
+	}
+	setPhase := func(id, phase string) error {
+		if id == "" || phase == "" || messagePhases[id] == phase {
+			return nil
+		}
+		messagePhases[id] = phase
+		part := chatmodel.Part{ID: id, Phase: phase, Role: "assistant", Kind: "text"}
+		return emit(AgentEvent{Type: "message", Part: &part})
+	}
 	seenActivity := make(map[string]string)
 	var streamedThinking string
 	for {
@@ -213,17 +239,31 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				}
 			}
 		case "stream_event":
-			if nestedString(value, "event", "type") == "content_block_delta" {
+			switch nestedString(value, "event", "type") {
+			case "message_start":
+				messageStarted = true
+				currentMessage = nestedString(value, "event", "message", "id")
+				if currentMessage == "" {
+					currentMessage = newMessage()
+				}
+				streamedThinking = ""
+			case "message_delta":
+				delta, _ := value["event"].(map[string]any)["delta"].(map[string]any)
+				if err := setPhase(currentMessage, claudeMessagePhase(delta)); err != nil {
+					return result, err, false
+				}
+			case "message_stop":
+				currentMessage, messageStarted = "", false
+			case "content_block_delta":
 				deltaType := nestedString(value, "event", "delta", "type")
 				switch deltaType {
 				case "text_delta":
 					text := nestedString(value, "event", "delta", "text")
-					result.Text += text
-					if text != "" {
-						streamed = true
-						if err := emit(AgentEvent{Type: "delta", Text: text}); err != nil {
-							return result, err, false
-						}
+					if currentMessage == "" {
+						currentMessage = newMessage()
+					}
+					if err := emitText(currentMessage, text); err != nil {
+						return result, err, false
 					}
 				case "thinking_delta":
 					text := nestedString(value, "event", "delta", "thinking")
@@ -238,6 +278,16 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 			}
 		case "assistant":
 			message, _ := value["message"].(map[string]any)
+			id := stringValue(message["id"])
+			if id == "" || (!messageStarted && currentMessage != "") {
+				id = currentMessage
+			}
+			if id == "" {
+				id = newMessage()
+			}
+			if err := setPhase(id, claudeMessagePhase(message)); err != nil {
+				return result, err, false
+			}
 			if model := stringValue(message["model"]); model != "" && model != "<synthetic>" && model != result.Model {
 				p.model, result.Model = model, model
 				if err := emit(AgentEvent{Type: "model", Model: model, ReasoningEffort: p.effort}); err != nil {
@@ -245,9 +295,25 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				}
 			}
 			content, _ := message["content"].([]any)
+			remaining := messageTexts[id]
 			for _, part := range content {
 				item, _ := part.(map[string]any)
 				switch stringValue(item["type"]) {
+				case "text":
+					text := stringValue(item["text"])
+					if strings.HasPrefix(remaining, text) {
+						remaining = remaining[len(text):]
+						continue
+					}
+					if strings.HasPrefix(text, remaining) {
+						text = text[len(remaining):]
+					} else if strings.HasSuffix(remaining, text) {
+						text = ""
+					}
+					remaining = ""
+					if err := emitText(id, text); err != nil {
+						return result, err, false
+					}
 				case "thinking":
 					// Depending on Claude CLI version, thinking can arrive either
 					// as thinking_delta events or only in the completed assistant
@@ -286,6 +352,12 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 					}
 				}
 			}
+			// Legacy streams can omit message_start; their next assistant event
+			// must still get its own message boundary.
+			if !messageStarted {
+				currentMessage = ""
+				streamedThinking = ""
+			}
 		case "user":
 			message, _ := value["message"].(map[string]any)
 			content, _ := message["content"].([]any)
@@ -322,16 +394,25 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				}
 			}
 			full := stringValue(value["result"])
-			if full != "" && (!streamed || strings.HasPrefix(full, result.Text)) {
-				text := full
-				if streamed {
-					text = full[len(result.Text):]
+			if full != "" {
+				id, text := lastTextMessage, full
+				if id != "" && strings.HasPrefix(full, messageTexts[id]) {
+					text = full[len(messageTexts[id]):]
+				} else if id != "" && messagePhases[id] == "final_answer" && strings.HasSuffix(messageTexts[id], full) {
+					text = ""
+				} else {
+					id = newMessage()
 				}
-				result.Text += text
-				if text != "" {
-					if err := emit(AgentEvent{Type: "delta", Text: text}); err != nil {
+				if id == "" {
+					id = newMessage()
+				}
+				if value["subtype"] == "success" && value["is_error"] != true {
+					if err := setPhase(id, "final_answer"); err != nil {
 						return result, err, false
 					}
+				}
+				if err := emitText(id, text); err != nil {
+					return result, err, false
 				}
 			}
 			if stringValue(value["subtype"]) != "success" || value["is_error"] == true {

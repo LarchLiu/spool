@@ -88,9 +88,14 @@ function mergeTranscript(previous: Transcript, next: Transcript): Transcript {
       oldPart.kind === newPart.kind &&
       oldPart.name === newPart.name &&
       oldPart.model === newPart.model &&
-      oldPart.text.length > newPart.text.length
+      oldPart.id === newPart.id
     ) {
-      parts[i] = oldPart;
+      if (oldPart.phase && !newPart.phase) {
+        parts[i] = { ...newPart, phase: oldPart.phase };
+      }
+      if (oldPart.text.length > newPart.text.length) {
+        parts[i] = { ...parts[i], text: oldPart.text, cut: oldPart.cut };
+      }
     }
   }
   return { ...next, parts };

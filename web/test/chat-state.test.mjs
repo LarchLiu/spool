@@ -50,6 +50,23 @@ function chat(turns, updated_at = 10, transcript = { parts: [] }) {
   };
 }
 
+test("late final phase metadata survives reconciliation with a longer streamed message", () => {
+  const part = { ...answerPart, id: "message", text: "Complete streamed answer" };
+  const previous = chat([running], 10, { parts: [userPart, part] });
+  const next = chat([running], 11, { parts: [userPart, { ...part, text: "Complete", phase: "final_answer" }] });
+  const merged = reconcile(previous, next);
+  assert.equal(merged.transcript.parts[1].text, part.text);
+  assert.equal(merged.transcript.parts[1].phase, "final_answer");
+});
+
+test("a same-revision snapshot cannot erase an already received final phase", () => {
+  const part = { ...answerPart, id: "message", phase: "final_answer" };
+  const previous = chat([running], 10, { parts: [userPart, part] });
+  const unphased = { ...answerPart, id: "message" };
+  const next = chat([running], 10, { parts: [userPart, unphased] });
+  assert.equal(reconcile(previous, next).transcript.parts[1].phase, "final_answer");
+});
+
 test("live metadata updates PRs and task controls without replacing streamed content", () => {
   const previous = {
     ...chat([running], 10, helloTranscript),

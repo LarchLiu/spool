@@ -295,6 +295,54 @@ func Run(t *testing.T) {
 		if strings.Contains(prompt, "block-task") || strings.Contains(prompt, "exit-task") {
 			text = "Partial reply"
 		}
+		if strings.Contains(prompt, "message-timeline") {
+			for i, message := range []string{"Checking.", "One more check.", "Done."} {
+				if i == 1 && strings.Contains(prompt, "result-only-suffix") {
+					message += " Done."
+				}
+				id, phase := fmt.Sprintf("message-%d", i), "commentary"
+				if i == 2 {
+					phase = "final_answer"
+					if !codex && strings.Contains(prompt, "result-only") {
+						break
+					}
+				}
+				if codex {
+					notify("item/started", map[string]any{"item": map[string]any{"type": "agentMessage", "id": id}})
+					if i != 1 && !strings.Contains(prompt, "full-only") {
+						notify("item/agentMessage/delta", map[string]any{"itemId": id, "delta": message[:2]})
+					}
+					notify("item/completed", map[string]any{"item": map[string]any{"type": "agentMessage", "id": id, "text": message, "phase": phase}})
+				} else {
+					send(map[string]any{"type": "stream_event", "event": map[string]any{"type": "message_start", "message": map[string]any{"id": id}}})
+					if i != 1 && !strings.Contains(prompt, "full-only") {
+						send(map[string]any{"type": "stream_event", "event": map[string]any{"type": "content_block_delta", "delta": map[string]any{"type": "text_delta", "text": message[:2]}}})
+					}
+					content := []any{map[string]any{"type": "text", "text": message}}
+					reason := "end_turn"
+					if i < 2 {
+						reason = "tool_use"
+						content = append(content, map[string]any{"type": "tool_use", "id": fmt.Sprintf("tool-%d", i), "name": "Read", "input": map[string]any{"file_path": "main.go"}})
+					}
+					send(map[string]any{"type": "stream_event", "event": map[string]any{"type": "message_delta", "delta": map[string]any{"stop_reason": reason}}})
+					send(map[string]any{"type": "assistant", "message": map[string]any{"id": id, "model": claudeModel, "content": content, "stop_reason": reason}})
+				}
+				if i < 2 {
+					if codex {
+						notify("item/started", map[string]any{"item": map[string]any{"id": fmt.Sprintf("tool-%d", i), "type": "commandExecution", "command": "pwd"}})
+						notify("item/completed", map[string]any{"item": map[string]any{"id": fmt.Sprintf("tool-%d", i), "type": "commandExecution", "command": "pwd", "aggregatedOutput": "workspace"}})
+					} else {
+						send(map[string]any{"type": "user", "message": map[string]any{"content": []any{map[string]any{"type": "tool_result", "tool_use_id": fmt.Sprintf("tool-%d", i), "content": "workspace"}}}})
+					}
+				}
+			}
+			if codex {
+				notify("turn/completed", map[string]any{"turn": map[string]any{"id": turnID, "status": "completed"}})
+			} else {
+				send(map[string]any{"type": "result", "subtype": "success", "session_id": thread, "result": "Done."})
+			}
+			continue
+		}
 		if codex {
 			notify := func(method string, params map[string]any) {
 				params["threadId"], params["turnId"] = thread, turnID

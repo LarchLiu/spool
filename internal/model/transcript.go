@@ -2,6 +2,8 @@ package model
 
 // Part is one normalized piece of a session transcript.
 type Part struct {
+	ID       string `json:"id,omitempty"`
+	Phase    string `json:"phase,omitempty"`
 	Role     string `json:"role"`
 	Kind     string `json:"kind"`
 	Name     string `json:"name,omitempty"`
@@ -34,7 +36,7 @@ func AppendStreamText(t *Transcript, part Part) {
 	}
 	if len(t.Parts) > 0 {
 		last := &t.Parts[len(t.Parts)-1]
-		if last.Role == part.Role && last.Kind == part.Kind && last.Name == part.Name && last.Model == part.Model {
+		if last.ID == part.ID && last.Phase == part.Phase && last.Role == part.Role && last.Kind == part.Kind && last.Name == part.Name && last.Model == part.Model {
 			last.Text += part.Text
 			last.Cut += part.Cut
 			return

@@ -851,7 +851,19 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 			current.NativeTurnID = event.TurnID
 		case "delta":
 			current.Reply += event.Text
-			appendTurnText(&current, chatmodel.Part{Role: "assistant", Kind: "text", Model: current.Model, Text: event.Text})
+			part := chatmodel.Part{Role: "assistant", Kind: "text", Model: current.Model, Text: event.Text}
+			if event.Part != nil {
+				part.ID, part.Phase = event.Part.ID, event.Part.Phase
+			}
+			appendTurnText(&current, part)
+		case "message":
+			if event.Part != nil && event.Part.ID != "" {
+				for i := range current.Parts {
+					if current.Parts[i].Role == "assistant" && current.Parts[i].Kind == "text" && current.Parts[i].ID == event.Part.ID {
+						current.Parts[i].Phase = event.Part.Phase
+					}
+				}
+			}
 		case "part":
 			if event.Part != nil {
 				if event.Part.Kind == "thinking" {

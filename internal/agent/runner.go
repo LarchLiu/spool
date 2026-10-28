@@ -240,7 +240,11 @@ func codexTranscriptParts(item map[string]any, model string) []chatmodel.Part {
 			switch blockType {
 			case "input_text", "output_text", "text":
 				if text != "" {
-					parts = append(parts, transcriptTextPart(role, text, model))
+					part := transcriptTextPart(role, text, model)
+					if role == "assistant" {
+						part.ID, part.Phase = stringValue(item["id"]), stringValue(item["phase"])
+					}
+					parts = append(parts, part)
 				}
 			case "image", "input_image":
 				parts = append(parts, transcriptModelPart(chatmodel.Part{Role: role, Kind: "image", Text: "[image]", ImageURL: nativeImageURL(stringValue(block["image_url"]))}, model))

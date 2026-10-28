@@ -57,6 +57,16 @@ func parseTranscriptReader(backend chatmodel.Backend, reader io.Reader, model st
 		switch backend {
 		case chatmodel.BackendClaude:
 			parts = claudeSessionParts(record)
+			message, _ := record["message"].(map[string]any)
+			if id, phase := stringValue(message["id"]), claudeMessagePhase(message); record["type"] == "assistant" && record["isSidechain"] != true && id != "" && phase != "" && message["model"] != "<synthetic>" {
+				// Native Claude files can store blocks of one message on separate
+				// lines, with the stop reason appearing only on the last block.
+				for i := range transcript.Parts {
+					if transcript.Parts[i].ID == id && transcript.Parts[i].Role == "assistant" && transcript.Parts[i].Kind == "text" {
+						transcript.Parts[i].Phase = phase
+					}
+				}
+			}
 		case chatmodel.BackendCodex:
 			carryNotes = codexCarryNotes(record, carryNotes)
 			if stringValue(record["type"]) == "turn_context" {
@@ -127,9 +137,21 @@ func (h *codexHistory) addResponse(item map[string]any, model string, transcript
 			h.pendingAgentMessages = make(map[string]int)
 		}
 		filtered := parts[:0]
+		matchedIDs := make(map[string]bool)
 		for _, part := range parts {
-			if part.Role == "assistant" && part.Kind == "text" && h.pendingAgentMessages[part.Text] > 0 {
-				h.pendingAgentMessages[part.Text]--
+			key := codexMessageKey(part)
+			if part.Role == "assistant" && part.Kind == "text" && (h.pendingAgentMessages[key] > 0 || matchedIDs[part.ID]) {
+				if !matchedIDs[part.ID] {
+					h.pendingAgentMessages[key]--
+				}
+				if part.ID != "" {
+					matchedIDs[part.ID] = true
+					for i := range transcript.Parts {
+						if transcript.Parts[i].ID == part.ID && part.Phase != "" {
+							transcript.Parts[i].Phase = part.Phase
+						}
+					}
+				}
 				continue
 			}
 			filtered = append(filtered, part)
@@ -218,15 +240,27 @@ func (h *codexHistory) addEvent(payload map[string]any, model string, transcript
 		if text == "" {
 			return nil
 		}
-		for _, existing := range transcript.Parts {
-			if existing.Role == "assistant" && existing.Kind == "text" && existing.Text == text {
+		part := chatmodel.Part{ID: stringValue(item["id"]), Phase: stringValue(item["phase"]), Role: "assistant", Kind: "text", Text: text, Model: model}
+		key := codexMessageKey(part)
+		for i, existing := range transcript.Parts {
+			if existing.Role == "assistant" && existing.Kind == "text" && codexMessageKey(existing) == key {
+				if part.Phase != "" {
+					transcript.Parts[i].Phase = part.Phase
+				}
 				return nil
 			}
 		}
-		h.pendingAgentMessages[text]++
-		return []chatmodel.Part{{Role: "assistant", Kind: "text", Text: text, Model: model}}
+		h.pendingAgentMessages[key]++
+		return []chatmodel.Part{part}
 	}
 	return nil
+}
+
+func codexMessageKey(part chatmodel.Part) string {
+	if part.ID != "" {
+		return "id:" + part.ID
+	}
+	return "text:" + part.Phase + ":" + part.Text
 }
 
 func codexAgentMessageText(item map[string]any) string {
@@ -374,6 +408,16 @@ func claudeSessionParts(record map[string]any) []chatmodel.Part {
 		model = ""
 	}
 	parts := claudeTranscriptParts(role, message["content"], model)
+	// Converted carry notes reuse one synthetic ID and end_turn across the
+	// whole turn. Only native messages have meaningful identity/phase metadata.
+	if role == "assistant" && !carryNotes {
+		for i := range parts {
+			if parts[i].Kind == "text" {
+				parts[i].ID = stringValue(message["id"])
+				parts[i].Phase = claudeMessagePhase(message)
+			}
+		}
+	}
 	if typ == "user" {
 		filtered := parts[:0]
 		for _, part := range parts {
@@ -398,6 +442,17 @@ func claudeSessionParts(record map[string]any) []chatmodel.Part {
 		parts = restoreCarryNotes(parts)
 	}
 	return parts
+}
+
+func claudeMessagePhase(message map[string]any) string {
+	switch stringValue(message["stop_reason"]) {
+	case "tool_use":
+		return "commentary"
+	case "end_turn":
+		return "final_answer"
+	default:
+		return ""
+	}
 }
 
 // claudeToolResultDiff preserves Claude's structured file changes in the

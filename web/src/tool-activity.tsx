@@ -18,6 +18,7 @@ import type { Backend, TranscriptPart } from "./types";
 import type { Translator } from "./i18n";
 import { MarkdownMessage } from "./markdown-message.js";
 import { patchText, toolResultDiffs } from "./tool-diff.js";
+import { turnPresentation } from "./turn-presentation.js";
 
 export { toolResultDiffs } from "./tool-diff.js";
 
@@ -31,6 +32,7 @@ type ActivityKind =
   | "web"
   | "shell"
   | "thinking"
+  | "message"
   | "other";
 
 type Activity = {
@@ -238,9 +240,14 @@ export function activitiesFromParts(
   const out: Activity[] = [];
   for (const part of parts) {
     if (part.role === "user") continue;
+    if (part.role === "assistant" && part.kind === "text") {
+      if (part.text.trim())
+        out.push({ use: part, kind: "message", label: "", detail: part.text });
+      continue;
+    }
     if (part.kind === "tool_result") {
       const last = out[out.length - 1];
-      if (last && !last.result) last.result = part;
+      if (last?.use?.kind === "tool_use" && !last.result) last.result = part;
       else out.push({ kind: "other", label: t("Tool result"), detail: "", result: part });
       continue;
     }
@@ -284,7 +291,7 @@ function groupActivities(activities: Activity[], t: Translator): ActivityGroup[]
   const groups: ActivityGroup[] = [];
   for (const activity of activities) {
     const last = groups[groups.length - 1];
-    if (last && last.kind === activity.kind) {
+    if (last && last.kind === activity.kind && activity.kind !== "message") {
       last.activities.push(activity);
       last.label = groupLabel(last.activities, t);
       continue;
@@ -501,6 +508,8 @@ export function ToolActivityList({
   const groupCount = groups.length;
   useEffect(() => {
     setActivityOpen(live);
+  }, [live]);
+  useEffect(() => {
     setOpenGroups(
       live
         ? new Set(Array.from({ length: groupCount }, (_, index) => index))
@@ -528,6 +537,13 @@ export function ToolActivityList({
       {activityOpen && (
         <div className="tool-activity-list">
           {groups.map((group, groupIndex) => {
+            if (group.kind === "message") {
+              return (
+                <div className="tool-progress-message" key={`message:${group.activities[0].use?.id || ""}:${groupIndex}`}>
+                  <MarkdownMessage>{group.activities[0].detail}</MarkdownMessage>
+                </div>
+              );
+            }
             if (group.activities.length === 1) {
               const itemID = `${groupIndex}:0`;
               return (
@@ -601,6 +617,34 @@ export function ToolActivityList({
         </div>
       )}
     </div>
+  );
+}
+
+export function TurnResponse({
+  parts,
+  backend,
+  t,
+  running,
+  summary,
+}: {
+  parts: TranscriptPart[];
+  backend?: Backend;
+  t: Translator;
+  running: boolean;
+  summary: ReactNode;
+}) {
+  const { process, answer, expanded } = turnPresentation(parts, running);
+  return (
+    <>
+      <ToolActivityList parts={process} backend={backend} t={t} live={expanded} summary={summary} />
+      {answer && (
+        <div className="assistant">
+          <div className="assistant-text">
+            <MarkdownMessage>{answer}</MarkdownMessage>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

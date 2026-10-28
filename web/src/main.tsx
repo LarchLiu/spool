@@ -53,7 +53,7 @@ import { AutosizeTextarea } from "./autosize-textarea";
 import { SlashCommandMenu } from "./slash-command-menu";
 import { goalSuggestion, parseGoalCommand } from "./slash-commands";
 import { MarkdownMessage } from "./markdown-message";
-import { ToolActivityList } from "./tool-activity";
+import { TurnResponse } from "./tool-activity";
 import { chatSelection, chooseModel } from "./model-selection";
 import { effortLabel as formatEffort } from "./i18n";
 import type { Translator } from "./i18n";
@@ -1270,19 +1270,6 @@ function App() {
                 const turnFiles = turn.attachments?.length
                   ? turn.attachments
                   : nativeImages;
-                const answer = parts
-                  .filter(
-                    (part) => part.role === "assistant" && part.kind === "text",
-                  )
-                  .map((part) => part.text)
-                  .join("");
-                const activities = parts.filter(
-                  (part) =>
-                    part.role !== "user" &&
-                    (part.kind === "tool_use" ||
-                      part.kind === "tool_result" ||
-                      part.kind === "thinking"),
-                );
                 return (
                   <article className="turn" key={turn.id}>
                     <div className="user-row">
@@ -1302,26 +1289,25 @@ function App() {
                         )}
                       </div>
                     </div>
-                    {activities.length ? (
-                      <ToolActivityList
-                        parts={activities}
-                        backend={turn.backend}
-                        t={t}
-                        live={turn.status === "running"}
-                        summary={workSummary(turn, t, clock, effortLabel)}
-                      />
-                    ) : (
-                      <div className="work-label">
-                        {workSummary(turn, t, clock, effortLabel)}
-                      </div>
-                    )}
-                    {answer && (
-                      <div className="assistant">
-                        <div className="assistant-text">
-                          <MarkdownMessage>{answer}</MarkdownMessage>
-                        </div>
-                      </div>
-                    )}
+                    <TurnResponse
+                      parts={parts}
+                      backend={turn.backend}
+                      t={t}
+                      running={turn.status === "running"}
+                      summary={workSummary(
+                        turn,
+                        t,
+                        clock,
+                        effortLabel,
+                        parts.some(
+                          (part) =>
+                            part.phase === "final_answer" &&
+                            part.role === "assistant" &&
+                            part.kind === "text" &&
+                            !!part.text.trim(),
+                        ),
+                      )}
+                    />
                     {turn.pending_approval && (
                       <ApprovalCard
                         key={turn.pending_approval.id}
@@ -1626,10 +1612,13 @@ function workSummary(
   t: Translator,
   now: number,
   effortLabel: (value: string) => string,
+  answered = false,
 ) {
   const duration =
     turn.status === "running"
-      ? working(turn, t, now)
+      ? answered
+        ? durationLabel(now - turn.started_at, t, "worked")
+        : working(turn, t, now)
       : turn.status === "stopped"
         ? t("Stopped")
         : worked(turn, t);
