@@ -87,7 +87,7 @@ func (s *Store) readHistorySnapshot(chat chatmodel.Session, file *nativeHistory)
 			}
 			parts = append(parts, part)
 		}
-		if len(parts) == 0 {
+		if len(parts) == 0 && !native.HasUserInput() {
 			continue
 		}
 		identity := nativeIdentity(chat.NativeSessionID, native)

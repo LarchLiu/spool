@@ -65,6 +65,50 @@ func TestClaudeNativeTurnsUsePromptAndParentChains(t *testing.T) {
 	}
 }
 
+func TestClaudeInterruptionStatusUsesStructuredNotice(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content any
+		stopped bool
+	}{
+		{name: "user interruption", content: "[Request interrupted by user]", stopped: true},
+		{name: "tool interruption", content: "[Request interrupted by user for tool use]", stopped: true},
+		{name: "literal prefix", content: "[Request interrupted by user] is an example."},
+		{name: "unknown notice", content: "[Request interrupted example]"},
+		{name: "request after notice", content: "[Request interrupted by user]\nTry again"},
+		{name: "request in next block", content: []any{map[string]any{"type": "text", "text": "[Request interrupted by user]"}, map[string]any{"type": "text", "text": "Try again"}}},
+		{name: "notice before attachment", content: "[Request interrupted by user]\n\n" + attachedFilesMarker + "\n- \"notes.txt\": \"/tmp/notes.txt\"\n"},
+		{name: "notice before image", content: []any{map[string]any{"type": "text", "text": "[Request interrupted by user]"}, map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": "image/png", "data": "aGVsbG8="}}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var data strings.Builder
+			encoder := json.NewEncoder(&data)
+			for _, record := range []map[string]any{
+				{"type": "user", "uuid": "prior", "message": map[string]any{"content": "Prior request"}},
+				{"type": "assistant", "uuid": "prior-answer", "parentUuid": "prior", "message": map[string]any{"stop_reason": "end_turn", "content": "Prior answer"}},
+				{"type": "user", "uuid": "current", "parentUuid": "prior-answer", "message": map[string]any{"content": test.content}},
+				{"type": "assistant", "uuid": "answer", "parentUuid": "current", "message": map[string]any{"stop_reason": "end_turn", "content": "Answer"}},
+			} {
+				if err := encoder.Encode(record); err != nil {
+					t.Fatal(err)
+				}
+			}
+			path := filepath.Join(t.TempDir(), "claude.jsonl")
+			if err := os.WriteFile(path, []byte(data.String()), 0600); err != nil {
+				t.Fatal(err)
+			}
+			turns, err := IndexSessionTurns(chatmodel.BackendClaude, path, 0)
+			wantTurns, wantStatus := 2, chatmodel.StatusCompleted
+			if test.stopped {
+				wantTurns, wantStatus = 1, chatmodel.StatusStopped
+			}
+			if err != nil || len(turns) != wantTurns || turns[len(turns)-1].Status != wantStatus {
+				t.Fatalf("wrong interruption classification/status: %+v, %v", turns, err)
+			}
+		})
+	}
+}
+
 func TestNativeImagePayloadSurvivesNormalization(t *testing.T) {
 	url := "data:image/png;base64,aGVsbG8="
 	codex := codexTranscriptParts(map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_image", "image_url": url}}}, "")

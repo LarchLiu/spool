@@ -419,16 +419,6 @@ func claudeSessionParts(record map[string]any) []chatmodel.Part {
 		}
 	}
 	if typ == "user" {
-		filtered := parts[:0]
-		for _, part := range parts {
-			if part.Kind == "text" && !genuineUserText(part.Text) {
-				continue
-			}
-			filtered = append(filtered, part)
-		}
-		parts = filtered
-	}
-	if typ == "user" {
 		if diff := claudeToolResultDiff(record["toolUseResult"]); diff != "" {
 			for i := range parts {
 				if parts[i].Kind == "tool_result" {

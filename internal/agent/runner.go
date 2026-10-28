@@ -250,6 +250,9 @@ func codexTranscriptParts(item map[string]any, model string) []chatmodel.Part {
 				parts = append(parts, transcriptModelPart(chatmodel.Part{Role: role, Kind: "image", Text: "[image]", ImageURL: nativeImageURL(stringValue(block["image_url"]))}, model))
 			}
 		}
+		if role == "user" {
+			return projectUserParts(parts)
+		}
 		return parts
 	case "reasoning":
 		summary, _ := item["summary"].([]any)
@@ -476,12 +479,7 @@ func oldOrContent(old, content string) string {
 }
 
 func transcriptTextPart(role, text, model string) chatmodel.Part {
-	kind := "text"
-	trimmed := strings.TrimSpace(text)
-	if strings.HasPrefix(trimmed, "<") || strings.HasPrefix(trimmed, "# AGENTS.md") {
-		kind = "context"
-	}
-	return transcriptModelPart(chatmodel.Part{Role: role, Kind: kind, Text: text}, model)
+	return transcriptModelPart(chatmodel.Part{Role: role, Kind: "text", Text: text}, model)
 }
 
 func transcriptModelPart(part chatmodel.Part, model string) chatmodel.Part {
@@ -549,7 +547,11 @@ func claudeToolUsePart(item map[string]any, model string) chatmodel.Part {
 
 func claudeTranscriptParts(role string, content any, model string) []chatmodel.Part {
 	if text, ok := content.(string); ok {
-		return []chatmodel.Part{transcriptTextPart(role, text, model)}
+		parts := []chatmodel.Part{transcriptTextPart(role, text, model)}
+		if role == "user" {
+			return projectUserParts(parts)
+		}
+		return parts
 	}
 	blocks, _ := content.([]any)
 	parts := make([]chatmodel.Part, 0, len(blocks))
@@ -606,6 +608,9 @@ func claudeTranscriptParts(role string, content any, model string) []chatmodel.P
 			}
 			parts = append(parts, transcriptModelPart(chatmodel.Part{Role: role, Kind: "image", Text: "[image]", ImageURL: url}, model))
 		}
+	}
+	if role == "user" {
+		return projectUserParts(parts)
 	}
 	return parts
 }

@@ -29,7 +29,12 @@ type NativeTurn struct {
 	Status          chatmodel.SessionStatus
 	ReasoningEffort string
 	Error           string
+	hasUserInput    bool
 }
+
+// HasUserInput preserves textless attachment turns without exposing display
+// metadata in the public transcript or persisting it alongside native files.
+func (t NativeTurn) HasUserInput() bool { return t.hasUserInput }
 
 type NativeRange struct{ Start, End int64 }
 
@@ -90,6 +95,7 @@ func indexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 			stamp := nativeTimestamp(record["timestamp"])
 			typ := stringValue(record["type"])
 			payload, _ := record["payload"].(map[string]any)
+			input := typ == "response_item" && payload["type"] == "message" && payload["role"] == "user" && genuineUserContent(payload["content"])
 			id, prompt := "", ""
 			boundary := false
 			if backend == chatmodel.BackendCodex {
@@ -106,7 +112,7 @@ func indexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 					id = stringValue(payload["turn_id"])
 					boundary = id != ""
 					codexExplicit = codexExplicit || boundary
-				} else if typ == "response_item" && payload["type"] == "message" && payload["role"] == "user" && genuineUserContent(payload["content"]) {
+				} else if input {
 					id = stringValue(payload["id"])
 					// A task_started/turn_context boundary already owns this input.
 					boundary = !codexExplicit
@@ -127,6 +133,9 @@ func indexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 			}
 			if len(turns) > 0 && model != "" && typ == "turn_context" {
 				turns[len(turns)-1].Model, turns[len(turns)-1].ReasoningEffort = model, effort
+			}
+			if len(turns) > 0 && input {
+				turns[len(turns)-1].hasUserInput = true
 			}
 			if len(turns) > 0 && typ == "event_msg" {
 				turn := &turns[len(turns)-1]
@@ -165,27 +174,12 @@ func indexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 }
 
 func genuineUserContent(content any) bool {
-	if text, ok := content.(string); ok {
-		return genuineUserText(text)
-	}
-	blocks, _ := content.([]any)
-	for _, raw := range blocks {
-		block, _ := raw.(map[string]any)
-		switch stringValue(block["type"]) {
-		case "image", "input_image":
-			return true
-		case "text", "input_text":
-			if genuineUserText(stringValue(block["text"])) {
-				return true
-			}
-		}
-	}
-	return false
+	texts, images := userContentTexts(content)
+	return images || cleanUserTextBlocks(texts, false).genuine()
 }
 
 func genuineUserText(text string) bool {
-	text = strings.TrimSpace(text)
-	return text != "" && !strings.HasPrefix(text, "<environment_context>") && !strings.HasPrefix(text, "<permissions instructions>") && !strings.HasPrefix(text, "<system-reminder>") && !strings.HasPrefix(text, "# AGENTS.md") && !strings.HasPrefix(text, "[Request interrupted") && !strings.HasPrefix(text, "This session is being continued from a previous conversation")
+	return cleanUserText(text, false).genuine()
 }
 
 func ReadSessionTurn(backend chatmodel.Backend, path string, turn NativeTurn) (chatmodel.Transcript, error) {
@@ -246,7 +240,7 @@ func indexClaudeTurns(path string, offset, end int64, title *nativeSessionTitle)
 				if current >= 0 && turns[current].Status == chatmodel.StatusRunning {
 					turns[current].Status = chatmodel.StatusCompleted
 				}
-				turn := NativeTurn{ID: id, PromptID: prompt, ParentID: parent, Start: start, StartedAt: nativeTimestamp(record["timestamp"]), Status: chatmodel.StatusRunning}
+				turn := NativeTurn{ID: id, PromptID: prompt, ParentID: parent, Start: start, StartedAt: nativeTimestamp(record["timestamp"]), Status: chatmodel.StatusRunning, hasUserInput: true}
 				if pos, ok := record["turnPosition"].(map[string]any); ok {
 					turn.PromptIndex, _ = numberValue(pos["promptIndex"])
 					turn.TurnIndex, _ = numberValue(pos["turnIndex"])
@@ -287,7 +281,7 @@ func indexClaudeTurns(path string, offset, end int64, title *nativeSessionTitle)
 						turn.Status = chatmodel.StatusCompleted
 					}
 				}
-				if record["type"] == "user" && strings.HasPrefix(strings.TrimSpace(claudeUserText(message["content"])), "[Request interrupted") {
+				if record["type"] == "user" && interruptedUserContent(message["content"]) {
 					turn.Status = chatmodel.StatusStopped
 				}
 				n := len(turn.Ranges)
@@ -344,15 +338,8 @@ func nativeReader(file *os.File, offset, end int64) *bufio.Reader {
 	return bufio.NewReader(reader)
 }
 
-func claudeUserText(content any) string {
-	if text, ok := content.(string); ok {
-		return text
-	}
-	blocks, _ := content.([]any)
-	for _, raw := range blocks {
-		if b, ok := raw.(map[string]any); ok && b["type"] == "text" {
-			return stringValue(b["text"])
-		}
-	}
-	return ""
+func interruptedUserContent(content any) bool {
+	texts, images := userContentTexts(content)
+	text := strings.TrimSpace(strings.Join(texts, "\n"))
+	return !images && userInterruptionEnd(text) > 0 && !cleanUserTextBlocks(texts, false).genuine()
 }
