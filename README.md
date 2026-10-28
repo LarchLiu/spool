@@ -147,11 +147,33 @@ automation cannot be enabled; the backend also checks it when saving. Install
 and authenticate `gh` on the service host, and ensure the repository has a `dev`
 branch.
 
+If the GitHub CLI check fails, enter a custom absolute executable path in **Projects →
+Scheduled GitHub issues → GitHub CLI executable**, then select **Save GitHub CLI
+path**. For example, use `/opt/homebrew/bin/gh` on macOS or
+`C:\Program Files\GitHub CLI\gh.exe` on Windows, without adding quotes. This
+shared setting is saved in the selected data directory's SQLite database and
+applies immediately to installation checks and scheduled runs (including the
+headless service using the same data directory). Saving triggers a fresh check.
+The path field and save button stay hidden while checking and after successful
+installation/authentication verification. They reappear if a later check fails.
+The executable path is also included in scheduled task and manual continuation
+instructions so the agent can use it outside the application's `PATH`.
+An invalid path is rejected without changing the saved setting. A configured
+executable never silently falls back to another installation; clear the field
+and save to restore auto-detection.
+
 At desktop launch, a background check verifies that `gh` can run and make an
 authenticated GitHub.com API request. New issue automation cannot be enabled
 until this check succeeds. The project panel shows installation, sign-in or
 network guidance and a **Recheck GitHub CLI** button; existing schedules remain
-editable and can still be disabled. The repository is detected in the background
+editable and can still be disabled. GitHub CLI discovery checks the application's
+`PATH` first, then common platform-specific installation locations: Homebrew,
+MacPorts and `~/.local/bin` on macOS; system directories, Linuxbrew, Snap and Nix
+profiles on Linux; and GitHub CLI's default directories, WinGet links, Scoop and
+Chocolatey on Windows. This also applies to scheduled runs, so desktop launches
+do not require inheriting a terminal's `PATH`. Nonstandard installations can use
+the saved executable path; discovery does not run shell startup files
+or change the process environment. The repository is detected in the background
 when the project directory changes, with a **Recheck project Git** button for
 local Git configuration changes. Existing schedules can still be disabled if
 Git information is missing. Each scheduled run verifies the current origin

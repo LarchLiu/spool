@@ -16,9 +16,29 @@ import (
 type Command func(context.Context, string, string, ...string) ([]byte, error)
 
 func Run(ctx context.Context, directory, name string, args ...string) ([]byte, error) {
+	return run(ctx, directory, name, "", args...)
+}
+
+// WithGitHubCLI uses a saved executable for gh commands without changing the
+// process environment or the lookup rules for other commands such as git.
+func WithGitHubCLI(executable string) Command {
+	return func(ctx context.Context, directory, name string, args ...string) ([]byte, error) {
+		return run(ctx, directory, name, executable, args...)
+	}
+}
+
+func run(ctx context.Context, directory, name, githubCLI string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
+	executable := name
+	if name == "gh" {
+		var err error
+		executable, err = ResolveGitHubCLI(githubCLI)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+	}
+	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.WaitDelay = 5 * time.Second
 	cmd.Dir = directory
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")

@@ -43,6 +43,7 @@ type panel struct {
 	project            workspace.Project
 	issueInterval      string
 	github             githubCLICheck
+	githubPath         string
 	projectGit         githubRepositoryCheck
 	directoryPicker    directoryPicker
 	members            map[string]bool
@@ -238,6 +239,7 @@ func (p *panel) load() {
 	p.agents, _ = p.service.Store.Agents()
 	p.status = p.service.Status()
 	p.updatePreferences, _ = p.service.Store.UpdatePreferences()
+	p.githubPath, _ = p.service.Store.GitHubCLIPath()
 	for _, a := range p.agents {
 		p.agentPaths[a.Backend] = a.Executable
 		p.agentEnabled[a.Backend] = a.Enabled

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"spool/internal/issues"
 	"spool/internal/workspace"
@@ -45,7 +46,7 @@ func (g *githubCLICheck) message() string {
 	case issues.CLIReady:
 		return "GitHub CLI is ready (signed in as {user})."
 	case issues.CLIMissing:
-		return "GitHub CLI (gh) was not found. Install it and ensure it is on the application's PATH, then recheck."
+		return "GitHub CLI (gh) was not found. Check the configured executable path or install gh, then recheck."
 	case issues.CLIUnavailable:
 		return "GitHub CLI could not run. Check its installation and permissions, then recheck."
 	case issues.CLILoginRequired:
@@ -60,7 +61,35 @@ func (g *githubCLICheck) message() string {
 }
 
 func (p *panel) refreshGitHubCLI() {
-	p.github.refresh(issues.Run, p.window.Update)
+	p.github.refresh(p.service.Store.RunIssueCommand, p.window.Update)
+}
+
+func (p *panel) saveGitHubCLIPath(update func(func())) {
+	if p.busy || p.github.pending || p.github.ctx.Err() != nil {
+		return
+	}
+	path := strings.TrimSpace(p.githubPath)
+	p.busy = true
+	p.message = "Working…"
+	go func() {
+		err := p.service.Store.SaveGitHubCLIPath(path)
+		if p.github.ctx.Err() != nil {
+			return
+		}
+		update(func() {
+			if p.github.ctx.Err() != nil {
+				return
+			}
+			p.busy = false
+			if err != nil {
+				p.message = err.Error()
+				return
+			}
+			p.githubPath = path
+			p.message = "Saved"
+			p.github.refresh(p.service.Store.RunIssueCommand, update)
+		})
+	}()
 }
 
 func (p *panel) validateIssueEnablement(project workspace.Project) error {

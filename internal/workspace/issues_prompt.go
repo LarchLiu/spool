@@ -33,7 +33,7 @@ func issueRecordPreview(record issues.Record) issues.Record {
 	return record
 }
 
-func issuePrompt(project Project, checkout issues.Checkout, issue issues.Issue, record issues.Record, resume bool, callback, token string) (string, error) {
+func issuePrompt(project Project, checkout issues.Checkout, issue issues.Issue, record issues.Record, resume bool, cliHint, callback, token string) (string, error) {
 	// Full comments remain accessible through gh even when a very long issue
 	// cannot fit in one native message. Never silently truncate the contract.
 	issue.Body = chatmodel.Clip(issue.Body, 32000)
@@ -60,7 +60,7 @@ func issuePrompt(project Project, checkout issues.Checkout, issue issues.Issue, 
 	if err != nil {
 		return "", err
 	}
-	prompt := `这是 Project 定时 issues 自动化的一轮独立执行。不要依赖任何旧聊天上下文，不创建下一轮定时任务，不在此聊天自行循环唤醒。遵守仓库 AGENTS.md，使用 GH 技能/gh CLI 获取 GitHub 数据与创建 PR。
+	prompt := cliHint + `这是 Project 定时 issues 自动化的一轮独立执行。不要依赖任何旧聊天上下文，不创建下一轮定时任务，不在此聊天自行循环唤醒。遵守仓库 AGENTS.md，使用 GH 技能/gh CLI 获取 GitHub 数据与创建 PR。
 
 Go 后端已经完成 1–3 点：检查 checkout/分支/status/worktree；取得主 checkout 的 docs/.issues-automation.lock 项目级排他锁；完整分页读取 open/closed issues 和关联 PR 真实状态；同步唯一共享台账；按精确 web/server/app 标签约束认领至多一个 issue（优先恢复本自动化 id: issues 的已结束轮次）。锁覆盖你的整个执行阶段，由 Go 后端持有和释放。不要删除、更换或自行释放这个锁；不要改动其他 issue 的 owner 或认领其他任务。owner 同时包含固定 automation: issues、本轮 run 与 chat 标识。
 

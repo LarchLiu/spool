@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -115,6 +118,10 @@ func TestIssueAutomationCheckboxRequiresReadyGitHubCLI(t *testing.T) {
 			if !view.HasText(message) || !view.HasText("Recheck GitHub CLI") {
 				t.Fatal("GitHub status and recovery action must be visible while automation is disabled")
 			}
+			showPath := state != "" && state != issues.CLIReady
+			if view.HasText("GitHub CLI executable (blank = auto-detect)") != showPath || view.HasText("Save GitHub CLI path") != showPath {
+				t.Fatalf("manual path controls must only appear after a failed check: %q", state)
+			}
 			if err := view.Click("Enable issue automation"); err != nil {
 				t.Fatal(err)
 			}
@@ -135,11 +142,31 @@ func TestIssueAutomationCheckboxStaysDisabledDuringRecheck(t *testing.T) {
 	if !view.HasText("Checking GitHub CLI installation and sign-in...") {
 		t.Fatal("pending recheck did not show progress")
 	}
+	if view.HasText("GitHub CLI executable (blank = auto-detect)") || view.HasText("Save GitHub CLI path") {
+		t.Fatal("successful verification must not reveal manual path controls during a recheck")
+	}
 	if err := view.Click("Enable issue automation"); err != nil {
 		t.Fatal(err)
 	}
 	if p.project.Issues.Enabled {
 		t.Fatal("a previous successful check allowed enablement during a recheck")
+	}
+}
+
+func TestGitHubCLIManualPathControlsStayHiddenWhileChecking(t *testing.T) {
+	for _, state := range []issues.CLIState{"", issues.CLIMissing, issues.CLILoginRequired, issues.CLIReady} {
+		t.Run(string(state), func(t *testing.T) {
+			p := &panel{preferences: workspace.UIPreferences{Language: "en"}, github: githubCLICheck{pending: true, status: issues.CLIStatus{State: state}}}
+			view := ui.NewTester(func(c *ui.Context) {
+				ui.Column(c).FillWidth().Children(func() { p.projectIssuesView(c) })
+			}, 900, 1400)
+			if view.HasText("GitHub CLI executable (blank = auto-detect)") || view.HasText("Save GitHub CLI path") {
+				t.Fatal("manual path controls must stay hidden until a failed check completes")
+			}
+			if !view.HasText("Recheck GitHub CLI") || !view.HasText("Checking GitHub CLI installation and sign-in...") {
+				t.Fatal("checking state and recheck action must remain visible")
+			}
+		})
 	}
 }
 
@@ -209,6 +236,79 @@ func TestGitHubCLIHintsAreLocalized(t *testing.T) {
 			if translated == message || strings.Contains(translated, "{user}") {
 				t.Errorf("%s: missing translation or interpolation for %q", locale, message)
 			}
+		}
+		for _, key := range []string{
+			"GitHub CLI executable (blank = auto-detect)",
+			"Save GitHub CLI path",
+			"Applies to all projects. Enter the absolute path to gh (gh.exe on Windows), without quotes. Leave blank to auto-detect.",
+			"GitHub CLI path must point to an existing executable using an absolute path.",
+		} {
+			if p.tr(key) == key {
+				t.Errorf("%s: missing manual-path translation for %q", locale, key)
+			}
+		}
+	}
+}
+
+func TestSaveGitHubCLIPathPublishesOnUIThreadAndRechecks(t *testing.T) {
+	store, err := workspace.OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	name := "gh"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+		t.Setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+	}
+	if err := os.WriteFile(filepath.Join(bin, name), []byte("invalid executable fixture"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	p := &panel{service: &workspace.Service{Store: store}, githubPath: "  " + executable + "  ", github: githubCLICheck{ctx: ctx, status: issues.CLIStatus{State: issues.CLIReady}}}
+	updates := make(chan func(), 2)
+	for _, path := range []string{p.githubPath, "relative/gh", ""} {
+		p.githubPath = path
+		p.saveGitHubCLIPath(func(fn func()) { updates <- fn })
+		if !p.busy {
+			t.Fatal("save did not mark the UI busy")
+		}
+		select {
+		case apply := <-updates:
+			if !p.busy || p.github.pending {
+				t.Fatal("worker changed UI state before dispatch")
+			}
+			apply()
+		case <-time.After(2 * time.Second):
+			t.Fatal("save did not dispatch a result")
+		}
+		if p.busy {
+			t.Fatal("save left the UI busy")
+		}
+		if path == "relative/gh" {
+			if p.github.pending || p.message == "Saved" {
+				t.Fatal("invalid path started a recheck or reported success")
+			}
+			continue
+		}
+		if p.message != "Saved" || !p.github.pending || p.github.ready() {
+			t.Fatal("successful save must start a fresh check before allowing enablement")
+		}
+		if p.githubPath != strings.TrimSpace(path) {
+			t.Fatal("saved path was not normalized")
+		}
+		select {
+		case apply := <-updates:
+			apply()
+		case <-time.After(5 * time.Second):
+			t.Fatal("saving did not run the CLI check")
 		}
 	}
 }

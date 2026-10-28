@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+	"spool/internal/issues"
 	chatmodel "spool/internal/model"
 )
 
@@ -14,12 +15,19 @@ func (p *panel) projectIssuesView(c *ui.Context) {
 	}
 	ui.Text(c, p.tr("Scheduled GitHub issues")).Bold()
 	ui.Row(c).Gap(10).Children(func() {
-		ui.Checkbox(c, &v.Enabled, p.tr("Enable issue automation")).Disabled(!v.Enabled && (!p.github.ready() || !p.projectGit.ready(p.project.Path)))
-		if ui.Button(c, p.tr("Recheck GitHub CLI")).Disabled(p.github.pending).Clicked() {
+		ui.Checkbox(c, &v.Enabled, p.tr("Enable issue automation")).Disabled(!v.Enabled && (p.busy || !p.github.ready() || !p.projectGit.ready(p.project.Path)))
+		if ui.Button(c, p.tr("Recheck GitHub CLI")).Disabled(p.busy || p.github.pending).Clicked() {
 			p.refreshGitHubCLI()
 		}
 	})
 	ui.Text(c, p.tr(p.github.message(), "user", p.github.status.Login)).Wrap().FontSize(12)
+	if !p.github.pending && p.github.status.State != "" && p.github.status.State != issues.CLIReady {
+		p.field(c, "GitHub CLI executable (blank = auto-detect)", &p.githubPath)
+		ui.Text(c, p.tr("Applies to all projects. Enter the absolute path to gh (gh.exe on Windows), without quotes. Leave blank to auto-detect.")).Wrap().FontSize(12)
+		if ui.Button(c, p.tr("Save GitHub CLI path")).Disabled(p.busy).Clicked() {
+			p.saveGitHubCLIPath(p.window.Update)
+		}
+	}
 	ui.Text(c, p.tr(p.projectGit.message(p.project.Path), "repository", p.projectGit.repository)).Wrap().FontSize(12)
 	if ui.Button(c, p.tr("Recheck project Git")).Disabled(p.projectGit.pending || p.project.Path == "").Clicked() {
 		p.refreshProjectGit()

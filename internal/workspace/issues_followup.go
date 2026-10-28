@@ -23,6 +23,10 @@ func (a *App) startIssueFollowup(chat chatmodel.Session, input messageInput, opt
 	if err != nil {
 		return err
 	}
+	cliHint, err := a.store.issueGitHubCLIHint()
+	if err != nil {
+		return err
+	}
 	a.turnMu.Lock()
 	if a.closing || a.updating {
 		a.turnMu.Unlock()
@@ -105,6 +109,7 @@ func (a *App) startIssueFollowup(chat chatmodel.Session, input messageInput, opt
 	} else {
 		input.Message = "这是负责人主动发送的消息，后端持有项目排他锁。此聊天不再拥有共享台账中的当前认领，可能已由下一轮新聊天接手。可以讨论和检查，但不得沿用过时上下文修改代码或台账、push 或创建 PR；如需继续处理请核实并转到台账 owner.chat 对应的新聊天。\n\n负责人消息：\n" + input.Message
 	}
+	input.Message = cliHint + input.Message
 	cleanupScope := func() {
 		cancel()
 		if token != "" {

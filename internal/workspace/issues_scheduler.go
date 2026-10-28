@@ -40,7 +40,7 @@ func (a *App) startIssueScheduler(instance, address string) {
 	if host == "" || host == "0.0.0.0" {
 		host = "127.0.0.1"
 	}
-	a.automation = &issueScheduler{instance: instance, callbackURL: "http://" + net.JoinHostPort(host, port) + "/api/automation/attach-artifact", run: issues.Run, active: map[string]bool{}, scopes: map[string]*issueArtifactScope{}}
+	a.automation = &issueScheduler{instance: instance, callbackURL: "http://" + net.JoinHostPort(host, port) + "/api/automation/attach-artifact", run: a.store.RunIssueCommand, active: map[string]bool{}, scopes: map[string]*issueArtifactScope{}}
 	a.turnMu.Lock()
 	a.turns.Add(1)
 	a.turnMu.Unlock()
@@ -161,6 +161,10 @@ func (a *App) runIssueRound(ctx context.Context, p Project) (runErr error) {
 		return !active && o.Ended(a.automation.instance, a.issueRunEnded)
 	}
 	checkout, err := issues.Inspect(ctx, a.automation.run, p.Path, v.Repository)
+	if err != nil {
+		return err
+	}
+	cliHint, err := a.store.issueGitHubCLIHint()
 	if err != nil {
 		return err
 	}
@@ -306,7 +310,7 @@ func (a *App) runIssueRound(ctx context.Context, p Project) (runErr error) {
 		scope.closed = true
 		scope.mu.Unlock()
 	}()
-	prompt, err := issuePrompt(p, checkout, *selected, *record, resume, a.automation.callbackURL, token)
+	prompt, err := issuePrompt(p, checkout, *selected, *record, resume, cliHint, a.automation.callbackURL, token)
 	if err != nil {
 		return err
 	}
