@@ -19,6 +19,34 @@ const t = (message, values = {}) =>
 const tool = (name, text) => ({ role: "assistant", kind: "tool_use", name, text });
 const message = (text, phase, id) => ({ role: "assistant", kind: "text", text, phase, id });
 
+test("thinking summaries keep their icon and full Markdown in a compact preview", () => {
+  const title = "Designing the animation ".repeat(30).trim();
+  const text = `**${title}**\n\nMore details with \`code\`.\n\n- Final step`;
+  for (const part of [
+    { role: "assistant", kind: "thinking", text },
+    tool("reasoning", text),
+  ]) {
+    const html = renderToStaticMarkup(createElement(ToolActivityList, {
+      parts: [part], backend: "codex", t, live: true,
+    }));
+    assert.match(html, /class="tool-activity-item-summary"[^>]*aria-expanded="false"/);
+    assert.match(html, /lucide-brain/);
+    assert.match(html, /class="tool-thinking-label-prefix">Think<\/span>/);
+    assert.match(html, /class="markdown markdown-preview"/);
+    assert.ok(html.includes(`<strong>${title}</strong>`));
+    assert.match(html, /<code>code<\/code>/);
+    assert.doesNotMatch(html, /class="tool-detail"|<p>|<ul>/);
+    const activity = displayActivity(part, "codex", t);
+    assert.equal(activity.detail, text);
+    const detail = renderToStaticMarkup(createElement(ActivityDetail, { activity, t }));
+    assert.match(detail, /class="tool-detail-label">Thought<\/span>/);
+    assert.match(detail, /class="markdown"><p><strong>/);
+    assert.ok(detail.includes(`<strong>${title}</strong>`));
+    assert.match(detail, /<ul>\n<li>Final step<\/li>/);
+    assert.doesNotMatch(detail, /markdown-preview/);
+  }
+});
+
 test("progress messages stay between tools and do not merge tool groups across them", () => {
   const parts = [
     message("First progress", "commentary", "first"),

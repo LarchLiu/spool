@@ -1017,6 +1017,10 @@ a.attachment-open {
 .tool-activity-item-summary:hover {
   color: var(--text);
 }
+.tool-activity-summary > svg,
+.tool-activity-item-summary > svg {
+  flex-shrink: 0;
+}
 .tool-activity-item-summary > span:nth-child(2) {
   min-width: 0;
   overflow: hidden;
@@ -1026,6 +1030,8 @@ a.attachment-open {
 .tool-thinking-label {
   display: flex;
   align-items: baseline;
+  flex: 1;
+  gap: 4px;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -1036,54 +1042,20 @@ a.attachment-open {
   flex: 0 0 auto;
 }
 .tool-thinking-label-preview {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tool-thinking-label-preview .markdown {
+.tool-thinking-label-preview .markdown-preview {
   display: block;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.tool-thinking-label-preview .markdown > * {
-  display: inline;
-  margin: 0;
-}
-.tool-thinking-label-preview .markdown > * + *::before {
-  content: " ";
-}
-.tool-thinking-label-preview .markdown p {
-  display: inline;
-  margin: 0;
-  white-space: normal;
-}
-.tool-thinking-label-preview .markdown :is(ul, ol) {
-  display: inline;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.tool-thinking-label-preview .markdown li {
-  display: inline;
-  margin: 0;
-}
-.tool-thinking-label-preview .markdown li + li::before {
-  content: " ";
-}
-.tool-thinking-label-preview .markdown blockquote {
-  padding: 0;
-  border: 0;
-  color: inherit;
-}
-.tool-thinking-label-preview .markdown pre {
-  display: inline;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  white-space: normal;
+.tool-thinking-label-preview .markdown-preview code {
+  white-space: inherit;
 }
 .tool-activity-item .tool-detail {
   margin-left: 20px;

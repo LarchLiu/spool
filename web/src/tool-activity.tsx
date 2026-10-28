@@ -16,7 +16,7 @@ import {
 import { FileDiff } from "@pierre/diffs/react";
 import type { Backend, TranscriptPart } from "./types";
 import type { Translator } from "./i18n";
-import { MarkdownMessage } from "./markdown-message.js";
+import { MarkdownMessage, MarkdownPreview } from "./markdown-message.js";
 import { patchText, toolResultDiffs } from "./tool-diff.js";
 import { turnPresentation } from "./turn-presentation.js";
 
@@ -440,7 +440,7 @@ function ActivityLabel({ activity }: { activity: Activity }) {
             {" "}·{" "}
           </span>
           <span className="tool-thinking-label-preview">
-            <MarkdownMessage>{activity.use.text}</MarkdownMessage>
+            <MarkdownPreview>{activity.use.text}</MarkdownPreview>
           </span>
         </>
       )}
