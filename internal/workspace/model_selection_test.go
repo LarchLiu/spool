@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -97,24 +98,25 @@ func TestGroupedModelSelectionAndMissingHistoryGuard(t *testing.T) {
 	}
 }
 
-func TestAgentSwitchRollbackAndRunningGuard(t *testing.T) {
+func TestRunningTurnRejectsModelAndAgentChanges(t *testing.T) {
 	s := testStore(t)
-	chat, _ := s.createSession("", "", chatmodel.BackendCodex)
-	s.SetNativeSession(chat.ID, "codex-native")
-	s.db.Exec(`CREATE TRIGGER reject_switch BEFORE UPDATE ON sessions BEGIN SELECT RAISE(ABORT,'fixture write failure'); END`)
-	if _, err := s.beginTurn(chat.ID, "Switch", chatmodel.BackendClaude, chatmodel.CodexOptions{Model: "test-claude"}); err == nil {
-		t.Fatal("expected insert failure")
+	chat, err := s.createSession("", "", chatmodel.BackendCodex)
+	if err != nil {
+		t.Fatal(err)
 	}
-	saved, _ := s.Get(chat.ID)
-	if saved.Backend != chatmodel.BackendCodex || saved.NativeSessionID != "codex-native" {
-		t.Fatal("failed switch partially committed")
-	}
-	s.db.Exec(`DROP TRIGGER reject_switch`)
 	if _, err := s.BeginTurn(chat.ID, "Working"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.beginTurn(chat.ID, "Switch", chatmodel.BackendClaude, chatmodel.CodexOptions{}); err == nil {
-		t.Fatal("switched agents during a running turn")
+	running, _ := s.Get(chat.ID)
+	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {
+		t.Run(string(backend), func(t *testing.T) {
+			if _, err := s.beginTurn(chat.ID, "Switch", backend, chatmodel.CodexOptions{Model: "other-model"}); err == nil || !strings.Contains(err.Error(), "running turn") {
+				t.Fatalf("expected running-turn guard, got %v", err)
+			}
+			if saved, ok := s.Get(chat.ID); !ok || !reflect.DeepEqual(saved, running) {
+				t.Fatalf("rejected change modified the running chat: %#v", saved)
+			}
+		})
 	}
 }
 

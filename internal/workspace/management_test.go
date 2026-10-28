@@ -3,6 +3,8 @@ package workspace
 import (
 	"context"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -265,14 +267,20 @@ func TestRegistrySavesDynamicModelsWithoutUserPromptAndRetainsOnFailure(t *testi
 }
 func TestSQLiteTurnWriteRollsBackAtomically(t *testing.T) {
 	s := testStore(t)
-	v, _ := s.createSession("", "", chatmodel.BackendCodex)
-	s.db.Exec(`CREATE TRIGGER reject_turn BEFORE UPDATE ON sessions BEGIN SELECT RAISE(ABORT,'fixture write failure'); END`)
-	if _, err := s.BeginTurn(v.ID, "No write", chatmodel.CodexOptions{Model: "test-model", ReasoningEffort: "high"}); err == nil {
-		t.Fatal("expected database failure")
+	v, err := s.createSession("", "", chatmodel.BackendCodex)
+	if err != nil {
+		t.Fatal(err)
 	}
-	saved, _ := s.Get(v.ID)
-	if saved.Status != chatmodel.StatusReady || saved.Model != "" || len(saved.Turns) != 0 {
-		t.Fatal("partial failed turn persisted")
+	original, _ := s.Get(v.ID)
+	if _, err := s.db.Exec(`CREATE TRIGGER reject_turn BEFORE UPDATE ON sessions BEGIN SELECT RAISE(ABORT,'fixture write failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	// A fresh chat can switch agents, so this must reach the failing SQL write.
+	if _, err := s.beginTurn(v.ID, "No write", chatmodel.BackendClaude, chatmodel.CodexOptions{Model: "test-claude", ReasoningEffort: "high"}); err == nil || !strings.Contains(err.Error(), "fixture write failure") {
+		t.Fatalf("expected injected database failure, got %v", err)
+	}
+	if saved, ok := s.Get(v.ID); !ok || !reflect.DeepEqual(saved, original) {
+		t.Fatalf("partial failed turn or agent switch persisted: %#v", saved)
 	}
 }
 func TestServiceLeasePreventsConcurrentManagers(t *testing.T) {

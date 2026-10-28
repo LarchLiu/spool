@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"spool/internal/agent"
 	chatmodel "spool/internal/model"
 )
@@ -83,7 +85,8 @@ func testStore(t *testing.T) *Store {
 }
 func testUser(t *testing.T, s *Store, name string) User {
 	t.Helper()
-	u, err := s.SaveUser(UserInput{Username: name, Nickname: name, Password: "test-password-2026"})
+	// Keep race tests focused on app behavior rather than production-cost hashing.
+	u, err := s.saveUserWithPasswordCost(UserInput{Username: name, Nickname: name, Password: "test-password-2026"}, bcrypt.MinCost)
 	if err != nil {
 		t.Fatal(err)
 	}

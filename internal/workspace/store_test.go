@@ -3,6 +3,7 @@ package workspace
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -47,11 +48,8 @@ func TestTurnTransitionsAdvanceSessionRevision(t *testing.T) {
 }
 
 func TestStorePersistsSessionMetadataWithoutConversationBodies(t *testing.T) {
-	root := t.TempDir()
-	store, err := OpenStore(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := testStore(t)
+	root := store.Root()
 	session, err := store.createSession("", "", chatmodel.BackendClaude)
 	if err != nil {
 		t.Fatal(err)
@@ -64,11 +62,15 @@ func TestStorePersistsSessionMetadataWithoutConversationBodies(t *testing.T) {
 	if err := store.FinishTurn(session.ID, turn.ID, result, nil, chatmodel.StatusCompleted); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	loaded, err := OpenStore(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { loaded.Close() })
 	got, ok := loaded.Get(session.ID)
 	if !ok {
 		t.Fatal("session missing after reload")
@@ -163,27 +165,59 @@ func TestSQLiteIgnoresOldJSONData(t *testing.T) {
 }
 
 func TestSetInterruptedMarksOnlyRunningTurns(t *testing.T) {
-	root := t.TempDir()
-	store, err := OpenStore(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	session, err := store.createSession("", "", chatmodel.BackendCodex)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.BeginTurn(session.ID, "still working"); err != nil {
-		t.Fatal(err)
+	store := testStore(t)
+	before := make(map[chatmodel.SessionStatus]chatmodel.Session)
+	for _, status := range []chatmodel.SessionStatus{chatmodel.StatusReady, chatmodel.StatusRunning, chatmodel.StatusCompleted, chatmodel.StatusFailed, chatmodel.StatusStopped, chatmodel.StatusInterrupted} {
+		session, err := store.createSession("", "", chatmodel.BackendCodex)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status != chatmodel.StatusReady {
+			turn, err := store.BeginTurn(session.ID, "still working")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status != chatmodel.StatusRunning {
+				if err := store.FinishTurn(session.ID, turn.ID, agent.AgentResult{}, nil, status); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		before[status], _ = store.Get(session.ID)
 	}
 	if err := store.SetInterrupted(); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := store.Get(session.ID)
-	if got.Status != chatmodel.StatusInterrupted || got.Turns[0].Status != chatmodel.StatusInterrupted {
-		t.Fatalf("running turn was not recovered as interrupted: %#v", got)
+	for status, original := range before {
+		t.Run(string(status), func(t *testing.T) {
+			got, ok := store.Get(original.ID)
+			if !ok {
+				t.Fatal("session disappeared during recovery")
+			}
+			if status != chatmodel.StatusRunning {
+				if !reflect.DeepEqual(got, original) {
+					t.Fatalf("recovery modified a non-running session: before=%#v after=%#v", original, got)
+				}
+				return
+			}
+			if got.Status != chatmodel.StatusInterrupted || len(got.Turns) != 1 || got.Turns[0].Status != chatmodel.StatusInterrupted || got.Turns[0].FinishedAt == 0 {
+				t.Fatalf("running turn was not recovered as interrupted: %#v", got)
+			}
+			if got.UpdatedAt <= original.UpdatedAt {
+				t.Fatal("recovery did not advance the SSE revision")
+			}
+			if !strings.Contains(got.Turns[0].Error, "restarted") {
+				t.Fatalf("missing restart explanation: %q", got.Turns[0].Error)
+			}
+		})
 	}
-	if !strings.Contains(got.Turns[0].Error, "restarted") {
-		t.Fatalf("missing restart explanation: %q", got.Turns[0].Error)
+	// Once recovered, another startup must not rewrite terminal states/revisions.
+	recovered := store.Sessions()
+	if err := store.SetInterrupted(); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Sessions(); !reflect.DeepEqual(got, recovered) {
+		t.Fatal("repeated recovery changed already recovered sessions")
 	}
 }
 

@@ -34,6 +34,9 @@ type UserInput struct {
 	Password string
 	Disabled bool
 }
+
+const productionBcryptCost = 12
+
 type Project struct {
 	ID          string           `json:"id"`
 	Name        string           `json:"name"`
@@ -130,6 +133,10 @@ func (s *Store) Users() ([]User, error) {
 	return out, rows.Err()
 }
 func (s *Store) SaveUser(v UserInput) (User, error) {
+	return s.saveUserWithPasswordCost(v, productionBcryptCost)
+}
+
+func (s *Store) saveUserWithPasswordCost(v UserInput, passwordCost int) (User, error) {
 	v.Username = strings.TrimSpace(v.Username)
 	v.Nickname = strings.TrimSpace(v.Nickname)
 	if v.Username == "" || len(v.Username) > 64 || len(v.Nickname) > 100 || v.Nickname == "" {
@@ -145,7 +152,7 @@ func (s *Store) SaveUser(v UserInput) (User, error) {
 		if len(v.Password) < 12 || len(v.Password) > 72 {
 			return User{}, fmt.Errorf("password must be between 12 and 72 bytes")
 		}
-		b, err := bcrypt.GenerateFromPassword([]byte(v.Password), 12)
+		b, err := bcrypt.GenerateFromPassword([]byte(v.Password), passwordCost)
 		if err != nil {
 			return User{}, err
 		}

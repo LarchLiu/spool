@@ -64,20 +64,16 @@ test("CLI defaults omitted or empty versions to patch, including with flags", ()
   assert.deepEqual(parseReleaseArgs(["--offline", "", "--dry-run"]), { input: "patch", dryRun: true, offline: true });
 });
 
-test("default CLI versions prepare patch releases without pushing", async (t) => {
-  for (const args of [[], [""]]) {
-    await t.test(args.length === 0 ? "omitted" : "empty", async (t) => {
-      const repo = await fixture(t);
-      const remoteBefore = repo.git("ls-remote", "origin");
-      const { input, ...options } = parseReleaseArgs(args);
-      const result = await prepareLocalRelease(input, { ...repo, ...options });
-      assert.equal(result.version, "0.1.1");
-      assert.equal(repo.git("log", "-1", "--format=%s"), "chore: release v0.1.1");
-      assert.equal(repo.git("cat-file", "-t", "v0.1.1"), "tag");
-      assert.equal(repo.git("status", "--porcelain"), "");
-      assert.equal(repo.git("ls-remote", "origin"), remoteBefore);
-    });
-  }
+test("default CLI version prepares a patch release without pushing", async (t) => {
+  const repo = await fixture(t);
+  const remoteBefore = repo.git("ls-remote", "origin");
+  const { input, ...options } = parseReleaseArgs([]);
+  const result = await prepareLocalRelease(input, { ...repo, ...options });
+  assert.equal(result.version, "0.1.1");
+  assert.equal(repo.git("log", "-1", "--format=%s"), "chore: release v0.1.1");
+  assert.equal(repo.git("cat-file", "-t", "v0.1.1"), "tag");
+  assert.equal(repo.git("status", "--porcelain"), "");
+  assert.equal(repo.git("ls-remote", "origin"), remoteBefore);
 });
 
 test("automatic versions use the highest known version, without floating point truncation", () => {

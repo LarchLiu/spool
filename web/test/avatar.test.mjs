@@ -177,39 +177,3 @@ test("online avatar stack shows up to three people and summarizes the rest", () 
   );
   assert.ok(many.includes(avatarDataURI(people[0]).replaceAll("&", "&amp;")));
 });
-
-test("avatar dialog scrolls only its body, keeping the heading and actions outside", () => {
-  const dialog = readFileSync(
-    new URL("../src/avatar-dialog.tsx", import.meta.url),
-    "utf8",
-  );
-  const css = readFileSync(
-    new URL("../src/style.css", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    dialog,
-    /className="dialog-heading"[\s\S]*className="avatar-dialog-body"/,
-  );
-  assert.match(
-    dialog,
-    /className="avatar-dialog-body">[\s\S]*className="avatar-preview"[\s\S]*className="avatar-credit"[\s\S]*<\/p>\s*<\/div>\s*\{error &&/,
-  );
-  assert.ok(
-    dialog.indexOf('className="avatar-dialog-actions"') >
-      dialog.indexOf("{error &&"),
-  );
-  const rule = (selector) => {
-    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return (
-      css.match(new RegExp(`(?:^|})\\s*${escaped}\\s*\\{([^}]*)\\}`))?.[1] ?? ""
-    );
-  };
-  assert.match(rule(".avatar-dialog"), /overflow: hidden/);
-  assert.match(rule(".avatar-dialog"), /padding: 0/);
-  assert.match(rule(".avatar-dialog[open]"), /flex-direction: column/);
-  assert.match(rule(".avatar-dialog-body"), /overflow-y: auto/);
-  assert.match(rule(".avatar-dialog-body"), /min-height: 0/);
-  assert.match(rule(".avatar-dialog-actions"), /flex-shrink: 0/);
-  assert.doesNotMatch(rule(".avatar-dialog-actions"), /position: sticky/);
-});

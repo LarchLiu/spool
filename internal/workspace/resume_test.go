@@ -19,10 +19,7 @@ func TestInterruptedChatResumesPersistedSessionAfterReload(t *testing.T) {
 				variable = "SPOOL_CLAUDE_BIN"
 			}
 			t.Setenv(variable, fixture.Binary)
-			store, err := OpenStore(t.TempDir())
-			if err != nil {
-				t.Fatal(err)
-			}
+			store := testStore(t)
 			session, err := store.createSession("", "", backend)
 			if err != nil {
 				t.Fatal(err)
@@ -41,18 +38,24 @@ func TestInterruptedChatResumesPersistedSessionAfterReload(t *testing.T) {
 			if !errors.Is(err, context.Canceled) {
 				t.Fatalf("expected cancellation, got %v", err)
 			}
-			_ = runner.Close()
-			store, err = OpenStore(store.Root())
+			if err := runner.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reloaded, err := OpenStore(store.Root())
 			if err != nil {
 				t.Fatal(err)
 			}
-			saved, _ := store.Get(session.ID)
+			t.Cleanup(func() { reloaded.Close() })
+			saved, _ := reloaded.Get(session.ID)
 			if saved.NativeSessionID != "native-session-123" || saved.Status == chatmodel.StatusRunning || len(saved.Turns) != 0 || len(saved.Transcript.Parts) != 0 {
 				t.Fatalf("lost interrupted turn: %#v", saved)
 			}
 			ctx, cancel2 := context.WithTimeout(context.Background(), 8*time.Second)
 			defer cancel2()
-			result, err := NewApp(store, newTestRunner(t), "", "").runTurn(ctx, session.ID, "Continue", nil)
+			result, err := NewApp(reloaded, newTestRunner(t), "", "").runTurn(ctx, session.ID, "Continue", nil)
 			if err != nil || result.Text != "Hello world" || result.SessionID != saved.NativeSessionID {
 				t.Fatalf("chat was not resumed: result=%#v, error=%v", result, err)
 			}
