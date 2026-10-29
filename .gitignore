@@ -6,5 +6,6 @@
 *.sqlite-wal
 *.sqlite-shm
 /mygo.ts
+/.mygo/
 /smoke-results/
 .DS_Store

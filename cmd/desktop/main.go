@@ -34,6 +34,7 @@ type panel struct {
 	chatStarting       bool
 	settingsView       *mygo.WebView
 	settingsFailed     bool
+	devFrontend        *desktopDevFrontend
 	quitting           bool
 	tray               *mygo.Tray
 	logo               *ui.Bitmap
@@ -78,6 +79,12 @@ func main() {
 }
 
 func runDesktop() (runErr error) {
+	// MyGo regenerates bindings before every dev rebuild, even while the old
+	// app owns the database. Generation must not start services or acquire locks.
+	if os.Getenv("MYGO_GENERATE") != "" {
+		mygo.BindAs("DesktopSettings", &desktopSettings{})
+		return mygo.App.Run()
+	}
 	development := mygo.IsDev()
 	root := flag.String("data-dir", workspace.DefaultDataDir(development), "Data directory (database in db/spool.sqlite)")
 	smoke := flag.String("release-smoke", "", "Probe the packaged desktop using fresh temporary data; write a JSON report")
@@ -143,7 +150,16 @@ func runDesktop() (runErr error) {
 		return showStartupFailure(*root, err, logs)
 	}
 	defer service.Close()
-	p := &panel{service: service, tab: "Service", members: map[string]bool{}, agentPaths: map[chatmodel.Backend]string{}, agentEnabled: map[chatmodel.Backend]bool{}}
+	devURL := os.Getenv("MYGO_DEV_URL")
+	if *smoke != "" {
+		devURL = ""
+	}
+	devFrontend, err := startDesktopDevFrontend(development, devURL, service.LocalWebURL)
+	if err != nil {
+		return err
+	}
+	defer devFrontend.close()
+	p := &panel{service: service, devFrontend: devFrontend, tab: "Service", members: map[string]bool{}, agentPaths: map[chatmodel.Backend]string{}, agentEnabled: map[chatmodel.Backend]bool{}}
 	githubContext, cancelGitHub := context.WithCancel(context.Background())
 	defer cancelGitHub()
 	p.github.ctx = githubContext
@@ -173,6 +189,7 @@ func runDesktop() (runErr error) {
 		cancelGitHub()
 		close(done)
 		p.updates.Close()
+		devFrontend.close()
 		// MyGo relaunches after OnQuit, before main's deferred cleanup.
 		if err := service.Close(); err != nil {
 			shutdownErr = err

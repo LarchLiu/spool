@@ -124,7 +124,7 @@ func (p *panel) loadSettingsView() error {
 	p.settingsView = view
 	page := view.Page()
 	page.OnWillNavigate(func(e *mygo.NavigateEvent) {
-		if settingsDocumentAllowed(e.URL) {
+		if p.settingsDocumentAllowed(e.URL) {
 			return
 		}
 		e.PreventDefault()
@@ -151,7 +151,7 @@ func (p *panel) loadSettingsView() error {
 			view.Focus()
 		}
 	})
-	return page.LoadURL(settingsPageURL)
+	return page.LoadURL(p.settingsURL())
 }
 
 // Bound calls run on worker goroutines. All panel state stays on the UI thread;
@@ -173,7 +173,7 @@ func settingsUI[T any](ctx context.Context, p *panel, fn func() (T, error)) (T, 
 		}
 		caller := mygo.CallerPage(ctx)
 		if p.quitting || p.settingsView == nil || p.settingsFailed || caller == nil ||
-			caller != p.settingsView.Page() || !settingsDocumentAllowed(caller.URL()) {
+			caller != p.settingsView.Page() || !p.settingsDocumentAllowed(caller.URL()) {
 			reply <- result{err: errors.New("only the desktop settings page may manage this workspace")}
 			return
 		}

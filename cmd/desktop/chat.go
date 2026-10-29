@@ -67,6 +67,9 @@ func chatWebViewOptions() mygo.WebViewOptions {
 }
 
 func (p *panel) loadChatView(address string) error {
+	if p.devFrontend != nil {
+		address = p.devFrontend.url + "/"
+	}
 	if p.chatView == nil {
 		if !mygo.WebViewAvailable() {
 			return fmt.Errorf("Desktop chat requires a system WebView. Install WebView2 (Windows) or WebKitGTK (Linux), or use Open in Browser.")

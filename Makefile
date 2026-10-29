@@ -1,9 +1,12 @@
 version ?= patch
 
-.PHONY: web desktop server test package auto-format branding release
+.PHONY: dev web desktop server test package auto-format branding release
 web: branding
 	npm --prefix web ci
 	npm --prefix web run build
+
+dev: web
+	go run github.com/egoist/mygo/cmd/mygo@v0.6.4 dev
 
 branding:
 	go run ./tools/branding.go

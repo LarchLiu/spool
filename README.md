@@ -46,7 +46,29 @@ need Node.js 22.12+ and npm (DiceBear 10.x requires Node.js 22+).
 
 ## Development
 
-From this directory:
+From this directory (quit any existing **Spool Dev** instance first; closing
+its window only hides it):
+
+```sh
+make dev
+```
+
+This prepares the embedded assets needed to compile Go, then runs the pinned
+MyGo dev CLI. It starts Vite on `127.0.0.1:5173` (the port must be free), waits
+for it to be ready, and opens **Spool Dev**. Both desktop chat and settings
+support Vite hot module replacement / React Fast Refresh; editing Go code
+automatically rebuilds and relaunches the desktop. A compile error keeps the
+previous app running until the next successful build. Quit the app or press
+Ctrl+C to stop the app and Vite together.
+
+The desktop uses a private loopback proxy for frontend assets, the HMR WebSocket
+and API calls. API requests always reach that desktop's active service, including
+after changing its port in settings; no extra headless server or fixed API port
+is required. The native settings bridge still accepts only the exact settings
+document in its own WebView, never the chat page or an ordinary browser.
+Production builds and release smoke probes always use embedded assets.
+
+To launch once without hot reload:
 
 ```sh
 npm --prefix web ci
@@ -54,7 +76,7 @@ npm --prefix web run build
 go run ./cmd/desktop
 ```
 
-For frontend hot reload, run the backend and Vite in separate terminals:
+For browser-only frontend hot reload, run the backend and Vite in separate terminals:
 
 ```sh
 go run ./cmd/server
@@ -67,6 +89,12 @@ configured backend port differs. The proxy preserves the development page's
 language/theme changes, and other writes still require the usual CSRF token.
 Use the Go-served production URL, not Vite, when checking Service Worker updates
 or offline behavior.
+
+With already-built assets, `go run github.com/egoist/mygo/cmd/mygo@v0.6.4 dev`
+starts the same desktop hot-reload workflow without the initial build. For a
+manual two-terminal desktop session, run Vite and then
+`MYGO_DEV_URL=http://127.0.0.1:5173 go run ./cmd/desktop`; this enables frontend
+HMR only, not automatic Go rebuilds.
 
 `go run .` is not an entry point: the root package only embeds resources. Use
 `go run ./cmd/desktop` or `go run ./cmd/server`; both commands are unchanged.

@@ -1,8 +1,28 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createServer, loadConfigFromFile } from "vite";
+
+test("desktop dev starts a pinned Vite origin without silently changing ports", async () => {
+  const config = JSON.parse(
+    await readFile(new URL("../../mygo.json", import.meta.url), "utf8"),
+  );
+  assert.equal(config.devUrl, "http://127.0.0.1:5173");
+  assert.equal(
+    config.devCommand,
+    "npm --prefix web run dev -- --port 5173 --strictPort",
+  );
+  const makefile = await readFile(
+    new URL("../../Makefile", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    makefile,
+    /dev: web\n\tgo run github\.com\/egoist\/mygo\/cmd\/mygo@v0\.6\.4 dev/,
+  );
+});
 
 test("the Vite API proxy preserves the dev origin and CSRF credentials", async (t) => {
   const backend = http.createServer((request, response) => {
