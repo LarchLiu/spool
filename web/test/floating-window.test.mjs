@@ -12,9 +12,9 @@ const mobile = { x: 0, y: 0, width: 390, height: 700 };
 
 test("chat initially opens compactly at the bottom right", () => {
   assert.deepEqual(fitFloatingWindow(null, desktop), {
-    x: 1008,
+    x: 828,
     y: 368,
-    width: 420,
+    width: 600,
     height: 520,
   });
   assert.deepEqual(fitFloatingWindow(null, mobile), {
@@ -29,7 +29,7 @@ test("drag keeps the full window and close control inside the viewport", () => {
   const bounds = fitFloatingWindow(null, desktop);
   assert.deepEqual(moveFloatingWindow(bounds, -80, -50, desktop), {
     ...bounds,
-    x: 928,
+    x: 748,
     y: 318,
   });
   assert.deepEqual(moveFloatingWindow(bounds, -10000, -10000, desktop), {

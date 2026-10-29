@@ -4,6 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   createDirectInbox,
+  formatUnreadCount,
   inboxMessageLimit,
   onlineChatRoom,
   messagePeer,
@@ -11,7 +12,8 @@ import {
 } from "../.test-build/direct-messages.js";
 import { DirectMessagePanel } from "../.test-build/components/web/src/direct-message-panel.js";
 import { PeopleGroupPicker } from "../.test-build/components/web/src/people-group-picker.js";
-import { PeopleConversationPicker } from "../.test-build/components/web/src/people-conversation-picker.js";
+import { PeopleConversationList } from "../.test-build/components/web/src/people-conversation-list.js";
+import { PeopleGroupAvatar } from "../.test-build/components/web/src/people-group-avatar.js";
 
 const people = [
   { id: "bob", nickname: "Bob", avatar: { style: "thumbs", seed: "bob" } },
@@ -78,7 +80,7 @@ test("inbox is bounded, keeps last known profiles while offline and starts empty
     inbox.receive(message(String(i)), "alice", true, people);
   assert.equal(inbox.snapshot().messages.length, inboxMessageLimit);
   assert.equal(inbox.snapshot().messages[0].id, "20");
-  assert.equal(inbox.snapshot().unread.bob, 99);
+  assert.equal(inbox.snapshot().unread.bob, inboxMessageLimit + 20);
   inbox.profiles([]);
   assert.equal(inbox.snapshot().people[0].nickname, "Bob");
   inbox.profiles([{ ...people[0], nickname: "Robert" }]);
@@ -88,7 +90,23 @@ test("inbox is bounded, keeps last known profiles while offline and starts empty
   assert.equal(inbox.snapshot().people.length, 0);
 });
 
-test("private panel escapes messages, explains lifetime and disables offline sending", () => {
+test("unread badges distinguish 9 messages from overflow without losing the count", () => {
+  for (const count of [0, 1, 8, 9, 10, 11, 9999])
+    assert.equal(formatUnreadCount(count), count > 9 ? "9+" : String(count));
+  const inbox = createDirectInbox();
+  for (let i = 1; i <= 10; i++) {
+    inbox.receive(message(String(i)), "alice", true, people);
+    assert.equal(inbox.snapshot().unread.bob, i);
+    assert.equal(
+      formatUnreadCount(inbox.snapshot().unread.bob),
+      i > 9 ? "9+" : String(i),
+    );
+  }
+  inbox.open("bob", people);
+  assert.equal(inbox.snapshot().unread.bob, 0);
+});
+
+test("private panel escapes messages, omits lifetime notice and disables offline sending", () => {
   const view = (status, connected = true) =>
     renderToStaticMarkup(
       createElement(DirectMessagePanel, {
@@ -114,11 +132,12 @@ test("private panel escapes messages, explains lifetime and disables offline sen
     );
   const html = view("online");
   assert.match(html, /role="log"/);
-  assert.match(html, /aria-labelledby="direct-message-title"/);
+  assert.match(html, /class="direct-message-panel" aria-label="Bob"/);
+  assert.doesNotMatch(html, /<h2|direct-message-title/);
   assert.match(html, /aria-modal="false"/);
   assert.match(html, /aria-label="Move chat window \(arrow keys\)"/);
   assert.match(html, /aria-label="Resize chat window \(arrow keys\)"/);
-  assert.match(html, /Messages are not saved/);
+  assert.doesNotMatch(html, /Messages are not saved|direct-message-notice/);
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
   assert.doesNotMatch(html, /<img src="x"/);
   assert.match(html, /class="direct-message own"/);
@@ -175,7 +194,10 @@ test("group panel identifies senders and is usable without a private recipient o
     }),
   );
   assert.match(html, /Online group chat/);
-  assert.match(html, /group-message-author">Bob/);
+  assert.match(
+    html,
+    /class="direct-message-avatar" role="img" aria-label="Bob"/,
+  );
   assert.match(html, /aria-label="Group message"/);
   assert.match(html, /aria-label="Send group message"/);
   assert.doesNotMatch(html, /This person is offline/);
@@ -221,7 +243,10 @@ test("selected groups remain separate from private/public chats and have invite 
   );
   assert.match(html, /A small group/);
   assert.match(html, /aria-label="Invite people"/);
-  assert.match(html, /group-message-author">Bob/);
+  assert.match(
+    html,
+    /class="direct-message-avatar" role="img" aria-label="Bob"/,
+  );
   inbox.groups([]);
   assert.equal(inbox.snapshot().groups.length, 0);
   inbox.reset();
@@ -245,23 +270,230 @@ test("member picker explains scope and lets users choose specific people", () =>
   assert.match(html, /Create group/);
 });
 
-test("conversation popup uses an anchored listbox trigger rather than a mobile native select", () => {
+test("conversation sidebar always lists people and groups with avatars and unread counts", () => {
   const html = renderToStaticMarkup(
-    createElement(PeopleConversationPicker, {
+    createElement(PeopleConversationList, {
       value: "bob",
-      people,
+      people: [
+        { id: onlineChatRoom, nickname: "Online group chat" },
+        ...people,
+      ],
       unread: { bob: 2 },
-      height: 360,
+      t: (key) => key,
+      onSelect() {},
+      onNewGroup() {},
+    }),
+  );
+  assert.match(html, /aria-label="Choose conversation"/);
+  assert.match(html, /<aside class="direct-message-sidebar"/);
+  assert.match(html, /role="listbox"/);
+  assert.match(
+    html,
+    /aria-label="Bob \(Offline\)" aria-selected="true" tabindex="0" data-conversation="bob"/,
+  );
+  assert.match(
+    html,
+    /aria-selected="false" tabindex="-1" data-conversation="online-room"/,
+  );
+  assert.match(html, /class="direct-message-conversation-name">Bob<\/span>/);
+  assert.match(html, /class="user-avatar"/);
+  assert.match(html, /class="group-chat-avatar"/);
+  assert.match(html, /aria-label="New group chat"/);
+  assert.match(html, /class="direct-unread">2/);
+  assert.doesNotMatch(html, /<select|aria-haspopup|aria-expanded/);
+});
+
+test("created group icons stack three member avatars and show the remaining count", () => {
+  const members = Array.from({ length: 32 }, (_, index) => ({
+    id: `member-${index}`,
+    nickname: `Member ${index + 1}`,
+    avatar: { style: "thumbs", seed: `member-${index}` },
+  }));
+  for (const count of [1, 2, 3, 4, 5, 32]) {
+    const html = renderToStaticMarkup(
+      createElement(PeopleGroupAvatar, { people: members.slice(0, count) }),
+    );
+    assert.equal([...html.matchAll(/<img /g)].length, Math.min(3, count));
+    assert.match(html, /class="people-group-avatar"/);
+    for (let index = 0; index < Math.min(3, count); index++)
+      assert.ok(html.includes(`title="Member ${index + 1}"`));
+    if (count > 3)
+      assert.ok(html.includes(`avatar-stack-more">+${count - 3}</span>`));
+    else assert.doesNotMatch(html, /avatar-stack-more/);
+  }
+  const generic = renderToStaticMarkup(createElement(PeopleGroupAvatar));
+  assert.match(generic, /group-chat-avatar/);
+  assert.doesNotMatch(generic, /avatar-stack|<img /);
+});
+
+test("group icons resolve self and missing profiles without counting the public room as members", () => {
+  const group = {
+    id: "group-icons",
+    name: "Small group",
+    members: ["alice", "bob", "uncached", "extra"],
+    created_by: "alice",
+  };
+  const html = renderToStaticMarkup(
+    createElement(PeopleConversationList, {
+      value: group.id,
+      people: [
+        { id: onlineChatRoom, nickname: "Online group chat" },
+        { id: group.id, nickname: group.name },
+      ],
+      groups: [group],
+      resolvePerson: (id) => ({ id, nickname: id === "alice" ? "Alice" : id }),
+      unread: {},
       t: (key) => key,
       onSelect() {},
     }),
   );
-  assert.match(html, /aria-label="Choose conversation"/);
-  assert.match(html, /aria-haspopup="listbox"/);
-  assert.match(html, /aria-expanded="false"/);
-  assert.match(html, /<span>Bob<\/span>/);
-  assert.match(html, /class="direct-unread">2/);
-  assert.doesNotMatch(html, /<select|role="listbox"/);
+  const buttons = [
+    ...html.matchAll(
+      /<button[^>]*data-conversation="([^"]+)"[^>]*>(.*?)<\/button>/gs,
+    ),
+  ];
+  const publicRoom = buttons.find((match) => match[1] === onlineChatRoom)[2];
+  const selected = buttons.find((match) => match[1] === group.id)[2];
+  assert.doesNotMatch(publicRoom, /<img |avatar-stack|direct-message-presence/);
+  assert.match(publicRoom, /group-chat-avatar/);
+  assert.match(selected, /title="Alice"/);
+  assert.match(selected, /title="uncached"/);
+  assert.match(selected, /avatar-stack-more">\+1/);
+  assert.doesNotMatch(selected, /direct-message-presence/);
+});
+
+test("personal conversation avatars expose online, away, offline and disconnected status", () => {
+  const view = (presence, connected = true) =>
+    renderToStaticMarkup(
+      createElement(PeopleConversationList, {
+        value: "bob",
+        people,
+        presence,
+        connected,
+        unread: { bob: 1 },
+        t: (key) => key,
+        onSelect() {},
+      }),
+    );
+  for (const [presence, state, label] of [
+    [{ bob: "online" }, "online", "Online"],
+    [{ bob: "away" }, "away", "Away"],
+    [{ bob: "offline" }, "offline", "Offline"],
+    [{}, "offline", "Offline"],
+  ]) {
+    const html = view(presence);
+    assert.match(
+      html,
+      new RegExp(
+        `class="direct-message-presence" data-state="${state}" title="${label}"`,
+      ),
+    );
+    assert.ok(html.includes(`aria-label="Bob (${label})"`));
+    assert.match(html, /direct-unread">1/);
+  }
+  assert.match(
+    view({ bob: "online" }, false),
+    /data-state="disconnected" title="Reconnecting…"/,
+  );
+});
+
+test("live group member avatars survive going offline and clear when membership ends", () => {
+  const inbox = createDirectInbox();
+  const member = {
+    id: "charlie",
+    nickname: "Charlie",
+    avatar: { style: "thumbs", seed: "charlie" },
+  };
+  const group = {
+    id: "group-icons",
+    name: "Small group",
+    members: ["alice", "bob", member.id],
+    created_by: "alice",
+  };
+  inbox.groups([group]);
+  inbox.profiles([...people, member]);
+  inbox.profiles([]);
+  assert.deepEqual(inbox.snapshot().people, [...people, member]);
+  const renamed = { ...member, nickname: "Charles" };
+  inbox.profiles([renamed]);
+  assert.equal(
+    inbox.snapshot().people.find((person) => person.id === member.id),
+    renamed,
+  );
+  inbox.groups([]);
+  assert.deepEqual(inbox.snapshot().people, []);
+});
+
+test("private and group messages show avatars, no nicknames and timestamps outside bubbles", () => {
+  const self = {
+    id: "alice",
+    nickname: "Alice",
+    avatar: { style: "thumbs", seed: "alice" },
+  };
+  for (const peer of [
+    people[0],
+    { id: onlineChatRoom, nickname: "Online group chat" },
+  ]) {
+    const html = renderToStaticMarkup(
+      createElement(DirectMessagePanel, {
+        user: self.id,
+        self,
+        peer,
+        people,
+        unread: {},
+        messages: [
+          message("bob"),
+          message("alice", "alice", "bob"),
+          message("unknown", "<unknown>"),
+        ],
+        connected: true,
+        status: "online",
+        draft: "",
+        sending: false,
+        locale: "en",
+        t: (key) => key,
+        onSend: async () => message("sent"),
+        onDraftChange() {},
+        onPeer() {},
+        onClose() {},
+      }),
+    );
+    const articles = [...html.matchAll(/<article[^>]*>(.*?)<\/article>/gs)].map(
+      (match) => match[1],
+    );
+    assert.equal(articles.length, 3);
+    for (const article of articles) {
+      assert.match(article, /class="direct-message-avatar"/);
+      assert.match(article, /<img class="user-avatar"/);
+      assert.match(article, /class="direct-message-entry"/);
+      assert.match(article, /class="direct-message-bubble"/);
+      const bubble = article.match(
+        /<div class="direct-message-bubble">(.*?)<\/div>/s,
+      )[1];
+      assert.match(bubble, /<p>hello<\/p>/);
+      assert.doesNotMatch(bubble, /<time/);
+      assert.match(article, /<\/div><time /);
+    }
+    assert.match(articles[0], /aria-label="Bob" title="Bob"/);
+    assert.match(articles[1], /aria-label="Alice" title="Alice"/);
+    assert.match(
+      articles[2],
+      /aria-label="&lt;unknown&gt;" title="&lt;unknown&gt;"/,
+    );
+    for (const article of articles)
+      assert.doesNotMatch(
+        article,
+        /direct-message-author|>Bob<|>Alice<|>&lt;unknown&gt;</,
+      );
+    assert.notEqual(
+      articles[0].match(/src="([^"]+)"/)[1],
+      articles[1].match(/src="([^"]+)"/)[1],
+    );
+    assert.ok(
+      html.indexOf("direct-message-sidebar") <
+        html.indexOf("direct-message-content"),
+    );
+  }
 });
 
 test("drafts survive switching, closing and profile eviction, but not reset", () => {

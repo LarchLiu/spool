@@ -39,6 +39,10 @@ export const onlineChatRoom = "online-room";
 export const isPeopleGroup = (id: string) =>
   id === onlineChatRoom || id.startsWith("group-");
 
+export function formatUnreadCount(count: number) {
+  return count > 9 ? "9+" : String(count);
+}
+
 export function messagePeer(message: DirectMessage, user: string) {
   return message.group || message.to === onlineChatRoom
     ? message.to
@@ -93,6 +97,7 @@ export function createDirectInbox() {
   const contactIDs = (inbox = state) =>
     new Set([
       inbox.active,
+      ...inbox.groups.flatMap((group) => group.members),
       ...Object.keys(inbox.drafts),
       ...Object.keys(inbox.sending),
       ...inbox.messages.flatMap((message) => [message.from, message.to]),
@@ -219,7 +224,7 @@ export function createDirectInbox() {
         Object.entries(state.unread).filter(([id]) => ids.has(id)),
       );
       if (message.from !== user && (state.active !== peer || !visible))
-        unread[peer] = Math.min(99, (unread[peer] || 0) + 1);
+        unread[peer] = (unread[peer] || 0) + 1;
       update({ ...state, messages, unread, people: remember(people, ids) });
     },
     reset: () => {

@@ -70,8 +70,10 @@ import { AvatarStack, UserAvatar } from "./user-avatar";
 import { DirectMessagePanel } from "./direct-message-panel";
 import type { FloatingWindowBounds } from "./floating-window";
 import { PeopleGroupPicker } from "./people-group-picker";
+import { PeopleGroupAvatar } from "./people-group-avatar";
 import {
   createDirectInbox,
+  formatUnreadCount,
   DirectMessageError,
   messagePeer,
   peopleConversationIDs,
@@ -170,13 +172,21 @@ function App() {
   const resolveProfile = useMemo(() => profileLookup(profiles), [profiles]);
   useEffect(() => {
     directInbox.profiles(profiles.people);
-  }, [directInbox, profiles]);
+  }, [directInbox, profiles, inbox.groups]);
   const openDirectChat = (id: string) => directInbox.open(id, profiles.people);
+  const openDirectInbox = () => {
+    const unread = Object.keys(inbox.unread).find((id) => inbox.unread[id] > 0);
+    const last = inbox.messages.at(-1);
+    openDirectChat(
+      unread || (last && messagePeer(last, user!.id)) || onlineChatRoom,
+    );
+  };
   const chatPeerIdentity = (id: string) => {
     if (!isPeopleGroup(id))
       return (
         profiles.people.find((person) => person.id === id) ||
         inbox.people.find((person) => person.id === id) ||
+        (id === user?.id ? user : undefined) ||
         resolveProfile(id)
       );
     const name = inbox.groupNames[id];
@@ -1441,15 +1451,47 @@ function App() {
               </button>
             )}
             <details className="online">
-              <summary>
+              <summary
+                aria-label={[
+                  t("{count} online", { count: online.length }),
+                  ...(unreadMessages
+                    ? [t("{count} unread messages", { count: unreadMessages })]
+                    : []),
+                ].join(", ")}
+              >
                 {online.length ? (
                   <AvatarStack people={displayOnline} />
                 ) : (
                   <Users size={14} aria-hidden="true" />
                 )}
-                {t("{count} online", { count: online.length })}
+                <span className="online-count">
+                  {t("{count} online", { count: online.length })}
+                </span>
+                {!!unreadMessages && (
+                  <span className="online-unread" aria-hidden="true">
+                    {formatUnreadCount(unreadMessages)}
+                  </span>
+                )}
               </summary>
               <div className="online-list">
+                <div className="online-inbox-row">
+                  <button
+                    className="online-chat-person online-inbox-button"
+                    onClick={(event) => {
+                      openDirectInbox();
+                      event.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
+                    }}
+                  >
+                    {t("People chat")}
+                    {!!unreadMessages && (
+                      <span className="direct-unread">
+                        {formatUnreadCount(unreadMessages)}
+                      </span>
+                    )}
+                  </button>
+                </div>
                 <div className="online-group-row">
                   <button
                     className="online-chat-person"
@@ -1464,7 +1506,7 @@ function App() {
                     {t("Online group chat")}
                     {!!inbox.unread[onlineChatRoom] && (
                       <span className="direct-unread">
-                        {inbox.unread[onlineChatRoom]}
+                        {formatUnreadCount(inbox.unread[onlineChatRoom])}
                       </span>
                     )}
                   </button>
@@ -1485,6 +1527,7 @@ function App() {
                   <div className="online-group-row" key={group.id}>
                     <button
                       className="online-chat-person"
+                      data-conversation={group.id}
                       onClick={(event) => {
                         openDirectChat(group.id);
                         event.currentTarget
@@ -1492,11 +1535,13 @@ function App() {
                           ?.removeAttribute("open");
                       }}
                     >
-                      <Users size={16} aria-hidden="true" />
+                      <PeopleGroupAvatar
+                        people={group.members.map(chatPeerIdentity)}
+                      />
                       {chatPeerIdentity(group.id).nickname}
                       {!!inbox.unread[group.id] && (
                         <span className="direct-unread">
-                          {inbox.unread[group.id]}
+                          {formatUnreadCount(inbox.unread[group.id])}
                         </span>
                       )}
                     </button>
@@ -1526,7 +1571,7 @@ function App() {
                         {u.nickname}
                         {!!inbox.unread[u.id] && (
                           <span className="direct-unread">
-                            {inbox.unread[u.id]}
+                            {formatUnreadCount(inbox.unread[u.id])}
                           </span>
                         )}
                         <MessageCircle size={13} aria-hidden="true" />
@@ -1550,22 +1595,12 @@ function App() {
                   : t("People chat")
               }
               title={t("People chat")}
-              onClick={() => {
-                const unread = Object.keys(inbox.unread).find(
-                  (id) => inbox.unread[id] > 0,
-                );
-                const last = inbox.messages.at(-1);
-                const peer =
-                  unread ||
-                  (last && messagePeer(last, user!.id)) ||
-                  onlineChatRoom;
-                if (peer) openDirectChat(peer);
-              }}
+              onClick={openDirectInbox}
             >
               <MessageCircle size={17} />
               {!!unreadMessages && (
                 <span className="direct-unread">
-                  {Math.min(99, unreadMessages)}
+                  {formatUnreadCount(unreadMessages)}
                 </span>
               )}
             </button>
@@ -2049,14 +2084,19 @@ function App() {
       </main>
       {inbox.active && (
         <DirectMessagePanel
-          key={`people-chat-${inbox.active}`}
           user={user!.id}
+          self={displayUser!}
           peer={chatPeerIdentity(inbox.active)}
           people={peopleConversationIDs(
             inbox,
             user!.id,
             online.map((person) => person.id),
           ).map(chatPeerIdentity)}
+          groups={inbox.groups}
+          resolvePerson={chatPeerIdentity}
+          presence={Object.fromEntries(
+            online.map((person) => [person.id, person.state]),
+          )}
           unread={inbox.unread}
           messages={inbox.messages.filter(
             (message) => messagePeer(message, user!.id) === inbox.active,
@@ -2074,6 +2114,7 @@ function App() {
           onPeer={openDirectChat}
           onClose={directInbox.close}
           onInvite={() => setGroupPicker(inbox.active)}
+          onNewGroup={() => setGroupPicker("")}
           windowBounds={chatWindowBounds.current}
           onWindowBoundsChange={rememberChatWindowBounds}
         />

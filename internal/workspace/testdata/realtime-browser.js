@@ -8,6 +8,7 @@ window.WebSocket = class extends NativeWebSocket {
         const message = JSON.parse(event.data);
         if (message.type === "profiles") this.profiles = message.data;
         if (message.type === "chat_groups") this.groups = message.data;
+        if (message.type === "presence") this.people = message.data;
       });
     }
   }
@@ -41,10 +42,105 @@ const isBobOnline = () => [...document.querySelectorAll(".online-list > div")].s
   (el) => el.textContent.includes("bob"),
 );
 
-async function browser(commands) {
-  const response = await fetch("/smoke/browser", { method: "POST", body: JSON.stringify(commands) });
+async function browser(commands, capture = "") {
+  const response = await fetch("/smoke/browser" + (capture ? "?capture=" + encodeURIComponent(capture) : ""), { method: "POST", body: JSON.stringify(commands) });
   if (!response.ok) throw new Error(await response.text());
   return response.json();
+}
+
+async function openInbox() {
+  document.querySelector(".scrim")?.click();
+  const mobile = matchMedia("(max-width: 900px)").matches;
+  if (mobile && !document.querySelector(".online").open)
+    document.querySelector(".online summary").click();
+  const button = document.querySelector(mobile ? ".online-inbox-button" : ".direct-inbox-button");
+  const bounds = button.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) throw new Error("Inbox action is hidden");
+  const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
+  await browser([
+    { method: "Input.dispatchMouseEvent", params: { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 } },
+    { method: "Input.dispatchMouseEvent", params: { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1 } },
+  ]);
+}
+
+async function checkOnlineHeader(report) {
+  const people = structuredClone(window.workspaceSocket.people);
+  const push = (data) => window.workspaceSocket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "presence", data }) }));
+  const summary = document.querySelector(".online summary");
+  const mobile = matchMedia("(max-width: 900px)").matches;
+  const displayed = (selector) => getComputedStyle(document.querySelector(selector)).display !== "none";
+  report.chatOnlineHeader = displayed(".online-count") !== mobile && displayed(".direct-inbox-button") !== mobile && displayed(".online-inbox-row") === mobile && displayed(".chat-heading > .agent-icon") !== mobile;
+  try {
+    for (const count of [0, 1, 3, 5]) {
+      push(Array.from({ length: count }, (_, index) => people[index] || {
+        id: "header-overflow-" + index, nickname: "Member " + index, state: "online",
+      }));
+      await waitFor(() => summary.getAttribute("aria-label") === count + " online", "online header count " + count);
+      const images = summary.querySelectorAll("img");
+      const more = summary.querySelector(".avatar-stack-more");
+      report.chatOnlineHeader &&= images.length === Math.min(3, count) && (count > 3 ? more?.textContent === "+" + (count - 3) : !more);
+      if (mobile && more) {
+        const bounds = more.getBoundingClientRect();
+        report.chatOnlineHeader &&= document.elementFromPoint(bounds.left + 3, bounds.top + bounds.height / 2) === more;
+      }
+      if (count === 5) await browser([{ method: "Page.captureScreenshot", params: { format: "png" } }], "header");
+    }
+  } finally {
+    push(people);
+    await waitFor(() => summary.getAttribute("aria-label") === people.length + " online", "restored online header");
+  }
+}
+
+async function checkUnreadHeader(report, sender) {
+  const summary = document.querySelector(".online summary");
+  const mobile = matchMedia("(max-width: 900px)").matches;
+  const recipient = window.workspaceSocket.profiles.people.find((person) => person.nickname === "alice").id;
+  const matches = (count) => {
+    const badge = summary.querySelector(".online-unread");
+    if (!count) return !badge;
+    if (!badge || badge.textContent !== (count > 9 ? "9+" : String(count))) return false;
+    const style = getComputedStyle(badge);
+    if (!mobile) return style.display === "none";
+    const bounds = badge.getBoundingClientRect();
+    const avatars = summary.querySelector(".avatar-stack").getBoundingClientRect();
+    const reference = getComputedStyle(document.querySelector(".direct-inbox-button .direct-unread"));
+    return style.backgroundColor === reference.backgroundColor && style.color === reference.color && bounds.left >= avatars.right && bounds.right <= innerWidth && bounds.width >= 18 && bounds.height === 18;
+  };
+  report.chatUnreadHeader = matches(0);
+  let sent = 0;
+  for (const count of [1, 9, 10, 11]) {
+    while (sent < count) {
+      sent++;
+      const group = sent === 1;
+      window.workspaceSocket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({
+        type: group ? "group_message" : "direct_message",
+        data: { id: "unread-header-" + sent, request_id: "unread-header-" + sent, from: sender, to: group ? "online-room" : recipient, text: "Unread badge test", sent_at: Math.floor(Date.now() / 1000), group },
+      }) }));
+    }
+    await waitFor(() => summary.getAttribute("aria-label").includes(count + " unread messages"), "unread header count " + count);
+    report.chatUnreadHeader &&= matches(count);
+  }
+  const theme = document.documentElement.dataset.theme;
+  try {
+    for (const value of ["light", "dark"]) {
+      document.documentElement.dataset.theme = value;
+      report.chatUnreadHeader &&= matches(11);
+    }
+  } finally {
+    if (theme === undefined) delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = theme;
+  }
+  await browser([{ method: "Page.captureScreenshot", params: { format: "png" } }], "unread");
+  await openInbox();
+  await waitFor(() => document.querySelector(".direct-message-panel[open]"), "open unread inbox");
+  await selectConversation("online-room");
+  await waitFor(() => summary.getAttribute("aria-label").includes("10 unread messages"), "group unread cleared independently");
+  report.chatUnreadHeader &&= matches(10);
+  await selectConversation(sender);
+  await waitFor(() => !summary.querySelector(".online-unread"), "all unread messages cleared");
+  report.chatUnreadHeader &&= matches(0);
+  document.querySelector('.direct-message-panel textarea').dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await waitFor(() => !document.querySelector(".direct-message-panel"), "unread test chat closed");
 }
 
 function setComposer(input, text) {
@@ -53,10 +149,77 @@ function setComposer(input, text) {
 }
 
 async function selectConversation(id) {
-  document.querySelector(".direct-message-conversation").click();
   await waitFor(() => document.querySelector(`.direct-message-conversations [data-conversation="${id}"]`), "retained conversation " + id);
   document.querySelector(`.direct-message-conversations [data-conversation="${id}"]`).click();
-  await waitFor(() => !document.querySelector(".direct-message-conversations"), "conversation selected");
+  await waitFor(() => document.querySelector(`.direct-message-conversations [data-conversation="${id}"][aria-selected="true"]`), "conversation selected");
+}
+
+function splitChatFits(panel) {
+  const sidebar = panel.querySelector(".direct-message-sidebar");
+  const content = panel.querySelector(".direct-message-main");
+  const list = panel.querySelector(".direct-message-conversations");
+  const left = sidebar.getBoundingClientRect();
+  const right = content.getBoundingClientRect();
+  const bounds = panel.getBoundingClientRect();
+  return !panel.querySelector("h2, .direct-message-notice, .direct-message-author") && Math.abs(left.top - bounds.top - 1) < 1 && Math.abs(left.width - 72) < 1 && Math.abs(left.right - right.left) < 1 && right.width > 150 && right.bottom <= bounds.bottom && content.scrollWidth <= content.clientWidth && list.scrollWidth <= list.clientWidth && left.height > 100;
+}
+
+function messageAvatarsMatch(panel) {
+  return [...panel.querySelectorAll(".direct-message")].every((message) => {
+    const author = window.workspaceSocket.profiles.people.find((person) => person.id === message.dataset.sender);
+    const bubble = message.querySelector(".direct-message-bubble");
+    const time = message.querySelector(".direct-message-entry > time");
+    if (!bubble || !time || bubble.contains(time)) return false;
+    const bounds = bubble.getBoundingClientRect(), stamp = time.getBoundingClientRect();
+    const aligned = message.classList.contains("own") ? Math.abs(stamp.right - bounds.right) < 1 : Math.abs(stamp.left - bounds.left) < 1;
+    return author && aligned && stamp.top >= bounds.bottom && !message.querySelector(".direct-message-author") && message.querySelector(".direct-message-avatar")?.getAttribute("aria-label") === author.nickname && message.querySelector(".direct-message-avatar img")?.src.startsWith("data:image/svg+xml");
+  });
+}
+
+function personPresenceMatches(panel, id, state) {
+  const button = panel.querySelector(`.direct-message-conversations [data-conversation="${id}"]`);
+  const dot = button?.querySelector(".direct-message-presence");
+  const image = button?.querySelector(".direct-message-person-avatar img");
+  if (!dot || !image || dot.dataset.state !== state) return false;
+  const bounds = image.getBoundingClientRect(), mark = dot.getBoundingClientRect();
+  return mark.width >= 8 && mark.right > bounds.left + bounds.width / 2 && mark.right <= bounds.right + 2 && mark.top >= bounds.top - 2 && mark.bottom < bounds.top + bounds.height / 2;
+}
+
+function groupIconsMatch(group) {
+  const roots = [
+    document.querySelector(`.direct-message-conversations [data-conversation="${group.id}"]`),
+    document.querySelector(`.online-group-row [data-conversation="${group.id}"]`),
+  ];
+  return roots.every((root, index) => {
+    const stack = root?.querySelector(".people-group-avatar");
+    const items = [...(stack?.querySelectorAll(".avatar-stack-item:not(.avatar-stack-more)") || [])];
+    const remaining = group.members.length - items.length;
+    if (!stack || items.length !== Math.min(3, group.members.length)) return false;
+    if (!items.every((item, index) => item.title === (window.workspaceSocket.profiles.people.find((person) => person.id === group.members[index])?.nickname || group.members[index]) && item.querySelector("img"))) return false;
+    const more = stack.querySelector(".avatar-stack-more");
+    if (remaining > 0 ? more?.textContent !== "+" + remaining : !!more) return false;
+    if (index === 0 && more) {
+      const badge = more.getBoundingClientRect();
+      if (document.elementFromPoint(badge.left + 3, badge.top + badge.height / 2) !== more) return false;
+    }
+    const bounds = stack.getBoundingClientRect(), outer = root.getBoundingClientRect();
+    return index !== 0 || (bounds.width <= 56 && bounds.left >= outer.left && bounds.right <= outer.right);
+  });
+}
+
+async function checkGroupAvatarOverflow(group, report) {
+  const groups = structuredClone(window.workspaceSocket.groups);
+  const expanded = { ...group, members: [...group.members, "avatar-overflow-a", "avatar-overflow-b"] };
+  const push = (data) => window.workspaceSocket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "chat_groups", data }) }));
+  try {
+    push(groups.map((item) => item.id === group.id ? expanded : item));
+    await waitFor(() => groupIconsMatch(expanded), "group icon +N overflow");
+    report.chatGroupAvatars &&= groupIconsMatch(expanded);
+    await browser([{ method: "Page.captureScreenshot", params: { format: "png" } }], "group");
+  } finally {
+    push(groups);
+    await waitFor(() => groupIconsMatch(group), "restored group avatars");
+  }
 }
 
 async function checkUnicodeComposer(panel, report) {
@@ -130,6 +293,7 @@ async function checkFloatingWindow(panel, report) {
   report.chatNonmodal = !panel.matches(":modal") && document.activeElement === mainInput && !panel.contains(document.elementFromPoint(16, 16));
 
   const original = windowBounds(panel);
+  report.chatSplitLayout = splitChatFits(panel);
   await pointerDrag(panel.querySelector(".direct-message-drag"), -60, -80);
   const moved = windowBounds(panel);
   report.chatDrag = moved.y < original.y && moved.width === original.width && moved.height === original.height;
@@ -170,6 +334,7 @@ async function checkFloatingWindow(panel, report) {
   await browser([{ method: "Emulation.setDeviceMetricsOverride", params: { width: 280, height: 320, deviceScaleFactor: 1, mobile: false } }]);
   await waitFor(() => innerWidth === 280 && fitsViewport(panel), "window clamped after viewport shrink");
   report.chatViewport = panel.getBoundingClientRect().width === 256 && panel.getBoundingClientRect().height === 296;
+  report.chatSplitLayout &&= splitChatFits(panel) && sendLayout(panel);
   await browser([{ method: "Emulation.setDeviceMetricsOverride", params: { width: window.smokeWidth, height: 900, deviceScaleFactor: 1, mobile: false } }]);
   await waitFor(() => innerWidth > 280 && fitsViewport(panel) && panel.getBoundingClientRect().width >= 300 && panel.getBoundingClientRect().height >= 360, "restored viewport");
   return windowBounds(panel);
@@ -245,15 +410,17 @@ async function run() {
     await action("join");
     await waitFor(isBobOnline, "online member push");
     report.presenceJoined = true;
+    await checkOnlineHeader(report);
     await action("group-send");
     await waitFor(() => document.querySelector(".direct-inbox-button .direct-unread")?.textContent === "1", "group-message unread badge");
     document.querySelector(".online summary").click();
     document.querySelector(".online-group-row button").click();
-    await waitFor(() => document.querySelector(".direct-message-panel[open] .group-message-author")?.textContent === "bob", "group sender identity");
+    await waitFor(() => document.querySelector(".direct-message-panel[open] .direct-message-avatar")?.getAttribute("aria-label") === "bob", "group sender identity");
     const groupPanel = document.querySelector(".direct-message-panel");
+    report.chatPresence = personPresenceMatches(groupPanel, window.workspaceSocket.profiles.people.find((person) => person.nickname === "bob").id, "online");
     const groupBounds = groupPanel.getBoundingClientRect();
     report.groupLayout = groupBounds.left >= 0 && groupBounds.right <= innerWidth && groupBounds.top >= 0 && groupBounds.bottom <= innerHeight && groupPanel.scrollWidth <= groupPanel.clientWidth;
-    const retainedBounds = await checkFloatingWindow(groupPanel, report);
+    let retainedBounds = await checkFloatingWindow(groupPanel, report);
     const groupInput = groupPanel.querySelector("textarea");
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(groupInput, "A line of draft text\n".repeat(8));
     groupInput.dispatchEvent(new Event("input", { bubbles: true }));
@@ -268,10 +435,9 @@ async function run() {
     await waitFor(() => groupPanel.querySelector(".direct-message.own") && groupInput.value === "", "group-message acknowledgement");
     report.chatDoesNotStealFocus = document.activeElement === document.querySelector("#chat-message");
     await action("group-received");
-    report.groupSent = groupPanel.querySelector("h2")?.textContent === "Online group chat" && !document.querySelector(".direct-inbox-button .direct-unread");
-    groupPanel.querySelector('.direct-message-heading button').click();
-    document.querySelector(".online summary").click();
-    document.querySelector(".online-new-group").click();
+    report.groupSent = groupPanel.getAttribute("aria-label") === "Online group chat" && !document.querySelector(".direct-inbox-button .direct-unread");
+    report.chatMessageAvatars = messageAvatarsMatch(groupPanel) && groupPanel.querySelectorAll(".direct-message-avatar img").length === 2;
+    groupPanel.querySelector('.direct-message-sidebar [aria-label="New group chat"]').click();
     await waitFor(() => document.querySelector(".people-group-picker[open]"), "selected-member picker");
     const picker = document.querySelector(".people-group-picker");
     const pickerBounds = picker.getBoundingClientRect();
@@ -282,8 +448,9 @@ async function run() {
     picker.querySelector('input[type="checkbox"]').click();
     await waitFor(() => !picker.querySelector('button[type="submit"]').disabled, "selected-group create enabled");
     picker.querySelector('button[type="submit"]').click();
-    await waitFor(() => document.querySelector(".direct-message-panel[open] h2")?.textContent === "Pair group", "selected-group created");
+    await waitFor(() => document.querySelector(".direct-message-panel[open]")?.getAttribute("aria-label") === "Pair group", "selected-group created");
     const selectedPanel = document.querySelector(".direct-message-panel");
+    report.chatGroupAvatars = groupIconsMatch(window.workspaceSocket.groups.find((group) => group.name === "Pair group"));
     report.chatRetained = sameBounds(retainedBounds, windowBounds(selectedPanel));
     const selectedInput = selectedPanel.querySelector("textarea");
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(selectedInput, "Selected browser secret");
@@ -304,7 +471,10 @@ async function run() {
     await waitFor(() => !document.querySelector(".people-group-picker") && window.workspaceSocket.groups?.some((group) => group.name === "Pair group" && group.members.length === 3), "selected-group invitation accepted");
     await action("selected-invited");
     report.selectedInvited = document.querySelectorAll("dialog").length === 1;
-    const selectedID = window.workspaceSocket.groups.find((group) => group.name === "Pair group").id;
+    const invitedGroup = window.workspaceSocket.groups.find((group) => group.name === "Pair group");
+    report.chatGroupAvatars &&= groupIconsMatch(invitedGroup);
+    await checkGroupAvatarOverflow(invitedGroup, report);
+    const selectedID = invitedGroup.id;
     setComposer(selectedInput, "Unsent selected-group draft");
     await pause(25);
     selectedPanel.querySelector('[aria-label="Close group chat"]').click();
@@ -313,17 +483,19 @@ async function run() {
     report.directUnread = true;
     document.querySelector(".online summary").click();
     document.querySelector('.online-chat-person[title="Chat with bob"]').click();
-    await waitFor(() => document.querySelector(".direct-message-panel[open] h2")?.textContent === "Chat with bob" && document.querySelector(".direct-message-panel .direct-message p")?.textContent === "Hello from Bob <script>not executable</script>", "open Bob's private message");
+    await waitFor(() => document.querySelector(".direct-message-panel[open]")?.getAttribute("aria-label") === "bob" && document.querySelector(".direct-message-panel .direct-message p")?.textContent === "Hello from Bob <script>not executable</script>", "open Bob's private message");
     let panel = document.querySelector(".direct-message-panel");
     const bobID = window.workspaceSocket.profiles.people.find((person) => person.nickname === "bob").id;
     setComposer(panel.querySelector("textarea"), "Unsent private draft");
     await pause(25);
+    const conversationList = panel.querySelector(".direct-message-conversations");
     await selectConversation(selectedID);
     await waitFor(() => document.querySelector(".direct-message-panel textarea")?.value === "Unsent selected-group draft", "closed/reopened group draft");
     await selectConversation(bobID);
     await waitFor(() => document.querySelector(".direct-message-panel textarea")?.value === "Unsent private draft", "private draft restored after switch");
+    report.chatStableSidebar = document.querySelector(".direct-message-panel") === panel && panel.querySelector(".direct-message-conversations") === conversationList;
     document.querySelector('[aria-label="Close private chat"]').click();
-    document.querySelector(".direct-inbox-button").click();
+    await openInbox();
     await waitFor(() => document.querySelector(".direct-message-panel textarea")?.value === "Unsent private draft", "private draft restored after close");
     report.draftRetained = true;
     panel = document.querySelector(".direct-message-panel");
@@ -348,6 +520,7 @@ async function run() {
     await waitFor(() => panel.querySelector(".direct-message.own") && textarea.value === "", "private-message server acknowledgement");
     await action("direct-received");
     report.directSent = !document.querySelector(".direct-inbox-button .direct-unread");
+    report.chatMessageAvatars &&= messageAvatarsMatch(panel) && panel.querySelectorAll(".direct-message-avatar img").length === 2;
     panel.querySelector('.direct-message-heading button').click();
     if (innerWidth < 900) document.querySelector(".panel-toggle-left")?.click();
     operators("Background chat").click();
@@ -374,8 +547,9 @@ async function run() {
     await action("leave");
     await waitFor(() => !isBobOnline(), "offline member push");
     report.presenceLeft = true;
-    document.querySelector(".direct-inbox-button").click();
+    await openInbox();
     await waitFor(() => document.querySelector(".direct-message-panel[open]"), "reopen offline private chat");
+    report.chatPresence &&= personPresenceMatches(document.querySelector(".direct-message-panel"), bobID, "offline");
     report.directOffline = document.querySelector('.direct-message-panel button[type="submit"]').disabled && document.querySelector(".direct-message-status")?.textContent.includes("offline");
     document.querySelector('.direct-message-heading button').click();
     await action("profile-name");
@@ -388,34 +562,34 @@ async function run() {
     await action("rename");
     await waitFor(() => window.workspaceSocket !== oldSocket && row("Changed while disconnected"), "reconnect snapshot");
     report.reconnected = true;
-    document.querySelector(".direct-inbox-button").click();
+    await openInbox();
     await waitFor(() => document.querySelector(".direct-message-panel[open]"), "retained in-page conversation");
     report.directNoReplay = document.querySelectorAll(".direct-message-panel .direct-message").length === 2;
-    document.querySelector(".direct-message-conversation").click();
-    await waitFor(() => document.querySelector('.direct-message-conversations [data-conversation="online-room"]'), "conversation popup");
-    const menu = document.querySelector(".direct-message-conversations");
-    const menuBounds = menu.getBoundingClientRect();
-    const conversationBounds = document.querySelector(".direct-message-conversation").getBoundingClientRect();
-    const popupPanelBounds = document.querySelector(".direct-message-panel").getBoundingClientRect();
-    report.chatConversationMenu = Math.abs(menuBounds.left - conversationBounds.left) < 1 && Math.abs(menuBounds.top - conversationBounds.bottom - 4) < 1 && menuBounds.right <= popupPanelBounds.right && menuBounds.bottom <= popupPanelBounds.bottom && menu.scrollWidth <= menu.clientWidth;
+    panel = document.querySelector(".direct-message-panel");
+    const selectedConversation = panel.querySelector('.direct-message-conversations [aria-selected="true"]');
+    selectedConversation.focus();
+    selectedConversation.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+    report.chatConversationKeyboard = document.activeElement === panel.querySelector('.direct-message-conversations [data-conversation="online-room"]');
+    document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
+    report.chatConversationKeyboard &&= document.activeElement === [...panel.querySelectorAll('.direct-message-conversations [role="option"]')].at(-1);
+    await pointerDrag(panel.querySelector('.direct-message-edge[data-edge="se"]'), Math.min(600, innerWidth - 24) - panel.getBoundingClientRect().width, Math.min(520, innerHeight - 24) - panel.getBoundingClientRect().height);
+    retainedBounds = windowBounds(panel);
+    report.chatSplitLayout &&= splitChatFits(panel);
+    panel.querySelector("textarea").focus();
     await browser([{ method: "Page.captureScreenshot", params: { format: "png" } }]);
-    menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    await waitFor(() => !document.querySelector(".direct-message-conversations"), "escape dismisses conversation menu");
-    report.chatConversationMenu &&= !!document.querySelector(".direct-message-panel[open]") && document.activeElement === document.querySelector(".direct-message-conversation");
-    document.querySelector(".direct-message-conversation").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
-    await waitFor(() => document.querySelector('.direct-message-conversations [aria-selected="true"]') === document.activeElement, "keyboard opens conversation menu");
-    document.querySelector('.direct-message-conversations [data-conversation="online-room"]').click();
-    await waitFor(() => document.querySelector(".direct-message-panel h2")?.textContent === "Online group chat", "switch private chat to group chat");
+    await selectConversation("online-room");
+    await waitFor(() => document.querySelector(".direct-message-panel")?.getAttribute("aria-label") === "Online group chat", "switch private chat to group chat");
     report.chatRetained &&= sameBounds(retainedBounds, windowBounds(document.querySelector(".direct-message-panel")));
     report.groupNoReplay = document.querySelectorAll(".direct-message-panel .direct-message").length === 2 && !document.querySelector(".direct-message-status");
     report.selectedClosed = !window.workspaceSocket.groups.some((group) => group.name === "Pair group");
     await selectConversation(selectedID);
-    await waitFor(() => document.querySelector(".direct-message-panel h2")?.textContent === "Pair group", "closed group retains its name");
+    await waitFor(() => document.querySelector(".direct-message-panel")?.getAttribute("aria-label") === "Pair group", "closed group retains its name");
     const closedPanel = document.querySelector(".direct-message-panel");
     report.closedGroupAccessible = closedPanel.querySelectorAll(".direct-message").length === 1 && closedPanel.querySelector("textarea").value === "Unsent selected-group draft" && closedPanel.querySelector('button[type="submit"]').disabled && !closedPanel.querySelector('[aria-label="Invite people"]') && closedPanel.textContent.includes("This group is no longer available to you.");
     document.querySelector('.direct-message-panel textarea').dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await waitFor(() => !document.querySelector(".direct-message-panel"), "escape closes only focused chat");
     report.chatEscape = true;
+    await checkUnreadHeader(report, bobID);
     await action("readonly");
     await waitFor(() => document.querySelector("#chat-message")?.disabled, "read-only controls");
     await action("control");

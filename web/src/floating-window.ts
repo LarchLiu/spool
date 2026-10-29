@@ -20,7 +20,7 @@ export type FloatingWindowEdge = (typeof floatingWindowEdges)[number];
 
 const inset = 12;
 const minimum = { width: 300, height: 360 };
-const preferred = { width: 420, height: 520 };
+const preferred = { width: 600, height: 520 };
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
 

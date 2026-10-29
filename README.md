@@ -63,7 +63,18 @@ users can receive messages while their connection remains active. Sending is
 limited to 2000 Unicode code points per message with a small per-connection
 burst limit. Unsent drafts stay in page memory when switching or closing chat
 windows and clear only after an acknowledged send. Closed groups with retained
-messages or drafts remain in the conversation picker for read-only access.
+messages or drafts remain in the conversation list for read-only access.
+The movable, edge-resizable chat window keeps a narrow people/group list on
+the left and the selected conversation on the right. Both private and group
+messages identify each sender with their profile avatar, with names available
+on hover and to screen readers rather than repeated above each message. The
+list stays a compact 72px avatar-and-name rail at every window size. The compact
+status/invite/close toolbar doubles as the drag handle, without a repeated
+conversation title. Timestamps sit below and outside message bubbles, aligned
+with the sender's side. Created groups show up to three overlapping member
+avatars plus a `+N` remainder; the public online room keeps its generic icon.
+Personal avatars in the list have a top-right presence dot (green online,
+yellow away, gray offline or reconnecting).
 
 There is no separate frontend service in production and no Node.js runtime
 requirement. Installed and signed-in Codex/Claude CLIs are still required.

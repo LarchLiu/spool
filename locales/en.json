@@ -564,5 +564,6 @@
   "Automation model": "Automation model",
   "Automation reasoning level": "Automation reasoning level",
   "No models are available. Refresh installation & models in Agents.": "No models are available. Refresh installation & models in Agents.",
-  "Saved value not in current catalog: {value}": "Saved value not in current catalog: {value}"
+  "Saved value not in current catalog: {value}": "Saved value not in current catalog: {value}",
+  "People & groups": "People & groups"
 }

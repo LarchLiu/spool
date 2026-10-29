@@ -564,5 +564,6 @@
   "Automation model": "自動化モデル",
   "Automation reasoning level": "自動化の推論レベル",
   "No models are available. Refresh installation & models in Agents.": "利用できるモデルがありません。エージェント設定でインストール状態とモデルを更新してください。",
-  "Saved value not in current catalog: {value}": "保存済みですが現在の一覧にありません：{value}"
+  "Saved value not in current catalog: {value}": "保存済みですが現在の一覧にありません：{value}",
+  "People & groups": "メンバーとグループ"
 }

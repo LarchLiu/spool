@@ -112,7 +112,15 @@ func TestRealtimeBrowser(t *testing.T) {
 							var data []byte
 							data, err = base64.StdEncoding.DecodeString(image.Data)
 							if err == nil {
-								err = os.WriteFile(filepath.Join(output, fmt.Sprintf("chat-window-%d.png", width)), data, 0644)
+								name := "chat-window"
+								if r.URL.Query().Get("capture") == "group" {
+									name = "chat-group"
+								} else if r.URL.Query().Get("capture") == "header" {
+									name = "chat-header"
+								} else if r.URL.Query().Get("capture") == "unread" {
+									name = "chat-unread"
+								}
+								err = os.WriteFile(filepath.Join(output, fmt.Sprintf("%s-%d.png", name, width)), data, 0644)
 							}
 						}
 						result = json.RawMessage(`{}`)
@@ -318,7 +326,7 @@ func TestRealtimeBrowser(t *testing.T) {
 				if report["viewportWidth"] != float64(width) {
 					t.Errorf("viewport width = %v, want %d", report["viewportWidth"], width)
 				}
-				for _, check := range []string{"chatInitialFocus", "chatNonmodal", "chatDrag", "chatResize", "chatEdges", "chatBounds", "chatKeyboard", "chatViewport", "chatRetained", "chatSendLayout", "chatEscape", "chatDoesNotStealFocus", "chatConversationMenu", "chatLongDraft"} {
+				for _, check := range []string{"chatInitialFocus", "chatNonmodal", "chatDrag", "chatResize", "chatEdges", "chatBounds", "chatKeyboard", "chatViewport", "chatRetained", "chatSendLayout", "chatEscape", "chatDoesNotStealFocus", "chatConversationKeyboard", "chatLongDraft", "chatSplitLayout", "chatMessageAvatars", "chatStableSidebar", "chatGroupAvatars", "chatPresence", "chatOnlineHeader", "chatUnreadHeader"} {
 					if report[check] != true {
 						t.Errorf("%s failed: %s", check, data)
 					}
