@@ -47,12 +47,18 @@ export function messageTime(timestamp: number | undefined, locale: Locale) {
   if (!timestamp || timestamp < 0 || !Number.isFinite(timestamp)) return null;
   const date = new Date(timestamp);
   if (!Number.isFinite(date.getTime())) return null;
+  const now = new Date();
+  const sameYear = date.getFullYear() === now.getFullYear();
+  const isToday =
+    sameYear &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
   return {
     dateTime: date.toISOString(),
     label: date.toLocaleString(locale, {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
+      year: sameYear ? undefined : "numeric",
+      month: isToday ? undefined : "2-digit",
+      day: isToday ? undefined : "2-digit",
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,

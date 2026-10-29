@@ -730,6 +730,8 @@ button:disabled {
   flex-wrap: wrap;
 }
 .message-footer {
+  /* Keep the absolute copy status inside the history scroller. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 7px;

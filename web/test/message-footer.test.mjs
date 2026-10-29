@@ -45,16 +45,14 @@ test("user footers put time before copy, while agent footers put copy before tim
   }
 });
 
-test("message times follow the viewer locale and omit missing or invalid timestamps", () => {
+test("message times follow the viewer locale and omit missing or invalid timestamps", (context) => {
+  context.mock.timers.enable({ apis: ["Date"], now: timestamp });
   for (const locale of ["en", "zh-CN", "ja"]) {
     const time = messageTime(timestamp, locale);
     assert.equal(time.dateTime, new Date(timestamp).toISOString());
     assert.equal(
       time.label,
       new Intl.DateTimeFormat(locale, {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
         hour12: false,
@@ -67,10 +65,78 @@ test("message times follow the viewer locale and omit missing or invalid timesta
   }
 });
 
+test("message dates show only time today, month/day this year and the full date in other years", (context) => {
+  context.mock.timers.enable({
+    apis: ["Date"],
+    now: new Date(2026, 9, 29, 12).getTime(),
+  });
+  const cases = [
+    { date: new Date(2025, 9, 29, 12), showYear: true, showDate: true },
+    { date: new Date(2026, 0, 1, 0, 15), showYear: false, showDate: true },
+    { date: new Date(2026, 9, 28, 23, 59), showYear: false, showDate: true },
+    { date: new Date(2026, 9, 29, 0), showYear: false, showDate: false },
+    { date: new Date(2026, 9, 29, 23, 59), showYear: false, showDate: false },
+    { date: new Date(2026, 9, 30, 0, 1), showYear: false, showDate: true },
+    { date: new Date(2027, 9, 29, 12), showYear: true, showDate: true },
+  ];
+  for (const locale of ["en", "zh-CN", "ja"]) {
+    for (const { date, showYear, showDate } of cases) {
+      const time = messageTime(date.getTime(), locale);
+      const formatter = new Intl.DateTimeFormat(locale, {
+        ...(showYear ? { year: "numeric" } : {}),
+        ...(showDate ? { month: "2-digit", day: "2-digit" } : {}),
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      assert.equal(time.label, formatter.format(date));
+      assert.equal(time.dateTime, date.toISOString());
+      assert.equal(time.title, date.toLocaleString(locale, { hour12: false }));
+    }
+  }
+  context.mock.timers.setTime(new Date(2027, 0, 1, 0, 1).getTime());
+  assert.match(messageTime(timestamp, "zh-CN").label, /2026/);
+  assert.doesNotMatch(
+    messageTime(new Date(2027, 0, 1, 0, 15).getTime(), "zh-CN").label,
+    /2027/,
+  );
+});
+
+test("message date labels follow the local day when formatting again after midnight", (context) => {
+  context.mock.timers.enable({
+    apis: ["Date"],
+    now: new Date(2026, 9, 29, 23, 59).getTime(),
+  });
+  const date = new Date(2026, 9, 29, 12, 34);
+  const time = messageTime(date.getTime(), "zh-CN");
+  assert.equal(time.label, "12:34");
+  context.mock.timers.setTime(new Date(2026, 9, 30, 0, 1).getTime());
+  assert.equal(messageTime(date.getTime(), "zh-CN").label, "10/29 12:34");
+  assert.equal(messageTime(date.getTime(), "zh-CN").title, time.title);
+});
+
 test("attachment-only messages disable copy without losing their send time", () => {
   const html = renderFooter("user", "");
   assert.match(html, /<time/);
   assert.match(html, /<button[^>]*disabled=""/);
+});
+
+test("hidden copy feedback stays anchored to the footer instead of overflowing the page", async () => {
+  const css = await readFile(
+    new URL("../src/style.css", import.meta.url),
+    "utf8",
+  );
+  assert.match(css, /^\.message-footer \{[^}]*position: relative;/m);
+  assert.match(
+    css,
+    /^\.message-copy-status \{[^}]*position: absolute;[^}]*clip-path: inset\(50%\);/m,
+  );
+  for (const role of ["user", "assistant"]) {
+    assert.match(
+      renderFooter(role),
+      /<span class="message-copy-status" role="status">/,
+    );
+  }
 });
 
 test("agent footers use completion time and copy only the final answer, not hidden activity", async () => {
