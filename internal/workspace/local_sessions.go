@@ -24,19 +24,26 @@ func canonicalDirectory(path string) string {
 	return filepath.Clean(path)
 }
 
-// Linked Git worktrees can live outside the project's directory. Match their
-// Git common directory, not their name or an untrusted transcript project label.
-func gitCommonDirectory(path string) string {
-	for dir := path; dir != filepath.Dir(dir); dir = filepath.Dir(dir) {
+func gitWorkspace(path string) (root, common string) {
+	if path == "" {
+		return "", ""
+	}
+	for dir := path; ; dir = filepath.Dir(dir) {
 		git := filepath.Join(dir, ".git")
 		info, err := os.Stat(git)
 		if err != nil {
+			if !os.IsNotExist(err) {
+				return dir, ""
+			}
+			if dir == filepath.Dir(dir) {
+				break
+			}
 			continue
 		}
 		if !info.IsDir() {
 			body, err := os.ReadFile(git)
 			if err != nil || !strings.HasPrefix(string(body), "gitdir: ") {
-				return ""
+				return dir, ""
 			}
 			git = strings.TrimSpace(strings.TrimPrefix(string(body), "gitdir: "))
 			if !filepath.IsAbs(git) {
@@ -49,10 +56,75 @@ func gitCommonDirectory(path string) string {
 				common = filepath.Join(git, common)
 			}
 			git = common
+		} else if !os.IsNotExist(err) {
+			return dir, ""
 		}
-		return canonicalDirectory(git)
+		return dir, canonicalDirectory(git)
 	}
-	return ""
+	return "", ""
+}
+
+func directoryWithin(directory, parent string) bool {
+	if parent == "" {
+		return false
+	}
+	relative, err := filepath.Rel(parent, directory)
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+
+type localSessionProject struct {
+	project                      Project
+	path, root, common, relative string
+}
+
+func localSessionProjects(projects []Project) []localSessionProject {
+	out := make([]localSessionProject, 0, len(projects))
+	for _, p := range projects {
+		path := canonicalDirectory(p.Path)
+		root, common := gitWorkspace(path)
+		relative := ""
+		if root != "" {
+			relative, _ = filepath.Rel(root, path)
+		}
+		out = append(out, localSessionProject{p, path, root, common, relative})
+	}
+	return out
+}
+
+// Project boundaries apply in every linked checkout, including private nested
+// directories. A broad physical ancestor cannot override a repository mapping.
+func matchLocalSessionProject(directory string, projects []localSessionProject) Project {
+	root, common := gitWorkspace(directory)
+	if root != "" && common == "" {
+		return Project{}
+	}
+	var match Project
+	bestPath := ""
+	bestDirect, publish, ambiguous := false, false, false
+	consider := func(p Project, path string, direct, allowed bool) {
+		if !directoryWithin(directory, path) {
+			return
+		}
+		if len(path) > len(bestPath) || (len(path) == len(bestPath) && direct && !bestDirect) {
+			match, bestPath, bestDirect, publish, ambiguous = p, path, direct, allowed, false
+		} else if len(path) == len(bestPath) && direct == bestDirect && p.ID != match.ID {
+			ambiguous = true
+		}
+	}
+	for _, p := range projects {
+		consider(p.project, p.path, true, true)
+		if common != "" && common == p.common {
+			path := filepath.Join(root, p.relative)
+			direct := path == p.path
+			// Subdirectories constrain mirrored roots but do not themselves
+			// opt into publishing other checkouts of their parent repository.
+			consider(p.project, path, direct, direct || p.path == p.root)
+		}
+	}
+	if ambiguous || !publish {
+		return Project{}
+	}
+	return match
 }
 
 func (s *Store) syncLocalSessions(force bool) error {
@@ -126,15 +198,8 @@ func (s *Store) syncLocalSessions(force bool) error {
 	if _, err = tx.Exec(`UPDATE local_sessions SET visible=0`); err != nil {
 		return err
 	}
-	counts, paths, common := map[string]int{}, map[string]string{}, map[string]string{}
-	for _, p := range projects {
-		paths[p.ID] = canonicalDirectory(p.Path)
-		// A configured subdirectory does not grant access to every sibling in
-		// its parent repository. Only repository/worktree roots opt into this.
-		if _, err := os.Stat(filepath.Join(p.Path, ".git")); err == nil {
-			common[p.ID] = gitCommonDirectory(p.Path)
-		}
-	}
+	counts, matches := map[string]int{}, map[string]Project{}
+	mappings := localSessionProjects(projects)
 	changed := false
 	for _, native := range local {
 		key := string(native.Backend) + ":" + native.ID
@@ -145,25 +210,10 @@ func (s *Store) syncLocalSessions(force bool) error {
 		if directory == "" {
 			continue
 		}
-		var match Project
-		// Prefer the most specific configured project before checking opt-in;
-		// a parent project must not publish a private nested project's history.
-		for _, p := range projects {
-			if path := paths[p.ID]; path != "" && (directory == path || strings.HasPrefix(directory, path+string(filepath.Separator))) && len(path) > len(paths[match.ID]) {
-				match = p
-			}
-		}
-		if match.ID == "" {
-			git := gitCommonDirectory(directory)
-			for _, p := range projects {
-				if git != "" && git == common[p.ID] {
-					if match.ID != "" { // Ambiguous repository mapping fails closed.
-						match = Project{}
-						break
-					}
-					match = p
-				}
-			}
+		match, matched := matches[directory]
+		if !matched {
+			match = matchLocalSessionProject(directory, mappings)
+			matches[directory] = match
 		}
 		if match.ID == "" || match.Archived || !match.SharedChats || !match.SharedLocalChats || counts[match.ID] >= localSessionLimit {
 			continue
@@ -179,7 +229,9 @@ func (s *Store) syncLocalSessions(force bool) error {
 		// A changed file must advance the stream revision even when its mtime
 		// stays in the same millisecond or moves backwards after replacement.
 		fileChanged := generation != native.Generation
-		result, err := tx.Exec(`INSERT INTO sessions(id,project_id,title,backend,native_session_id,native_session_path,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,native_session_path=excluded.native_session_path,updated_at=MAX(sessions.updated_at+1,excluded.updated_at) WHERE sessions.status<>'running' AND (sessions.title<>excluded.title OR sessions.native_session_path<>excluded.native_session_path OR ?)`, id, match.ID, native.Title, native.Backend, native.ID, native.Path, chatmodel.StatusCompleted, native.CreatedAt, native.UpdatedAt, fileChanged)
+		// A prefix/tail sample may miss a newer title in the middle. Never
+		// replace a confirmed title with that provisional metadata.
+		result, err := tx.Exec(`INSERT INTO sessions(id,project_id,title,backend,native_session_id,native_session_path,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=CASE WHEN ? THEN excluded.title ELSE sessions.title END,native_session_path=excluded.native_session_path,updated_at=MAX(sessions.updated_at+1,excluded.updated_at) WHERE sessions.status<>'running' AND ((? AND sessions.title<>excluded.title) OR sessions.native_session_path<>excluded.native_session_path OR ?)`, id, match.ID, native.Title, native.Backend, native.ID, native.Path, chatmodel.StatusCompleted, native.CreatedAt, native.UpdatedAt, native.TitleAuthoritative, native.TitleAuthoritative, fileChanged)
 		if err != nil {
 			return err
 		}

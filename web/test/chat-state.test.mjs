@@ -62,6 +62,37 @@ test("permission metadata revokes controls without replacing history at the same
   assert.equal(next.transcript, previous.transcript);
 });
 
+test("a late stop snapshot retains projected shared controls after terminal SSE metadata", () => {
+  for (const local of [false, true]) {
+    const previous = {
+      ...chat([running], 10, helloTranscript),
+      user_id: local ? "" : "alice",
+      local_session: local,
+      can_control: true,
+    };
+    const streamed = reconcileMetadata(previous, {
+      id: previous.id,
+      updated_at: 11,
+      can_control: true,
+    });
+    const response = {
+      ...previous,
+      updated_at: 11,
+      status: "stopped",
+      turns: [{ ...running, status: "stopped" }],
+      can_control: true,
+    };
+    assert.equal(canControlChat(reconcile(streamed, response), "bob"), true);
+    assert.equal(
+      canControlChat(
+        reconcile(streamed, { ...response, can_control: false }),
+        "bob",
+      ),
+      false,
+    );
+  }
+});
+
 const userPart = { role: "user", kind: "text", text: "Hello" };
 const answerPart = { role: "assistant", kind: "text", text: "Hi" };
 const helloTranscript = { parts: [userPart, answerPart] };

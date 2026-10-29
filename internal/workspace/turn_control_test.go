@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"spool/internal/agent"
 	chatmodel "spool/internal/model"
 	"spool/internal/testutil/agentfixture"
 )
@@ -161,5 +162,82 @@ func TestStopResponseCancelsPendingApproval(t *testing.T) {
 				t.Fatal("stopped approval could still be granted")
 			}
 		})
+	}
+}
+
+func TestSharedStopResponsesRetainControlPermissions(t *testing.T) {
+	for _, local := range []bool{false, true} {
+		for _, state := range []string{"active", "orphaned", "finished"} {
+			name := "in-app/" + state
+			if local {
+				name = "local/" + state
+			}
+			t.Run(name, func(t *testing.T) {
+				localSessionHomes(t)
+				s := testStore(t)
+				owner, viewer := testUser(t, s, "owner"), testUser(t, s, "viewer")
+				p := testProject(t, s, owner, viewer)
+				p.SharedChats, p.SharedLocalChats = true, true
+				if _, err := s.SaveProject(p); err != nil {
+					t.Fatal(err)
+				}
+				var chat chatmodel.Session
+				if local {
+					writeLocalSession(t, chatmodel.BackendCodex, "shared-stop-session", p.Path, 1)
+					nav, err := s.UserNavigation(viewer.ID)
+					if err != nil || len(nav.Chats) != 1 {
+						t.Fatalf("missing local session: %+v %v", nav, err)
+					}
+					chat = nav.Chats[0]
+				} else {
+					var err error
+					chat, err = s.CreateChat(owner.ID, p.ID, chatmodel.BackendCodex)
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				testAgent(t, s)
+				runner := &gatedRunner{started: make(chan struct{}), release: make(chan struct{})}
+				app := NewApp(s, runner, "", "")
+				t.Cleanup(func() { _ = app.Close() })
+				cookie, csrf := loginRequest(t, app, viewer.Username)
+				var turn chatmodel.Turn
+				if state == "active" {
+					w := apiRequest(app, "POST", "/api/chats/"+chat.ID+"/messages", `{"message":"start shared turn"}`, cookie, csrf)
+					if w.Code != 202 {
+						t.Fatal(w.Code, w.Body.String())
+					}
+					select {
+					case <-runner.started:
+					case <-time.After(5 * time.Second):
+						t.Fatal("shared turn did not start")
+					}
+					current, _ := s.Get(chat.ID)
+					turn = current.Turns[len(current.Turns)-1]
+				} else {
+					var err error
+					turn, err = s.beginTurnBy(chat.ID, "shared turn", chat.Backend, "", nil, viewer.ID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if state == "finished" {
+						if err := s.FinishTurn(chat.ID, turn.ID, agent.AgentResult{}, nil, chatmodel.StatusCompleted); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				for range 2 {
+					w := apiRequest(app, "POST", "/api/chats/"+chat.ID+"/stop", `{"turn_id":"`+turn.ID+`"}`, cookie, csrf)
+					var stopped chatmodel.Session
+					if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &stopped) != nil || stopped.CanControl == nil || !*stopped.CanControl {
+						t.Fatalf("shared stop response lost control permission: %d %s", w.Code, w.Body.String())
+					}
+					if stopped.LocalSession != local || stopped.NativeSessionID != "" || !s.CanControlChat(viewer.ID, chat.ID) {
+						t.Fatalf("stop changed session visibility or leaked native identity: %+v", stopped)
+					}
+					app.turns.Wait()
+				}
+			})
+		}
 	}
 }

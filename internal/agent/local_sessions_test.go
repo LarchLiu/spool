@@ -49,8 +49,13 @@ func TestLocalSessionDiscoveryIgnoresSidechainsAndUsesNativeTitles(t *testing.T)
 		t.Fatalf("discovery included hidden sessions: %+v %v", sessions, err)
 	}
 	titles := map[string]string{}
+	generations := map[string]string{}
 	for _, session := range sessions {
 		titles[session.ID] = session.Title
+		generations[session.ID] = session.Generation
+		if !session.TitleAuthoritative {
+			t.Fatalf("complete transcript or title index was treated as a provisional title: %+v", session)
+		}
 	}
 	if titles["codex-primary"] != "Named Codex chat" || titles["claude-primary"] != "Actual user request" {
 		t.Fatalf("native titles were not projected correctly: %+v", titles)
@@ -63,6 +68,9 @@ func TestLocalSessionDiscoveryIgnoresSidechainsAndUsesNativeTitles(t *testing.T)
 	for _, session := range sessions {
 		if session.Backend == chatmodel.BackendCodex && session.Title != "Renamed without a turn" {
 			t.Fatal("cached discovery missed provider title-index changes")
+		}
+		if session.Generation != generations[session.ID] || !session.TitleAuthoritative {
+			t.Fatal("title-only refresh changed the file generation or lost title authority")
 		}
 	}
 }

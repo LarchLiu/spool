@@ -99,6 +99,8 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string, user string) (chat
 	}
 	a.liveMu.Unlock()
 	latest.NativeSessionID = ""
+	allowed := a.store.CanControlChat(user, chat.ID)
+	latest.CanControl = &allowed
 	return latest, nil
 }
 
@@ -121,6 +123,8 @@ func (a *App) stopTurnResponse(w http.ResponseWriter, r *http.Request, chat chat
 	a.turnMu.Unlock()
 	if control == nil {
 		latest, ok := a.store.Get(chat.ID)
+		allowed := a.store.CanControlChat(user, chat.ID)
+		latest.CanControl = &allowed
 		// Repeating a stop is harmless, but a stale click must never stop a new turn.
 		if ok && len(latest.Turns) > 0 {
 			last := latest.Turns[len(latest.Turns)-1]

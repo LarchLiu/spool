@@ -18,6 +18,7 @@ type LocalSession struct {
 	Generation                 string
 	Backend                    chatmodel.Backend
 	CreatedAt, UpdatedAt       int64
+	TitleAuthoritative         bool
 }
 
 type localSessionFile struct {
@@ -38,7 +39,7 @@ func (index *LocalSessionIndex) Discover() ([]LocalSession, error) {
 	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {
 		home, err := nativeSessionHome(backend)
 		if err != nil {
-			return nil, err
+			continue
 		}
 		folder := "sessions"
 		if backend == chatmodel.BackendClaude {
@@ -46,10 +47,9 @@ func (index *LocalSessionIndex) Discover() ([]LocalSession, error) {
 		}
 		err = filepath.WalkDir(filepath.Join(home, folder), func(path string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
-				if os.IsNotExist(walkErr) {
-					return nil
-				}
-				return walkErr
+				// Optional native history must not block healthy providers or
+				// normal project navigation when one directory is unreadable.
+				return nil
 			}
 			if entry.IsDir() {
 				if entry.Name() == "subagents" {
@@ -76,6 +76,7 @@ func (index *LocalSessionIndex) Discover() ([]LocalSession, error) {
 			if backend == chatmodel.BackendCodex {
 				if title := index.titles.Title(path, v.ID); title != "" {
 					v.Title = title
+					v.TitleAuthoritative = true
 				}
 			}
 			sessions = append(sessions, v)
@@ -103,7 +104,7 @@ func readLocalSession(backend chatmodel.Backend, path string, info os.FileInfo) 
 	}
 	defer file.Close()
 	var title nativeSessionTitle
-	collect := func(reader io.Reader, identity bool) {
+	collect := func(reader io.Reader, identity bool) bool {
 		scanner := bufio.NewScanner(reader)
 		scanner.Buffer(make([]byte, 4096), 256*1024)
 		for scanner.Scan() {
@@ -113,17 +114,20 @@ func readLocalSession(backend chatmodel.Backend, path string, info os.FileInfo) 
 			}
 			title.collect(backend, record)
 			if !identity {
+				if backend == chatmodel.BackendClaude && record["type"] == "custom-title" && strings.TrimSpace(stringValue(record["customTitle"])) != "" {
+					v.TitleAuthoritative = true
+				}
 				continue
 			}
 			if record["isSidechain"] == true {
 				v.ID, v.Directory = "", ""
-				return
+				return false
 			}
 			if backend == chatmodel.BackendCodex && record["type"] == "session_meta" {
 				payload, _ := record["payload"].(map[string]any)
 				if source, ok := payload["source"].(map[string]any); ok && source["subagent"] != nil {
 					v.ID, v.Directory = "", ""
-					return
+					return false
 				}
 				v.ID, v.Directory = stringValue(payload["id"]), stringValue(payload["cwd"])
 				v.CreatedAt = nativeTimestamp(record["timestamp"])
@@ -151,10 +155,12 @@ func readLocalSession(backend chatmodel.Backend, path string, info os.FileInfo) 
 				v.Title = strings.Join(strings.Fields(cleanUserTextBlocks(texts, images).Text), " ")
 			}
 		}
+		return scanner.Err() == nil
 	}
 	// Discovery never decodes whole conversations. Titles near the end are
 	// sampled separately; full history is read lazily by the existing cache.
-	collect(io.LimitReader(file, 256*1024), true)
+	complete := collect(io.LimitReader(file, 256*1024), true)
+	v.TitleAuthoritative = complete && info.Size() <= 256*1024
 	if info.Size() > 256*1024 {
 		if _, err := file.Seek(max(0, info.Size()-64*1024), io.SeekStart); err == nil {
 			reader := bufio.NewReader(file)
