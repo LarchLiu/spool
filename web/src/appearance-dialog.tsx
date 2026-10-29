@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Check, Monitor, Moon, Sun, X } from "lucide-react";
 import type { Translator } from "./i18n";
+import { CustomSelect } from "./custom-select.js";
 import {
   languages,
   type Language,
@@ -86,26 +87,24 @@ export function AppearanceDialog({
           ))}
         </div>
       </fieldset>
-      <label className="language-choice">
-        {t("Language")}
-        <select
+      <div className="language-choice">
+        <span>{t("Language")}</span>
+        <CustomSelect
+          label={t("Language")}
           value={preferences.language}
           disabled={saving}
-          onChange={(event) =>
+          onChange={(value) =>
             onChange({
               ...preferences,
-              language: event.target.value as Language,
+              language: value as Language,
             })
           }
-        >
-          <option value="system">{t("Follow system")}</option>
-          {languages.map(([value, name]) => (
-            <option key={value} value={value}>
-              {name}
-            </option>
-          ))}
-        </select>
-      </label>
+          options={[
+            { value: "system", label: t("Follow system") },
+            ...languages.map(([value, label]) => ({ value, label })),
+          ]}
+        />
+      </div>
       <p>{t("Current version: {version}", { version: version || "..." })}</p>
     </dialog>
   );

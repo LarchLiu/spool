@@ -8,6 +8,12 @@ import {
   X,
 } from "lucide-react";
 import { SettingsBack, SettingsList } from "./settings-list";
+import { CustomSelect } from "./custom-select";
+import {
+  automationModelChoices,
+  chooseAutomationModel,
+} from "./automation-model-selection";
+import { effortLabel } from "./i18n";
 import {
   newProject,
   projectDraft,
@@ -36,6 +42,13 @@ export function ProjectsPage({ data, run, t }: PageProps) {
   const [githubPathOpen, setGitHubPathOpen] = useState(false);
   const people = data.users.filter((person) => !person.disabled);
   const issue = draft.issues;
+  const automationAgent = data.agents.find(
+    (agent) => agent.backend === issue.backend,
+  );
+  const automationChoices = automationModelChoices(
+    automationAgent,
+    issue.model || "",
+  );
   const update = (value: Partial<typeof issue>) =>
     setDraft((old) => ({ ...old, issues: { ...old.issues, ...value } }));
   const select = (project: ManagedProject) => {
@@ -417,21 +430,22 @@ export function ProjectsPage({ data, run, t }: PageProps) {
                 </div>
               </Row>
               <Row title={t("Automation agent")}>
-                <select
-                  aria-label={t("Automation agent")}
+                <CustomSelect
+                  label={t("Automation agent")}
                   value={issue.backend}
-                  onChange={(e) =>
+                  onChange={(value) =>
                     update({
-                      backend: e.target.value as typeof issue.backend,
+                      backend: value as typeof issue.backend,
                       model: "",
                       effort: "",
                       permission: "",
                     })
                   }
-                >
-                  <option value="codex">Codex</option>
-                  <option value="claude">Claude Code</option>
-                </select>
+                  options={[
+                    { value: "codex", label: "Codex" },
+                    { value: "claude", label: "Claude Code" },
+                  ]}
+                />
               </Row>
               <Row
                 title={t("Task assignees (all can control task chats)")}
@@ -470,23 +484,93 @@ export function ProjectsPage({ data, run, t }: PageProps) {
                     ))}
                 </div>
               </Row>
-              <TextField
-                title={t("Automation model (blank = agent default)")}
-                value={issue.model || ""}
-                onChange={(model) => update({ model })}
-              />
-              <TextField
-                title={t("Automation reasoning level (blank = default)")}
-                value={issue.effort || ""}
-                onChange={(effort) => update({ effort })}
-              />
+              <Row
+                title={t("Automation model")}
+                help={
+                  !automationChoices.models.length
+                    ? t(
+                        "No models are available. Refresh installation & models in Agents.",
+                      )
+                    : undefined
+                }
+              >
+                <CustomSelect
+                  label={t("Automation model")}
+                  value={issue.model || ""}
+                  onChange={(model) =>
+                    update(
+                      chooseAutomationModel(
+                        automationAgent,
+                        model,
+                        issue.effort || "",
+                      ),
+                    )
+                  }
+                  options={[
+                    { value: "", label: t("Default") },
+                    ...(issue.model &&
+                    !automationChoices.models.some(
+                      (model) => model.model === issue.model,
+                    )
+                      ? [
+                          {
+                            value: issue.model,
+                            label: t(
+                              "Saved value not in current catalog: {value}",
+                              { value: issue.model },
+                            ),
+                            disabled: true,
+                          },
+                        ]
+                      : []),
+                    ...automationChoices.models.map((model) => ({
+                      value: model.model,
+                      label: model.displayName || model.model,
+                    })),
+                  ]}
+                />
+              </Row>
+              <Row
+                title={t("Automation reasoning level")}
+                help={
+                  automationChoices.selected &&
+                  !automationChoices.efforts.length
+                    ? t("This model has no adjustable reasoning level.")
+                    : undefined
+                }
+              >
+                <CustomSelect
+                  label={t("Automation reasoning level")}
+                  value={issue.effort || ""}
+                  onChange={(effort) => update({ effort })}
+                  options={[
+                    { value: "", label: t("Default") },
+                    ...(issue.effort &&
+                    !automationChoices.efforts.includes(issue.effort)
+                      ? [
+                          {
+                            value: issue.effort,
+                            label: t(
+                              "Saved value not in current catalog: {value}",
+                              { value: issue.effort },
+                            ),
+                            disabled: true,
+                          },
+                        ]
+                      : []),
+                    ...automationChoices.efforts.map((value) => ({
+                      value,
+                      label: effortLabel(value, t),
+                    })),
+                  ]}
+                />
+              </Row>
               <Row title={t("Automation permissions")}>
-                <select
-                  aria-label={t("Automation permissions")}
+                <CustomSelect
+                  label={t("Automation permissions")}
                   value={issue.permission || ""}
-                  onChange={(e) => update({ permission: e.target.value })}
-                >
-                  {[
+                  onChange={(value) => update({ permission: value })}
+                  options={[
                     "",
                     ...(issue.backend === "codex"
                       ? ["ask", "auto"]
@@ -498,12 +582,8 @@ export function ProjectsPage({ data, run, t }: PageProps) {
                           "dontAsk",
                           "bypassPermissions",
                         ]),
-                  ].map((value) => (
-                    <option key={value} value={value}>
-                      {value || t("Default")}
-                    </option>
-                  ))}
-                </select>
+                  ].map((value) => ({ value, label: value || t("Default") }))}
+                />
               </Row>
             </>
           )}

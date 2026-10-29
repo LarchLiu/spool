@@ -321,9 +321,16 @@
   color: var(--text);
   text-decoration: none;
 }
-.settings-row-control > select {
+.settings-row-control > .custom-select {
   max-width: 100%;
   width: 168px;
+}
+.desktop-settings-shell .custom-select .custom-select-trigger {
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--input);
 }
 .settings-row-control > input[type="number"] {
   width: 100px;
@@ -844,7 +851,7 @@
     max-width: 100%;
   }
   .settings-row-control > input,
-  .settings-row-control > select {
+  .settings-row-control > .custom-select {
     width: 100%;
   }
   .settings-card-actions {

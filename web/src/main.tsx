@@ -74,6 +74,7 @@ import {
   createDirectInbox,
   DirectMessageError,
   messagePeer,
+  peopleConversationIDs,
   onlineChatRoom,
   isPeopleGroup,
   type PeopleChatGroup,
@@ -178,7 +179,7 @@ function App() {
         inbox.people.find((person) => person.id === id) ||
         resolveProfile(id)
       );
-    const name = inbox.groups.find((group) => group.id === id)?.name;
+    const name = inbox.groupNames[id];
     return {
       id,
       nickname:
@@ -193,8 +194,13 @@ function App() {
     to: string,
     text: string,
   ): Promise<DirectMessage> =>
-    messageStream.current?.sendMessage(to, text) ||
-    Promise.reject(new DirectMessageError("unavailable"));
+    directInbox.send(
+      to,
+      text,
+      (id, value) =>
+        messageStream.current?.sendMessage(id, value) ||
+        Promise.reject(new DirectMessageError("unavailable")),
+    );
   const changePeopleGroup = (
     name: string,
     members: string[],
@@ -2046,17 +2052,11 @@ function App() {
           key={`people-chat-${inbox.active}`}
           user={user!.id}
           peer={chatPeerIdentity(inbox.active)}
-          people={[
-            ...new Set([
-              onlineChatRoom,
-              ...inbox.groups.map((group) => group.id),
-              ...online.map((person) => person.id),
-              ...inbox.people.map((person) => person.id),
-              inbox.active,
-            ]),
-          ]
-            .filter((id) => id !== user!.id)
-            .map(chatPeerIdentity)}
+          people={peopleConversationIDs(
+            inbox,
+            user!.id,
+            online.map((person) => person.id),
+          ).map(chatPeerIdentity)}
           unread={inbox.unread}
           messages={inbox.messages.filter(
             (message) => messagePeer(message, user!.id) === inbox.active,
@@ -2065,9 +2065,12 @@ function App() {
           status={online.find((person) => person.id === inbox.active)?.state}
           onlineCount={online.length}
           group={inbox.groups.find((group) => group.id === inbox.active)}
+          draft={inbox.drafts[inbox.active]?.text || ""}
+          sending={!!inbox.sending[inbox.active]}
           locale={locale}
           t={t}
           onSend={sendDirectMessage}
+          onDraftChange={(text) => directInbox.draft(inbox.active, text)}
           onPeer={openDirectChat}
           onClose={directInbox.close}
           onInvite={() => setGroupPicker(inbox.active)}

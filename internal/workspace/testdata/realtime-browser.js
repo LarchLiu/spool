@@ -47,6 +47,60 @@ async function browser(commands) {
   return response.json();
 }
 
+function setComposer(input, text) {
+  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(input, text);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+async function selectConversation(id) {
+  document.querySelector(".direct-message-conversation").click();
+  await waitFor(() => document.querySelector(`.direct-message-conversations [data-conversation="${id}"]`), "retained conversation " + id);
+  document.querySelector(`.direct-message-conversations [data-conversation="${id}"]`).click();
+  await waitFor(() => !document.querySelector(".direct-message-conversations"), "conversation selected");
+}
+
+async function checkUnicodeComposer(panel, report) {
+  const input = panel.querySelector("textarea");
+  const submit = panel.querySelector('button[type="submit"]');
+  input.focus();
+  await browser([{ method: "Input.insertText", params: { text: "🙂".repeat(2000) } }]);
+  await waitFor(() => [...input.value].length === 2000 && !submit.disabled, "2000 emoji accepted");
+  await browser([{ method: "Input.insertText", params: { text: "你" } }]);
+  await waitFor(() => [...input.value].length === 2001 && submit.disabled && input.getAttribute("aria-invalid") === "true", "over-limit Unicode validation");
+  report.unicodeComposer = input.value === "🙂".repeat(2000) + "你";
+
+  setComposer(input, "a".repeat(1999));
+  await waitFor(() => input.value.length === 1999 && !submit.disabled, "IME boundary setup");
+  input.setSelectionRange(input.value.length, input.value.length);
+  await browser([{ method: "Input.imeSetComposition", params: { text: "你🙂", selectionStart: 3, selectionEnd: 3 } }]);
+  await waitFor(() => input.value === "a".repeat(1999) + "你🙂", "IME provisional text remains intact");
+  const count = panel.querySelectorAll(".direct-message").length;
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  report.imeComposer = submit.disabled && !input.hasAttribute("aria-invalid") && !panel.querySelector('[role="alert"]');
+  await browser([{ method: "Input.insertText", params: { text: "你🙂" } }]);
+  await waitFor(() => input.getAttribute("aria-invalid") === "true" && submit.disabled, "IME committed over-limit validation");
+  report.imeComposer &&= panel.querySelectorAll(".direct-message").length === count && input.value === "a".repeat(1999) + "你🙂";
+  setComposer(input, "a".repeat(1998));
+  input.setSelectionRange(input.value.length, input.value.length);
+  await browser([{ method: "Input.imeSetComposition", params: { text: "你🙂", selectionStart: 3, selectionEnd: 3 } }]);
+  await waitFor(() => input.value === "a".repeat(1998) + "你🙂" && submit.disabled, "valid-length IME composition");
+  const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+  input.dispatchEvent(enter);
+  panel.querySelector("form").dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  report.imeComposer &&= !enter.defaultPrevented && panel.querySelectorAll(".direct-message").length === count;
+  await browser([{ method: "Input.insertText", params: { text: "你🙂" } }]);
+  await waitFor(() => !submit.disabled && !input.hasAttribute("aria-invalid"), "valid-length IME commit");
+  report.imeComposer &&= input.value === "a".repeat(1998) + "你🙂";
+  const webkitEnter = new KeyboardEvent("keydown", { key: "Enter", keyCode: 229, bubbles: true, cancelable: true });
+  input.dispatchEvent(webkitEnter);
+  await pause(25);
+  report.imeComposer &&= !webkitEnter.defaultPrevented && panel.querySelectorAll(".direct-message").length === count && input.value === "a".repeat(1998) + "你🙂";
+  setComposer(input, "你🙂".repeat(1000));
+  await waitFor(() => !submit.disabled && !input.hasAttribute("aria-invalid"), "mixed Unicode boundary accepted");
+  report.unicodeComposer &&= input.value === "你🙂".repeat(1000);
+  setComposer(input, "");
+}
+
 async function pointerDrag(element, dx, dy) {
   const bounds = element.getBoundingClientRect();
   const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
@@ -250,6 +304,9 @@ async function run() {
     await waitFor(() => !document.querySelector(".people-group-picker") && window.workspaceSocket.groups?.some((group) => group.name === "Pair group" && group.members.length === 3), "selected-group invitation accepted");
     await action("selected-invited");
     report.selectedInvited = document.querySelectorAll("dialog").length === 1;
+    const selectedID = window.workspaceSocket.groups.find((group) => group.name === "Pair group").id;
+    setComposer(selectedInput, "Unsent selected-group draft");
+    await pause(25);
     selectedPanel.querySelector('[aria-label="Close group chat"]').click();
     await action("direct-send");
     await waitFor(() => document.querySelector(".direct-inbox-button .direct-unread")?.textContent === "1", "private-message unread badge");
@@ -257,13 +314,28 @@ async function run() {
     document.querySelector(".online summary").click();
     document.querySelector('.online-chat-person[title="Chat with bob"]').click();
     await waitFor(() => document.querySelector(".direct-message-panel[open] h2")?.textContent === "Chat with bob" && document.querySelector(".direct-message-panel .direct-message p")?.textContent === "Hello from Bob <script>not executable</script>", "open Bob's private message");
-    const panel = document.querySelector(".direct-message-panel");
+    let panel = document.querySelector(".direct-message-panel");
+    const bobID = window.workspaceSocket.profiles.people.find((person) => person.nickname === "bob").id;
+    setComposer(panel.querySelector("textarea"), "Unsent private draft");
+    await pause(25);
+    await selectConversation(selectedID);
+    await waitFor(() => document.querySelector(".direct-message-panel textarea")?.value === "Unsent selected-group draft", "closed/reopened group draft");
+    await selectConversation(bobID);
+    await waitFor(() => document.querySelector(".direct-message-panel textarea")?.value === "Unsent private draft", "private draft restored after switch");
+    document.querySelector('[aria-label="Close private chat"]').click();
+    document.querySelector(".direct-inbox-button").click();
+    await waitFor(() => document.querySelector(".direct-message-panel textarea")?.value === "Unsent private draft", "private draft restored after close");
+    report.draftRetained = true;
+    panel = document.querySelector(".direct-message-panel");
     if (panel.querySelector("script") || panel.querySelector(".direct-message p")?.textContent !== "Hello from Bob <script>not executable</script>")
       throw new Error("Private message was not rendered as plain text");
     const bounds = panel.getBoundingClientRect();
     report.directLayout = bounds.left >= 0 && bounds.right <= innerWidth && bounds.top >= 0 && bounds.bottom <= innerHeight && panel.scrollWidth <= panel.clientWidth;
     report.chatRetained &&= sameBounds(retainedBounds, windowBounds(panel));
     report.chatSendLayout = sendLayout(panel);
+    setComposer(panel.querySelector("textarea"), "");
+    await pause(25);
+    await checkUnicodeComposer(panel, report);
     const textarea = panel.querySelector("textarea");
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "Browser reply");
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
@@ -337,6 +409,10 @@ async function run() {
     report.chatRetained &&= sameBounds(retainedBounds, windowBounds(document.querySelector(".direct-message-panel")));
     report.groupNoReplay = document.querySelectorAll(".direct-message-panel .direct-message").length === 2 && !document.querySelector(".direct-message-status");
     report.selectedClosed = !window.workspaceSocket.groups.some((group) => group.name === "Pair group");
+    await selectConversation(selectedID);
+    await waitFor(() => document.querySelector(".direct-message-panel h2")?.textContent === "Pair group", "closed group retains its name");
+    const closedPanel = document.querySelector(".direct-message-panel");
+    report.closedGroupAccessible = closedPanel.querySelectorAll(".direct-message").length === 1 && closedPanel.querySelector("textarea").value === "Unsent selected-group draft" && closedPanel.querySelector('button[type="submit"]').disabled && !closedPanel.querySelector('[aria-label="Invite people"]') && closedPanel.textContent.includes("This group is no longer available to you.");
     document.querySelector('.direct-message-panel textarea').dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await waitFor(() => !document.querySelector(".direct-message-panel"), "escape closes only focused chat");
     report.chatEscape = true;
@@ -356,6 +432,7 @@ async function run() {
     report.ownControlsUpdated = true;
     await checkSettingsChoiceStyles();
     report.segmentedStyles = true;
+    await checkCustomSelects(report);
     const state = await fetch("/smoke/state").then((response) => response.json());
     report.events = state.events;
     report.navigationGets = state.navigationGets;

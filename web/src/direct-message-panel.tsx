@@ -29,9 +29,12 @@ export function DirectMessagePanel({
   status,
   onlineCount = 0,
   group,
+  draft,
+  sending,
   locale,
   t,
   onSend,
+  onDraftChange,
   onPeer,
   onClose,
   onInvite,
@@ -47,9 +50,12 @@ export function DirectMessagePanel({
   status?: string;
   onlineCount?: number;
   group?: PeopleChatGroup;
+  draft: string;
+  sending: boolean;
   locale: string;
   t: Translator;
   onSend: (to: string, text: string) => Promise<DirectMessage>;
+  onDraftChange: (text: string) => void;
   onPeer: (id: string) => void;
   onClose: () => void;
   onInvite?: () => void;
@@ -58,9 +64,9 @@ export function DirectMessagePanel({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const log = useRef<HTMLDivElement>(null);
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
   const [error, setError] = useState<MessageKey | "">("");
+  const composing = useRef(false);
+  const [isComposing, setIsComposing] = useState(false);
   const mounted = useRef(true);
   const floating = useFloatingWindow(windowBounds, onWindowBoundsChange);
   const moveLabel = t("Move chat window (arrow keys)");
@@ -88,15 +94,14 @@ export function DirectMessagePanel({
   const isGroup = isPeopleGroup(peer.id);
   const isRoom = peer.id === onlineChatRoom;
   const groupAvailable = isRoom || !!group;
+  const tooLong = [...draft].length > directMessageLimit;
   const writable =
-    connected && (isGroup ? groupAvailable : !!status) && !sending;
+    connected && (isGroup ? groupAvailable : !!status) && !sending && !tooLong;
   const send = async () => {
-    if (!writable || !draft.trim()) return;
-    setSending(true);
+    if (!writable || composing.current || !draft.trim()) return;
     setError("");
     try {
       await onSend(peer.id, draft);
-      if (mounted.current) setDraft("");
     } catch (error) {
       if (!mounted.current) return;
       const code = error instanceof DirectMessageError ? error.code : "unknown";
@@ -110,8 +115,6 @@ export function DirectMessagePanel({
         forbidden: "This group is no longer available to you.",
       };
       setError(errors[code] || errors.unknown);
-    } finally {
-      if (mounted.current) setSending(false);
     }
   };
   return (
@@ -264,9 +267,13 @@ export function DirectMessagePanel({
           </p>
         )
       )}
-      {error && (
+      {(error || (tooLong && !isComposing)) && (
         <p className="direct-message-status error" role="alert">
-          {t(error)}
+          {t(
+            tooLong
+              ? "Enter a message of up to 2000 characters."
+              : (error as MessageKey),
+          )}
         </p>
       )}
       <form
@@ -285,17 +292,28 @@ export function DirectMessagePanel({
           aria-label={t(isGroup ? "Group message" : "Private message")}
           placeholder={t(isGroup ? "Group message" : "Private message")}
           value={draft}
-          maxLength={directMessageLimit}
+          aria-invalid={(tooLong && !isComposing) || undefined}
           disabled={sending}
           onChange={(event) => {
-            setDraft(event.target.value);
+            onDraftChange(event.target.value);
             setError("");
+          }}
+          onCompositionStart={() => {
+            composing.current = true;
+            setIsComposing(true);
+          }}
+          onCompositionEnd={() => {
+            composing.current = false;
+            setIsComposing(false);
           }}
           onKeyDown={(event) => {
             if (
               event.key === "Enter" &&
               !event.shiftKey &&
-              !event.nativeEvent.isComposing
+              !composing.current &&
+              !event.nativeEvent.isComposing &&
+              // WebKit can end composition before the confirming Enter keydown.
+              event.nativeEvent.keyCode !== 229
             ) {
               event.preventDefault();
               void send();
@@ -305,7 +323,7 @@ export function DirectMessagePanel({
         <button
           className="primary"
           type="submit"
-          disabled={!writable || !draft.trim()}
+          disabled={!writable || isComposing || !draft.trim()}
           aria-label={t(
             isGroup ? "Send group message" : "Send private message",
           )}

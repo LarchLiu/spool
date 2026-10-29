@@ -13,6 +13,8 @@ import (
 
 const (
 	maxDirectMessageCharacters = 2000
+	maxPeopleChatGroups        = 256
+	maxPeopleChatGroupsPerUser = 16
 	onlineChatRoom             = "online-room"
 )
 
@@ -217,8 +219,21 @@ func (a *App) changePeopleChatGroup(origin *directMessageClient, input realtimeI
 			return peopleChatGroup{}, "forbidden"
 		}
 		group.Members = slices.Clone(group.Members)
-	} else if len(h.groups) >= 256 {
-		return peopleChatGroup{}, "group_limit"
+	} else {
+		if len(h.groups) >= maxPeopleChatGroups {
+			return peopleChatGroup{}, "group_limit"
+		}
+		// Count by creator identity, not socket or current presence: reconnecting
+		// must not release slots for groups kept alive by other members.
+		created := 0
+		for _, existing := range h.groups {
+			if existing.CreatedBy == origin.user {
+				created++
+			}
+		}
+		if created >= maxPeopleChatGroupsPerUser {
+			return peopleChatGroup{}, "group_limit"
+		}
 	}
 	for _, user := range input.Members {
 		if !chatmodel.ValidID(user) {

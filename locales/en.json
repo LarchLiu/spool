@@ -560,5 +560,9 @@
   "Too many active groups. Try again after unused groups close.": "Too many active groups. Try again after unused groups close.",
   "Group operation status unknown. Check your conversation list before trying again.": "Group operation status unknown. Check your conversation list before trying again.",
   "Move chat window (arrow keys)": "Move chat window (arrow keys)",
-  "Resize chat window (arrow keys)": "Resize chat window (arrow keys)"
+  "Resize chat window (arrow keys)": "Resize chat window (arrow keys)",
+  "Automation model": "Automation model",
+  "Automation reasoning level": "Automation reasoning level",
+  "No models are available. Refresh installation & models in Agents.": "No models are available. Refresh installation & models in Agents.",
+  "Saved value not in current catalog: {value}": "Saved value not in current catalog: {value}"
 }

@@ -22,6 +22,7 @@ import {
 } from "./settings-client";
 import { SettingsBack, SettingsList } from "./settings-list";
 import { ThemePicker } from "./theme-picker";
+import { CustomSelect } from "./custom-select";
 import { ServiceSettingsAutosave } from "./settings-autosave";
 import { UpdateCheckInterval } from "./update-controls";
 import { ReleaseNotesPanel } from "./release-notes";
@@ -516,20 +517,17 @@ export function AppearancePage({ data, run, t }: PageProps) {
           />
         </Row>
         <Row title={t("Language")}>
-          <select
-            aria-label={t("Language")}
+          <CustomSelect
+            label={t("Language")}
             value={data.preferences.language}
-            onChange={(e) =>
-              save({ language: e.target.value as UIPreferences["language"] })
+            onChange={(value) =>
+              save({ language: value as UIPreferences["language"] })
             }
-          >
-            <option value="system">{t("Follow system")}</option>
-            {languages.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "system", label: t("Follow system") },
+              ...languages.map(([value, label]) => ({ value, label })),
+            ]}
+          />
         </Row>
       </Card>
       <div className="settings-info">

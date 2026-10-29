@@ -2,12 +2,145 @@ package workspace
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coder/websocket"
 )
+
+func TestDirectMessageUnicodeBoundaries(t *testing.T) {
+	for _, kind := range []string{"direct_message", "group_message"} {
+		for name, text := range map[string]string{
+			"ascii":     strings.Repeat("a", maxDirectMessageCharacters),
+			"emoji":     strings.Repeat("🙂", maxDirectMessageCharacters),
+			"mixed":     strings.Repeat("你🙂", maxDirectMessageCharacters/2),
+			"combining": strings.Repeat("e\u0301", maxDirectMessageCharacters/2),
+		} {
+			t.Run(kind+"/"+name, func(t *testing.T) {
+				input := realtimeInput{Type: kind, RequestID: "unicode-boundary", To: "bob-user", Text: text}
+				if !utf8.ValidString(text) || !validDirectMessage(input, "alice-user") {
+					t.Fatal("valid 2000-code-point message rejected")
+				}
+				input.Text += "x"
+				if validDirectMessage(input, "alice-user") {
+					t.Fatal("2001-code-point message accepted")
+				}
+			})
+		}
+	}
+}
+
+func TestPeopleChatGroupQuotaIsPerCreatorAcrossConnections(t *testing.T) {
+	s := testStore(t)
+	a := NewApp(s, &fakeRunner{}, "", "")
+	t.Cleanup(func() { a.Close() })
+	connect := func(name string) *directMessageClient {
+		t.Helper()
+		u := testUser(t, s, name)
+		_, identity, err := s.login(u.Username, "test-password-2026")
+		if err != nil {
+			t.Fatal(err)
+		}
+		a.presence.Touch(identity, "quota-test", true)
+		client := a.directMessages.subscribe(u.ID)
+		t.Cleanup(func() { a.directMessages.unsubscribe(client) })
+		return client
+	}
+	alice, bob, charlie, david := connect("alice"), connect("bob"), connect("charlie"), connect("david")
+	create := func(client *directMessageClient, member string) (peopleChatGroup, string) {
+		return a.changePeopleChatGroup(client, realtimeInput{Type: "group_create", RequestID: "quota-create", Members: []string{member}})
+	}
+	var first peopleChatGroup
+	for i := 0; i < maxPeopleChatGroupsPerUser; i++ {
+		group, code := create(alice, bob.user)
+		if code != "" {
+			t.Fatalf("create group %d: %s", i, code)
+		}
+		if i == 0 {
+			first = group
+		}
+	}
+	if _, code := create(alice, bob.user); code != "group_limit" {
+		t.Fatalf("creator quota: %q", code)
+	}
+	second := a.directMessages.subscribe(alice.user)
+	a.directMessages.unsubscribe(alice)
+	if _, code := create(second, bob.user); code != "group_limit" {
+		t.Fatalf("second socket bypassed quota: %q", code)
+	}
+	a.directMessages.unsubscribe(second)
+	reconnected := a.directMessages.subscribe(alice.user)
+	t.Cleanup(func() { a.directMessages.unsubscribe(reconnected) })
+	if _, code := create(reconnected, bob.user); code != "group_limit" {
+		t.Fatalf("reconnect bypassed quota: %q", code)
+	}
+	if _, code := create(charlie, david.user); code != "" {
+		t.Fatalf("unrelated creator blocked: %q", code)
+	}
+	if group, code := a.changePeopleChatGroup(reconnected, realtimeInput{Type: "group_invite", RequestID: "quota-invite", To: first.ID, Members: []string{david.user}}); code != "" || len(group.Members) != 3 {
+		t.Fatalf("invitation consumed creator quota: %q", code)
+	}
+	// A recipient does not consume their creation quota just by being invited.
+	if _, code := create(bob, david.user); code != "" {
+		t.Fatalf("invited member blocked: %q", code)
+	}
+	a.directMessages.unsubscribe(reconnected)
+	a.directMessages.unsubscribe(bob)
+	if groups := a.directMessages.groupsFor(alice.user); len(groups) != 1 || groups[0].ID != first.ID {
+		t.Fatalf("only the group kept alive by David should remain: %#v", groups)
+	}
+	reconnected = a.directMessages.subscribe(alice.user)
+	if _, code := create(reconnected, david.user); code != "" {
+		t.Fatalf("cleanup did not release creator quota: %q", code)
+	}
+	// The global safety cap remains independent of the per-creator cap.
+	a.directMessages.mu.Lock()
+	for len(a.directMessages.groups) < maxPeopleChatGroups {
+		id := fmt.Sprintf("group-fixture-%d", len(a.directMessages.groups))
+		a.directMessages.groups[id] = peopleChatGroup{ID: id, CreatedBy: id, Members: []string{david.user}}
+	}
+	a.directMessages.mu.Unlock()
+	if _, code := create(charlie, david.user); code != "group_limit" {
+		t.Fatalf("global cap bypassed: %q", code)
+	}
+}
+
+func TestPeopleChatGroupQuotaIsAtomicAcrossConcurrentConnections(t *testing.T) {
+	s := testStore(t)
+	a := NewApp(s, &fakeRunner{}, "", "")
+	t.Cleanup(func() { a.Close() })
+	alice, bob := testUser(t, s, "alice"), testUser(t, s, "bob")
+	_, identity, err := s.login(bob.Username, "test-password-2026")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.presence.Touch(identity, "quota-test", true)
+	recipient := a.directMessages.subscribe(bob.ID)
+	t.Cleanup(func() { a.directMessages.unsubscribe(recipient) })
+	results := make(chan string, maxPeopleChatGroupsPerUser*2)
+	for i := 0; i < cap(results); i++ {
+		client := a.directMessages.subscribe(alice.ID)
+		t.Cleanup(func() { a.directMessages.unsubscribe(client) })
+		go func() {
+			_, code := a.changePeopleChatGroup(client, realtimeInput{Type: "group_create", RequestID: "concurrent-create", Members: []string{bob.ID}})
+			results <- code
+		}()
+	}
+	created := 0
+	for i := 0; i < cap(results); i++ {
+		if code := <-results; code == "" {
+			created++
+		} else if code != "group_limit" {
+			t.Errorf("unexpected error: %q", code)
+		}
+	}
+	if created != maxPeopleChatGroupsPerUser {
+		t.Fatalf("concurrent groups = %d, want %d", created, maxPeopleChatGroupsPerUser)
+	}
+}
 
 func readDirectMessage(t *testing.T, conn *websocket.Conn) directMessage {
 	t.Helper()

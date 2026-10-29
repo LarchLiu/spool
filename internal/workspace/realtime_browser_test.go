@@ -65,6 +65,14 @@ func TestRealtimeBrowser(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			selectProbe, err := os.ReadFile("testdata/custom-select-browser.js")
+			if err != nil {
+				t.Fatal(err)
+			}
+			settingsBridge, err := os.ReadFile("testdata/settings-selects-bridge.js")
+			if err != nil {
+				t.Fatal(err)
+			}
 			var events, navigationGets, presencePosts, profileGets atomic.Int64
 			reports := make(chan map[string]any, 1)
 			var extra *websocket.Conn
@@ -88,7 +96,7 @@ func TestRealtimeBrowser(t *testing.T) {
 					}
 					for _, command := range commands {
 						switch command.Method {
-						case "Input.dispatchMouseEvent", "Emulation.setDeviceMetricsOverride", "Emulation.clearDeviceMetricsOverride", "Page.captureScreenshot":
+						case "Input.dispatchMouseEvent", "Input.insertText", "Input.imeSetComposition", "Emulation.setDeviceMetricsOverride", "Emulation.clearDeviceMetricsOverride", "Page.captureScreenshot":
 						default:
 							http.Error(w, "unsupported browser command", 400)
 							return
@@ -123,7 +131,20 @@ func TestRealtimeBrowser(t *testing.T) {
 				case "/smoke/probe.js":
 					w.Header().Set("Content-Type", "text/javascript")
 					fmt.Fprintf(w, "window.smokeWidth = %d;\n", width)
+					w.Write(selectProbe)
 					w.Write(probe)
+					return
+				case "/smoke/settings-bridge.js":
+					w.Header().Set("Content-Type", "text/javascript")
+					w.Write(settingsBridge)
+					return
+				case "/smoke/settings":
+					recorder := httptest.NewRecorder()
+					request := r.Clone(r.Context())
+					request.URL.Path = "/desktop.html"
+					a.ServeHTTP(recorder, request)
+					w.Header().Set("Content-Type", "text/html")
+					w.Write(bytes.Replace(recorder.Body.Bytes(), []byte("<head>"), []byte(`<head><script src="/smoke/settings-bridge.js"></script>`), 1))
 					return
 				case "/smoke/report":
 					var report map[string]any
@@ -302,7 +323,12 @@ func TestRealtimeBrowser(t *testing.T) {
 						t.Errorf("%s failed: %s", check, data)
 					}
 				}
-				for _, check := range []string{"localIcon", "controlsUpdated", "ownControlsUpdated", "segmentedStyles", "actorStack", "activeUnchanged", "avatarUpdated", "sharedAvatars", "staleProfilesIgnored", "nameUpdated", "presenceJoined", "presenceLeft", "reconnected", "revoked", "directUnread", "directSent", "directLayout", "directOffline", "directNoReplay", "groupSent", "groupLayout", "groupNoReplay", "selectedCreated", "selectedInvited", "selectedLayout", "selectedClosed"} {
+				for _, check := range []string{"selectModal", "selectSettingsLanguage", "selectModelEffort", "selectAgentScoped", "selectAutomationSaved", "selectDisabled"} {
+					if report[check] != true {
+						t.Errorf("%s failed: %s", check, data)
+					}
+				}
+				for _, check := range []string{"localIcon", "controlsUpdated", "ownControlsUpdated", "segmentedStyles", "actorStack", "activeUnchanged", "avatarUpdated", "sharedAvatars", "staleProfilesIgnored", "nameUpdated", "presenceJoined", "presenceLeft", "reconnected", "revoked", "directUnread", "directSent", "directLayout", "directOffline", "directNoReplay", "groupSent", "groupLayout", "groupNoReplay", "selectedCreated", "selectedInvited", "selectedLayout", "selectedClosed", "draftRetained", "unicodeComposer", "imeComposer", "closedGroupAccessible"} {
 					if report[check] != true {
 						t.Errorf("%s failed: %s", check, data)
 					}

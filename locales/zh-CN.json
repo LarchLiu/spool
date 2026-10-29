@@ -560,5 +560,9 @@
   "Too many active groups. Try again after unused groups close.": "当前群聊数量已达上限，请等待闲置群聊关闭后再试。",
   "Group operation status unknown. Check your conversation list before trying again.": "群聊操作结果未知，请先检查聊天列表，避免重复操作。",
   "Move chat window (arrow keys)": "移动聊天窗口（也可使用方向键）",
-  "Resize chat window (arrow keys)": "调整聊天窗口大小（也可使用方向键）"
+  "Resize chat window (arrow keys)": "调整聊天窗口大小（也可使用方向键）",
+  "Automation model": "自动化模型",
+  "Automation reasoning level": "自动化推理级别",
+  "No models are available. Refresh installation & models in Agents.": "暂无可用模型，请在 Agent 设置中刷新安装状态和模型。",
+  "Saved value not in current catalog: {value}": "已保存但当前列表不可用：{value}"
 }

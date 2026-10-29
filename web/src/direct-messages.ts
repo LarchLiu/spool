@@ -53,7 +53,28 @@ export type DirectInbox = {
   unread: Record<string, number>;
   people: UserProfile[];
   groups: PeopleChatGroup[];
+  groupNames: Record<string, string>;
+  drafts: Record<string, { text: string }>;
+  sending: Record<string, boolean>;
 };
+
+export function peopleConversationIDs(
+  inbox: DirectInbox,
+  user: string,
+  online: string[],
+) {
+  return [
+    ...new Set([
+      onlineChatRoom,
+      ...inbox.groups.map((group) => group.id),
+      ...online,
+      ...inbox.people.map((person) => person.id),
+      ...inbox.messages.map((message) => messagePeer(message, user)),
+      ...Object.keys(inbox.drafts),
+      inbox.active,
+    ]),
+  ].filter((id) => id && id !== user);
+}
 
 export function createDirectInbox() {
   const empty = (): DirectInbox => ({
@@ -62,11 +83,34 @@ export function createDirectInbox() {
     unread: {},
     people: [],
     groups: [],
+    groupNames: {},
+    drafts: {},
+    sending: {},
   });
   let state = empty();
+  let generation = 0;
   const listeners = new Set<() => void>();
+  const contactIDs = (inbox = state) =>
+    new Set([
+      inbox.active,
+      ...Object.keys(inbox.drafts),
+      ...Object.keys(inbox.sending),
+      ...inbox.messages.flatMap((message) => [message.from, message.to]),
+    ]);
   const update = (next: DirectInbox) => {
-    state = next;
+    const ids = contactIDs(next);
+    const groupIDs = new Set([...ids, ...next.groups.map((group) => group.id)]);
+    state = {
+      ...next,
+      people: next.people.filter((person) => ids.has(person.id)),
+      unread: Object.fromEntries(
+        Object.entries(next.unread).filter(([id]) => ids.has(id)),
+      ),
+      // Remember labels, not membership. Only the live groups authorize sending.
+      groupNames: Object.fromEntries(
+        Object.entries(next.groupNames).filter(([id]) => groupIDs.has(id)),
+      ),
+    };
     listeners.forEach((listener) => listener());
   };
   const remember = (people: UserProfile[], ids: Set<string>) => {
@@ -77,11 +121,6 @@ export function createDirectInbox() {
       if (ids.has(person.id)) known.set(person.id, person);
     return [...known.values()];
   };
-  const contactIDs = () =>
-    new Set([
-      state.active,
-      ...state.messages.flatMap((message) => [message.from, message.to]),
-    ]);
   return {
     snapshot: () => state,
     subscribe: (listener: () => void) => {
@@ -101,7 +140,52 @@ export function createDirectInbox() {
       });
     },
     close: () => update({ ...state, active: "" }),
-    groups: (groups: PeopleChatGroup[]) => update({ ...state, groups }),
+    groups: (groups: PeopleChatGroup[]) =>
+      update({
+        ...state,
+        groups,
+        groupNames: {
+          ...state.groupNames,
+          ...Object.fromEntries(groups.map((group) => [group.id, group.name])),
+        },
+      }),
+    draft: (id: string, text: string) => {
+      const drafts = { ...state.drafts };
+      if (text) drafts[id] = { text };
+      else delete drafts[id];
+      update({ ...state, drafts });
+    },
+    send: async (
+      id: string,
+      text: string,
+      send: (id: string, text: string) => Promise<DirectMessage>,
+    ) => {
+      if (state.sending[id]) throw new DirectMessageError("rate_limited");
+      const draft = state.drafts[id];
+      const started = generation;
+      update({ ...state, sending: { ...state.sending, [id]: true } });
+      try {
+        const message = await send(id, text);
+        // Acknowledgements belong to the original draft, even after switching
+        // panels. Never clear a newer edit or a different signed-in session.
+        if (
+          generation === started &&
+          draft?.text === text &&
+          state.drafts[id] === draft
+        ) {
+          const drafts = { ...state.drafts };
+          delete drafts[id];
+          update({ ...state, drafts });
+        }
+        return message;
+      } finally {
+        if (generation === started) {
+          const sending = { ...state.sending };
+          delete sending[id];
+          update({ ...state, sending });
+        }
+      }
+    },
     read: () => {
       if (state.active && state.unread[state.active])
         update({ ...state, unread: { ...state.unread, [state.active]: 0 } });
@@ -130,10 +214,7 @@ export function createDirectInbox() {
         return;
       const peer = messagePeer(message, user);
       const messages = [...state.messages, message].slice(-inboxMessageLimit);
-      const ids = new Set([
-        state.active,
-        ...messages.flatMap((item) => [item.from, item.to]),
-      ]);
+      const ids = contactIDs({ ...state, messages });
       const unread = Object.fromEntries(
         Object.entries(state.unread).filter(([id]) => ids.has(id)),
       );
@@ -141,6 +222,9 @@ export function createDirectInbox() {
         unread[peer] = Math.min(99, (unread[peer] || 0) + 1);
       update({ ...state, messages, unread, people: remember(people, ids) });
     },
-    reset: () => update(empty()),
+    reset: () => {
+      generation++;
+      update(empty());
+    },
   };
 }

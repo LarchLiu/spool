@@ -61,6 +61,8 @@ export type ManagedAgent = {
   error?: string;
   checked_at: number;
   catalog: {
+    defaultModel?: string;
+    defaultEffort?: string;
     models: {
       model: string;
       displayName: string;

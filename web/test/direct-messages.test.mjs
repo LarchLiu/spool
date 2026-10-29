@@ -7,6 +7,7 @@ import {
   inboxMessageLimit,
   onlineChatRoom,
   messagePeer,
+  peopleConversationIDs,
 } from "../.test-build/direct-messages.js";
 import { DirectMessagePanel } from "../.test-build/components/web/src/direct-message-panel.js";
 import { PeopleGroupPicker } from "../.test-build/components/web/src/people-group-picker.js";
@@ -65,6 +66,9 @@ test("inbox separates people, deduplicates echoes and tracks unread messages", (
     unread: {},
     people: [],
     groups: [],
+    groupNames: {},
+    drafts: {},
+    sending: {},
   });
 });
 
@@ -89,6 +93,9 @@ test("private panel escapes messages, explains lifetime and disables offline sen
     renderToStaticMarkup(
       createElement(DirectMessagePanel, {
         user: "alice",
+        draft: "",
+        sending: false,
+        onDraftChange() {},
         peer: people[0],
         people,
         unread: {},
@@ -115,7 +122,7 @@ test("private panel escapes messages, explains lifetime and disables offline sen
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
   assert.doesNotMatch(html, /<img src="x"/);
   assert.match(html, /class="direct-message own"/);
-  assert.match(html, /maxLength="2000"/i);
+  assert.doesNotMatch(html, /maxLength=/i);
   assert.match(view(undefined), /This person is offline/);
   assert.match(view("online", false), /Wait for reconnection/);
 });
@@ -151,6 +158,9 @@ test("group panel identifies senders and is usable without a private recipient o
   const html = renderToStaticMarkup(
     createElement(DirectMessagePanel, {
       user: "alice",
+      draft: "",
+      sending: false,
+      onDraftChange() {},
       peer: room,
       people: [room, ...people],
       unread: {},
@@ -192,6 +202,9 @@ test("selected groups remain separate from private/public chats and have invite 
   const html = renderToStaticMarkup(
     createElement(DirectMessagePanel, {
       user: "alice",
+      draft: "",
+      sending: false,
+      onDraftChange() {},
       peer: { id: group.id, nickname: group.name },
       people,
       group,
@@ -249,4 +262,209 @@ test("conversation popup uses an anchored listbox trigger rather than a mobile n
   assert.match(html, /<span>Bob<\/span>/);
   assert.match(html, /class="direct-unread">2/);
   assert.doesNotMatch(html, /<select|role="listbox"/);
+});
+
+test("drafts survive switching, closing and profile eviction, but not reset", () => {
+  const inbox = createDirectInbox();
+  inbox.open("bob", people);
+  inbox.draft("bob", "Unsent draft for Bob");
+  inbox.open("charlie", []);
+  inbox.draft("charlie", "A separate draft");
+  inbox.close();
+  for (let i = 0; i <= inboxMessageLimit; i++)
+    inbox.receive(message(String(i), "david"), "alice", true, []);
+  inbox.profiles([]);
+  assert.equal(inbox.snapshot().people[0].nickname, "Bob");
+  assert.ok(
+    peopleConversationIDs(inbox.snapshot(), "alice", []).includes("bob"),
+  );
+  inbox.open("bob", []);
+  assert.equal(inbox.snapshot().drafts.bob.text, "Unsent draft for Bob");
+  assert.equal(inbox.snapshot().drafts.charlie.text, "A separate draft");
+  inbox.draft("charlie", "");
+  assert.equal(inbox.snapshot().drafts.charlie, undefined);
+  inbox.reset();
+  assert.deepEqual(inbox.snapshot().drafts, {});
+});
+
+test("only an acknowledged unchanged draft clears, even after the panel closes", async () => {
+  const inbox = createDirectInbox();
+  inbox.open("bob", people);
+  inbox.draft("bob", "first");
+  let resolve;
+  const sent = inbox.send(
+    "bob",
+    "first",
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  assert.equal(inbox.snapshot().sending.bob, true);
+  await assert.rejects(
+    inbox.send("bob", "first", async () => message("duplicate")),
+    { code: "rate_limited" },
+  );
+  inbox.close();
+  assert.equal(inbox.snapshot().drafts.bob.text, "first");
+  resolve(message("sent"));
+  await sent;
+  assert.equal(inbox.snapshot().drafts.bob, undefined);
+  assert.equal(inbox.snapshot().sending.bob, undefined);
+
+  inbox.draft("bob", "second");
+  const changed = inbox.send(
+    "bob",
+    "second",
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  inbox.draft("bob", "newer edit");
+  inbox.draft("bob", "second");
+  resolve(message("old-ack"));
+  await changed;
+  assert.equal(inbox.snapshot().drafts.bob.text, "second");
+  await assert.rejects(
+    inbox.send("bob", "second", async () => {
+      throw new Error("offline");
+    }),
+  );
+  assert.equal(inbox.snapshot().drafts.bob.text, "second");
+  assert.deepEqual(inbox.snapshot().sending, {});
+
+  const oldSession = inbox.send(
+    "bob",
+    "second",
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  inbox.reset();
+  inbox.draft("bob", "second");
+  let nextResolve;
+  const newSession = inbox.send(
+    "bob",
+    "second",
+    () =>
+      new Promise((done) => {
+        nextResolve = done;
+      }),
+  );
+  resolve(message("old-session-ack"));
+  await oldSession;
+  assert.equal(inbox.snapshot().drafts.bob.text, "second");
+  assert.equal(inbox.snapshot().sending.bob, true);
+  nextResolve(message("new-session-ack"));
+  await newSession;
+  assert.equal(inbox.snapshot().drafts.bob, undefined);
+});
+
+test("closed groups retain their label and read conversation, never live membership", () => {
+  const inbox = createDirectInbox();
+  const group = {
+    id: "group-pair",
+    name: "Pair group",
+    members: ["alice", "bob"],
+    created_by: "alice",
+  };
+  inbox.groups([group]);
+  inbox.open(group.id, people);
+  inbox.receive(
+    { ...message("group", "bob", group.id), group: true },
+    "alice",
+    true,
+    people,
+  );
+  inbox.open("bob", people);
+  inbox.groups([]);
+  inbox.receive(message("later-private"), "alice", true, people);
+  assert.equal(inbox.snapshot().unread[group.id], 0);
+  assert.ok(
+    peopleConversationIDs(inbox.snapshot(), "alice", ["bob"]).includes(
+      group.id,
+    ),
+  );
+  assert.equal(inbox.snapshot().groupNames[group.id], "Pair group");
+  assert.equal(inbox.snapshot().groups.length, 0);
+  const html = renderToStaticMarkup(
+    createElement(DirectMessagePanel, {
+      user: "alice",
+      peer: { id: group.id, nickname: inbox.snapshot().groupNames[group.id] },
+      people,
+      unread: {},
+      messages: inbox.snapshot().messages,
+      connected: true,
+      draft: "retained",
+      sending: false,
+      onDraftChange() {},
+      locale: "en",
+      t: (key) => key,
+      onSend: async () => message("sent"),
+      onPeer() {},
+      onClose() {},
+    }),
+  );
+  assert.match(html, /This group is no longer available to you/);
+  assert.match(html, /type="submit" disabled=""/);
+  assert.doesNotMatch(html, /aria-label="Invite people"/);
+
+  for (let i = 0; i < inboxMessageLimit; i++)
+    inbox.receive(message(String(i)), "alice", true, people);
+  assert.equal(inbox.snapshot().groupNames[group.id], undefined);
+  assert.ok(
+    !peopleConversationIDs(inbox.snapshot(), "alice", []).includes(group.id),
+  );
+  inbox.groups([group]);
+  inbox.open(group.id, people);
+  inbox.draft(group.id, "draft only");
+  inbox.groups([]);
+  inbox.close();
+  assert.equal(inbox.snapshot().groupNames[group.id], "Pair group");
+  assert.ok(
+    peopleConversationIDs(inbox.snapshot(), "alice", []).includes(group.id),
+  );
+  inbox.draft(group.id, "");
+  assert.equal(inbox.snapshot().groupNames[group.id], undefined);
+});
+
+test("composer validates code points rather than UTF-16 units without truncation", () => {
+  const view = (draft) =>
+    renderToStaticMarkup(
+      createElement(DirectMessagePanel, {
+        user: "alice",
+        peer: people[0],
+        people,
+        unread: {},
+        messages: [],
+        connected: true,
+        status: "online",
+        draft,
+        sending: false,
+        onDraftChange() {},
+        locale: "en",
+        t: (key) => key,
+        onSend: async () => message("sent"),
+        onPeer() {},
+        onClose() {},
+      }),
+    );
+  for (const draft of [
+    "🙂".repeat(2000),
+    "你🙂".repeat(1000),
+    "a".repeat(2000),
+  ]) {
+    const html = view(draft);
+    assert.doesNotMatch(
+      html,
+      /type="submit" disabled|aria-invalid="true"|maxLength=/i,
+    );
+    assert.ok(html.includes(draft));
+  }
+  const html = view("你🙂".repeat(1000) + "x");
+  assert.match(html, /aria-invalid="true"/);
+  assert.match(html, /type="submit" disabled=""/);
+  assert.match(html, /Enter a message of up to 2000 characters/);
 });

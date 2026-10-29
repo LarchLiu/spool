@@ -281,6 +281,34 @@ test("private messages require a ready connection and wait for the server echo",
   assert.equal(f.received.at(-1)[1].id, "reply");
 });
 
+test("transport accepts 2000 Unicode code points and rejects the next one", async (t) => {
+  const f = fixture(t);
+  const socket = f.sockets[0];
+  socket.opened();
+  socket.emit("ready", true);
+  for (const text of [
+    "🙂".repeat(2000),
+    "你🙂".repeat(1000),
+    "e\u0301".repeat(1000),
+  ]) {
+    const pending = f.stream.sendMessage("bob", text);
+    const request = socket.sent.at(-1);
+    assert.equal(request.text, text);
+    socket.emit("direct_message", {
+      id: request.request_id,
+      request_id: request.request_id,
+      from: "alice",
+      to: "bob",
+      text,
+      sent_at: 123,
+    });
+    assert.equal((await pending).text, text);
+    await assert.rejects(f.stream.sendMessage("bob", text + "x"), {
+      code: "invalid_message",
+    });
+  }
+});
+
 test("offline errors retain their request and disconnected messages are never replayed", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
   const f = fixture(t);

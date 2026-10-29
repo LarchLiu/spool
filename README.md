@@ -49,6 +49,9 @@ from its header. Selected-member groups are visible only to their members;
 newly invited members receive no earlier messages. Group metadata stays only
 in server memory while at least one member is connected and disappears when
 everyone disconnects or the service restarts.
+Each user can create up to 16 active selected-member groups across all their
+connections (256 total per server). Groups still count while another member
+keeps them alive; their slots are released when everyone disconnects.
 Both share the authenticated `/api/events` WebSocket and show unread badges.
 Private messages reach only the two users' devices; the online group broadcasts
 to all signed-in chat connections, including away users. These messages
@@ -57,7 +60,10 @@ storage. Each page keeps at most its latest 300 messages in memory; refreshing,
 signing out, or closing the page clears them. The server only owns bounded live
 delivery queues, with no history, offline delivery, or reconnect replay. Away
 users can receive messages while their connection remains active. Sending is
-limited to 2000 characters per message with a small per-connection burst limit.
+limited to 2000 Unicode code points per message with a small per-connection
+burst limit. Unsent drafts stay in page memory when switching or closing chat
+windows and clear only after an acknowledged send. Closed groups with retained
+messages or drafts remain in the conversation picker for read-only access.
 
 There is no separate frontend service in production and no Node.js runtime
 requirement. Installed and signed-in Codex/Claude CLIs are still required.
