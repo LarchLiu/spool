@@ -66,7 +66,12 @@ func (index *LocalSessionIndex) Discover() ([]LocalSession, error) {
 			}
 			cached, ok := index.files[path]
 			if !ok || info.Size() != cached.info.Size() || !info.ModTime().Equal(cached.info.ModTime()) || !os.SameFile(info, cached.info) {
-				cached = localSessionFile{info: info, session: readLocalSession(backend, path, info)}
+				session, err := readLocalSession(backend, path, info)
+				if err != nil {
+					// Retry transient read failures even if the file generation is unchanged.
+					return nil
+				}
+				cached = localSessionFile{info: info, session: session}
 			}
 			files[path] = cached
 			v := cached.session
@@ -96,20 +101,28 @@ func (index *LocalSessionIndex) Discover() ([]LocalSession, error) {
 	return sessions, nil
 }
 
-func readLocalSession(backend chatmodel.Backend, path string, info os.FileInfo) LocalSession {
+func readLocalSession(backend chatmodel.Backend, path string, info os.FileInfo) (LocalSession, error) {
 	v := LocalSession{Path: path, Backend: backend, UpdatedAt: info.ModTime().UnixMilli(), Generation: chatmodel.NewID()}
 	file, err := os.Open(path)
 	if err != nil {
-		return v
+		return v, err
 	}
 	defer file.Close()
 	var title nativeSessionTitle
-	collect := func(reader io.Reader, identity bool) bool {
-		scanner := bufio.NewScanner(reader)
-		scanner.Buffer(make([]byte, 4096), 256*1024)
-		for scanner.Scan() {
+	collect := func(source io.Reader, limit int64, identity bool) (int64, error) {
+		reader := bufio.NewReader(source)
+		var sampled int64
+		for sampled < limit || (identity && (v.ID == "" || v.Directory == "")) {
+			line, err := reader.ReadBytes('\n')
+			sampled += int64(len(line))
+			if err != nil && err != io.EOF {
+				return sampled, err
+			}
+			if len(line) == 0 {
+				break
+			}
 			var record map[string]any
-			if json.Unmarshal(scanner.Bytes(), &record) != nil {
+			if json.Unmarshal(line, &record) != nil {
 				continue
 			}
 			title.collect(backend, record)
@@ -121,13 +134,13 @@ func readLocalSession(backend chatmodel.Backend, path string, info os.FileInfo) 
 			}
 			if record["isSidechain"] == true {
 				v.ID, v.Directory = "", ""
-				return false
+				return sampled, nil
 			}
 			if backend == chatmodel.BackendCodex && record["type"] == "session_meta" {
 				payload, _ := record["payload"].(map[string]any)
 				if source, ok := payload["source"].(map[string]any); ok && source["subagent"] != nil {
 					v.ID, v.Directory = "", ""
-					return false
+					return sampled, nil
 				}
 				v.ID, v.Directory = stringValue(payload["id"]), stringValue(payload["cwd"])
 				v.CreatedAt = nativeTimestamp(record["timestamp"])
@@ -155,17 +168,23 @@ func readLocalSession(backend chatmodel.Backend, path string, info os.FileInfo) 
 				v.Title = strings.Join(strings.Fields(cleanUserTextBlocks(texts, images).Text), " ")
 			}
 		}
-		return scanner.Err() == nil
+		return sampled, nil
 	}
-	// Discovery never decodes whole conversations. Titles near the end are
-	// sampled separately; full history is read lazily by the existing cache.
-	complete := collect(io.LimitReader(file, 256*1024), true)
-	v.TitleAuthoritative = complete && info.Size() <= 256*1024
-	if info.Size() > 256*1024 {
-		if _, err := file.Seek(max(0, info.Size()-64*1024), io.SeekStart); err == nil {
-			reader := bufio.NewReader(file)
-			_, _ = reader.ReadBytes('\n')
-			collect(io.LimitReader(reader, 64*1024), false)
+	// Sample complete records, extending the prefix until identity is known so
+	// large images or metadata cannot hide it. Transcript bodies are not retained.
+	sampled, err := collect(io.NewSectionReader(file, 0, info.Size()), 256*1024, true)
+	if err != nil {
+		return v, err
+	}
+	v.TitleAuthoritative = sampled == info.Size()
+	if sampled < info.Size() {
+		start := max(0, info.Size()-64*1024)
+		reader := bufio.NewReader(io.NewSectionReader(file, start, info.Size()-start))
+		if _, err := reader.ReadBytes('\n'); err != nil && err != io.EOF {
+			return v, err
+		}
+		if _, err := collect(reader, 64*1024, false); err != nil {
+			return v, err
 		}
 	}
 	if title.text != "" {
@@ -181,5 +200,5 @@ func readLocalSession(backend chatmodel.Backend, path string, info os.FileInfo) 
 	if !chatmodel.ValidID(v.ID) || !filepath.IsAbs(v.Directory) {
 		v.ID, v.Directory = "", ""
 	}
-	return v
+	return v, nil
 }

@@ -4,10 +4,28 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	chatmodel "spool/internal/model"
 )
+
+func writeLocalSessionRecords(t *testing.T, path string, records ...map[string]any) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	for _, record := range records {
+		if err := json.NewEncoder(file).Encode(record); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 func TestLocalSessionDiscoveryIgnoresSidechainsAndUsesNativeTitles(t *testing.T) {
 	root := t.TempDir()
@@ -16,19 +34,7 @@ func TestLocalSessionDiscoveryIgnoresSidechainsAndUsesNativeTitles(t *testing.T)
 	t.Setenv("CLAUDE_CONFIG_DIR", claude)
 	write := func(path string, records ...map[string]any) {
 		t.Helper()
-		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-			t.Fatal(err)
-		}
-		file, err := os.Create(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer file.Close()
-		for _, record := range records {
-			if err := json.NewEncoder(file).Encode(record); err != nil {
-				t.Fatal(err)
-			}
-		}
+		writeLocalSessionRecords(t, path, records...)
 	}
 	meta := func(id string, source any) map[string]any {
 		return map[string]any{"type": "session_meta", "payload": map[string]any{"id": id, "cwd": root, "source": source}}
@@ -71,6 +77,115 @@ func TestLocalSessionDiscoveryIgnoresSidechainsAndUsesNativeTitles(t *testing.T)
 		}
 		if session.Generation != generations[session.ID] || !session.TitleAuthoritative {
 			t.Fatal("title-only refresh changed the file generation or lost title authority")
+		}
+	}
+}
+
+func localSessionDiscoveryFile(t *testing.T, backend chatmodel.Backend) (path, directory string) {
+	t.Helper()
+	root := t.TempDir()
+	codex, claude := filepath.Join(root, "codex"), filepath.Join(root, "claude")
+	t.Setenv("CODEX_HOME", codex)
+	t.Setenv("CLAUDE_CONFIG_DIR", claude)
+	path = filepath.Join(codex, "sessions", "rollout-native-session.jsonl")
+	if backend == chatmodel.BackendClaude {
+		path = filepath.Join(claude, "projects", "project", "native-session.jsonl")
+	}
+	return path, root
+}
+
+func TestLocalSessionDiscoveryReadsLargeIdentityRecords(t *testing.T) {
+	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {
+		for _, preface := range []bool{false, true} {
+			name := string(backend)
+			if preface {
+				name += "/large-preface"
+			}
+			t.Run(name, func(t *testing.T) {
+				path, directory := localSessionDiscoveryFile(t, backend)
+				large := strings.Repeat("A", 400000)
+				record := map[string]any{"type": "session_meta", "payload": map[string]any{"id": "native-session", "cwd": directory, "source": "cli", "title": "First request", "developer_instructions": large}}
+				if backend == chatmodel.BackendClaude {
+					record = map[string]any{"type": "user", "sessionId": "native-session", "cwd": directory, "message": map[string]any{"role": "user", "content": []any{
+						map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": "image/png", "data": large}},
+						map[string]any{"type": "text", "text": "First request"},
+					}}}
+				}
+				var records []map[string]any
+				if preface {
+					records = append(records, map[string]any{"type": "file-history-snapshot", "snapshot": map[string]any{"data": large}})
+				}
+				writeLocalSessionRecords(t, path, append(records, record)...)
+				var index LocalSessionIndex
+				sessions, err := index.Discover()
+				if err != nil || len(sessions) != 1 {
+					t.Fatalf("large identity record was not discovered: %+v %v", sessions, err)
+				}
+				v := sessions[0]
+				if v.ID != "native-session" || v.Directory != directory || v.Title != "First request" || !v.TitleAuthoritative {
+					t.Fatalf("large identity record lost metadata: %+v", v)
+				}
+				sessions, err = index.Discover()
+				if err != nil || len(sessions) != 1 || sessions[0].Generation != v.Generation {
+					t.Fatalf("unchanged large record was not cached: %+v %v", sessions, err)
+				}
+			})
+		}
+	}
+}
+
+func TestLocalSessionDiscoveryRetriesUnreadableFiles(t *testing.T) {
+	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {
+		for _, previouslyCached := range []bool{false, true} {
+			name := string(backend)
+			if previouslyCached {
+				name += "/changed-cached-file"
+			}
+			t.Run(name, func(t *testing.T) {
+				path, directory := localSessionDiscoveryFile(t, backend)
+				record := func(title string) map[string]any {
+					if backend == chatmodel.BackendClaude {
+						return map[string]any{"type": "user", "sessionId": "native-session", "cwd": directory, "message": map[string]any{"role": "user", "content": title}}
+					}
+					return map[string]any{"type": "session_meta", "payload": map[string]any{"id": "native-session", "cwd": directory, "title": title}}
+				}
+				writeLocalSessionRecords(t, path, record("Original request"))
+				var index LocalSessionIndex
+				if previouslyCached {
+					if sessions, err := index.Discover(); err != nil || len(sessions) != 1 {
+						t.Fatalf("initial discovery failed: %+v %v", sessions, err)
+					}
+					writeLocalSessionRecords(t, path, record("Updated and longer request"))
+				}
+				t.Cleanup(func() { _ = os.Chmod(path, 0600) })
+				if err := os.Chmod(path, 0); err != nil {
+					t.Fatal(err)
+				}
+				if file, err := os.Open(path); err == nil {
+					file.Close()
+					t.Skip("cannot simulate an unreadable file")
+				}
+				before, err := os.Stat(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if sessions, err := index.Discover(); err != nil || len(sessions) != 0 {
+					t.Fatalf("unreadable file was not skipped: %+v %v", sessions, err)
+				}
+				if err := os.Chmod(path, 0600); err != nil {
+					t.Fatal(err)
+				}
+				after, err := os.Stat(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) || !os.SameFile(before, after) {
+					t.Fatal("permission recovery changed the file generation")
+				}
+				if sessions, err := index.Discover(); err != nil || len(sessions) != 1 || sessions[0].ID != "native-session" {
+					t.Fatalf("readable file was not retried: %+v %v", sessions, err)
+				}
+			})
 		}
 	}
 }
