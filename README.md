@@ -519,6 +519,10 @@ followed by the native agent's permission selector. Agent/model selection and
 Send remain on the right. Attached images appear as thumbnails above the text;
 click to open a full-size preview. File cards show the name and a small text/code
 excerpt where possible. Remove an attachment before sending with its **x**.
+Paste images or files directly into the message input with **Cmd+V** / **Ctrl+V**
+when the browser exposes them as clipboard files; they use the same previews,
+removal controls and upload limits as the **+** picker. Ordinary text pastes stay
+as text. Pasted paths, URLs and HTML do not trigger file reads or remote downloads.
 Images embedded in native history can also be previewed. Uploaded originals are
 downloadable only while their temporary copies exist in the current process.
 Files-only messages are supported, and failed submissions keep their draft and

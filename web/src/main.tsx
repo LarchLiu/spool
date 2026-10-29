@@ -79,6 +79,7 @@ import { defaultPreferences, type UIPreferences } from "./preferences";
 import { usePresentation } from "./use-presentation";
 import { AttachmentCards, ImagePreview } from "./attachments";
 import {
+  pasteAttachments,
   prepareAttachments,
   releaseAttachments,
   validateAttachments,
@@ -1508,6 +1509,7 @@ function App() {
               }
               value={draft}
               disabled={!composerWritable}
+              onPaste={(event) => pasteAttachments(event, addFiles)}
               onChange={(e) => {
                 setDraft(e.target.value);
                 setCommandDismissed(false);

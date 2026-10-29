@@ -2,6 +2,28 @@ import type { Attachment } from "./types";
 
 export type DraftAttachment = Attachment & { file: File };
 
+export function pasteAttachments(
+  event: {
+    clipboardData: DataTransfer | null;
+    preventDefault: () => void;
+  },
+  addFiles: (files: File[]) => void,
+) {
+  const clipboard = event.clipboardData;
+  if (!clipboard) return;
+  let files = Array.from(clipboard.files);
+  // Some webviews expose pasted images only through clipboard items.
+  if (!files.length) {
+    files = Array.from(clipboard.items).flatMap((item) => {
+      const file = item.kind === "file" ? item.getAsFile() : null;
+      return file ? [file] : [];
+    });
+  }
+  if (!files.length) return;
+  event.preventDefault();
+  addFiles(files);
+}
+
 export function validateAttachments(files: { size: number }[]): string | null {
   if (
     files.length > 6 ||
