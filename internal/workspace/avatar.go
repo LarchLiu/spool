@@ -48,5 +48,6 @@ func (s *Store) SaveAvatar(user string, v Avatar) error {
 	} else if count != 1 {
 		return fmt.Errorf("user not found or disabled")
 	}
+	s.changes.publish(changeNavigation | changePresence)
 	return nil
 }

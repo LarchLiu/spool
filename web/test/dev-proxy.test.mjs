@@ -39,6 +39,11 @@ test("the Vite API proxy preserves the dev origin and CSRF credentials", async (
   const config = loaded.config;
   const apiProxy = config.server.proxy["/api"];
   assert.equal(typeof apiProxy, "object");
+  assert.equal(
+    apiProxy.ws,
+    true,
+    "global workspace sockets must be proxied alongside HTTP/SSE",
+  );
   const vite = await createServer({
     ...config,
     configFile: false,

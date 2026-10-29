@@ -25,12 +25,17 @@ import {
   Square,
   LoaderCircle,
 } from "lucide-react";
-import { api, setCSRF } from "./api";
+import { api, getCSRF, setCSRF } from "./api";
 import { isDesktopChat } from "./runtime";
 import { DesktopSettingsLink } from "./desktop-settings";
 import { DesktopWindowChrome } from "./desktop-window-chrome";
 import { LoginStory } from "./login-story";
 import { subscribeChatEvents } from "./chat-stream";
+import {
+  mergeNavigationChats,
+  subscribeWorkspaceEvents,
+  type Navigation,
+} from "./workspace-stream";
 import {
   adoptCreatedChat,
   canControlChat,
@@ -94,7 +99,6 @@ import {
 } from "./permission-picker";
 import type { MessageKey } from "./i18n";
 import "./style.css";
-const clientID = crypto.randomUUID();
 function App() {
   const [preferences, setPreferences] =
     useState<UIPreferences>(defaultPreferences);
@@ -296,112 +300,146 @@ function App() {
     return () => window.removeEventListener("beforeinstallprompt", handler);
   }, []);
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setOnline([]);
+      return;
+    }
     let cancelled = false;
+    let realtimeConnected = false;
+    let navigationVersion = 0;
+    let previousIDs: Set<string> | undefined;
+    let initializedAgents = false;
+    const controller = new AbortController();
+    const receiveNavigation = (navigation: Navigation) => {
+      if (cancelled) return;
+      navigationVersion++;
+      const p = Array.isArray(navigation?.projects) ? navigation.projects : [];
+      const navigationChats = Array.isArray(navigation?.chats)
+        ? navigation.chats
+        : [];
+      setChat((old) => {
+        const next = navigationChats.find((item) => item.id === old?.id);
+        return old && next && next.updated_at >= old.updated_at
+          ? { ...old, title: next.title, participants: next.participants }
+          : old;
+      });
+      setProjects(p);
+      setChats((old) => mergeNavigationChats(old, navigationChats));
+      const current = selection.current;
+      if (!p.some((v) => v.id === current.project)) {
+        activeID.current = "";
+        setChat(null);
+        const first = p[0]?.id || "";
+        setProject(first);
+        setChatID(
+          navigationChats.find((c) => c.project_id === first)?.id || "",
+        );
+      } else if (!previousIDs && !current.chatID) {
+        setChatID(
+          navigationChats.find((c) => c.project_id === current.project)?.id ||
+            "",
+        );
+      } else if (
+        previousIDs?.has(current.chatID) &&
+        !navigationChats.some((c) => c.id === current.chatID)
+      ) {
+        activeID.current = "";
+        setChat(null);
+        setChatID("");
+      }
+      previousIDs = new Set(navigationChats.map((item) => item.id));
+    };
+    const receiveAgents = (value: Agent[]) => {
+      if (cancelled) return;
+      const discovered = Array.isArray(value) ? value : [];
+      setAgents(discovered);
+      if (!initializedAgents) {
+        initializedAgents = true;
+        const available = discovered.find((v) => v.enabled && v.installed);
+        if (available) {
+          const selected = chooseModel(
+            available,
+            available.catalog.defaultModel ||
+              available.catalog.models?.[0]?.model ||
+              "",
+          );
+          setBackend(selected.backend);
+          setModel(selected.model);
+          setEffort(selected.effort);
+        }
+      }
+    };
+    let loading = false;
     const loadNavigation = (initial = false) => {
-      Promise.all([
-        api<{ projects: Project[]; chats: Chat[] }>("/navigation"),
-        api<Agent[]>("/agents"),
+      if (loading) return;
+      loading = true;
+      const version = navigationVersion;
+      void Promise.all([
+        api<Navigation>("/navigation", undefined, controller.signal),
+        api<Agent[]>("/agents", undefined, controller.signal),
       ])
-        .then(([navigation, a]) => {
-          if (cancelled) return;
-          const p = Array.isArray(navigation?.projects)
-            ? navigation.projects
-            : [];
-          const navigationChats = Array.isArray(navigation?.chats)
-            ? navigation.chats
-            : [];
-          setChat((old) => {
-            const next = navigationChats.find((item) => item.id === old?.id);
-            return old && next && next.updated_at >= old.updated_at
-              ? { ...old, participants: next.participants }
-              : old;
-          });
-          const discoveredAgents = Array.isArray(a) ? a : [];
-          setProjects(p);
-          setAgents(discoveredAgents);
-          setChats((old) => {
-            const byID = new Map(
-              navigationChats.map((chat) => [chat.id, chat]),
-            );
-            for (const chat of old) {
-              if (!p.some((project) => project.id === chat.project_id))
-                continue;
-              const next = byID.get(chat.id);
-              if (!next || next.updated_at < chat.updated_at)
-                byID.set(chat.id, chat);
-            }
-            return [...byID.values()];
-          });
-          const current = selection.current;
-          if (!p.some((v) => v.id === current.project)) {
-            const first = p[0]?.id || "";
-            setProject(first);
-            setChatID(
-              navigationChats.find((c) => c.project_id === first)?.id || "",
-            );
-          } else if (initial && !current.chatID) {
-            setChatID(
-              navigationChats.find((c) => c.project_id === current.project)
-                ?.id || "",
-            );
-          }
-          if (initial) {
-            const available = discoveredAgents.find(
-              (v) => v.enabled && v.installed,
-            );
-            if (available) {
-              const selected = chooseModel(
-                available,
-                available.catalog.defaultModel ||
-                  available.catalog.models?.[0]?.model ||
-                  "",
-              );
-              setBackend(selected.backend);
-              setModel(selected.model);
-              setEffort(selected.effort);
-            }
-          }
+        .then(([navigation, discovered]) => {
+          // A delayed fallback must not overwrite a newer WebSocket snapshot.
+          if (cancelled || version !== navigationVersion) return;
+          receiveNavigation(navigation);
+          receiveAgents(discovered);
         })
         .catch((error) => {
-          if (initial && !cancelled) fail(error);
+          if (initial && !cancelled && version === navigationVersion)
+            fail(error);
+        })
+        .finally(() => {
+          loading = false;
         });
     };
     loadNavigation(true);
-    const refreshData = () => loadNavigation();
-    const refresh = setInterval(refreshData, 15000);
-    window.addEventListener("focus", refreshData);
-    return () => {
-      cancelled = true;
-      clearInterval(refresh);
-      window.removeEventListener("focus", refreshData);
-    };
-  }, [user?.id]);
-  useEffect(() => {
-    if (!user) return;
-    let cancelled = false;
-    const heartbeat = () => {
-      api<Online[]>("/presence", {
-        client_id: clientID,
-        visible: document.visibilityState === "visible",
-      })
-        .then((v) => {
-          if (!cancelled) setOnline(v);
-        })
-        .catch(() => {});
-    };
-    heartbeat();
-    const tick = setInterval(heartbeat, 20000);
-    document.addEventListener("visibilitychange", heartbeat);
-    const source = new EventSource("/api/presence/events");
-    source.addEventListener("presence", (e) =>
-      setOnline(JSON.parse((e as MessageEvent).data)),
+    const stream = subscribeWorkspaceEvents(
+      {
+        navigation: receiveNavigation,
+        agents: receiveAgents,
+        presence: (people) => {
+          if (!cancelled) setOnline(people);
+        },
+        connected: (value) => {
+          realtimeConnected = value;
+          if (!value && !cancelled) setOnline([]);
+        },
+        expired: () => window.dispatchEvent(new Event("auth-expired")),
+      },
+      {
+        open: () => {
+          const url = new URL("/api/events", window.location.href);
+          url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+          return new WebSocket(url);
+        },
+        csrf: getCSRF,
+        visible: () => document.visibilityState === "visible",
+        checkAuth: (signal) => api("/me", undefined, signal),
+      },
     );
+    const resume = () => {
+      stream.resume();
+      if (!realtimeConnected) loadNavigation();
+    };
+    const visibility = () => {
+      stream.visibility();
+      if (document.visibilityState === "visible") resume();
+    };
+    // Poll only as a fallback for unavailable/blocked WebSocket connections.
+    const refresh = setInterval(() => {
+      if (!realtimeConnected) loadNavigation();
+    }, 15000);
+    window.addEventListener("focus", resume);
+    window.addEventListener("online", resume);
+    document.addEventListener("visibilitychange", visibility);
     return () => {
       cancelled = true;
-      clearInterval(tick);
-      source.close();
-      document.removeEventListener("visibilitychange", heartbeat);
+      controller.abort();
+      stream.close();
+      clearInterval(refresh);
+      window.removeEventListener("focus", resume);
+      window.removeEventListener("online", resume);
+      document.removeEventListener("visibilitychange", visibility);
     };
   }, [user?.id]);
   useEffect(() => {

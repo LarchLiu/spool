@@ -73,6 +73,7 @@ func (s *Store) forkChat(id string, backend chatmodel.Backend, options chatmodel
 		return chat, err
 	}
 	committed = true
+	s.changes.publish(changeNavigation)
 	chat, _ = s.Get(chat.ID)
 	return chat, nil
 }
@@ -115,6 +116,7 @@ func (s *Store) discardFork(chat chatmodel.Session) {
 		return
 	}
 	if tx.Commit() == nil {
+		s.changes.publish(changeNavigation)
 		_ = os.Remove(chat.NativeSessionPath)
 	}
 }

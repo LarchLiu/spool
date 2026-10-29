@@ -22,31 +22,58 @@ type presenceClient struct {
 type Presence struct {
 	mu      sync.Mutex
 	clients map[string]presenceClient
+	changed func()
 }
 
 func (p *Presence) Touch(id authIdentity, client string, visible bool) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	changed := false
+	defer func() {
+		p.mu.Unlock()
+		if changed && p.changed != nil {
+			p.changed()
+		}
+	}()
 	if p.clients == nil {
 		p.clients = map[string]presenceClient{}
 	}
 	for key, value := range p.clients {
 		if time.Since(value.Seen) > 90*time.Second {
 			delete(p.clients, key)
+			changed = true
 		}
 	}
-	if len(p.clients) > 4096 {
+	key := id.User.ID + ":" + client
+	previous, exists := p.clients[key]
+	if !exists && len(p.clients) >= 4096 {
 		return
 	}
-	p.clients[id.User.ID+":"+client] = presenceClient{id.User, visible, time.Now(), id.TokenHash}
+	changed = changed || !exists || previous.Visible != visible || previous.TokenHash != id.TokenHash
+	p.clients[key] = presenceClient{id.User, visible, time.Now(), id.TokenHash}
+}
+
+func (p *Presence) Disconnect(user, client string) {
+	p.mu.Lock()
+	key := user + ":" + client
+	_, existed := p.clients[key]
+	delete(p.clients, key)
+	p.mu.Unlock()
+	if existed && p.changed != nil {
+		p.changed()
+	}
 }
 func (p *Presence) Remove(token string) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	changed := false
 	for key, value := range p.clients {
 		if value.TokenHash == token {
 			delete(p.clients, key)
+			changed = true
 		}
+	}
+	p.mu.Unlock()
+	if changed && p.changed != nil {
+		p.changed()
 	}
 }
 func (p *Presence) List(store *Store) []PresenceUser {

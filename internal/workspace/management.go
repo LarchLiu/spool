@@ -194,6 +194,7 @@ func (s *Store) saveUserWithPasswordCost(v UserInput, passwordCost int) (User, e
 		return User{}, err
 	}
 	err = tx.Commit()
+	s.notify(err, changeNavigation|changePresence|changeAuth)
 	return User{ID: v.ID, Username: v.Username, Nickname: v.Nickname, Disabled: v.Disabled, CreatedAt: now, Avatar: avatar}, err
 }
 func (s *Store) DeleteUser(id string) error {
@@ -208,7 +209,7 @@ func (s *Store) DeleteUser(id string) error {
 	if _, err = tx.Exec(`DELETE FROM auth_sessions WHERE user_id=?`, id); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return s.notify(tx.Commit(), changeNavigation|changePresence|changeAuth)
 }
 func (s *Store) Projects() ([]Project, error) {
 	rows, err := s.db.Query(`SELECT id,name,path,archived,shared_chats,created_at FROM projects ORDER BY name`)
@@ -321,7 +322,7 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 	if err = saveIssuesAutomation(tx, v.ID, v.Issues); err != nil {
 		return v, err
 	}
-	return v, tx.Commit()
+	return v, s.notify(tx.Commit(), changeNavigation)
 }
 func (s *Store) CanAccessProject(user, project string) bool {
 	var n int

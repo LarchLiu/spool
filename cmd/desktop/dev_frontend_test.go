@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 
 	"spool/internal/workspace"
 )
@@ -206,6 +209,49 @@ func TestDesktopDevFrontendTunnelsViteHMRWebSocket(t *testing.T) {
 	line, err := reader.ReadString('\n')
 	if err != nil || line != "hot update\n" {
 		t.Fatalf("HMR tunnel failed: %q, %v", line, err)
+	}
+}
+
+func TestDesktopDevFrontendTunnelsWorkspaceWebSocket(t *testing.T) {
+	headers := make(chan http.Header, 1)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		copy := r.Header.Clone()
+		copy.Set("Host", r.Host)
+		copy.Set("Path", r.URL.Path)
+		headers <- copy
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.CloseNow()
+		ctx, done := context.WithTimeout(context.Background(), 3*time.Second)
+		defer done()
+		kind, data, err := conn.Read(ctx)
+		if err == nil {
+			conn.Write(ctx, kind, data)
+		}
+	}))
+	t.Cleanup(backend.Close)
+	frontend := newTestDevFrontend(t, backend.URL, func() (string, error) { return backend.URL, nil })
+	ctx, done := context.WithTimeout(context.Background(), 3*time.Second)
+	defer done()
+	conn, _, err := websocket.Dial(ctx, frontend.url+"/api/events", &websocket.DialOptions{HTTPHeader: http.Header{
+		"Origin": {frontend.url}, "Cookie": {"spool_session=fixture-session"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	if err = conn.Write(ctx, websocket.MessageText, []byte(`{"type":"hello","csrf":"fixture"}`)); err != nil {
+		t.Fatal(err)
+	}
+	_, data, err := conn.Read(ctx)
+	if err != nil || string(data) != `{"type":"hello","csrf":"fixture"}` {
+		t.Fatal("workspace socket did not tunnel bidirectionally", string(data), err)
+	}
+	got := <-headers
+	if got.Get("Host") != strings.TrimPrefix(frontend.url, "http://") || got.Get("Origin") != frontend.url || got.Get("Cookie") != "spool_session=fixture-session" || got.Get("Path") != "/api/events" {
+		t.Fatal("workspace WebSocket proxy changed auth/origin/path:", got)
 	}
 }
 

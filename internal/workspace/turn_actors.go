@@ -144,7 +144,7 @@ func (s *Store) recordTurnAction(chat, turn, user, kind, approval string) (chatm
 	if _, err = tx.Exec(`UPDATE sessions SET updated_at=MAX(updated_at+1,?) WHERE id=?`, v.CreatedAt, chat); err != nil {
 		return v, err
 	}
-	return v, tx.Commit()
+	return v, s.notify(tx.Commit(), changeNavigation)
 }
 
 // Batch only the already-authorized chat IDs; listing chats must not decode

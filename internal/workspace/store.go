@@ -20,6 +20,7 @@ var errSessionConversion = errors.New("Could not convert this chat to another ag
 var errTurnChanged = errors.New("turn changed while agent was running")
 
 type Store struct {
+	changes      changeHub
 	historyCache nativeHistoryCache
 	settingsMu   sync.Mutex
 	mu           sync.Mutex
@@ -163,6 +164,8 @@ func (s *Store) Get(id string) (chatmodel.Session, bool) {
 			if latest, found := s.getSession(id); found {
 				v.Title = latest.Title
 			}
+		} else {
+			s.changes.publish(changeNavigation)
 		}
 	}
 	v = s.withRuntimeTurn(v)
@@ -230,7 +233,7 @@ func (s *Store) createSession(user, project string, backend chatmodel.Backend) (
 	if err = insertSession(tx, v); err != nil {
 		return v, err
 	}
-	return v, tx.Commit()
+	return v, s.notify(tx.Commit(), changeNavigation)
 }
 func (s *Store) BeginTurn(id, prompt string, options ...chatmodel.CodexOptions) (chatmodel.Turn, error) {
 	return s.beginTurn(id, prompt, "", options...)
@@ -350,6 +353,7 @@ func (s *Store) beginTurnBy(id, prompt string, backend chatmodel.Backend, permis
 		return chatmodel.Turn{}, err
 	}
 	s.setRuntimeTurn(id, t)
+	s.changes.publish(changeNavigation)
 	return t, nil
 }
 func (s *Store) SetNativeSession(id, native string) error {
@@ -467,6 +471,7 @@ func (s *Store) finishTurn(id, turnID string, result agent.AgentResult, runErr e
 		return err
 	}
 	s.setRuntimeTurn(id, t)
+	s.changes.publish(changeNavigation)
 	return nil
 }
 
@@ -592,6 +597,7 @@ func (s *Store) SetInterrupted() error {
 			s.runtimeTurns[id] = t
 		}
 	}
+	s.changes.publish(changeNavigation)
 	return nil
 }
 func titleFor(prompt string) string {

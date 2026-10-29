@@ -26,11 +26,14 @@ type App struct {
 	runner          agent.AgentRunner
 	settings        Settings
 	streamHeartbeat time.Duration
+	realtimePing    time.Duration
+	realtimeTimeout time.Duration
 	turnMu          sync.Mutex
 	closing         bool
 	updating        bool
 	runningTurns    int
 	turns           sync.WaitGroup
+	streams         sync.WaitGroup
 	activeTurns     map[string]*turnControl
 	liveMu          sync.Mutex
 	live            map[string]chatmodel.Turn
@@ -73,7 +76,7 @@ func sessionMetadata(chat chatmodel.Session) chatMetadata {
 func NewApp(store *Store, runner agent.AgentRunner, _, _ string) *App {
 	settings, _ := store.Settings()
 	assets, _ := fs.Sub(resources.Frontend(), "frontend")
-	return &App{store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{}, assets: http.FileServer(http.FS(assets))}
+	return &App{store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, realtimePing: 15 * time.Second, realtimeTimeout: 45 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{changed: func() { store.changes.publish(changePresence) }}, assets: http.FileServer(http.FS(assets))}
 }
 func apiJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -90,7 +93,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src "+a.realtimeConnectSources(r)+"; worker-src 'self'; manifest-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		w.Header().Set("Cache-Control", "no-store")
 		preferred := []string{}
@@ -170,6 +173,8 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case path == "/api/events" && r.Method == "GET":
+		a.realtimeStream(w, r, id)
 	case path == "/api/me" && r.Method == "GET":
 		a.signedInResponse(w, id)
 	case path == "/api/me/avatar" && r.Method == "POST":
@@ -221,6 +226,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.presence.Remove(id.TokenHash)
+		a.store.changes.publish(changeAuth | changePresence)
 		http.SetCookie(w, &http.Cookie{Name: authCookie, Path: "/", MaxAge: -1, HttpOnly: true, Secure: a.secureCookie(r), SameSite: http.SameSiteStrictMode})
 		apiJSON(w, 200, map[string]bool{"ok": true})
 	case path == "/api/projects" && r.Method == "GET":
@@ -918,6 +924,7 @@ func (a *App) Close() error {
 		err = closer.Close()
 	}
 	a.turns.Wait()
+	a.streams.Wait()
 	a.filesMu.Lock()
 	if a.filesRoot != "" {
 		_ = os.RemoveAll(a.filesRoot)

@@ -9,6 +9,7 @@ export default defineConfig({
         target: "http://127.0.0.1:8787",
         // Go compares Origin with Host; preserve the browser's dev-server host.
         changeOrigin: false,
+        ws: true,
       },
     },
   },

@@ -15,7 +15,7 @@ bundle identifier is `com.cloudgeek.spool`.
 - `internal/model/`: shared conversation/attachment types, model and permission
   options, message limits, ID validation, and bounded UTF-8 text helpers.
 - `internal/workspace/`: SQLite storage, users/projects/settings, authenticated
-  HTTP/SSE APIs, presence, chat orchestration, and service lifecycle/leases.
+  HTTP/SSE/WebSocket APIs, presence, chat orchestration, and service lifecycle/leases.
 - `internal/i18n/`: shared locale resolution and message translation.
 - `internal/testutil/agentfixture/`: fake native CLI subprocesses shared by unit
   and integration tests; production entry points do not import this package.
@@ -881,13 +881,28 @@ No forced major dependency overrides are applied.
 
 ## Online Presence
 
-Authenticated pages send a heartbeat every 20 seconds and on visibility changes.
-Presence is kept in memory and broadcast over SSE; users are deduplicated by
-account and their tab/device connection count is aggregated. A visible page is
-online, a background page is away, and connections expire after 90 seconds.
-Disabled/revoked login sessions disappear from presence. The desktop Online tab
-and Web header show the list. Mobile OS suspension may delay these indications;
-agent task state is independent of a person's presence.
+Authenticated pages maintain one global WebSocket at `/api/events`, with an
+exact-origin handshake, the existing login cookie, and a CSRF-authenticated hello
+(the token is never put in the URL). Navigation, agent metadata, and online
+presence are sent as snapshots; subsequent changes are published after successful
+database writes rather than polled. Each navigation snapshot is filtered using
+the connection owner's current permissions; revoked sessions are disconnected.
+
+Presence is kept in memory and deduplicated by account, aggregating tab/device
+connections. A visible page is online and an account with only background pages
+is away. Visibility changes and normal disconnects update the list immediately;
+closing one tab does not mark other connections offline. Application-level
+ping/pong runs every 15 seconds, with a 45-second timeout for unresponsive clients
+or half-open connections. Mobile OS suspension can therefore mark a suspended
+page offline; agent task state is independent of a person's presence.
+
+The client reconnects with capped exponential backoff and jitter, and receives
+fresh authorized snapshots to recover changes missed while disconnected. Focus,
+visibility restoration, and network restoration resynchronize the connection.
+Navigation retains a 15-second HTTP fallback only while WebSocket is unavailable;
+the UI clears stale online indicators instead of claiming disconnected users are
+still online. Existing HTTP heartbeat/presence SSE endpoints remain compatible
+with older clients, whose connections retain the legacy 90-second expiry.
 
 ## Navigation, Appearance, And Languages
 
@@ -899,8 +914,9 @@ expands/collapses its chat list, without changing the active chat or creating on
 Clicking a recent chat also
 selects and expands its project, revealing older selected chats when necessary.
 Private chats and, when enabled, shared project chats appear only for currently
-authorized projects. Sidebar metadata refreshes every 15 seconds; the active
-chat continues streaming over SSE.
+authorized projects. Sidebar metadata and participant avatars update over the
+global WebSocket, including chats that are not open. The active chat continues
+streaming over SSE; native transcript parsing and pagination are unchanged.
 
 The composer starts at one visible line, grows with explicit line breaks and
 wrapped text up to six visible lines, then scrolls internally. It shrinks again
@@ -958,7 +974,8 @@ chat.example.com {
 ```
 
 Keep the upstream bound to loopback when using a same-machine proxy, use trusted
-certificates, and avoid proxy buffering or short SSE timeouts. Once HTTPS public
+certificates, allow WebSocket upgrades for `/api/events`, and avoid proxy buffering
+or short SSE/WebSocket timeouts. Once HTTPS public
 origin is configured, use that HTTPS URL to log in: Secure cookies intentionally
 will not work over an unrelated plain HTTP LAN address. iOS installation uses
 Safari's Share → Add to Home Screen; not every browser emits an install prompt.

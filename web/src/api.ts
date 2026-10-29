@@ -9,6 +9,9 @@ export function setAPILanguage(locale: Locale) {
 export function setCSRF(value: string) {
   csrf = value;
 }
+export function getCSRF() {
+  return csrf;
+}
 export async function api<T>(
   path: string,
   body?: unknown,

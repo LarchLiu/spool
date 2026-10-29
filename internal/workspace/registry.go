@@ -62,7 +62,7 @@ func (s *Store) saveAgent(v AgentInfo) error {
 		return err
 	}
 	_, err = s.db.Exec(`INSERT INTO agents VALUES(?,?) ON CONFLICT(backend) DO UPDATE SET body=excluded.body WHERE body<>excluded.body`, v.Backend, string(b))
-	return err
+	return s.notify(err, changeAgents)
 }
 func (s *Store) ConfigureAgent(backend chatmodel.Backend, enabled bool, path string) error {
 	s.agentMu.Lock()

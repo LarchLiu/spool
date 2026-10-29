@@ -3,6 +3,7 @@ module spool
 go 1.27.3
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/egoist/mygo v0.6.4
 	github.com/google/uuid v1.6.0
 	golang.org/x/crypto v0.58.0

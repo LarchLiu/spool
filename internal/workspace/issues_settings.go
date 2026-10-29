@@ -180,7 +180,7 @@ func (s *Store) createAutomationChat(v IssuesAutomation, project string) (chatmo
 			return chat, err
 		}
 	}
-	return chat, tx.Commit()
+	return chat, s.notify(tx.Commit(), changeNavigation)
 }
 
 type chatMetadataReader interface {
@@ -255,5 +255,5 @@ func (s *Store) attachPR(chat, link string) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	return s.notify(tx.Commit(), changeNavigation)
 }

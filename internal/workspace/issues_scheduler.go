@@ -86,6 +86,7 @@ func (a *App) scheduleIssues(ctx context.Context, now time.Time) {
 			a.turnMu.Unlock()
 			continue
 		}
+		a.store.changes.publish(changeNavigation)
 		batch := &issueBatch{claimed: map[int]bool{}}
 		labels := v.IssueLabels()
 		if len(labels) == 0 {
@@ -126,6 +127,8 @@ func (a *App) scheduleIssues(ctx context.Context, now time.Time) {
 				// Successful labels must not erase a sibling's failure from this check.
 				if _, e := a.store.db.Exec(`UPDATE project_automations SET last_error=COALESCE((SELECT error FROM automation_runs WHERE project_id=? AND status='failed' AND started_at>=project_automations.last_run_at ORDER BY finished_at DESC LIMIT 1),?) WHERE project_id=?`, p.ID, message, p.ID); e != nil {
 					log.Printf("issues %s: could not save run status: %v", p.Name, e)
+				} else {
+					a.store.changes.publish(changeNavigation)
 				}
 				if message != "" && message != p.Issues.LastError {
 					log.Printf("项目 %s 的 issues 定时任务 [%s]：%s", p.Name, label, message)
@@ -312,12 +315,14 @@ func (a *App) runIssueLabelRound(ctx context.Context, p Project, label string, b
 	if _, err = a.store.db.Exec(`UPDATE sessions SET title=? WHERE id=?`, chatmodel.Clip(title, 160), chat.ID); err != nil {
 		return err
 	}
+	a.store.changes.publish(changeNavigation)
 	if _, err = a.store.db.Exec(`UPDATE automation_runs SET chat_id=? WHERE id=?`, chat.ID, runID); err != nil {
 		return err
 	}
 	if _, err = a.store.db.Exec(`UPDATE project_automations SET last_chat_id=? WHERE project_id=?`, chat.ID, p.ID); err != nil {
 		return err
 	}
+	a.store.changes.publish(changeNavigation)
 	prompt, err := issuePrompt(p, checkout, *selected, *record, resume, cliHint, ledger.Path, task.Path)
 	if err != nil {
 		return err
