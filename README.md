@@ -499,6 +499,13 @@ Raw HTML is disabled and unsafe link protocols are filtered. Markdown images
 are shown as links instead of fetching external images automatically; uploaded
 image attachments retain their existing authenticated preview.
 
+Message footers show the user's send time followed by a copy button on the right,
+and the agent's copy button followed by its completion time on the left. Both
+show the date and time in the viewer's local timezone, with seconds on hover. Copying
+preserves the original Markdown, excluding tool activity and reasoning from agent
+replies. Attachment-only messages have no copyable text; replies still streaming
+show their completion time once the turn finishes.
+
 The project file viewer offers **Source** and **Preview** modes for Markdown
 and HTML (`.html` / `.htm`, or text detected as `text/html`). HTML previews render
 in a sandboxed frame with inline styles and embedded data images; scripts,

@@ -19,6 +19,8 @@ import type { Translator } from "./i18n";
 import { MarkdownMessage, MarkdownPreview } from "./markdown-message.js";
 import { patchText, toolResultDiffs } from "./tool-diff.js";
 import { turnPresentation } from "./turn-presentation.js";
+import { MessageFooter } from "./message-footer.js";
+import type { Locale } from "./preferences.js";
 
 export { toolResultDiffs } from "./tool-diff.js";
 
@@ -626,12 +628,16 @@ export function TurnResponse({
   t,
   running,
   summary,
+  timestamp,
+  locale,
 }: {
   parts: TranscriptPart[];
   backend?: Backend;
   t: Translator;
   running: boolean;
   summary: ReactNode;
+  timestamp?: number;
+  locale?: Locale;
 }) {
   const { process, answer, expanded } = turnPresentation(parts, running);
   return (
@@ -642,6 +648,13 @@ export function TurnResponse({
           <div className="assistant-text">
             <MarkdownMessage>{answer}</MarkdownMessage>
           </div>
+          <MessageFooter
+            role="assistant"
+            text={answer}
+            timestamp={timestamp}
+            locale={locale}
+            t={t}
+          />
         </div>
       )}
     </>

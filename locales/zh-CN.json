@@ -476,5 +476,8 @@
   "Archived": "已归档",
   "No people yet. Create an account to get started.": "暂无成员，创建一个账号开始使用。",
   "No projects yet. Add a local directory to get started.": "暂无项目，添加一个本地目录开始使用。",
-  "No agents available.": "暂无可用的 Agent。"
+  "No agents available.": "暂无可用的 Agent。",
+  "Copy message": "复制消息",
+  "Message copied": "消息已复制",
+  "Could not copy message": "无法复制消息"
 }

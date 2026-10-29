@@ -476,5 +476,8 @@
   "Archived": "アーカイブ済み",
   "No people yet. Create an account to get started.": "ユーザーはまだいません。アカウントを作成して始めましょう。",
   "No projects yet. Add a local directory to get started.": "プロジェクトはまだありません。ローカルディレクトリを追加して始めましょう。",
-  "No agents available.": "利用可能なエージェントがありません。"
+  "No agents available.": "利用可能なエージェントがありません。",
+  "Copy message": "メッセージをコピー",
+  "Message copied": "メッセージをコピーしました",
+  "Could not copy message": "メッセージをコピーできませんでした"
 }

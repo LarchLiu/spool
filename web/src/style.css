@@ -729,6 +729,52 @@ button:disabled {
   justify-content: flex-end;
   flex-wrap: wrap;
 }
+.message-footer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+}
+.message-footer-user {
+  align-self: flex-end;
+  justify-content: flex-end;
+}
+.message-footer-assistant {
+  margin-top: 9px;
+  justify-content: flex-start;
+}
+.message-footer time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.message-copy {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+}
+.message-copy:hover:not(:disabled) {
+  background: var(--soft);
+  color: var(--text);
+}
+.message-copy-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .composer-attachments {
   padding: 12px 12px 0;
 }

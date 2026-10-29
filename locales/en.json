@@ -476,5 +476,8 @@
   "Archived": "Archived",
   "No people yet. Create an account to get started.": "No users yet. Create an account to get started.",
   "No projects yet. Add a local directory to get started.": "No projects yet. Add a local directory to get started.",
-  "No agents available.": "No agents available."
+  "No agents available.": "No agents available.",
+  "Copy message": "Copy message",
+  "Message copied": "Message copied",
+  "Could not copy message": "Could not copy message"
 }

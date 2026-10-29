@@ -70,6 +70,7 @@ import { AutosizeTextarea } from "./autosize-textarea";
 import { SlashCommandMenu } from "./slash-command-menu";
 import { goalSuggestion, parseGoalCommand } from "./slash-commands";
 import { MarkdownMessage } from "./markdown-message";
+import { MessageFooter } from "./message-footer";
 import { TurnResponse } from "./tool-activity";
 import { chatSelection, chooseModel } from "./model-selection";
 import { effortLabel as formatEffort } from "./i18n";
@@ -97,7 +98,7 @@ function App() {
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [savingPreferences, setSavingPreferences] = useState(false);
-  const { t, theme } = usePresentation(preferences);
+  const { t, theme, locale } = usePresentation(preferences);
   const effortLabel = (value: string) => formatEffort(value, t);
   const [user, setUser] = useState<User | null>(null),
     [ready, setReady] = useState(false),
@@ -1385,6 +1386,13 @@ function App() {
                             <MarkdownMessage>{userText}</MarkdownMessage>
                           </div>
                         )}
+                        <MessageFooter
+                          role="user"
+                          text={userText}
+                          timestamp={turn.started_at}
+                          locale={locale}
+                          t={t}
+                        />
                       </div>
                     </div>
                     <TurnResponse
@@ -1392,6 +1400,8 @@ function App() {
                       backend={turn.backend}
                       t={t}
                       running={turn.status === "running"}
+                      timestamp={turn.finished_at}
+                      locale={locale}
                       summary={workSummary(
                         turn,
                         t,
