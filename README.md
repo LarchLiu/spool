@@ -852,6 +852,10 @@ The composer starts at one visible line, grows with explicit line breaks and
 wrapped text up to six visible lines, then scrolls internally. It shrinks again
 when text is removed or sent, and recalculates when its width changes.
 
+Long user messages initially show up to eight lines, with **Show more** below
+the text to expand and **Show less** to collapse it again. The preview adapts to
+the available width without truncating Markdown or changing the copied text.
+
 Both Web and desktop support **Light**, **Dark**, and **Follow system**, plus
 **English**, **简体中文**, **日本語**, and a system-language option. Theme and language
 changes apply without restarting the service or agent processes. The Web uses the

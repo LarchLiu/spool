@@ -69,7 +69,7 @@ import { AgentIcon } from "./agent-icon";
 import { AutosizeTextarea } from "./autosize-textarea";
 import { SlashCommandMenu } from "./slash-command-menu";
 import { goalSuggestion, parseGoalCommand } from "./slash-commands";
-import { MarkdownMessage } from "./markdown-message";
+import { UserMessage } from "./user-message";
 import { MessageFooter } from "./message-footer";
 import { TurnResponse } from "./tool-activity";
 import { chatSelection, chooseModel } from "./model-selection";
@@ -1382,11 +1382,7 @@ function App() {
                             onPreview={(file, url) => setPreview({ file, url })}
                           />
                         )}
-                        {userText && (
-                          <div className="user-bubble">
-                            <MarkdownMessage>{userText}</MarkdownMessage>
-                          </div>
-                        )}
+                        {userText && <UserMessage text={userText} t={t} />}
                         <MessageFooter
                           role="user"
                           text={userText}

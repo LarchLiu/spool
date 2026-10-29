@@ -725,6 +725,29 @@ button:disabled {
 .user-message .user-bubble {
   max-width: 100%;
 }
+.user-bubble-content {
+  max-height: 8lh;
+  overflow: hidden;
+}
+.user-bubble-content[data-expanded="true"] {
+  max-height: none;
+}
+.user-message-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+}
+.user-message-toggle:hover {
+  color: var(--text);
+}
 .user-message .attachment-cards {
   justify-content: flex-end;
   flex-wrap: wrap;
