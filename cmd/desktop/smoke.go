@@ -437,10 +437,28 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 	if err := waitChatScript(ctx, page, `return !document.querySelector('[data-page="Service"]').hidden && !document.querySelector('.settings-content').disabled && (await mygo.call('DesktopSettings.Snapshot')).section === 'Service';`); err != nil {
 		return err
 	}
+	// An inactive WebView can change activeElement without emitting focus/blur.
+	// Give the real page the keyboard before exercising React's blur autosave.
+	focused := make(chan struct{})
+	p.window.Update(func() {
+		p.showMainWindow()
+		view.Focus()
+		close(focused)
+	})
+	select {
+	case <-focused:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := waitChatScript(ctx, page, `return document.hasFocus();`); err != nil {
+		return fmt.Errorf("service input page focus: %w", err)
+	}
 	// Inputs autosave on blur; navigation must not drop the save or its command.
 	if _, err := page.EvalContext(ctx, `
 		window.smokeSetInput = (input, value) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', {bubbles: true})); };
+		window.smokeServiceBlurred = false;
 		const input = document.querySelector('[data-page="Service"] input');
+		input.addEventListener('blur', () => { window.smokeServiceBlurred = true; }, {once: true});
 		input.focus();
 		if (document.activeElement !== input) throw new Error('service input did not receive focus');
 		smokeSetInput(input, 'localhost');
@@ -450,8 +468,17 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 	`); err != nil {
 		return err
 	}
-	if err := waitChatScript(ctx, page, `return !document.querySelector('[data-page="People"]').hidden && !document.querySelector('.settings-content').disabled`); err != nil {
-		return err
+	if err := waitChatChecks(ctx, page, `
+		const snapshot = await mygo.call('DesktopSettings.Snapshot');
+		const checks = {
+			blur: window.smokeServiceBlurred === true,
+			saved: snapshot.settings.host === 'localhost',
+			navigated: snapshot.section === 'People' && !document.querySelector('[data-page="People"]').hidden,
+			idle: !document.querySelector('.settings-content').disabled
+		};
+		return {ready: Object.values(checks).every(Boolean), checks, host: snapshot.settings.host, focused: document.hasFocus()};
+	`); err != nil {
+		return fmt.Errorf("service input blur autosave/navigation: %w", err)
 	}
 	if _, err := page.EvalContext(ctx, `document.querySelector('[data-page="People"] [data-new-entity]').click();`); err != nil {
 		return err
@@ -590,11 +617,25 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 		return err
 	}
 	for _, section := range []string{"Projects", "Appearance", "About", "Service"} {
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`return !document.querySelector('[data-section="%s"]').disabled;`, section)); err != nil {
+			return fmt.Errorf("compact settings %s navigation available: %w", section, err)
+		}
 		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-section="%s"]').click();`, section)); err != nil {
 			return err
 		}
-		if err := waitChatScript(ctx, page, fmt.Sprintf(`const main = document.querySelector('.settings-main'); return !document.querySelector('[data-page="%s"]').hidden && !document.querySelector('.settings-content').disabled && main.scrollWidth <= main.clientWidth;`, section)); err != nil {
-			return err
+		if err := waitChatChecks(ctx, page, fmt.Sprintf(`
+			const snapshot = await mygo.call('DesktopSettings.Snapshot');
+			const main = document.querySelector('.settings-main');
+			const checks = {
+				nativeSection: snapshot.section === %q,
+				visible: !document.querySelector('[data-page="%s"]').hidden,
+				idle: !document.querySelector('.settings-content').disabled && !document.querySelector('[data-section="%s"]').disabled,
+				noOverflow: main.scrollWidth <= main.clientWidth
+			};
+			return {ready: Object.values(checks).every(Boolean), checks, section: snapshot.section,
+				width: main.clientWidth, scrollWidth: main.scrollWidth};
+		`, section, section, section)); err != nil {
+			return fmt.Errorf("compact settings %s: %w", section, err)
 		}
 		if section == "About" {
 			if err := waitChatScript(ctx, page, `
@@ -1215,7 +1256,7 @@ func waitChatScript(ctx context.Context, page *mygo.Page, script string) error {
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("desktop chat did not become ready: %w (last result %v, %v)", ctx.Err(), value, err)
+			return fmt.Errorf("desktop chat did not become ready: %w (last result %v, %v; script: %s)", ctx.Err(), value, err, script)
 		case <-ticker.C:
 		}
 	}

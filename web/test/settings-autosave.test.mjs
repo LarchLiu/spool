@@ -269,3 +269,28 @@ test("service UI commits on blur/Enter, removes save controls and restarts only 
   assert.match(app, /createSettingsCommandQueue/);
   assert.match(app, /setBusy\(command\.kind !== "save-settings"\)/);
 });
+
+test("native smoke requires real page focus and blur before accepting autosave", async () => {
+  const source = await readFile(
+    new URL("../../cmd/desktop/smoke.go", import.meta.url),
+    "utf8",
+  );
+  const probe = source.slice(
+    source.indexOf("func (p *panel) probeSettings("),
+    source.indexOf("func (p *panel) probeAboutSettings("),
+  );
+  assert.match(probe, /p\.showMainWindow\(\)\s+view\.Focus\(\)/);
+  const focus = probe.indexOf("return document.hasFocus();");
+  assert.ok(
+    focus >= 0 && focus < probe.indexOf("smokeSetInput(input, 'localhost')"),
+  );
+  assert.match(probe, /input\.addEventListener\('blur'/);
+  assert.match(probe, /blur: window\.smokeServiceBlurred === true/);
+  assert.match(probe, /saved: snapshot\.settings\.host === 'localhost'/);
+  assert.doesNotMatch(
+    probe,
+    /dispatchEvent\(new (?:FocusEvent|Event)\('(?:blur|focusout)'/,
+  );
+  assert.match(probe, /nativeSection: snapshot\.section === %q/);
+  assert.match(probe, /compact settings %s: %w/);
+});
