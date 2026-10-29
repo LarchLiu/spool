@@ -9,6 +9,7 @@ const (
 	changeAgents
 	changePresence
 	changeAuth
+	changeProfiles
 )
 
 // Notifications carry no user data. Each subscriber reads a fresh, authorized

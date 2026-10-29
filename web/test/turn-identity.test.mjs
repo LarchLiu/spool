@@ -17,6 +17,7 @@ import {
 } from "../.test-build/components/web/src/turn-identity.js";
 import { MessageFooter } from "../.test-build/components/web/src/message-footer.js";
 import { TurnResponse } from "../.test-build/components/web/src/tool-activity.js";
+import { profileLookup } from "../.test-build/user-profiles.js";
 
 const alice = {
   id: "alice",
@@ -29,6 +30,10 @@ const bob = {
   avatar: { style: "thumbs", seed: "bob-picked" },
 };
 const bot = { id: "spool-bot", nickname: "Spool Bot", bot: true };
+const resolve = profileLookup({
+  revision: 1,
+  people: [alice, bob, { id: "four", nickname: "Fourth" }],
+});
 const turn = {
   id: "turn",
   user_id: bob.id,
@@ -56,11 +61,14 @@ const chat = {
 const t = (key, values = {}) =>
   key.replace(/\{(\w+)\}/g, (_, key) => values[key]);
 const render = (Component, props) =>
-  renderToStaticMarkup(createElement(Component, props));
+  renderToStaticMarkup(createElement(Component, { resolve, ...props }));
 
 test("turn identity uses actual sender and falls back to the creator for legacy turns", () => {
-  assert.deepEqual(turnOperator(chat, turn), bob);
-  assert.deepEqual(turnOperator(chat, { ...turn, user_id: undefined }), alice);
+  assert.deepEqual(turnOperator(chat, turn, null, resolve), bob);
+  assert.deepEqual(
+    turnOperator(chat, { ...turn, user_id: undefined }, null, resolve),
+    alice,
+  );
   assert.deepEqual(turnOperator({ ...chat, participants: [] }, turn, bob), bob);
   assert.deepEqual(
     turnOperator({ ...chat, participants: [] }, { ...turn, user_id: bot.id }),
@@ -161,6 +169,7 @@ test("turn actions appear after the reply and before its copy icon and time", ()
       },
       locale: "en",
       t,
+      resolve,
     });
     const html = render(TurnResponse, {
       parts: chat.transcript.parts,
@@ -270,7 +279,7 @@ test("both sidebar lists replace the leading agent icon only when operators exis
   );
   assert.match(
     sidebar,
-    /!!chat\.participants\?\.length && (?:\(\s*)?<ChatOperatorAvatars chat=\{chat\} \/>/,
+    /!!chat\.participants\?\.length && (?:\(\s*)?<ChatOperatorAvatars\s+chat=\{chat\}\s+resolve=\{props.resolveProfile\}\s*\/>/,
   );
   assert.match(
     sidebar,
@@ -278,7 +287,7 @@ test("both sidebar lists replace the leading agent icon only when operators exis
   );
   assert.match(
     sidebar,
-    /<ChatOperatorAvatars chat=\{chat\} \/>\s*(?:\))?\}\s*<button\s+type="button"\s+className="nav-chat-open"/,
+    /<ChatOperatorAvatars\s+chat=\{chat\}\s+resolve=\{props.resolveProfile\}\s*\/>\s*(?:\))?\}\s*<button\s+type="button"\s+className="nav-chat-open"/,
   );
   assert.equal((sidebar.match(/<ChatOperatorAvatars /g) || []).length, 1);
   assert.match(sidebar, /chatButton\(chat, true\)/);

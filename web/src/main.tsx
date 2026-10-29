@@ -5,6 +5,7 @@ import React, {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
 } from "react";
 import { createRoot } from "react-dom/client";
@@ -65,6 +66,11 @@ import { AppearanceDialog } from "./appearance-dialog";
 import { AvatarDialog } from "./avatar-dialog";
 import { AvatarStack, UserAvatar } from "./user-avatar";
 import type { AvatarConfig } from "./avatar";
+import {
+  createProfileCache,
+  profileLookup,
+  type ProfileSnapshot,
+} from "./user-profiles";
 import { Sidebar } from "./sidebar";
 import { FileSidebar, type FileSelection } from "./file-sidebar";
 import { LocalFileContext } from "./local-file-context";
@@ -123,6 +129,40 @@ function App() {
     [connected, setConnected] = useState(true),
     [sidebar, setSidebar] = useState(false),
     [showLatest, setShowLatest] = useState(false);
+  const [profileCache] = useState(createProfileCache);
+  const profiles = useSyncExternalStore(
+    profileCache.subscribe,
+    profileCache.snapshot,
+  );
+  const resolveProfile = useMemo(() => profileLookup(profiles), [profiles]);
+  const displayUser = user
+    ? {
+        ...user,
+        ...(profiles.people.find((person) => person.id === user.id) || {}),
+      }
+    : null;
+  const displayOnline = online.map((person) => ({
+    ...person,
+    ...resolveProfile(person.id),
+  }));
+  const missingProfileIDs = useMemo(() => {
+    const known = new Set(profiles.people.map((person) => person.id));
+    const ids = new Set([
+      ...chats.flatMap(
+        (item) => item.participants?.map((person) => person.id) || [],
+      ),
+      ...(chat?.participants?.map((person) => person.id) || []),
+      ...(chat?.turns.flatMap((turn) => [
+        turn.user_id || chat.user_id || "",
+        ...(turn.actions?.map((action) => action.user_id) || []),
+      ]) || []),
+      ...online.map((person) => person.id),
+    ]);
+    return [...ids]
+      .filter((id) => id && id !== "spool-bot" && !known.has(id))
+      .sort()
+      .join(",");
+  }, [profiles, chats, chat, online]);
   const [panels, setPanels] = useState(() => {
     try {
       return parsePanelLayout(localStorage.getItem(panelStorageKey));
@@ -250,6 +290,7 @@ function App() {
       .catch(() => {})
       .finally(() => setReady(true));
     const expire = () => {
+      profileCache.reset();
       setUser(null);
       setChat(null);
       setChats([]);
@@ -310,6 +351,10 @@ function App() {
     let previousIDs: Set<string> | undefined;
     let initializedAgents = false;
     const controller = new AbortController();
+    const receiveProfiles = (value: ProfileSnapshot) => {
+      if (cancelled) return;
+      profileCache.accept(value);
+    };
     const receiveNavigation = (navigation: Navigation) => {
       if (cancelled) return;
       navigationVersion++;
@@ -379,6 +424,12 @@ function App() {
       if (loading) return;
       loading = true;
       const version = navigationVersion;
+      void profileCache
+        .load(
+          () => api<ProfileSnapshot>("/profiles", undefined, controller.signal),
+          controller.signal,
+        )
+        .catch(() => {});
       void Promise.all([
         api<Navigation>("/navigation", undefined, controller.signal),
         api<Agent[]>("/agents", undefined, controller.signal),
@@ -402,6 +453,7 @@ function App() {
       {
         navigation: receiveNavigation,
         agents: receiveAgents,
+        profiles: receiveProfiles,
         presence: (people) => {
           if (!cancelled) setOnline(people);
         },
@@ -447,6 +499,23 @@ function App() {
       document.removeEventListener("visibilitychange", visibility);
     };
   }, [user?.id]);
+  useEffect(() => {
+    if (!user || !missingProfileIDs) return;
+    const controller = new AbortController();
+    // One batched lookup for missing identities, never one request per avatar.
+    const timer = setTimeout(() => {
+      void profileCache
+        .load(
+          () => api<ProfileSnapshot>("/profiles", undefined, controller.signal),
+          controller.signal,
+        )
+        .catch(() => {});
+    }, 50);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [user?.id, missingProfileIDs]);
   useEffect(() => {
     setPicker(false);
     setPermissionOpen(false);
@@ -742,26 +811,12 @@ function App() {
   }
   async function updateAvatar(avatar: AvatarConfig) {
     const owner = user?.id;
-    const updated = await api<User>("/me/avatar", avatar);
-    if (activeUser.current !== owner) return;
-    setUser(updated);
-    const refreshParticipants = (item: Chat): Chat => ({
-      ...item,
-      participants: item.participants?.map((person) =>
-        person.id === updated.id
-          ? { ...person, nickname: updated.nickname, avatar: updated.avatar }
-          : person,
-      ),
-    });
-    setChat((old) => (old ? refreshParticipants(old) : old));
-    setChats((old) => old.map(refreshParticipants));
-    setOnline((people) =>
-      people.map((person) =>
-        person.id === updated.id
-          ? { ...person, avatar: updated.avatar }
-          : person,
-      ),
+    const updated = await api<User & { profiles: ProfileSnapshot }>(
+      "/me/avatar",
+      avatar,
     );
+    if (!owner || activeUser.current !== owner) return;
+    profileCache.acceptSaved(updated.profiles, owner);
   }
   function newChat(projectID = project) {
     if (
@@ -1211,7 +1266,8 @@ function App() {
       }
     >
       <Sidebar
-        user={user}
+        user={displayUser!}
+        resolveProfile={resolveProfile}
         projects={projects}
         chats={chats}
         project={project}
@@ -1291,14 +1347,14 @@ function App() {
             <details className="online">
               <summary>
                 {online.length ? (
-                  <AvatarStack people={online} />
+                  <AvatarStack people={displayOnline} />
                 ) : (
                   <Users size={14} aria-hidden="true" />
                 )}
                 {t("{count} online", { count: online.length })}
               </summary>
               <div className="online-list">
-                {online.map((u) => (
+                {displayOnline.map((u) => (
                   <div key={u.id}>
                     <UserAvatar person={u} size={26} />
                     <span
@@ -1421,7 +1477,12 @@ function App() {
               </section>
             ) : (
               chat.turns.map((turn) => {
-                const operator = turnOperator(chat, turn, user);
+                const operator = turnOperator(
+                  chat,
+                  turn,
+                  displayUser,
+                  resolveProfile,
+                );
                 const parts = chat.transcript.parts.slice(
                   turn.part_start,
                   turn.part_end,
@@ -1492,6 +1553,7 @@ function App() {
                           turn={turn}
                           locale={locale}
                           t={t}
+                          resolve={resolveProfile}
                         />
                       }
                       summary={workSummary(
@@ -1808,7 +1870,7 @@ function App() {
       {appearance}
       {avatarOpen && (
         <AvatarDialog
-          user={user}
+          user={displayUser!}
           t={t}
           onSave={updateAvatar}
           onClose={() => setAvatarOpen(false)}

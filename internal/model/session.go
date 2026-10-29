@@ -64,15 +64,9 @@ type TurnAction struct {
 	CreatedAt  int64  `json:"created_at"`
 }
 
-// Chat participants expose only the identity needed to render historical actors.
+// Mutable display names and avatars travel separately from chat history.
 type ChatParticipant struct {
-	ID       string `json:"id"`
-	Nickname string `json:"nickname"`
-	Bot      bool   `json:"bot,omitempty"`
-	Avatar   struct {
-		Style string `json:"style"`
-		Seed  string `json:"seed"`
-	} `json:"avatar"`
+	ID string `json:"id"`
 }
 
 type Session struct {

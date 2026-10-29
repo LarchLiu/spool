@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Folder, FolderOpen, LogOut, PanelLeftClose, Plus } from "lucide-react";
 import type { Translator } from "./i18n";
 import type { Backend, Chat, Project, User } from "./types";
+import type { AvatarIdentity } from "./avatar";
 import { AgentIcon } from "./agent-icon";
 import { UserAvatar } from "./user-avatar";
 import { ChatOperatorAvatars } from "./turn-identity";
@@ -18,6 +19,7 @@ type Props = {
   user: User;
   projects: Project[];
   chats: Chat[];
+  resolveProfile: (id: string) => AvatarIdentity;
   project: string;
   chatID: string;
   activeBackend?: Backend;
@@ -80,7 +82,9 @@ export function Sidebar(props: Props) {
           (chat.id === chatID ? "active" : "")
         }
       >
-        {!!chat.participants?.length && <ChatOperatorAvatars chat={chat} />}
+        {!!chat.participants?.length && (
+          <ChatOperatorAvatars chat={chat} resolve={props.resolveProfile} />
+        )}
         <button
           type="button"
           className="nav-chat-open"

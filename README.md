@@ -910,10 +910,20 @@ No forced major dependency overrides are applied.
 
 Authenticated pages maintain one global WebSocket at `/api/events`, with an
 exact-origin handshake, the existing login cookie, and a CSRF-authenticated hello
-(the token is never put in the URL). Navigation, agent metadata, and online
+(the token is never put in the URL). Navigation, user profiles, agent metadata, and online
 presence are sent as snapshots; subsequent changes are published after successful
 database writes rather than polled. Each navigation snapshot is filtered using
 the connection owner's current permissions; revoked sessions are disconnected.
+
+Chat HTTP/SSE/navigation payloads carry operator IDs only; display names and
+avatar configurations live in a shared client profile cache. One batched
+`GET /api/profiles` loads the signed-in user, operators in currently authorized
+chats, and online identities. The WebSocket sends scoped `profiles` snapshots
+before navigation/presence updates, including after reconnects and permission
+changes. Durable profile revisions and HTTP request fencing keep delayed replies
+or old chat SSE frames from reverting newer avatars/names. Missing identities
+use an ID placeholder until the batch lookup completes; avatar rendering still
+shares the bounded SVG cache rather than fetching an image for each component.
 
 Presence is kept in memory and deduplicated by account, aggregating tab/device
 connections. A visible page is online and an account with only background pages

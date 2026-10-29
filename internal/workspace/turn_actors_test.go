@@ -69,9 +69,13 @@ func TestTurnActorsSurviveRestartWithLegacyOwnerFallback(t *testing.T) {
 			if len(loaded.Participants) != 2 {
 				t.Fatalf("legacy owner or actual operator missing: %+v", loaded.Participants)
 			}
-			for _, person := range loaded.Participants {
+			profiles, err := reopened.userProfiles(alice.ID, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, person := range profiles.People {
 				if person.ID == bob.ID && (person.Avatar.Style != "thumbs" || person.Avatar.Seed != "bob-picked") {
-					t.Fatal("operator avatar was not loaded")
+					t.Fatal("operator avatar was not loaded separately")
 				}
 			}
 			navigation, err := reopened.UserNavigation(alice.ID)
@@ -101,7 +105,7 @@ func TestTurnActorsRecoverUnannouncedNativeTurnAndAuditActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	loaded, _ := store.Get(chat.ID)
-	if !reflect.DeepEqual(participantIDs(loaded), []string{chatmodel.SpoolBotID}) || !loaded.Participants[0].Bot || loaded.Turns[0].UserID != chatmodel.SpoolBotID {
+	if !reflect.DeepEqual(participantIDs(loaded), []string{chatmodel.SpoolBotID}) || loaded.Turns[0].UserID != chatmodel.SpoolBotID {
 		t.Fatalf("automatic turns must be bot-owned, not owner-operated: %+v", loaded)
 	}
 	human, err := store.beginTurnBy(chat.ID, "follow-up", chat.Backend, "", nil, bob.ID)

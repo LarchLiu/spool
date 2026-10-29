@@ -178,6 +178,13 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		a.realtimeStream(w, r, id)
 	case path == "/api/me" && r.Method == "GET":
 		a.signedInResponse(w, id)
+	case path == "/api/profiles" && r.Method == "GET":
+		profiles, err := a.store.userProfiles(id.User.ID, a.presence.List(a.store))
+		if err != nil {
+			apiError(w, 500, "Could not load user profiles")
+			return
+		}
+		apiJSON(w, 200, profiles)
 	case path == "/api/me/avatar" && r.Method == "POST":
 		var avatar Avatar
 		if !decodeJSON(w, r, &avatar) {
@@ -192,7 +199,15 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		id.User.Avatar = avatar
-		apiJSON(w, 200, id.User)
+		profiles, err := a.store.userProfiles(id.User.ID, a.presence.List(a.store))
+		if err != nil {
+			apiError(w, 500, "Could not load user profiles")
+			return
+		}
+		apiJSON(w, 200, struct {
+			User
+			Profiles ProfileSnapshot `json:"profiles"`
+		}{id.User, profiles})
 	case path == "/api/preferences" && r.Method == "GET":
 		preferences, err := a.store.UIPreferences(id.User.ID)
 		if err != nil {

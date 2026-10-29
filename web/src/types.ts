@@ -1,4 +1,4 @@
-import type { AvatarConfig, AvatarIdentity } from "./avatar";
+import type { AvatarConfig } from "./avatar";
 
 export type Backend = "codex" | "claude";
 export type User = {
@@ -126,7 +126,7 @@ export type TurnAction = {
 export type Chat = {
   local_session?: boolean;
   can_control?: boolean;
-  participants?: AvatarIdentity[];
+  participants?: { id: string }[];
   history?: { before?: string; has_more?: boolean; error?: string };
   automation_chat?: boolean;
   collaborator_ids?: string[];
@@ -156,8 +156,6 @@ export type ChatMetadata = Pick<
 > & { title?: string };
 export type Online = {
   id: string;
-  nickname: string;
   state: string;
   devices: number;
-  avatar?: AvatarConfig;
 };

@@ -48,9 +48,14 @@ function fixture(t) {
   let failOpen = false;
   const stream = subscribeWorkspaceEvents(
     Object.fromEntries(
-      ["navigation", "agents", "presence", "connected", "expired"].map(
-        (key) => [key, (value) => received.push([key, value])],
-      ),
+      [
+        "navigation",
+        "agents",
+        "presence",
+        "profiles",
+        "connected",
+        "expired",
+      ].map((key) => [key, (value) => received.push([key, value])]),
     ),
     {
       open: () => {
@@ -110,6 +115,10 @@ test("workspace socket authenticates and synchronizes navigation/agents/presence
   };
   socket.emit("navigation", navigation);
   socket.emit("agents", [{ backend: "codex" }]);
+  socket.emit("profiles", {
+    revision: 1,
+    people: [{ id: "alice", nickname: "Alice" }],
+  });
   socket.emit("presence", [{ id: "alice", devices: 2 }]);
   assert.equal(
     f.received.some(([name]) => name === "connected"),
@@ -119,6 +128,7 @@ test("workspace socket authenticates and synchronizes navigation/agents/presence
   assert.deepEqual(f.received, [
     ["navigation", navigation],
     ["agents", [{ backend: "codex" }]],
+    ["profiles", { revision: 1, people: [{ id: "alice", nickname: "Alice" }] }],
     ["presence", [{ id: "alice", devices: 2 }]],
     ["connected", true],
   ]);

@@ -197,8 +197,11 @@ func (s *Store) saveUserWithPasswordCost(v UserInput, passwordCost int) (User, e
 	if err = tx.QueryRow(`SELECT style,seed FROM user_avatars WHERE user_id=?`, v.ID).Scan(&avatar.Style, &avatar.Seed); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return User{}, err
 	}
+	if err = bumpProfileRevision(tx); err != nil {
+		return User{}, err
+	}
 	err = tx.Commit()
-	s.notify(err, changeNavigation|changePresence|changeAuth)
+	s.notify(err, changeNavigation|changePresence|changeAuth|changeProfiles)
 	return User{ID: v.ID, Username: v.Username, Nickname: v.Nickname, Disabled: v.Disabled, CreatedAt: now, Avatar: avatar}, err
 }
 func (s *Store) DeleteUser(id string) error {

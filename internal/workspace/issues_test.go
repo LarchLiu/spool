@@ -277,7 +277,7 @@ func TestIssueRoundFailureRecoveryUsesNewChatsAndSameSharedClaim(t *testing.T) {
 	if !ok || len(chat.Artifacts) != 0 {
 		t.Fatal("issue automation wrote PR attachments instead of using the JSON ledger")
 	}
-	if len(chat.Turns) != 1 || chat.Turns[0].UserID != chatmodel.SpoolBotID || len(chat.Participants) != 1 || !chat.Participants[0].Bot {
+	if len(chat.Turns) != 1 || chat.Turns[0].UserID != chatmodel.SpoolBotID || len(chat.Participants) != 1 || chat.Participants[0].ID != chatmodel.SpoolBotID {
 		t.Fatalf("scheduled issue task must be attributed to Spool Bot: %+v", chat)
 	}
 	if !strings.Contains(requests[1].Prompt, "git pull --ff-only origin dev") || strings.Contains(requests[1].Prompt, "attach_artifact") || strings.Contains(requests[1].Prompt, "Authorization: Bearer") || !strings.Contains(requests[1].Prompt, "prs 数组") || !strings.Contains(requests[1].Prompt, "沙箱外联网") {

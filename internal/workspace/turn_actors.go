@@ -165,16 +165,16 @@ func populateParticipants(db chatMetadataReader, chats []chatmodel.Session) erro
 			UNION SELECT a.session_id,a.user_id FROM turn_actors a JOIN selected s ON s.id=a.session_id
 			UNION SELECT a.session_id,a.user_id FROM turn_actions a JOIN selected s ON s.id=a.session_id
 		), people AS (
-			SELECT o.session_id,u.id,u.nickname,COALESCE(a.style,'clay') AS style,COALESCE(a.seed,'') AS seed,0 AS bot FROM operators o JOIN users u ON u.id=o.user_id LEFT JOIN user_avatars a ON a.user_id=u.id
-			UNION ALL SELECT DISTINCT a.session_id,'spool-bot','Spool Bot','clay','',1 FROM turn_actors a JOIN selected s ON s.id=a.session_id WHERE a.actor_kind='bot'
-		) SELECT session_id,id,nickname,style,seed,bot FROM people ORDER BY session_id,bot DESC,id`, args...)
+			SELECT o.session_id,u.id,0 AS bot FROM operators o JOIN users u ON u.id=o.user_id
+			UNION ALL SELECT DISTINCT a.session_id,'spool-bot',1 FROM turn_actors a JOIN selected s ON s.id=a.session_id WHERE a.actor_kind='bot'
+		) SELECT session_id,id FROM people ORDER BY session_id,bot DESC,id`, args...)
 		if err != nil {
 			return err
 		}
 		for rows.Next() {
 			var id string
 			var v chatmodel.ChatParticipant
-			if err = rows.Scan(&id, &v.ID, &v.Nickname, &v.Avatar.Style, &v.Avatar.Seed, &v.Bot); err != nil {
+			if err = rows.Scan(&id, &v.ID); err != nil {
 				break
 			}
 			i := positions[id]

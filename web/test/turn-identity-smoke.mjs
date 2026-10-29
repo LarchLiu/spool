@@ -265,6 +265,11 @@ const server = createServer(async (req, res) => {
     return json({ ok: true });
   }
   if (path === "/api/version") return json({ version: "smoke-fixture" });
+  if (path === "/api/profiles")
+    return json({
+      revision: 1,
+      people: [...people.slice(1), { id: "four", nickname: "Fourth" }],
+    });
   if (path === "/api/me")
     return json({
       user: { ...people[2], username: "alice" },

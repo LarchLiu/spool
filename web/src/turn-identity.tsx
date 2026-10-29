@@ -2,6 +2,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -15,8 +16,17 @@ import type { Chat, Turn } from "./types.js";
 import type { Translator } from "./i18n.js";
 import type { Locale } from "./preferences.js";
 
-export function ChatOperatorAvatars({ chat }: { chat: Chat }) {
-  const people = chat.participants || [];
+export function ChatOperatorAvatars({
+  chat,
+  resolve,
+}: {
+  chat: Chat;
+  resolve: (id: string) => AvatarIdentity;
+}) {
+  const people = useMemo(
+    () => chat.participants?.map((person) => resolve(person.id)) || [],
+    [chat.participants, resolve],
+  );
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const popup = useRef<HTMLDivElement>(null);
@@ -178,17 +188,24 @@ export function TurnActions({
   turn,
   locale,
   t,
+  resolve,
 }: {
   chat: Chat;
   turn: Turn;
   locale: Locale;
   t: Translator;
+  resolve?: (id: string) => AvatarIdentity;
 }) {
   if (!turn.actions?.length) return null;
   return (
     <ul className="turn-actions">
       {turn.actions.map((action) => {
-        const person = turnOperator(chat, { ...turn, user_id: action.user_id });
+        const person = turnOperator(
+          chat,
+          { ...turn, user_id: action.user_id },
+          null,
+          resolve,
+        );
         const time = messageTime(action.created_at, locale);
         const label =
           action.kind === "stop"

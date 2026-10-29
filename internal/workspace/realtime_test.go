@@ -112,18 +112,26 @@ func TestRealtimePublishesAuthorizedNavigationAndActors(t *testing.T) {
 		if m.Type != "navigation" {
 			return false
 		}
+		if strings.Contains(string(m.Data), `"avatar"`) || strings.Contains(string(m.Data), `"nickname"`) {
+			t.Fatal("navigation contains mutable profile data", string(m.Data))
+		}
 		var nav Navigation
 		if err := json.Unmarshal(m.Data, &nav); err != nil {
 			t.Fatal(err)
 		}
 		return len(nav.Chats) == 1 && nav.Chats[0].ID == chat.ID && len(nav.Chats[0].Participants) == 1 && nav.Chats[0].Participants[0].ID == bob.ID
 	})
+	before, _ := a.store.Get(chat.ID)
 	if err = a.store.SaveAvatar(bob.ID, Avatar{Style: "thumbs", Seed: "bob-new"}); err != nil {
 		t.Fatal(err)
 	}
 	realtimeUntil(t, conn, func(m realtimeMessage) bool {
-		return m.Type == "navigation" && strings.Contains(string(m.Data), "bob-new")
+		return m.Type == "profiles" && strings.Contains(string(m.Data), "bob-new")
 	})
+	after, _ := a.store.Get(chat.ID)
+	if before.UpdatedAt != after.UpdatedAt {
+		t.Fatal("profile update changed chat revision")
+	}
 	// A global invalidation must not expose other users' private project data.
 	private := testProject(t, a.store, bob)
 	if _, err = a.store.CreateChat(bob.ID, private.ID, chatmodel.BackendCodex); err != nil {
@@ -152,6 +160,9 @@ func TestRealtimePresenceTracksConnectionsVisibilityAndClose(t *testing.T) {
 		realtimeUntil(t, first, func(m realtimeMessage) bool {
 			if m.Type != "presence" {
 				return false
+			}
+			if strings.Contains(string(m.Data), `"avatar"`) || strings.Contains(string(m.Data), `"nickname"`) {
+				t.Fatal("presence contains mutable profile data", string(m.Data))
 			}
 			var users []PresenceUser
 			json.Unmarshal(m.Data, &users)

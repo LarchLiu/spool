@@ -97,7 +97,7 @@ export type SettingsSnapshot = {
     RestartRequired: boolean;
     Address: string;
     Error: string;
-    Online: Online[];
+    Online: (Online & Pick<User, "nickname" | "avatar">)[];
   };
   users: Person[];
   projects: ManagedProject[];

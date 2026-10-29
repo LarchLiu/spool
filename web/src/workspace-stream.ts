@@ -1,4 +1,5 @@
 import type { Agent, Chat, Online, Project } from "./types";
+import type { ProfileSnapshot } from "./user-profiles";
 
 export type Navigation = { projects: Project[]; chats: Chat[] };
 
@@ -22,6 +23,7 @@ export function subscribeWorkspaceEvents(
     navigation: (value: Navigation) => void;
     agents: (value: Agent[]) => void;
     presence: (value: Online[]) => void;
+    profiles: (value: ProfileSnapshot) => void;
     connected: (value: boolean) => void;
     expired: () => void;
   },
@@ -115,6 +117,9 @@ export function subscribeWorkspaceEvents(
           break;
         case "presence":
           handlers.presence(message.data as Online[]);
+          break;
+        case "profiles":
+          handlers.profiles(message.data as ProfileSnapshot);
           break;
         case "ping":
           send("pong");

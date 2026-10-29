@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"golang.org/x/crypto/bcrypt"
 
 	"spool/internal/agent"
 	chatmodel "spool/internal/model"
@@ -60,7 +61,7 @@ func TestRealtimeBrowser(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var events, navigationGets, presencePosts atomic.Int64
+			var events, navigationGets, presencePosts, profileGets atomic.Int64
 			reports := make(chan map[string]any, 1)
 			var extra *websocket.Conn
 			var actionMu sync.Mutex
@@ -82,7 +83,7 @@ func TestRealtimeBrowser(t *testing.T) {
 					w.WriteHeader(http.StatusNoContent)
 					return
 				case "/smoke/state":
-					apiJSON(w, 200, map[string]int64{"events": events.Load(), "navigationGets": navigationGets.Load(), "presencePosts": presencePosts.Load()})
+					apiJSON(w, 200, map[string]int64{"events": events.Load(), "navigationGets": navigationGets.Load(), "presencePosts": presencePosts.Load(), "profileGets": profileGets.Load()})
 					return
 				case "/smoke/action":
 					actionMu.Lock()
@@ -93,6 +94,8 @@ func TestRealtimeBrowser(t *testing.T) {
 						_, err = s.beginTurnBy(background.ID, "from bob", chatmodel.BackendCodex, "", nil, bob.ID)
 					case "avatar":
 						err = s.SaveAvatar(bob.ID, Avatar{Style: "thumbs", Seed: "browser-new"})
+					case "profile-name":
+						_, err = s.saveUserWithPasswordCost(UserInput{ID: bob.ID, Username: bob.Username, Nickname: "Robert"}, bcrypt.MinCost)
 					case "join":
 						ctx, done := context.WithTimeout(context.Background(), 3*time.Second)
 						origin := "http://" + r.Host
@@ -139,6 +142,8 @@ func TestRealtimeBrowser(t *testing.T) {
 					navigationGets.Add(1)
 				case "/api/presence":
 					presencePosts.Add(1)
+				case "/api/profiles":
+					profileGets.Add(1)
 				case "/":
 					recorder := httptest.NewRecorder()
 					a.ServeHTTP(recorder, r)
@@ -179,14 +184,15 @@ func TestRealtimeBrowser(t *testing.T) {
 			case report := <-reports:
 				data, _ := json.MarshalIndent(report, "", "  ")
 				os.WriteFile(filepath.Join(output, fmt.Sprintf("browser-%d.json", width)), data, 0644)
-				for _, check := range []string{"localIcon", "controlsUpdated", "ownControlsUpdated", "segmentedStyles", "actorStack", "activeUnchanged", "avatarUpdated", "presenceJoined", "presenceLeft", "reconnected", "revoked"} {
+				for _, check := range []string{"localIcon", "controlsUpdated", "ownControlsUpdated", "segmentedStyles", "actorStack", "activeUnchanged", "avatarUpdated", "sharedAvatars", "staleProfilesIgnored", "nameUpdated", "presenceJoined", "presenceLeft", "reconnected", "revoked"} {
 					if report[check] != true {
 						t.Errorf("%s failed: %s", check, data)
 					}
 				}
 				navCount, _ := report["navigationGets"].(float64)
 				eventCount, _ := report["events"].(float64)
-				if report["error"] != nil || report["overflow"] != false || report["presencePosts"] != float64(0) || navCount > 2 || eventCount < 3 {
+				profileCount, _ := report["profileGets"].(float64)
+				if report["error"] != nil || report["overflow"] != false || report["presencePosts"] != float64(0) || navCount > 2 || eventCount < 3 || profileCount > 3 {
 					t.Errorf("unexpected browser state: %s", data)
 				}
 			case <-time.After(30 * time.Second):

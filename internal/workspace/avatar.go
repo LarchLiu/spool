@@ -37,7 +37,12 @@ func (s *Store) SaveAvatar(user string, v Avatar) error {
 	if err := v.Validate(); err != nil {
 		return err
 	}
-	result, err := s.db.Exec(`INSERT INTO user_avatars(user_id,style,seed)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`INSERT INTO user_avatars(user_id,style,seed)
 		SELECT id,?,? FROM users WHERE id=? AND disabled=0
 		ON CONFLICT(user_id) DO UPDATE SET style=excluded.style,seed=excluded.seed`, v.Style, v.Seed, user)
 	if err != nil {
@@ -48,6 +53,8 @@ func (s *Store) SaveAvatar(user string, v Avatar) error {
 	} else if count != 1 {
 		return fmt.Errorf("user not found or disabled")
 	}
-	s.changes.publish(changeNavigation | changePresence)
-	return nil
+	if err = bumpProfileRevision(tx); err != nil {
+		return err
+	}
+	return s.notify(tx.Commit(), changeProfiles|changePresence)
 }

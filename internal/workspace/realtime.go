@@ -126,6 +126,14 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 			_ = conn.Close(websocket.StatusPolicyViolation, "session expired")
 			return false
 		}
+		var people []PresenceUser
+		if changes&(changeNavigation|changeProfiles|changePresence) != 0 {
+			people = a.presence.List(a.store)
+			profiles, err := a.store.userProfiles(identity.User.ID, people)
+			if err != nil || send("profiles", profiles) != nil {
+				return false
+			}
+		}
 		if changes&changeNavigation != 0 {
 			navigation, err := a.store.UserNavigation(identity.User.ID)
 			if err != nil || send("navigation", navigation) != nil {
@@ -146,7 +154,18 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 				return false
 			}
 		}
-		return changes&changePresence == 0 || send("presence", a.presence.List(a.store)) == nil
+		if changes&changePresence != 0 {
+			presence := make([]struct {
+				ID      string `json:"id"`
+				State   string `json:"state"`
+				Devices int    `json:"devices"`
+			}, len(people))
+			for i, person := range people {
+				presence[i].ID, presence[i].State, presence[i].Devices = person.ID, person.State, person.Devices
+			}
+			return send("presence", presence) == nil
+		}
+		return true
 	}
 	if !syncState(changeNavigation|changeAgents|changePresence) || send("ready", true) != nil {
 		return

@@ -11,11 +11,12 @@ export function turnOperator(
   chat: Chat,
   turn: Turn,
   currentUser?: AvatarIdentity | null,
+  resolve?: (id: string) => AvatarIdentity,
 ): AvatarIdentity | undefined {
   const id = turn.user_id || chat.user_id;
   if (!id) return undefined;
   return (
-    chat.participants?.find((person) => person.id === id) ||
+    resolve?.(id) ||
     (currentUser?.id === id ? currentUser : undefined) ||
     (id === "spool-bot"
       ? { id, nickname: "Spool Bot", bot: true }
