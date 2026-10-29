@@ -118,13 +118,19 @@ func (p *panel) smoke(report string, result chan<- error, history *appupdate.Rel
 		err = ctx.Err()
 	}
 	if err == nil {
-		err = p.probeStartupChat(ctx, report)
+		if err = p.probeStartupChat(ctx, report); err != nil {
+			err = fmt.Errorf("startup chat: %w", err)
+		}
 	}
 	if err == nil {
-		err = p.probeSettings(ctx, report, history)
+		if err = p.probeSettings(ctx, report, history); err != nil {
+			err = fmt.Errorf("settings: %w", err)
+		}
 	}
 	if err == nil {
-		err = p.probeEmbeddedChat(ctx)
+		if err = p.probeEmbeddedChat(ctx); err != nil {
+			err = fmt.Errorf("embedded chat: %w", err)
+		}
 	}
 	if err == nil {
 		data, _ := json.Marshal(map[string]any{"version": mygo.App.Version(), "target": runtime.GOOS + "-" + runtime.GOARCH, "native": true, "web": true, "chat_webview": true, "single_window": true, "full_window_chat": true, "shared_presentation": true, "settings_webview": true, "management_bridge": true})
@@ -426,7 +432,7 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 		}
 	}
 	if err := p.probeThemePicker(ctx, view, report); err != nil {
-		return err
+		return fmt.Errorf("appearance controls: %w", err)
 	}
 	if err := waitChatScript(ctx, page, `return !document.querySelector('[data-page="Service"]').hidden && !document.querySelector('.settings-content').disabled && (await mygo.call('DesktopSettings.Snapshot')).section === 'Service';`); err != nil {
 		return err
@@ -842,7 +848,20 @@ func (p *panel) probeThemePicker(ctx context.Context, view *mygo.WebView, report
 	if _, err := page.EvalContext(ctx, `document.querySelector('[data-section="Appearance"]').click();`); err != nil {
 		return err
 	}
-	if err := waitChatScript(ctx, page, `return !document.querySelector('[data-page="Appearance"]').hidden && !document.querySelector('.settings-content').disabled && document.querySelectorAll('.settings-theme-picker button').length === 3 && document.querySelectorAll('[data-page="Appearance"] select').length === 1;`); err != nil {
+	if err := waitChatChecks(ctx, page, `
+		const section = document.querySelector('[data-page="Appearance"]');
+		const language = section?.querySelector('.custom-select-trigger[aria-haspopup="listbox"]');
+		const checks = {
+			visible: !!section && !section.hidden,
+			idle: !!document.querySelector('.settings-content') && !document.querySelector('.settings-content').disabled,
+			themes: section?.querySelectorAll('.settings-theme-picker button').length === 3,
+			language: !!language && !language.matches(':disabled') && language.getAttribute('aria-expanded') === 'false'
+		};
+		return {ready: Object.values(checks).every(Boolean), checks};
+	`); err != nil {
+		return fmt.Errorf("appearance render: %w", err)
+	}
+	if err := p.probeSettingsLanguage(ctx, page); err != nil {
 		return err
 	}
 	for _, theme := range []string{"light", "dark", "system"} {
@@ -873,6 +892,47 @@ func (p *panel) probeThemePicker(ctx context.Context, view *mygo.WebView, report
 	}
 	_, err := page.EvalContext(ctx, `document.querySelector('[data-section="Service"]').click();`)
 	return err
+}
+
+func (p *panel) probeSettingsLanguage(ctx context.Context, page *mygo.Page) error {
+	for _, language := range []string{"ja", "en", "zh-CN"} {
+		if _, err := page.EvalContext(ctx, `
+			const trigger = document.querySelector('[data-page="Appearance"] .custom-select-trigger[aria-haspopup="listbox"]');
+			trigger.scrollIntoView({block: 'center'});
+			trigger.click();
+		`); err != nil {
+			return fmt.Errorf("language %s open: %w", language, err)
+		}
+		if err := waitChatChecks(ctx, page, fmt.Sprintf(`
+			const trigger = document.querySelector('[data-page="Appearance"] .custom-select-trigger');
+			const menu = document.getElementById(trigger.getAttribute('aria-controls'));
+			const option = menu?.querySelector('[role="option"][data-value="%s"]');
+			const bounds = menu?.getBoundingClientRect();
+			const checks = {
+				open: trigger.getAttribute('aria-expanded') === 'true' && menu?.getAttribute('role') === 'listbox',
+				option: !!option && !option.matches(':disabled'),
+				viewport: !!bounds && bounds.width > 0 && bounds.height > 0 && bounds.left >= 0 && bounds.top >= 0 && bounds.right <= innerWidth && bounds.bottom <= innerHeight,
+				unclipped: !!bounds && !!menu?.contains(document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2))
+			};
+			return {ready: Object.values(checks).every(Boolean), checks, bounds: bounds?.toJSON()};
+		`, language)); err != nil {
+			return fmt.Errorf("language %s popup: %w", language, err)
+		}
+		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('.custom-select-menu [role="option"][data-value="%s"]').click();`, language)); err != nil {
+			return fmt.Errorf("language %s select: %w", language, err)
+		}
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`
+			const snapshot = await mygo.call('DesktopSettings.Snapshot');
+			const trigger = document.querySelector('[data-page="Appearance"] .custom-select-trigger');
+			return snapshot.preferences.language === %q && snapshot.preferences.theme === 'system' &&
+				document.documentElement.lang === %q && !document.querySelector('.settings-content').disabled &&
+				!trigger.matches(':disabled') && trigger.getAttribute('aria-expanded') === 'false' &&
+				!document.querySelector('.custom-select-menu');
+		`, language, language)); err != nil {
+			return fmt.Errorf("language %s save: %w", language, err)
+		}
+	}
+	return nil
 }
 
 func (p *panel) probeManagementLists(ctx context.Context, view *mygo.WebView, report string) error {

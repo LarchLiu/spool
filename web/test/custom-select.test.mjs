@@ -79,6 +79,30 @@ test("all frontend views forbid browser-native dropdowns", async () => {
   }
 });
 
+test("packaged desktop smoke follows the custom language control instead of a native select", async () => {
+  const source = await readFile(
+    new URL("../../cmd/desktop/smoke.go", import.meta.url),
+    "utf8",
+  );
+  const appearance = source.slice(
+    source.indexOf("func (p *panel) probeThemePicker("),
+    source.indexOf("func (p *panel) probeManagementLists("),
+  );
+  assert.match(
+    appearance,
+    /\.custom-select-trigger\[aria-haspopup="listbox"\]/,
+  );
+  for (const [, selector] of appearance.matchAll(
+    /querySelector(?:All)?\('([^']*)'\)/g,
+  )) {
+    assert.ok(selector !== "select" && !selector.endsWith(" select"), selector);
+  }
+  assert.match(appearance, /\[role="option"\]\[data-value=/);
+  assert.match(appearance, /snapshot\.preferences\.language === %q/);
+  assert.match(appearance, /document\.documentElement\.lang === %q/);
+  assert.match(appearance, /appearance render: %w/);
+});
+
 const view = { x: 0, y: 0, width: 390, height: 700 };
 test("popup aligns below the anchor and flips above near the viewport bottom", () => {
   const anchor = { left: 20, top: 100, bottom: 134, right: 188, width: 168 };
