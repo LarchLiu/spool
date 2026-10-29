@@ -254,7 +254,7 @@ renderer reports an error in the control center; **Open Chat** retries loading.
 
 The full control center uses a separate embedded WebView with a compact sidebar
 and grouped setting rows: **Service**, **User**, **Projects**, **Agents**,
-**Online**, **Appearance**, and **Updates**. Server start/stop, listener and runtime
+**Online**, **Appearance**, and **About**. Server start/stop, listener and runtime
 configuration, account management, project membership and scheduled GitHub issues,
 CLI discovery/configuration, online presence, diagnostics and signed updates all
 remain available. Form drafts survive section switches and background status polls.
@@ -289,7 +289,21 @@ same tokens; ordinary button text stays neutral. Settings' main and sidebar
 scrollbars share the chat scrollbar rule.
 Icon-only controls use circular hover, pressed and focus outlines. The settings
 sidebar footer shares chat's height, with a back-to-chat icon on the left and
-service status on the right; the version remains in **Updates**.
+service status on the right; the version remains in **About**. Available updates
+show a primary-color dot on the chat settings icon and next to **About**. The
+About page ends with a GitHub repository icon linking to the project. Browser
+settings show the running server version in the appearance dialog footer,
+including before sign-in.
+
+When an update is available, **About > View release notes** lazily loads GitHub
+Releases newer than the installed version and up to and including the available
+version. Each published version (including prereleases in that range) has its own
+Markdown description, date and GitHub link, sorted newest first by semantic
+version. The native read-only bridge fetches all API pages with bounded response
+sizes and a 30-second deadline. Collapsing/reopening retains the loaded history;
+refresh and retry fetch it again. Raw HTML and unsafe URLs are disabled, and
+remote images become links instead of loading remote content in settings. These
+descriptions are display-only and never replace authenticated updater metadata.
 
 ### Scheduled GitHub Issues
 
@@ -1194,6 +1208,15 @@ exits after the probes. It never opens a supplied `--data-dir` or the usual
 temporary root. The probe never signs in or replaces installed-app cookies.
 The runner enforces a 90-second process timeout.
 
+For release-history visual checks, `--release-smoke <report.json>` also accepts
+`--smoke-release-history <fixture.json>`. The fixture uses the `ReleaseHistory`
+shape (`current_version`, `target_version`, `releases`), with at least two release
+entries. It changes only the smoke process's displayed version and fake updater;
+no installed version, database or archive is changed. The actual native bridge
+and Markdown UI produce `-release-history.png` and `-release-history-older.png`
+screenshots next to the report. Without a fixture the probe uses deterministic
+test notes and never contacts GitHub.
+
 The publish job's `tools/sign-release.mjs` signs every archive's SHA-256 digest,
 generates the six `update-<platform>.json` manifests, and signs each manifest's
 exact bytes into a detached, binary `update-<platform>.json.sig`. The signed
@@ -1266,9 +1289,11 @@ signature. This does not implement a trusted timestamp/freshness service: an
 attacker controlling distribution can still withhold updates. Initial installation
 also requires trusting the source of the installer/script and its embedded key.
 
-The WebView control center has an **Updates** page and the tray has **Check for
+The WebView control center has an **About** page and the tray has **Check for
 updates**. Official CI builds check shortly after launch and every 12 hours by
-default. Automatic installation is **opt-in**, stored locally in SQLite, and
+default. In **About**, the automatic check interval can be set to 30 minutes,
+1 hour, 6 hours, 12 hours, or 24 hours; changes are saved immediately in SQLite
+and reschedule the next check without restarting. Automatic installation is **opt-in**, stored locally in SQLite, and
 never forces a restart. Development builds and read-only installations explain
 why updates are unavailable instead of checking in the background.
 
@@ -1294,7 +1319,7 @@ not keep reinstalling the same version; retry manually or wait for a different
 version. Busy-chat refusals still retry when idle. The Linux installer also uses
 bounded downloader retries and never retries or bypasses a failed signature.
 
-The Updates page shows the failure stage and a **Show update log** button.
+The About page shows the failure stage and a **Show update log** button.
 `<data-dir>/log/update.log` records checks, retries, installation results, shutdown and
 startup; it rotates at 256 KiB, retaining one previous file. Download/CDN URLs
 are redacted, and no chat content or credentials are recorded. Unix log files

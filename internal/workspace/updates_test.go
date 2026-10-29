@@ -6,21 +6,80 @@ import (
 	"net/http"
 	"testing"
 
+	"spool"
 	chatmodel "spool/internal/model"
 )
 
 func TestUpdatePreferences(t *testing.T) {
 	s := testStore(t)
 	p, err := s.UpdatePreferences()
-	if err != nil || !p.AutomaticChecks || p.AutomaticInstalls {
+	if err != nil || !p.AutomaticChecks || p.AutomaticInstalls || p.CheckIntervalMinutes != 720 {
 		t.Fatalf("unsafe defaults: %+v %v", p, err)
 	}
-	p = UpdatePreferences{AutomaticChecks: false, AutomaticInstalls: true}
+	p = UpdatePreferences{AutomaticChecks: false, AutomaticInstalls: true, CheckIntervalMinutes: 30}
 	if err := s.SaveUpdatePreferences(p); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := s.UpdatePreferences(); err != nil || got != p {
 		t.Fatalf("preferences not saved: %+v %v", got, err)
+	}
+}
+
+func TestUpdateCheckIntervalsPersistAndRejectUnsupportedValues(t *testing.T) {
+	s := testStore(t)
+	for _, interval := range []int{30, 60, 360, 720, 1440} {
+		p := UpdatePreferences{AutomaticChecks: true, CheckIntervalMinutes: interval}
+		if err := s.SaveUpdatePreferences(p); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := s.UpdatePreferences(); err != nil || got != p {
+			t.Fatalf("interval %d not persisted: %+v, %v", interval, got, err)
+		}
+	}
+	for _, interval := range []int{-30, 1, 31, 120, 1441} {
+		if err := s.SaveUpdatePreferences(UpdatePreferences{CheckIntervalMinutes: interval}); err == nil {
+			t.Fatalf("unsupported interval %d accepted", interval)
+		}
+	}
+	if got, err := s.UpdatePreferences(); err != nil || got.CheckIntervalMinutes != 1440 || !got.AutomaticChecks {
+		t.Fatalf("invalid save overwrote preferences: %+v, %v", got, err)
+	}
+}
+
+func TestLegacyUpdatePreferencesKeepTwelveHourInterval(t *testing.T) {
+	s := testStore(t)
+	for _, body := range []string{
+		`{"automatic_checks":false,"automatic_installs":true}`,
+		`{"automatic_checks":false,"automatic_installs":true,"check_interval_minutes":0}`,
+	} {
+		if _, err := s.db.Exec(`INSERT INTO settings(key,value) VALUES('updates:desktop',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, body); err != nil {
+			t.Fatal(err)
+		}
+		p, err := s.UpdatePreferences()
+		if err != nil || p.AutomaticChecks || !p.AutomaticInstalls || p.CheckIntervalMinutes != 720 {
+			t.Fatalf("legacy preferences not preserved: %+v, %v", p, err)
+		}
+	}
+	if err := s.SaveUpdatePreferences(UpdatePreferences{AutomaticChecks: true}); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := s.UpdatePreferences(); err != nil || p.CheckIntervalMinutes != 720 {
+		t.Fatalf("legacy save lost its default interval: %+v, %v", p, err)
+	}
+}
+
+func TestVersionIsPublicWithoutExposingWorkspaceSettings(t *testing.T) {
+	a := NewApp(testStore(t), &fakeRunner{}, "", "")
+	t.Cleanup(func() { _ = a.Close() })
+	w := apiRequest(a, "GET", "/api/version", "", nil, "")
+	if w.Code != http.StatusOK || w.Body.String() != "{\"version\":\""+spool.Version()+"\"}\n" {
+		t.Fatalf("missing running version before sign-in: %d %s", w.Code, w.Body.String())
+	}
+	if w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("server version may be cached across upgrades")
+	}
+	if w := apiRequest(a, "POST", "/api/version", "{}", nil, ""); w.Code != http.StatusUnauthorized {
+		t.Fatalf("public version endpoint allowed mutation: %d", w.Code)
 	}
 }
 

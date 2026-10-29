@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   ChevronRight,
   FolderOpen,
+  Github,
   Monitor,
   Plus,
   Radio,
@@ -17,10 +18,13 @@ import {
   type PersonDraft,
   type ManagedAgent,
   type Backend,
+  type UpdatePreferences,
 } from "./settings-client";
 import { SettingsBack, SettingsList } from "./settings-list";
 import { ThemePicker } from "./theme-picker";
 import { ServiceSettingsAutosave } from "./settings-autosave";
+import { UpdateCheckInterval } from "./update-controls";
+import { ReleaseNotesPanel } from "./release-notes";
 import {
   Card,
   Row,
@@ -535,8 +539,16 @@ export function AppearancePage({ data, run, t }: PageProps) {
     </>
   );
 }
-export function UpdatesPage({ data, run, t }: PageProps) {
+export function AboutPage({ data, run, t }: PageProps) {
   const state = data.updates;
+  const save = (change: Partial<UpdatePreferences>) =>
+    void run((latest) => ({
+      kind: "save-updates",
+      update_preferences: {
+        ...(latest ?? data).update_preferences,
+        ...change,
+      },
+    }));
   const busy = state.Checking || state.Installing;
   const message = state.Checking
     ? t("Checking for updates...")
@@ -606,6 +618,14 @@ export function UpdatesPage({ data, run, t }: PageProps) {
           </div>
         )}
       </Card>
+      {state.Version && (
+        <ReleaseNotesPanel
+          key={`${data.version}/${state.Version}`}
+          current={data.version}
+          target={state.Version}
+          t={t}
+        />
+      )}
       {state.Error && (
         <div className="settings-error" role="alert">
           {knownMessage(state.Error, t)}
@@ -628,15 +648,17 @@ export function UpdatesPage({ data, run, t }: PageProps) {
           <Toggle
             label={t("Automatically check for updates")}
             value={data.update_preferences.automatic_checks}
-            onChange={(automatic_checks) =>
-              void run({
-                kind: "save-updates",
-                update_preferences: {
-                  ...data.update_preferences,
-                  automatic_checks,
-                },
-              })
+            onChange={(automatic_checks) => save({ automatic_checks })}
+          />
+        </Row>
+        <Row title={t("Check interval")}>
+          <UpdateCheckInterval
+            value={data.update_preferences.check_interval_minutes}
+            disabled={!data.update_preferences.automatic_checks}
+            onChange={(check_interval_minutes) =>
+              save({ check_interval_minutes })
             }
+            t={t}
           />
         </Row>
         <Row
@@ -645,15 +667,7 @@ export function UpdatesPage({ data, run, t }: PageProps) {
           <Toggle
             label={t("Automatically install updates when no chats are running")}
             value={data.update_preferences.automatic_installs}
-            onChange={(automatic_installs) =>
-              void run({
-                kind: "save-updates",
-                update_preferences: {
-                  ...data.update_preferences,
-                  automatic_installs,
-                },
-              })
-            }
+            onChange={(automatic_installs) => save({ automatic_installs })}
           />
         </Row>
       </Card>
@@ -680,11 +694,20 @@ export function UpdatesPage({ data, run, t }: PageProps) {
           </Row>
         </Card>
       )}
-      {state.Notes && (
-        <Card title={t("Release notes")}>
-          <div className="settings-release-notes">{state.Notes}</div>
-        </Card>
-      )}
+      <Card>
+        <Row title={t("GitHub repository")} help="LarchLiu/spool">
+          <a
+            className="icon settings-repository-link"
+            href="https://github.com/LarchLiu/spool"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={t("Open GitHub repository")}
+            title={t("Open GitHub repository")}
+          >
+            <Github size={21} aria-hidden="true" />
+          </a>
+        </Row>
+      </Card>
     </>
   );
 }

@@ -127,6 +127,10 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimSuffix(r.URL.Path, "/")
+	if path == "/api/version" && r.Method == http.MethodGet {
+		apiJSON(w, http.StatusOK, map[string]string{"version": resources.Version()})
+		return
+	}
 	if path == "/api/login" && r.Method == "POST" {
 		if !a.sameOrigin(r) {
 			apiError(w, 403, "跨域登录被拒绝")

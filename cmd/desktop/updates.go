@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -26,9 +28,12 @@ func (p *panel) initUpdates() {
 			return &appupdate.Release{Version: up.Version, Notes: up.Notes, Install: up.Install}, nil
 		},
 		Acquire: p.service.AcquireUpdate,
+		ReleaseNotes: func(ctx context.Context, current, target string) ([]appupdate.ReleaseNotes, error) {
+			return appupdate.FetchReleaseNotes(ctx, http.DefaultClient, appupdate.Repository(), current, target)
+		},
 		Preferences: func() (appupdate.Preferences, error) {
 			p, err := p.service.Store.UpdatePreferences()
-			return appupdate.Preferences{AutomaticChecks: p.AutomaticChecks, AutomaticInstalls: p.AutomaticInstalls}, err
+			return appupdate.Preferences{AutomaticChecks: p.AutomaticChecks, AutomaticInstalls: p.AutomaticInstalls, CheckInterval: time.Duration(p.CheckIntervalMinutes) * time.Minute}, err
 		},
 	})
 }
@@ -43,7 +48,7 @@ func (p *panel) updateLog(phase, version string, err error) {
 }
 
 func (p *panel) showUpdates() {
-	p.selectTab("Updates")
+	p.selectTab("About")
 	p.showMainWindow()
 }
 
@@ -59,6 +64,7 @@ func (p *panel) updatesView(c *ui.Context) {
 	}
 	if !state.Enabled {
 		ui.Text(c, p.tr("Updates are unavailable in development builds or read-only installations. Install an official release in a writable location.")).Wrap()
+		p.aboutRepository(c)
 		return
 	}
 	if !state.LastCheck.IsZero() {
@@ -105,6 +111,23 @@ func (p *panel) updatesView(c *ui.Context) {
 	})
 	previous := p.updatePreferences
 	ui.Checkbox(c, &p.updatePreferences.AutomaticChecks, p.tr("Automatically check for updates"))
+	intervals := []int{30, 60, 360, 720, 1440}
+	labels := []string{p.tr("30 minutes"), p.tr("1 hour"), p.tr("6 hours"), p.tr("12 hours"), p.tr("24 hours")}
+	selected := labels[3]
+	for i, interval := range intervals {
+		if interval == p.updatePreferences.CheckIntervalMinutes {
+			selected = labels[i]
+		}
+	}
+	oldInterval := selected
+	ui.Select(c, &selected, labels).Label(p.tr("Check interval")).Disabled(!p.updatePreferences.AutomaticChecks)
+	if selected != oldInterval {
+		for i, label := range labels {
+			if selected == label {
+				p.updatePreferences.CheckIntervalMinutes = intervals[i]
+			}
+		}
+	}
 	ui.Checkbox(c, &p.updatePreferences.AutomaticInstalls, p.tr("Automatically install updates when no chats are running"))
 	if previous != p.updatePreferences {
 		if err := p.service.Store.SaveUpdatePreferences(p.updatePreferences); err != nil {
@@ -116,6 +139,14 @@ func (p *panel) updatesView(c *ui.Context) {
 	if state.Notes != "" {
 		ui.Text(c, p.tr("Release notes")).Bold()
 		ui.Text(c, state.Notes).Wrap().FontSize(13)
+	}
+	p.aboutRepository(c)
+}
+
+func (p *panel) aboutRepository(c *ui.Context) {
+	ui.Text(c, p.tr("GitHub repository")).Bold()
+	if ui.Button(c, "GitHub - LarchLiu/spool").Clicked() {
+		p.openChatLink("https://github.com/LarchLiu/spool")
 	}
 }
 

@@ -17,14 +17,16 @@ type Release struct {
 type Preferences struct {
 	AutomaticChecks   bool
 	AutomaticInstalls bool
+	CheckInterval     time.Duration
 }
 
 type Options struct {
-	Enabled     bool
-	Check       func(context.Context) (*Release, error)
-	Acquire     func() (func(), error)
-	Preferences func() (Preferences, error)
-	Log         func(phase, version string, err error)
+	Enabled      bool
+	Check        func(context.Context) (*Release, error)
+	ReleaseNotes func(context.Context, string, string) ([]ReleaseNotes, error)
+	Acquire      func() (func(), error)
+	Preferences  func() (Preferences, error)
+	Log          func(phase, version string, err error)
 }
 
 type State struct {
@@ -68,6 +70,29 @@ func (c *Controller) State() State {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.state
+}
+
+func (c *Controller) ReleaseNotes(ctx context.Context, current string) (ReleaseHistory, error) {
+	c.mu.Lock()
+	if c.closed || !c.state.Enabled || c.state.Version == "" || c.opts.ReleaseNotes == nil {
+		c.mu.Unlock()
+		return ReleaseHistory{}, errors.New("No update release information is available")
+	}
+	target := c.state.Version
+	c.workers.Add(1)
+	c.mu.Unlock()
+	defer c.workers.Done()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	stop := context.AfterFunc(c.ctx, cancel)
+	defer stop()
+	var notes []ReleaseNotes
+	err := retryNetwork(ctx, c.retryDelays, func() error {
+		var err error
+		notes, err = c.opts.ReleaseNotes(ctx, current, target)
+		return err
+	}, nil)
+	return ReleaseHistory{CurrentVersion: current, TargetVersion: target, Releases: notes}, err
 }
 
 func (c *Controller) begin(install bool) bool {
@@ -174,31 +199,41 @@ func (c *Controller) Start() {
 		defer c.workers.Done()
 		timer := time.NewTimer(10 * time.Second)
 		defer timer.Stop()
-		var nextCheck time.Time
+		var lastAttempt time.Time
 		for {
 			select {
 			case <-c.ctx.Done():
 				return
 			case <-timer.C:
 			}
-			nextCheck = c.poll(nextCheck)
+			lastAttempt = c.poll(lastAttempt)
 			timer.Reset(time.Minute)
 		}
 	}()
 }
 
-func (c *Controller) poll(nextCheck time.Time) time.Time {
+func (c *Controller) poll(lastAttempt time.Time) time.Time {
 	p, err := c.opts.Preferences()
 	if err != nil {
-		return nextCheck
+		return lastAttempt
 	}
-	if p.AutomaticChecks && !time.Now().Before(nextCheck) {
+	state := c.State()
+	lastCheck := lastAttempt
+	if state.LastCheck.After(lastCheck) {
+		lastCheck = state.LastCheck
+	}
+	delay := p.CheckInterval
+	if delay <= 0 {
+		delay = 12 * time.Hour
+	}
+	if state.ErrorPhase == "check" {
+		delay = 5 * time.Minute
+	}
+	// Recompute from the latest preference on every poll, so interval changes
+	// do not leave a check scheduled at the old interval. Manual checks count too.
+	if p.AutomaticChecks && !time.Now().Before(lastCheck.Add(delay)) {
 		c.Check()
-		delay := 12 * time.Hour
-		if c.State().Error != "" {
-			delay = 5 * time.Minute
-		}
-		nextCheck = time.Now().Add(delay)
+		lastAttempt = time.Now()
 	}
 	c.mu.Lock()
 	held := c.autoInstallHeld
@@ -206,7 +241,7 @@ func (c *Controller) poll(nextCheck time.Time) time.Time {
 	if p.AutomaticInstalls && !held {
 		c.Install()
 	}
-	return nextCheck
+	return lastAttempt
 }
 
 // PrepareRestart takes the same lease again: chats may have started since

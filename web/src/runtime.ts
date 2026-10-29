@@ -69,6 +69,29 @@ export function subscribeDesktopTheme(
   listener: () => void,
   surface: unknown = globalThis,
 ): () => void {
+  return subscribeDesktopEvent("spool:appearance-changed", listener, surface);
+}
+
+export function desktopUpdateAvailable(surface: unknown = globalThis): boolean {
+  return (
+    isDesktopChat(surface) &&
+    "spoolUpdateAvailable" in surface &&
+    surface.spoolUpdateAvailable === true
+  );
+}
+
+export function subscribeDesktopUpdates(
+  listener: () => void,
+  surface: unknown = globalThis,
+): () => void {
+  return subscribeDesktopEvent("spool:update-changed", listener, surface);
+}
+
+function subscribeDesktopEvent(
+  event: string,
+  listener: () => void,
+  surface: unknown,
+): () => void {
   if (
     !isDesktopChat(surface) ||
     !("addEventListener" in surface) ||
@@ -79,8 +102,8 @@ export function subscribeDesktopTheme(
     return () => {};
   }
   const removeEventListener = surface.removeEventListener.bind(surface);
-  surface.addEventListener("spool:appearance-changed", listener);
-  return () => removeEventListener("spool:appearance-changed", listener);
+  surface.addEventListener(event, listener);
+  return () => removeEventListener(event, listener);
 }
 
 export function subscribeDesktopLocale(

@@ -1,6 +1,13 @@
+import { useSyncExternalStore } from "react";
 import { Settings2 } from "lucide-react";
 import type { Translator } from "./i18n";
-import { desktopSettingsPath, isDesktopChat } from "./runtime.js";
+import {
+  desktopSettingsPath,
+  isDesktopChat,
+  desktopUpdateAvailable,
+  subscribeDesktopUpdates,
+} from "./runtime.js";
+import { UpdateIndicator } from "./update-controls.js";
 
 export function DesktopSettingsLink({
   t,
@@ -11,6 +18,11 @@ export function DesktopSettingsLink({
   className?: string;
   iconOnly?: boolean;
 }) {
+  const updateAvailable = useSyncExternalStore(
+    subscribeDesktopUpdates,
+    desktopUpdateAvailable,
+    desktopUpdateAvailable,
+  );
   if (!isDesktopChat()) return null;
   return (
     <a
@@ -20,6 +32,7 @@ export function DesktopSettingsLink({
       title={t("Settings")}
     >
       <Settings2 size={16} />
+      {updateAvailable && <UpdateIndicator t={t} />}
       {!iconOnly && <span>{t("Settings")}</span>}
     </a>
   );

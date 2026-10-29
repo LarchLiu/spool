@@ -99,6 +99,7 @@ function App() {
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [savingPreferences, setSavingPreferences] = useState(false);
+  const [version, setVersion] = useState("");
   const { t, theme, locale } = usePresentation(preferences);
   const effortLabel = (value: string) => formatEffort(value, t);
   const [user, setUser] = useState<User | null>(null),
@@ -231,6 +232,9 @@ function App() {
     setError(e instanceof Error ? e.message : t("Request failed"));
   }
   useEffect(() => {
+    void api<{ version: string }>("/version")
+      .then((value) => setVersion(value.version))
+      .catch(() => {});
     api<{ user: User; csrf: string; preferences: UIPreferences }>("/me")
       .then((v) => {
         setPreferences(v.preferences);
@@ -1044,6 +1048,7 @@ function App() {
     <AppearanceDialog
       preferences={preferences}
       saving={savingPreferences}
+      version={version}
       t={t}
       onChange={updatePreferences}
       onClose={() => setAppearanceOpen(false)}

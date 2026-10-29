@@ -241,10 +241,31 @@ func (s *desktopSettings) Snapshot(ctx context.Context) (settingsSnapshot, error
 
 func settingsTabAllowed(tab string) bool {
 	switch tab {
-	case "Service", "People", "Projects", "Agents", "Online", "Appearance", "Updates":
+	case "Service", "People", "Projects", "Agents", "Online", "Appearance", "About":
 		return true
 	}
 	return false
+}
+
+func (s *desktopSettings) ReleaseNotes(ctx context.Context) (appupdate.ReleaseHistory, error) {
+	type source struct {
+		updates *appupdate.Controller
+		version string
+	}
+	v, err := settingsUI(ctx, s.panel, func() (source, error) {
+		return source{updates: s.panel.updates, version: desktopVersion()}, nil
+	})
+	if err != nil {
+		return appupdate.ReleaseHistory{}, err
+	}
+	if v.updates == nil {
+		return appupdate.ReleaseHistory{}, errors.New("No update release information is available")
+	}
+	history, err := v.updates.ReleaseNotes(ctx, v.version)
+	if err != nil {
+		return appupdate.ReleaseHistory{}, errors.New(appupdate.SafeError(err))
+	}
+	return history, nil
 }
 
 func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) (settingsSnapshot, error) {

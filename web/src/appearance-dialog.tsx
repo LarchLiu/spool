@@ -6,17 +6,19 @@ import {
   type Language,
   type Theme,
   type UIPreferences,
-} from "./preferences";
+} from "./preferences.js";
 
 export function AppearanceDialog({
   preferences,
   saving,
+  version,
   t,
   onChange,
   onClose,
 }: {
   preferences: UIPreferences;
   saving: boolean;
+  version: string;
   t: Translator;
   onChange: (preferences: UIPreferences) => void;
   onClose: () => void;
@@ -104,11 +106,7 @@ export function AppearanceDialog({
           ))}
         </select>
       </label>
-      <p>
-        {saving
-          ? t("Working…")
-          : t("Changes apply immediately and are saved in SQLite.")}
-      </p>
+      <p>{t("Current version: {version}", { version: version || "..." })}</p>
     </dialog>
   );
 }

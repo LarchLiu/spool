@@ -9,8 +9,15 @@ import (
 
 var titlebarChanged = mygo.NewEvent[windowChrome]("spool:titlebar")
 var desktopAppearance = mygo.NewEvent[string]("spool:appearance")
+var desktopUpdateAvailable = mygo.NewEvent[bool]("spool:update-available")
 
 const desktopWindowPreload = `Object.defineProperty(window, "spoolDesktop", {value: true});
+window.mygo?.on("spool:update-available", available => {
+  const next = available === true;
+  if (window.spoolUpdateAvailable === next) return;
+  window.spoolUpdateAvailable = next;
+  window.dispatchEvent(new Event("spool:update-changed"));
+});
 if (window.mygo?.platform === "win32") {
   window.mygo.on("spool:appearance", theme => {
     if (theme !== "light" && theme !== "dark") return;
@@ -62,6 +69,14 @@ func (p *panel) sendWindowChrome(view *mygo.WebView) {
 	if runtime.GOOS == "darwin" && view != nil {
 		_ = titlebarChanged.EmitPage(view.Page(), p.windowChrome)
 	}
+}
+
+func (p *panel) sendUpdateAvailability(view *mygo.WebView) {
+	if view == nil || p.updates == nil {
+		return
+	}
+	state := p.updates.State()
+	_ = desktopUpdateAvailable.EmitPage(view.Page(), state.Enabled && state.Version != "")
 }
 
 func (p *panel) sendDesktopAppearance(view *mygo.WebView) {

@@ -8,7 +8,7 @@ export const settingsSections = [
   "Agents",
   "Online",
   "Appearance",
-  "Updates",
+  "About",
 ] as const;
 export type SettingsSection = (typeof settingsSections)[number];
 export type Backend = "codex" | "claude";
@@ -68,6 +68,20 @@ export type ManagedAgent = {
 export type UpdatePreferences = {
   automatic_checks: boolean;
   automatic_installs: boolean;
+  check_interval_minutes: 30 | 60 | 360 | 720 | 1440;
+};
+export type ReleaseNotes = {
+  version: string;
+  name: string;
+  body: string;
+  url: string;
+  published_at: string;
+  prerelease: boolean;
+};
+export type ReleaseHistory = {
+  current_version: string;
+  target_version: string;
+  releases: ReleaseNotes[];
 };
 export type SettingsSnapshot = {
   section: string;
@@ -158,7 +172,7 @@ export function hasSettingsBridge(surface: unknown = globalThis) {
   return !!runtime(surface);
 }
 export function settingsCall<T>(
-  method: "Snapshot" | "Execute" | "ChoosePath",
+  method: "Snapshot" | "Execute" | "ChoosePath" | "ReleaseNotes",
   ...args: unknown[]
 ): Promise<T> {
   const bridge = runtime();

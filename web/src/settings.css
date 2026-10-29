@@ -104,9 +104,16 @@
   font-size: 13px;
   color: var(--muted);
 }
-.settings-nav-group button span {
+.settings-nav-group button > span:not(.update-indicator) {
   flex: 1;
+  min-width: 0;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-nav-group .update-indicator {
+  flex: 0 0 7px;
 }
 .settings-nav-group button.selected {
   background: var(--selected);
@@ -259,6 +266,40 @@
 }
 .settings-theme-picker .icon[aria-pressed="true"]:hover:not(:disabled) {
   background: var(--color-primary-hover);
+}
+.settings-check-interval {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-width: 100%;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--soft);
+}
+.settings-check-interval button {
+  flex: 1 0 auto;
+  min-height: 25px;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.settings-check-interval button[aria-pressed="true"] {
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: 0 1px 3px var(--shadow);
+}
+.settings-row-control:has(> .settings-check-interval) {
+  min-width: 0;
+  max-width: 100%;
+  flex-shrink: 1;
+}
+.settings-repository-link {
+  color: var(--text);
+  text-decoration: none;
 }
 .settings-row-control > select {
   max-width: 100%;
@@ -595,12 +636,102 @@
   height: 6px;
   accent-color: var(--color-primary);
 }
-.settings-release-notes {
-  white-space: pre-wrap;
-  padding: 20px;
+.desktop-settings-shell .settings-release-toggle {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  gap: 18px;
+  border: 0;
+  border-radius: 0;
+  padding: 17px 19px;
+  background: transparent;
+  text-align: left;
+}
+.settings-release-toggle > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.settings-release-toggle strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.settings-release-toggle small {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.settings-release-toggle > svg {
+  flex-shrink: 0;
+}
+.settings-release-toggle[aria-expanded="true"] > svg {
+  transform: rotate(180deg);
+}
+.settings-release-body {
+  border-top: 1px solid var(--line);
+  padding: 12px 19px 20px;
+}
+.settings-release-source,
+.settings-release-version > header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.settings-release-source {
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.settings-release-source > span {
+  flex: 1;
+  min-width: 0;
+}
+.settings-release-version {
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+}
+.settings-release-version:last-child {
+  padding-bottom: 0;
+}
+.settings-release-version > header {
+  margin-bottom: 16px;
+}
+.settings-release-version h3 {
+  margin: 0;
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.settings-release-version :is(time, header > span) {
+  color: var(--muted);
+  font-size: 10px;
+}
+.settings-release-version header > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  text-decoration: none;
+}
+.settings-release-version a:focus-visible {
+  outline: 2px solid var(--color-primary-focus);
+  outline-offset: 3px;
+}
+.settings-release-name {
+  margin: -4px 0 16px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.settings-release-markdown {
   font-size: 12px;
   line-height: 1.8;
-  overflow-wrap: anywhere;
+}
+.settings-release-markdown input[type="checkbox"] {
+  min-height: 0;
+  padding: 0;
 }
 .settings-spinning {
   animation: settings-spin 1.3s linear infinite;

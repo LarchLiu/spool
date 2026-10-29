@@ -90,7 +90,19 @@ func runDesktop() (runErr error) {
 	development := mygo.IsDev()
 	root := flag.String("data-dir", workspace.DefaultDataDir(development), "Data directory (database in db/spool.sqlite)")
 	smoke := flag.String("release-smoke", "", "Probe the packaged desktop using fresh temporary data; write a JSON report")
+	smokeHistoryPath := flag.String("smoke-release-history", "", "ReleaseHistory JSON fixture for --release-smoke screenshots only")
 	flag.Parse()
+	var smokeHistory *appupdate.ReleaseHistory
+	if *smokeHistoryPath != "" {
+		if *smoke == "" {
+			return fmt.Errorf("--smoke-release-history requires --release-smoke")
+		}
+		var err error
+		smokeHistory, err = loadSmokeReleaseHistory(*smokeHistoryPath)
+		if err != nil {
+			return err
+		}
+	}
 	if *smoke != "" {
 		temporary, err := smokeData()
 		if err != nil {
@@ -267,7 +279,7 @@ func runDesktop() (runErr error) {
 			p.updates.Start()
 		} else {
 			p.window.Show()
-			go p.smoke(*smoke, smokeResult)
+			go p.smoke(*smoke, smokeResult, smokeHistory)
 		}
 
 		go func() {
@@ -281,7 +293,10 @@ func runDesktop() (runErr error) {
 					status := service.Status()
 					agents, _ := service.Store.Agents()
 					projects, _ := service.Store.Projects()
-					p.window.Update(func() { p.status = status; p.agents = agents; p.projects = projects })
+					p.window.Update(func() {
+						p.status, p.agents, p.projects = status, agents, projects
+						p.sendUpdateAvailability(p.chatView)
+					})
 				}
 			}
 
@@ -362,7 +377,7 @@ func (p *panel) view(c *ui.Context) {
 			}
 			ui.Text(c, "Spool").Bold().FontSize(16)
 			ui.Text(c, p.tr("Control Center")).FontSize(12)
-			for _, tab := range []string{"Chat", "Service", "People", "Projects", "Agents", "Online", "Appearance", "Updates"} {
+			for _, tab := range []string{"Chat", "Service", "People", "Projects", "Agents", "Online", "Appearance", "About"} {
 				c.Key("tab-" + tab)
 				button := ui.Button
 				if p.tab == tab {
@@ -384,7 +399,7 @@ func (p *panel) view(c *ui.Context) {
 				if p.message != "" {
 					ui.Text(c, p.tr(p.message)).Wrap().FontSize(12)
 				}
-				if state := p.updates.State(); state.Version != "" && p.tab != "Updates" {
+				if state := p.updates.State(); state.Version != "" && p.tab != "About" {
 					ui.Text(c, p.tr("Update {version} is available.", "version", state.Version)).Wrap().FontSize(12)
 					if state.Error != "" {
 						ui.Text(c, p.tr(state.Error)).Wrap().FontSize(12)
@@ -403,7 +418,7 @@ func (p *panel) view(c *ui.Context) {
 					p.onlineView(c)
 				case "Appearance":
 					p.appearanceView(c)
-				case "Updates":
+				case "About":
 					p.updatesView(c)
 				}
 			})

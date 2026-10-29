@@ -10,6 +10,8 @@ import {
   desktopTheme,
   subscribeDesktopLocale,
   subscribeDesktopTheme,
+  desktopUpdateAvailable,
+  subscribeDesktopUpdates,
   chatPreferences,
 } from "../.test-build/runtime.js";
 import { resolveLanguage, resolveTheme } from "../.test-build/preferences.js";
@@ -77,6 +79,57 @@ test("footer settings replaces appearance in desktop but preserves the browser c
   assert.match(desktop, /aria-label="Settings"/);
   assert.doesNotMatch(desktop, /<button|<span>|Appearance and language/);
   assert.doesNotMatch(desktop, /desktop-settings-labeled/);
+});
+
+test("desktop settings marks available and restart-pending updates with a localized dot", (t) => {
+  globalThis.spoolDesktop = true;
+  t.after(() => {
+    delete globalThis.spoolDesktop;
+    delete globalThis.spoolUpdateAvailable;
+  });
+  for (const available of [false, true, false]) {
+    globalThis.spoolUpdateAvailable = available;
+    const html = renderToStaticMarkup(createElement(ChatSettingsControl, {
+      t: (key) => `translated:${key}`,
+      onAppearance() {},
+    }));
+    assert.equal(html.includes('class="update-indicator"'), available);
+    if (available) assert.match(html, /role="img" aria-label="translated:Update available"/);
+  }
+});
+
+test("desktop update availability is cached by preload and changes live without exposing management to chat", async () => {
+  const listeners = new Map();
+  const surface = {
+    spoolDesktop: true,
+    addEventListener(name, listener) { listeners.set(name, listener); },
+    removeEventListener(name, listener) {
+      if (listeners.get(name) === listener) listeners.delete(name);
+    },
+  };
+  assert.equal(desktopUpdateAvailable(surface), false);
+  const seen = [];
+  const off = subscribeDesktopUpdates(() => seen.push(desktopUpdateAvailable(surface)), surface);
+  for (const available of [true, false]) {
+    surface.spoolUpdateAvailable = available;
+    listeners.get("spool:update-changed")();
+  }
+  assert.deepEqual(seen, [true, false]);
+  off();
+  assert.equal(listeners.size, 0);
+  for (const invalid of [null, {}, { spoolUpdateAvailable: true }, { spoolDesktop: true, spoolUpdateAvailable: "true" }]) {
+    assert.equal(desktopUpdateAvailable(invalid), false);
+    assert.doesNotThrow(() => subscribeDesktopUpdates(() => assert.fail("invalid surface subscribed"), invalid)());
+  }
+  const source = await readFile(new URL("../../cmd/desktop/window_chrome.go", import.meta.url), "utf8");
+  assert.match(source, /window\.mygo\?\.on\("spool:update-available"/);
+  assert.match(source, /window\.spoolUpdateAvailable = next/);
+  assert.match(source, /new Event\("spool:update-changed"\)/);
+  assert.match(source, /state\.Enabled && state\.Version != ""/);
+  const chat = await readFile(new URL("../../cmd/desktop/chat.go", import.meta.url), "utf8");
+  assert.match(chat, /OnDidFinishLoad[\s\S]*?p\.sendUpdateAvailability\(view\)/);
+  const main = await readFile(new URL("../../cmd/desktop/main.go", import.meta.url), "utf8");
+  assert.match(main, /ticker\.C:[\s\S]*?p\.sendUpdateAvailability\(p\.chatView\)/);
 });
 
 test("desktop locale starts with the native setting and updates through MyGo events", () => {

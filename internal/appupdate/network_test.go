@@ -73,7 +73,7 @@ func TestControllerRetriesDownloadWithoutRepeatingSecurityFailures(t *testing.T)
 	for _, secure := range []bool{false, true} {
 		installs, checks, retries := 0, 0, 0
 		c := New(Options{
-			Enabled: true, Preferences: func() (Preferences, error) { return Preferences{true, true}, nil },
+			Enabled: true, Preferences: func() (Preferences, error) { return Preferences{AutomaticChecks: true, AutomaticInstalls: true}, nil },
 			Check: func(context.Context) (*Release, error) {
 				checks++
 				return &Release{Version: "1.2.3", Install: func(context.Context, func(int64, int64)) error {

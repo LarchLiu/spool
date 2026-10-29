@@ -146,7 +146,7 @@ test("management has no HTTP fallback or presentation-flag authorization", async
   await assert.rejects(settingsCall("Snapshot"), /only available/);
 });
 
-test("management calls use the three native methods and propagate native failures", async (t) => {
+test("management calls use the native methods and propagate native failures", async (t) => {
   const calls = [];
   mockRuntime(t, {
     call: async (...args) => {
@@ -160,9 +160,11 @@ test("management calls use the three native methods and propagate native failure
     section: "Service",
   });
   await settingsCall("ChoosePath", "directory", "/tmp/project");
+  await settingsCall("ReleaseNotes");
   assert.deepEqual(calls, [
     ["DesktopSettings.Execute", command],
     ["DesktopSettings.ChoosePath", "directory", "/tmp/project"],
+    ["DesktopSettings.ReleaseNotes"],
   ]);
   globalThis.mygo.call = async () => {
     throw new Error("only the desktop settings page");

@@ -410,10 +410,25 @@ button:disabled {
   margin-top: 4px;
 }
 .desktop-settings {
+  position: relative;
   gap: 8px;
   flex-shrink: 0;
   font-size: 12px;
   text-decoration: none;
+}
+.update-indicator {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+.desktop-settings > .update-indicator {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  box-shadow: 0 0 0 2px var(--sidebar);
 }
 .desktop-settings-labeled {
   width: auto;

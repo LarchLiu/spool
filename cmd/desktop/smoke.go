@@ -12,10 +12,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
 
+	"spool/internal/appupdate"
 	"spool/internal/i18n"
 	"spool/internal/workspace"
 )
@@ -65,7 +67,7 @@ func probeWeb(ctx context.Context, address string) error {
 	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 5 * time.Second}
 	defer client.CloseIdleConnections()
 	for _, page := range []struct{ path, contains string }{
-		{"/healthz", `"ok":true`}, {"/", "<title>Spool"}, {"/manifest.webmanifest", `"Spool"`},
+		{"/healthz", `"ok":true`}, {"/", "<title>Spool"}, {"/manifest.webmanifest", `"Spool"`}, {"/api/version", `"version":`},
 	} {
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+address+page.path, nil)
 		res, err := client.Do(req)
@@ -81,7 +83,23 @@ func probeWeb(ctx context.Context, address string) error {
 	return nil
 }
 
-func (p *panel) smoke(report string, result chan<- error) {
+func loadSmokeReleaseHistory(path string) (*appupdate.ReleaseHistory, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	var history appupdate.ReleaseHistory
+	if err := json.NewDecoder(io.LimitReader(file, 8<<20)).Decode(&history); err != nil {
+		return nil, err
+	}
+	if history.CurrentVersion == "" || history.TargetVersion == "" || len(history.Releases) < 2 {
+		return nil, fmt.Errorf("smoke release history needs a current version, target version and at least two releases")
+	}
+	return &history, nil
+}
+
+func (p *panel) smoke(report string, result chan<- error, history *appupdate.ReleaseHistory) {
 	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
 	defer cancel()
 	// Confirm the native event loop still dispatches after window creation.
@@ -103,7 +121,7 @@ func (p *panel) smoke(report string, result chan<- error) {
 		err = p.probeStartupChat(ctx, report)
 	}
 	if err == nil {
-		err = p.probeSettings(ctx, report)
+		err = p.probeSettings(ctx, report, history)
 	}
 	if err == nil {
 		err = p.probeEmbeddedChat(ctx)
@@ -359,7 +377,7 @@ func smokeSettingsCommand(ctx context.Context, page *mygo.Page, command settings
 	return err
 }
 
-func (p *panel) probeSettings(ctx context.Context, report string) error {
+func (p *panel) probeSettings(ctx context.Context, report string, history *appupdate.ReleaseHistory) error {
 	ready := make(chan *mygo.WebView, 1)
 	p.window.Update(func() { ready <- p.settingsView })
 	var view *mygo.WebView
@@ -389,7 +407,7 @@ func (p *panel) probeSettings(ctx context.Context, report string) error {
 		}
 	}
 	// Native navigation events and all seven pages must work in one window.
-	for _, section := range []string{"People", "Projects", "Agents", "Online", "Appearance", "Updates", "Service"} {
+	for _, section := range []string{"People", "Projects", "Agents", "Online", "Appearance", "About", "Service"} {
 		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-section="%s"]').click();`, section)); err != nil {
 			return err
 		}
@@ -399,6 +417,11 @@ func (p *panel) probeSettings(ctx context.Context, report string) error {
 		if section == "People" || section == "Projects" || section == "Agents" {
 			if err := waitChatScript(ctx, page, fmt.Sprintf(`return !!document.querySelector('[data-page="%s"] .settings-list') && !document.querySelector('[data-page="%s"] form');`, section, section)); err != nil {
 				return fmt.Errorf("settings list-first %s: %w", section, err)
+			}
+		}
+		if section == "About" {
+			if err := p.probeAboutSettings(ctx, view, report, history); err != nil {
+				return fmt.Errorf("about settings: %w", err)
 			}
 		}
 	}
@@ -560,12 +583,27 @@ func (p *panel) probeSettings(ctx context.Context, report string) error {
 	} else if err := os.WriteFile(report+"-settings-compact.png", image, 0o600); err != nil {
 		return err
 	}
-	for _, section := range []string{"Projects", "Appearance", "Service"} {
+	for _, section := range []string{"Projects", "Appearance", "About", "Service"} {
 		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-section="%s"]').click();`, section)); err != nil {
 			return err
 		}
 		if err := waitChatScript(ctx, page, fmt.Sprintf(`const main = document.querySelector('.settings-main'); return !document.querySelector('[data-page="%s"]').hidden && !document.querySelector('.settings-content').disabled && main.scrollWidth <= main.clientWidth;`, section)); err != nil {
 			return err
+		}
+		if section == "About" {
+			if err := waitChatScript(ctx, page, `
+				const interval = document.querySelector('.settings-check-interval');
+				const heading = interval.closest('.settings-row').querySelector('.settings-row-heading').getBoundingClientRect();
+				const buttons = [...interval.querySelectorAll('button')].map(button => button.getBoundingClientRect());
+				return buttons[0].left > heading.right && buttons.every(button => Math.abs(button.top - buttons[0].top) <= 1);
+			`); err != nil {
+				return fmt.Errorf("compact interval alignment: %w", err)
+			}
+			if image, err := view.CapturePage(); err != nil {
+				return err
+			} else if err := os.WriteFile(report+"-about-compact.png", image, 0o600); err != nil {
+				return err
+			}
 		}
 	}
 	restored := make(chan struct{})
@@ -594,6 +632,206 @@ func (p *panel) probeSettings(ctx context.Context, report string) error {
 		return err
 	}
 	return smokeSettingsCommand(ctx, page, settingsCommand{Kind: "start-service"})
+}
+
+func (p *panel) probeAboutSettings(ctx context.Context, view *mygo.WebView, report string, history *appupdate.ReleaseHistory) error {
+	page := view.Page()
+	if err := waitChatScript(ctx, page, `
+		const section = document.querySelector('[data-page="About"]');
+		const snapshot = await mygo.call('DesktopSettings.Snapshot');
+		const link = section.querySelector('.settings-repository-link');
+		const interval = section.querySelector('.settings-check-interval');
+		const row = interval.closest('.settings-row');
+		const heading = row.querySelector('.settings-row-heading').getBoundingClientRect();
+		const choices = interval.getBoundingClientRect();
+		return !section.hidden && !document.querySelector('[data-section="Updates"]') &&
+			section.querySelectorAll('.settings-check-interval button').length === 5 &&
+			!row.classList.contains('settings-row-wide') && choices.left > heading.right &&
+			Math.abs((choices.top + choices.bottom) / 2 - (heading.top + heading.bottom) / 2) <= 1 &&
+			section.textContent.includes(snapshot.version) &&
+			link?.href === 'https://github.com/LarchLiu/spool' && !!link.querySelector('svg') &&
+			section.lastElementChild.contains(link);
+	`); err != nil {
+		return err
+	}
+	for index, minutes := range []int{30, 60, 360, 720, 1440} {
+		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelectorAll('[data-page="About"] .settings-check-interval button')[%d].click();`, index)); err != nil {
+			return err
+		}
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`
+			return (await mygo.call('DesktopSettings.Snapshot')).update_preferences.check_interval_minutes === %d &&
+				document.querySelectorAll('[data-page="About"] .settings-check-interval button')[%d].getAttribute('aria-pressed') === 'true' &&
+				!document.querySelector('.settings-content').disabled;
+		`, minutes, index)); err != nil {
+			return fmt.Errorf("interval %d: %w", minutes, err)
+		}
+	}
+	if image, err := view.CapturePage(); err != nil {
+		return err
+	} else if err := os.WriteFile(report+"-about.png", image, 0o600); err != nil {
+		return err
+	}
+	if err := p.probeUpdateIndicators(ctx, view, report, history); err != nil {
+		return err
+	}
+	if _, err := page.EvalContext(ctx, `document.querySelector('[data-page="About"] [role="switch"]').click();`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, `
+		const preferences = (await mygo.call('DesktopSettings.Snapshot')).update_preferences;
+		return !preferences.automatic_checks && preferences.check_interval_minutes === 1440 &&
+			[...document.querySelectorAll('[data-page="About"] .settings-check-interval button')].every(button => button.disabled) &&
+			!document.querySelector('.settings-content').disabled;
+	`); err != nil {
+		return err
+	}
+	return smokeSettingsCommand(ctx, page, settingsCommand{Kind: "save-updates", UpdatePreferences: workspace.UpdatePreferences{
+		AutomaticChecks: true, CheckIntervalMinutes: workspace.DefaultUpdateCheckIntervalMinutes,
+	}})
+}
+
+func (p *panel) probeUpdateIndicators(ctx context.Context, view *mygo.WebView, report string, history *appupdate.ReleaseHistory) error {
+	// Exercise the real bridge and preload without contacting an update server
+	// or downloading/installing a release in the smoke process.
+	checks := 0
+	if history == nil {
+		history = &appupdate.ReleaseHistory{CurrentVersion: desktopVersion(), TargetVersion: "99.0.0", Releases: []appupdate.ReleaseNotes{
+			{Version: "99.0.0", Body: "## Features\n- **Markdown** release notes\n\n| Feature | Status |\n| --- | --- |\n| Release history | Ready |", URL: "https://github.com/LarchLiu/spool/releases/tag/v99.0.0"},
+			{Version: "98.0.0", Body: "## Fixes\n- Preserve `settings` preferences", URL: "https://github.com/LarchLiu/spool/releases/tag/v98.0.0"},
+		}}
+	}
+	var notesRequests atomic.Int32
+	fixture := appupdate.New(appupdate.Options{
+		Enabled: true,
+		Check: func(context.Context) (*appupdate.Release, error) {
+			checks++
+			if checks == 1 {
+				return &appupdate.Release{Version: history.TargetVersion}, nil
+			}
+			return nil, nil
+		},
+		ReleaseNotes: func(context.Context, string, string) ([]appupdate.ReleaseNotes, error) {
+			notesRequests.Add(1)
+			return history.Releases, nil
+		},
+	})
+	defer fixture.Close()
+	fixture.Check()
+	original := make(chan *appupdate.Controller, 1)
+	var previousVersion string
+	p.window.Update(func() {
+		previousVersion = mygo.App.Version()
+		mygo.App.SetVersion(history.CurrentVersion)
+		original <- p.updates
+		p.updates = fixture
+		p.sendUpdateAvailability(p.chatView)
+	})
+	var previous *appupdate.Controller
+	select {
+	case previous = <-original:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer p.window.Update(func() {
+		mygo.App.SetVersion(previousVersion)
+		p.updates = previous
+		p.sendUpdateAvailability(p.chatView)
+	})
+	for _, available := range []bool{true, false} {
+		if !available {
+			fixture.Check()
+			p.window.Update(func() { p.sendUpdateAvailability(p.chatView) })
+		}
+		if err := waitChatScript(ctx, view.Page(), fmt.Sprintf(`
+			return !!document.querySelector('[data-section="About"] .update-indicator') === %t;
+		`, available)); err != nil {
+			return fmt.Errorf("about update dot %t: %w", available, err)
+		}
+		if err := waitChatScript(ctx, p.chatView.Page(), fmt.Sprintf(`
+			return window.spoolUpdateAvailable === %t && !!document.querySelector('a.desktop-settings .update-indicator') === %t;
+		`, available, available)); err != nil {
+			return fmt.Errorf("chat update dot %t: %w", available, err)
+		}
+		if available {
+			if notesRequests.Load() != 0 {
+				return fmt.Errorf("release notes fetched before expansion")
+			}
+			if err := p.probeReleaseHistory(ctx, view, report, len(history.Releases)); err != nil {
+				return err
+			}
+			if notesRequests.Load() != 1 {
+				return fmt.Errorf("release notes collapse/reopen lost its cache: %d requests", notesRequests.Load())
+			}
+			if image, err := view.CapturePage(); err != nil {
+				return err
+			} else if err := os.WriteFile(report+"-about-update.png", image, 0o600); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (p *panel) probeReleaseHistory(ctx context.Context, view *mygo.WebView, report string, count int) error {
+	page := view.Page()
+	if _, err := page.EvalContext(ctx, `document.querySelector('.settings-release-toggle').click();`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, fmt.Sprintf(`
+		return document.querySelector('.settings-release-toggle')?.getAttribute('aria-expanded') === 'true' &&
+			document.querySelectorAll('.settings-release-version').length === %d &&
+			!!document.querySelector('.settings-release-markdown h2, .settings-release-markdown h3') &&
+			!!document.querySelector('.settings-release-markdown li') &&
+			!document.querySelector('.settings-release-body [role="alert"]');
+	`, count)); err != nil {
+		return fmt.Errorf("release history rendering: %w", err)
+	}
+	// Use the real settings preferences and renderer, with an isolated fixture
+	// behind the native bridge. Never fetch or install an update in this probe.
+	preferences, err := p.service.Store.UIPreferences("")
+	if err != nil {
+		return err
+	}
+	if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: "save-appearance", Preferences: workspace.UIPreferences{Theme: "light", Language: "zh-CN"}}); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, `return document.documentElement.dataset.theme === 'light' && document.querySelector('.settings-release-toggle').textContent.includes('查看版本更新信息');`); err != nil {
+		return err
+	}
+	// Verify collapse/reopen retains already loaded content.
+	for _, expanded := range []bool{false, true} {
+		if _, err := page.EvalContext(ctx, `document.querySelector('.settings-release-toggle').click();`); err != nil {
+			return err
+		}
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`return document.querySelector('.settings-release-toggle').getAttribute('aria-expanded') === '%t';`, expanded)); err != nil {
+			return err
+		}
+	}
+	if _, err := page.EvalContext(ctx, `document.querySelector('.settings-release-history').scrollIntoView({block: 'start'});`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, `const bounds = document.querySelector('.settings-release-history').getBoundingClientRect(); return bounds.top >= -1 && bounds.top < innerHeight / 2;`); err != nil {
+		return err
+	}
+	for i, suffix := range []string{"-release-history.png", "-release-history-older.png"} {
+		if i != 0 {
+			if _, err := page.EvalContext(ctx, `document.querySelectorAll('.settings-release-version')[1].scrollIntoView({block: 'start'});`); err != nil {
+				return err
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+		image, err := view.CapturePage()
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(report+suffix, image, 0o600); err != nil {
+			return err
+		}
+	}
+	if _, err := page.EvalContext(ctx, `document.querySelector('.settings-main').scrollTop = 0;`); err != nil {
+		return err
+	}
+	return smokeSettingsCommand(ctx, page, settingsCommand{Kind: "save-appearance", Preferences: preferences})
 }
 
 func (p *panel) probeThemePicker(ctx context.Context, view *mygo.WebView, report string) error {

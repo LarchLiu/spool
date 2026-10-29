@@ -55,6 +55,9 @@ func TestSettingsBridgeRejectsCallsWithoutDesktopPage(t *testing.T) {
 		if _, err := bridge.ChoosePath(context.Background(), "directory", ""); err == nil {
 			t.Fatal("dialog allowed without calling page")
 		}
+		if _, err := bridge.ReleaseNotes(context.Background()); err == nil {
+			t.Fatal("release history allowed without calling page")
+		}
 	}
 }
 
@@ -114,7 +117,7 @@ func TestSettingsAssetsForbidRemoteContentAndHTTPAdminFallback(t *testing.T) {
 }
 
 func TestSettingsSectionsAreAllowlisted(t *testing.T) {
-	for _, section := range []string{"Service", "People", "Projects", "Agents", "Online", "Appearance", "Updates"} {
+	for _, section := range []string{"Service", "People", "Projects", "Agents", "Online", "Appearance", "About"} {
 		if !settingsTabAllowed(section) {
 			t.Fatal(section)
 		}

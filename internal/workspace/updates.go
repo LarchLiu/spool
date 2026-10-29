@@ -14,12 +14,24 @@ var (
 )
 
 type UpdatePreferences struct {
-	AutomaticChecks   bool `json:"automatic_checks"`
-	AutomaticInstalls bool `json:"automatic_installs"`
+	AutomaticChecks      bool `json:"automatic_checks"`
+	AutomaticInstalls    bool `json:"automatic_installs"`
+	CheckIntervalMinutes int  `json:"check_interval_minutes"`
+}
+
+const DefaultUpdateCheckIntervalMinutes = 12 * 60
+
+func (p UpdatePreferences) Validate() error {
+	switch p.CheckIntervalMinutes {
+	case 30, 60, 360, 720, 1440:
+		return nil
+	default:
+		return errors.New("Invalid update check interval")
+	}
 }
 
 func (s *Store) UpdatePreferences() (UpdatePreferences, error) {
-	p := UpdatePreferences{AutomaticChecks: true}
+	p := UpdatePreferences{AutomaticChecks: true, CheckIntervalMinutes: DefaultUpdateCheckIntervalMinutes}
 	var body string
 	err := s.db.QueryRow(`SELECT value FROM settings WHERE key='updates:desktop'`).Scan(&body)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -28,11 +40,22 @@ func (s *Store) UpdatePreferences() (UpdatePreferences, error) {
 	if err != nil {
 		return p, err
 	}
-	err = json.Unmarshal([]byte(body), &p)
-	return p, err
+	if err = json.Unmarshal([]byte(body), &p); err != nil {
+		return p, err
+	}
+	if p.CheckIntervalMinutes == 0 {
+		p.CheckIntervalMinutes = DefaultUpdateCheckIntervalMinutes
+	}
+	return p, p.Validate()
 }
 
 func (s *Store) SaveUpdatePreferences(p UpdatePreferences) error {
+	if p.CheckIntervalMinutes == 0 {
+		p.CheckIntervalMinutes = DefaultUpdateCheckIntervalMinutes
+	}
+	if err := p.Validate(); err != nil {
+		return err
+	}
 	body, err := json.Marshal(p)
 	if err != nil {
 		return err

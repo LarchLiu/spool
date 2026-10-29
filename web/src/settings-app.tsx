@@ -4,6 +4,7 @@ import {
   Check,
   ChevronRight,
   FolderOpen,
+  Info,
   Radio,
   RefreshCw,
   Server,
@@ -30,10 +31,11 @@ import {
   AgentsPage,
   OnlinePage,
   AppearancePage,
-  UpdatesPage,
+  AboutPage,
 } from "./settings-pages";
 import { ProjectsPage } from "./settings-projects";
 import { createSettingsCommandQueue } from "./settings-autosave";
+import { UpdateIndicator } from "./update-controls";
 
 const icons = {
   Service: Server,
@@ -42,7 +44,7 @@ const icons = {
   Agents: Workflow,
   Online: Radio,
   Appearance: SlidersHorizontal,
-  Updates: RefreshCw,
+  About: Info,
 };
 const descriptions: Record<SettingsSection, MessageKey> = {
   Service: "Manage your local server and workspace access.",
@@ -52,7 +54,7 @@ const descriptions: Record<SettingsSection, MessageKey> = {
   Agents: "Your local coding tools, connected to Spool.",
   Online: "See who is connected to your workspace.",
   Appearance: "Make this workspace feel like yours.",
-  Updates: "Keep Spool up to date, on your terms.",
+  About: "Keep Spool up to date, on your terms.",
 };
 export function SettingsApp() {
   const { t } = usePresentation(defaultPreferences);
@@ -164,6 +166,9 @@ export function SettingsApp() {
                       >
                         <Icon size={17} />
                         <span>{t(key)}</span>
+                        {key === "About" &&
+                          data?.updates.Enabled &&
+                          data.updates.Version && <UpdateIndicator t={t} />}
                         {section === key && <ChevronRight size={14} />}
                       </button>
                     );
@@ -250,8 +255,8 @@ export function SettingsApp() {
                   <div data-page="Appearance" hidden={section !== "Appearance"}>
                     <AppearancePage {...props} />
                   </div>
-                  <div data-page="Updates" hidden={section !== "Updates"}>
-                    <UpdatesPage {...props} />
+                  <div data-page="About" hidden={section !== "About"}>
+                    <AboutPage {...props} />
                   </div>
                 </fieldset>
               )}
