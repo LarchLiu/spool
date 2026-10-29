@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { Avatar } from "@dicebear/core";
 import {
   avatarChoices,
   avatarAttribution,
@@ -50,6 +51,89 @@ test("existing users get a stable, locally generated name-based avatar", () => {
     avatarDataURI(user),
     avatarDataURI({ ...user, id: "another-account" }),
   );
+});
+
+test("avatar images are shared across identities, component mounts and display sizes", (t) => {
+  const generated = t.mock.method(Avatar.prototype, "toDataUri");
+  const person = {
+    ...user,
+    avatar: { style: "clay", seed: "cache:shared-components" },
+  };
+  const uri = avatarDataURI(person);
+  for (const size of [16, 28, 80]) {
+    const html = renderToStaticMarkup(
+      createElement(UserAvatar, {
+        person: { ...person, id: `other-${size}`, nickname: "Renamed" },
+        size,
+      }),
+    );
+    assert.ok(html.includes(uri.replaceAll("&", "&amp;")));
+    assert.match(html, new RegExp(`width="${size}" height="${size}"`));
+  }
+  assert.equal(generated.mock.callCount(), 1);
+});
+
+test("avatar cache uses resolved style and seed and respects configuration changes", (t) => {
+  const generated = t.mock.method(Avatar.prototype, "toDataUri");
+  const person = { ...user, nickname: "cache:automatic-name" };
+  const automatic = avatarDataURI(person);
+  assert.equal(
+    avatarDataURI({ ...person, nickname: ` ${person.nickname} ` }),
+    automatic,
+  );
+  assert.equal(
+    avatarDataURI({ ...person, nickname: "", username: person.nickname }),
+    automatic,
+  );
+  assert.equal(
+    avatarDataURI({ ...person, avatar: { style: "initials", seed: "" } }),
+    automatic,
+  );
+  assert.equal(generated.mock.callCount(), 1);
+  const renamed = avatarDataURI({ ...person, nickname: "cache:renamed" });
+  const picked = avatarDataURI({
+    ...person,
+    avatar: { style: "clay", seed: "cache:picked" },
+  });
+  const restyled = avatarDataURI({
+    ...person,
+    avatar: { style: "thumbs", seed: "cache:picked" },
+  });
+  assert.equal(new Set([automatic, renamed, picked, restyled]).size, 4);
+  assert.equal(generated.mock.callCount(), 4);
+  assert.equal(avatarDataURI(person), automatic);
+  assert.equal(generated.mock.callCount(), 4);
+});
+
+test("avatar cache evicts the least recently used image after 256 entries", (t) => {
+  const generated = t.mock.method(Avatar.prototype, "toDataUri");
+  const person = (index) => ({
+    ...user,
+    avatar: { style: "thumbs", seed: `cache:lru-${index}` },
+  });
+  const images = Array.from({ length: 256 }, (_, index) =>
+    avatarDataURI(person(index)),
+  );
+  generated.mock.resetCalls();
+  assert.equal(avatarDataURI(person(0)), images[0]);
+  assert.equal(generated.mock.callCount(), 0);
+  avatarDataURI(person(256));
+  assert.equal(generated.mock.callCount(), 1);
+  assert.equal(avatarDataURI(person(0)), images[0]);
+  assert.equal(generated.mock.callCount(), 1);
+  assert.equal(avatarDataURI(person(1)), images[1]);
+  assert.equal(generated.mock.callCount(), 2);
+});
+
+test("Spool Bot reuses its static logo without generating an avatar", (t) => {
+  const generated = t.mock.method(Avatar.prototype, "toDataUri");
+  for (const size of [16, 28]) {
+    const html = renderToStaticMarkup(
+      createElement(UserAvatar, { person: { ...user, bot: true }, size }),
+    );
+    assert.match(html, /src="\/logo\.png"/);
+  }
+  assert.equal(generated.mock.callCount(), 0);
 });
 
 test("hand-picked avatars survive renames and resetting the seed restores auto mode", () => {

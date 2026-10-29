@@ -43,6 +43,8 @@ const definitions = {
   thumbs,
 };
 const styles: Partial<Record<AvatarStyle, Style>> = {};
+const avatarCacheLimit = 256;
+const avatarCache = new Map<string, string>();
 
 export function avatarAttribution(style: AvatarStyle) {
   return definitions[style].meta;
@@ -74,12 +76,27 @@ export function avatarChoices(name: string, page: number): string[] {
 
 export function avatarDataURI(person: AvatarIdentity): string {
   const config = avatarConfig(person);
+  const seed = config.seed || avatarName(person);
+  const key = JSON.stringify([config.style, seed]);
+  const cached = avatarCache.get(key);
+  if (cached !== undefined) {
+    avatarCache.delete(key);
+    avatarCache.set(key, cached);
+    return cached;
+  }
   const options = {
-    seed: config.seed || avatarName(person),
+    seed,
     size: 96,
     backgroundColor: ["dbe8d2", "f2d5c8", "e8dfb4", "cce2e5", "d8dded"],
   };
   // Validate and clone each bundled definition once, not for every thumbnail.
   const style = (styles[config.style] ??= new Style(definitions[config.style]));
-  return new Avatar(style, options).toDataUri();
+  const uri = new Avatar(style, options).toDataUri();
+  // Share images across component instances without retaining every picker page.
+  avatarCache.set(key, uri);
+  if (avatarCache.size > avatarCacheLimit) {
+    const oldest = avatarCache.keys().next().value;
+    if (oldest !== undefined) avatarCache.delete(oldest);
+  }
+  return uri;
 }
