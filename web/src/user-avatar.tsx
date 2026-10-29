@@ -9,9 +9,10 @@ export function UserAvatar({
   size?: number;
 }) {
   const src = useMemo(
-    () => avatarDataURI(person),
+    () => (person.bot ? "/logo.png" : avatarDataURI(person)),
     [
       person.id,
+      person.bot,
       person.nickname,
       person.username,
       person.avatar?.style,
@@ -30,7 +31,13 @@ export function UserAvatar({
   );
 }
 
-export function AvatarStack({ people }: { people: AvatarIdentity[] }) {
+export function AvatarStack({
+  people,
+  showTitles = true,
+}: {
+  people: AvatarIdentity[];
+  showTitles?: boolean;
+}) {
   if (!people.length) return null;
   const visible = people.slice(0, 3);
   const remaining = people.length - visible.length;
@@ -41,7 +48,7 @@ export function AvatarStack({ people }: { people: AvatarIdentity[] }) {
           key={person.id}
           className="avatar-stack-item"
           style={{ zIndex: visible.length - index }}
-          title={person.nickname}
+          title={showTitles ? person.nickname : undefined}
         >
           <UserAvatar person={person} size={24} />
         </span>

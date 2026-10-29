@@ -37,6 +37,9 @@ favor of the CLIs' native sessions. Production uses `~/.spool`; development
 uses `~/.spool-dev` so testing cannot migrate an installed app's database.
 Both keep SQLite in `db/spool.sqlite` and preserve the CLI wire protocols,
 adding a backward-paginated HTTP history endpoint.
+Small SQLite sidecar tables retain turn actors and stop/approval audit events,
+not prompts, responses or other transcript content. Native turn IDs (with an
+offset fallback for interrupted requests) associate this metadata with history.
 
 There is no separate frontend service in production and no Node.js runtime
 requirement. Installed and signed-in Codex/Claude CLIs are still required.
@@ -314,6 +317,11 @@ send messages/files, stop responses and answer permission requests, even when
 project-wide chat sharing is disabled. Responsibility changes also update
 existing task chats; removing membership or disabling an account immediately
 revokes its controls. Regular chats remain owner-only, including shared ones.
+Scheduled turns are attributed to **Spool Bot** and use the Spool logo. Manual
+follow-ups and stop/approval actions retain the actual signed-in user's identity.
+User messages show the sender's avatar on the right; chat-list avatar stacks show
+the people (and bot) who actually operated the chat, not every authorized assignee.
+Turns from before actor tracking was introduced belong to the chat's creator.
 Human follow-ups atomically reserve the same issue slots so scheduled recoveries
 cannot overlap them, while unrelated labels continue when labels are configured. Model, reasoning level and native permission mode
 are optional. Configuration is per project; no repository/path is hardcoded.

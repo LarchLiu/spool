@@ -630,6 +630,7 @@ export function TurnResponse({
   summary,
   timestamp,
   locale,
+  actions,
 }: {
   parts: TranscriptPart[];
   backend?: Backend;
@@ -638,6 +639,7 @@ export function TurnResponse({
   summary: ReactNode;
   timestamp?: number;
   locale?: Locale;
+  actions?: ReactNode;
 }) {
   const { process, answer, expanded } = turnPresentation(parts, running);
   return (
@@ -648,6 +650,7 @@ export function TurnResponse({
           <div className="assistant-text">
             <MarkdownMessage>{answer}</MarkdownMessage>
           </div>
+          {actions}
           <MessageFooter
             role="assistant"
             text={answer}
@@ -657,6 +660,7 @@ export function TurnResponse({
           />
         </div>
       )}
+      {!answer && actions}
     </>
   );
 }

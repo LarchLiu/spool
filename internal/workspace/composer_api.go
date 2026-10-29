@@ -11,6 +11,7 @@ import (
 )
 
 type messageInput struct {
+	userID         string
 	Message        string            `json:"message"`
 	Model          string            `json:"model"`
 	Effort         string            `json:"reasoning_effort"`
@@ -179,7 +180,7 @@ func (a *App) requestApproval(ctx context.Context, chatID, turnID string, reques
 	}
 }
 
-func (a *App) approvalResponse(w http.ResponseWriter, r *http.Request, chat chatmodel.Session) {
+func (a *App) approvalResponse(w http.ResponseWriter, r *http.Request, chat chatmodel.Session, user string) {
 	var input struct {
 		ID     string `json:"id"`
 		TurnID string `json:"turn_id"`
@@ -190,11 +191,25 @@ func (a *App) approvalResponse(w http.ResponseWriter, r *http.Request, chat chat
 	}
 	a.liveMu.Lock()
 	pending, ok := a.approvals[input.ID]
-	if !ok || pending.chatID != chat.ID || pending.turnID != input.TurnID || pending.decided || chat.Status != chatmodel.StatusRunning {
+	current, running := a.live[chat.ID]
+	if !ok || pending.chatID != chat.ID || pending.turnID != input.TurnID || pending.decided || chat.Status != chatmodel.StatusRunning || !running || current.ID != input.TurnID || current.Status != chatmodel.StatusRunning {
 		a.liveMu.Unlock()
 		apiError(w, 409, "This approval request is no longer pending")
 		return
 	}
+	kind := "deny"
+	if input.Allow {
+		kind = "approve"
+	}
+	action, err := a.store.recordTurnAction(chat.ID, input.TurnID, user, kind, input.ID)
+	if err != nil {
+		a.liveMu.Unlock()
+		apiError(w, 500, "Could not record this operation")
+		return
+	}
+	turn := a.live[chat.ID]
+	turn.Actions = append(append([]chatmodel.TurnAction(nil), turn.Actions...), action)
+	a.live[chat.ID] = turn
 	pending.decided = true
 	pending.decision <- input.Allow
 	a.liveMu.Unlock()

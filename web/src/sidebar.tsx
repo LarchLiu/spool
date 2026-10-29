@@ -4,6 +4,7 @@ import type { Translator } from "./i18n";
 import type { Backend, Chat, Project, User } from "./types";
 import { AgentIcon } from "./agent-icon";
 import { UserAvatar } from "./user-avatar";
+import { ChatOperatorAvatars } from "./turn-identity";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { ChatSettingsControl } from "./desktop-settings";
 import { isMacDesktop } from "./runtime";
@@ -66,38 +67,48 @@ export function Sidebar(props: Props) {
   }, [project, chatID]);
   function chatButton(chat: Chat, nested: boolean) {
     return (
-      <button
+      <div
         key={chat.id}
         className={
           "nav-chat " +
           (nested ? "nested " : "") +
           (chat.id === chatID ? "active" : "")
         }
-        aria-current={chat.id === chatID ? "page" : undefined}
-        title={chat.title === "New chat" ? t("New chat") : chat.title}
-        onClick={() => {
-          setExpanded((old) => new Set([...old, chat.project_id]));
-          props.onChat(chat);
-        }}
       >
-        <AgentIcon
-          backend={
-            chat.id === chatID && props.activeBackend
-              ? props.activeBackend
-              : chat.backend
-          }
-        />
-        <span className="nav-chat-title">
-          {chat.title === "New chat" ? t("New chat") : chat.title}
-        </span>
-        {chat.status === "running" && (
-          <span
-            className="task-spinner"
-            role="status"
-            aria-label={t("Working")}
-          />
-        )}
-      </button>
+        {!!chat.participants?.length && <ChatOperatorAvatars chat={chat} />}
+        <button
+          type="button"
+          className="nav-chat-open"
+          aria-current={chat.id === chatID ? "page" : undefined}
+          title={chat.title === "New chat" ? t("New chat") : chat.title}
+          onClick={() => {
+            setExpanded((old) => new Set([...old, chat.project_id]));
+            props.onChat(chat);
+          }}
+        >
+          {!chat.participants?.length && (
+            <span className="nav-chat-agent">
+              <AgentIcon
+                backend={
+                  chat.id === chatID && props.activeBackend
+                    ? props.activeBackend
+                    : chat.backend
+                }
+              />
+            </span>
+          )}
+          <span className="nav-chat-title">
+            {chat.title === "New chat" ? t("New chat") : chat.title}
+          </span>
+          {chat.status === "running" && (
+            <span
+              className="task-spinner"
+              role="status"
+              aria-label={t("Working")}
+            />
+          )}
+        </button>
+      </div>
     );
   }
   return (

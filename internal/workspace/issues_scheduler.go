@@ -323,7 +323,7 @@ func (a *App) runIssueLabelRound(ctx context.Context, p Project, label string, b
 		return err
 	}
 	done := make(chan error, 1)
-	if err = a.startTurnWithCallback(chat, messageInput{Message: prompt, PermissionMode: v.Permission, writableDirectories: []string{filepath.Dir(task.Path)}}, options, func(e error) { done <- e }); err != nil {
+	if err = a.startTurnWithCallback(chat, messageInput{userID: chatmodel.SpoolBotID, Message: prompt, PermissionMode: v.Permission, writableDirectories: []string{filepath.Dir(task.Path)}}, options, func(e error) { done <- e }); err != nil {
 		return err
 	}
 	// Keep label reservations until actual cleanup and task import, not merely

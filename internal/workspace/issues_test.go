@@ -277,6 +277,9 @@ func TestIssueRoundFailureRecoveryUsesNewChatsAndSameSharedClaim(t *testing.T) {
 	if !ok || len(chat.Artifacts) != 0 {
 		t.Fatal("issue automation wrote PR attachments instead of using the JSON ledger")
 	}
+	if len(chat.Turns) != 1 || chat.Turns[0].UserID != chatmodel.SpoolBotID || len(chat.Participants) != 1 || !chat.Participants[0].Bot {
+		t.Fatalf("scheduled issue task must be attributed to Spool Bot: %+v", chat)
+	}
 	if !strings.Contains(requests[1].Prompt, "git pull --ff-only origin dev") || strings.Contains(requests[1].Prompt, "attach_artifact") || strings.Contains(requests[1].Prompt, "Authorization: Bearer") || !strings.Contains(requests[1].Prompt, "prs 数组") || !strings.Contains(requests[1].Prompt, "沙箱外联网") {
 		t.Fatal("agent execution contract incomplete")
 	}
@@ -540,12 +543,19 @@ func TestTaskAssigneesCanSeeSendStopAndApproveWithoutProjectWideSharing(t *testi
 		t.Fatalf("assignee send failed: %d %s", w.Code, w.Body.String())
 	}
 	turn := waitLiveTurn(t, a, chat.ID, func(v chatmodel.Turn) bool { return v.PendingApproval != nil })
+	if turn.UserID != bob.ID {
+		t.Fatalf("assignee turn attributed to %q instead of %q", turn.UserID, bob.ID)
+	}
 	body := `{"id":"` + turn.PendingApproval.ID + `","turn_id":"` + turn.ID + `","allow":true}`
 	// Approval uses the same current task ACL as send and stop.
-	if w := apiRequest(a, "POST", path+"/approvals", body, cookie, csrf); w.Code != 200 {
+	ownerCookie, ownerCSRF := loginRequest(t, a, "automation")
+	if w := apiRequest(a, "POST", path+"/approvals", body, ownerCookie, ownerCSRF); w.Code != 200 {
 		t.Fatalf("assignee approval failed: %d %s", w.Code, w.Body.String())
 	}
-	waitChat(t, a.store, chat.ID)
+	approved := waitChat(t, a.store, chat.ID)
+	if len(approved.Turns[0].Actions) != 1 || approved.Turns[0].Actions[0].UserID != p.Issues.UserID || approved.Turns[0].Actions[0].Kind != "approve" || approved.Turns[0].UserID != bob.ID {
+		t.Fatalf("approval lost its distinct operator: %+v", approved.Turns)
+	}
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		a.turnMu.Lock()
@@ -573,6 +583,10 @@ func TestTaskAssigneesCanSeeSendStopAndApproveWithoutProjectWideSharing(t *testi
 	turn = waitLiveTurn(t, a, chat.ID, func(v chatmodel.Turn) bool { return v.Status == chatmodel.StatusRunning })
 	if w := apiRequest(a, "POST", path+"/stop", `{"turn_id":"`+turn.ID+`"}`, cookie, csrf); w.Code != 200 {
 		t.Fatalf("assignee stop failed: %d", w.Code)
+	}
+	stopped, _ := a.store.Get(chat.ID)
+	if len(stopped.Turns[0].Actions) != 1 || stopped.Turns[0].Actions[0].Kind != "stop" || stopped.Turns[0].Actions[0].UserID != bob.ID {
+		t.Fatalf("stop lost its operator: %+v", stopped.Turns)
 	}
 	// Editing responsibilities updates existing task chats immediately.
 	p.Issues.AssigneeIDs = []string{p.Issues.UserID}

@@ -506,5 +506,10 @@
   "View {version} on GitHub": "GitHub で {version} を表示",
   "Pre-release": "プレリリース",
   "The available update changed. Reopen release notes.": "更新可能なバージョンが変わりました。リリースノートを開き直してください。",
-  "Image": "画像"
+  "Image": "画像",
+  "Stopped by {name}": "{name} が応答を停止しました",
+  "Approved by {name}": "{name} が操作を承認しました",
+  "Denied by {name}": "{name} が操作を拒否しました",
+  "Could not record this operation": "この操作を記録できませんでした",
+  "Turn attribution is unavailable": "ターンの操作者情報を取得できません"
 }

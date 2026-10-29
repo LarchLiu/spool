@@ -506,5 +506,10 @@
   "View {version} on GitHub": "在 GitHub 查看 {version}",
   "Pre-release": "预发布版本",
   "The available update changed. Reopen release notes.": "可更新版本已变更，请重新打开版本更新信息。",
-  "Image": "图片"
+  "Image": "图片",
+  "Stopped by {name}": "{name} 停止了响应",
+  "Approved by {name}": "{name} 批准了操作",
+  "Denied by {name}": "{name} 拒绝了操作",
+  "Could not record this operation": "无法记录本次操作",
+  "Turn attribution is unavailable": "无法读取轮次操作者信息"
 }

@@ -38,6 +38,7 @@ import {
   reconcile,
   reconcileMetadata,
   prependHistory,
+  turnOperator,
 } from "./chat-state";
 import {
   fetchOlderHistory,
@@ -71,6 +72,7 @@ import { SlashCommandMenu } from "./slash-command-menu";
 import { goalSuggestion, parseGoalCommand } from "./slash-commands";
 import { UserMessage } from "./user-message";
 import { MessageFooter } from "./message-footer";
+import { TurnActions, TurnOperatorAvatar } from "./turn-identity";
 import { TurnResponse } from "./tool-activity";
 import { chatSelection, chooseModel } from "./model-selection";
 import { effortLabel as formatEffort } from "./i18n";
@@ -309,6 +311,12 @@ function App() {
           const navigationChats = Array.isArray(navigation?.chats)
             ? navigation.chats
             : [];
+          setChat((old) => {
+            const next = navigationChats.find((item) => item.id === old?.id);
+            return old && next && next.updated_at >= old.updated_at
+              ? { ...old, participants: next.participants }
+              : old;
+          });
           const discoveredAgents = Array.isArray(a) ? a : [];
           setProjects(p);
           setAgents(discoveredAgents);
@@ -428,7 +436,7 @@ function App() {
           setChats((old) =>
             old.map((item) =>
               item.id === v.id && item.updated_at <= v.updated_at
-                ? { ...item, title: v.title }
+                ? { ...item, title: v.title, participants: v.participants }
                 : item,
             ),
           );
@@ -682,6 +690,16 @@ function App() {
     const updated = await api<User>("/me/avatar", avatar);
     if (activeUser.current !== owner) return;
     setUser(updated);
+    const refreshParticipants = (item: Chat): Chat => ({
+      ...item,
+      participants: item.participants?.map((person) =>
+        person.id === updated.id
+          ? { ...person, nickname: updated.nickname, avatar: updated.avatar }
+          : person,
+      ),
+    });
+    setChat((old) => (old ? refreshParticipants(old) : old));
+    setChats((old) => old.map(refreshParticipants));
     setOnline((people) =>
       people.map((person) =>
         person.id === updated.id
@@ -810,6 +828,7 @@ function App() {
     follow.current = true;
     const optimistic: Turn = {
       id: "pending-" + crypto.randomUUID(),
+      user_id: user?.id,
       part_start: 0,
       input_end: 0,
       part_end: 0,
@@ -1342,6 +1361,7 @@ function App() {
               </section>
             ) : (
               chat.turns.map((turn) => {
+                const operator = turnOperator(chat, turn, user);
                 const parts = chat.transcript.parts.slice(
                   turn.part_start,
                   turn.part_end,
@@ -1392,10 +1412,12 @@ function App() {
                           role="user"
                           text={userText}
                           timestamp={turn.started_at}
+                          author={operator?.nickname}
                           locale={locale}
                           t={t}
                         />
                       </div>
+                      <TurnOperatorAvatar person={operator} />
                     </div>
                     <TurnResponse
                       parts={parts}
@@ -1404,6 +1426,14 @@ function App() {
                       running={turn.status === "running"}
                       timestamp={turn.finished_at}
                       locale={locale}
+                      actions={
+                        <TurnActions
+                          chat={chat}
+                          turn={turn}
+                          locale={locale}
+                          t={t}
+                        />
+                      }
                       summary={workSummary(
                         turn,
                         t,

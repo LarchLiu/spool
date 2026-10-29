@@ -69,12 +69,14 @@ export function messageTime(timestamp: number | undefined, locale: Locale) {
 
 export function MessageFooter({
   role,
+  author,
   text,
   timestamp,
   locale = "en",
   t,
 }: {
   role: "user" | "assistant";
+  author?: string;
   text: string;
   timestamp?: number;
   locale?: Locale;
@@ -109,6 +111,9 @@ export function MessageFooter({
         : Copy;
   return (
     <div className={`message-footer message-footer-${role}`}>
+      {role === "user" && author && (
+        <span className="message-author">{author}</span>
+      )}
       {role === "user" && timeLabel}
       <button
         type="button"

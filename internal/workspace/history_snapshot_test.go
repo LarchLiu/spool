@@ -246,7 +246,7 @@ func TestLiveAndStoppedHistoryKeepTheirFullBaseAndRanges(t *testing.T) {
 		}
 	}
 	check(app.snapshot(latest))
-	stopped, err := app.stopTurn(latest, turn.ID)
+	stopped, err := app.stopTurn(latest, turn.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}

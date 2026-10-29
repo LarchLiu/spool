@@ -5,6 +5,23 @@ import type {
   TranscriptPart,
   Turn,
 } from "./types";
+import type { AvatarIdentity } from "./avatar";
+
+export function turnOperator(
+  chat: Chat,
+  turn: Turn,
+  currentUser?: AvatarIdentity | null,
+): AvatarIdentity | undefined {
+  const id = turn.user_id || chat.user_id;
+  if (!id) return undefined;
+  return (
+    chat.participants?.find((person) => person.id === id) ||
+    (currentUser?.id === id ? currentUser : undefined) ||
+    (id === "spool-bot"
+      ? { id, nickname: "Spool Bot", bot: true }
+      : { id, nickname: id })
+  );
+}
 
 export function canControlChat(chat: Chat | null, userID: string): boolean {
   if (!chat) return true;
@@ -25,6 +42,7 @@ export function reconcileMetadata(
     automation_chat: next.automation_chat ?? false,
     collaborator_ids: next.collaborator_ids ?? [],
     artifacts: next.artifacts ?? [],
+    participants: next.participants ?? previous.participants,
   };
 }
 

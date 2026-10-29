@@ -331,6 +331,25 @@ button:disabled {
 .nav-chat-title {
   flex: 1;
 }
+.nav-chat-open {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.nav-chat-agent {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
 .nav-chat.nested {
   padding-left: 32px;
 }
@@ -718,6 +737,106 @@ button:disabled {
   display: flex;
   justify-content: flex-end;
   margin-bottom: 22px;
+  gap: 10px;
+  align-items: flex-start;
+}
+.turn-operator-avatar {
+  flex-shrink: 0;
+  padding-top: 6px;
+}
+.chat-operators {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  background: transparent;
+}
+.chat-operator-popover {
+  position: fixed;
+  z-index: 40;
+  width: min(240px, calc(100vw - 16px));
+  max-height: min(320px, calc(100dvh - 16px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--elevated);
+  box-shadow: 0 8px 30px var(--shadow);
+  color: var(--text);
+  font-size: 13px;
+}
+.chat-operator-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.chat-operator-list li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+}
+.chat-operator-list .user-avatar {
+  flex-shrink: 0;
+}
+.chat-operator-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.nav-chat .avatar-stack-item {
+  width: 16px;
+  height: 16px;
+  border-width: 1px;
+  border-color: var(--sidebar);
+}
+.nav-chat .avatar-stack .user-avatar {
+  width: 14px;
+  height: 14px;
+}
+.nav-chat .avatar-stack-item:only-child {
+  border: 0;
+}
+.nav-chat .avatar-stack-item:only-child .user-avatar {
+  width: 16px;
+  height: 16px;
+}
+.nav-chat .avatar-stack-more {
+  width: auto;
+  min-width: 20px;
+  padding: 0 3px;
+  font-size: 8px;
+  line-height: 1;
+}
+.nav-chat .avatar-stack-item + .avatar-stack-item {
+  margin-left: -10px;
+}
+.nav-chat .avatar-stack-item + .avatar-stack-more {
+  margin-left: -3px;
+}
+.message-author {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turn-actions {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.turn-actions li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 6px;
+}
+.turn-actions time {
+  font-variant-numeric: tabular-nums;
 }
 .user-bubble {
   max-width: min(80%, 680px);

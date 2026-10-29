@@ -23,6 +23,7 @@ export type AvatarConfig = { style: AvatarStyle; seed: string };
 export type AvatarIdentity = {
   id: string;
   nickname: string;
+  bot?: boolean;
   username?: string;
   avatar?: AvatarConfig;
 };

@@ -46,6 +46,8 @@ CREATE INDEX IF NOT EXISTS automation_runs_chat ON automation_runs(chat_id,proje
 CREATE TABLE IF NOT EXISTS chat_artifacts(session_id TEXT NOT NULL REFERENCES sessions(id),type TEXT NOT NULL,url TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY KEY(session_id,type,url));
 CREATE TABLE IF NOT EXISTS automation_chats(session_id TEXT PRIMARY KEY REFERENCES sessions(id),project_id TEXT NOT NULL REFERENCES projects(id));
 CREATE TABLE IF NOT EXISTS chat_collaborators(session_id TEXT NOT NULL REFERENCES sessions(id),user_id TEXT NOT NULL REFERENCES users(id),PRIMARY KEY(session_id,user_id));
+CREATE TABLE IF NOT EXISTS turn_actors(session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,turn_id TEXT NOT NULL,user_id TEXT REFERENCES users(id),actor_kind TEXT NOT NULL DEFAULT 'user',native_session_id TEXT NOT NULL DEFAULT '',native_turn_id TEXT NOT NULL DEFAULT '',source_offset INTEGER NOT NULL DEFAULT -1,started_at INTEGER NOT NULL,PRIMARY KEY(session_id,turn_id));
+CREATE TABLE IF NOT EXISTS turn_actions(session_id TEXT NOT NULL,turn_id TEXT NOT NULL,id TEXT NOT NULL,kind TEXT NOT NULL,user_id TEXT NOT NULL REFERENCES users(id),approval_id TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,PRIMARY KEY(session_id,id),UNIQUE(session_id,turn_id,kind,approval_id),FOREIGN KEY(session_id,turn_id) REFERENCES turn_actors(session_id,turn_id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS auth_sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),csrf TEXT NOT NULL,expires_at INTEGER NOT NULL);
 `
 
@@ -90,6 +92,9 @@ func OpenStore(root string) (*Store, error) {
 	}
 	if err = migrateHistorySchema(db); err != nil {
 		return fail(err)
+	}
+	if err = migrateTurnActorSchema(db); err != nil {
+		return fail(fmt.Errorf("migrate turn actors: %w", err))
 	}
 	// Retired avatar styles adopt Clay without losing automatic or picked seeds.
 	if _, err = db.Exec(`UPDATE user_avatars SET style=? WHERE style IN ('bottts-neutral','shapes','initials')`, DefaultAvatar().Style); err != nil {
@@ -161,6 +166,9 @@ func (s *Store) Get(id string) (chatmodel.Session, bool) {
 		}
 	}
 	v = s.withRuntimeTurn(v)
+	if err := s.attributeTurns(&v); err != nil {
+		v.History = &chatmodel.HistoryState{Error: "Turn attribution is unavailable"}
+	}
 	return v, true
 }
 
@@ -183,6 +191,11 @@ func (s *Store) getSession(id string) (chatmodel.Session, bool) {
 	if err != nil {
 		return chatmodel.Session{}, false
 	}
+	chats := []chatmodel.Session{v}
+	if err = populateParticipants(tx, chats); err != nil {
+		return chatmodel.Session{}, false
+	}
+	v.Participants = chats[0].Participants
 	return v, true
 }
 func (s *Store) Sessions() []chatmodel.Session {
@@ -228,6 +241,10 @@ func (s *Store) beginTurn(id, prompt string, backend chatmodel.Backend, options 
 }
 
 func (s *Store) beginTurnWithInput(id, prompt string, backend chatmodel.Backend, permission string, files []uploadedAttachment, options ...chatmodel.CodexOptions) (chatmodel.Turn, error) {
+	return s.beginTurnBy(id, prompt, backend, permission, files, "", options...)
+}
+
+func (s *Store) beginTurnBy(id, prompt string, backend chatmodel.Backend, permission string, files []uploadedAttachment, user string, options ...chatmodel.CodexOptions) (chatmodel.Turn, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v, ok := s.Get(id)
@@ -274,9 +291,17 @@ func (s *Store) beginTurnWithInput(id, prompt string, backend chatmodel.Backend,
 		return chatmodel.Turn{}, err
 	}
 	t := chatmodel.Turn{ID: chatmodel.NewID(), Backend: backend, PartStart: len(v.Transcript.Parts), StartedAt: nextSessionTime(v.UpdatedAt), Status: chatmodel.StatusRunning, RequestedModel: choice.Model, ReasoningEffort: choice.ReasoningEffort}
+	t.UserID = user
+	if t.UserID == "" {
+		t.UserID = v.UserID
+	}
 	t.Prompt = prompt
+	sourceOffset := int64(-1)
 	if info, e := os.Stat(v.NativeSessionPath); e == nil {
 		t.SourceOffset = info.Size()
+		sourceOffset = info.Size()
+	} else if v.NativeSessionID == "" {
+		sourceOffset = 0
 	}
 	t.PermissionMode = permission
 	for _, file := range files {
@@ -314,6 +339,13 @@ func (s *Store) beginTurnWithInput(id, prompt string, backend chatmodel.Backend,
 	if n != 1 {
 		return chatmodel.Turn{}, fmt.Errorf("this chat already has a running turn")
 	}
+	actorUser, actorKind := t.UserID, "user"
+	if t.UserID == chatmodel.SpoolBotID {
+		actorUser, actorKind = "", "bot"
+	}
+	if _, err = tx.Exec(`INSERT INTO turn_actors(session_id,turn_id,user_id,actor_kind,native_session_id,source_offset,started_at) VALUES(?,?,NULLIF(?,''),?,?,?,?)`, id, t.ID, actorUser, actorKind, v.NativeSessionID, sourceOffset, t.StartedAt); err != nil {
+		return chatmodel.Turn{}, err
+	}
 	if err = tx.Commit(); err != nil {
 		return chatmodel.Turn{}, err
 	}
@@ -336,7 +368,21 @@ func (s *Store) setTurnNativeSession(id, turnID, native string) error {
 	if !ok || !active || chat.Status != chatmodel.StatusRunning || t.ID != turnID {
 		return errTurnChanged
 	}
-	return s.SetNativeSession(id, native)
+	if !chatmodel.ValidID(native) {
+		return fmt.Errorf("invalid provider session ID")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`UPDATE sessions SET native_session_id=? WHERE id=?`, native, id); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`UPDATE turn_actors SET native_session_id=? WHERE session_id=? AND turn_id=?`, native, id, turnID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) SetNativeSessionPath(id, native, path string) error {
@@ -347,6 +393,10 @@ func (s *Store) SetNativeSessionPath(id, native, path string) error {
 	return err
 }
 func (s *Store) FinishTurn(id, turnID string, result agent.AgentResult, runErr error, status chatmodel.SessionStatus) error {
+	return s.finishTurn(id, turnID, result, runErr, status, "")
+}
+
+func (s *Store) finishTurn(id, turnID string, result agent.AgentResult, runErr error, status chatmodel.SessionStatus, stoppedBy string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v, ok := s.getSession(id)
@@ -395,20 +445,43 @@ func (s *Store) FinishTurn(id, turnID string, result agent.AgentResult, runErr e
 			}
 		}
 	}
-	_, err := s.db.Exec(`UPDATE sessions SET native_session_id=?,native_session_path=?,status=?,updated_at=? WHERE id=?`, v.NativeSessionID, nativePath, status, t.FinishedAt, id)
-	if err == nil {
-		s.setRuntimeTurn(id, t)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
 	}
-	return err
+	defer tx.Rollback()
+	if _, err = tx.Exec(`UPDATE sessions SET native_session_id=?,native_session_path=?,status=?,updated_at=? WHERE id=?`, v.NativeSessionID, nativePath, status, t.FinishedAt, id); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`UPDATE turn_actors SET native_session_id=?,native_turn_id=? WHERE session_id=? AND turn_id=?`, v.NativeSessionID, t.NativeTurnID, id, turnID); err != nil {
+		return err
+	}
+	if stoppedBy != "" {
+		action, err := insertTurnAction(tx, id, turnID, stoppedBy, "stop", "")
+		if err != nil {
+			return err
+		}
+		t.Actions = append(t.Actions, action)
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	s.setRuntimeTurn(id, t)
+	return nil
 }
 
-// Live lifecycle state is process-local; native JSONL is the only turn history.
+// Lifecycle/transcript state is process-local; only actor metadata is durable.
 func (s *Store) SaveRunningTurn(id string, turn chatmodel.Turn) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	current, ok := s.runtimeTurn(id)
 	if !ok || current.ID != turn.ID || current.Status != chatmodel.StatusRunning {
 		return errTurnChanged
+	}
+	if turn.NativeTurnID != current.NativeTurnID {
+		if _, err := s.db.Exec(`UPDATE turn_actors SET native_turn_id=? WHERE session_id=? AND turn_id=?`, turn.NativeTurnID, id, turn.ID); err != nil {
+			return err
+		}
 	}
 	s.setRuntimeTurn(id, turn)
 	return nil

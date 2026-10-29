@@ -506,5 +506,10 @@
   "View {version} on GitHub": "View {version} on GitHub",
   "Pre-release": "Pre-release",
   "The available update changed. Reopen release notes.": "The available update changed. Reopen release notes.",
-  "Image": "Image"
+  "Image": "Image",
+  "Stopped by {name}": "Stopped by {name}",
+  "Approved by {name}": "Approved by {name}",
+  "Denied by {name}": "Denied by {name}",
+  "Could not record this operation": "Could not record this operation",
+  "Turn attribution is unavailable": "Turn attribution is unavailable"
 }

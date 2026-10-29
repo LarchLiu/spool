@@ -57,16 +57,17 @@ type completedTurn struct {
 }
 
 type chatMetadata struct {
-	ID              string               `json:"id"`
-	Title           string               `json:"title"`
-	UpdatedAt       int64                `json:"updated_at"`
-	AutomationChat  bool                 `json:"automation_chat,omitempty"`
-	CollaboratorIDs []string             `json:"collaborator_ids,omitempty"`
-	Artifacts       []chatmodel.Artifact `json:"artifacts,omitempty"`
+	Participants    []chatmodel.ChatParticipant `json:"participants,omitempty"`
+	ID              string                      `json:"id"`
+	Title           string                      `json:"title"`
+	UpdatedAt       int64                       `json:"updated_at"`
+	AutomationChat  bool                        `json:"automation_chat,omitempty"`
+	CollaboratorIDs []string                    `json:"collaborator_ids,omitempty"`
+	Artifacts       []chatmodel.Artifact        `json:"artifacts,omitempty"`
 }
 
 func sessionMetadata(chat chatmodel.Session) chatMetadata {
-	return chatMetadata{chat.ID, chat.Title, chat.UpdatedAt, chat.AutomationChat, chat.CollaboratorIDs, chat.Artifacts}
+	return chatMetadata{chat.Participants, chat.ID, chat.Title, chat.UpdatedAt, chat.AutomationChat, chat.CollaboratorIDs, chat.Artifacts}
 }
 
 func NewApp(store *Store, runner agent.AgentRunner, _, _ string) *App {
@@ -506,11 +507,11 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		return
 	}
 	if len(parts) == 2 && parts[1] == "approvals" && r.Method == "POST" {
-		a.approvalResponse(w, r, chat)
+		a.approvalResponse(w, r, chat, id.User.ID)
 		return
 	}
 	if len(parts) == 2 && parts[1] == "stop" && r.Method == "POST" {
-		a.stopTurnResponse(w, r, chat)
+		a.stopTurnResponse(w, r, chat, id.User.ID)
 		return
 	}
 	if len(parts) == 2 && parts[1] == "goal" && r.Method == "POST" {
@@ -525,6 +526,7 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 	if !valid {
 		return
 	}
+	input.userID = id.User.ID
 	if err := validateGoalInput(input); err != nil {
 		apiError(w, 400, err.Error())
 		return
@@ -657,7 +659,7 @@ func (a *App) startTurnWithCallback(chat chatmodel.Session, input messageInput, 
 	if _, err = agent.WorkingDirectory(project.Path); err != nil {
 		return fmt.Errorf("project directory is unavailable")
 	}
-	turn, err := a.store.beginTurnWithInput(chat.ID, input.Message, chat.Backend, input.PermissionMode, input.files, options)
+	turn, err := a.store.beginTurnBy(chat.ID, input.Message, chat.Backend, input.PermissionMode, input.files, input.userID, options)
 	if err != nil {
 		return err
 	}

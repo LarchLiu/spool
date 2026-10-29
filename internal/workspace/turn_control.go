@@ -41,7 +41,7 @@ func (a *App) releaseTurn(chatID string, control *turnControl) {
 // stopTurn persists the terminal state before waiting for the provider
 // process. A provider can take a while to reap a child process; the web UI
 // must not remain stuck in the running state during that cleanup.
-func (a *App) stopTurn(chat chatmodel.Session, turnID string) (chatmodel.Session, error) {
+func (a *App) stopTurn(chat chatmodel.Session, turnID string, user string) (chatmodel.Session, error) {
 	var current chatmodel.Turn
 	a.liveMu.Lock()
 	if live, ok := a.live[chat.ID]; ok && live.ID == turnID {
@@ -59,7 +59,7 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string) (chatmodel.Session
 			Parts:           current.Parts,
 		}
 	}
-	if err := a.store.FinishTurn(chat.ID, turnID, result, context.Canceled, chatmodel.StatusStopped); err != nil {
+	if err := a.store.finishTurn(chat.ID, turnID, result, context.Canceled, chatmodel.StatusStopped, user); err != nil {
 		return chatmodel.Session{}, err
 	}
 	latest, ok := a.store.Get(chat.ID)
@@ -76,6 +76,7 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string) (chatmodel.Session
 			finished := latest.Turns[len(latest.Turns)-1]
 			live.FinishedAt = finished.FinishedAt
 			live.Error = finished.Error
+			live.Actions = finished.Actions
 		}
 		base := latest.Transcript
 		if hydrated, exists := a.liveBase[chat.ID]; exists {
@@ -101,7 +102,7 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string) (chatmodel.Session
 	return latest, nil
 }
 
-func (a *App) stopTurnResponse(w http.ResponseWriter, r *http.Request, chat chatmodel.Session) {
+func (a *App) stopTurnResponse(w http.ResponseWriter, r *http.Request, chat chatmodel.Session, user string) {
 	var input struct {
 		TurnID string `json:"turn_id"`
 	}
@@ -131,7 +132,7 @@ func (a *App) stopTurnResponse(w http.ResponseWriter, r *http.Request, chat chat
 			// (for example after a provider crash). Reconcile the persisted
 			// running turn instead of leaving the chat permanently busy.
 			if last.ID == input.TurnID && last.Status == chatmodel.StatusRunning {
-				stopped, err := a.stopTurn(chat, input.TurnID)
+				stopped, err := a.stopTurn(chat, input.TurnID, user)
 				if err != nil {
 					apiError(w, 500, "Could not stop this turn")
 					return
@@ -146,7 +147,7 @@ func (a *App) stopTurnResponse(w http.ResponseWriter, r *http.Request, chat chat
 	// Persist the stopped state immediately. Waiting for control.done here
 	// made the stop request depend on provider process reaping and could leave
 	// both the button and the chat spinner stuck indefinitely.
-	latest, err := a.stopTurn(chat, input.TurnID)
+	latest, err := a.stopTurn(chat, input.TurnID, user)
 	if err != nil {
 		apiError(w, 500, "Could not stop this turn")
 		return

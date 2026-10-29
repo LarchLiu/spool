@@ -92,7 +92,12 @@ func (s *Store) UserNavigation(user string) (Navigation, error) {
 		chat.NativeSessionID = ""
 		chats = append(chats, chat)
 	}
-	return Navigation{Projects: projects, Chats: chats}, rows.Err()
+	err = rows.Err()
+	rows.Close()
+	if err == nil {
+		err = populateParticipants(s.db, chats)
+	}
+	return Navigation{Projects: projects, Chats: chats}, err
 }
 
 const qualifiedSessionColumns = `s.id,COALESCE(s.user_id,''),COALESCE(s.project_id,''),s.title,s.backend,s.native_session_id,s.native_session_path,s.model,s.reasoning_effort,s.permission_mode,s.status,s.created_at,s.updated_at`

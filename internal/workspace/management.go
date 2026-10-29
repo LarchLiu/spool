@@ -401,5 +401,10 @@ func (s *Store) UserSessions(user, project string) ([]chatmodel.Session, error) 
 		}
 		out = append(out, v)
 	}
-	return out, rows.Err()
+	err = rows.Err()
+	rows.Close()
+	if err == nil {
+		err = populateParticipants(s.db, out)
+	}
+	return out, err
 }

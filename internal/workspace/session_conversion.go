@@ -73,8 +73,8 @@ func (s *Store) forkChat(id string, backend chatmodel.Backend, options chatmodel
 		return chat, err
 	}
 	committed = true
-	chat, _ = s.getSession(chat.ID)
-	return s.hydrateSession(chat), nil
+	chat, _ = s.Get(chat.ID)
+	return chat, nil
 }
 
 func (a *App) forkChat(id string, backend chatmodel.Backend, options chatmodel.CodexOptions) (chatmodel.Session, error) {

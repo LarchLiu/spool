@@ -1,4 +1,4 @@
-import type { AvatarConfig } from "./avatar";
+import type { AvatarConfig, AvatarIdentity } from "./avatar";
 
 export type Backend = "codex" | "claude";
 export type User = {
@@ -95,6 +95,8 @@ export type Transcript = {
 };
 export type Turn = {
   id: string;
+  user_id?: string;
+  actions?: TurnAction[];
   native_turn_id?: string;
   native_prompt_id?: string;
   backend?: Backend;
@@ -112,7 +114,15 @@ export type Turn = {
   attachments?: Attachment[];
   pending_approval?: ApprovalRequest;
 };
+export type TurnAction = {
+  id: string;
+  user_id: string;
+  kind: "stop" | "approve" | "deny";
+  approval_id?: string;
+  created_at: number;
+};
 export type Chat = {
+  participants?: AvatarIdentity[];
   history?: { before?: string; has_more?: boolean; error?: string };
   automation_chat?: boolean;
   collaborator_ids?: string[];
@@ -132,7 +142,12 @@ export type Chat = {
 };
 export type ChatMetadata = Pick<
   Chat,
-  "id" | "updated_at" | "automation_chat" | "collaborator_ids" | "artifacts"
+  | "id"
+  | "updated_at"
+  | "automation_chat"
+  | "collaborator_ids"
+  | "artifacts"
+  | "participants"
 > & { title?: string };
 export type Online = {
   id: string;
