@@ -1,4 +1,5 @@
-/build/
+/build/*
+!/build/go.mod
 /frontend/
 /web/node_modules/
 /web/.test-build/

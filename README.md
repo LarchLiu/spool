@@ -1052,6 +1052,11 @@ go build -o build/spool-server ./cmd/server
 go build -o build/spool-desktop ./cmd/desktop
 ```
 
+`build/go.mod` is a module boundary, so root-level `go test ./...` and
+`go vet ./...` skip build outputs, caches, and diagnostic Go files under
+`build/`. Keep this tracked file in place; all other build contents remain
+ignored by Git.
+
 Package the desktop application with the pinned MyGo CLI:
 
 ```sh
