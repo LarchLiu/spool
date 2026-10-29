@@ -18,6 +18,7 @@ import { PanelResizeHandle } from "./panel-resize-handle";
 import { FilePreviewSplit } from "./file-preview-split";
 import { FileSidebarHeader } from "./file-sidebar-header";
 import { FileSource } from "./file-source";
+import { filePreviewKind, HtmlFilePreview } from "./file-preview";
 
 export type FileSelection = { target: LocalFileTarget; request: number };
 type Props = {
@@ -356,7 +357,8 @@ function FileContent({
   theme: "light" | "dark";
   onOpen: Props["onOpen"];
 }) {
-  const [renderMarkdown, setRenderMarkdown] = useState(false);
+  const [renderPreview, setRenderPreview] = useState(false);
+  const previewKind = filePreviewKind(file);
   const context = useMemo(
     () => ({ openFile: onOpen, basePath: file.path }),
     [onOpen, file.path],
@@ -370,17 +372,17 @@ function FileContent({
         </span>
         <small>{formatFileSize(file.size)}</small>
       </div>
-      {file.kind === "text" && /\.md(?:own|x)?$/i.test(file.name) && (
+      {previewKind && (
         <div className="file-preview-mode">
           <button
-            aria-pressed={!renderMarkdown}
-            onClick={() => setRenderMarkdown(false)}
+            aria-pressed={!renderPreview}
+            onClick={() => setRenderPreview(false)}
           >
             {t("Source")}
           </button>
           <button
-            aria-pressed={renderMarkdown}
-            onClick={() => setRenderMarkdown(true)}
+            aria-pressed={renderPreview}
+            onClick={() => setRenderPreview(true)}
           >
             {t("Preview")}
           </button>
@@ -388,7 +390,12 @@ function FileContent({
       )}
       <div className="file-preview-scroll">
         {file.kind === "text" &&
-          (renderMarkdown ? (
+          (renderPreview && previewKind === "html" ? (
+            <HtmlFilePreview
+              contents={file.content || ""}
+              title={t("Preview {name}", { name: file.name })}
+            />
+          ) : renderPreview && previewKind === "markdown" ? (
             <MarkdownMessage>{file.content || ""}</MarkdownMessage>
           ) : (
             <FileSource

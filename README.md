@@ -499,6 +499,14 @@ Raw HTML is disabled and unsafe link protocols are filtered. Markdown images
 are shown as links instead of fetching external images automatically; uploaded
 image attachments retain their existing authenticated preview.
 
+The project file viewer offers **Source** and **Preview** modes for Markdown
+and HTML (`.html` / `.htm`, or text detected as `text/html`). HTML previews render
+in a sandboxed frame with inline styles and embedded data images; scripts,
+forms, nested frames and external or project-relative resources are disabled.
+Previews use the same bounded text content as source view, and show a notice when
+the file is truncated. Download the original to view files that need scripts or
+separate assets.
+
 The composer's left toolbar contains a single **+** for both files and images,
 followed by the native agent's permission selector. Agent/model selection and
 Send remain on the right. Attached images appear as thumbnails above the text;
