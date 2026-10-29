@@ -100,6 +100,15 @@ test("failed measurement removes the temporary element without changing live geo
   assert.deepEqual(f.writes, []);
 });
 
+test("compact floating windows can cap draft height without losing scrollable text", (t) => {
+  const f = textareaFixture(t, 500);
+  resizeTextarea(f.textarea, 3);
+  assert.equal(f.textarea.style.height, "93px");
+  assert.equal(f.textarea.style.overflowY, "auto");
+  resizeTextarea(f.textarea, 1);
+  assert.equal(f.textarea.style.height, "48px");
+});
+
 test("following history observes viewport changes as well as message growth", async () => {
   const main = await readFile(
     new URL("../src/main.tsx", import.meta.url),

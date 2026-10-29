@@ -68,6 +68,7 @@ import { AppearanceDialog } from "./appearance-dialog";
 import { AvatarDialog } from "./avatar-dialog";
 import { AvatarStack, UserAvatar } from "./user-avatar";
 import { DirectMessagePanel } from "./direct-message-panel";
+import type { FloatingWindowBounds } from "./floating-window";
 import { PeopleGroupPicker } from "./people-group-picker";
 import {
   createDirectInbox,
@@ -153,6 +154,10 @@ function App() {
   > | null>(null);
   const [messagingConnected, setMessagingConnected] = useState(false);
   const [groupPicker, setGroupPicker] = useState<string | null>(null);
+  const chatWindowBounds = useRef<FloatingWindowBounds | null>(null);
+  const rememberChatWindowBounds = useCallback((bounds: FloatingWindowBounds) => {
+    chatWindowBounds.current = bounds;
+  }, []);
   const unreadMessages = Object.values(inbox.unread).reduce(
     (sum, count) => sum + count,
     0,
@@ -2066,6 +2071,8 @@ function App() {
           onPeer={openDirectChat}
           onClose={directInbox.close}
           onInvite={() => setGroupPicker(inbox.active)}
+          windowBounds={chatWindowBounds.current}
+          onWindowBoundsChange={rememberChatWindowBounds}
         />
       )}
       {groupPicker !== null && (

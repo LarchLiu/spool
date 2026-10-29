@@ -12,6 +12,12 @@ import {
 } from "./direct-messages.js";
 import { UserAvatar } from "./user-avatar.js";
 import { AutosizeTextarea } from "./autosize-textarea.js";
+import { useFloatingWindow } from "./use-floating-window.js";
+import { PeopleConversationPicker } from "./people-conversation-picker.js";
+import {
+  floatingWindowEdges,
+  type FloatingWindowBounds,
+} from "./floating-window.js";
 
 export function DirectMessagePanel({
   user,
@@ -29,6 +35,8 @@ export function DirectMessagePanel({
   onPeer,
   onClose,
   onInvite,
+  windowBounds,
+  onWindowBoundsChange,
 }: {
   user: string;
   peer: AvatarIdentity;
@@ -45,6 +53,8 @@ export function DirectMessagePanel({
   onPeer: (id: string) => void;
   onClose: () => void;
   onInvite?: () => void;
+  windowBounds?: FloatingWindowBounds | null;
+  onWindowBoundsChange?: (bounds: FloatingWindowBounds) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const log = useRef<HTMLDivElement>(null);
@@ -52,9 +62,13 @@ export function DirectMessagePanel({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<MessageKey | "">("");
   const mounted = useRef(true);
+  const floating = useFloatingWindow(windowBounds, onWindowBoundsChange);
+  const moveLabel = t("Move chat window (arrow keys)");
+  const resizeLabel = t("Resize chat window (arrow keys)");
   useEffect(() => {
     mounted.current = true;
-    dialog.current?.showModal();
+    dialog.current?.show();
+    dialog.current?.querySelector("textarea")?.focus({ preventScroll: true });
     return () => {
       mounted.current = false;
     };
@@ -105,36 +119,62 @@ export function DirectMessagePanel({
       ref={dialog}
       className="direct-message-panel"
       aria-labelledby="direct-message-title"
+      aria-modal="false"
+      style={{
+        left: floating.bounds.x,
+        top: floating.bounds.y,
+        width: floating.bounds.width,
+        height: floating.bounds.height,
+      }}
+      data-operation={floating.operation || undefined}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose();
+        }
+      }}
       onCancel={(event) => {
         event.preventDefault();
         onClose();
       }}
     >
       <div className="direct-message-heading">
-        {isGroup ? (
-          <span className="group-chat-avatar">
-            <Users size={22} />
-          </span>
-        ) : (
-          <UserAvatar person={peer} size={34} />
-        )}
-        <div>
-          <h2 id="direct-message-title">
-            {isGroup
-              ? peer.nickname
-              : t("Chat with {name}", { name: peer.nickname })}
-          </h2>
-          <small role="status">
-            {!connected
-              ? t("Reconnecting…")
-              : isRoom
-                ? t("{count} online", { count: onlineCount })
-                : isGroup
-                  ? t("{count} members", { count: group?.members.length || 0 })
-                  : status
-                    ? t(status === "online" ? "Online" : "Away")
-                    : t("Offline")}
-          </small>
+        <div
+          className="direct-message-drag"
+          role="button"
+          tabIndex={0}
+          aria-label={moveLabel}
+          title={moveLabel}
+          {...floating.moveHandle}
+        >
+          {isGroup ? (
+            <span className="group-chat-avatar">
+              <Users size={22} />
+            </span>
+          ) : (
+            <UserAvatar person={peer} size={34} />
+          )}
+          <div>
+            <h2 id="direct-message-title" title={peer.nickname}>
+              {isGroup
+                ? peer.nickname
+                : t("Chat with {name}", { name: peer.nickname })}
+            </h2>
+            <small role="status">
+              {!connected
+                ? t("Reconnecting…")
+                : isRoom
+                  ? t("{count} online", { count: onlineCount })
+                  : isGroup
+                    ? t("{count} members", {
+                        count: group?.members.length || 0,
+                      })
+                    : status
+                      ? t(status === "online" ? "Online" : "Away")
+                      : t("Offline")}
+            </small>
+          </div>
         </div>
         {group && (
           <button
@@ -155,19 +195,14 @@ export function DirectMessagePanel({
           <X size={18} />
         </button>
       </div>
-      <select
-        className="direct-message-people"
+      <PeopleConversationPicker
         value={peer.id}
-        aria-label={t("Choose conversation")}
-        onChange={(event) => onPeer(event.target.value)}
-      >
-        {people.map((person) => (
-          <option key={person.id} value={person.id}>
-            {person.nickname}
-            {unread[person.id] ? ` (${unread[person.id]})` : ""}
-          </option>
-        ))}
-      </select>
+        people={people}
+        unread={unread}
+        height={floating.bounds.height}
+        t={t}
+        onSelect={onPeer}
+      />
       <p className="direct-message-notice">
         {t("Live only. Messages are not saved and disappear when you refresh.")}
       </p>
@@ -243,6 +278,10 @@ export function DirectMessagePanel({
       >
         <AutosizeTextarea
           autoFocus
+          maxRows={Math.max(
+            1,
+            Math.min(6, Math.floor((floating.bounds.height - 290) / 20)),
+          )}
           aria-label={t(isGroup ? "Group message" : "Private message")}
           placeholder={t(isGroup ? "Group message" : "Private message")}
           value={draft}
@@ -278,6 +317,35 @@ export function DirectMessagePanel({
           )}
         </button>
       </form>
+      {floatingWindowEdges.map((edge) => (
+        <div
+          key={edge}
+          className="direct-message-edge"
+          data-edge={edge}
+          role={edge.length === 1 ? "separator" : undefined}
+          aria-orientation={
+            edge === "n" || edge === "s"
+              ? "horizontal"
+              : edge === "e" || edge === "w"
+                ? "vertical"
+                : undefined
+          }
+          aria-label={edge.length === 1 ? resizeLabel : undefined}
+          aria-valuenow={
+            edge.length === 1
+              ? Math.round(
+                  edge === "n" || edge === "s"
+                    ? floating.bounds.height
+                    : floating.bounds.width,
+                )
+              : undefined
+          }
+          aria-hidden={edge.length > 1 || undefined}
+          tabIndex={edge.length === 1 ? 0 : -1}
+          title={resizeLabel}
+          {...floating.resizeHandle(edge)}
+        />
+      ))}
     </dialog>
   );
 }

@@ -10,6 +10,7 @@ import {
 } from "../.test-build/direct-messages.js";
 import { DirectMessagePanel } from "../.test-build/components/web/src/direct-message-panel.js";
 import { PeopleGroupPicker } from "../.test-build/components/web/src/people-group-picker.js";
+import { PeopleConversationPicker } from "../.test-build/components/web/src/people-conversation-picker.js";
 
 const people = [
   { id: "bob", nickname: "Bob", avatar: { style: "thumbs", seed: "bob" } },
@@ -107,6 +108,9 @@ test("private panel escapes messages, explains lifetime and disables offline sen
   const html = view("online");
   assert.match(html, /role="log"/);
   assert.match(html, /aria-labelledby="direct-message-title"/);
+  assert.match(html, /aria-modal="false"/);
+  assert.match(html, /aria-label="Move chat window \(arrow keys\)"/);
+  assert.match(html, /aria-label="Resize chat window \(arrow keys\)"/);
   assert.match(html, /Messages are not saved/);
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
   assert.doesNotMatch(html, /<img src="x"/);
@@ -226,4 +230,23 @@ test("member picker explains scope and lets users choose specific people", () =>
   assert.match(html, /Only selected members/);
   assert.match(html, /Group name/);
   assert.match(html, /Create group/);
+});
+
+test("conversation popup uses an anchored listbox trigger rather than a mobile native select", () => {
+  const html = renderToStaticMarkup(
+    createElement(PeopleConversationPicker, {
+      value: "bob",
+      people,
+      unread: { bob: 2 },
+      height: 360,
+      t: (key) => key,
+      onSelect() {},
+    }),
+  );
+  assert.match(html, /aria-label="Choose conversation"/);
+  assert.match(html, /aria-haspopup="listbox"/);
+  assert.match(html, /aria-expanded="false"/);
+  assert.match(html, /<span>Bob<\/span>/);
+  assert.match(html, /class="direct-unread">2/);
+  assert.doesNotMatch(html, /<select|role="listbox"/);
 });

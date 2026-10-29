@@ -3,6 +3,7 @@ package workspace
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -70,14 +71,58 @@ func TestRealtimeBrowser(t *testing.T) {
 			var third *websocket.Conn
 			var selectedGroup string
 			var actionMu sync.Mutex
+			browserProfile := t.TempDir()
+			driver := &browserDriver{profile: browserProfile}
+			t.Cleanup(driver.close)
+			output := filepath.Join("..", "..", "build", "artifacts", "realtime")
+			if err := os.MkdirAll(output, 0755); err != nil {
+				t.Fatal(err)
+			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
+				case "/smoke/browser":
+					var commands []browserCommand
+					if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&commands); err != nil {
+						http.Error(w, err.Error(), 400)
+						return
+					}
+					for _, command := range commands {
+						switch command.Method {
+						case "Input.dispatchMouseEvent", "Emulation.setDeviceMetricsOverride", "Emulation.clearDeviceMetricsOverride", "Page.captureScreenshot":
+						default:
+							http.Error(w, "unsupported browser command", 400)
+							return
+						}
+					}
+					ctx, done := context.WithTimeout(r.Context(), 5*time.Second)
+					defer done()
+					result, err := driver.run(ctx, commands)
+					if err == nil && len(commands) > 0 && commands[len(commands)-1].Method == "Page.captureScreenshot" {
+						var image struct{ Data string }
+						err = json.Unmarshal(result, &image)
+						if err == nil {
+							var data []byte
+							data, err = base64.StdEncoding.DecodeString(image.Data)
+							if err == nil {
+								err = os.WriteFile(filepath.Join(output, fmt.Sprintf("chat-window-%d.png", width)), data, 0644)
+							}
+						}
+						result = json.RawMessage(`{}`)
+					}
+					if err != nil {
+						http.Error(w, err.Error(), 500)
+					} else {
+						w.Header().Set("Content-Type", "application/json")
+						w.Write(result)
+					}
+					return
 				case "/smoke/login":
 					http.SetCookie(w, cookie)
 					http.Redirect(w, r, "/", http.StatusFound)
 					return
 				case "/smoke/probe.js":
 					w.Header().Set("Content-Type", "text/javascript")
+					fmt.Fprintf(w, "window.smokeWidth = %d;\n", width)
 					w.Write(probe)
 					return
 				case "/smoke/report":
@@ -231,16 +276,12 @@ func TestRealtimeBrowser(t *testing.T) {
 				a.Close()
 				server.Close()
 			})
-			output := filepath.Join("..", "..", "build", "artifacts", "realtime")
-			if err := os.MkdirAll(output, 0755); err != nil {
-				t.Fatal(err)
-			}
 			log, err := os.Create(filepath.Join(output, fmt.Sprintf("browser-%d.log", width)))
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer log.Close()
-			command := exec.Command(chrome, "--headless", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-extensions", "--disable-breakpad", "--remote-debugging-port=0", "--user-data-dir="+t.TempDir(), fmt.Sprintf("--window-size=%d,1000", width), server.URL+"/smoke/login")
+			command := exec.Command(chrome, "--headless", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-extensions", "--disable-breakpad", "--remote-debugging-port=0", "--user-data-dir="+browserProfile, fmt.Sprintf("--window-size=%d,1000", width), server.URL+"/smoke/login")
 			command.Stdout, command.Stderr = log, log
 			if err := command.Start(); err != nil {
 				t.Fatal(err)
@@ -252,6 +293,14 @@ func TestRealtimeBrowser(t *testing.T) {
 				os.WriteFile(filepath.Join(output, fmt.Sprintf("browser-%d.json", width)), data, 0644)
 				if report["error"] != nil {
 					t.Fatalf("browser probe failed: %s", data)
+				}
+				if report["viewportWidth"] != float64(width) {
+					t.Errorf("viewport width = %v, want %d", report["viewportWidth"], width)
+				}
+				for _, check := range []string{"chatInitialFocus", "chatNonmodal", "chatDrag", "chatResize", "chatEdges", "chatBounds", "chatKeyboard", "chatViewport", "chatRetained", "chatSendLayout", "chatEscape", "chatDoesNotStealFocus", "chatConversationMenu", "chatLongDraft"} {
+					if report[check] != true {
+						t.Errorf("%s failed: %s", check, data)
+					}
 				}
 				for _, check := range []string{"localIcon", "controlsUpdated", "ownControlsUpdated", "segmentedStyles", "actorStack", "activeUnchanged", "avatarUpdated", "sharedAvatars", "staleProfilesIgnored", "nameUpdated", "presenceJoined", "presenceLeft", "reconnected", "revoked", "directUnread", "directSent", "directLayout", "directOffline", "directNoReplay", "groupSent", "groupLayout", "groupNoReplay", "selectedCreated", "selectedInvited", "selectedLayout", "selectedClosed"} {
 					if report[check] != true {

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -141,62 +142,81 @@ func TestLocalSharingLatestTwentyMixedProvidersAndRefresh(t *testing.T) {
 }
 
 func TestLocalSharingMatchesLinkedWorktreesAndProtectsNestedProjects(t *testing.T) {
-	localSessionHomes(t)
-	s := testStore(t)
-	u := testUser(t, s, "alice")
-	p := testProject(t, s, u)
-	p.SharedChats, p.SharedLocalChats = true, true
-	git := filepath.Join(p.Path, ".git")
-	gitWorktree := filepath.Join(git, "worktrees", "issue-42")
-	if err := os.MkdirAll(gitWorktree, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(gitWorktree, "commondir"), []byte("../..\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	worktree := t.TempDir()
-	if err := os.WriteFile(filepath.Join(worktree, ".git"), []byte("gitdir: "+gitWorktree+"\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	nestedPath := filepath.Join(p.Path, "private-project")
-	if err := os.MkdirAll(nestedPath, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.SaveProject(Project{Name: "Private nested project", Path: nestedPath}); err != nil {
-		t.Fatal(err)
-	}
-	writeLocalSession(t, chatmodel.BackendCodex, "private-nested-session", nestedPath, 40)
-	writeLocalSession(t, chatmodel.BackendCodex, "external-worktree-session-42", worktree, 41)
-	if _, err := s.SaveProject(p); err != nil {
-		t.Fatal(err)
-	}
-	nav, err := s.UserNavigation(u.ID)
-	if err != nil || len(nav.Chats) != 1 || !nav.Chats[0].LocalSession {
-		t.Fatalf("linked worktree not shared or nested private project leaked: %+v %v", nav, err)
-	}
-	chat, ok := s.getSession(nav.Chats[0].ID)
-	directory, err := s.sessionDirectory(chat)
-	if !ok || err != nil || directory != worktree {
-		t.Fatal("linked worktree context was not preserved", directory, err)
-	}
-	testAgent(t, s)
-	runner := &historyRunner{}
-	a := NewApp(s, runner, "", "")
-	t.Cleanup(func() { _ = a.Close() })
-	cookie, csrf := loginRequest(t, a, u.Username)
-	w := apiRequest(a, "GET", "/api/chats/"+chat.ID, "", cookie, csrf)
-	if w.Code != 200 || strings.Contains(w.Body.String(), worktree) || strings.Contains(w.Body.String(), chat.NativeSessionID) || !strings.Contains(w.Body.String(), `"local_session":true`) {
-		t.Fatalf("local API leaked paths or native identity: %d %s", w.Code, w.Body.String())
-	}
-	w = apiRequest(a, "POST", "/api/chats/"+chat.ID+"/messages", `{"message":"Continue the issue"}`, cookie, csrf)
-	if w.Code != 202 || !strings.Contains(w.Body.String(), `"can_control":true`) {
-		t.Fatalf("operator could not resume local issue session: %d %s", w.Code, w.Body.String())
-	}
-	a.turns.Wait()
-	runner.mu.Lock()
-	defer runner.mu.Unlock()
-	if len(runner.requests) != 1 || runner.requests[0].WorkingDirectory != worktree || runner.requests[0].NativeSessionID != "external-worktree-session-42" {
-		t.Fatalf("local session resumed in the wrong context: %+v", runner.requests)
+	for _, pathKind := range []string{"direct", "symlink"} {
+		t.Run(pathKind, func(t *testing.T) {
+			if pathKind == "symlink" && runtime.GOOS == "windows" {
+				t.Skip("symlinks require Windows developer privileges")
+			}
+			localSessionHomes(t)
+			s := testStore(t)
+			u := testUser(t, s, "alice")
+			p := testProject(t, s, u)
+			p.SharedChats, p.SharedLocalChats = true, true
+			git := filepath.Join(p.Path, ".git")
+			gitWorktree := filepath.Join(git, "worktrees", "issue-42")
+			if err := os.MkdirAll(gitWorktree, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(gitWorktree, "commondir"), []byte("../..\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			worktree := t.TempDir()
+			if pathKind == "symlink" {
+				alias := filepath.Join(t.TempDir(), "worktree-alias")
+				if err := os.Symlink(worktree, alias); err != nil {
+					t.Fatal(err)
+				}
+				worktree = alias
+			}
+			// Discovery resolves aliases, including macOS's /var -> /private/var.
+			wantDirectory, err := filepath.EvalSymlinks(worktree)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(worktree, ".git"), []byte("gitdir: "+gitWorktree+"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			nestedPath := filepath.Join(p.Path, "private-project")
+			if err := os.MkdirAll(nestedPath, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.SaveProject(Project{Name: "Private nested project", Path: nestedPath}); err != nil {
+				t.Fatal(err)
+			}
+			writeLocalSession(t, chatmodel.BackendCodex, "private-nested-session", nestedPath, 40)
+			writeLocalSession(t, chatmodel.BackendCodex, "external-worktree-session-42", worktree, 41)
+			if _, err := s.SaveProject(p); err != nil {
+				t.Fatal(err)
+			}
+			nav, err := s.UserNavigation(u.ID)
+			if err != nil || len(nav.Chats) != 1 || !nav.Chats[0].LocalSession {
+				t.Fatalf("linked worktree not shared or nested private project leaked: %+v %v", nav, err)
+			}
+			chat, ok := s.getSession(nav.Chats[0].ID)
+			directory, err := s.sessionDirectory(chat)
+			if !ok || err != nil || directory != wantDirectory {
+				t.Fatalf("linked worktree directory = %q, want %q: %v", directory, wantDirectory, err)
+			}
+			testAgent(t, s)
+			runner := &historyRunner{}
+			a := NewApp(s, runner, "", "")
+			t.Cleanup(func() { _ = a.Close() })
+			cookie, csrf := loginRequest(t, a, u.Username)
+			w := apiRequest(a, "GET", "/api/chats/"+chat.ID, "", cookie, csrf)
+			if w.Code != 200 || strings.Contains(w.Body.String(), worktree) || strings.Contains(w.Body.String(), wantDirectory) || strings.Contains(w.Body.String(), chat.NativeSessionID) || !strings.Contains(w.Body.String(), `"local_session":true`) {
+				t.Fatalf("local API leaked paths or native identity: %d %s", w.Code, w.Body.String())
+			}
+			w = apiRequest(a, "POST", "/api/chats/"+chat.ID+"/messages", `{"message":"Continue the issue"}`, cookie, csrf)
+			if w.Code != 202 || !strings.Contains(w.Body.String(), `"can_control":true`) {
+				t.Fatalf("operator could not resume local issue session: %d %s", w.Code, w.Body.String())
+			}
+			a.turns.Wait()
+			runner.mu.Lock()
+			defer runner.mu.Unlock()
+			if len(runner.requests) != 1 || runner.requests[0].WorkingDirectory != wantDirectory || runner.requests[0].NativeSessionID != "external-worktree-session-42" {
+				t.Fatalf("local session resumed in the wrong context: %+v", runner.requests)
+			}
+		})
 	}
 }
 

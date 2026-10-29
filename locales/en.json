@@ -558,5 +558,7 @@
   "Choose 1-31 other people. Groups support up to 32 members.": "Choose 1-31 other people. Groups support up to 32 members.",
   "This group is no longer available to you.": "This group is no longer available to you.",
   "Too many active groups. Try again after unused groups close.": "Too many active groups. Try again after unused groups close.",
-  "Group operation status unknown. Check your conversation list before trying again.": "Group operation status unknown. Check your conversation list before trying again."
+  "Group operation status unknown. Check your conversation list before trying again.": "Group operation status unknown. Check your conversation list before trying again.",
+  "Move chat window (arrow keys)": "Move chat window (arrow keys)",
+  "Resize chat window (arrow keys)": "Resize chat window (arrow keys)"
 }
