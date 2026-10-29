@@ -405,10 +405,18 @@ func (p *panel) probeSettings(ctx context.Context, report string) error {
 	if err := p.probeThemePicker(ctx, view, report); err != nil {
 		return err
 	}
-	// React controlled inputs must keep unsaved drafts across navigation/polls.
+	if err := waitChatScript(ctx, page, `return !document.querySelector('[data-page="Service"]').hidden && !document.querySelector('.settings-content').disabled && (await mygo.call('DesktopSettings.Snapshot')).section === 'Service';`); err != nil {
+		return err
+	}
+	// Inputs autosave on blur; navigation must not drop the save or its command.
 	if _, err := page.EvalContext(ctx, `
 		window.smokeSetInput = (input, value) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', {bubbles: true})); };
-		smokeSetInput(document.querySelector('[data-page="Service"] input'), 'localhost');
+		const input = document.querySelector('[data-page="Service"] input');
+		input.focus();
+		if (document.activeElement !== input) throw new Error('service input did not receive focus');
+		smokeSetInput(input, 'localhost');
+		await new Promise(resolve => setTimeout(resolve, 0));
+		input.blur();
 		document.querySelector('[data-section="People"]').click();
 	`); err != nil {
 		return err
@@ -484,14 +492,13 @@ func (p *panel) probeSettings(ctx context.Context, report string) error {
 		return err
 	}
 	if err := waitChatScript(ctx, page, `return !document.querySelector('[data-page="Service"]').hidden && !document.querySelector('.settings-content').disabled && document.querySelector('[data-page="Service"] input').value === 'localhost'`); err != nil {
-		return fmt.Errorf("settings draft lost: %w", err)
-	}
-	// Save through the real service form, then verify SQLite.
-	if _, err := page.EvalContext(ctx, `document.querySelector('[data-page="Service"] form').requestSubmit();`); err != nil {
-		return err
+		return fmt.Errorf("settings autosave lost: %w", err)
 	}
 	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).settings.host === 'localhost' && !document.querySelector('.settings-content').disabled`); err != nil {
-		return err
+		return fmt.Errorf("service field was not autosaved: %w", err)
+	}
+	if err := waitChatScript(ctx, page, `const section = document.querySelector('[data-page="Service"]'); return !section.querySelector('form, button[type="submit"]') && (await mygo.call('DesktopSettings.Snapshot')).status.RestartRequired && !!section.querySelector('[data-restart-service]');`); err != nil {
+		return fmt.Errorf("service autosave/restart notice: %w", err)
 	}
 	for _, theme := range []string{"dark", "light"} {
 		if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: "save-appearance", Preferences: workspace.UIPreferences{Theme: theme, Language: "zh-CN"}}); err != nil {
@@ -567,6 +574,12 @@ func (p *panel) probeSettings(ctx context.Context, report string) error {
 	case <-restored:
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+	if _, err := page.EvalContext(ctx, `document.querySelector('[data-restart-service]').click();`); err != nil {
+		return err
+	}
+	if err := waitChatScript(ctx, page, `const snapshot = await mygo.call('DesktopSettings.Snapshot'); return snapshot.status.Running && !snapshot.status.RestartRequired && !document.querySelector('[data-restart-service]') && !document.querySelector('.settings-content').disabled;`); err != nil {
+		return fmt.Errorf("explicit settings restart: %w", err)
 	}
 	// Restore the original listen address before chat's origin is established.
 	settings, err := p.service.Store.Settings()

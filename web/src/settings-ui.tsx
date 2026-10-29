@@ -2,14 +2,11 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { Check, FolderOpen } from "lucide-react";
 import en from "../../locales/en.json";
 import type { MessageKey, Translator } from "./i18n";
-import {
-  settingsCall,
-  type SettingsCommand,
-  type SettingsSnapshot,
-} from "./settings-client";
+import { settingsCall, type SettingsSnapshot } from "./settings-client";
+import type { SettingsOperation } from "./settings-autosave";
 
 export type Run = (
-  command: SettingsCommand,
+  command: SettingsOperation,
 ) => Promise<SettingsSnapshot | undefined>;
 export type PageProps = { data: SettingsSnapshot; run: Run; t: Translator };
 
@@ -94,6 +91,7 @@ export function TextField({
   min,
   max,
   required,
+  onCommit,
 }: {
   title: string;
   value: string | number;
@@ -103,6 +101,7 @@ export function TextField({
   min?: number;
   max?: number;
   required?: boolean;
+  onCommit?: () => void;
 }) {
   return (
     <Row title={title} help={help}>
@@ -111,6 +110,23 @@ export function TextField({
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={
+          onCommit
+            ? (e) => {
+                if (e.currentTarget.reportValidity()) onCommit();
+              }
+            : undefined
+        }
+        onKeyDown={
+          onCommit
+            ? (e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  if (e.currentTarget.reportValidity()) onCommit();
+                }
+              }
+            : undefined
+        }
         min={min}
         max={max}
         step={type === "number" ? 1 : undefined}

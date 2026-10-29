@@ -33,6 +33,7 @@ import {
   UpdatesPage,
 } from "./settings-pages";
 import { ProjectsPage } from "./settings-projects";
+import { createSettingsCommandQueue } from "./settings-autosave";
 
 const icons = {
   Service: Server,
@@ -56,9 +57,12 @@ const descriptions: Record<SettingsSection, MessageKey> = {
 export function SettingsApp() {
   const { t } = usePresentation(defaultPreferences);
   const [data, setData] = useState<SettingsSnapshot>();
+  const snapshot = useRef<SettingsSnapshot>(undefined);
   const [section, setSection] = useState<SettingsSection>("Service");
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [saveError, setSaveError] = useState("");
   const [saved, setSaved] = useState(false);
   const operation = useRef(false);
   const revision = useRef(0);
@@ -70,6 +74,7 @@ export function SettingsApp() {
     try {
       const next = await settingsCall<SettingsSnapshot>("Snapshot");
       if (operation.current || generation !== revision.current) return;
+      snapshot.current = next;
       setData(next);
       if (initial && settingsSections.includes(next.section as SettingsSection))
         setSection(next.section as SettingsSection);
@@ -99,27 +104,36 @@ export function SettingsApp() {
     const timer = setTimeout(() => setSaved(false), 2500);
     return () => clearTimeout(timer);
   }, [saved]);
-  const run: Run = async (command) => {
-    if (operation.current) return;
-    operation.current = true;
-    revision.current++;
-    setBusy(true);
-    setError("");
-    setSaved(false);
-    try {
-      const next = await settingsCall<SettingsSnapshot>("Execute", command);
-      setData(next);
-      if (command.kind.startsWith("save-")) setSaved(true);
-      return next;
-    } catch (e) {
-      setError(String(e instanceof Error ? e.message : e));
-    } finally {
-      operation.current = false;
-      setBusy(false);
-    }
-  };
+  const [run] = useState<Run>(() =>
+    createSettingsCommandQueue(
+      async (command) => {
+        operation.current = true;
+        revision.current++;
+        setBusy(command.kind !== "save-settings");
+        setSaving(command.kind === "save-settings");
+        setError("");
+        if (command.kind === "save-settings") setSaveError("");
+        setSaved(false);
+        try {
+          const next = await settingsCall<SettingsSnapshot>("Execute", command);
+          snapshot.current = next;
+          setData(next);
+          if (command.kind.startsWith("save-")) setSaved(true);
+          return next;
+        } catch (e) {
+          const message = String(e instanceof Error ? e.message : e);
+          if (command.kind === "save-settings") setSaveError(message);
+          else setError(message);
+        } finally {
+          operation.current = false;
+          setBusy(false);
+          setSaving(false);
+        }
+      },
+      () => snapshot.current,
+    ),
+  );
   const navigate = (next: SettingsSection) => {
-    if (operation.current) return;
     setSection(next);
     setSaved(false);
     setError("");
@@ -200,9 +214,9 @@ export function SettingsApp() {
             </div>
           ) : (
             <>
-              {error && (
+              {(saveError || error) && (
                 <div role="alert" className="settings-error">
-                  {knownMessage(error, t)}
+                  {knownMessage(saveError || error, t)}
                   {!data && (
                     <button type="button" onClick={() => void refresh(true)}>
                       {t("Retry")}
@@ -245,9 +259,9 @@ export function SettingsApp() {
           )}
           <div
             role="status"
-            className={`settings-save-status${saved || busy ? " visible" : ""}`}
+            className={`settings-save-status${saved || busy || saving ? " visible" : ""}`}
           >
-            {busy ? (
+            {busy || saving ? (
               <>
                 <RefreshCw size={14} className="settings-spinning" />
                 {t("Working…")}

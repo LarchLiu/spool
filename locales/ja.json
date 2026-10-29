@@ -479,5 +479,9 @@
   "No agents available.": "利用可能なエージェントがありません。",
   "Copy message": "メッセージをコピー",
   "Message copied": "メッセージをコピーしました",
-  "Could not copy message": "メッセージをコピーできませんでした"
+  "Could not copy message": "メッセージをコピーできませんでした",
+  "Restart service": "サービスを再起動",
+  "Settings saved. Restart the service to apply connection and idle changes. Restarting interrupts active tasks.": "設定を保存しました。接続とアイドル時間の変更を適用するにはサービスを再起動してください。再起動すると実行中のタスクが中断されます。",
+  "Changes are saved on blur or Enter; switches save immediately. The service never restarts automatically. Closing this window keeps it in the tray; Quit stops it.": "入力欄からフォーカスを外すか Enter を押すと自動保存され、スイッチは切り替えるとすぐに保存されます。サービスは自動で再起動しません。ウィンドウを閉じてもトレイで動作し、終了すると停止します。",
+  "Shared by all chats. Changes are saved automatically and apply immediately. A larger session is kept whole; history is never truncated.": "すべてのチャットで共有され、変更は自動保存されてすぐに適用されます。大きなセッションも完全に保持され、履歴は切り詰められません。"
 }

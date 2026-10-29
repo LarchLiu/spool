@@ -46,6 +46,8 @@ type panel struct {
 	settings           workspace.Settings
 	port, idle         string
 	historyCache       string
+	serviceFieldFocus  map[string]bool
+	serviceFieldCommit func()
 	users              []workspace.User
 	projects           []workspace.Project
 	agents             []workspace.AgentInfo
@@ -322,6 +324,7 @@ func (p *panel) action(fn func() error) {
 	if p.busy {
 		return
 	}
+	p.flushServiceSetting()
 	p.busy = true
 	p.message = "Working…"
 	go func() {
@@ -434,28 +437,32 @@ func (p *panel) serviceView(c *ui.Context) {
 			p.openBrowser()
 		}
 	})
-	p.field(c, "Listen IP (127.0.0.1 / 0.0.0.0)", &p.settings.Host)
-	p.field(c, "Web port", &p.port)
-	p.field(c, "Public origin (HTTPS reverse proxy for remote PWA)", &p.settings.PublicURL)
-	p.field(c, "Release completed agents after idle minutes", &p.idle)
-	p.field(c, "History cache size (MiB)", &p.historyCache)
-	ui.Text(c, p.tr("Shared by all chats. Applies immediately after saving. A larger session is kept whole; history is never truncated.")).Wrap().FontSize(12)
-	ui.Checkbox(c, &p.settings.AutoStart, p.tr("Start Web service on application launch"))
-	if ui.PrimaryButton(c, p.tr("Save settings")).Disabled(p.busy).Clicked() {
-		settings := p.settings
-		port, e := strconv.Atoi(p.port)
-		idle, e2 := strconv.Atoi(p.idle)
-		cache, e3 := strconv.Atoi(p.historyCache)
-		if e != nil || e2 != nil || e3 != nil {
-			p.message = "Port, idle minutes and history cache size must be integers"
-		} else {
-			settings.Port = port
-			settings.IdleMinutes = idle
-			settings.HistoryCacheMiB = cache
-			p.action(func() error { return p.service.Store.SaveSettings(settings) })
+	if p.status.RestartRequired {
+		ui.Text(c, p.tr("Settings saved. Restart the service to apply connection and idle changes. Restarting interrupts active tasks.")).Wrap().FontSize(12)
+		if ui.Button(c, p.tr("Restart service")).Disabled(p.busy).Clicked() {
+			p.action(p.service.Restart)
 		}
 	}
-	ui.Text(c, p.tr("Listen address and idle settings apply after Stop → Start. Stopping interrupts active tasks. Closing this window keeps the server in the tray; Quit stops it.")).Wrap().FontSize(12)
+	p.serviceSettingField(c, "Listen IP (127.0.0.1 / 0.0.0.0)", &p.settings.Host, func(settings *workspace.Settings, value string) error { settings.Host = value; return nil })
+	p.serviceSettingField(c, "Web port", &p.port, func(settings *workspace.Settings, value string) (err error) {
+		settings.Port, err = strconv.Atoi(value)
+		return err
+	})
+	p.serviceSettingField(c, "Public origin (HTTPS reverse proxy for remote PWA)", &p.settings.PublicURL, func(settings *workspace.Settings, value string) error { settings.PublicURL = value; return nil })
+	p.serviceSettingField(c, "Release completed agents after idle minutes", &p.idle, func(settings *workspace.Settings, value string) (err error) {
+		settings.IdleMinutes, err = strconv.Atoi(value)
+		return err
+	})
+	p.serviceSettingField(c, "History cache size (MiB)", &p.historyCache, func(settings *workspace.Settings, value string) (err error) {
+		settings.HistoryCacheMiB, err = strconv.Atoi(value)
+		return err
+	})
+	ui.Text(c, p.tr("Shared by all chats. Changes are saved automatically and apply immediately. A larger session is kept whole; history is never truncated.")).Wrap().FontSize(12)
+	if ui.Checkbox(c, &p.settings.AutoStart, p.tr("Start Web service on application launch")).Disabled(p.busy).Changed() {
+		autoStart := p.settings.AutoStart
+		p.saveServiceSetting(func(settings *workspace.Settings) error { settings.AutoStart = autoStart; return nil })
+	}
+	ui.Text(c, p.tr("Changes are saved on blur or Enter; switches save immediately. The service never restarts automatically. Closing this window keeps it in the tray; Quit stops it.")).Wrap().FontSize(12)
 	ui.Text(c, "SQLite · "+p.service.Store.DatabasePath()).Wrap().FontSize(12)
 	if p.runtimeDiagnostics != nil {
 		ui.Text(c, p.tr("Application log")+": "+p.runtimeDiagnostics.Path).Selectable().Wrap().FontSize(12)
@@ -470,6 +477,54 @@ func (p *panel) serviceView(c *ui.Context) {
 		}
 	}
 	ui.Text(c, p.tr("Users can execute agent tools in granted projects. Only grant access to trusted people. HTTPS is required for remote PWA installation.")).Wrap().FontSize(12)
+}
+
+func (p *panel) saveServiceSetting(update func(*workspace.Settings) error) {
+	// This local write must not disable the next field or reload other drafts
+	// when focus moves between inputs in the native fallback.
+	settings, err := p.service.Store.Settings()
+	if err == nil {
+		err = update(&settings)
+	}
+	if err == nil {
+		err = p.service.Store.SaveSettings(settings)
+	}
+	if err != nil {
+		p.message = err.Error()
+		return
+	}
+	p.message = "Saved"
+	p.status = p.service.Status()
+}
+
+func (p *panel) flushServiceSetting() {
+	if commit := p.serviceFieldCommit; commit != nil {
+		p.serviceFieldCommit = nil
+		commit()
+	}
+}
+
+func (p *panel) serviceSettingField(c *ui.Context, label string, value *string, update func(*workspace.Settings, string) error) {
+	if p.serviceFieldFocus == nil {
+		p.serviceFieldFocus = make(map[string]bool)
+	}
+	ui.Column(c).FillWidth().Gap(5).Children(func() {
+		ui.Text(c, p.tr(label)).FontSize(12)
+		input := ui.TextInput(c, value).FillWidth().Label(p.tr(label)).Disabled(p.busy)
+		submitted := input.Submitted()
+		wasFocused := p.serviceFieldFocus[label]
+		p.serviceFieldFocus[label] = input.Focused()
+		commit := func() {
+			committed := *value
+			p.saveServiceSetting(func(settings *workspace.Settings) error { return update(settings, committed) })
+		}
+		if !p.busy && input.Focused() {
+			p.serviceFieldCommit = commit
+		}
+		if !p.busy && (submitted || (wasFocused && !input.Focused())) {
+			commit()
+		}
+	})
 }
 func (p *panel) peopleView(c *ui.Context) {
 	ui.Text(c, p.tr("Accounts are created here. Web clients cannot register or administer users.")).Wrap().FontSize(12)

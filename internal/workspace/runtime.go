@@ -31,10 +31,11 @@ type Service struct {
 	localAddress   string
 }
 type ServiceStatus struct {
-	Running bool
-	Address string
-	Error   string
-	Online  []PresenceUser
+	Running         bool
+	RestartRequired bool
+	Address         string
+	Error           string
+	Online          []PresenceUser
 }
 
 func OpenService(root string) (*Service, error) {
@@ -98,6 +99,10 @@ func OpenService(root string) (*Service, error) {
 func (s *Service) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.startLocked()
+}
+
+func (s *Service) startLocked() error {
 	if s.closed {
 		return fmt.Errorf("service is closed")
 	}
@@ -174,6 +179,23 @@ func (s *Service) Start() error {
 func (s *Service) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.stopLocked()
+}
+
+// Restart is explicit: saving settings alone never interrupts running tasks.
+func (s *Service) Restart() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.updating {
+		return ErrUpdateInProgress
+	}
+	if err := s.stopLocked(); err != nil {
+		return err
+	}
+	return s.startLocked()
+}
+
+func (s *Service) stopLocked() error {
 	if s.server == nil {
 		return nil
 	}
@@ -198,10 +220,16 @@ func (s *Service) Status() ServiceStatus {
 		online = s.app.presence.List(s.Store)
 	}
 	address := settings.Address()
+	restartRequired := false
 	if s.server != nil {
 		address = s.runningAddress
+		if s.app != nil {
+			active := s.app.settings
+			restartRequired = active.Host != settings.Host || active.Port != settings.Port ||
+				active.PublicURL != settings.PublicURL || active.IdleMinutes != settings.IdleMinutes
+		}
 	}
-	return ServiceStatus{Running: s.server != nil, Address: address, Error: message, Online: online}
+	return ServiceStatus{Running: s.server != nil, RestartRequired: restartRequired, Address: address, Error: message, Online: online}
 }
 func (s *Service) WebURL() string {
 	s.mu.Lock()

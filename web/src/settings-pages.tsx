@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
   ChevronRight,
@@ -20,6 +20,7 @@ import {
 } from "./settings-client";
 import { SettingsBack, SettingsList } from "./settings-list";
 import { ThemePicker } from "./theme-picker";
+import { ServiceSettingsAutosave } from "./settings-autosave";
 import {
   Card,
   Row,
@@ -34,11 +35,25 @@ import {
 } from "./settings-ui";
 
 export function ServicePage({ data, run, t }: PageProps) {
-  const [draft, setDraft] = useState(() => ({ ...data.settings }));
-  const field = <K extends keyof typeof draft>(
-    key: K,
-    value: (typeof draft)[K],
-  ) => setDraft((old) => ({ ...old, [key]: value }));
+  const runRef = useRef(run);
+  runRef.current = run;
+  const [, redraw] = useState(0);
+  const [autosave] = useState(
+    () =>
+      new ServiceSettingsAutosave(
+        data.settings,
+        async (settings) =>
+          (
+            await runRef.current((latest) => ({
+              kind: "save-settings",
+              settings: settings(latest?.settings),
+            }))
+          )?.settings,
+        () => redraw((value) => value + 1),
+      ),
+  );
+  useEffect(() => autosave.sync(data.settings), [autosave, data.settings]);
+  const draft = autosave.draft;
   return (
     <>
       <Card title={t("Web service")}>
@@ -91,69 +106,89 @@ export function ServicePage({ data, run, t }: PageProps) {
           {knownMessage(data.status.Error, t)}
         </div>
       )}
-      <form
-        onSubmit={(e) =>
-          submit(e, () => void run({ kind: "save-settings", settings: draft }))
-        }
-      >
-        <Card title={t("Connection")}>
-          <TextField
-            title={t("Listen IP (127.0.0.1 / 0.0.0.0)")}
-            value={draft.host}
-            onChange={(v) => field("host", v)}
-            required
-          />
-          <TextField
-            title={t("Web port")}
-            type="number"
-            value={draft.port}
-            min={1}
-            max={65535}
-            onChange={(v) => field("port", Number(v))}
-            required
-          />
-          <TextField
-            title={t("Public origin (HTTPS reverse proxy for remote PWA)")}
-            value={draft.public_url}
-            onChange={(v) => field("public_url", v)}
-          />
-        </Card>
-        <Card title={t("Runtime")}>
-          <TextField
-            title={t("Release completed agents after idle minutes")}
-            type="number"
-            value={draft.idle_minutes}
-            min={1}
-            max={10080}
-            onChange={(v) => field("idle_minutes", Number(v))}
-            required
-          />
-          <TextField
-            title={t("History cache size (MiB)")}
-            type="number"
-            value={draft.history_cache_mib}
-            min={1}
-            onChange={(v) => field("history_cache_mib", Number(v))}
-            help={t(
-              "Shared by all chats. Applies immediately after saving. A larger session is kept whole; history is never truncated.",
-            )}
-            required
-          />
-          <Row title={t("Start Web service on application launch")}>
-            <Toggle
-              label={t("Start Web service on application launch")}
-              value={draft.auto_start}
-              onChange={(v) => field("auto_start", v)}
-            />
-          </Row>
-        </Card>
-        <Hint>
-          {t(
-            "Listen address and idle settings apply after Stop → Start. Stopping interrupts active tasks. Closing this window keeps the server in the tray; Quit stops it.",
+      {data.status.RestartRequired && (
+        <div className="settings-notice" role="status">
+          <RefreshCw size={18} />
+          <div>
+            <p>
+              {t(
+                "Settings saved. Restart the service to apply connection and idle changes. Restarting interrupts active tasks.",
+              )}
+            </p>
+            <button
+              type="button"
+              data-restart-service
+              onClick={() => void run({ kind: "restart-service" })}
+            >
+              {t("Restart service")}
+            </button>
+          </div>
+        </div>
+      )}
+      <Card title={t("Connection")}>
+        <TextField
+          title={t("Listen IP (127.0.0.1 / 0.0.0.0)")}
+          value={draft.host}
+          onChange={(v) => autosave.edit("host", v)}
+          onCommit={() => void autosave.commit("host")}
+          required
+        />
+        <TextField
+          title={t("Web port")}
+          type="number"
+          value={draft.port}
+          min={1}
+          max={65535}
+          onChange={(v) => autosave.edit("port", v)}
+          onCommit={() => void autosave.commit("port")}
+          required
+        />
+        <TextField
+          title={t("Public origin (HTTPS reverse proxy for remote PWA)")}
+          value={draft.public_url}
+          onChange={(v) => autosave.edit("public_url", v)}
+          onCommit={() => void autosave.commit("public_url")}
+        />
+      </Card>
+      <Card title={t("Runtime")}>
+        <TextField
+          title={t("Release completed agents after idle minutes")}
+          type="number"
+          value={draft.idle_minutes}
+          min={1}
+          max={10080}
+          onChange={(v) => autosave.edit("idle_minutes", v)}
+          onCommit={() => void autosave.commit("idle_minutes")}
+          required
+        />
+        <TextField
+          title={t("History cache size (MiB)")}
+          type="number"
+          value={draft.history_cache_mib}
+          min={1}
+          onChange={(v) => autosave.edit("history_cache_mib", v)}
+          onCommit={() => void autosave.commit("history_cache_mib")}
+          help={t(
+            "Shared by all chats. Changes are saved automatically and apply immediately. A larger session is kept whole; history is never truncated.",
           )}
-        </Hint>
-        <Save title={t("Save settings")} />
-      </form>
+          required
+        />
+        <Row title={t("Start Web service on application launch")}>
+          <Toggle
+            label={t("Start Web service on application launch")}
+            value={draft.auto_start}
+            onChange={(v) => {
+              autosave.edit("auto_start", v);
+              void autosave.commit("auto_start");
+            }}
+          />
+        </Row>
+      </Card>
+      <Hint>
+        {t(
+          "Changes are saved on blur or Enter; switches save immediately. The service never restarts automatically. Closing this window keeps it in the tray; Quit stops it.",
+        )}
+      </Hint>
       <Card title={t("Data & diagnostics")}>
         <Row title="SQLite" help={data.database}>
           <button

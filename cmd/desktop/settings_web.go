@@ -303,6 +303,8 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 		err = p.service.Start()
 	case "stop-service":
 		err = p.service.Stop()
+	case "restart-service":
+		err = p.service.Restart()
 	case "save-settings":
 		err = store.SaveSettings(command.Settings)
 	case "save-appearance":

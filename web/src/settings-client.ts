@@ -77,6 +77,7 @@ export type SettingsSnapshot = {
   update_preferences: UpdatePreferences;
   status: {
     Running: boolean;
+    RestartRequired: boolean;
     Address: string;
     Error: string;
     Online: Online[];
@@ -128,6 +129,7 @@ export type SettingsCommand =
         | "open-browser"
         | "start-service"
         | "stop-service"
+        | "restart-service"
         | "refresh-agents"
         | "check-github"
         | "check-updates"

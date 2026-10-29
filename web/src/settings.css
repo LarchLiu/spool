@@ -389,6 +389,9 @@
 .settings-notice p {
   margin: 0;
 }
+.settings-notice button {
+  margin-top: 10px;
+}
 .settings-info p + p {
   margin-top: 8px;
 }

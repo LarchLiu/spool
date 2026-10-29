@@ -143,8 +143,11 @@ func (p *panel) chatContent(c *ui.Context) {
 }
 
 func (p *panel) selectTab(tab string) {
-	p.tab = tab
 	p.message = ""
+	if p.tab == "Service" && tab != p.tab {
+		p.flushServiceSetting()
+	}
+	p.tab = tab
 	if p.window != nil {
 		if tab != "Chat" && p.settingsView != nil && !p.settingsFailed {
 			_ = settingsSection.EmitPage(p.settingsView.Page(), tab)

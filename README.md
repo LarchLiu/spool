@@ -188,8 +188,12 @@ an application crash report; consult the OS crash reports as well.
    discovery; a saved path overrides environment/PATH detection. Agents can be
    enabled/disabled. Saving an agent also triggers a fresh probe.
 4. Open **Service** and choose the listen IP, external Web port, public origin,
-   and idle release interval. Settings are persisted in SQLite. **Stop → Start**
-   applies saved listener/origin/idle settings; stopping interrupts active tasks.
+   and idle release interval. Inputs save automatically on blur or Enter, and
+   switches save immediately; there is no separate save button. History-cache
+   changes apply immediately. Changed listener/origin/idle settings show a pending
+   restart notice while the service is running. Choose **Restart service** to
+   apply them; saving never restarts it automatically, because a restart interrupts
+   active tasks. A stopped service uses the saved settings on its next start.
 5. Use the back icon in the settings footer (or **Open Chat** in the tray)
    and sign in, or choose
    **Open in Browser** to use the Web/PWA client. With an authorized project and no chats yet, type
@@ -1175,7 +1179,8 @@ Web `/healthz`, embedded index/PWA manifest, actual system-WebView React renderi
 the full-window viewport, login screen and unauthenticated API guards with an HTTPS
 public URL configured, all settings sections, server start/stop while settings
 stays usable, user/project persistence through the native bridge, chat denial of
-management calls, settings form draft preservation, native theme/language changes before
+management calls, service settings autosave and manual-restart notices, settings
+form draft preservation, native theme/language changes before
 sign-in and while settings hide the chat, main-window hide/show without losing a
 draft or creating another window, and clean exit. Linux runs under Xvfb
 with software GL; Windows and macOS use their runner's desktop. A failed probe
