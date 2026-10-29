@@ -8,6 +8,7 @@ import { ChatOperatorAvatars } from "./turn-identity";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { ChatSettingsControl } from "./desktop-settings";
 import { isMacDesktop } from "./runtime";
+import { INITIAL_CHAT_LIMIT, SidebarChatList } from "./sidebar-chat-list";
 
 type Props = {
   user: User;
@@ -34,7 +35,7 @@ export function Sidebar(props: Props) {
   const { projects, chats, project, chatID, t } = props;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [projectLimit, setProjectLimit] = useState(5);
-  const [recentLimit, setRecentLimit] = useState(8);
+  const [recentLimit, setRecentLimit] = useState(INITIAL_CHAT_LIMIT);
   const [chatLimits, setChatLimits] = useState<Record<string, number>>({});
   const byProject = useMemo(() => {
     const groups = new Map<string, Chat[]>();
@@ -61,7 +62,7 @@ export function Sidebar(props: Props) {
     );
     setChatLimits((old) => ({
       ...old,
-      [project]: Math.max(old[project] || 5, chatIndex + 1),
+      [project]: Math.max(old[project] || INITIAL_CHAT_LIMIT, chatIndex + 1),
     }));
     // Metadata refreshes must not reopen a project the user just collapsed.
   }, [project, chatID]);
@@ -138,7 +139,7 @@ export function Sidebar(props: Props) {
           {projects.slice(0, projectLimit).map((p) => {
             const isOpen = expanded.has(p.id);
             const list = byProject.get(p.id) || [];
-            const limit = chatLimits[p.id] || 5;
+            const limit = chatLimits[p.id] || INITIAL_CHAT_LIMIT;
             return (
               <div className="project-group" key={p.id}>
                 <div
@@ -177,25 +178,19 @@ export function Sidebar(props: Props) {
                 </div>
                 {isOpen && (
                   <div id={"project-chats-" + p.id} className="project-chats">
-                    {list.slice(0, limit).map((chat) => chatButton(chat, true))}
-                    {!list.length && (
-                      <p className="nav-empty nested">
-                        {t("No conversations yet.")}
-                      </p>
-                    )}
-                    {list.length > limit && (
-                      <button
-                        className="show-more nested"
-                        onClick={() =>
-                          setChatLimits((old) => ({
-                            ...old,
-                            [p.id]: limit + 5,
-                          }))
-                        }
-                      >
-                        {t("Show more")}
-                      </button>
-                    )}
+                    <SidebarChatList
+                      chats={list}
+                      limit={limit}
+                      nested
+                      t={t}
+                      renderChat={(chat) => chatButton(chat, true)}
+                      onLimit={(nextLimit) =>
+                        setChatLimits((old) => ({
+                          ...old,
+                          [p.id]: nextLimit,
+                        }))
+                      }
+                    />
                   </div>
                 )}
               </div>
@@ -218,18 +213,13 @@ export function Sidebar(props: Props) {
           aria-labelledby="recents-label"
         >
           <h2 id="recents-label">{t("Recents")}</h2>
-          {recents.slice(0, recentLimit).map((chat) => chatButton(chat, false))}
-          {!recents.length && (
-            <p className="nav-empty">{t("No conversations yet.")}</p>
-          )}
-          {recents.length > recentLimit && (
-            <button
-              className="show-more"
-              onClick={() => setRecentLimit((old) => old + 8)}
-            >
-              {t("Show more")}
-            </button>
-          )}
+          <SidebarChatList
+            chats={recents}
+            limit={recentLimit}
+            t={t}
+            renderChat={(chat) => chatButton(chat, false)}
+            onLimit={setRecentLimit}
+          />
         </section>
       </nav>
       <div className="side-foot">
