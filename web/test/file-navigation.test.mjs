@@ -140,6 +140,32 @@ test("header sidebar open buttons are hidden while their sidebar is open", async
   assert.doesNotMatch(main, /PanelLeftClose|Collapse sidebar/);
 });
 
+test("mobile navigation uses menu and close icons without changing desktop panel icons", async () => {
+  const main = await readFile(
+    new URL("../src/main.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    main,
+    /narrowLayout \? <Menu size=\{18\} \/> : <PanelLeftOpen size=\{18\} \/>/,
+  );
+  const sidebar = await readFile(
+    new URL("../src/sidebar.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    sidebar,
+    /props\.open \? <X size=\{18\} \/> : <PanelLeftClose size=\{18\} \/>/,
+  );
+  for (const attribute of ["aria-label", "title"]) {
+    assert.ok(
+      sidebar.includes(
+        `${attribute}={t(props.open ? "Close sidebar" : "Collapse sidebar")}`,
+      ),
+    );
+  }
+});
+
 test("the file sidebar title contains the project name and refresh before close", async () => {
   const source = await readFile(
     new URL("../src/file-sidebar.tsx", import.meta.url),

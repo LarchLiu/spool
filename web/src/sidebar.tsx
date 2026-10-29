@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Folder, FolderOpen, LogOut, PanelLeftClose, Plus } from "lucide-react";
+import { Folder, FolderOpen, LogOut, PanelLeftClose, Plus, X } from "lucide-react";
 import type { Translator } from "./i18n";
 import type { Backend, Chat, Project, User } from "./types";
 import type { AvatarIdentity } from "./avatar";
@@ -136,10 +136,10 @@ export function Sidebar(props: Props) {
         <button
           className="icon sidebar-collapse"
           onClick={props.onClose}
-          aria-label={t("Collapse sidebar")}
-          title={t("Collapse sidebar")}
+          aria-label={t(props.open ? "Close sidebar" : "Collapse sidebar")}
+          title={t(props.open ? "Close sidebar" : "Collapse sidebar")}
         >
-          <PanelLeftClose size={18} />
+          {props.open ? <X size={18} /> : <PanelLeftClose size={18} />}
         </button>
       </div>
       <nav className="sidebar-scroll" aria-label={t("Workspace")}>

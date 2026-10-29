@@ -16,6 +16,7 @@ import {
   Settings2,
   Folder,
   Users,
+  Menu,
   PanelLeftOpen,
   PanelRightOpen,
   X,
@@ -1314,7 +1315,7 @@ function App() {
                 aria-label={t("Open sidebar")}
                 title={t("Open sidebar")}
               >
-                <PanelLeftOpen size={18} />
+                {narrowLayout ? <Menu size={18} /> : <PanelLeftOpen size={18} />}
               </button>
             )}
             <div className={chat ? "heading-copy has-agent" : "heading-copy"}>
