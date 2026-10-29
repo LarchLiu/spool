@@ -38,14 +38,18 @@ type UserInput struct {
 const productionBcryptCost = 12
 
 type Project struct {
-	ID          string           `json:"id"`
-	Name        string           `json:"name"`
-	Path        string           `json:"-"`
-	Archived    bool             `json:"archived"`
-	SharedChats bool             `json:"shared_chats"`
-	CreatedAt   int64            `json:"created_at"`
-	Members     []string         `json:"-"`
-	Issues      IssuesAutomation `json:"-"`
+	ID               string            `json:"id"`
+	Name             string            `json:"name"`
+	Path             string            `json:"-"`
+	Archived         bool              `json:"archived"`
+	SharedChats      bool              `json:"shared_chats"`
+	SharedLocalChats bool              `json:"shared_local_chats"`
+	CreatedAt        int64             `json:"created_at"`
+	Members          []string          `json:"-"`
+	MemberAccess     map[string]string `json:"-"`
+	MemberOwnAccess  map[string]string `json:"-"`
+	CanCreate        *bool             `json:"can_create,omitempty"`
+	Issues           IssuesAutomation  `json:"-"`
 }
 type Settings struct {
 	Host            string `json:"host"`
@@ -212,14 +216,14 @@ func (s *Store) DeleteUser(id string) error {
 	return s.notify(tx.Commit(), changeNavigation|changePresence|changeAuth)
 }
 func (s *Store) Projects() ([]Project, error) {
-	rows, err := s.db.Query(`SELECT id,name,path,archived,shared_chats,created_at FROM projects ORDER BY name`)
+	rows, err := s.db.Query(`SELECT id,name,path,archived,shared_chats,created_at,COALESCE((SELECT enabled FROM project_local_sharing WHERE project_id=projects.id),0) FROM projects ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
 	out := []Project{}
 	for rows.Next() {
 		var v Project
-		if err = rows.Scan(&v.ID, &v.Name, &v.Path, &v.Archived, &v.SharedChats, &v.CreatedAt); err != nil {
+		if err = rows.Scan(&v.ID, &v.Name, &v.Path, &v.Archived, &v.SharedChats, &v.CreatedAt, &v.SharedLocalChats); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -234,28 +238,38 @@ func (s *Store) Projects() ([]Project, error) {
 		if out[i].Issues, err = s.IssuesAutomation(out[i].ID); err != nil {
 			return nil, err
 		}
-		members, e := s.db.Query(`SELECT user_id FROM project_members WHERE project_id=?`, out[i].ID)
+		members, e := s.db.Query(`SELECT m.user_id,COALESCE(a.access,'control'),COALESCE(own.access,'create') FROM project_members m LEFT JOIN project_member_access a ON a.project_id=m.project_id AND a.user_id=m.user_id LEFT JOIN project_member_own_access own ON own.project_id=m.project_id AND own.user_id=m.user_id WHERE m.project_id=?`, out[i].ID)
 		if e != nil {
 			return nil, e
 		}
+		out[i].MemberAccess = map[string]string{}
+		out[i].MemberOwnAccess = map[string]string{}
 		for members.Next() {
-			var id string
-			if e = members.Scan(&id); e != nil {
+			var id, access, own string
+			if e = members.Scan(&id, &access, &own); e != nil {
 				members.Close()
 				return nil, e
 			}
 			out[i].Members = append(out[i].Members, id)
+			out[i].MemberAccess[id] = access
+			out[i].MemberOwnAccess[id] = own
 		}
+		e = members.Err()
 		members.Close()
+		if e != nil {
+			return nil, e
+		}
 	}
 	return out, nil
 }
 func (s *Store) Project(id string) (Project, error) {
 	var v Project
-	err := s.db.QueryRow(`SELECT id,name,path,archived,shared_chats,created_at FROM projects WHERE id=?`, id).Scan(&v.ID, &v.Name, &v.Path, &v.Archived, &v.SharedChats, &v.CreatedAt)
+	err := s.db.QueryRow(`SELECT id,name,path,archived,shared_chats,created_at,COALESCE((SELECT enabled FROM project_local_sharing WHERE project_id=projects.id),0) FROM projects WHERE id=?`, id).Scan(&v.ID, &v.Name, &v.Path, &v.Archived, &v.SharedChats, &v.CreatedAt, &v.SharedLocalChats)
 	return v, err
 }
 func (s *Store) SaveProject(v Project) (Project, error) {
+	s.localMu.Lock()
+	defer s.localMu.Unlock()
 	v.Name = strings.TrimSpace(v.Name)
 	if v.Name == "" || len(v.Name) > 120 {
 		return v, fmt.Errorf("project name is required (120 byte maximum)")
@@ -285,6 +299,28 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 	if err = v.Issues.Validate(v.Members); err != nil {
 		return v, err
 	}
+	access := make(map[string]string, len(v.Members))
+	ownAccess := make(map[string]string, len(v.Members))
+	for _, id := range v.Members {
+		mode := v.MemberAccess[id]
+		if mode == "" {
+			mode = "control"
+		}
+		if mode != "control" && mode != "read-only" {
+			return v, fmt.Errorf("invalid project member access")
+		}
+		access[id] = mode
+		own := v.MemberOwnAccess[id]
+		if own == "" {
+			own = "create"
+		}
+		if own != "create" && own != "read-only" {
+			return v, fmt.Errorf("invalid project member own chat access")
+		}
+		ownAccess[id] = own
+	}
+	v.MemberAccess = access
+	v.MemberOwnAccess = ownAccess
 	tx, err := s.db.Begin()
 	if err != nil {
 		return v, err
@@ -311,6 +347,9 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 	if err != nil {
 		return v, err
 	}
+	if _, err = tx.Exec(`INSERT INTO project_local_sharing(project_id,enabled) VALUES(?,?) ON CONFLICT(project_id) DO UPDATE SET enabled=excluded.enabled`, v.ID, v.SharedLocalChats); err != nil {
+		return v, err
+	}
 	if _, err = tx.Exec(`DELETE FROM project_members WHERE project_id=?`, v.ID); err != nil {
 		return v, err
 	}
@@ -318,11 +357,22 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 		if _, err = tx.Exec(`INSERT OR IGNORE INTO project_members VALUES(?,?)`, v.ID, id); err != nil {
 			return v, err
 		}
+		if _, err = tx.Exec(`INSERT OR REPLACE INTO project_member_access(project_id,user_id,access) VALUES(?,?,?)`, v.ID, id, v.MemberAccess[id]); err != nil {
+			return v, err
+		}
+		if _, err = tx.Exec(`INSERT OR REPLACE INTO project_member_own_access(project_id,user_id,access) VALUES(?,?,?)`, v.ID, id, v.MemberOwnAccess[id]); err != nil {
+			return v, err
+		}
 	}
 	if err = saveIssuesAutomation(tx, v.ID, v.Issues); err != nil {
 		return v, err
 	}
-	return v, s.notify(tx.Commit(), changeNavigation)
+	if err = tx.Commit(); err != nil {
+		return v, err
+	}
+	s.localScanAt = time.Time{}
+	s.changes.publish(changeNavigation)
+	return v, nil
 }
 func (s *Store) CanAccessProject(user, project string) bool {
 	var n int
@@ -330,12 +380,12 @@ func (s *Store) CanAccessProject(user, project string) bool {
 	return err == nil && n == 1
 }
 
-// Task assignees can read/control their task chats without enabling project-wide
-// sharing. Regular shared chats remain read-only for non-owners.
+// Task assignees retain access without project-wide sharing. Local sessions are
+// only available while explicitly shared and in the latest discovery window.
 func (s *Store) CanAccessChat(user, chat string) bool {
 	var owner, project string
 	var shared bool
-	err := s.db.QueryRow(`SELECT s.user_id,s.project_id,p.shared_chats FROM sessions s JOIN projects p ON p.id=s.project_id JOIN users u ON u.id=s.user_id WHERE s.id=? AND p.archived=0 AND (u.disabled=0 OR EXISTS(SELECT 1 FROM automation_chats WHERE session_id=s.id))`, chat).Scan(&owner, &project, &shared)
+	err := s.db.QueryRow(`SELECT COALESCE(s.user_id,''),s.project_id,p.shared_chats FROM sessions s JOIN projects p ON p.id=s.project_id LEFT JOIN users u ON u.id=s.user_id WHERE s.id=? AND p.archived=0 AND `+visibleSessionSQL+` AND (u.disabled=0 OR EXISTS(SELECT 1 FROM automation_chats WHERE session_id=s.id) OR EXISTS(SELECT 1 FROM local_sessions WHERE session_id=s.id))`, chat).Scan(&owner, &project, &shared)
 	if err != nil || !s.CanAccessProject(user, project) {
 		return false
 	}
@@ -352,11 +402,21 @@ func (s *Store) CanControlChat(user, chat string) bool {
 		return false
 	}
 	var n int
-	err := s.db.QueryRow(`SELECT count(*) FROM sessions s WHERE s.id=? AND ((s.user_id=? AND NOT EXISTS(SELECT 1 FROM automation_chats WHERE session_id=s.id)) OR EXISTS(SELECT 1 FROM chat_collaborators WHERE session_id=s.id AND user_id=?))`, chat, user, user).Scan(&n)
+	err := s.db.QueryRow(`SELECT count(*) FROM sessions s JOIN projects p ON p.id=s.project_id JOIN users u ON u.id=? WHERE s.id=? AND u.disabled=0 AND `+controllableSessionSQL, user, chat).Scan(&n)
 	return err == nil && n == 1
 }
-func (s *Store) CreateChat(user, project string, backend chatmodel.Backend) (chatmodel.Session, error) {
+
+func (s *Store) CanCreateChat(user, project string) bool {
 	if !s.CanAccessProject(user, project) {
+		return false
+	}
+	var access string
+	err := s.db.QueryRow(`SELECT COALESCE((SELECT access FROM project_member_own_access WHERE project_id=? AND user_id=?),'create')`, project, user).Scan(&access)
+	return err == nil && access == "create"
+}
+
+func (s *Store) CreateChat(user, project string, backend chatmodel.Backend) (chatmodel.Session, error) {
+	if !s.CanCreateChat(user, project) {
 		return chatmodel.Session{}, os.ErrPermission
 	}
 	return s.createSession(user, project, backend)
@@ -369,6 +429,8 @@ func (s *Store) UserProjects(user string) ([]Project, error) {
 	out := []Project{}
 	for _, p := range all {
 		if !p.Archived && s.CanAccessProject(user, p.ID) {
+			allowed := p.MemberOwnAccess[user] != "read-only"
+			p.CanCreate = &allowed
 			out = append(out, p)
 		}
 	}
@@ -378,17 +440,20 @@ func (s *Store) UserSessions(user, project string) ([]chatmodel.Session, error) 
 	if !s.CanAccessProject(user, project) {
 		return nil, os.ErrPermission
 	}
+	if err := s.syncLocalSessions(false); err != nil {
+		return nil, err
+	}
 	p, err := s.Project(project)
 	if err != nil {
 		return nil, err
 	}
-	query := `SELECT ` + sessionColumns + ` FROM sessions WHERE project_id=?`
+	query := `SELECT ` + qualifiedSessionColumns + ` FROM sessions s JOIN projects p ON p.id=s.project_id LEFT JOIN users u ON u.id=s.user_id WHERE s.project_id=? AND ` + visibleSessionSQL + ` AND (u.disabled=0 OR EXISTS(SELECT 1 FROM automation_chats WHERE session_id=s.id) OR EXISTS(SELECT 1 FROM local_sessions WHERE session_id=s.id))`
 	args := []any{project}
 	if !p.SharedChats {
-		query += ` AND (user_id=? OR EXISTS(SELECT 1 FROM chat_collaborators WHERE session_id=sessions.id AND user_id=?))`
+		query += ` AND (s.user_id=? OR EXISTS(SELECT 1 FROM chat_collaborators WHERE session_id=s.id AND user_id=?))`
 		args = append(args, user, user)
 	}
-	query += ` ORDER BY updated_at DESC`
+	query += ` ORDER BY s.updated_at DESC,s.id`
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
@@ -406,6 +471,7 @@ func (s *Store) UserSessions(user, project string) ([]chatmodel.Session, error) 
 	rows.Close()
 	if err == nil {
 		err = populateParticipants(s.db, out)
+		s.setSessionControls(user, out)
 	}
 	return out, err
 }

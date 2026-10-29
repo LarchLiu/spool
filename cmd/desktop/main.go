@@ -584,6 +584,14 @@ func (p *panel) projectView(c *ui.Context) {
 			c.Key(project.ID)
 			if ui.Button(c, project.Name).Disabled(p.directoryPicker.pending).Clicked() {
 				p.project = project
+				p.project.MemberAccess = map[string]string{}
+				for id, access := range project.MemberAccess {
+					p.project.MemberAccess[id] = access
+				}
+				p.project.MemberOwnAccess = map[string]string{}
+				for id, access := range project.MemberOwnAccess {
+					p.project.MemberOwnAccess[id] = access
+				}
 				p.project.Issues.Labels = project.Issues.IssueLabels()
 				p.issueLabel = ""
 				p.issueInterval = strconv.Itoa(project.Issues.IntervalMinutes)
@@ -612,8 +620,39 @@ func (p *panel) projectView(c *ui.Context) {
 		checked := p.members[u.ID]
 		ui.Checkbox(c, &checked, u.Nickname+" · "+u.Username)
 		p.members[u.ID] = checked
+		if checked {
+			if p.project.MemberAccess == nil {
+				p.project.MemberAccess = map[string]string{}
+			}
+			if p.project.MemberOwnAccess == nil {
+				p.project.MemberOwnAccess = map[string]string{}
+			}
+			ui.Text(c, p.tr("In-app permissions")).FontSize(12)
+			ui.Row(c).Gap(8).Children(func() {
+				if ui.Button(c, p.tr("Read-only")).Disabled(p.project.MemberOwnAccess[u.ID] == "read-only").Clicked() {
+					p.project.MemberOwnAccess[u.ID] = "read-only"
+				}
+				if ui.Button(c, p.tr("Can create")).Disabled(p.project.MemberOwnAccess[u.ID] != "read-only").Clicked() {
+					p.project.MemberOwnAccess[u.ID] = "create"
+				}
+			})
+			ui.Text(c, p.tr("Shared session permissions")).FontSize(12)
+			ui.Row(c).Gap(8).Children(func() {
+				if ui.Button(c, p.tr("Read-only")).Disabled(p.project.MemberAccess[u.ID] == "read-only").Clicked() {
+					p.project.MemberAccess[u.ID] = "read-only"
+				}
+				if ui.Button(c, p.tr("Can control sessions")).Disabled(p.project.MemberAccess[u.ID] != "read-only").Clicked() {
+					p.project.MemberAccess[u.ID] = "control"
+				}
+			})
+		} else {
+			delete(p.project.MemberAccess, u.ID)
+			delete(p.project.MemberOwnAccess, u.ID)
+		}
 	}
-	ui.Checkbox(c, &p.project.SharedChats, p.tr("Share chats with all project members"))
+	ui.Text(c, p.tr("In-app permissions: read-only allows viewing existing chats; Can create also allows creating and controlling personal chats. Shared session permissions separately control other people's shared chats and shared local sessions. Assigned task permissions are unchanged.")).Wrap().FontSize(12)
+	ui.Checkbox(c, &p.project.SharedChats, p.tr("Share in-app sessions"))
+	ui.Checkbox(c, &p.project.SharedLocalChats, p.tr("Share local sessions"))
 	p.projectIssuesView(c)
 	if ui.PrimaryButton(c, p.tr("Save project")).Disabled(p.busy || p.directoryPicker.pending).Clicked() {
 		project := p.project
@@ -637,7 +676,7 @@ func (p *panel) projectView(c *ui.Context) {
 		}
 		p.action(func() error { _, err := p.service.Store.SaveProject(project); return err })
 	}
-	ui.Text(c, p.tr("When enabled, project members can view one another's chats; only chat owners can send messages or control runs.")).Wrap().FontSize(12)
+	ui.Text(c, p.tr("Choose whether each project member can only view or also control other people's shared chats.")).Wrap().FontSize(12)
 	ui.Text(c, p.tr("Members share the actual directory and its filesystem permissions. A project's directory cannot change after chats exist.")).Wrap().FontSize(12)
 }
 func (p *panel) agentView(c *ui.Context) {

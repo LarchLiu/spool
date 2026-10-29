@@ -254,7 +254,7 @@ export function PeoplePage({ data, run, t }: PageProps) {
           id: person.id,
           title: person.nickname || person.username,
           description: person.username,
-          status: t(person.disabled ? "Disabled" : "Enabled"),
+          status: person.disabled ? t("Disabled") : "",
           icon: <UserAvatar person={person} size={34} />,
         }))}
         onSelect={(id) => {

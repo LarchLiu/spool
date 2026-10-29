@@ -11,7 +11,9 @@ export function mergeNavigationChats(
   // SSE revision. Keep newer metadata only for IDs still authorized/listed.
   return incoming.map((next) => {
     const old = byID.get(next.id);
-    return old && old.updated_at > next.updated_at ? old : next;
+    return old && old.updated_at > next.updated_at
+      ? { ...old, can_control: next.can_control }
+      : next;
   });
 }
 

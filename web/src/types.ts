@@ -12,6 +12,8 @@ export type Project = {
   name: string;
   archived: boolean;
   shared_chats: boolean;
+  shared_local_chats?: boolean;
+  can_create?: boolean;
 };
 export type ProjectFileEntry = {
   name: string;
@@ -122,6 +124,8 @@ export type TurnAction = {
   created_at: number;
 };
 export type Chat = {
+  local_session?: boolean;
+  can_control?: boolean;
   participants?: AvatarIdentity[];
   history?: { before?: string; has_more?: boolean; error?: string };
   automation_chat?: boolean;
@@ -148,6 +152,7 @@ export type ChatMetadata = Pick<
   | "collaborator_ids"
   | "artifacts"
   | "participants"
+  | "can_control"
 > & { title?: string };
 export type Online = {
   id: string;

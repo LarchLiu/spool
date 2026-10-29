@@ -31,6 +31,15 @@ test("authorized navigation removes revoked chats without losing newer SSE revis
   assert.deepEqual(mergeNavigationChats(previous, []), []);
 });
 
+test("older activity metadata still updates current session control permissions", () => {
+  const result = mergeNavigationChats(
+    [{ id: "chat", updated_at: 5, title: "Current", can_control: true }],
+    [{ id: "chat", updated_at: 4, title: "Older", can_control: false }],
+  );
+  assert.equal(result[0].title, "Current");
+  assert.equal(result[0].can_control, false);
+});
+
 function fixture(t) {
   const sockets = [];
   const received = [];

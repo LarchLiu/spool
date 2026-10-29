@@ -93,6 +93,7 @@ func TestAgentSwitchCreatesIndependentChatsWithoutSourceLinks(t *testing.T) {
 	u, bob := testUser(t, store, "alice"), testUser(t, store, "bob")
 	project := testProject(t, store, u, bob)
 	project.SharedChats = true
+	project.MemberAccess = map[string]string{bob.ID: "read-only"}
 	if _, err := store.SaveProject(project); err != nil {
 		t.Fatal(err)
 	}

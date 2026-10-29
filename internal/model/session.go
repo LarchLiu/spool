@@ -76,6 +76,8 @@ type ChatParticipant struct {
 }
 
 type Session struct {
+	LocalSession      bool              `json:"local_session,omitempty"`
+	CanControl        *bool             `json:"can_control,omitempty"`
 	Participants      []ChatParticipant `json:"participants,omitempty"`
 	History           *HistoryState     `json:"history,omitempty"`
 	AutomationChat    bool              `json:"automation_chat,omitempty"`

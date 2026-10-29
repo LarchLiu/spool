@@ -190,7 +190,7 @@
   "Project directory": "プロジェクトディレクトリ",
   "Archive project (deny new access, keep history)": "プロジェクトをアーカイブ（アクセス不可、履歴は保持）",
   "People allowed to use this project": "このプロジェクトを利用できるユーザー",
-  "Share chats with all project members": "プロジェクトメンバー全員とチャットを共有",
+  "Share in-app sessions": "アプリ内のセッションを共有",
   "Save project": "プロジェクトを保存",
   "When enabled, project members can view one another's chats; only chat owners can send messages or control runs.": "有効にすると、プロジェクトメンバーは互いのチャットを閲覧できます。メッセージ送信や実行の操作は所有者のみ可能です。",
   "Members share the actual directory and its filesystem permissions. A project's directory cannot change after chats exist.": "メンバーは実際のディレクトリと権限を共有します。チャット作成後はディレクトリを変更できません。",
@@ -511,5 +511,15 @@
   "Approved by {name}": "{name} が操作を承認しました",
   "Denied by {name}": "{name} が操作を拒否しました",
   "Could not record this operation": "この操作を記録できませんでした",
-  "Turn attribution is unavailable": "ターンの操作者情報を取得できません"
+  "Turn attribution is unavailable": "ターンの操作者情報を取得できません",
+  "Read-only": "読み取り専用",
+  "Can control sessions": "セッションを操作可能",
+  "Share local sessions": "ローカルセッションを共有",
+  "Share the latest 20 Codex and Claude sessions started outside Spool. Chats started by Spool, including issue automation, do not count. Updates sync automatically about every 10 seconds.": "Spool の外で開始した最新 20 件の Codex / Claude セッションを共有します。Issue 自動処理を含む Spool で開始したチャットは数に含みません。約 10 秒ごとに自動同期します。",
+  "Local session": "ローカルセッション",
+  "Choose whether each project member can only view or also control other people's shared chats.": "他の人の共有チャットの閲覧のみ、または操作も許可するかをプロジェクトのメンバーごとに設定します。",
+  "Shared session permissions": "共有セッションの権限",
+  "In-app permissions: read-only allows viewing existing chats; Can create also allows creating and controlling personal chats. Shared session permissions separately control other people's shared chats and shared local sessions. Assigned task permissions are unchanged.": "アプリ内セッションの権限：読み取り専用では既存のチャットを閲覧でき、作成可では自分のチャットの新規作成・操作も可能です。共有セッションの権限では、他の人の共有チャットと共有ローカルセッションの閲覧・操作を別に設定します。割り当て済みタスクの操作権限は変わりません。",
+  "In-app permissions": "アプリ内セッションの権限",
+  "Can create": "作成可"
 }

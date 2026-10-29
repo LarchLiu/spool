@@ -184,6 +184,78 @@ export function ProjectsPage({ data, run, t }: PageProps) {
                 title={person.nickname}
                 help={person.username}
               >
+                {draft.members.includes(person.id) && (
+                  <div className="settings-member-permissions">
+                    <div className="settings-member-permission">
+                      <span>{t("In-app permissions")}</span>
+                      <div
+                        className="settings-member-access"
+                        role="group"
+                        aria-label={`${person.nickname} · ${t("In-app permissions")}`}
+                      >
+                        {(["read-only", "create"] as const).map((access) => (
+                          <button
+                            key={access}
+                            type="button"
+                            aria-pressed={
+                              (draft.member_own_access[person.id] ??
+                                "create") === access
+                            }
+                            onClick={() =>
+                              setDraft((old) => ({
+                                ...old,
+                                member_own_access: {
+                                  ...old.member_own_access,
+                                  [person.id]: access,
+                                },
+                              }))
+                            }
+                          >
+                            {t(
+                              access === "read-only"
+                                ? "Read-only"
+                                : "Can create",
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="settings-member-permission">
+                      <span>{t("Shared session permissions")}</span>
+                      <div
+                        className="settings-member-access"
+                        role="group"
+                        aria-label={`${person.nickname} · ${t("Shared session permissions")}`}
+                      >
+                        {(["read-only", "control"] as const).map((access) => (
+                          <button
+                            key={access}
+                            type="button"
+                            aria-pressed={
+                              (draft.member_access[person.id] ?? "control") ===
+                              access
+                            }
+                            onClick={() =>
+                              setDraft((old) => ({
+                                ...old,
+                                member_access: {
+                                  ...old.member_access,
+                                  [person.id]: access,
+                                },
+                              }))
+                            }
+                          >
+                            {t(
+                              access === "read-only"
+                                ? "Read-only"
+                                : "Can control sessions",
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <Toggle
                   label={`${t("People allowed to use this project")} · ${person.nickname}`}
                   value={draft.members.includes(person.id)}
@@ -195,17 +267,37 @@ export function ProjectsPage({ data, run, t }: PageProps) {
             <Row title={t("Create a person first to grant project access.")} />
           )}
         </Card>
+        <Hint>
+          {t(
+            "In-app permissions: read-only allows viewing existing chats; Can create also allows creating and controlling personal chats. Shared session permissions separately control other people's shared chats and shared local sessions. Assigned task permissions are unchanged.",
+          )}
+        </Hint>
         <Card>
           <Row
-            title={t("Share chats with all project members")}
+            title={t("Share in-app sessions")}
             help={t(
-              "When enabled, project members can view one another's chats; only chat owners can send messages or control runs.",
+              "Choose whether each project member can only view or also control other people's shared chats.",
             )}
           >
             <Toggle
-              label={t("Share chats with all project members")}
+              label={t("Share in-app sessions")}
               value={draft.shared_chats}
               onChange={(shared_chats) => setDraft({ ...draft, shared_chats })}
+            />
+          </Row>
+          <Row
+            title={t("Share local sessions")}
+            help={t(
+              "Share the latest 20 Codex and Claude sessions started outside Spool. Chats started by Spool, including issue automation, do not count. Updates sync automatically about every 10 seconds.",
+            )}
+          >
+            <Toggle
+              label={t("Share local sessions")}
+              value={!!draft.shared_local_chats}
+              disabled={!draft.shared_chats}
+              onChange={(shared_local_chats) =>
+                setDraft({ ...draft, shared_local_chats })
+              }
             />
           </Row>
         </Card>

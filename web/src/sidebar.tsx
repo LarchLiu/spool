@@ -8,7 +8,11 @@ import { ChatOperatorAvatars } from "./turn-identity";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { ChatSettingsControl } from "./desktop-settings";
 import { isMacDesktop } from "./runtime";
-import { INITIAL_CHAT_LIMIT, SidebarChatList } from "./sidebar-chat-list";
+import {
+  INITIAL_CHAT_LIMIT,
+  LocalSessionIcon,
+  SidebarChatList,
+} from "./sidebar-chat-list";
 
 type Props = {
   user: User;
@@ -101,6 +105,7 @@ export function Sidebar(props: Props) {
           <span className="nav-chat-title">
             {chat.title === "New chat" ? t("New chat") : chat.title}
           </span>
+          {chat.local_session && <LocalSessionIcon t={t} />}
           {chat.status === "running" && (
             <span
               className="task-spinner"
@@ -168,7 +173,7 @@ export function Sidebar(props: Props) {
                   <button
                     type="button"
                     className="project-new icon"
-                    disabled={props.posting}
+                    disabled={props.posting || p.can_create === false}
                     title={t("New chat in {project}", { project: p.name })}
                     aria-label={t("New chat in {project}", { project: p.name })}
                     onClick={() => props.onNew(p.id)}

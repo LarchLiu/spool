@@ -599,7 +599,7 @@ ID before stopping; closing the browser alone still does not cancel accepted wor
   blocks. Both get file paths for regular attachments. File contents are user
   data, not system/developer instructions.
 - Downloads and previews require current project access. Uploads, approvals,
-  and chat controls require the chat owner; writes also require same-origin
+  and chat controls require session control permission; writes also require same-origin
   and CSRF validation. Attachment responses are never cached by the PWA.
 
 Permission choices are discovered by the Go service in the project's working
@@ -676,12 +676,39 @@ Archiving/revoking membership blocks new access but does not cancel an already
 accepted task.
 
 Users only see projects they have been granted. Chats are private by default;
-the desktop Projects panel can enable **Share chats with all project members**
-for an individual project. When enabled, members can read one another's
-history and streams, but only the chat owner can send messages or control a
-run. Scheduled-task chats additionally allow all configured task assignees to
-send messages, stop turns and handle approvals. Knowing another user's chat ID
-never bypasses current membership and task-assignment checks.
+the desktop Projects panel can enable **Share in-app sessions**
+for an individual project. Members can read shared history and streams. Each
+project member has two independent segmented-button groups in that project's
+member list: **In-app session permissions: Read-only / Can create**, and **Shared session permissions:
+Read-only / Can control sessions**. Defaults preserve personal creation and shared
+control for existing/new members. Permissions are independent per project; the
+global People editor has no session permission setting. Personal read-only allows
+viewing existing personal chats, but blocks creating chats and operating those
+chats, even when shared-chat control is allowed. Shared-chat read-only limits
+other people's shared chats and shared local sessions without changing personal
+permissions. Explicit task-assignee permissions are unchanged. Creating a new
+chat through agent conversion also requires personal creation permission.
+Without project-wide sharing, only owners and configured task assignees can
+access their private chats, subject to their respective operation permissions.
+Knowing another user's chat ID never bypasses current membership/access checks.
+
+Under project sharing, **Share local sessions** separately opts into discovering
+non-Spool Codex/Claude chats from the configured provider homes. It shares at
+most the latest **20 local sessions per project**, ordered by native file activity,
+refreshing about every 10 seconds. Matching includes project subdirectories and
+linked Git worktrees, but not a separately configured private nested project.
+All sessions initiated by Spool, including issue automation, are excluded from
+the local window and do not consume its 20 slots. A durable provider-ID ledger
+keeps them excluded even after their Spool chat adopts a different native ID.
+Archived sessions and subagent sessions are also excluded. A monitor **Local session** icon distinguishes
+these chats in project lists and Recents. Only metadata is indexed in SQLite;
+history remains in the provider files and resumes in its original working
+directory. Each scan checks file size, nanosecond modification time and file
+identity; a changed generation advances the chat revision even if its timestamp
+does not increase. Lists update over WebSocket, and an open chat refreshes native
+history over SSE. New/deleted sessions rotate the latest-20 window while public
+chat IDs stay stable. Synchronization runs while the desktop service is running;
+it is eventual discovery, not instantaneous file mirroring. Disabling either sharing switch immediately blocks local chat access.
 Native CLI session IDs and configured executable paths are not returned by the
 Web API. Online nicknames are visible to signed-in users.
 

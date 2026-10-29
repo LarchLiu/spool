@@ -60,6 +60,7 @@ type completedTurn struct {
 }
 
 type chatMetadata struct {
+	CanControl      *bool                       `json:"can_control,omitempty"`
 	Participants    []chatmodel.ChatParticipant `json:"participants,omitempty"`
 	ID              string                      `json:"id"`
 	Title           string                      `json:"title"`
@@ -70,7 +71,7 @@ type chatMetadata struct {
 }
 
 func sessionMetadata(chat chatmodel.Session) chatMetadata {
-	return chatMetadata{chat.Participants, chat.ID, chat.Title, chat.UpdatedAt, chat.AutomationChat, chat.CollaboratorIDs, chat.Artifacts}
+	return chatMetadata{chat.CanControl, chat.Participants, chat.ID, chat.Title, chat.UpdatedAt, chat.AutomationChat, chat.CollaboratorIDs, chat.Artifacts}
 }
 
 func NewApp(store *Store, runner agent.AgentRunner, _, _ string) *App {
@@ -327,6 +328,8 @@ func (a *App) accessibleChat(user, id string) (chatmodel.Session, bool) {
 		return chatmodel.Session{}, false
 	}
 	chat, ok := a.store.Get(id)
+	allowed := a.store.CanControlChat(user, id)
+	chat.CanControl = &allowed
 	return chat, ok
 }
 func (a *App) snapshot(chat chatmodel.Session) chatmodel.Session {
@@ -477,13 +480,17 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		a.attachmentResponse(w, r, chat)
 		return
 	}
-	// Project sharing alone is read-only; scheduled-task assignees additionally
-	// have control rights, checked against current membership on every mutation.
+	// Check current account and project permissions on every mutation, including
+	// stop, approvals, goals and agent conversion; client controls are not a gate.
 	if !a.store.CanControlChat(id.User.ID, chat.ID) {
 		apiError(w, 404, "聊天不存在")
 		return
 	}
 	if len(parts) == 2 && parts[1] == "fork" && r.Method == "POST" {
+		if !a.store.CanCreateChat(id.User.ID, chat.ProjectID) {
+			apiError(w, 403, "无权在该项目创建聊天")
+			return
+		}
 		var input struct {
 			Backend chatmodel.Backend `json:"backend"`
 			Model   string            `json:"model"`
@@ -503,12 +510,14 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 			apiError(w, 400, err.Error())
 			return
 		}
-		fork, err := a.forkChat(chat.ID, input.Backend, options)
+		fork, err := a.forkChat(chat.ID, input.Backend, options, id.User.ID)
 		if err != nil {
 			apiError(w, 409, err.Error())
 			return
 		}
 		fork.NativeSessionID = ""
+		allowed := a.store.CanControlChat(id.User.ID, fork.ID)
+		fork.CanControl = &allowed
 		apiJSON(w, 201, historyWindow(fork))
 		return
 	}
@@ -569,7 +578,11 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		}
 	}
 	if chat.Backend != source.Backend && (source.NativeSessionID != "" || source.Status != chatmodel.StatusReady) {
-		forked, err := a.forkChat(source.ID, chat.Backend, options)
+		if !a.store.CanCreateChat(id.User.ID, source.ProjectID) {
+			apiError(w, 403, "无权在该项目创建聊天")
+			return
+		}
+		forked, err := a.forkChat(source.ID, chat.Backend, options, id.User.ID)
 		if err != nil {
 			apiError(w, 409, err.Error())
 			return
@@ -592,6 +605,8 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		return
 	}
 	latest, _ := a.store.Get(chat.ID)
+	allowed := a.store.CanControlChat(id.User.ID, chat.ID)
+	latest.CanControl = &allowed
 	apiJSON(w, 202, historyWindow(a.snapshot(latest)))
 }
 func (a *App) validateSelection(ctx context.Context, chat chatmodel.Session, options chatmodel.CodexOptions) error {
@@ -658,11 +673,11 @@ func (a *App) startTurnWithCallback(chat chatmodel.Session, input messageInput, 
 	if a.updating {
 		return ErrUpdateInProgress
 	}
-	project, err := a.store.Project(chat.ProjectID)
+	directory, err := a.store.sessionDirectory(chat)
 	if err != nil {
 		return err
 	}
-	if _, err = agent.WorkingDirectory(project.Path); err != nil {
+	if _, err = agent.WorkingDirectory(directory); err != nil {
 		return fmt.Errorf("project directory is unavailable")
 	}
 	turn, err := a.store.beginTurnBy(chat.ID, input.Message, chat.Backend, input.PermissionMode, input.files, input.userID, options)
@@ -809,13 +824,9 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 	if err != nil {
 		return finish(agent.AgentResult{}, err)
 	}
-	directory := ""
-	if chat.ProjectID != "" {
-		project, e := a.store.Project(chat.ProjectID)
-		if e != nil {
-			return finish(agent.AgentResult{}, e)
-		}
-		directory = project.Path
+	directory, err := a.store.sessionDirectory(chat)
+	if err != nil {
+		return finish(agent.AgentResult{}, err)
 	}
 	request := agent.AgentRequest{ChatID: id, Backend: chat.Backend, Binary: binary, WorkingDirectory: directory, NativeSessionID: chat.NativeSessionID, Prompt: prompt, Model: turn.RequestedModel, ReasoningEffort: turn.ReasoningEffort}
 	request.NativeSessionPath = chat.NativeSessionPath
@@ -1011,6 +1022,7 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 	}
 	cachedUpdated := chat.UpdatedAt
 	cachedTitle := chat.Title
+	cachedControl := chat.CanControl != nil && *chat.CanControl
 	previousMetadata, _ := json.Marshal(sessionMetadata(chat))
 	for {
 		// Poll only indexed metadata. Never decode an entire conversation on every
@@ -1019,6 +1031,8 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 		if err != nil || !a.store.CanAccessChat(user, id) {
 			return
 		}
+		allowed := a.store.CanControlChat(user, id)
+		meta.CanControl = &allowed
 		a.liveMu.Lock()
 		current, live := a.live[id]
 		if live {
@@ -1028,12 +1042,13 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 		}
 		a.liveMu.Unlock()
 		revisionChanged := cachedUpdated != meta.UpdatedAt
-		if revisionChanged || cachedTitle != meta.Title {
+		if revisionChanged || cachedTitle != meta.Title || cachedControl != allowed {
 			latest, ok := a.store.Get(id)
 			if !ok {
 				return
 			}
 			latest = a.snapshot(latest)
+			latest.CanControl = &allowed
 			meta = latest
 			streamTurns = latest.Turns
 			streamHistory = latest.History
@@ -1057,6 +1072,7 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 			}
 			cachedUpdated = meta.UpdatedAt
 			cachedTitle = meta.Title
+			cachedControl = allowed
 		}
 		if !live || meta.Status != chatmodel.StatusRunning {
 			current = cached

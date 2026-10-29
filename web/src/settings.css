@@ -267,7 +267,8 @@
 .settings-theme-picker .icon[aria-pressed="true"]:hover:not(:disabled) {
   background: var(--color-primary-hover);
 }
-.settings-check-interval {
+.settings-check-interval,
+.settings-member-access {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 2px;
@@ -276,7 +277,8 @@
   border-radius: 8px;
   background: var(--soft);
 }
-.settings-check-interval button {
+.settings-check-interval button,
+.settings-member-access button {
   flex: 1 0 auto;
   min-height: 25px;
   padding: 3px 10px;
@@ -287,15 +289,33 @@
   font-size: 11px;
   white-space: nowrap;
 }
-.settings-check-interval button[aria-pressed="true"] {
+.settings-check-interval button[aria-pressed="true"],
+.settings-member-access button[aria-pressed="true"] {
   background: var(--elevated);
-  color: var(--text);
+  color: var(--color-primary);
   box-shadow: 0 1px 3px var(--shadow);
 }
-.settings-row-control:has(> .settings-check-interval) {
+.settings-row-control:has(> .settings-check-interval),
+.settings-row-control:has(> .settings-member-permissions) {
   min-width: 0;
   max-width: 100%;
   flex-shrink: 1;
+}
+.settings-member-permissions {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.settings-member-permission {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+.settings-member-permission > span {
+  color: var(--muted);
+  font-size: 11px;
 }
 .settings-repository-link {
   color: var(--text);

@@ -117,7 +117,10 @@ test("chat sends and settings controls share the application primary palette", a
     settings,
     /\.settings-primary \{\s*color: var\(--color-on-primary\)/,
   );
-  assert.doesNotMatch(settings, /(?:^|[;{])\s*color: var\(--color-primary\)/);
+  assert.doesNotMatch(
+    settings,
+    /\.desktop-settings-shell button:where\(:not\(\.icon\)\) \{[^}]*color: var\(--color-primary\)/,
+  );
   assert.doesNotMatch(settings, /--settings-accent|#3278cf|#2468bb/);
 });
 
@@ -204,6 +207,10 @@ test("new entities do not share mutable state or passwords", () => {
   assert.deepEqual(second.members, []);
   assert.deepEqual(second.issues.labels, []);
   assert.equal(newPerson().password, "");
+  assert.equal("read_only" in newPerson(), false);
+  assert.deepEqual(second.member_access, {});
+  assert.deepEqual(second.member_own_access, {});
+  assert.equal(second.shared_local_chats, false);
 });
 
 test("project edit drafts are independent from polling snapshots and support legacy assignees", () => {
@@ -223,11 +230,29 @@ test("removing members also removes automation controllers and chooses a valid o
   project.members = ["a", "b"];
   project.issues.assignee_ids = ["a", "b"];
   project.issues.user_id = "a";
+  project.member_access = { a: "read-only", b: "control" };
+  project.member_own_access = { a: "read-only", b: "create" };
   const next = projectMembers(project, ["b"]);
   assert.deepEqual(next.issues.assignee_ids, ["b"]);
+  assert.deepEqual(next.member_access, { b: "control" });
+  assert.deepEqual(next.member_own_access, { b: "create" });
+  assert.deepEqual(projectMembers(next, ["a", "b"]).member_own_access, { a: "create", b: "create" });
+  assert.deepEqual(projectMembers(next, ["a", "b"]).member_access, { a: "control", b: "control" });
   assert.equal(next.issues.user_id, "b");
   const empty = projectMembers(next, []);
   assert.deepEqual(empty.issues.assignee_ids, []);
   assert.equal(empty.issues.user_id, "");
   assert.deepEqual(project.members, ["a", "b"]);
+});
+
+
+test("session permissions live in project member button groups, not People or dropdowns", async () => {
+  const people = await readFile(new URL("../src/settings-pages.tsx", import.meta.url), "utf8");
+  const projects = await readFile(new URL("../src/settings-projects.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(people, /read_only|Session access|Can control sessions/);
+  assert.match(projects, /className="settings-member-access"[\s\S]*?role="group"[\s\S]*?aria-pressed=/);
+  assert.doesNotMatch(projects, /<select[^>]*[\s\S]*?aria-label=\{t\("(?:Shared session permissions|In-app permissions)"\)\}/);
+  assert.match(projects, /member_access: \{\s*\.\.\.old.member_access/);
+  assert.match(projects, /member_own_access: \{\s*\.\.\.old.member_own_access/);
+  assert.match(projects, /In-app permissions: read-only allows viewing existing chats/);
 });

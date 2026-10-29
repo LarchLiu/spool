@@ -190,7 +190,7 @@
   "Project directory": "项目目录",
   "Archive project (deny new access, keep history)": "归档项目（禁止访问，保留记录）",
   "People allowed to use this project": "允许使用此项目的成员",
-  "Share chats with all project members": "与项目所有成员共享聊天",
+  "Share in-app sessions": "共享应用内会话",
   "Save project": "保存项目",
   "When enabled, project members can view one another's chats; only chat owners can send messages or control runs.": "启用后，项目成员可以查看彼此的聊天；只有聊天所有者可以发送消息或控制运行。",
   "Members share the actual directory and its filesystem permissions. A project's directory cannot change after chats exist.": "项目成员共享实际目录及文件权限。已有聊天后不可更改项目目录。",
@@ -511,5 +511,15 @@
   "Approved by {name}": "{name} 批准了操作",
   "Denied by {name}": "{name} 拒绝了操作",
   "Could not record this operation": "无法记录本次操作",
-  "Turn attribution is unavailable": "无法读取轮次操作者信息"
+  "Turn attribution is unavailable": "无法读取轮次操作者信息",
+  "Read-only": "只读",
+  "Can control sessions": "可操作",
+  "Share local sessions": "共享本地会话",
+  "Share the latest 20 Codex and Claude sessions started outside Spool. Chats started by Spool, including issue automation, do not count. Updates sync automatically about every 10 seconds.": "共享本项目最新的 20 个从 Spool 外发起的 Codex 和 Claude 会话。Spool 发起的聊天（包括 issues 自动任务）不占名额。约每 10 秒自动同步更新。",
+  "Local session": "本地会话",
+  "Choose whether each project member can only view or also control other people's shared chats.": "可分别设置每位项目成员对他人共享聊天的只读或操作权限。",
+  "Shared session permissions": "共享会话权限",
+  "In-app permissions: read-only allows viewing existing chats; Can create also allows creating and controlling personal chats. Shared session permissions separately control other people's shared chats and shared local sessions. Assigned task permissions are unchanged.": "应用内会话权限：只读可查看已有会话；可创建还可新建并操作自己的会话。共享会话权限独立控制他人的共享聊天和共享本地会话，不改变已分配任务的操作权限。",
+  "In-app permissions": "应用内会话权限",
+  "Can create": "可创建"
 }

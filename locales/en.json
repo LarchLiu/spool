@@ -190,7 +190,7 @@
   "Project directory": "Project directory",
   "Archive project (deny new access, keep history)": "Archive project (deny new access, keep history)",
   "People allowed to use this project": "Users allowed to use this project",
-  "Share chats with all project members": "Share chats with all project members",
+  "Share in-app sessions": "Share in-app sessions",
   "Save project": "Save project",
   "When enabled, project members can view one another's chats; only chat owners can send messages or control runs.": "When enabled, project members can view one another's chats; only chat owners can send messages or control runs.",
   "Members share the actual directory and its filesystem permissions. A project's directory cannot change after chats exist.": "Members share the actual directory and its filesystem permissions. A project's directory cannot change after chats exist.",
@@ -511,5 +511,15 @@
   "Approved by {name}": "Approved by {name}",
   "Denied by {name}": "Denied by {name}",
   "Could not record this operation": "Could not record this operation",
-  "Turn attribution is unavailable": "Turn attribution is unavailable"
+  "Turn attribution is unavailable": "Turn attribution is unavailable",
+  "Read-only": "Read-only",
+  "Can control sessions": "Can control sessions",
+  "Share local sessions": "Share local sessions",
+  "Share the latest 20 Codex and Claude sessions started outside Spool. Chats started by Spool, including issue automation, do not count. Updates sync automatically about every 10 seconds.": "Share the latest 20 Codex and Claude sessions started outside Spool. Chats started by Spool, including issue automation, do not count. Updates sync automatically about every 10 seconds.",
+  "Local session": "Local session",
+  "Choose whether each project member can only view or also control other people's shared chats.": "Choose whether each project member can only view or also control other people's shared chats.",
+  "Shared session permissions": "Shared session permissions",
+  "In-app permissions: read-only allows viewing existing chats; Can create also allows creating and controlling personal chats. Shared session permissions separately control other people's shared chats and shared local sessions. Assigned task permissions are unchanged.": "In-app session permissions: read-only allows viewing existing chats; Can create also allows creating and controlling personal chats. Shared session permissions separately control other people's shared chats and shared local sessions. Assigned task permissions are unchanged.",
+  "In-app permissions": "In-app session permissions",
+  "Can create": "Can create"
 }

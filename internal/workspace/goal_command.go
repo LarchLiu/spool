@@ -68,7 +68,7 @@ func (a *App) goalCommandResponse(w http.ResponseWriter, r *http.Request, chat c
 		apiJSON(w, 200, map[string]string{"message": "No goal set."})
 		return
 	}
-	project, err := a.store.Project(chat.ProjectID)
+	directory, err := a.store.sessionDirectory(chat)
 	if err != nil {
 		apiError(w, 500, "project directory is unavailable")
 		return
@@ -83,7 +83,7 @@ func (a *App) goalCommandResponse(w http.ResponseWriter, r *http.Request, chat c
 		prompt += " clear"
 	}
 	result, err := a.runner.Run(ctx, agent.AgentRequest{
-		ChatID: chat.ID, Backend: chat.Backend, Binary: binary, WorkingDirectory: project.Path,
+		ChatID: chat.ID, Backend: chat.Backend, Binary: binary, WorkingDirectory: directory,
 		NativeSessionID: chat.NativeSessionID, NativeSessionPath: chat.NativeSessionPath,
 		Prompt: prompt, Model: chat.Model, ReasoningEffort: chat.ReasoningEffort, PermissionMode: chat.PermissionMode,
 	}, nil)

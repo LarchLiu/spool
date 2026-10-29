@@ -30,10 +30,13 @@ func TestRealtimeBrowser(t *testing.T) {
 	}
 	for _, width := range []int{1440, 390} {
 		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			localSessionHomes(t)
 			s := testStore(t)
 			alice, bob := testUser(t, s, "alice"), testUser(t, s, "bob")
 			project := testProject(t, s, alice, bob)
 			project.SharedChats = true
+			project.SharedLocalChats = true
+			writeLocalSession(t, chatmodel.BackendClaude, "browser-local-session", project.Path, 1)
 			if _, err := s.SaveProject(project); err != nil {
 				t.Fatal(err)
 			}
@@ -47,7 +50,7 @@ func TestRealtimeBrowser(t *testing.T) {
 			if err = s.FinishTurn(background.ID, turn.ID, agent.AgentResult{}, nil, chatmodel.StatusCompleted); err != nil {
 				t.Fatal(err)
 			}
-			watching, _ := s.CreateChat(alice.ID, project.ID, chatmodel.BackendCodex)
+			watching, _ := s.CreateChat(bob.ID, project.ID, chatmodel.BackendCodex)
 			if _, err = s.db.Exec(`UPDATE sessions SET title=CASE id WHEN ? THEN 'Watching chat' ELSE 'Background chat' END`, watching.ID); err != nil {
 				t.Fatal(err)
 			}
@@ -106,6 +109,20 @@ func TestRealtimeBrowser(t *testing.T) {
 					case "rename":
 						_, err = s.db.Exec(`UPDATE sessions SET title='Changed while disconnected',updated_at=updated_at+1 WHERE id=?`, background.ID)
 						s.notify(err, changeNavigation)
+					case "readonly", "control":
+						access := "control"
+						if r.URL.Query().Get("step") == "readonly" {
+							access = "read-only"
+						}
+						_, err = s.db.Exec(`INSERT INTO project_member_access(project_id,user_id,access) VALUES(?,?,?) ON CONFLICT(project_id,user_id) DO UPDATE SET access=excluded.access`, project.ID, alice.ID, access)
+						s.notify(err, changeNavigation)
+					case "ownreadonly", "owncreate":
+						access := "create"
+						if r.URL.Query().Get("step") == "ownreadonly" {
+							access = "read-only"
+						}
+						_, err = s.db.Exec(`INSERT INTO project_member_own_access(project_id,user_id,access) VALUES(?,?,?) ON CONFLICT(project_id,user_id) DO UPDATE SET access=excluded.access`, project.ID, alice.ID, access)
+						s.notify(err, changeNavigation)
 					case "revoke":
 						project.Members = []string{bob.ID}
 						_, err = s.SaveProject(project)
@@ -162,7 +179,7 @@ func TestRealtimeBrowser(t *testing.T) {
 			case report := <-reports:
 				data, _ := json.MarshalIndent(report, "", "  ")
 				os.WriteFile(filepath.Join(output, fmt.Sprintf("browser-%d.json", width)), data, 0644)
-				for _, check := range []string{"actorStack", "activeUnchanged", "avatarUpdated", "presenceJoined", "presenceLeft", "reconnected", "revoked"} {
+				for _, check := range []string{"localIcon", "controlsUpdated", "ownControlsUpdated", "segmentedStyles", "actorStack", "activeUnchanged", "avatarUpdated", "presenceJoined", "presenceLeft", "reconnected", "revoked"} {
 					if report[check] != true {
 						t.Errorf("%s failed: %s", check, data)
 					}

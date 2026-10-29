@@ -31,6 +31,13 @@ test("automatic checks can be disabled without losing the chosen interval", () =
   assert.match(html, /aria-pressed="true"[^>]*>24 hours<\/button>/);
 });
 
+test("project permissions and update intervals share segmented buttons with theme-colored selection", async () => {
+  const css = await readFile(new URL("../src/settings.css", import.meta.url), "utf8");
+  assert.match(css, /\.settings-check-interval,\s*\.settings-member-access \{[^}]*display: inline-flex;[^}]*background: var\(--soft\)/);
+  assert.match(css, /\.settings-check-interval button,\s*\.settings-member-access button \{[^}]*background: transparent;[^}]*color: var\(--muted\)/);
+  assert.match(css, /\.settings-check-interval button\[aria-pressed="true"\],\s*\.settings-member-access button\[aria-pressed="true"\] \{[^}]*background: var\(--elevated\);[^}]*color: var\(--color-primary\)/);
+});
+
 test("update indicators use a shared primary-color dot and expose a localized meaning", async () => {
   const html = renderToStaticMarkup(createElement(UpdateIndicator, { t: (key) => `translated:${key}` }));
   assert.match(html, /role="img" aria-label="translated:Update available"/);

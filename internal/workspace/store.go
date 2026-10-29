@@ -25,6 +25,9 @@ type Store struct {
 	settingsMu   sync.Mutex
 	mu           sync.Mutex
 	agentMu      sync.Mutex
+	localMu      sync.Mutex
+	localScanAt  time.Time
+	localIndex   agent.LocalSessionIndex
 	root         string
 	db           *sql.DB
 	runtimeMu    sync.Mutex
@@ -37,8 +40,16 @@ CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQ
 CREATE TABLE IF NOT EXISTS user_avatars(user_id TEXT PRIMARY KEY REFERENCES users(id),style TEXT NOT NULL,seed TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,name TEXT NOT NULL,path TEXT NOT NULL UNIQUE,archived INTEGER NOT NULL DEFAULT 0,shared_chats INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS project_members(project_id TEXT NOT NULL REFERENCES projects(id),user_id TEXT NOT NULL REFERENCES users(id),PRIMARY KEY(project_id,user_id));
+CREATE TABLE IF NOT EXISTS project_member_access(project_id TEXT NOT NULL,user_id TEXT NOT NULL,access TEXT NOT NULL CHECK(access IN ('read-only','control')),PRIMARY KEY(project_id,user_id),FOREIGN KEY(project_id,user_id) REFERENCES project_members(project_id,user_id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS project_member_own_access(project_id TEXT NOT NULL,user_id TEXT NOT NULL,access TEXT NOT NULL CHECK(access IN ('read-only','create')),PRIMARY KEY(project_id,user_id),FOREIGN KEY(project_id,user_id) REFERENCES project_members(project_id,user_id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS project_local_sharing(project_id TEXT PRIMARY KEY REFERENCES projects(id),enabled INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id),project_id TEXT REFERENCES projects(id),title TEXT NOT NULL,backend TEXT NOT NULL,native_session_id TEXT NOT NULL DEFAULT '',native_session_path TEXT NOT NULL DEFAULT '',model TEXT NOT NULL DEFAULT '',reasoning_effort TEXT NOT NULL DEFAULT '',permission_mode TEXT NOT NULL DEFAULT '',status TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS sessions_owner ON sessions(user_id,project_id,updated_at DESC);
+CREATE INDEX IF NOT EXISTS sessions_native ON sessions(backend,native_session_id);
+CREATE TABLE IF NOT EXISTS local_sessions(session_id TEXT PRIMARY KEY REFERENCES sessions(id),visible INTEGER NOT NULL DEFAULT 1,directory TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS local_session_files(session_id TEXT PRIMARY KEY REFERENCES local_sessions(session_id),generation TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS spool_native_sessions(backend TEXT NOT NULL,native_session_id TEXT NOT NULL,PRIMARY KEY(backend,native_session_id));
+CREATE TABLE IF NOT EXISTS session_workspaces(session_id TEXT PRIMARY KEY REFERENCES sessions(id),directory TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS agents(backend TEXT PRIMARY KEY,body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS project_automations(project_id TEXT PRIMARY KEY REFERENCES projects(id),body TEXT NOT NULL,next_run_at INTEGER NOT NULL,last_run_at INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '',last_chat_id TEXT NOT NULL DEFAULT '');
@@ -97,6 +108,11 @@ func OpenStore(root string) (*Store, error) {
 	if err = migrateTurnActorSchema(db); err != nil {
 		return fail(fmt.Errorf("migrate turn actors: %w", err))
 	}
+	// Retain every known Spool origin, even after a chat adopts another ID.
+	if _, err = db.Exec(`INSERT OR IGNORE INTO spool_native_sessions SELECT backend,native_session_id FROM sessions WHERE native_session_id<>'' AND NOT EXISTS(SELECT 1 FROM local_sessions WHERE session_id=sessions.id);
+		INSERT OR IGNORE INTO spool_native_sessions SELECT s.backend,t.native_session_id FROM turn_actors t JOIN sessions s ON s.id=t.session_id WHERE t.native_session_id<>'' AND NOT EXISTS(SELECT 1 FROM local_sessions WHERE session_id=s.id);`); err != nil {
+		return fail(err)
+	}
 	// Retired avatar styles adopt Clay without losing automatic or picked seeds.
 	if _, err = db.Exec(`UPDATE user_avatars SET style=? WHERE style IN ('bottts-neutral','shapes','initials')`, DefaultAvatar().Style); err != nil {
 		return fail(err)
@@ -132,14 +148,22 @@ func insertSession(tx *sql.Tx, s chatmodel.Session) error {
 		project = s.ProjectID
 	}
 	_, err := tx.Exec(`INSERT INTO sessions(id,user_id,project_id,title,backend,native_session_id,native_session_path,model,reasoning_effort,permission_mode,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, s.ID, owner, project, s.Title, s.Backend, s.NativeSessionID, s.NativeSessionPath, s.Model, s.ReasoningEffort, s.PermissionMode, s.Status, s.CreatedAt, s.UpdatedAt)
+	if err == nil {
+		err = registerSpoolNative(tx, s.ID)
+	}
 	return err
 }
 
-const sessionColumns = `id,COALESCE(user_id,''),COALESCE(project_id,''),title,backend,native_session_id,native_session_path,model,reasoning_effort,permission_mode,status,created_at,updated_at`
+func registerSpoolNative(tx *sql.Tx, id string) error {
+	_, err := tx.Exec(`INSERT OR IGNORE INTO spool_native_sessions SELECT backend,native_session_id FROM sessions WHERE id=? AND native_session_id<>'' AND NOT EXISTS(SELECT 1 FROM local_sessions WHERE session_id=sessions.id)`, id)
+	return err
+}
+
+const sessionColumns = `id,COALESCE(user_id,''),COALESCE(project_id,''),title,backend,native_session_id,native_session_path,model,reasoning_effort,permission_mode,status,created_at,updated_at,EXISTS(SELECT 1 FROM local_sessions WHERE session_id=sessions.id)`
 
 func scanSession(row interface{ Scan(...any) error }) (chatmodel.Session, error) {
 	var s chatmodel.Session
-	err := row.Scan(&s.ID, &s.UserID, &s.ProjectID, &s.Title, &s.Backend, &s.NativeSessionID, &s.NativeSessionPath, &s.Model, &s.ReasoningEffort, &s.PermissionMode, &s.Status, &s.CreatedAt, &s.UpdatedAt)
+	err := row.Scan(&s.ID, &s.UserID, &s.ProjectID, &s.Title, &s.Backend, &s.NativeSessionID, &s.NativeSessionPath, &s.Model, &s.ReasoningEffort, &s.PermissionMode, &s.Status, &s.CreatedAt, &s.UpdatedAt, &s.LocalSession)
 	s.Turns = []chatmodel.Turn{}
 	s.Transcript.Parts = []chatmodel.Part{}
 	return s, err
@@ -357,11 +381,32 @@ func (s *Store) beginTurnBy(id, prompt string, backend chatmodel.Backend, permis
 	return t, nil
 }
 func (s *Store) SetNativeSession(id, native string) error {
+	return s.setNativeSession(id, native, "", false)
+}
+
+func (s *Store) setNativeSession(id, native, path string, withPath bool) error {
 	if !chatmodel.ValidID(native) {
 		return fmt.Errorf("invalid provider session ID")
 	}
-	_, err := s.db.Exec(`UPDATE sessions SET native_session_id=? WHERE id=?`, native, id)
-	return err
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if withPath {
+		_, err = tx.Exec(`UPDATE sessions SET native_session_id=?,native_session_path=? WHERE id=?`, native, path, id)
+	} else {
+		_, err = tx.Exec(`UPDATE sessions SET native_session_id=? WHERE id=?`, native, id)
+	}
+	if err == nil {
+		err = registerSpoolNative(tx, id)
+	}
+	if err != nil {
+		return err
+	}
+	return s.notify(tx.Commit(), changeNavigation)
 }
 
 func (s *Store) setTurnNativeSession(id, turnID, native string) error {
@@ -386,15 +431,14 @@ func (s *Store) setTurnNativeSession(id, turnID, native string) error {
 	if _, err = tx.Exec(`UPDATE turn_actors SET native_session_id=? WHERE session_id=? AND turn_id=?`, native, id, turnID); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err = registerSpoolNative(tx, id); err != nil {
+		return err
+	}
+	return s.notify(tx.Commit(), changeNavigation)
 }
 
 func (s *Store) SetNativeSessionPath(id, native, path string) error {
-	if !chatmodel.ValidID(native) {
-		return fmt.Errorf("invalid provider session ID")
-	}
-	_, err := s.db.Exec(`UPDATE sessions SET native_session_id=?,native_session_path=? WHERE id=?`, native, path, id)
-	return err
+	return s.setNativeSession(id, native, path, true)
 }
 func (s *Store) FinishTurn(id, turnID string, result agent.AgentResult, runErr error, status chatmodel.SessionStatus) error {
 	return s.finishTurn(id, turnID, result, runErr, status, "")
@@ -458,6 +502,9 @@ func (s *Store) finishTurn(id, turnID string, result agent.AgentResult, runErr e
 		return err
 	}
 	if _, err = tx.Exec(`UPDATE turn_actors SET native_session_id=?,native_turn_id=? WHERE session_id=? AND turn_id=?`, v.NativeSessionID, t.NativeTurnID, id, turnID); err != nil {
+		return err
+	}
+	if err = registerSpoolNative(tx, id); err != nil {
 		return err
 	}
 	if stoppedBy != "" {

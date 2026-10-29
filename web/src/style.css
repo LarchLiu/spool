@@ -1591,6 +1591,13 @@ a.attachment-open {
   height: 32px;
   border-radius: 50%;
 }
+.nav-chat-local {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  color: var(--muted);
+}
+
 .permission-picker {
   position: relative;
   min-width: 0;

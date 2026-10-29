@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	chatmodel "spool/internal/model"
 )
@@ -68,6 +69,9 @@ type Navigation struct {
 }
 
 func (s *Store) UserNavigation(user string) (Navigation, error) {
+	if err := s.syncLocalSessions(false); err != nil {
+		return Navigation{}, err
+	}
 	projects, err := s.UserProjects(user)
 	if err != nil {
 		return Navigation{}, err
@@ -77,8 +81,8 @@ func (s *Store) UserNavigation(user string) (Navigation, error) {
 	rows, err := s.db.Query(`SELECT `+qualifiedSessionColumns+` FROM sessions s
 		JOIN project_members member ON member.project_id=s.project_id AND member.user_id=?
 		JOIN projects p ON p.id=s.project_id
-		JOIN users u ON u.id=s.user_id
-		WHERE (s.user_id=? OR p.shared_chats=1 OR EXISTS(SELECT 1 FROM chat_collaborators WHERE session_id=s.id AND user_id=?)) AND p.archived=0 AND (u.disabled=0 OR EXISTS(SELECT 1 FROM automation_chats WHERE session_id=s.id)) ORDER BY s.updated_at DESC,s.id`, user, user, user)
+		LEFT JOIN users u ON u.id=s.user_id
+		WHERE (s.user_id=? OR p.shared_chats=1 OR EXISTS(SELECT 1 FROM chat_collaborators WHERE session_id=s.id AND user_id=?)) AND p.archived=0 AND `+visibleSessionSQL+` AND (u.disabled=0 OR EXISTS(SELECT 1 FROM automation_chats WHERE session_id=s.id) OR EXISTS(SELECT 1 FROM local_sessions WHERE session_id=s.id)) ORDER BY s.updated_at DESC,s.id`, user, user, user)
 	if err != nil {
 		return Navigation{}, err
 	}
@@ -96,8 +100,42 @@ func (s *Store) UserNavigation(user string) (Navigation, error) {
 	rows.Close()
 	if err == nil {
 		err = populateParticipants(s.db, chats)
+		s.setSessionControls(user, chats)
 	}
 	return Navigation{Projects: projects, Chats: chats}, err
 }
 
-const qualifiedSessionColumns = `s.id,COALESCE(s.user_id,''),COALESCE(s.project_id,''),s.title,s.backend,s.native_session_id,s.native_session_path,s.model,s.reasoning_effort,s.permission_mode,s.status,s.created_at,s.updated_at`
+const qualifiedSessionColumns = `s.id,COALESCE(s.user_id,''),COALESCE(s.project_id,''),s.title,s.backend,s.native_session_id,s.native_session_path,s.model,s.reasoning_effort,s.permission_mode,s.status,s.created_at,s.updated_at,EXISTS(SELECT 1 FROM local_sessions WHERE session_id=s.id)`
+
+const visibleSessionSQL = `(NOT EXISTS(SELECT 1 FROM local_sessions WHERE session_id=s.id) OR (p.shared_chats=1 AND EXISTS(SELECT 1 FROM project_local_sharing WHERE project_id=p.id AND enabled=1) AND EXISTS(SELECT 1 FROM local_sessions WHERE session_id=s.id AND visible=1) AND NOT EXISTS(SELECT 1 FROM spool_native_sessions owned WHERE owned.backend=s.backend AND owned.native_session_id=s.native_session_id)))`
+
+// Ownership selects the independent personal-chat permission, so project-wide
+// sharing cannot bypass a personal read-only policy. Task assignment is separate.
+const controllableSessionSQL = `(CASE WHEN s.user_id=u.id AND NOT EXISTS(SELECT 1 FROM automation_chats WHERE session_id=s.id) THEN COALESCE((SELECT access FROM project_member_own_access WHERE project_id=p.id AND user_id=u.id),'create')='create' ELSE EXISTS(SELECT 1 FROM chat_collaborators WHERE session_id=s.id AND user_id=u.id) OR (p.shared_chats=1 AND COALESCE((SELECT access FROM project_member_access WHERE project_id=p.id AND user_id=u.id),'control')='control') END)`
+
+func (s *Store) setSessionControls(user string, chats []chatmodel.Session) {
+	for i := range chats {
+		chats[i].CanControl = new(bool)
+	}
+	for start := 0; start < len(chats); start += 200 {
+		batch := chats[start:min(start+200, len(chats))]
+		args := []any{user}
+		positions := map[string]int{}
+		for i := range batch {
+			args = append(args, batch[i].ID)
+			positions[batch[i].ID] = i
+		}
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",")
+		rows, err := s.db.Query(`SELECT s.id FROM sessions s JOIN projects p ON p.id=s.project_id JOIN project_members m ON m.project_id=p.id AND m.user_id=? JOIN users u ON u.id=m.user_id WHERE p.archived=0 AND u.disabled=0 AND `+controllableSessionSQL+` AND `+visibleSessionSQL+` AND s.id IN (`+placeholders+`)`, args...)
+		if err != nil {
+			continue
+		}
+		for rows.Next() {
+			var id string
+			if rows.Scan(&id) == nil {
+				*batch[positions[id]].CanControl = true
+			}
+		}
+		rows.Close()
+	}
+}

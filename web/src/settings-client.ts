@@ -41,8 +41,11 @@ export type ManagedProject = {
   name: string;
   path: string;
   members: string[];
+  member_access: Record<string, "read-only" | "control">;
+  member_own_access: Record<string, "read-only" | "create">;
   archived: boolean;
   shared_chats: boolean;
+  shared_local_chats?: boolean;
   issues: Automation;
   next_run?: number;
   last_error?: string;
@@ -195,7 +198,13 @@ export function subscribeSettingsSection(
   );
 }
 export function newPerson(): PersonDraft {
-  return { id: "", username: "", nickname: "", password: "", disabled: false };
+  return {
+    id: "",
+    username: "",
+    nickname: "",
+    password: "",
+    disabled: false,
+  };
 }
 export function newProject(): ManagedProject {
   return {
@@ -203,8 +212,11 @@ export function newProject(): ManagedProject {
     name: "",
     path: "",
     members: [],
+    member_access: {},
+    member_own_access: {},
     archived: false,
     shared_chats: false,
+    shared_local_chats: false,
     issues: {
       enabled: false,
       interval_minutes: 60,
@@ -219,6 +231,8 @@ export function newProject(): ManagedProject {
 export function projectDraft(project: ManagedProject): ManagedProject {
   const copy = structuredClone(project);
   copy.members ??= [];
+  copy.member_access ??= {};
+  copy.member_own_access ??= {};
   copy.issues.labels ??= [];
   copy.issues.assignee_ids ??= copy.issues.user_id ? [copy.issues.user_id] : [];
   return copy;
@@ -233,6 +247,12 @@ export function projectMembers(
   return {
     ...project,
     members,
+    member_access: Object.fromEntries(
+      members.map((id) => [id, project.member_access?.[id] ?? "control"]),
+    ),
+    member_own_access: Object.fromEntries(
+      members.map((id) => [id, project.member_own_access?.[id] ?? "create"]),
+    ),
     issues: {
       ...project.issues,
       assignee_ids: ids,

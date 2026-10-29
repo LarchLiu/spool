@@ -14,12 +14,15 @@ var errTaskSessionConversion = errors.New("Task chats cannot switch agents. Cont
 
 // A conversion is a new native session and a new chat, not a link to a mutable
 // source. Subsequent messages on either side cannot alter the other's context.
-func (s *Store) forkChat(id string, backend chatmodel.Backend, options chatmodel.CodexOptions) (chatmodel.Session, error) {
+func (s *Store) forkChat(id string, backend chatmodel.Backend, options chatmodel.CodexOptions, owner ...string) (chatmodel.Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	source, ok := s.getSession(id)
 	if !ok {
 		return source, os.ErrNotExist
+	}
+	if len(owner) > 0 && !s.CanCreateChat(owner[0], source.ProjectID) {
+		return source, os.ErrPermission
 	}
 	if source.Status == chatmodel.StatusRunning {
 		return source, fmt.Errorf("this chat already has a running turn")
@@ -38,18 +41,18 @@ func (s *Store) forkChat(id string, backend chatmodel.Backend, options chatmodel
 			return source, err
 		}
 	}
-	project, err := s.Project(source.ProjectID)
+	directory, err := s.sessionDirectory(source)
 	if err != nil {
 		return source, err
 	}
 	path := source.NativeSessionPath
 	if path == "" {
-		path, err = agent.FindSessionTranscript(source.Backend, source.NativeSessionID, project.Path)
+		path, err = agent.FindSessionTranscript(source.Backend, source.NativeSessionID, directory)
 	}
 	if err != nil {
 		return source, errSessionConversion
 	}
-	converted, err := agent.ConvertSession(source.Backend, backend, path, project.Path)
+	converted, err := agent.ConvertSession(source.Backend, backend, path, directory)
 	if err != nil {
 		return source, errSessionConversion
 	}
@@ -61,12 +64,18 @@ func (s *Store) forkChat(id string, backend chatmodel.Backend, options chatmodel
 	}()
 	now := time.Now().UnixMilli()
 	chat := chatmodel.Session{ID: chatmodel.NewID(), UserID: source.UserID, ProjectID: source.ProjectID, Title: source.Title, Backend: backend, NativeSessionID: converted.ID, NativeSessionPath: converted.Path, Model: options.Model, ReasoningEffort: options.ReasoningEffort, PermissionMode: chatmodel.DefaultPermissionMode(backend), CreatedAt: now, UpdatedAt: now, Status: chatmodel.StatusReady}
+	if len(owner) > 0 {
+		chat.UserID = owner[0]
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return chat, err
 	}
 	defer tx.Rollback()
 	if err = insertSession(tx, chat); err != nil {
+		return chat, err
+	}
+	if _, err = tx.Exec(`INSERT INTO session_workspaces(session_id,directory) VALUES(?,?)`, chat.ID, directory); err != nil {
 		return chat, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -78,7 +87,7 @@ func (s *Store) forkChat(id string, backend chatmodel.Backend, options chatmodel
 	return chat, nil
 }
 
-func (a *App) forkChat(id string, backend chatmodel.Backend, options chatmodel.CodexOptions) (chatmodel.Session, error) {
+func (a *App) forkChat(id string, backend chatmodel.Backend, options chatmodel.CodexOptions, owner ...string) (chatmodel.Session, error) {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
 	if a.closing {
@@ -90,7 +99,7 @@ func (a *App) forkChat(id string, backend chatmodel.Backend, options chatmodel.C
 	if a.nativeCommandRunning(id) {
 		return chatmodel.Session{}, fmt.Errorf("this chat already has a running turn")
 	}
-	return a.store.forkChat(id, backend, options)
+	return a.store.forkChat(id, backend, options, owner...)
 }
 
 // Only for a newly created conversion whose first request failed admission.
@@ -110,6 +119,9 @@ func (s *Store) discardFork(chat chatmodel.Session) {
 		return
 	}
 	if _, err = tx.Exec(`DELETE FROM automation_chats WHERE session_id=?`, chat.ID); err != nil {
+		return
+	}
+	if _, err = tx.Exec(`DELETE FROM session_workspaces WHERE session_id=?`, chat.ID); err != nil {
 		return
 	}
 	if _, err = tx.Exec(`DELETE FROM sessions WHERE id=?`, chat.ID); err != nil {

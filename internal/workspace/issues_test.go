@@ -600,8 +600,15 @@ func TestTaskAssigneesCanSeeSendStopAndApproveWithoutProjectWideSharing(t *testi
 	if _, err = a.store.SaveProject(p); err != nil {
 		t.Fatal(err)
 	}
+	if !a.store.CanAccessChat(bob.ID, chat.ID) || !a.store.CanControlChat(bob.ID, chat.ID) || !a.store.CanControlChat(bob.ID, normal.ID) {
+		t.Fatal("shared project did not grant session control")
+	}
+	p.MemberAccess = map[string]string{bob.ID: "read-only"}
+	if _, err = a.store.SaveProject(p); err != nil {
+		t.Fatal(err)
+	}
 	if !a.store.CanAccessChat(bob.ID, chat.ID) || a.store.CanControlChat(bob.ID, chat.ID) || a.store.CanControlChat(bob.ID, normal.ID) {
-		t.Fatal("project sharing bypassed task or normal chat controls")
+		t.Fatal("read-only project member retained unassigned shared chat control")
 	}
 }
 

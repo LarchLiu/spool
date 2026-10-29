@@ -149,6 +149,7 @@ func (s *Service) startLocked() error {
 	runner.ConfigureBinaries(agentBinaries(agents))
 	runner.IdleTimeout = time.Duration(settings.IdleMinutes) * time.Minute
 	app := NewApp(s.Store, runner, "", "")
+	app.startLocalSessionSync()
 	app.startIssueScheduler(s.lease)
 	server := &http.Server{Handler: app, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
 	s.server = server

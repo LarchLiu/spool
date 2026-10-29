@@ -319,9 +319,14 @@ function App() {
         : [];
       setChat((old) => {
         const next = navigationChats.find((item) => item.id === old?.id);
-        return old && next && next.updated_at >= old.updated_at
-          ? { ...old, title: next.title, participants: next.participants }
-          : old;
+        if (!old || !next) return old;
+        return {
+          ...old,
+          ...(next.updated_at >= old.updated_at
+            ? { title: next.title, participants: next.participants }
+            : {}),
+          can_control: next.can_control,
+        };
       });
       setProjects(p);
       setChats((old) => mergeNavigationChats(old, navigationChats));
@@ -590,8 +595,12 @@ function App() {
     !!selectedAgent?.enabled && !!selectedAgent?.installed;
   const composerReady =
     projects.some((p) => p.id === project) && (!chatID || chat?.id === chatID);
+  const canCreate =
+    projects.find((p) => p.id === project)?.can_create !== false;
   const composerWritable =
-    composerReady && !!user && canControlChat(chat, user.id);
+    composerReady &&
+    !!user &&
+    (chat ? canControlChat(chat, user.id) : canCreate);
   const commandOpen =
     composerWritable &&
     commandFocused &&
@@ -626,6 +635,14 @@ function App() {
     setEffort(selected.effort);
     // Catalog refreshes must not discard an unsent model/agent choice.
   }, [chat?.id, chat?.backend]);
+  useEffect(() => {
+    if (!canCreate && chat && backend !== chat.backend) {
+      const selected = chatSelection(agents, chat);
+      setBackend(selected.backend);
+      setModel(selected.model);
+      setEffort(selected.effort);
+    }
+  }, [canCreate, chat?.id, chat?.backend, backend]);
   useEffect(() => {
     const element = content.current;
     if (!element) return;
@@ -747,7 +764,12 @@ function App() {
     );
   }
   function newChat(projectID = project) {
-    if (!projects.some((item) => item.id === projectID) || submission.current)
+    if (
+      !projects.some(
+        (item) => item.id === projectID && item.can_create !== false,
+      ) ||
+      submission.current
+    )
       return;
     // A new chat is a local draft. Persist it only when its first message is sent.
     activeID.current = "";
@@ -1570,11 +1592,13 @@ function App() {
                 commandOpen ? "slash-command-goal" : undefined
               }
               placeholder={
-                project
-                  ? t("Message {agent}", {
-                      agent: backend === "codex" ? "Codex" : "Claude",
-                    })
-                  : t("Waiting for project access")
+                !composerWritable && project
+                  ? t("Read-only")
+                  : project
+                    ? t("Message {agent}", {
+                        agent: backend === "codex" ? "Codex" : "Claude",
+                      })
+                    : t("Waiting for project access")
               }
               value={draft}
               disabled={!composerWritable}
@@ -1700,7 +1724,13 @@ function App() {
                     </button>
                     {picker && (
                       <AgentModelMenu
-                        agents={agents}
+                        agents={
+                          canCreate || !chat
+                            ? agents
+                            : agents.filter(
+                                (agent) => agent.backend === chat.backend,
+                              )
+                        }
                         selection={{ backend, model, effort }}
                         currentBackend={
                           chat?.turns.length ? chat.backend : undefined

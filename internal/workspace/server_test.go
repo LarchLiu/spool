@@ -304,6 +304,7 @@ func TestSharedProjectChatReadAccessIsReadOnly(t *testing.T) {
 	bob := testUser(t, s, "bob")
 	project := testProject(t, s, alice, bob)
 	project.SharedChats = true
+	project.MemberAccess = map[string]string{bob.ID: "read-only"}
 	project, _ = s.SaveProject(project)
 	chat, _ := s.CreateChat(alice.ID, project.ID, chatmodel.BackendCodex)
 	a := NewApp(s, &fakeRunner{}, "", "")

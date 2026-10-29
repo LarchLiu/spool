@@ -4,8 +4,18 @@ import { Children, createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   INITIAL_CHAT_LIMIT,
+  LocalSessionIcon,
   SidebarChatList,
 } from "../.test-build/components/web/src/sidebar-chat-list.js";
+
+test("local sessions have a compact monitor icon with an accessible source label", () => {
+  const html = renderToStaticMarkup(
+    createElement(LocalSessionIcon, { t: (key) => `translated:${key}` }),
+  );
+  assert.match(html, /class="nav-chat-local"/);
+  assert.match(html, /aria-label="translated:Local session"/);
+  assert.match(html, /lucide-monitor/);
+});
 
 function fixture(count, options = {}) {
   const chats = Array.from({ length: count }, (_, index) => ({
@@ -52,7 +62,10 @@ function fixture(count, options = {}) {
 
 test("chat lists initially show the first five records without reordering", () => {
   const list = fixture(30);
-  assert.deepEqual(list.view().ids, list.chats.slice(0, 5).map((chat) => chat.id));
+  assert.deepEqual(
+    list.view().ids,
+    list.chats.slice(0, 5).map((chat) => chat.id),
+  );
   assert.equal(list.view().button.props.children, "Show more");
 });
 

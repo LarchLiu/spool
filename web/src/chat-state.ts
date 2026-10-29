@@ -25,6 +25,8 @@ export function turnOperator(
 
 export function canControlChat(chat: Chat | null, userID: string): boolean {
   if (!chat) return true;
+  if (chat.can_control !== undefined) return chat.can_control;
+  if (chat.local_session) return false;
   if (chat.automation_chat) return !!chat.collaborator_ids?.includes(userID);
   return chat.user_id == null || chat.user_id === userID;
 }
@@ -43,6 +45,7 @@ export function reconcileMetadata(
     collaborator_ids: next.collaborator_ids ?? [],
     artifacts: next.artifacts ?? [],
     participants: next.participants ?? previous.participants,
+    can_control: next.can_control ?? previous.can_control,
   };
 }
 

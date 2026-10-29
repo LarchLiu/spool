@@ -25,6 +25,43 @@ test("all task assignees can control chat, while regular shared chats stay owner
   assert.equal(canControlChat({ user_id: "alice" }, "alice"), true);
 });
 
+test("server-projected permissions override owner and task defaults, including local chats", () => {
+  assert.equal(
+    canControlChat({ user_id: "alice", can_control: true }, "bob"),
+    true,
+  );
+  assert.equal(
+    canControlChat({ user_id: "alice", can_control: false }, "alice"),
+    false,
+  );
+  assert.equal(
+    canControlChat(
+      { automation_chat: true, collaborator_ids: ["bob"], can_control: false },
+      "bob",
+    ),
+    false,
+  );
+  assert.equal(canControlChat({ local_session: true }, "bob"), false);
+  assert.equal(
+    canControlChat({ local_session: true, can_control: true }, "bob"),
+    true,
+  );
+});
+
+test("permission metadata revokes controls without replacing history at the same revision", () => {
+  const previous = {
+    ...chat([running], 10, helloTranscript),
+    can_control: true,
+  };
+  const next = reconcileMetadata(previous, {
+    id: previous.id,
+    updated_at: 10,
+    can_control: false,
+  });
+  assert.equal(canControlChat(next, "alice"), false);
+  assert.equal(next.transcript, previous.transcript);
+});
+
 const userPart = { role: "user", kind: "text", text: "Hello" };
 const answerPart = { role: "assistant", kind: "text", text: "Hi" };
 const helloTranscript = { parts: [userPart, answerPart] };
@@ -51,9 +88,15 @@ function chat(turns, updated_at = 10, transcript = { parts: [] }) {
 }
 
 test("late final phase metadata survives reconciliation with a longer streamed message", () => {
-  const part = { ...answerPart, id: "message", text: "Complete streamed answer" };
+  const part = {
+    ...answerPart,
+    id: "message",
+    text: "Complete streamed answer",
+  };
   const previous = chat([running], 10, { parts: [userPart, part] });
-  const next = chat([running], 11, { parts: [userPart, { ...part, text: "Complete", phase: "final_answer" }] });
+  const next = chat([running], 11, {
+    parts: [userPart, { ...part, text: "Complete", phase: "final_answer" }],
+  });
   const merged = reconcile(previous, next);
   assert.equal(merged.transcript.parts[1].text, part.text);
   assert.equal(merged.transcript.parts[1].phase, "final_answer");
@@ -64,7 +107,10 @@ test("a same-revision snapshot cannot erase an already received final phase", ()
   const previous = chat([running], 10, { parts: [userPart, part] });
   const unphased = { ...answerPart, id: "message" };
   const next = chat([running], 10, { parts: [userPart, unphased] });
-  assert.equal(reconcile(previous, next).transcript.parts[1].phase, "final_answer");
+  assert.equal(
+    reconcile(previous, next).transcript.parts[1].phase,
+    "final_answer",
+  );
 });
 
 test("live metadata updates PRs and task controls without replacing streamed content", () => {

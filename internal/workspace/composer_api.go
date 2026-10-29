@@ -88,7 +88,7 @@ func readMessageInput(w http.ResponseWriter, r *http.Request) (messageInput, boo
 }
 
 func (a *App) permissionCatalog(ctx context.Context, chat chatmodel.Session) (chatmodel.PermissionCatalog, error) {
-	project, err := a.store.Project(chat.ProjectID)
+	directory, err := a.store.sessionDirectory(chat)
 	if err != nil {
 		return chatmodel.PermissionCatalog{}, err
 	}
@@ -98,7 +98,7 @@ func (a *App) permissionCatalog(ctx context.Context, chat chatmodel.Session) (ch
 	if !ok {
 		return chatmodel.PermissionCatalog{}, fmt.Errorf("Permission discovery is unavailable")
 	}
-	catalog, err := provider.PermissionModes(ctx, chat.Backend, project.Path)
+	catalog, err := provider.PermissionModes(ctx, chat.Backend, directory)
 	if err != nil {
 		return chatmodel.PermissionCatalog{}, err
 	}
@@ -116,13 +116,17 @@ func (a *App) permissionResponse(w http.ResponseWriter, r *http.Request, user st
 	}
 	if id := r.URL.Query().Get("chat_id"); id != "" {
 		owned, ok := a.accessibleChat(user, id)
-		if !ok || owned.ProjectID != chat.ProjectID {
+		if !ok || owned.ProjectID != chat.ProjectID || !a.store.CanControlChat(user, id) {
 			apiError(w, 404, "聊天不存在")
 			return
 		}
 		if owned.Backend == chat.Backend {
 			chat.PermissionMode = owned.PermissionMode
 		}
+		chat.ID, chat.LocalSession = owned.ID, owned.LocalSession
+	} else if !a.store.CanCreateChat(user, chat.ProjectID) {
+		apiError(w, 404, "Permission discovery is unavailable")
+		return
 	}
 	if !a.enabled(chat.Backend) {
 		apiError(w, 409, "agent 未启用或尚未安装")
