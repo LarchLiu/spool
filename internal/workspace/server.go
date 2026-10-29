@@ -35,6 +35,7 @@ type App struct {
 	turns           sync.WaitGroup
 	streams         sync.WaitGroup
 	activeTurns     map[string]*turnControl
+	directMessages  directMessageHub
 	liveMu          sync.Mutex
 	live            map[string]chatmodel.Turn
 	// liveBase keeps the hydrated provider transcript that existed before the

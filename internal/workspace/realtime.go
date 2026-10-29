@@ -17,9 +17,14 @@ import (
 )
 
 type realtimeInput struct {
-	Type    string `json:"type"`
-	CSRF    string `json:"csrf,omitempty"`
-	Visible bool   `json:"visible"`
+	Type      string   `json:"type"`
+	CSRF      string   `json:"csrf,omitempty"`
+	Visible   bool     `json:"visible"`
+	RequestID string   `json:"request_id,omitempty"`
+	To        string   `json:"to,omitempty"`
+	Text      string   `json:"text,omitempty"`
+	Name      string   `json:"name,omitempty"`
+	Members   []string `json:"members,omitempty"`
 }
 
 func (a *App) realtimeConnectSources(r *http.Request) string {
@@ -70,7 +75,7 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 		return
 	}
 	defer conn.CloseNow()
-	conn.SetReadLimit(4096)
+	conn.SetReadLimit(32 * 1024)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Hijacked connections are not closed by http.Server.Close.
@@ -98,6 +103,9 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 	client := chatmodel.NewID()
 	defer a.presence.Disconnect(identity.User.ID, client)
 	a.presence.Touch(identity, client, hello.Visible)
+	direct := a.directMessages.subscribe(identity.User.ID)
+	defer a.directMessages.unsubscribe(direct)
+	messageTokens, messageRefill := 10.0, time.Now()
 	last := make(map[string][]byte)
 	send := func(kind string, value any) error {
 		data, err := json.Marshal(value)
@@ -167,7 +175,10 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 		}
 		return true
 	}
-	if !syncState(changeNavigation|changeAgents|changePresence) || send("ready", true) != nil {
+	syncGroups := func() bool {
+		return syncState(changeAuth) && send("chat_groups", a.directMessages.groupsFor(identity.User.ID)) == nil
+	}
+	if !syncState(changeNavigation|changeAgents|changePresence) || !syncGroups() || send("ready", true) != nil {
 		return
 	}
 	incoming := make(chan realtimeInput)
@@ -200,12 +211,22 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 			return
 		case <-readDone:
 			return
+		case <-direct.done:
+			return
+		case <-direct.groups:
+			if !syncGroups() {
+				return
+			}
+		case message := <-direct.messages:
+			if !syncState(changeAuth) || send(message.eventType(), message) != nil {
+				return
+			}
 		case <-sub.wake:
 			if !syncState(sub.take()) {
 				return
 			}
 		case input := <-incoming:
-			if input.Type != "pong" && input.Type != "visibility" && input.Type != "refresh" {
+			if input.Type != "pong" && input.Type != "visibility" && input.Type != "refresh" && input.Type != "direct_message" && input.Type != "group_message" && input.Type != "group_create" && input.Type != "group_invite" {
 				_ = conn.Close(websocket.StatusPolicyViolation, "invalid message")
 				return
 			}
@@ -216,6 +237,38 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 				return
 			}
 			a.presence.Touch(current, client, input.Visible)
+			if input.Type == "direct_message" || input.Type == "group_message" || input.Type == "group_create" || input.Type == "group_invite" {
+				now := time.Now()
+				messageTokens = min(10, messageTokens+now.Sub(messageRefill).Seconds()*5)
+				messageRefill = now
+				var message directMessage
+				var group peopleChatGroup
+				code := "rate_limited"
+				if messageTokens >= 1 {
+					messageTokens--
+					if input.Type == "group_create" || input.Type == "group_invite" {
+						group, code = a.changePeopleChatGroup(direct, input)
+					} else {
+						message, code = a.publishDirectMessage(direct, input)
+					}
+				}
+				if code != "" {
+					// Errors are per request, not deduplicated state snapshots.
+					delete(last, "direct_message_error")
+					if send("direct_message_error", directMessageError{input.RequestID, code}) != nil {
+						return
+					}
+				} else if group.ID != "" {
+					if !syncGroups() || send("group_result", struct {
+						RequestID string          `json:"request_id"`
+						Group     peopleChatGroup `json:"group"`
+					}{input.RequestID, group}) != nil {
+						return
+					}
+				} else if send(message.eventType(), message) != nil {
+					return
+				}
+			}
 			if input.Type == "refresh" && !syncState(changeNavigation|changeAgents|changePresence) {
 				return
 			}

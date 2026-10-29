@@ -1,5 +1,13 @@
 import type { Agent, Chat, Online, Project } from "./types";
 import type { ProfileSnapshot } from "./user-profiles";
+import {
+  DirectMessageError,
+  directMessageLimit,
+  isPeopleGroup,
+  type DirectMessage,
+  type DirectMessageErrorCode,
+  type PeopleChatGroup,
+} from "./direct-messages.js";
 
 export type Navigation = { projects: Project[]; chats: Chat[] };
 
@@ -26,6 +34,8 @@ export function subscribeWorkspaceEvents(
     profiles: (value: ProfileSnapshot) => void;
     connected: (value: boolean) => void;
     expired: () => void;
+    directMessage?: (value: DirectMessage) => void;
+    groups?: (value: PeopleChatGroup[]) => void;
   },
   transport: {
     open: () => WebSocket;
@@ -42,6 +52,22 @@ export function subscribeWorkspaceEvents(
   let ready = false;
   let lastMessage = 0;
   let checkingAuth = false;
+  let sequence = 0;
+  const pending = new Map<
+    string,
+    {
+      resolve: (message: DirectMessage | PeopleChatGroup) => void;
+      reject: (error: DirectMessageError) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
+  const rejectPending = () => {
+    for (const request of pending.values()) {
+      clearTimeout(request.timer);
+      request.reject(new DirectMessageError("unknown"));
+    }
+    pending.clear();
+  };
 
   const clearTimers = () => {
     clearTimeout(retry);
@@ -58,6 +84,7 @@ export function subscribeWorkspaceEvents(
     socket = undefined;
     current?.close();
     ready = false;
+    rejectPending();
     handlers.connected(false);
     if (!checkingAuth) {
       checkingAuth = true;
@@ -121,6 +148,47 @@ export function subscribeWorkspaceEvents(
         case "profiles":
           handlers.profiles(message.data as ProfileSnapshot);
           break;
+        case "direct_message":
+        case "group_message": {
+          const value = message.data as DirectMessage;
+          const request = pending.get(value.request_id);
+          if (request) {
+            clearTimeout(request.timer);
+            pending.delete(value.request_id);
+            request.resolve(value);
+          }
+          handlers.directMessage?.(value);
+          break;
+        }
+        case "direct_message_error": {
+          const value = message.data as {
+            request_id: string;
+            code: DirectMessageErrorCode;
+          };
+          const request = pending.get(value.request_id);
+          if (request) {
+            clearTimeout(request.timer);
+            pending.delete(value.request_id);
+            request.reject(new DirectMessageError(value.code));
+          }
+          break;
+        }
+        case "chat_groups":
+          handlers.groups?.(message.data as PeopleChatGroup[]);
+          break;
+        case "group_result": {
+          const value = message.data as {
+            request_id: string;
+            group: PeopleChatGroup;
+          };
+          const request = pending.get(value.request_id);
+          if (request) {
+            clearTimeout(request.timer);
+            pending.delete(value.request_id);
+            request.resolve(value.group);
+          }
+          break;
+        }
         case "ping":
           send("pong");
           break;
@@ -143,13 +211,68 @@ export function subscribeWorkspaceEvents(
   function close() {
     controller.abort();
     clearTimers();
+    ready = false;
+    rejectPending();
     const current = socket;
     socket = undefined;
     current?.close();
   }
   connect();
+  const request = <T extends DirectMessage | PeopleChatGroup>(
+    type: string,
+    fields: object,
+  ): Promise<T> => {
+    if (!ready || socket?.readyState !== 1 || controller.signal.aborted)
+      return Promise.reject(new DirectMessageError("unavailable"));
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    const requestID =
+      Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join(
+        "",
+      ) +
+      "-" +
+      sequence++;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(requestID);
+        reject(new DirectMessageError("unknown"));
+      }, 10000);
+      pending.set(requestID, {
+        resolve: (value) => resolve(value as T),
+        reject,
+        timer,
+      });
+      try {
+        socket!.send(
+          JSON.stringify({
+            type,
+            request_id: requestID,
+            ...fields,
+            visible: transport.visible(),
+          }),
+        );
+      } catch {
+        lost(socket);
+      }
+    });
+  };
   return {
     close,
+    sendMessage: (to: string, text: string): Promise<DirectMessage> => {
+      if (!ready || socket?.readyState !== 1 || controller.signal.aborted)
+        return Promise.reject(new DirectMessageError("unavailable"));
+      if (!text.trim() || [...text].length > directMessageLimit)
+        return Promise.reject(new DirectMessageError("invalid_message"));
+      // Messages are never automatically replayed after reconnecting.
+      return request<DirectMessage>(
+        isPeopleGroup(to) ? "group_message" : "direct_message",
+        { to, text },
+      );
+    },
+    createGroup: (name: string, members: string[]) =>
+      request<PeopleChatGroup>("group_create", { name, members }),
+    inviteGroup: (to: string, members: string[]) =>
+      request<PeopleChatGroup>("group_invite", { to, members }),
     visibility: () => send("visibility"),
     resume: () => {
       if (controller.signal.aborted) return;
@@ -159,6 +282,7 @@ export function subscribeWorkspaceEvents(
         socket = undefined;
         current?.close();
         ready = false;
+        rejectPending();
         handlers.connected(false);
         connect();
       }

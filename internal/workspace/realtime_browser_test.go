@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -34,6 +35,7 @@ func TestRealtimeBrowser(t *testing.T) {
 			localSessionHomes(t)
 			s := testStore(t)
 			alice, bob := testUser(t, s, "alice"), testUser(t, s, "bob")
+			charlie := testUser(t, s, "charlie")
 			project := testProject(t, s, alice, bob)
 			project.SharedChats = true
 			project.SharedLocalChats = true
@@ -57,6 +59,7 @@ func TestRealtimeBrowser(t *testing.T) {
 			}
 			cookie, _ := loginRequest(t, a, alice.Username)
 			bobCookie, bobCSRF := loginRequest(t, a, bob.Username)
+			charlieCookie, charlieCSRF := loginRequest(t, a, charlie.Username)
 			probe, err := os.ReadFile("testdata/realtime-browser.js")
 			if err != nil {
 				t.Fatal(err)
@@ -64,6 +67,8 @@ func TestRealtimeBrowser(t *testing.T) {
 			var events, navigationGets, presencePosts, profileGets atomic.Int64
 			reports := make(chan map[string]any, 1)
 			var extra *websocket.Conn
+			var third *websocket.Conn
+			var selectedGroup string
 			var actionMu sync.Mutex
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
@@ -109,6 +114,64 @@ func TestRealtimeBrowser(t *testing.T) {
 						if extra != nil {
 							extra.CloseNow()
 						}
+						if third != nil {
+							third.CloseNow()
+						}
+					case "third-join":
+						ctx, done := context.WithTimeout(context.Background(), 3*time.Second)
+						origin := "http://" + r.Host
+						third, _, err = websocket.Dial(ctx, origin+"/api/events", &websocket.DialOptions{HTTPHeader: http.Header{"Cookie": {charlieCookie.String()}, "Origin": {origin}}})
+						if err == nil {
+							body, _ := json.Marshal(realtimeInput{Type: "hello", CSRF: charlieCSRF, Visible: true})
+							err = third.Write(ctx, websocket.MessageText, body)
+						}
+						done()
+					case "selected-invited":
+						if groups := a.directMessages.groupsFor(charlie.ID); len(groups) != 1 || groups[0].ID != selectedGroup {
+							err = fmt.Errorf("selected group invitation missing")
+						}
+					case "direct-send", "group-send":
+						ctx, done := context.WithTimeout(context.Background(), 3*time.Second)
+						input := realtimeInput{Type: "direct_message", RequestID: "browser-inbound", To: alice.ID, Text: "Hello from Bob <script>not executable</script>", Visible: true}
+						if r.URL.Query().Get("step") == "group-send" {
+							input.Type, input.To, input.Text = "group_message", onlineChatRoom, "Hello group from Bob"
+						}
+						body, _ := json.Marshal(input)
+						err = extra.Write(ctx, websocket.MessageText, body)
+						done()
+					case "direct-received", "group-received", "selected-received":
+						ctx, done := context.WithTimeout(context.Background(), 3*time.Second)
+						kind, target, text := "direct_message", bob.ID, "Browser reply"
+						if r.URL.Query().Get("step") == "group-received" {
+							kind, target, text = "group_message", onlineChatRoom, "Group browser reply"
+						}
+						if r.URL.Query().Get("step") == "selected-received" {
+							kind, target, text = "group_message", "", "Selected browser secret"
+						}
+						for {
+							var data []byte
+							_, data, err = extra.Read(ctx)
+							if err != nil {
+								break
+							}
+							var event realtimeMessage
+							if err = json.Unmarshal(data, &event); err != nil {
+								break
+							}
+							if event.Type == kind {
+								var message directMessage
+								if err = json.Unmarshal(event.Data, &message); err != nil {
+									break
+								}
+								if message.From == alice.ID && (message.To == target || target == "" && strings.HasPrefix(message.To, "group-")) && message.Text == text {
+									if target == "" {
+										selectedGroup = message.To
+									}
+									break
+								}
+							}
+						}
+						done()
 					case "rename":
 						_, err = s.db.Exec(`UPDATE sessions SET title='Changed while disconnected',updated_at=updated_at+1 WHERE id=?`, background.ID)
 						s.notify(err, changeNavigation)
@@ -161,6 +224,9 @@ func TestRealtimeBrowser(t *testing.T) {
 				if extra != nil {
 					extra.CloseNow()
 				}
+				if third != nil {
+					third.CloseNow()
+				}
 				actionMu.Unlock()
 				a.Close()
 				server.Close()
@@ -184,7 +250,10 @@ func TestRealtimeBrowser(t *testing.T) {
 			case report := <-reports:
 				data, _ := json.MarshalIndent(report, "", "  ")
 				os.WriteFile(filepath.Join(output, fmt.Sprintf("browser-%d.json", width)), data, 0644)
-				for _, check := range []string{"localIcon", "controlsUpdated", "ownControlsUpdated", "segmentedStyles", "actorStack", "activeUnchanged", "avatarUpdated", "sharedAvatars", "staleProfilesIgnored", "nameUpdated", "presenceJoined", "presenceLeft", "reconnected", "revoked"} {
+				if report["error"] != nil {
+					t.Fatalf("browser probe failed: %s", data)
+				}
+				for _, check := range []string{"localIcon", "controlsUpdated", "ownControlsUpdated", "segmentedStyles", "actorStack", "activeUnchanged", "avatarUpdated", "sharedAvatars", "staleProfilesIgnored", "nameUpdated", "presenceJoined", "presenceLeft", "reconnected", "revoked", "directUnread", "directSent", "directLayout", "directOffline", "directNoReplay", "groupSent", "groupLayout", "groupNoReplay", "selectedCreated", "selectedInvited", "selectedLayout", "selectedClosed"} {
 					if report[check] != true {
 						t.Errorf("%s failed: %s", check, data)
 					}

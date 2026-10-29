@@ -26,6 +26,7 @@ import {
   Plus,
   Square,
   LoaderCircle,
+  MessageCircle,
 } from "lucide-react";
 import { api, getCSRF, setCSRF } from "./api";
 import { isDesktopChat } from "./runtime";
@@ -66,6 +67,17 @@ import type {
 import { AppearanceDialog } from "./appearance-dialog";
 import { AvatarDialog } from "./avatar-dialog";
 import { AvatarStack, UserAvatar } from "./user-avatar";
+import { DirectMessagePanel } from "./direct-message-panel";
+import { PeopleGroupPicker } from "./people-group-picker";
+import {
+  createDirectInbox,
+  DirectMessageError,
+  messagePeer,
+  onlineChatRoom,
+  isPeopleGroup,
+  type PeopleChatGroup,
+  type DirectMessage,
+} from "./direct-messages";
 import type { AvatarConfig } from "./avatar";
 import {
   createProfileCache,
@@ -131,11 +143,63 @@ function App() {
     [sidebar, setSidebar] = useState(false),
     [showLatest, setShowLatest] = useState(false);
   const [profileCache] = useState(createProfileCache);
+  const [directInbox] = useState(createDirectInbox);
+  const inbox = useSyncExternalStore(
+    directInbox.subscribe,
+    directInbox.snapshot,
+  );
+  const messageStream = useRef<ReturnType<
+    typeof subscribeWorkspaceEvents
+  > | null>(null);
+  const [messagingConnected, setMessagingConnected] = useState(false);
+  const [groupPicker, setGroupPicker] = useState<string | null>(null);
+  const unreadMessages = Object.values(inbox.unread).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
   const profiles = useSyncExternalStore(
     profileCache.subscribe,
     profileCache.snapshot,
   );
   const resolveProfile = useMemo(() => profileLookup(profiles), [profiles]);
+  useEffect(() => {
+    directInbox.profiles(profiles.people);
+  }, [directInbox, profiles]);
+  const openDirectChat = (id: string) => directInbox.open(id, profiles.people);
+  const chatPeerIdentity = (id: string) => {
+    if (!isPeopleGroup(id))
+      return (
+        profiles.people.find((person) => person.id === id) ||
+        inbox.people.find((person) => person.id === id) ||
+        resolveProfile(id)
+      );
+    const name = inbox.groups.find((group) => group.id === id)?.name;
+    return {
+      id,
+      nickname:
+        id === onlineChatRoom
+          ? t("Online group chat")
+          : !name || name === "Group chat"
+            ? t("Group chat")
+            : name,
+    };
+  };
+  const sendDirectMessage = (
+    to: string,
+    text: string,
+  ): Promise<DirectMessage> =>
+    messageStream.current?.sendMessage(to, text) ||
+    Promise.reject(new DirectMessageError("unavailable"));
+  const changePeopleGroup = (
+    name: string,
+    members: string[],
+  ): Promise<PeopleChatGroup> => {
+    const stream = messageStream.current;
+    if (!stream) return Promise.reject(new DirectMessageError("unavailable"));
+    return groupPicker
+      ? stream.inviteGroup(groupPicker, members)
+      : stream.createGroup(name, members);
+  };
   const displayUser = user
     ? {
         ...user,
@@ -291,6 +355,8 @@ function App() {
       .catch(() => {})
       .finally(() => setReady(true));
     const expire = () => {
+      directInbox.reset();
+      setGroupPicker(null);
       profileCache.reset();
       setUser(null);
       setChat(null);
@@ -344,6 +410,8 @@ function App() {
   useEffect(() => {
     if (!user) {
       setOnline([]);
+      setMessagingConnected(false);
+      directInbox.reset();
       return;
     }
     let cancelled = false;
@@ -460,9 +528,22 @@ function App() {
         },
         connected: (value) => {
           realtimeConnected = value;
+          if (!cancelled) setMessagingConnected(value);
           if (!value && !cancelled) setOnline([]);
         },
         expired: () => window.dispatchEvent(new Event("auth-expired")),
+        groups: (groups) => {
+          if (!cancelled) directInbox.groups(groups);
+        },
+        directMessage: (message) => {
+          if (!cancelled)
+            directInbox.receive(
+              message,
+              user.id,
+              document.visibilityState === "visible",
+              profileCache.snapshot().people,
+            );
+        },
       },
       {
         open: () => {
@@ -475,7 +556,9 @@ function App() {
         checkAuth: (signal) => api("/me", undefined, signal),
       },
     );
+    messageStream.current = stream;
     const resume = () => {
+      if (document.visibilityState === "visible") directInbox.read();
       stream.resume();
       if (!realtimeConnected) loadNavigation();
     };
@@ -494,6 +577,7 @@ function App() {
       cancelled = true;
       controller.abort();
       stream.close();
+      if (messageStream.current === stream) messageStream.current = null;
       clearInterval(refresh);
       window.removeEventListener("focus", resume);
       window.removeEventListener("online", resume);
@@ -1355,6 +1439,58 @@ function App() {
                 {t("{count} online", { count: online.length })}
               </summary>
               <div className="online-list">
+                <div className="online-group-row">
+                  <button
+                    className="online-chat-person"
+                    onClick={(event) => {
+                      openDirectChat(onlineChatRoom);
+                      event.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
+                    }}
+                  >
+                    <Users size={16} aria-hidden="true" />
+                    {t("Online group chat")}
+                    {!!inbox.unread[onlineChatRoom] && (
+                      <span className="direct-unread">
+                        {inbox.unread[onlineChatRoom]}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    className="quiet online-new-group"
+                    onClick={(event) => {
+                      setGroupPicker("");
+                      event.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
+                    }}
+                  >
+                    <Plus size={14} />
+                    {t("New group chat")}
+                  </button>
+                </div>
+                {inbox.groups.map((group) => (
+                  <div className="online-group-row" key={group.id}>
+                    <button
+                      className="online-chat-person"
+                      onClick={(event) => {
+                        openDirectChat(group.id);
+                        event.currentTarget
+                          .closest("details")
+                          ?.removeAttribute("open");
+                      }}
+                    >
+                      <Users size={16} aria-hidden="true" />
+                      {chatPeerIdentity(group.id).nickname}
+                      {!!inbox.unread[group.id] && (
+                        <span className="direct-unread">
+                          {inbox.unread[group.id]}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                ))}
                 {displayOnline.map((u) => (
                   <div key={u.id}>
                     <UserAvatar person={u} size={26} />
@@ -1363,7 +1499,28 @@ function App() {
                         u.state === "online" ? "online-dot" : "away-dot"
                       }
                     />
-                    <span>{u.nickname}</span>
+                    {u.id === user!.id ? (
+                      <span>{u.nickname}</span>
+                    ) : (
+                      <button
+                        className="online-chat-person"
+                        onClick={(event) => {
+                          openDirectChat(u.id);
+                          event.currentTarget
+                            .closest("details")
+                            ?.removeAttribute("open");
+                        }}
+                        title={t("Chat with {name}", { name: u.nickname })}
+                      >
+                        {u.nickname}
+                        {!!inbox.unread[u.id] && (
+                          <span className="direct-unread">
+                            {inbox.unread[u.id]}
+                          </span>
+                        )}
+                        <MessageCircle size={13} aria-hidden="true" />
+                      </button>
+                    )}
                     <small>
                       {u.state === "online" ? t("Online") : t("Away")}
                     </small>
@@ -1372,6 +1529,35 @@ function App() {
                 {!online.length && <small>{t("Updating presence…")}</small>}
               </div>
             </details>
+            <button
+              className="icon direct-inbox-button"
+              aria-label={
+                unreadMessages
+                  ? t("{count} unread messages", {
+                      count: unreadMessages,
+                    })
+                  : t("People chat")
+              }
+              title={t("People chat")}
+              onClick={() => {
+                const unread = Object.keys(inbox.unread).find(
+                  (id) => inbox.unread[id] > 0,
+                );
+                const last = inbox.messages.at(-1);
+                const peer =
+                  unread ||
+                  (last && messagePeer(last, user!.id)) ||
+                  onlineChatRoom;
+                if (peer) openDirectChat(peer);
+              }}
+            >
+              <MessageCircle size={17} />
+              {!!unreadMessages && (
+                <span className="direct-unread">
+                  {Math.min(99, unreadMessages)}
+                </span>
+              )}
+            </button>
             {!(narrowLayout ? fileSidebarMobile : panels.rightOpen) && (
               <button
                 className="icon"
@@ -1850,6 +2036,58 @@ function App() {
           </form>
         </footer>
       </main>
+      {inbox.active && (
+        <DirectMessagePanel
+          key={`people-chat-${inbox.active}`}
+          user={user!.id}
+          peer={chatPeerIdentity(inbox.active)}
+          people={[
+            ...new Set([
+              onlineChatRoom,
+              ...inbox.groups.map((group) => group.id),
+              ...online.map((person) => person.id),
+              ...inbox.people.map((person) => person.id),
+              inbox.active,
+            ]),
+          ]
+            .filter((id) => id !== user!.id)
+            .map(chatPeerIdentity)}
+          unread={inbox.unread}
+          messages={inbox.messages.filter(
+            (message) => messagePeer(message, user!.id) === inbox.active,
+          )}
+          connected={messagingConnected}
+          status={online.find((person) => person.id === inbox.active)?.state}
+          onlineCount={online.length}
+          group={inbox.groups.find((group) => group.id === inbox.active)}
+          locale={locale}
+          t={t}
+          onSend={sendDirectMessage}
+          onPeer={openDirectChat}
+          onClose={directInbox.close}
+          onInvite={() => setGroupPicker(inbox.active)}
+        />
+      )}
+      {groupPicker !== null && (
+        <PeopleGroupPicker
+          key={`people-picker-${groupPicker}`}
+          group={inbox.groups.find((group) => group.id === groupPicker)}
+          people={displayOnline.filter(
+            (person) =>
+              person.id !== user!.id &&
+              !inbox.groups
+                .find((group) => group.id === groupPicker)
+                ?.members.includes(person.id),
+          )}
+          t={t}
+          onSubmit={changePeopleGroup}
+          onClose={() => setGroupPicker(null)}
+          onDone={(group) => {
+            setGroupPicker(null);
+            openDirectChat(group.id);
+          }}
+        />
+      )}
       <FileSidebar
         project={projects.find((item) => item.id === project)}
         active={narrowLayout ? fileSidebarMobile : panels.rightOpen}

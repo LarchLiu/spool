@@ -41,6 +41,24 @@ Small SQLite sidecar tables retain turn actors and stop/approval audit events,
 not prompts, responses or other transcript content. Native turn IDs (with an
 offset fallback for interrupted requests) associate this metadata with history.
 
+Signed-in users can click another person in the online list to open a private
+chat, or choose **Online group chat** to talk to everyone currently connected.
+Use **New group chat** to select specific online people (up to 32 members
+including yourself), optionally name the group, and later **Invite people**
+from its header. Selected-member groups are visible only to their members;
+newly invited members receive no earlier messages. Group metadata stays only
+in server memory while at least one member is connected and disappears when
+everyone disconnects or the service restarts.
+Both share the authenticated `/api/events` WebSocket and show unread badges.
+Private messages reach only the two users' devices; the online group broadcasts
+to all signed-in chat connections, including away users. These messages
+are not agent tasks: they never enter SQLite, native CLI sessions, or browser
+storage. Each page keeps at most its latest 300 messages in memory; refreshing,
+signing out, or closing the page clears them. The server only owns bounded live
+delivery queues, with no history, offline delivery, or reconnect replay. Away
+users can receive messages while their connection remains active. Sending is
+limited to 2000 characters per message with a small per-connection burst limit.
+
 There is no separate frontend service in production and no Node.js runtime
 requirement. Installed and signed-in Codex/Claude CLIs are still required.
 MyGo is pinned to **v0.6.4**, which requires **Go 1.27.3+**. Go's automatic

@@ -4,6 +4,7 @@ import {
   mergeNavigationChats,
   subscribeWorkspaceEvents,
 } from "../.test-build/workspace-stream.js";
+import { onlineChatRoom } from "../.test-build/direct-messages.js";
 
 test("authorized navigation removes revoked chats without losing newer SSE revisions", () => {
   const previous = [
@@ -55,6 +56,8 @@ function fixture(t) {
         "profiles",
         "connected",
         "expired",
+        "directMessage",
+        "groups",
       ].map((key) => [key, (value) => received.push([key, value])]),
     ),
     {
@@ -229,4 +232,155 @@ test("blocked connection or invalid JSON retries rather than losing synchronizat
   f.block(false);
   t.mock.timers.tick(1210);
   assert.equal(f.sockets.length, 2);
+});
+
+test("private messages require a ready connection and wait for the server echo", async (t) => {
+  const f = fixture(t);
+  await assert.rejects(f.stream.sendMessage("bob", "hello"), {
+    code: "unavailable",
+  });
+  const socket = f.sockets[0];
+  socket.opened();
+  await assert.rejects(f.stream.sendMessage("bob", "hello"), {
+    code: "unavailable",
+  });
+  socket.emit("ready", true);
+  await assert.rejects(f.stream.sendMessage("bob", " \n "), {
+    code: "invalid_message",
+  });
+  await assert.rejects(f.stream.sendMessage("bob", "x".repeat(2001)), {
+    code: "invalid_message",
+  });
+  const sent = f.stream.sendMessage("bob", "hello");
+  const request = socket.sent.at(-1);
+  assert.equal(request.type, "direct_message");
+  assert.equal(request.to, "bob");
+  assert.equal(request.text, "hello");
+  assert.equal(request.visible, true);
+  assert.ok(request.request_id.length > 8);
+  assert.equal(
+    f.received.some(([kind]) => kind === "directMessage"),
+    false,
+  );
+  const message = {
+    id: "server-id",
+    request_id: request.request_id,
+    from: "alice",
+    to: "bob",
+    text: "hello",
+    sent_at: 123,
+  };
+  socket.emit("direct_message", message);
+  assert.deepEqual(await sent, message);
+  assert.deepEqual(f.received.at(-1), ["directMessage", message]);
+  socket.emit("direct_message", {
+    ...message,
+    id: "reply",
+    request_id: "other-device",
+  });
+  assert.equal(f.received.at(-1)[1].id, "reply");
+});
+
+test("offline errors retain their request and disconnected messages are never replayed", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const f = fixture(t);
+  const socket = f.sockets[0];
+  socket.opened();
+  socket.emit("ready", true);
+  const first = f.stream.sendMessage("bob", "offline");
+  const rejected = assert.rejects(first, { code: "offline" });
+  socket.emit("direct_message_error", {
+    request_id: socket.sent.at(-1).request_id,
+    code: "offline",
+  });
+  await rejected;
+  const second = assert.rejects(f.stream.sendMessage("bob", "maybe arrived"), {
+    code: "unknown",
+  });
+  socket.onerror();
+  await second;
+  t.mock.timers.tick(610);
+  const next = f.sockets[1];
+  next.opened();
+  next.emit("ready", true);
+  assert.equal(
+    next.sent.some((message) => message.type === "direct_message"),
+    false,
+  );
+  const timeout = assert.rejects(f.stream.sendMessage("bob", "no ack"), {
+    code: "unknown",
+  });
+  t.mock.timers.tick(10001);
+  await timeout;
+  const cleanup = assert.rejects(f.stream.sendMessage("bob", "closing"), {
+    code: "unknown",
+  });
+  f.stream.close();
+  await cleanup;
+});
+
+test("group messages share the socket but use a distinct broadcast event", async (t) => {
+  const f = fixture(t);
+  const socket = f.sockets[0];
+  socket.opened();
+  socket.emit("ready", true);
+  const sent = f.stream.sendMessage(onlineChatRoom, "hello everyone");
+  const request = socket.sent.at(-1);
+  assert.equal(request.type, "group_message");
+  assert.equal(request.to, onlineChatRoom);
+  const group = {
+    id: "group-id",
+    request_id: request.request_id,
+    from: "alice",
+    to: onlineChatRoom,
+    text: "hello everyone",
+    sent_at: 123,
+  };
+  socket.emit("group_message", group);
+  assert.deepEqual(await sent, group);
+  assert.deepEqual(f.received.at(-1), ["directMessage", group]);
+});
+
+test("selected-group creation and invitations wait for authenticated server results", async (t) => {
+  const f = fixture(t);
+  const socket = f.sockets[0];
+  socket.opened();
+  socket.emit("ready", true);
+  const created = f.stream.createGroup("Team", ["bob"]);
+  const request = socket.sent.at(-1);
+  assert.equal(request.type, "group_create");
+  assert.deepEqual(request.members, ["bob"]);
+  const group = {
+    id: "group-team",
+    name: "Team",
+    members: ["alice", "bob"],
+    created_by: "alice",
+  };
+  socket.emit("chat_groups", [group]);
+  socket.emit("group_result", { request_id: request.request_id, group });
+  assert.deepEqual(await created, group);
+  assert.deepEqual(f.received.at(-1), ["groups", [group]]);
+  const invited = f.stream.inviteGroup(group.id, ["charlie"]);
+  const invite = socket.sent.at(-1);
+  assert.equal(invite.type, "group_invite");
+  assert.equal(invite.to, group.id);
+  const updated = { ...group, members: [...group.members, "charlie"] };
+  socket.emit("group_result", {
+    request_id: invite.request_id,
+    group: updated,
+  });
+  assert.deepEqual(await invited, updated);
+  const sent = f.stream.sendMessage(group.id, "only selected people");
+  const messageRequest = socket.sent.at(-1);
+  assert.equal(messageRequest.type, "group_message");
+  socket.emit("group_message", {
+    id: "selected-message",
+    request_id: messageRequest.request_id,
+    from: "alice",
+    to: group.id,
+    text: "only selected people",
+    group: true,
+    sent_at: 123,
+  });
+  assert.equal((await sent).group, true);
 });
