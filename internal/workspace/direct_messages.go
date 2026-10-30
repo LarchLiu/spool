@@ -151,11 +151,16 @@ func (a *App) publishDirectMessage(origin *directMessageClient, input realtimeIn
 		Group: input.Type == "group_message",
 	}
 	if message.Group {
-		return message, a.directMessages.publishGroup(origin, message)
+		recipients, code := a.directMessages.publishGroup(origin, message)
+		if code == "" && len(recipients) > 0 {
+			a.enqueueMessagePush(message, recipients)
+		}
+		return message, code
 	}
 	if !a.directMessages.publish(origin, message) {
 		return directMessage{}, "offline"
 	}
+	a.enqueueMessagePush(message, []string{message.To})
 	return message, ""
 }
 
@@ -166,23 +171,50 @@ func (m directMessage) eventType() string {
 	return "direct_message"
 }
 
-func (h *directMessageHub) publishGroup(origin *directMessageClient, message directMessage) string {
+func (h *directMessageHub) publishGroup(origin *directMessageClient, message directMessage) ([]string, string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	var members []string
 	if message.To != onlineChatRoom {
 		group, exists := h.groups[message.To]
 		if !exists || !slices.Contains(group.Members, origin.user) {
-			return "forbidden"
+			return nil, "forbidden"
 		}
 		members = group.Members
 	}
+	recipients := map[string]bool{}
 	for client := range h.clients {
 		if client != origin && (message.To == onlineChatRoom || slices.Contains(members, client.user)) {
-			h.enqueueLocked(client, message)
+			if h.enqueueLocked(client, message) && client.user != message.From {
+				recipients[client.user] = true
+			}
 		}
 	}
-	return ""
+	users := make([]string, 0, len(recipients))
+	for user := range recipients {
+		users = append(users, user)
+	}
+	sort.Strings(users)
+	return users, ""
+}
+
+func (h *directMessageHub) canNotifyGroup(sender, recipient, groupID string) bool {
+	if sender == recipient {
+		return false
+	}
+	if groupID == onlineChatRoom {
+		return true // Recipients were frozen at successful live delivery.
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	group, exists := h.groups[groupID]
+	return exists && slices.Contains(group.Members, sender) && slices.Contains(group.Members, recipient)
+}
+
+func (h *directMessageHub) groupName(id string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.groups[id].Name
 }
 
 func (h *directMessageHub) groupsFor(user string) []peopleChatGroup {

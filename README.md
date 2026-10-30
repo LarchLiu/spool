@@ -1053,6 +1053,82 @@ will not work over an unrelated plain HTTP LAN address. iOS installation uses
 Safari's Share → Add to Home Screen; not every browser emits an install prompt.
 TLS certificate provisioning and reverse-proxy setup are not automated here.
 
+### Web Push Notifications
+
+In the signed-in Web/PWA sidebar settings (**Appearance and language**), use
+**Enable notifications**, grant the browser permission, then **Send test
+notification**. Each device opts in separately. On iOS/iPadOS 16.4 or newer,
+first add Spool to the Home Screen and enable notifications from that installed
+app. HTTPS is required outside localhost. Desktop-native chat does not register
+a Service Worker or offer this Web-only control.
+
+Spool uses standard encrypted Web Push, not a Firebase SDK or Firebase project.
+A VAPID key pair is generated automatically on first configuration and persisted
+in private SQLite storage, outside management/settings API responses. Back up
+the database to preserve it; replacing the keys requires devices to enable
+notifications again. The public HTTPS origin is the VAPID contact URI; local
+development falls back to the Spool repository URL.
+
+Notifications have distinct titles for task success, failure, and required
+approval. They cover those agent-turn events even when the page is closed,
+subject to browser/OS delivery policies. Manual stops do not notify.
+Recipients are the chat owner, explicit collaborators/assignees,
+and the user who submitted that turn, with current project/chat access checked
+again before delivery. Approval notifications additionally require control
+permission. Project-wide chat sharing alone does not notify every member.
+Bodies contain only a translated generic status, never prompts, replies,
+project names, chat titles, or approval command details. Clicking a notification
+opens its chat after normal authentication/authorization; an existing app
+window is focused without reloading it.
+
+The same device opt-in also covers successfully delivered private and group
+messages. The sender never receives a notification for their own message.
+Private notifications go only to the recipient's subscribed devices; selected
+groups notify only members whose live connection accepted the message, and the
+online room snapshots its actual recipients at send time. Multiple sockets for
+one person do not duplicate notifications. Later invitees/joiners do not receive
+earlier notifications, and selected-group membership, enabled accounts and login
+sessions are checked again before sending. Notifications for the same people
+conversation replace one another instead of accumulating on the lock screen.
+Private notification titles identify the sender by display name. Group titles
+identify the group (including the online room), and the body identifies the
+sender. These names can appear on the lock screen; message contents are never
+included. Titles and generic text follow the receiving device's language;
+user-chosen names stay unchanged apart from single-line formatting and length
+limits. Clicking opens that private/group conversation in an existing page
+without a reload; the link is scoped to the recipient's account.
+
+This does **not** add offline messaging or history storage. Private sends to a
+fully disconnected recipient still fail; private/group message content remains
+only in connected pages' memory. A subscribed phone can be alerted while another
+device receives the live message, but opening a fresh page cannot recover that
+message. Closed temporary groups may no longer be available. Use the already-open
+page to read its retained messages. These limits are also stated in the
+notification settings.
+
+Subscriptions are tied to the current login session. Logout, session expiry,
+account edits that revoke sessions, and account disabling stop future sends.
+After signing in again, enable notifications again; existing permission does
+not trigger another browser prompt. **Disable notifications** affects only this
+device/session. Normal page loads only refresh an already enabled subscription's
+language and never request permission or revive disabled notifications. Logging
+out also attempts to unsubscribe the browser and close displayed notifications;
+already accepted/in-flight provider messages cannot be recalled.
+
+The server makes direct outbound HTTPS requests to browser-owned push providers
+(FCM, Mozilla, Apple, or Windows); no inbound push callback is needed. Endpoints
+are restricted to those providers, redirects and private-IP destinations are
+blocked, and environment HTTP proxies are deliberately not used for push.
+Both the server and device need access to their push provider; Chrome's FCM may
+be unreliable on mainland China networks even without a Firebase SDK.
+Delivery is best-effort: a bounded in-memory background queue keeps provider
+latency out of agent execution, pending messages expire after five minutes,
+and shutdown discards unsent jobs. Invalid subscriptions returning 404/410 are
+removed. There is no durable retry queue or guaranteed delivery, so important
+approvals remain visible in the app. The test button reports provider acceptance,
+not confirmation that an OS displayed the notification, and is limited to one
+test per device every 30 seconds.
+
 ## SQLite Storage
 
 The data root and `db/` directory are private (0700); `db/spool.sqlite` is

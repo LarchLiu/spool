@@ -65,6 +65,13 @@ import type {
   TranscriptPart,
 } from "./types";
 import { AppearanceDialog } from "./appearance-dialog";
+import { NotificationSettings } from "./notification-settings";
+import {
+  clearDevicePush,
+  notificationChatFromURL,
+  notificationInboxFromURL,
+  syncExistingPush,
+} from "./web-push";
 import { AvatarDialog } from "./avatar-dialog";
 import { AvatarStack, UserAvatar } from "./user-avatar";
 import { DirectMessagePanel } from "./direct-message-panel";
@@ -345,6 +352,10 @@ function App() {
     serviceWorker = useRef<ServiceWorkerRegistration | null>(null),
     follow = useRef(true),
     activeID = useRef(chatID);
+  const notificationChat = useRef(notificationChatFromURL(window.location.href));
+  const [notificationInbox, setNotificationInbox] = useState(() =>
+    notificationInboxFromURL(window.location.href),
+  );
   activeID.current = chatID;
   const selection = useRef({ project, chatID, draftVersion });
   const activeUser = useRef(user?.id);
@@ -399,6 +410,98 @@ function App() {
     window.addEventListener("auth-expired", expire);
     return () => window.removeEventListener("auth-expired", expire);
   }, []);
+  useEffect(() => {
+    if (!user || isDesktopChat()) return;
+    const controller = new AbortController();
+    void syncExistingPush(locale, controller.signal).catch(() => {});
+    return () => controller.abort();
+  }, [user?.id, locale]);
+  useEffect(() => {
+    if (!user || !messagingConnected || !notificationInbox) return;
+    setNotificationInbox(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("inbox");
+    url.searchParams.delete("recipient");
+    window.history.replaceState(null, "", url);
+    if (notificationInbox.user !== user.id) return;
+    const peer = notificationInbox.peer;
+    const known = isPeopleGroup(peer)
+      ? peer === onlineChatRoom ||
+        inbox.groups.some((group) => group.id === peer) ||
+        inbox.messages.some((message) => message.group && message.to === peer)
+      : profiles.people.some((person) => person.id === peer) ||
+        inbox.people.some((person) => person.id === peer);
+    if (known) {
+      directInbox.open(peer, [...profiles.people, ...inbox.people]);
+      setSidebar(false);
+    } else {
+      setError(
+        t(
+          "This conversation is no longer available. Messages are only kept in an open page.",
+        ),
+      );
+    }
+  }, [
+    notificationInbox,
+    user?.id,
+    messagingConnected,
+    profiles,
+    inbox.groups,
+    inbox.people,
+    inbox.messages,
+  ]);
+  useEffect(() => {
+    if (isDesktopChat() || !("serviceWorker" in navigator)) return;
+    const owner = user?.id;
+    const receive = (event: MessageEvent) => {
+      if (
+        event.data?.type === "OPEN_INBOX" &&
+        typeof event.data.peerID === "string" &&
+        typeof event.data.userID === "string"
+      ) {
+        const target = notificationInboxFromURL(
+          new URL(
+            "/?" +
+              new URLSearchParams({
+                inbox: event.data.peerID,
+                recipient: event.data.userID,
+              }),
+            window.location.origin,
+          ).href,
+        );
+        if (!target) return;
+        event.ports[0]?.postMessage({ handled: true });
+        setNotificationInbox(target);
+        return;
+      }
+      if (
+        event.data?.type !== "OPEN_CHAT" ||
+        typeof event.data.chatID !== "string"
+      )
+        return;
+      const id = notificationChatFromURL(
+        new URL(
+          "/?chat=" + encodeURIComponent(event.data.chatID),
+          window.location.origin,
+        ).href,
+      );
+      if (!id) return;
+      notificationChat.current = id;
+      event.ports[0]?.postMessage({ handled: true });
+      if (!owner) return;
+      void api<Chat>("/chats/" + encodeURIComponent(id))
+        .then((chat) => {
+          if (activeUser.current !== owner || notificationChat.current !== id)
+            return;
+          notificationChat.current = "";
+          openChat(chat);
+        })
+        .catch(fail);
+    };
+    navigator.serviceWorker.addEventListener("message", receive);
+    return () =>
+      navigator.serviceWorker.removeEventListener("message", receive);
+  }, [user?.id]);
   useEffect(() => {
     // Desktop updates ship these assets with the executable, not a PWA.
     if (isDesktopChat()) return;
@@ -466,7 +569,16 @@ function App() {
       setProjects(p);
       setChats((old) => mergeNavigationChats(old, navigationChats));
       const current = selection.current;
-      if (!p.some((v) => v.id === current.project)) {
+      const requested = navigationChats.find(
+        (item) => item.id === notificationChat.current,
+      );
+      if (requested) {
+        notificationChat.current = "";
+        const url = new URL(window.location.href);
+        url.searchParams.delete("chat");
+        window.history.replaceState(null, "", url);
+        openChat(requested);
+      } else if (!p.some((v) => v.id === current.project)) {
         activeID.current = "";
         setChat(null);
         const first = p[0]?.id || "";
@@ -1219,6 +1331,7 @@ function App() {
     try {
       await api("/logout", {});
       window.dispatchEvent(new Event("auth-expired"));
+      void clearDevicePush().catch(() => {});
     } catch (e) {
       fail(e);
     }
@@ -1292,7 +1405,9 @@ function App() {
       t={t}
       onChange={updatePreferences}
       onClose={() => setAppearanceOpen(false)}
-    />
+    >
+      {user && <NotificationSettings key={user.id} t={t} language={locale} />}
+    </AppearanceDialog>
   );
   if (!ready)
     return (

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Check, Monitor, Moon, Sun, X } from "lucide-react";
 import type { Translator } from "./i18n";
 import { CustomSelect } from "./custom-select.js";
@@ -16,6 +16,7 @@ export function AppearanceDialog({
   t,
   onChange,
   onClose,
+  children,
 }: {
   preferences: UIPreferences;
   saving: boolean;
@@ -23,6 +24,7 @@ export function AppearanceDialog({
   t: Translator;
   onChange: (preferences: UIPreferences) => void;
   onClose: () => void;
+  children?: ReactNode;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -105,6 +107,7 @@ export function AppearanceDialog({
           ]}
         />
       </div>
+      {children}
       <p>{t("Current version: {version}", { version: version || "..." })}</p>
     </dialog>
   );

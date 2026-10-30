@@ -3163,6 +3163,41 @@ option {
   line-height: 1.8;
   color: var(--muted);
 }
+.notification-settings {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.notification-settings h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.notification-settings p {
+  margin: 8px 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.notification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.notification-actions button {
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--input);
+  font-size: 12px;
+}
+.notification-settings .notification-error {
+  color: var(--error-text);
+}
 .avatar-dialog {
   --avatar-dialog-padding: 24px;
   width: min(460px, calc(100vw - 24px));

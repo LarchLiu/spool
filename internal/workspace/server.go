@@ -54,6 +54,8 @@ type App struct {
 	shutdown   chan struct{}
 	closeOnce  sync.Once
 	automation *issueScheduler
+	push       pushDispatcher
+	pushClient *http.Client
 }
 
 type completedTurn struct {
@@ -78,7 +80,7 @@ func sessionMetadata(chat chatmodel.Session) chatMetadata {
 func NewApp(store *Store, runner agent.AgentRunner, _, _ string) *App {
 	settings, _ := store.Settings()
 	assets, _ := fs.Sub(resources.Frontend(), "frontend")
-	return &App{store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, realtimePing: 15 * time.Second, realtimeTimeout: 45 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{changed: func() { store.changes.publish(changePresence) }}, assets: http.FileServer(http.FS(assets))}
+	return &App{store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, realtimePing: 15 * time.Second, realtimeTimeout: 45 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{changed: func() { store.changes.publish(changePresence) }}, assets: http.FileServer(http.FS(assets)), pushClient: newPushHTTPClient()}
 }
 func apiJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -175,6 +177,8 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case strings.HasPrefix(path, "/api/push/"):
+		a.pushRoute(w, r, id, path)
 	case path == "/api/events" && r.Method == "GET":
 		a.realtimeStream(w, r, id)
 	case path == "/api/me" && r.Method == "GET":
@@ -776,6 +780,7 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 		}
 		a.liveMu.Unlock()
 		err := a.store.FinishTurn(id, turn.ID, result, runErr, statusForAgentError(runErr))
+		pushStatus := chatmodel.StatusFailed
 		a.liveMu.Lock()
 		if err == nil {
 			terminal := turn
@@ -808,6 +813,7 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 				terminal.Reply = result.Text
 			}
 			a.completed[id] = completedTurn{turn: terminal}
+			pushStatus = terminal.Status
 			delete(a.live, id)
 			delete(a.liveBase, id)
 			delete(a.liveTurns, id)
@@ -831,6 +837,13 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 			a.live[id] = failed
 		}
 		a.liveMu.Unlock()
+		if !errors.Is(err, errTurnChanged) && (pushStatus == chatmodel.StatusCompleted || pushStatus == chatmodel.StatusFailed) {
+			kind := "completed"
+			if pushStatus == chatmodel.StatusFailed {
+				kind = "failed"
+			}
+			a.enqueuePush(pushJob{chatID: id, turnID: turn.ID, kind: kind})
+		}
 		if err != nil {
 			return result, fmt.Errorf("could not save response: %w", err)
 		}
@@ -952,6 +965,7 @@ func (a *App) Close() error {
 	}
 	a.turns.Wait()
 	a.streams.Wait()
+	a.closePush()
 	a.filesMu.Lock()
 	if a.filesRoot != "" {
 		_ = os.RemoveAll(a.filesRoot)

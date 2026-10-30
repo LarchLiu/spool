@@ -61,6 +61,9 @@ CREATE TABLE IF NOT EXISTS chat_collaborators(session_id TEXT NOT NULL REFERENCE
 CREATE TABLE IF NOT EXISTS turn_actors(session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,turn_id TEXT NOT NULL,user_id TEXT REFERENCES users(id),actor_kind TEXT NOT NULL DEFAULT 'user',native_session_id TEXT NOT NULL DEFAULT '',native_turn_id TEXT NOT NULL DEFAULT '',source_offset INTEGER NOT NULL DEFAULT -1,started_at INTEGER NOT NULL,PRIMARY KEY(session_id,turn_id));
 CREATE TABLE IF NOT EXISTS turn_actions(session_id TEXT NOT NULL,turn_id TEXT NOT NULL,id TEXT NOT NULL,kind TEXT NOT NULL,user_id TEXT NOT NULL REFERENCES users(id),approval_id TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,PRIMARY KEY(session_id,id),UNIQUE(session_id,turn_id,kind,approval_id),FOREIGN KEY(session_id,turn_id) REFERENCES turn_actors(session_id,turn_id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS auth_sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),csrf TEXT NOT NULL,expires_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS web_push_keys(id INTEGER PRIMARY KEY CHECK(id=1),public_key TEXT NOT NULL,private_key TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS web_push_subscriptions(endpoint TEXT PRIMARY KEY,token_hash TEXT NOT NULL REFERENCES auth_sessions(token_hash) ON DELETE CASCADE,p256dh TEXT NOT NULL,auth TEXT NOT NULL,language TEXT NOT NULL,updated_at INTEGER NOT NULL,last_test_at INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS web_push_session ON web_push_subscriptions(token_hash);
 `
 
 func OpenStore(root string) (*Store, error) {

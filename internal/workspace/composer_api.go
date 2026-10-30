@@ -164,6 +164,7 @@ func (a *App) requestApproval(ctx context.Context, chatID, turnID string, reques
 	turn.PendingApproval = &request
 	a.live[chatID] = turn
 	a.liveMu.Unlock()
+	a.enqueuePush(pushJob{chatID: chatID, turnID: turnID, approvalID: request.ID, kind: "approval"})
 	defer func() {
 		a.liveMu.Lock()
 		delete(a.approvals, request.ID)
