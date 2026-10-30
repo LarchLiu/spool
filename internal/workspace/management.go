@@ -17,6 +17,7 @@ import (
 	"spool/internal/agent"
 	"spool/internal/issues"
 	chatmodel "spool/internal/model"
+	"spool/internal/netproxy"
 	"spool/internal/tailnet"
 )
 
@@ -62,11 +63,14 @@ type Settings struct {
 	TSNetEnabled    bool   `json:"tsnet_enabled"`
 	TSNetHostname   string `json:"tsnet_hostname"`
 	TSNetPort       int    `json:"tsnet_port"`
+	ProxyEnabled    bool   `json:"proxy_enabled"`
 	UseSystemProxy  bool   `json:"use_system_proxy"`
+	ProxyURL        string `json:"proxy_url"`
+	NoProxy         string `json:"no_proxy"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{Host: "127.0.0.1", Port: 8787, IdleMinutes: 15, AutoStart: true, HistoryCacheMiB: 64, TSNetHostname: "spool-server", TSNetPort: 443}
+	return Settings{Host: "127.0.0.1", Port: 8787, IdleMinutes: 15, AutoStart: true, HistoryCacheMiB: 64, TSNetHostname: "spool-server", TSNetPort: 443, ProxyEnabled: true}
 }
 func (s Settings) Address() string { return net.JoinHostPort(s.Host, fmt.Sprint(s.Port)) }
 func (s Settings) Validate() error {
@@ -93,7 +97,7 @@ func (s Settings) Validate() error {
 			return fmt.Errorf("public URL must be an http(s) origin without a path")
 		}
 	}
-	return nil
+	return (netproxy.Options{ProxyURL: s.ProxyURL, NoProxy: s.NoProxy}).Validate()
 }
 
 func validateHistoryCacheMiB(size int) error {
@@ -116,6 +120,8 @@ func (s *Store) Settings() (Settings, error) {
 	return v, err
 }
 func (s *Store) SaveSettings(v Settings) error {
+	v.ProxyURL = strings.TrimSpace(v.ProxyURL)
+	v.NoProxy = strings.TrimSpace(v.NoProxy)
 	if !v.TSNetEnabled {
 		if v.TSNetHostname == "" {
 			v.TSNetHostname = DefaultSettings().TSNetHostname

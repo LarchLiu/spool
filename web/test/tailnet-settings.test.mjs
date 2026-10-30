@@ -135,19 +135,40 @@ test("login requests bypass the global settings queue and only report local erro
   assert.match(pages, /disabled=\{requestingLogin\}/);
 });
 
-test("system proxy is an application Network setting, not a Tailscale option", async () => {
-  const html = renderToStaticMarkup(
+function renderNetwork(settings = {}) {
+  return renderToStaticMarkup(
     createElement(NetworkPage, {
       data: {
-        settings: { use_system_proxy: true },
+        settings: {
+          proxy_enabled: true,
+          use_system_proxy: true,
+          proxy_url: "http://127.0.0.1:8889",
+          no_proxy: "internal.example,192.168.0.0/16",
+          ...settings,
+        },
         status: { RestartRequired: true },
       },
       run: async () => undefined,
       t: (key) => key,
     }),
   );
+}
+
+test("system proxy is an application Network setting, not a Tailscale option", async () => {
+  const html = renderNetwork();
+  assert.match(html, /aria-label="Enable proxy" aria-checked="true"/);
   assert.match(html, /aria-label="Use system proxy" aria-checked="true"/);
   assert.match(html, /including updates and Tailscale/);
+  assert.match(
+    html,
+    /aria-label="Proxy URL"[^>]+value="http:\/\/127\.0\.0\.1:8889"/,
+  );
+  assert.match(
+    html,
+    /aria-label="No proxy"[^>]+value="internal\.example,192\.168\.0\.0\/16"/,
+  );
+  assert.match(html, /Leave blank to inherit environment proxies/);
+  assert.match(html, /Leave blank to inherit NO_PROXY/);
   assert.match(html, /Restart service/);
   assert.doesNotMatch(renderService(), /Use system proxy/);
   const app = await readFile(
@@ -164,6 +185,38 @@ test("system proxy is an application Network setting, not a Tailscale option", a
   assert.doesNotMatch(client, /tsnet_use_system_proxy/);
 });
 
+test("proxy controls follow master, system, custom order and retain inactive values", () => {
+  for (const proxy_enabled of [false, true]) {
+    for (const use_system_proxy of [false, true]) {
+      const html = renderNetwork({ proxy_enabled, use_system_proxy });
+      const master = html.match(
+        /<button[^>]*aria-label="Enable proxy"[^>]*>/,
+      )?.[0];
+      const system = html.match(
+        /<button[^>]*aria-label="Use system proxy"[^>]*>/,
+      )?.[0];
+      const custom = html.match(/<input[^>]*aria-label="Proxy URL"[^>]*>/)?.[0];
+      const bypass = html.match(/<input[^>]*aria-label="No proxy"[^>]*>/)?.[0];
+      assert.ok(master && system && custom && bypass);
+      assert.ok(html.indexOf(master) < html.indexOf(system));
+      assert.ok(html.indexOf(system) < html.indexOf(custom));
+      assert.ok(html.indexOf(custom) < html.indexOf(bypass));
+      assert.doesNotMatch(master, /disabled/);
+      assert.equal(system.includes('disabled=""'), !proxy_enabled);
+      assert.equal(
+        custom.includes('disabled=""'),
+        !proxy_enabled || use_system_proxy,
+      );
+      assert.equal(
+        bypass.includes('disabled=""'),
+        !proxy_enabled || use_system_proxy,
+      );
+      assert.match(custom, /value="http:\/\/127\.0\.0\.1:8889"/);
+      assert.match(bypass, /value="internal\.example,192\.168\.0\.0\/16"/);
+    }
+  }
+});
+
 test("connected tailnet displays the assigned HTTPS address and leaves Spool login required", () => {
   const html = renderService(
     { TSNet: { State: "Running", URL: "https://spool.example.ts.net" } },
@@ -173,7 +226,10 @@ test("connected tailnet displays the assigned HTTPS address and leaves Spool log
   assert.match(html, /<code>https:\/\/spool.example.ts.net<\/code>/);
   assert.match(html, /Copy address/);
   assert.match(html, /Spool login is still required/);
-  assert.match(html, /aria-label="Public origin[^>]+value="https:\/\/chat\.example\.com"/);
+  assert.match(
+    html,
+    /aria-label="Public origin[^>]+value="https:\/\/chat\.example\.com"/,
+  );
   assert.doesNotMatch(html, /aria-label="Public origin[^>]+disabled/);
   assert.doesNotMatch(html, /Sign in to Tailscale|Clear pending key/);
 });

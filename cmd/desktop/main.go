@@ -526,11 +526,21 @@ func (p *panel) serviceView(c *ui.Context) {
 }
 
 func (p *panel) networkView(c *ui.Context) {
-	if ui.Checkbox(c, &p.settings.UseSystemProxy, p.tr("Use system proxy")).Disabled(p.busy).Changed() {
+	if ui.Checkbox(c, &p.settings.ProxyEnabled, p.tr("Enable proxy")).Disabled(p.busy).Changed() {
+		enabled := p.settings.ProxyEnabled
+		p.saveServiceSetting(func(settings *workspace.Settings) error { settings.ProxyEnabled = enabled; return nil })
+	}
+	ui.Text(c, p.tr("Allow proxies for Spool's built-in requests. Turn off to connect directly, ignoring system, custom and environment proxies.")).Wrap().FontSize(12)
+	if ui.Checkbox(c, &p.settings.UseSystemProxy, p.tr("Use system proxy")).Disabled(p.busy || !p.settings.ProxyEnabled).Changed() {
 		useProxy := p.settings.UseSystemProxy
 		p.saveServiceSetting(func(settings *workspace.Settings) error { settings.UseSystemProxy = useProxy; return nil })
 	}
-	ui.Text(c, p.tr("Use macOS system HTTP/HTTPS proxy settings for Spool's built-in network requests, including updates and Tailscale. Environment proxy variables take priority and remain active when this switch is off.")).Wrap().FontSize(12)
+	ui.Text(c, p.tr("Use macOS system HTTP/HTTPS proxies, including updates and Tailscale. Environment proxies take priority; custom settings below are ignored while this is on.")).Wrap().FontSize(12)
+	customDisabled := !p.settings.ProxyEnabled || p.settings.UseSystemProxy
+	p.serviceSettingFieldWithDisabled(c, "Proxy URL", &p.settings.ProxyURL, customDisabled, func(settings *workspace.Settings, value string) error { settings.ProxyURL = value; return nil })
+	ui.Text(c, p.tr("Custom HTTP(S) or SOCKS5 proxy for Spool's built-in requests. Used when proxy is enabled and system proxy is off. Leave blank to inherit environment proxies.")).Wrap().FontSize(12)
+	p.serviceSettingFieldWithDisabled(c, "No proxy", &p.settings.NoProxy, customDisabled, func(settings *workspace.Settings, value string) error { settings.NoProxy = value; return nil })
+	ui.Text(c, p.tr("Comma-separated hosts or IP ranges that should bypass the proxy. Leave blank to inherit NO_PROXY. Loopback always connects directly.")).Wrap().FontSize(12)
 	ui.Text(c, p.tr("New built-in HTTP requests use this setting immediately. Restart the service to reconnect Tailscale. Local loopback access, push security checks and external agent tools keep their own network rules.")).Wrap().FontSize(12)
 	if p.status.RestartRequired {
 		ui.Text(c, p.tr("Restarting the service applies pending connection changes and interrupts active tasks.")).Wrap()
@@ -566,12 +576,17 @@ func (p *panel) flushServiceSetting() {
 }
 
 func (p *panel) serviceSettingField(c *ui.Context, label string, value *string, update func(*workspace.Settings, string) error) {
+	p.serviceSettingFieldWithDisabled(c, label, value, false, update)
+}
+
+func (p *panel) serviceSettingFieldWithDisabled(c *ui.Context, label string, value *string, disabled bool, update func(*workspace.Settings, string) error) {
+	disabled = disabled || p.busy
 	if p.serviceFieldFocus == nil {
 		p.serviceFieldFocus = make(map[string]bool)
 	}
 	ui.Column(c).FillWidth().Gap(5).Children(func() {
 		ui.Text(c, p.tr(label)).FontSize(12)
-		input := ui.TextInput(c, value).FillWidth().Label(p.tr(label)).Disabled(p.busy)
+		input := ui.TextInput(c, value).FillWidth().Label(p.tr(label)).Disabled(disabled)
 		submitted := input.Submitted()
 		wasFocused := p.serviceFieldFocus[label]
 		p.serviceFieldFocus[label] = input.Focused()
@@ -579,7 +594,7 @@ func (p *panel) serviceSettingField(c *ui.Context, label string, value *string, 
 			committed := *value
 			p.saveServiceSetting(func(settings *workspace.Settings) error { return update(settings, committed) })
 		}
-		if !p.busy && input.Focused() {
+		if !disabled && input.Focused() {
 			p.serviceFieldCommit = commit
 		}
 		if !p.busy && (submitted || (wasFocused && !input.Focused())) {

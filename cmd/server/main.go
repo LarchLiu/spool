@@ -42,6 +42,9 @@ func run() (runErr error) {
 	tailnetHostname := flag.String("tsnet-hostname", "spool-server", "embedded Tailscale node hostname (state persists in data-dir/tsnet)")
 	tailnetPort := flag.Int("tsnet-port", 443, "HTTPS port on the embedded Tailscale node (does not bind a host TCP port)")
 	systemProxy := flag.Bool("system-proxy", false, "persist use of system HTTP/HTTPS proxy settings for Spool (macOS)")
+	proxyEnabled := flag.Bool("proxy-enabled", true, "persist whether Spool uses outbound proxies (false forces direct connections)")
+	proxyURL := flag.String("proxy-url", "", "persist a custom outbound proxy URL (used when proxies are enabled and system proxy is off; blank inherits environment)")
+	noProxy := flag.String("no-proxy", "", "persist comma-separated proxy bypass hosts (blank inherits NO_PROXY)")
 	historyCache := flag.Int("history-cache-mib", 0, "persist shared history cache target in MiB (default 64)")
 	issuesProject := flag.String("issues-project", "", "configure issue automation for an existing project ID (service must be stopped)")
 	listProjects := flag.Bool("list-projects", false, "list local project IDs/names as JSON while service is stopped")
@@ -202,6 +205,12 @@ func run() (runErr error) {
 			settings.TSNetPort = *tailnetPort
 		case "system-proxy":
 			settings.UseSystemProxy = *systemProxy
+		case "proxy-enabled":
+			settings.ProxyEnabled = *proxyEnabled
+		case "proxy-url":
+			settings.ProxyURL = *proxyURL
+		case "no-proxy":
+			settings.NoProxy = *noProxy
 		case "history-cache-mib":
 			settings.HistoryCacheMiB = *historyCache
 		}

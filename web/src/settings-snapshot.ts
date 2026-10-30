@@ -52,7 +52,10 @@ export function settingsPageDataEqual(
       );
     case "Network":
       return (
+        a.settings.proxy_enabled === b.settings.proxy_enabled &&
         a.settings.use_system_proxy === b.settings.use_system_proxy &&
+        a.settings.proxy_url === b.settings.proxy_url &&
+        a.settings.no_proxy === b.settings.no_proxy &&
         a.status.RestartRequired === b.status.RestartRequired
       );
     case "People":

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"golang.org/x/net/http/httpproxy"
@@ -48,11 +49,11 @@ func TestPolicySystemFallbackAndEnvironmentPrecedence(t *testing.T) {
 }
 
 func TestDisabledSystemProxyPreservesEnvironment(t *testing.T) {
-	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "NO_PROXY", "no_proxy", "REQUEST_METHOD"} {
+	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy", "REQUEST_METHOD"} {
 		t.Setenv(key, "")
 	}
 	t.Setenv("HTTPS_PROXY", "http://env:8889")
-	policy, err := Prepare(context.Background(), false)
+	policy, err := Prepare(context.Background(), Options{Enabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func TestDisabledSystemProxyPreservesEnvironment(t *testing.T) {
 		t.Fatal(proxy, err)
 	}
 	t.Setenv("HTTPS_PROXY", "")
-	policy, err = Prepare(context.Background(), false)
+	policy, err = Prepare(context.Background(), Options{Enabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +85,11 @@ func TestSharedHTTPPolicyCanChangeWithoutReplacingDefaultClient(t *testing.T) {
 			_, _ = io.WriteString(w, body)
 		}))
 		t.Cleanup(proxy.Close)
-		Activate(newPolicy(&httpproxy.Config{}, systemProxy{http: proxy.URL}))
+		policy, err := Prepare(context.Background(), Options{Enabled: true, ProxyURL: proxy.URL, NoProxy: "localhost"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		Activate(policy)
 		response, err := client.Get("http://spool-proxy-test.invalid/resource")
 		if err != nil {
 			t.Fatal(err)
@@ -96,6 +101,128 @@ func TestSharedHTTPPolicyCanChangeWithoutReplacingDefaultClient(t *testing.T) {
 		}
 		if client != http.DefaultClient {
 			t.Fatal("replaced the signed update client")
+		}
+	}
+}
+
+func TestCustomProxyOverridesEnvironmentAndKeepsBypassRules(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://environment:8080")
+	t.Setenv("HTTPS_PROXY", "http://environment:8081")
+	t.Setenv("ALL_PROXY", "socks5://environment:1080")
+	t.Setenv("NO_PROXY", "inherited.example")
+	t.Setenv("REQUEST_METHOD", "GET")
+	for _, tc := range []struct{ name, bypass, target, want string }{
+		{"HTTP", "", "http://example.com", "http://custom:8889"},
+		{"HTTPS", "", "https://example.com", "http://custom:8889"},
+		{"inherit bypass", "", "https://inherited.example", ""},
+		{"replace inherited bypass", "internal.example", "https://inherited.example", "http://custom:8889"},
+		{"custom bypass", "internal.example", "https://api.internal.example", ""},
+		{"CIDR bypass", "192.168.0.0/16", "https://192.168.12.1", ""},
+		{"IPv6 bypass", "2001:db8::/32", "https://[2001:db8::1]", ""},
+		{"bypass everything", "*", "https://example.com", ""},
+		{"localhost", "example.com", "http://localhost", ""},
+		{"IPv4 loopback", "example.com", "http://127.0.0.2", ""},
+		{"IPv6 loopback", "example.com", "http://[::1]", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			policy, err := prepare(context.Background(), Options{Enabled: true, ProxyURL: " http://custom:8889 ", NoProxy: tc.bypass}, func(context.Context) (systemProxy, error) {
+				t.Fatal("custom mode attempted system discovery")
+				return systemProxy{}, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			target, _ := url.Parse(tc.target)
+			proxy, err := policy.resolve(target)
+			got := ""
+			if proxy != nil {
+				got = proxy.String()
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("proxy = %q, %v; want %q", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestAllProxyIsOnlyAFallbackForSchemeSpecificEnvironment(t *testing.T) {
+	for _, key := range []string{"HTTP_PROXY", "http_proxy", "https_proxy", "all_proxy", "NO_PROXY", "no_proxy", "REQUEST_METHOD"} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("HTTPS_PROXY", "http://https-environment:8080")
+	t.Setenv("ALL_PROXY", "socks5://all-environment:1080")
+	policy, err := Prepare(context.Background(), Options{Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for target, want := range map[string]string{
+		"http://example.com": "socks5://all-environment:1080", "https://example.com": "http://https-environment:8080",
+	} {
+		u, _ := url.Parse(target)
+		proxy, err := policy.resolve(u)
+		if err != nil || proxy == nil || proxy.String() != want {
+			t.Fatalf("%s = %v, %v; want %s", target, proxy, err, want)
+		}
+	}
+}
+
+func TestProxyMasterSwitchAndSystemMode(t *testing.T) {
+	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy", "REQUEST_METHOD"} {
+		t.Setenv(key, "")
+	}
+	for _, tc := range []struct {
+		name, environment, target, want string
+		enabled, system                 bool
+	}{
+		{"disabled custom", "http://environment:8080", "https://external.test", "", false, false},
+		{"disabled system", "http://environment:8080", "https://external.test", "", false, true},
+		{"disabled HTTP", "http://environment:8080", "http://external.test", "", false, true},
+		{"custom mode", "http://environment:8080", "https://external.test", "http://custom:8889", true, false},
+		{"custom bypass", "http://environment:8080", "https://example.com", "", true, false},
+		{"system ignores saved custom and bypass", "", "https://example.com", "http://system:8889", true, true},
+		{"system keeps its exceptions", "", "https://api.internal", "", true, true},
+		{"system preserves environment priority", "http://environment:8080", "https://example.com", "http://environment:8080", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HTTP_PROXY", tc.environment)
+			t.Setenv("HTTPS_PROXY", tc.environment)
+			t.Setenv("ALL_PROXY", tc.environment)
+			discoveries := 0
+			policy, err := prepare(context.Background(), Options{
+				Enabled: tc.enabled, UseSystemProxy: tc.system, ProxyURL: "http://custom:8889", NoProxy: "example.com",
+			}, func(context.Context) (systemProxy, error) {
+				discoveries++
+				return systemProxy{https: "http://system:8889", exceptions: []string{"*.internal"}}, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (discoveries == 1) != (tc.enabled && tc.system) {
+				t.Fatalf("unexpected system discovery count: %d", discoveries)
+			}
+			target, _ := url.Parse(tc.target)
+			proxy, err := policy.resolve(target)
+			got := ""
+			if proxy != nil {
+				got = proxy.String()
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("proxy = %q, %v; want %q", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestCustomProxyValidationDoesNotDiscloseCredentials(t *testing.T) {
+	for _, address := range []string{"", "  ", "http://127.0.0.1:8889", "https://proxy.example", "socks5://[::1]:1080", "socks5h://user:secret@proxy.example:1080/"} {
+		if err := (Options{ProxyURL: address}).Validate(); err != nil {
+			t.Fatalf("valid proxy URL rejected: %v", err)
+		}
+	}
+	for _, address := range []string{"proxy.example:8889", "ftp://proxy.example", "http://", "http://proxy.example:0", "http://proxy.example:65536", "http://proxy.example:", "http://proxy.example:bad", "http://user:secret@proxy.example/path", "http://user:secret@proxy.example?x=y", "http://proxy.example#fragment", "http://proxy.example?", "http://proxy.example#", "http://proxy.example\n" + "x"} {
+		_, err := Prepare(context.Background(), Options{ProxyURL: address})
+		if err == nil || strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), address) {
+			t.Fatalf("invalid proxy was accepted or error disclosed the URL: %v", err)
 		}
 	}
 }

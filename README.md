@@ -785,15 +785,36 @@ allow the client node to reach this server node's TCP port.
 
 ### Application Network Settings
 
-In Desktop, **Application > Network > Use system proxy** is an application-level
-setting, not a Tailscale option. On macOS it reads static system HTTP/HTTPS proxy
-configuration (including bypass exceptions). Both built-in HTTP clients, such as
-signed update checks/downloads, and embedded Tailscale use the shared policy.
-The headless equivalent is `-system-proxy` (`-system-proxy=false` to disable);
-the choice is saved in `use_system_proxy` alongside the other application settings.
+In Desktop, **Application > Network > Proxy** has three levels:
 
-The switch defaults off. `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` environment
-variables still take priority and remain effective when system discovery is off.
+1. **Enable proxy** is the master switch. Turning it off forces direct built-in
+   requests, ignoring system, custom and environment proxies. It defaults on,
+   including for older settings, to preserve existing environment proxy behavior.
+2. **Use system proxy** selects macOS static HTTP/HTTPS proxy configuration
+   (including bypass exceptions) and ignores the custom fields below. It defaults
+   off. Environment proxy variables retain priority over system discovery.
+3. With proxies enabled and system proxy off, **Proxy URL** selects a custom
+   proxy, such as `http://127.0.0.1:8889`. HTTP, HTTPS, SOCKS5 and SOCKS5h URLs
+   are supported. A custom URL overrides environment proxies; leave it blank to
+   inherit them. **No proxy** accepts comma-separated hosts, domains or IP CIDR
+   ranges, such as `localhost,127.0.0.1,.internal.example,192.168.0.0/16`. A
+   non-empty value overrides `NO_PROXY`; leave it blank to inherit `NO_PROXY`.
+
+Inactive controls are disabled without clearing their saved values. Fields save
+on blur or Enter. Both built-in HTTP clients, such as signed update
+checks/downloads, and embedded Tailscale use the shared policy.
+The headless equivalents are `-proxy-enabled=false` to force direct connections
+and `-system-proxy` to select system discovery. Settings are persisted as
+`proxy_enabled`, `use_system_proxy`, `proxy_url` and `no_proxy`.
+The headless flags `-proxy-url http://127.0.0.1:8889` and
+`-no-proxy localhost,127.0.0.1,.internal.example` persist the same custom fields;
+pass an empty value to clear either override. Credentials in a custom proxy URL
+are saved in the private settings database, so protect the data directory.
+
+While proxies are enabled and no custom URL is selected, `HTTP_PROXY` and `HTTPS_PROXY`
+environment variables still take priority over system discovery, with `ALL_PROXY`
+as a fallback when a scheme-specific variable is unset. Their lowercase variants
+are also supported.
 Other platforms retain their existing environment/SDK proxy behavior; this switch
 currently adds macOS system discovery. PAC/auto-discovery and SOCKS-only macOS
 configurations are not supported and produce an explicit error rather than a

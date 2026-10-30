@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -25,28 +26,90 @@ type Policy struct {
 	resolve func(*url.URL) (*url.URL, error)
 }
 
+type Options struct {
+	Enabled        bool
+	UseSystemProxy bool
+	ProxyURL       string
+	NoProxy        string
+}
+
+func (o Options) Validate() error {
+	raw := strings.TrimSpace(o.ProxyURL)
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" || u.Opaque != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(raw, "#") || (u.Path != "" && u.Path != "/") || strings.ContainsAny(raw, " \t\r\n") {
+		return fmt.Errorf("Proxy URL must be an http(s) or socks5(h) URL without a path, query or fragment.")
+	}
+	switch u.Scheme {
+	case "http", "https", "socks5", "socks5h":
+	default:
+		return fmt.Errorf("Proxy URL must be an http(s) or socks5(h) URL without a path, query or fragment.")
+	}
+	if port := u.Port(); port != "" {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 {
+			return fmt.Errorf("Proxy URL port must be between 1 and 65535.")
+		}
+	} else if strings.HasSuffix(u.Host, ":") {
+		return fmt.Errorf("Proxy URL port must be between 1 and 65535.")
+	}
+	return nil
+}
+
 var activeProxy atomic.Pointer[Policy]
 
 func init() {
-	activeProxy.Store(newPolicy(httpproxy.FromEnvironment(), systemProxy{}))
+	activeProxy.Store(newPolicy(environmentConfig(), systemProxy{}))
 	// Install before HTTP users (including the signed update wrapper) start.
 	// The transport stays immutable; requests read an atomic policy snapshot.
 	http.DefaultTransport.(*http.Transport).Proxy = Proxy
 }
 
-// Prepare resolves system configuration without changing the active policy.
-// Explicit environment variables remain authoritative, even when disabled.
-func Prepare(ctx context.Context, enabled bool) (*Policy, error) {
+func environmentConfig() *httpproxy.Config {
 	config := httpproxy.FromEnvironment()
-	var proxy systemProxy
-	if enabled {
-		var err error
-		proxy, err = readSystemProxy(ctx)
+	all := os.Getenv("ALL_PROXY")
+	if all == "" {
+		all = os.Getenv("all_proxy")
+	}
+	if config.HTTPProxy == "" {
+		config.HTTPProxy = all
+	}
+	if config.HTTPSProxy == "" {
+		config.HTTPSProxy = all
+	}
+	return config
+}
+
+// Prepare resolves the selected proxy mode without changing the active policy.
+func Prepare(ctx context.Context, options Options) (*Policy, error) {
+	return prepare(ctx, options, readSystemProxy)
+}
+
+func prepare(ctx context.Context, options Options, readSystem func(context.Context) (systemProxy, error)) (*Policy, error) {
+	if err := options.Validate(); err != nil {
+		return nil, err
+	}
+	if !options.Enabled {
+		return newPolicy(&httpproxy.Config{}, systemProxy{}), nil
+	}
+	config := environmentConfig()
+	if options.UseSystemProxy {
+		proxy, err := readSystem(ctx)
 		if err != nil {
 			return nil, err
 		}
+		return newPolicy(config, proxy), nil
 	}
-	return newPolicy(config, proxy), nil
+	if address := strings.TrimSpace(options.ProxyURL); address != "" {
+		config.HTTPProxy, config.HTTPSProxy = address, address
+		config.CGI = false
+	}
+	if bypass := strings.TrimSpace(options.NoProxy); bypass != "" {
+		config.NoProxy = bypass
+	}
+	return newPolicy(config, systemProxy{}), nil
 }
 
 func newPolicy(config *httpproxy.Config, proxy systemProxy) *Policy {

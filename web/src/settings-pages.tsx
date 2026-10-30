@@ -4,6 +4,7 @@ import {
   ChevronRight,
   FolderOpen,
   Github,
+  Globe2,
   Monitor,
   Plus,
   Radio,
@@ -24,7 +25,10 @@ import {
 import { SettingsBack, SettingsList } from "./settings-list";
 import { ThemePicker } from "./theme-picker";
 import { CustomSelect } from "./custom-select";
-import { ServiceSettingsAutosave } from "./settings-autosave";
+import {
+  NetworkSettingsAutosave,
+  ServiceSettingsAutosave,
+} from "./settings-autosave";
 import { UpdateCheckInterval } from "./update-controls";
 import { ReleaseNotesPanel } from "./release-notes";
 import {
@@ -41,37 +45,97 @@ import {
   type PageProps,
 } from "./settings-ui";
 
+function useSettingsAutosave<
+  T extends ServiceSettingsAutosave | NetworkSettingsAutosave,
+>(
+  { data, run }: Pick<PageProps, "data" | "run">,
+  Autosave: new (
+    ...args: ConstructorParameters<typeof ServiceSettingsAutosave>
+  ) => T,
+) {
+  const runRef = useRef(run);
+  runRef.current = run;
+  const [, redraw] = useState(0);
+  const [autosave] = useState(
+    () =>
+      new Autosave(
+        data.settings,
+        async (settings) =>
+          (
+            await runRef.current((latest) => ({
+              kind: "save-settings",
+              settings: settings(latest?.settings),
+            }))
+          )?.settings,
+        () => redraw((value) => value + 1),
+      ),
+  );
+  useEffect(() => autosave.sync(data.settings), [autosave, data.settings]);
+  return autosave;
+}
+
 export function NetworkPage({ data, run, t }: PageProps) {
-  const [pending, setPending] = useState<boolean>();
+  const autosave = useSettingsAutosave({ data, run }, NetworkSettingsAutosave);
+  const draft = autosave.draft;
+  const customDisabled = !draft.proxy_enabled || draft.use_system_proxy;
   return (
     <>
       <Card title={t("Proxy")}>
         <Row
+          title={t("Enable proxy")}
+          help={t(
+            "Allow proxies for Spool's built-in requests. Turn off to connect directly, ignoring system, custom and environment proxies.",
+          )}
+        >
+          <Toggle
+            label={t("Enable proxy")}
+            value={draft.proxy_enabled}
+            onChange={(value) => {
+              autosave.edit("proxy_enabled", value);
+              void autosave.commit("proxy_enabled");
+            }}
+          />
+        </Row>
+        <Row
           title={t("Use system proxy")}
           help={t(
-            "Use macOS system HTTP/HTTPS proxy settings for Spool's built-in network requests, including updates and Tailscale. Environment proxy variables take priority and remain active when this switch is off.",
+            "Use macOS system HTTP/HTTPS proxies, including updates and Tailscale. Environment proxies take priority; custom settings below are ignored while this is on.",
           )}
         >
           <Toggle
             label={t("Use system proxy")}
-            value={pending ?? data.settings.use_system_proxy ?? false}
-            disabled={pending !== undefined}
-            onChange={async (value) => {
-              setPending(value);
-              try {
-                await run((latest) => ({
-                  kind: "save-settings",
-                  settings: {
-                    ...(latest?.settings ?? data.settings),
-                    use_system_proxy: value,
-                  },
-                }));
-              } finally {
-                setPending(undefined);
-              }
+            value={draft.use_system_proxy}
+            disabled={!draft.proxy_enabled}
+            onChange={(value) => {
+              autosave.edit("use_system_proxy", value);
+              void autosave.commit("use_system_proxy");
             }}
           />
         </Row>
+        <TextField
+          icon={<Globe2 size={15} />}
+          title={t("Proxy URL")}
+          value={draft.proxy_url}
+          placeholder="http://127.0.0.1:8889"
+          disabled={customDisabled}
+          help={t(
+            "Custom HTTP(S) or SOCKS5 proxy for Spool's built-in requests. Used when proxy is enabled and system proxy is off. Leave blank to inherit environment proxies.",
+          )}
+          onChange={(value) => autosave.edit("proxy_url", value)}
+          onCommit={() => void autosave.commit("proxy_url")}
+        />
+        <TextField
+          icon={<Globe2 size={15} />}
+          title={t("No proxy")}
+          value={draft.no_proxy}
+          placeholder="localhost,127.0.0.1"
+          disabled={customDisabled}
+          help={t(
+            "Comma-separated hosts or IP ranges that should bypass the proxy. Leave blank to inherit NO_PROXY. Loopback always connects directly.",
+          )}
+          onChange={(value) => autosave.edit("no_proxy", value)}
+          onCommit={() => void autosave.commit("no_proxy")}
+        />
         <Hint>
           {t(
             "New built-in HTTP requests use this setting immediately. Restart the service to reconnect Tailscale. Local loopback access, push security checks and external agent tools keep their own network rules.",
@@ -101,24 +165,7 @@ export function NetworkPage({ data, run, t }: PageProps) {
 }
 
 export function ServicePage({ data, run, t }: PageProps) {
-  const runRef = useRef(run);
-  runRef.current = run;
-  const [, redraw] = useState(0);
-  const [autosave] = useState(
-    () =>
-      new ServiceSettingsAutosave(
-        data.settings,
-        async (settings) =>
-          (
-            await runRef.current((latest) => ({
-              kind: "save-settings",
-              settings: settings(latest?.settings),
-            }))
-          )?.settings,
-        () => redraw((value) => value + 1),
-      ),
-  );
-  useEffect(() => autosave.sync(data.settings), [autosave, data.settings]);
+  const autosave = useSettingsAutosave({ data, run }, ServiceSettingsAutosave);
   const draft = autosave.draft;
   const [authKey, setAuthKey] = useState("");
   const [requestingLogin, setRequestingLogin] = useState(false);

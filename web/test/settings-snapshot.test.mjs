@@ -10,7 +10,7 @@ import { settingsSections } from "../.test-build/settings-client.js";
 
 function snapshot() {
   return {
-    settings: { use_system_proxy: false },
+    settings: { proxy_enabled: true, use_system_proxy: false },
     status: {
       Running: true,
       RestartRequired: false,
@@ -69,6 +69,15 @@ test("page dependencies distinguish presence, membership, settings and appearanc
     [(next) => (next.users[0].nickname = "Updated"), ["People", "Projects"]],
     [(next) => (next.status.TSNet.State = "NeedsLogin"), ["Service"]],
     [(next) => (next.settings.use_system_proxy = true), ["Service", "Network"]],
+    [(next) => (next.settings.proxy_enabled = false), ["Service", "Network"]],
+    [
+      (next) => (next.settings.proxy_url = "http://127.0.0.1:8889"),
+      ["Service", "Network"],
+    ],
+    [
+      (next) => (next.settings.no_proxy = "internal.example"),
+      ["Service", "Network"],
+    ],
     [(next) => (next.preferences.theme = "dark"), ["Appearance"]],
     [(next) => (next.notifications_enabled = false), ["Appearance"]],
     [(next) => (next.status.RestartRequired = true), ["Service", "Network"]],

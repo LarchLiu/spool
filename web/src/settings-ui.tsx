@@ -154,6 +154,7 @@ export function Toggle({
   );
 }
 export function TextField({
+  icon,
   title,
   value,
   onChange,
@@ -164,7 +165,9 @@ export function TextField({
   required,
   onCommit,
   disabled,
+  placeholder,
 }: {
+  icon?: ReactNode;
   title: string;
   value: string | number;
   onChange: (value: string) => void;
@@ -175,14 +178,16 @@ export function TextField({
   required?: boolean;
   onCommit?: () => void;
   disabled?: boolean;
+  placeholder?: string;
 }) {
   return (
-    <Row title={title} help={help}>
+    <Row icon={icon} title={title} help={help}>
       <input
         aria-label={title}
         type={type}
         value={value}
         disabled={disabled}
+        placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
         onBlur={
           onCommit

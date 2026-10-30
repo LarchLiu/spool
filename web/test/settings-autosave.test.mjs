@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import {
   createSettingsCommandQueue,
+  NetworkSettingsAutosave,
   ServiceSettingsAutosave,
 } from "../.test-build/settings-autosave.js";
 
@@ -16,15 +17,19 @@ const initial = () => ({
   tsnet_enabled: false,
   tsnet_hostname: "spool-server",
   tsnet_port: 443,
+  proxy_enabled: true,
+  use_system_proxy: false,
+  proxy_url: "",
+  no_proxy: "",
 });
-function fixture(execute) {
+function fixture(execute, Autosave = ServiceSettingsAutosave) {
   const commands = [];
   const run = createSettingsCommandQueue(async (command) => {
     commands.push(command);
     return execute ? execute(command) : { settings: command.settings };
   });
   let changes = 0;
-  const autosave = new ServiceSettingsAutosave(
+  const autosave = new Autosave(
     initial(),
     async (settings) =>
       (
@@ -62,10 +67,20 @@ test("service inputs keep raw numeric drafts and save only the committed field",
 
 test("unchanged polling and unrelated proxy changes do not redraw service drafts", () => {
   let redraws = 0;
-  const autosave = new ServiceSettingsAutosave(initial(), async () => undefined, () => redraws++);
+  const autosave = new ServiceSettingsAutosave(
+    initial(),
+    async () => undefined,
+    () => redraws++,
+  );
   const draft = autosave.draft;
   autosave.sync({ ...initial() });
   autosave.sync({ ...initial(), use_system_proxy: true });
+  autosave.sync({
+    ...initial(),
+    proxy_enabled: false,
+    proxy_url: "http://proxy:80",
+    no_proxy: "internal.example",
+  });
   autosave.edit("host", initial().host);
   assert.equal(redraws, 0);
   assert.equal(autosave.draft, draft);
@@ -107,6 +122,10 @@ test("every connection/runtime setting saves without an explicit save action", a
     tsnet_enabled: true,
     tsnet_hostname: "spool-office",
     tsnet_port: 8443,
+    proxy_enabled: true,
+    use_system_proxy: false,
+    proxy_url: "",
+    no_proxy: "",
   });
   await autosave.commit("auto_start");
   assert.equal(commands.length, 9, "unchanged values must not be resaved");
@@ -139,6 +158,61 @@ test("rapid field commits merge in order before a queued manual restart", async 
   );
   assert.equal(commands[1].settings.port, 9000);
   assert.equal(commands[1].settings.idle_minutes, 30);
+});
+
+test("custom proxy fields autosave independently and keep drafts across polling", async () => {
+  const { autosave, commands } = fixture(undefined, NetworkSettingsAutosave);
+  autosave.edit("proxy_url", "http://127.0.0.1:8889");
+  autosave.edit("no_proxy", "internal.example,192.168.0.0/16");
+  autosave.sync({ ...initial(), public_url: "https://chat.example.com" });
+  assert.equal(autosave.draft.proxy_url, "http://127.0.0.1:8889");
+  assert.equal(autosave.draft.no_proxy, "internal.example,192.168.0.0/16");
+  await Promise.all([
+    autosave.commit("proxy_url"),
+    autosave.commit("no_proxy"),
+  ]);
+  assert.equal(commands.at(-1).settings.proxy_url, "http://127.0.0.1:8889");
+  assert.equal(
+    commands.at(-1).settings.no_proxy,
+    "internal.example,192.168.0.0/16",
+  );
+  assert.equal(commands.at(-1).settings.public_url, "https://chat.example.com");
+  autosave.edit("use_system_proxy", true);
+  await autosave.commit("use_system_proxy");
+  assert.equal(commands.at(-1).settings.proxy_url, "http://127.0.0.1:8889");
+  autosave.edit("proxy_enabled", false);
+  await autosave.commit("proxy_enabled");
+  assert.equal(commands.at(-1).settings.proxy_enabled, false);
+  assert.equal(commands.at(-1).settings.use_system_proxy, true);
+  assert.equal(commands.at(-1).settings.proxy_url, "http://127.0.0.1:8889");
+  assert.equal(
+    commands.at(-1).settings.no_proxy,
+    "internal.example,192.168.0.0/16",
+  );
+  autosave.edit("proxy_url", "");
+  await autosave.commit("proxy_url");
+  assert.equal(commands.at(-1).settings.proxy_url, "");
+  assert.equal(commands.at(-1).settings.use_system_proxy, true);
+});
+
+test("rapid proxy mode toggles persist in order without discarding custom values", async () => {
+  const { autosave, commands } = fixture(undefined, NetworkSettingsAutosave);
+  autosave.edit("proxy_url", "socks5://127.0.0.1:1080");
+  const custom = autosave.commit("proxy_url");
+  autosave.edit("use_system_proxy", true);
+  const system = autosave.commit("use_system_proxy");
+  autosave.edit("proxy_enabled", false);
+  const off = autosave.commit("proxy_enabled");
+  autosave.edit("proxy_enabled", true);
+  const on = autosave.commit("proxy_enabled");
+  await Promise.all([custom, system, off, on]);
+  assert.deepEqual(
+    commands.map((command) => command.settings.proxy_enabled),
+    [true, true, false, true],
+  );
+  assert.equal(autosave.draft.proxy_enabled, true);
+  assert.equal(autosave.draft.use_system_proxy, true);
+  assert.equal(commands.at(-1).settings.proxy_url, "socks5://127.0.0.1:1080");
 });
 
 test("a switch toggled back during an in-flight save is not silently dropped", async () => {

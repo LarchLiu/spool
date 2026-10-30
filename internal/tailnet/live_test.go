@@ -21,14 +21,14 @@ func TestTailnetLiveLoginURLThroughSystemProxy(t *testing.T) {
 	for _, key := range []string{"TS_AUTHKEY", "TS_AUTH_KEY", "TS_CLIENT_SECRET", "TS_CLIENT_ID", "TS_ID_TOKEN", "TS_AUDIENCE", "TS_CONTROL_URL"} {
 		t.Setenv(key, "")
 	}
-	before, err := netproxy.Prepare(context.Background(), false)
+	before, err := netproxy.Prepare(context.Background(), netproxy.Options{Enabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { netproxy.Activate(before) })
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	policy, err := netproxy.Prepare(ctx, true)
+	policy, err := netproxy.Prepare(ctx, netproxy.Options{Enabled: true, UseSystemProxy: true})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -23,7 +23,10 @@ export type ServerSettings = {
   tsnet_enabled: boolean;
   tsnet_hostname: string;
   tsnet_port: number;
+  proxy_enabled: boolean;
   use_system_proxy: boolean;
+  proxy_url: string;
+  no_proxy: string;
 };
 export type Person = User & {
   disabled: boolean;

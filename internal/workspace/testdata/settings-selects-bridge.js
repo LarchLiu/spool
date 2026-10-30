@@ -6,7 +6,7 @@ const model = (id, levels) => ({
 const snapshot = {
   section: "Appearance", message: "", version: "test", database: "", application_log: "", crash_log: "", update_log: "",
   github_path: "", github_state: "", github_message: "", github_login: "",
-  settings: { host: "127.0.0.1", port: 8787, public_url: "https://chat.example.com", idle_minutes: 10, history_cache_mib: 256, auto_start: false, tsnet_enabled: false, tsnet_hostname: "spool-server", tsnet_port: 443, use_system_proxy: false },
+  settings: { host: "127.0.0.1", port: 8787, public_url: "https://chat.example.com", idle_minutes: 10, history_cache_mib: 256, auto_start: false, tsnet_enabled: false, tsnet_hostname: "spool-server", tsnet_port: 443, proxy_enabled: true, use_system_proxy: false, proxy_url: "", no_proxy: "" },
   preferences: { theme: "system", language: "system" },
   update_preferences: { automatic_checks: false, automatic_installs: false, check_interval_minutes: 60 },
   status: { Running: false, RestartRequired: false, Address: "", Error: "", Online: [], TSNet: { State: "Disabled", AuthURL: "", URL: "", Error: "" }, TSNetAuthKeySet: false },

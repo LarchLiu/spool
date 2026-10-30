@@ -11,6 +11,7 @@ import (
 
 	"spool/internal/agent"
 	chatmodel "spool/internal/model"
+	"spool/internal/netproxy"
 	"spool/internal/tailnet"
 )
 
@@ -36,7 +37,7 @@ type Service struct {
 	enrollTailnet       func(context.Context, string, tailnet.Options, func(tailnet.Status)) error
 	tailnetAuthKey      string
 	tailnetAuthRevision uint64
-	useSystemProxy      bool
+	networkProxy        netproxy.Options
 }
 type ServiceStatus struct {
 	Running         bool
@@ -277,7 +278,7 @@ func (s *Service) Status() ServiceStatus {
 			active := s.app.settings
 			restartRequired = active.Host != settings.Host || active.Port != settings.Port ||
 				s.app.publicURL() != settings.PublicURL || active.IdleMinutes != settings.IdleMinutes ||
-				!sameTailnetSettings(active, settings) || active.TSNetEnabled && active.UseSystemProxy != settings.UseSystemProxy
+				!sameTailnetSettings(active, settings) || active.TSNetEnabled && active.proxyOptions() != settings.proxyOptions()
 		}
 	}
 	tailnetStatus := tailnet.Status{State: "Disabled"}

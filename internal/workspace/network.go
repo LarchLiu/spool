@@ -1,6 +1,22 @@
 package workspace
 
-import "spool/internal/netproxy"
+import (
+	"strings"
+
+	"spool/internal/netproxy"
+)
+
+func (s Settings) proxyOptions() netproxy.Options {
+	// Inactive custom values stay saved without affecting the live policy or
+	// requesting a Tailscale restart until their mode is selected again.
+	if !s.ProxyEnabled {
+		return netproxy.Options{}
+	}
+	if s.UseSystemProxy {
+		return netproxy.Options{Enabled: true, UseSystemProxy: true}
+	}
+	return netproxy.Options{Enabled: true, ProxyURL: strings.TrimSpace(s.ProxyURL), NoProxy: strings.TrimSpace(s.NoProxy)}
+}
 
 // SaveSettings applies the app-wide network policy after a successful save.
 // It never restarts the service or interrupts active tasks. Embedded Tailscale
@@ -12,9 +28,10 @@ func (s *Service) SaveSettings(settings Settings) error {
 		return err
 	}
 	var policy *netproxy.Policy
-	if settings.UseSystemProxy != s.useSystemProxy {
+	options := settings.proxyOptions()
+	if options != s.networkProxy {
 		var err error
-		policy, err = netproxy.Prepare(s.ctx, settings.UseSystemProxy)
+		policy, err = netproxy.Prepare(s.ctx, options)
 		if err != nil {
 			return err
 		}
@@ -28,17 +45,18 @@ func (s *Service) SaveSettings(settings Settings) error {
 	}
 	if policy != nil {
 		netproxy.Activate(policy)
-		s.useSystemProxy = settings.UseSystemProxy
+		s.networkProxy = options
 	}
 	return nil
 }
 
 func (s *Service) applyNetworkSettingsLocked(settings Settings) error {
-	policy, err := netproxy.Prepare(s.ctx, settings.UseSystemProxy)
+	options := settings.proxyOptions()
+	policy, err := netproxy.Prepare(s.ctx, options)
 	if err != nil {
 		return err
 	}
 	netproxy.Activate(policy)
-	s.useSystemProxy = settings.UseSystemProxy
+	s.networkProxy = options
 	return nil
 }

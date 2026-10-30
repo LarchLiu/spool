@@ -42,9 +42,22 @@ type ServiceDraft = {
   tsnet_hostname: string;
   tsnet_port: string;
 };
-type ServiceField = keyof ServiceDraft;
+type NetworkDraft = {
+  proxy_enabled: boolean;
+  use_system_proxy: boolean;
+  proxy_url: string;
+  no_proxy: string;
+};
+type SettingsDraft = ServiceDraft & NetworkDraft;
+type AutosaveArgs = [
+  settings: ServerSettings,
+  save: (
+    settings: (latest?: ServerSettings) => ServerSettings,
+  ) => Promise<ServerSettings | undefined>,
+  changed: () => void,
+];
 
-function toDraft(settings: ServerSettings): ServiceDraft {
+function toServiceDraft(settings: ServerSettings): ServiceDraft {
   return {
     host: settings.host,
     public_url: settings.public_url,
@@ -58,56 +71,62 @@ function toDraft(settings: ServerSettings): ServiceDraft {
   };
 }
 
-export class ServiceSettingsAutosave {
-  draft: ServiceDraft;
+function toNetworkDraft(settings: ServerSettings): NetworkDraft {
+  return {
+    proxy_enabled: settings.proxy_enabled ?? true,
+    use_system_proxy: settings.use_system_proxy ?? false,
+    proxy_url: settings.proxy_url ?? "",
+    no_proxy: settings.no_proxy ?? "",
+  };
+}
+
+class SettingsAutosave<K extends keyof SettingsDraft> {
+  draft: Pick<SettingsDraft, K>;
   private saved: ServerSettings;
-  private edits: Partial<Record<ServiceField, number>> = {};
-  private pendingFields: Partial<Record<ServiceField, number>> = {};
+  private edits: Partial<Record<K, number>> = {};
+  private pendingFields: Partial<Record<K, number>> = {};
 
   constructor(
     settings: ServerSettings,
-    private save: (
-      settings: (latest?: ServerSettings) => ServerSettings,
-    ) => Promise<ServerSettings | undefined>,
+    private save: AutosaveArgs[1],
     private changed: () => void,
+    private toDraft: (settings: ServerSettings) => Pick<SettingsDraft, K>,
   ) {
     this.saved = { ...settings };
     this.draft = toDraft(settings);
   }
 
-  edit<K extends ServiceField>(key: K, value: ServiceDraft[K]) {
+  edit<F extends K>(key: F, value: SettingsDraft[F]) {
     if (this.draft[key] === value) return;
     this.draft = { ...this.draft, [key]: value };
     this.edits[key] = (this.edits[key] ?? 0) + 1;
     this.changed();
   }
 
-  sync(settings: ServerSettings, committed?: [ServiceField, number]) {
-    const previous = toDraft(this.saved);
-    const next = toDraft(settings);
+  sync(settings: ServerSettings, committed?: [K, number]) {
+    const previous = this.toDraft(this.saved);
+    const next = this.toDraft(settings);
     // Polling and save acknowledgements may update untouched fields, but must
     // not replace a newer edit or another field's incomplete input.
     const draft = Object.fromEntries(
-      (Object.keys(next) as ServiceField[]).map((key) => [
+      (Object.keys(next) as K[]).map((key) => [
         key,
         (!this.pendingFields[key] && this.draft[key] === previous[key]) ||
         (committed?.[0] === key && (this.edits[key] ?? 0) === committed[1])
           ? next[key]
           : this.draft[key],
       ]),
-    ) as ServiceDraft;
+    ) as Pick<SettingsDraft, K>;
     this.saved = { ...settings };
     if (
-      (Object.keys(draft) as ServiceField[]).some(
-        (key) => draft[key] !== this.draft[key],
-      )
+      (Object.keys(draft) as K[]).some((key) => draft[key] !== this.draft[key])
     ) {
       this.draft = draft;
       this.changed();
     }
   }
 
-  async commit(key: ServiceField) {
+  async commit(key: K) {
     const raw = this.draft[key];
     const edit = this.edits[key] ?? 0;
     let value: string | number | boolean = raw;
@@ -139,5 +158,21 @@ export class ServiceSettingsAutosave {
     } finally {
       this.pendingFields[key] = (this.pendingFields[key] ?? 1) - 1;
     }
+  }
+}
+
+export class ServiceSettingsAutosave extends SettingsAutosave<
+  keyof ServiceDraft
+> {
+  constructor(...args: AutosaveArgs) {
+    super(...args, toServiceDraft);
+  }
+}
+
+export class NetworkSettingsAutosave extends SettingsAutosave<
+  keyof NetworkDraft
+> {
+  constructor(...args: AutosaveArgs) {
+    super(...args, toNetworkDraft);
   }
 }
