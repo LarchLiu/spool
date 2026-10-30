@@ -62,6 +62,35 @@ func TestSettingsUsersProjectsAndAgentsPersistInSQLite(t *testing.T) {
 	}
 }
 
+func TestPublicOriginRemainsEditableAcrossTailnetSettings(t *testing.T) {
+	s := testStore(t)
+	settings := DefaultSettings()
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+		origin  string
+	}{
+		{"proxy only", false, "https://chat.example.test"},
+		{"enable tailnet", true, "https://chat.example.test"},
+		{"edit proxy with tailnet enabled", true, "https://pwa.example.test/"},
+		{"disable tailnet", false, "https://pwa.example.test"},
+		{"enable tailnet again", true, "https://pwa.example.test"},
+		{"clear proxy with tailnet enabled", true, ""},
+		{"restore proxy with tailnet enabled", true, "https://chat.example.test"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			settings.TSNetEnabled, settings.PublicURL = tc.enabled, tc.origin
+			if err := s.SaveSettings(settings); err != nil {
+				t.Fatal(err)
+			}
+			saved, err := s.Settings()
+			if err != nil || saved.PublicURL != strings.TrimSuffix(tc.origin, "/") || saved.TSNetEnabled != tc.enabled {
+				t.Fatal("tailnet settings changed the independently configured public origin", saved, err)
+			}
+		})
+	}
+}
+
 func TestHistoryCacheSettingsDefaultAndValidation(t *testing.T) {
 	s := testStore(t)
 	settings, err := s.Settings()

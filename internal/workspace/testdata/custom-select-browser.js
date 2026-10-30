@@ -93,7 +93,8 @@ async function checkCustomSelects(report) {
     const idle = () => !doc.querySelector('.settings-content').disabled && !doc.querySelector('[data-page="Service"] fieldset').disabled;
     doc.querySelector('[aria-label="Enable embedded Tailscale"]').click();
     await waitFor(() => fixture.snapshot.settings.tsnet_enabled && doc.querySelector('[data-restart-service]') && idle(), "tailnet enable saved");
-    report.tailnetExplicitRestart = !fixture.commands.some((command) => command.kind === "restart-service") && doc.querySelector('[aria-label^="Public origin"]').disabled;
+    const publicOriginInput = doc.querySelector('[aria-label^="Public origin"]');
+    report.tailnetExplicitRestart = !fixture.commands.some((command) => command.kind === "restart-service") && !publicOriginInput.disabled;
     doc.querySelector('[data-restart-service]').click();
     await waitFor(() => button("Sign in to Tailscale") && idle(), "browser enrollment option");
     report.tailnetMissingLoginLink = fixture.snapshot.status.TSNet.AuthURL === "" && !button("Sign in to Tailscale").disabled;
@@ -140,7 +141,16 @@ async function checkCustomSelects(report) {
     await waitFor(() => doc.querySelector('[data-restart-service]') && idle(), "registered node restart action");
     doc.querySelector('[data-restart-service]').click();
     await waitFor(() => doc.querySelector('code')?.textContent === "https://spool.example.ts.net" && idle(), "assigned HTTPS origin");
-    report.tailnetConnected = !fixture.snapshot.status.TSNetAuthKeySet && !button("Clear pending key") && !button("Sign in to Tailscale") && !doc.querySelector('[data-restart-service]');
+    report.tailnetConnected = !fixture.snapshot.status.TSNetAuthKeySet && !button("Clear pending key") && !button("Sign in to Tailscale") && !doc.querySelector('[data-restart-service]') && fixture.snapshot.settings.public_url === "https://chat.example.com" && publicOriginInput.value === "https://chat.example.com" && !publicOriginInput.disabled;
+    const nextPublicOrigin = "https://pwa.example.com";
+    Object.getOwnPropertyDescriptor(frame.contentWindow.HTMLInputElement.prototype, "value").set.call(publicOriginInput, nextPublicOrigin);
+    publicOriginInput.dispatchEvent(new frame.contentWindow.Event("input", { bubbles: true }));
+    publicOriginInput.focus();
+    publicOriginInput.blur();
+    await waitFor(() => fixture.snapshot.settings.public_url === nextPublicOrigin && doc.querySelector('[data-restart-service]') && fixture.snapshot.status.TSNet.URL === "https://spool.example.ts.net", "public origin saved independently");
+    doc.querySelector('[data-restart-service]').click();
+    await waitFor(() => !doc.querySelector('[data-restart-service]') && fixture.snapshot.settings.public_url === nextPublicOrigin && fixture.snapshot.status.TSNet.URL === "https://spool.example.ts.net" && idle(), "restart retains both origins");
+    report.tailnetPublicOriginIndependent = publicOriginInput.value === nextPublicOrigin && !publicOriginInput.disabled && fixture.snapshot.status.TSNet.URL === "https://spool.example.ts.net";
     const assertSettingsViewport = () => {
       const view = frame.contentWindow;
       const root = doc.scrollingElement;

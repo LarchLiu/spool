@@ -58,17 +58,6 @@ func sameTailnetSettings(a, b Settings) bool {
 	return a.TSNetEnabled == b.TSNetEnabled && (!a.TSNetEnabled || a.TSNetHostname == b.TSNetHostname && a.TSNetPort == b.TSNetPort)
 }
 
-func (s *Store) saveTailnetOrigin(active Settings, origin string) error {
-	s.settingsMu.Lock()
-	defer s.settingsMu.Unlock()
-	latest, err := s.Settings()
-	if err != nil || !sameTailnetSettings(latest, active) {
-		return err
-	}
-	latest.PublicURL = origin
-	return s.saveSettingsLocked(latest)
-}
-
 func (s *Service) startTailnetLocked(settings Settings) {
 	if s.tailnet != nil {
 		s.tailnet.cancel()
@@ -77,7 +66,7 @@ func (s *Service) startTailnetLocked(settings Settings) {
 	runtime := &tailnetRuntime{ctx: ctx, cancel: cancel, status: tailnet.Status{State: "Starting"}, authRevision: s.tailnetAuthRevision}
 	authKey := s.tailnetAuthKey
 	s.tailnet = runtime
-	server, app := s.server, s.app
+	server := s.server
 	open := s.openTailnet
 	if open == nil {
 		open = func(ctx context.Context, root string, options tailnet.Options, report func(tailnet.Status)) (tailnetConnection, error) {
@@ -115,7 +104,7 @@ func (s *Service) startTailnetLocked(settings Settings) {
 				log.Printf("event=tsnet_shutdown_failed error=%q", tailnet.RedactSecrets(err.Error(), authKey))
 			}
 		}()
-		if !s.attachTailnet(runtime, server, app, settings, connection, ctx) {
+		if !s.attachTailnet(runtime, server, connection, ctx) {
 			return
 		}
 		<-ctx.Done()
@@ -259,18 +248,15 @@ func (s *Service) TSNetLoginURL(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("Tailscale did not provide a login link. Check network access to Tailscale and try again, or use an Auth Key.")
 }
 
-func (s *Service) attachTailnet(runtime *tailnetRuntime, server *http.Server, app *App, settings Settings, connection tailnetConnection, ctx context.Context) bool {
+func (s *Service) attachTailnet(runtime *tailnetRuntime, server *http.Server, connection tailnetConnection, ctx context.Context) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if ctx.Err() != nil || s.server != server || s.tailnet != runtime {
 		return false
 	}
 	origin := connection.Origin()
-	if err := s.Store.saveTailnetOrigin(settings, origin); err != nil {
-		runtime.report(tailnet.Status{State: "Error", Error: err.Error()})
-		return false
-	}
-	app.publicOrigin.Store(&origin)
+	// TLS requests already pass the app's same-origin check against their Host.
+	// Publish this ingress separately; never replace the configured proxy origin.
 	if runtime.authRevision == s.tailnetAuthRevision {
 		s.tailnetAuthKey = ""
 	}

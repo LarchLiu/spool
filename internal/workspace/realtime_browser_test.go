@@ -336,7 +336,7 @@ func TestRealtimeBrowser(t *testing.T) {
 						t.Errorf("%s failed: %s", check, data)
 					}
 				}
-				for _, check := range []string{"tailnetExplicitRestart", "tailnetMissingLoginLink", "tailnetLoginFeedback", "tailnetLoginNonBlocking", "networkProxySettings", "tailnetBrowserLogin", "tailnetSecretInput", "tailnetKeyRegistration", "tailnetKeyNonBlocking", "tailnetConnected", "tailnetCopyURL", "settingsCopyStable", "settingsPollingStable", "settingsDraftRetained"} {
+				for _, check := range []string{"tailnetExplicitRestart", "tailnetMissingLoginLink", "tailnetLoginFeedback", "tailnetLoginNonBlocking", "networkProxySettings", "tailnetBrowserLogin", "tailnetSecretInput", "tailnetKeyRegistration", "tailnetKeyNonBlocking", "tailnetConnected", "tailnetPublicOriginIndependent", "tailnetCopyURL", "settingsCopyStable", "settingsPollingStable", "settingsDraftRetained"} {
 					if report[check] != true {
 						t.Errorf("tailnet settings check failed: %s = %v", check, report[check])
 					}

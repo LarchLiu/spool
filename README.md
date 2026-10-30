@@ -757,11 +757,24 @@ allow the client node to reach this server node's TCP port.
   `127.0.0.1:8787`). Both listeners share one App, database, user sessions, agent
   tasks, SSE and WebSocket connections, and service shutdown lifecycle. An
   existing LAN binding is not changed automatically.
-- The assigned HTTPS origin is managed automatically as **Public origin**,
-  replacing any saved reverse-proxy origin. The desktop origin field is disabled
-  while tsnet is enabled. To return to local HTTP, disable tsnet in Desktop and
-  restart, or launch with `-tsnet=false`. Disabling clears the managed origin;
-  pass `-public-url https://your-proxy.example` if switching to a separate proxy.
+- **Public origin** remains an editable, independently saved reverse-proxy
+  origin, for example `https://chat.example.com`. The automatically assigned
+  **Tailnet HTTPS address** is displayed and copied separately, for example
+  `https://spool-server.example.ts.net`. Connecting or disabling tsnet never
+  overwrites or clears Public origin. Connection changes still require an
+  explicit service restart.
+- Both entrances can be used simultaneously: Web/PWA clients connect through
+  your HTTPS reverse proxy to the normal HTTP listener, while Android clients
+  connect directly to the tailnet HTTPS address. Both use the same accounts,
+  permissions and data. Each origin has its own browser cookies and storage, so
+  sign in separately at each address. Origin, CSRF and WebSocket checks stay
+  strict; no wildcard CORS is enabled. **Open in Browser** prefers Public origin
+  when configured, otherwise the connected tailnet address, then local HTTP.
+- To disable only the tailnet entrance, disable tsnet in Desktop and restart,
+  or launch with `-tsnet=false`; your reverse-proxy origin remains configured.
+  If an older version replaced your proxy origin with a `.ts.net` address,
+  re-enter the proxy origin once (or use `-public-url https://chat.example.com`).
+  The previously overwritten value cannot be recovered automatically.
 - This is **tailnet-only**, not Funnel. HTTPS does not bypass Spool login,
   project permissions, CSRF checks, or Secure/HttpOnly/SameSite cookies.
   No auth key is embedded in the Android APK.

@@ -61,7 +61,11 @@ test("service offers optional masked enrollment without storing a key in the set
   assert.match(html, /Sign in to Tailscale/);
   assert.match(html, /Waiting for Tailscale login/);
   assert.doesNotMatch(html, /Clear pending key/);
-  assert.match(html, /aria-label="Public origin[^>]+disabled=""/);
+  assert.doesNotMatch(html, /aria-label="Public origin[^>]+disabled=""/);
+  assert.match(
+    html,
+    /This reverse-proxy origin stays independent of the Tailscale HTTPS address\./,
+  );
   const autosave = await readFile(
     new URL("../src/settings-autosave.ts", import.meta.url),
     "utf8",
@@ -161,13 +165,16 @@ test("system proxy is an application Network setting, not a Tailscale option", a
 });
 
 test("connected tailnet displays the assigned HTTPS address and leaves Spool login required", () => {
-  const html = renderService({
-    TSNet: { State: "Running", URL: "https://spool.example.ts.net" },
-  });
+  const html = renderService(
+    { TSNet: { State: "Running", URL: "https://spool.example.ts.net" } },
+    { public_url: "https://chat.example.com" },
+  );
   assert.match(html, /Connected to tailnet/);
   assert.match(html, /<code>https:\/\/spool.example.ts.net<\/code>/);
   assert.match(html, /Copy address/);
   assert.match(html, /Spool login is still required/);
+  assert.match(html, /aria-label="Public origin[^>]+value="https:\/\/chat\.example\.com"/);
+  assert.doesNotMatch(html, /aria-label="Public origin[^>]+disabled/);
   assert.doesNotMatch(html, /Sign in to Tailscale|Clear pending key/);
 });
 

@@ -131,17 +131,6 @@ func (s *Store) SaveSettings(v Settings) error {
 	// Keep persistence and the live cache target ordered across concurrent saves.
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
-	previous, err := s.Settings()
-	if err != nil {
-		return err
-	}
-	if v.TSNetEnabled && sameTailnetSettings(previous, v) {
-		// A settings snapshot may predate asynchronous enrollment. The tsnet
-		// origin is managed by the service, never by a stale autosave payload.
-		v.PublicURL = previous.PublicURL
-	} else if previous.TSNetEnabled && !v.TSNetEnabled && v.PublicURL == previous.PublicURL {
-		v.PublicURL = ""
-	}
 	return s.saveSettingsLocked(v)
 }
 

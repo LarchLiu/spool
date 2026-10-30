@@ -613,7 +613,7 @@
   "Waiting for device approval": "デバイスの承認待ち",
   "Tailscale unavailable": "Tailscale を利用できません",
   "Starting Tailscale": "Tailscale を起動中",
-  "Tailscale manages the HTTPS origin automatically.": "Tailscale が HTTPS オリジンを自動設定します。",
+  "This reverse-proxy origin stays independent of the Tailscale HTTPS address.": "このリバースプロキシのオリジンは Tailscale の HTTPS アドレスとは別に設定されます。",
   "Enable embedded Tailscale": "内蔵 Tailscale を有効にする",
   "Connect this workspace to your tailnet without a system VPN or a separate Serve proxy.": "システム VPN や別の Serve プロキシなしでワークスペースを Tailnet に接続します。",
   "Tailscale node name": "Tailscale ノード名",

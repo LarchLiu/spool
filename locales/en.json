@@ -613,7 +613,7 @@
   "Waiting for device approval": "Waiting for device approval",
   "Tailscale unavailable": "Tailscale unavailable",
   "Starting Tailscale": "Starting Tailscale",
-  "Tailscale manages the HTTPS origin automatically.": "Tailscale manages the HTTPS origin automatically.",
+  "This reverse-proxy origin stays independent of the Tailscale HTTPS address.": "This reverse-proxy origin stays independent of the Tailscale HTTPS address.",
   "Enable embedded Tailscale": "Enable embedded Tailscale",
   "Connect this workspace to your tailnet without a system VPN or a separate Serve proxy.": "Connect this workspace to your tailnet without a system VPN or a separate Serve proxy.",
   "Tailscale node name": "Tailscale node name",

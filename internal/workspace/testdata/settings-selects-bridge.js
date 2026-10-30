@@ -6,7 +6,7 @@ const model = (id, levels) => ({
 const snapshot = {
   section: "Appearance", message: "", version: "test", database: "", application_log: "", crash_log: "", update_log: "",
   github_path: "", github_state: "", github_message: "", github_login: "",
-  settings: { host: "127.0.0.1", port: 8787, public_url: "", idle_minutes: 10, history_cache_mib: 256, auto_start: false, tsnet_enabled: false, tsnet_hostname: "spool-server", tsnet_port: 443, use_system_proxy: false },
+  settings: { host: "127.0.0.1", port: 8787, public_url: "https://chat.example.com", idle_minutes: 10, history_cache_mib: 256, auto_start: false, tsnet_enabled: false, tsnet_hostname: "spool-server", tsnet_port: 443, use_system_proxy: false },
   preferences: { theme: "system", language: "system" },
   update_preferences: { automatic_checks: false, automatic_installs: false, check_interval_minutes: 60 },
   status: { Running: false, RestartRequired: false, Address: "", Error: "", Online: [], TSNet: { State: "Disabled", AuthURL: "", URL: "", Error: "" }, TSNetAuthKeySet: false },
@@ -104,7 +104,6 @@ window.mygo = {
         ? { State: "Running", AuthURL: "", URL: "https://spool.example.ts.net", Error: "" }
         : { State: "NeedsLogin", AuthURL: "", URL: "", Error: "" };
       snapshot.status.TSNetAuthKeySet = false;
-      snapshot.settings.public_url = snapshot.status.TSNet.URL;
     }
     await new Promise((resolve) => setTimeout(resolve, 40));
     return structuredClone(snapshot);

@@ -613,7 +613,7 @@
   "Waiting for device approval": "等待管理员批准设备",
   "Tailscale unavailable": "Tailscale 暂不可用",
   "Starting Tailscale": "正在启动 Tailscale",
-  "Tailscale manages the HTTPS origin automatically.": "Tailscale 会自动设置 HTTPS 公开地址。",
+  "This reverse-proxy origin stays independent of the Tailscale HTTPS address.": "此反向代理公开地址独立于 Tailscale HTTPS 地址。",
   "Enable embedded Tailscale": "启用内嵌 Tailscale",
   "Connect this workspace to your tailnet without a system VPN or a separate Serve proxy.": "将工作空间接入 Tailnet，无需系统 VPN 或单独的 Serve 代理。",
   "Tailscale node name": "Tailscale 节点名称",

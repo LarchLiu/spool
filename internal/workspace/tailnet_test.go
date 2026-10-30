@@ -112,6 +112,11 @@ func TestTailnetEnrollmentDoesNotBlockLocalServiceAndStopCancelsIt(t *testing.T)
 
 func TestTailnetAuthKeyIsMemoryOnlyAndConsumedAfterEnrollment(t *testing.T) {
 	service, settings := settingsService(t)
+	const publicOrigin = "https://chat.example.test"
+	settings.PublicURL = publicOrigin
+	if err := service.Store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
 	const key = "tskey-auth-test-enrollment-secret"
 	if err := service.SetTSNetAuthKey("  " + key + "\n"); err != nil {
 		t.Fatal(err)
@@ -159,25 +164,74 @@ func TestTailnetAuthKeyIsMemoryOnlyAndConsumedAfterEnrollment(t *testing.T) {
 		t.Fatal("enrollment did not consume the key or lost the pending idle change", status)
 	}
 	saved, err := service.Store.Settings()
-	if err != nil || saved.PublicURL != connection.Origin() || saved.IdleMinutes != settings.IdleMinutes || service.WebURL() != connection.Origin() {
-		t.Fatal("enrollment overwrote newer settings or failed to publish its origin", saved, err)
+	if err != nil || saved.PublicURL != publicOrigin || saved.IdleMinutes != settings.IdleMinutes || status.TSNet.URL != connection.Origin() || service.WebURL() != publicOrigin {
+		t.Fatal("enrollment replaced the configured PWA origin instead of publishing its own address", saved, status, err)
 	}
-	// A stale autosave must not restore the empty pre-enrollment origin.
+	// Other settings saves must retain the independent PWA origin.
 	settings.HistoryCacheMiB++
 	if err := service.Store.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
 	saved, _ = service.Store.Settings()
-	if saved.PublicURL != connection.Origin() {
-		t.Fatal("stale autosave overwrote the managed origin")
+	if saved.PublicURL != publicOrigin {
+		t.Fatal("unrelated settings save changed the configured PWA origin")
 	}
 	saved.TSNetEnabled = false
 	if err := service.Store.SaveSettings(saved); err != nil {
 		t.Fatal(err)
 	}
 	saved, _ = service.Store.Settings()
-	if saved.PublicURL != "" {
-		t.Fatal("disabling tsnet retained its managed public origin")
+	if saved.PublicURL != publicOrigin {
+		t.Fatal("disabling tsnet cleared the configured PWA origin")
+	}
+}
+
+func TestTailnetPublicOriginChangesApplyOnExplicitRestart(t *testing.T) {
+	service, settings := settingsService(t)
+	settings.PublicURL = "https://chat.example.test"
+	var connections []*testTailnetConnection
+	settings = enableTestTailnet(t, service, settings, func(context.Context, string, tailnet.Options, func(tailnet.Status)) (tailnetConnection, error) {
+		connection := newTestTailnetConnection(t)
+		connections = append(connections, connection)
+		return connection, nil
+	})
+	status := waitTailnet(t, service, func(status ServiceStatus) bool { return status.TSNet.URL != "" })
+	if status.RestartRequired || service.WebURL() != settings.PublicURL {
+		t.Fatal("connecting tailnet changed the public origin or requires another restart", status)
+	}
+	app := service.app
+	settings.PublicURL = "https://pwa.example.test"
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if status := service.Status(); !status.RestartRequired || status.TSNet.URL == "" || service.app != app || service.WebURL() != app.settings.PublicURL {
+		t.Fatal("editing the public origin interrupted the active dual ingress", status)
+	}
+	if err := service.Restart(); err != nil {
+		t.Fatal(err)
+	}
+	status = waitTailnet(t, service, func(status ServiceStatus) bool { return status.TSNet.URL != "" })
+	if status.RestartRequired || service.WebURL() != settings.PublicURL || service.app.publicURL() != settings.PublicURL {
+		t.Fatal("restart did not apply the independent public origin", status)
+	}
+	settings.TSNetEnabled = false
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Restart(); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := service.Store.Settings()
+	status = service.Status()
+	if err != nil || !status.Running || status.RestartRequired || status.TSNet.State != "Disabled" || status.TSNet.URL != "" || saved.PublicURL != settings.PublicURL || service.WebURL() != settings.PublicURL {
+		t.Fatal("disabling tailnet failed to preserve the PWA entrance", saved, status, err)
+	}
+	for _, connection := range connections {
+		conn, err := net.DialTimeout("tcp", connection.Listener().Addr().String(), time.Second)
+		if err == nil {
+			conn.Close()
+			t.Fatal("disabling tailnet left its ingress open")
+		}
 	}
 }
 
@@ -196,7 +250,7 @@ func TestTailnetRestartClosesOldNodeBeforeOpeningNewNode(t *testing.T) {
 		return second, nil
 	})
 	status := waitTailnet(t, service, func(s ServiceStatus) bool { return s.TSNet.URL != "" })
-	if status.RestartRequired {
+	if status.RestartRequired || service.WebURL() != first.Origin() {
 		t.Fatal("automatically assigned origin caused a false restart notice", status)
 	}
 	app := service.app

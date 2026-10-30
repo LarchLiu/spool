@@ -296,10 +296,14 @@ func (s *Service) WebURL() string {
 	settings, _ := s.Store.Settings()
 	if s.app != nil {
 		settings = s.app.settings
-		settings.PublicURL = s.app.publicURL()
 	}
 	if settings.PublicURL != "" {
 		return settings.PublicURL
+	}
+	if s.tailnet != nil {
+		if origin := s.tailnet.snapshot().URL; origin != "" {
+			return origin
+		}
 	}
 	host := settings.Host
 	if host == "0.0.0.0" || host == "::" {

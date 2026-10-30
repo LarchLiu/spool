@@ -245,12 +245,9 @@ export function ServicePage({ data, run, t }: PageProps) {
         <TextField
           title={t("Public origin (HTTPS reverse proxy for remote PWA)")}
           value={draft.public_url}
-          disabled={draft.tsnet_enabled}
-          help={
-            draft.tsnet_enabled
-              ? t("Tailscale manages the HTTPS origin automatically.")
-              : undefined
-          }
+          help={t(
+            "This reverse-proxy origin stays independent of the Tailscale HTTPS address.",
+          )}
           onChange={(v) => autosave.edit("public_url", v)}
           onCommit={() => void autosave.commit("public_url")}
         />
