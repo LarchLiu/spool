@@ -181,6 +181,48 @@ PushManager.prototype.subscribe = async function(options) {
 			t.Fatal(err)
 		}
 	}
+	// Native notification clicks use a preload event rather than Service Worker
+	// messaging. Keep authentication inside this disposable browser profile.
+	nativeSetup := fmt.Sprintf(`window.spoolDesktop = true; window.spoolNotificationTarget = {url: %q, user: %q};`, "/?inbox="+group.ID+"&recipient="+u.ID, u.ID)
+	if _, err := driver.run(ctx, []browserCommand{
+		{Method: "Page.enable"},
+		{Method: "Page.addScriptToEvaluateOnNewDocument", Params: map[string]any{"source": nativeSetup}},
+		{Method: "Page.navigate", Params: map[string]any{"url": server.URL + "/"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	nativeDeadline := time.Now().Add(5 * time.Second)
+	for {
+		result, err := driver.run(ctx, []browserCommand{{Method: "Runtime.evaluate", Params: map[string]any{"expression": "window.spoolDesktop === true && !!document.querySelector('.direct-message-panel')", "returnByValue": true}}})
+		var state struct{ Result struct{ Value bool } }
+		if err == nil && json.Unmarshal(result, &state) == nil && state.Result.Value {
+			break
+		}
+		if time.Now().After(nativeDeadline) {
+			detail, _ := driver.run(ctx, []browserCommand{{Method: "Runtime.evaluate", Params: map[string]any{"expression": "JSON.stringify({ready:document.readyState,native:window.spoolDesktop,target:window.spoolNotificationTarget,text:document.body?.innerText.slice(0,2500)})", "returnByValue": true}}})
+			t.Fatalf("native notification page did not become ready: %s", detail)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("native notification page did not become ready")
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+	nativeProbe, err := os.ReadFile("testdata/desktop-notifications-browser.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := driver.run(ctx, []browserCommand{{Method: "Runtime.evaluate", Params: map[string]any{"expression": fmt.Sprintf("(%s)(%q, %q, %q, %q)", nativeProbe, u.ID, peer.ID, group.ID, target.ID), "awaitPromise": true, "returnByValue": true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nativeReport struct {
+		Result           struct{ Value map[string]any }
+		ExceptionDetails json.RawMessage
+	}
+	if err := json.Unmarshal(result, &nativeReport); err != nil || len(nativeReport.ExceptionDetails) > 0 || nativeReport.Result.Value["ok"] != true {
+		t.Fatalf("native notification browser routing failed: %s (%v)", result, err)
+	}
 	if delivered.Load() != 1 {
 		t.Fatalf("browser test delivered %d test pushes, want 1", delivered.Load())
 	}

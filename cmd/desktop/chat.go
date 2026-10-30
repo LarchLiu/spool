@@ -105,6 +105,8 @@ func (p *panel) loadChatView(address string) error {
 			p.sendDesktopAppearance(view)
 			p.sendUpdateAvailability(view)
 			p.chatFailed = false
+			p.chatLoaded = true
+			p.sendPendingNotification()
 			if p.tab == "Chat" {
 				view.Focus()
 			}
@@ -119,6 +121,7 @@ func (p *panel) loadChatView(address string) error {
 		})
 	}
 	if p.chatURL != address || p.chatFailed {
+		p.chatLoaded = false
 		p.chatURL = address
 		p.chatFailed = false
 		if err := p.chatView.Page().LoadURL(address); err != nil {

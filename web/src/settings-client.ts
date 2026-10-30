@@ -93,6 +93,8 @@ export type SettingsSnapshot = {
   message: string;
   settings: ServerSettings;
   preferences: UIPreferences;
+  notifications_enabled?: boolean;
+  notifications_supported?: boolean;
   update_preferences: UpdatePreferences;
   status: {
     Running: boolean;
@@ -133,6 +135,8 @@ export type SettingsCommand =
   | { kind: "navigate"; section: SettingsSection }
   | { kind: "save-settings"; settings: ServerSettings }
   | { kind: "save-appearance"; preferences: UIPreferences }
+  | { kind: "save-notifications"; enabled: boolean }
+  | { kind: "test-notification" }
   | { kind: "save-updates"; update_preferences: UpdatePreferences }
   | { kind: "save-person"; person: PersonDraft }
   | { kind: "save-project"; project: ManagedProject }

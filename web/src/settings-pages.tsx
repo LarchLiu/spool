@@ -534,6 +534,56 @@ export function AppearancePage({ data, run, t }: PageProps) {
         <Monitor size={18} />
         <p>{t("Changes apply immediately and are saved in SQLite.")}</p>
       </div>
+      <Card title={t("System notifications")}>
+        <Row
+          title={t("Enable notifications")}
+          help={t(
+            "Notify this desktop about messages and tasks for the account signed in to Chat, even when the window is hidden. Spool must keep running.",
+          )}
+        >
+          <Toggle
+            label={t("Enable notifications")}
+            value={data.notifications_enabled === true}
+            disabled={!data.notifications_supported}
+            onChange={(enabled) =>
+              void run({ kind: "save-notifications", enabled })
+            }
+          />
+        </Row>
+        <div className="settings-card-actions">
+          <button
+            type="button"
+            disabled={
+              !data.notifications_enabled || !data.notifications_supported
+            }
+            onClick={() => void run({ kind: "test-notification" })}
+          >
+            {t("Send test notification")}
+          </button>
+        </div>
+      </Card>
+      <Hint>
+        {t(
+          "Automatic notifications are skipped while the desktop window has focus and are not replayed later. Test notifications still appear.",
+        )}
+      </Hint>
+      <Hint>
+        {t(
+          "Notifications show sender and group names, but never message contents.",
+        )}
+      </Hint>
+      <Hint>
+        {t(
+          "Private and group messages are live only and are not replayed after closing or refreshing the page.",
+        )}
+      </Hint>
+      {!data.notifications_supported && (
+        <Hint>
+          {t(
+            "System notifications are unavailable. On macOS, use the packaged desktop app.",
+          )}
+        </Hint>
+      )}
     </>
   );
 }

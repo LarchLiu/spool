@@ -29,7 +29,11 @@ import {
   MessageCircle,
 } from "lucide-react";
 import { api, getCSRF, setCSRF } from "./api";
-import { isDesktopChat } from "./runtime";
+import {
+  isDesktopChat,
+  subscribeDesktopNotifications,
+  takeDesktopNotification,
+} from "./runtime";
 import { DesktopSettingsLink } from "./desktop-settings";
 import { DesktopWindowChrome } from "./desktop-window-chrome";
 import { LoginStory } from "./login-story";
@@ -356,6 +360,9 @@ function App() {
   const [notificationInbox, setNotificationInbox] = useState(() =>
     notificationInboxFromURL(window.location.href),
   );
+  const [desktopNotification, setDesktopNotification] = useState(() =>
+    takeDesktopNotification(),
+  );
   activeID.current = chatID;
   const selection = useRef({ project, chatID, draftVersion });
   const activeUser = useRef(user?.id);
@@ -416,6 +423,39 @@ function App() {
     void syncExistingPush(locale, controller.signal).catch(() => {});
     return () => controller.abort();
   }, [user?.id, locale]);
+  useEffect(() => {
+    const receive = () => {
+      const target = takeDesktopNotification();
+      if (target) setDesktopNotification(target);
+    };
+    const unsubscribe = subscribeDesktopNotifications(receive);
+    receive();
+    return unsubscribe;
+  }, []);
+  useEffect(() => {
+    if (!user || !desktopNotification) return;
+    setDesktopNotification(null);
+    if (desktopNotification.user !== user.id) return;
+    const url = new URL(desktopNotification.url, window.location.origin);
+    const inbox = notificationInboxFromURL(url.href);
+    if (inbox && inbox.user === user.id) {
+      setNotificationInbox(inbox);
+      return;
+    }
+    const id = notificationChatFromURL(url.href);
+    if (!id) return;
+    const owner = user.id;
+    notificationChat.current = id;
+    void api<Chat>("/chats/" + encodeURIComponent(id))
+      .then((chat) => {
+        if (activeUser.current !== owner || notificationChat.current !== id)
+          return;
+        notificationChat.current = "";
+        directInbox.close();
+        openChat(chat);
+      })
+      .catch(fail);
+  }, [desktopNotification, user?.id]);
   useEffect(() => {
     if (!user || !messagingConnected || !notificationInbox) return;
     setNotificationInbox(null);

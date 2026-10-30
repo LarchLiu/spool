@@ -262,6 +262,7 @@ func (a *App) enqueuePush(job pushJob) {
 		return
 	default:
 	}
+	a.store.desktopNotifications.publish(a, job)
 	var subscribed bool
 	if err := a.store.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM web_push_subscriptions)`).Scan(&subscribed); err != nil || !subscribed {
 		return

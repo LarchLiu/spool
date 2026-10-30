@@ -87,6 +87,38 @@ export function subscribeDesktopUpdates(
   return subscribeDesktopEvent("spool:update-changed", listener, surface);
 }
 
+export type DesktopNotificationTarget = { url: string; user: string };
+
+export function takeDesktopNotification(
+  surface: unknown = globalThis,
+): DesktopNotificationTarget | null {
+  if (!isDesktopChat(surface) || !("spoolNotificationTarget" in surface))
+    return null;
+  const target = surface.spoolNotificationTarget;
+  delete (surface as { spoolNotificationTarget?: unknown })
+    .spoolNotificationTarget;
+  if (
+    typeof target !== "object" ||
+    target === null ||
+    !("url" in target) ||
+    typeof target.url !== "string" ||
+    !("user" in target) ||
+    typeof target.user !== "string" ||
+    !target.url.startsWith("/?") ||
+    target.url.length > 512 ||
+    !/^[a-zA-Z0-9_][a-zA-Z0-9_-]{7,127}$/.test(target.user)
+  )
+    return null;
+  return { url: target.url, user: target.user };
+}
+
+export function subscribeDesktopNotifications(
+  listener: () => void,
+  surface: unknown = globalThis,
+): () => void {
+  return subscribeDesktopEvent("spool:notification-changed", listener, surface);
+}
+
 function subscribeDesktopEvent(
   event: string,
   listener: () => void,

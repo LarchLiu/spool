@@ -1053,6 +1053,45 @@ will not work over an unrelated plain HTTP LAN address. iOS installation uses
 Safari's Share → Add to Home Screen; not every browser emits an install prompt.
 TLS certificate provisioning and reverse-proxy setup are not automated here.
 
+### Desktop System Notifications
+
+In the desktop Control Center, open **Appearance and language**, then enable
+**System notifications**. This is a separate, local-device opt-in, disabled by
+default. Enabling sends a test notification and asks for OS permission when
+needed; permission errors do not save the opt-in. Use **Send test notification**
+to check again. macOS requires the packaged app (`mygo dev` or `mygo build`), not
+a bare `go run` executable; other platforms require their native notification
+service. The OS may suppress alerts through Focus/Do Not Disturb settings.
+
+Desktop alerts use MyGo's native notification API, not Web Push, Firebase, or
+browser notification permissions. They cover task success, failure, pending
+approval, and successfully delivered private/group messages, using the same
+localized titles, sender/group names and content-privacy rules as Web Push.
+Spool and its local service must stay running; closing the main window to the
+tray is supported, quitting the app stops new alerts. No Web Push subscription
+is required. Human chats remain live-only with no offline history.
+
+Automatic alerts are suppressed while the native desktop window has focus,
+including when Control Center is open. Foreground events are discarded, not
+queued for replay after switching away. Alerts resume for new events when the
+window loses focus, is minimized, or is hidden to the tray. Manual test
+notifications bypass this focus rule so OS permissions can be checked.
+
+Only the account signed in to the desktop Chat receives alerts. The native
+host reads its own HTTPOnly cookie and rechecks session validity, current chat
+access/control, task participation and actual message recipients immediately
+before displaying an event. It does not grant native privileges to the chat
+renderer. Changing accounts or signing out clears prior alerts on the next
+desktop refresh (normally within three seconds); disabling notifications clears
+them immediately. Already-displayed or in-flight OS notifications are best-effort.
+
+Clicking an alert restores the main window and opens the relevant conversation
+without reloading an existing chat page. Targets are local and account-scoped;
+old notifications cannot switch accounts or bypass login. On platforms that
+relaunch the app for an old notification (macOS), its target is retained until
+the chat page and matching login are ready. Delivery is bounded and in-memory;
+events expire after five minutes and are not replayed after quitting/restarting.
+
 ### Web Push Notifications
 
 In the signed-in Web/PWA sidebar settings (**Appearance and language**), use

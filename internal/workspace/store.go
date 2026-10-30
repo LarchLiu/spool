@@ -20,18 +20,19 @@ var errSessionConversion = errors.New("Could not convert this chat to another ag
 var errTurnChanged = errors.New("turn changed while agent was running")
 
 type Store struct {
-	changes      changeHub
-	historyCache nativeHistoryCache
-	settingsMu   sync.Mutex
-	mu           sync.Mutex
-	agentMu      sync.Mutex
-	localMu      sync.Mutex
-	localScanAt  time.Time
-	localIndex   agent.LocalSessionIndex
-	root         string
-	db           *sql.DB
-	runtimeMu    sync.Mutex
-	runtimeTurns map[string]chatmodel.Turn
+	changes              changeHub
+	desktopNotifications desktopNotificationHub
+	historyCache         nativeHistoryCache
+	settingsMu           sync.Mutex
+	mu                   sync.Mutex
+	agentMu              sync.Mutex
+	localMu              sync.Mutex
+	localScanAt          time.Time
+	localIndex           agent.LocalSessionIndex
+	root                 string
+	db                   *sql.DB
+	runtimeMu            sync.Mutex
+	runtimeTurns         map[string]chatmodel.Turn
 }
 
 const schema = `

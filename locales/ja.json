@@ -599,5 +599,13 @@
   "Spool - Message from {name}": "Spool · {name} からのメッセージ",
   "Spool - New group message": "Spool · 新しいグループメッセージ",
   "Spool - Group: {name}": "Spool · グループ：{name}",
-  "{name} sent a message in this group. Open Spool to view it.": "{name} がグループにメッセージを送信しました。Spool を開いて確認してください。"
+  "{name} sent a message in this group. Open Spool to view it.": "{name} がグループにメッセージを送信しました。Spool を開いて確認してください。",
+  "System notifications": "システム通知",
+  "Automatic notifications are skipped while the desktop window has focus and are not replayed later. Test notifications still appear.": "デスクトップウィンドウにフォーカスがある間は自動通知を送信せず、後からも再送しません。テスト通知は対象外です。",
+  "Notify this desktop about messages and tasks for the account signed in to Chat, even when the window is hidden. Spool must keep running.": "チャットにログイン中のアカウントのメッセージとタスクを通知します。ウィンドウを非表示にしても届きますが、Spool の起動が必要です。",
+  "Notifications show sender and group names, but never message contents.": "通知には送信者名とグループ名を表示しますが、メッセージ本文は表示しません。",
+  "System notifications are unavailable. On macOS, use the packaged desktop app.": "システム通知は利用できません。macOS ではパッケージ化されたデスクトップアプリを使用してください。",
+  "System notifications are blocked. Allow Spool in your system notification settings.": "システム通知が拒否されています。システムの通知設定で Spool を許可してください。",
+  "Could not show system notification": "システム通知を表示できませんでした",
+  "System notifications are working on this desktop.": "このデスクトップでシステム通知を受信できています。"
 }

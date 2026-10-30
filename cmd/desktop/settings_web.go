@@ -61,27 +61,29 @@ type settingsPerson struct {
 }
 
 type settingsSnapshot struct {
-	Section           string                      `json:"section"`
-	Message           string                      `json:"message"`
-	Settings          workspace.Settings          `json:"settings"`
-	Preferences       workspace.UIPreferences     `json:"preferences"`
-	UpdatePreferences workspace.UpdatePreferences `json:"update_preferences"`
-	Status            workspace.ServiceStatus     `json:"status"`
-	Users             []workspace.User            `json:"users"`
-	Projects          []settingsProject           `json:"projects"`
-	Agents            []settingsAgent             `json:"agents"`
-	Updates           appupdate.State             `json:"updates"`
-	Version           string                      `json:"version"`
-	Database          string                      `json:"database"`
-	ApplicationLog    string                      `json:"application_log"`
-	CrashLog          string                      `json:"crash_log"`
-	UpdateLog         string                      `json:"update_log"`
-	GitHubPath        string                      `json:"github_path"`
-	GitHubState       string                      `json:"github_state"`
-	GitHubMessage     string                      `json:"github_message"`
-	GitHubLogin       string                      `json:"github_login"`
-	SavedID           string                      `json:"saved_id,omitempty"`
-	Repository        string                      `json:"repository,omitempty"`
+	Section                string                      `json:"section"`
+	Message                string                      `json:"message"`
+	Settings               workspace.Settings          `json:"settings"`
+	Preferences            workspace.UIPreferences     `json:"preferences"`
+	NotificationsEnabled   bool                        `json:"notifications_enabled"`
+	NotificationsSupported bool                        `json:"notifications_supported"`
+	UpdatePreferences      workspace.UpdatePreferences `json:"update_preferences"`
+	Status                 workspace.ServiceStatus     `json:"status"`
+	Users                  []workspace.User            `json:"users"`
+	Projects               []settingsProject           `json:"projects"`
+	Agents                 []settingsAgent             `json:"agents"`
+	Updates                appupdate.State             `json:"updates"`
+	Version                string                      `json:"version"`
+	Database               string                      `json:"database"`
+	ApplicationLog         string                      `json:"application_log"`
+	CrashLog               string                      `json:"crash_log"`
+	UpdateLog              string                      `json:"update_log"`
+	GitHubPath             string                      `json:"github_path"`
+	GitHubState            string                      `json:"github_state"`
+	GitHubMessage          string                      `json:"github_message"`
+	GitHubLogin            string                      `json:"github_login"`
+	SavedID                string                      `json:"saved_id,omitempty"`
+	Repository             string                      `json:"repository,omitempty"`
 }
 
 type settingsCommand struct {
@@ -193,7 +195,7 @@ func settingsUI[T any](ctx context.Context, p *panel, fn func() (T, error)) (T, 
 func (s *desktopSettings) Snapshot(ctx context.Context) (settingsSnapshot, error) {
 	p := s.panel
 	v, err := settingsUI(ctx, p, func() (settingsSnapshot, error) {
-		v := settingsSnapshot{Section: p.tab, Message: p.message, Updates: p.updates.State(), Version: desktopVersion()}
+		v := settingsSnapshot{Section: p.tab, Message: p.message, Updates: p.updates.State(), Version: desktopVersion(), NotificationsSupported: p.notificationsSupported}
 		v.GitHubState, v.GitHubLogin = string(p.github.status.State), p.github.status.Login
 		v.GitHubMessage = p.tr(p.github.message(), "user", p.github.status.Login)
 		if p.runtimeDiagnostics != nil {
@@ -212,6 +214,9 @@ func (s *desktopSettings) Snapshot(ctx context.Context) (settingsSnapshot, error
 		return v, err
 	}
 	if v.Preferences, err = store.UIPreferences(""); err != nil {
+		return v, err
+	}
+	if v.NotificationsEnabled, err = store.DesktopNotificationsEnabled(); err != nil {
 		return v, err
 	}
 	if v.UpdatePreferences, err = store.UpdatePreferences(); err != nil {
@@ -332,6 +337,18 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 		err = store.SaveSettings(command.Settings)
 	case "save-appearance":
 		err = store.SaveUIPreferences("", command.Preferences)
+	case "save-notifications":
+		if command.Enabled {
+			err = p.testSystemNotification(ctx)
+		}
+		if err == nil {
+			err = store.SaveDesktopNotificationsEnabled(command.Enabled)
+		}
+		if err == nil && !command.Enabled {
+			p.clearSystemNotifications()
+		}
+	case "test-notification":
+		err = p.testSystemNotification(ctx)
 	case "save-updates":
 		err = store.SaveUpdatePreferences(command.UpdatePreferences)
 	case "save-person":

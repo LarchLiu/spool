@@ -35,6 +35,11 @@ func smokeData() (string, error) {
 			return fail(err)
 		}
 	}
+	for key, folder := range map[string]string{"CODEX_HOME": "codex", "CLAUDE_CONFIG_DIR": "claude"} {
+		if err := os.Setenv(key, filepath.Join(root, folder)); err != nil {
+			return fail(err)
+		}
+	}
 	store, err := workspace.OpenStore(root)
 	if err != nil {
 		return fail(err)
@@ -130,6 +135,11 @@ func (p *panel) smoke(report string, result chan<- error, history *appupdate.Rel
 	if err == nil {
 		if err = p.probeEmbeddedChat(ctx); err != nil {
 			err = fmt.Errorf("embedded chat: %w", err)
+		}
+	}
+	if err == nil {
+		if err = p.probeDesktopNotifications(ctx, report); err != nil {
+			err = fmt.Errorf("desktop notifications: %w", err)
 		}
 	}
 	if err == nil {

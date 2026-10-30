@@ -13,6 +13,8 @@ import {
   desktopUpdateAvailable,
   subscribeDesktopUpdates,
   chatPreferences,
+  takeDesktopNotification,
+  subscribeDesktopNotifications,
 } from "../.test-build/runtime.js";
 import { resolveLanguage, resolveTheme } from "../.test-build/preferences.js";
 import { DesktopSettingsLink, ChatSettingsControl } from "../.test-build/components/web/src/desktop-settings.js";
@@ -22,6 +24,29 @@ test("desktop presentation requires the explicit preload flag, not a query or ge
   for (const surface of [null, {}, { spoolDesktop: "true" }, { spoolDesktop: false }, { mygo: {} }, { location: { search: "?desktop=true" } }]) {
     assert.equal(isDesktopChat(surface), false);
   }
+});
+
+test("desktop notification navigation buffers cold clicks and consumes only native account-scoped targets", () => {
+  const target = { url: "/?chat=chat-12345678", user: "user-12345678" };
+  const surface = { spoolDesktop: true, spoolNotificationTarget: target };
+  assert.deepEqual(takeDesktopNotification(surface), target);
+  assert.equal(takeDesktopNotification(surface), null);
+  for (const bad of [null, {}, { url: "https://evil.test/", user: target.user }, { url: target.url, user: "bad" }]) {
+    assert.equal(takeDesktopNotification({ spoolDesktop: true, spoolNotificationTarget: bad }), null);
+  }
+  assert.equal(takeDesktopNotification({ spoolNotificationTarget: target }), null);
+  let received = 0;
+  const events = new Map();
+  const native = {
+    spoolDesktop: true,
+    addEventListener: (key, listener) => events.set(key, listener),
+    removeEventListener: (key) => events.delete(key),
+  };
+  const off = subscribeDesktopNotifications(() => received++, native);
+  events.get("spool:notification-changed")();
+  assert.equal(received, 1);
+  off();
+  assert.equal(events.size, 0);
 });
 
 test("desktop skips PWA registration and install UI without changing browser behavior", async () => {

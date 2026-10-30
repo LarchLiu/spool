@@ -12,6 +12,10 @@ var desktopAppearance = mygo.NewEvent[string]("spool:appearance")
 var desktopUpdateAvailable = mygo.NewEvent[bool]("spool:update-available")
 
 const desktopWindowPreload = `Object.defineProperty(window, "spoolDesktop", {value: true});
+window.mygo?.on("spool:notification-open", target => {
+  window.spoolNotificationTarget = target;
+  window.dispatchEvent(new Event("spool:notification-changed"));
+});
 window.mygo?.on("spool:update-available", available => {
   const next = available === true;
   if (window.spoolUpdateAvailable === next) return;

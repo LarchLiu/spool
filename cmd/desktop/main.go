@@ -25,49 +25,59 @@ import (
 )
 
 type panel struct {
-	service            *workspace.Service
-	window             *mygo.Window
-	windowChrome       windowChrome
-	chatView           *mygo.WebView
-	chatURL            string
-	chatFailed         bool
-	chatStarting       bool
-	settingsView       *mygo.WebView
-	settingsFailed     bool
-	devFrontend        *desktopDevFrontend
-	quitting           bool
-	tray               *mygo.Tray
-	logo               *ui.Bitmap
-	preferences        workspace.UIPreferences
-	appliedPreferences workspace.UIPreferences
-	tab                string
-	message            string
-	busy               bool
-	settings           workspace.Settings
-	port, idle         string
-	historyCache       string
-	serviceFieldFocus  map[string]bool
-	serviceFieldCommit func()
-	users              []workspace.User
-	projects           []workspace.Project
-	agents             []workspace.AgentInfo
-	status             workspace.ServiceStatus
-	user               workspace.UserInput
-	project            workspace.Project
-	issueInterval      string
-	issueLabel         string
-	github             githubCLICheck
-	githubPath         string
-	projectGit         githubRepositoryCheck
-	directoryPicker    directoryPicker
-	members            map[string]bool
-	agentPaths         map[chatmodel.Backend]string
-	agentEnabled       map[chatmodel.Backend]bool
-	updates            *appupdate.Controller
-	updatePreferences  workspace.UpdatePreferences
-	updateRelease      func()
-	updateDiagnostics  *appupdate.Diagnostics
-	runtimeDiagnostics *diagnostics.Session
+	service                *workspace.Service
+	window                 *mygo.Window
+	windowChrome           windowChrome
+	chatView               *mygo.WebView
+	chatURL                string
+	chatFailed             bool
+	chatLoaded             bool
+	chatStarting           bool
+	settingsView           *mygo.WebView
+	settingsFailed         bool
+	devFrontend            *desktopDevFrontend
+	quitting               bool
+	tray                   *mygo.Tray
+	logo                   *ui.Bitmap
+	preferences            workspace.UIPreferences
+	appliedPreferences     workspace.UIPreferences
+	tab                    string
+	message                string
+	busy                   bool
+	settings               workspace.Settings
+	port, idle             string
+	historyCache           string
+	serviceFieldFocus      map[string]bool
+	serviceFieldCommit     func()
+	users                  []workspace.User
+	projects               []workspace.Project
+	agents                 []workspace.AgentInfo
+	status                 workspace.ServiceStatus
+	user                   workspace.UserInput
+	project                workspace.Project
+	issueInterval          string
+	issueLabel             string
+	github                 githubCLICheck
+	githubPath             string
+	projectGit             githubRepositoryCheck
+	directoryPicker        directoryPicker
+	members                map[string]bool
+	agentPaths             map[chatmodel.Backend]string
+	agentEnabled           map[chatmodel.Backend]bool
+	updates                *appupdate.Controller
+	updatePreferences      workspace.UpdatePreferences
+	updateRelease          func()
+	updateDiagnostics      *appupdate.Diagnostics
+	runtimeDiagnostics     *diagnostics.Session
+	notificationEvents     *workspace.DesktopNotificationSubscription
+	notificationsEnabled   bool
+	notificationsSupported bool
+	notificationSession    [32]byte
+	notificationPolling    bool
+	pendingNotification    *notificationTarget
+	notificationShow       func(mygo.NotificationOptions) error
+	notificationClear      func()
+	notificationCookies    func(string) ([]mygo.Cookie, error)
 }
 
 func main() {
@@ -174,6 +184,10 @@ func runDesktop() (runErr error) {
 	}
 	defer devFrontend.close()
 	p := &panel{service: service, devFrontend: devFrontend, tab: "Service", members: map[string]bool{}, agentPaths: map[chatmodel.Backend]string{}, agentEnabled: map[chatmodel.Backend]bool{}}
+	if *smoke != "" {
+		// Release probes must not change the installed app's Notification Center.
+		p.notificationClear = func() {}
+	}
 	githubContext, cancelGitHub := context.WithCancel(context.Background())
 	defer cancelGitHub()
 	p.github.ctx = githubContext
@@ -199,6 +213,9 @@ func runDesktop() (runErr error) {
 	smokeResult := make(chan error, 1)
 	var shutdownErr error
 	mygo.App.OnQuit(func() {
+		if p.notificationEvents != nil {
+			p.notificationEvents.Close()
+		}
 		p.updateLog("shutdown_started", "", nil)
 		cancelGitHub()
 		close(done)
@@ -224,12 +241,19 @@ func runDesktop() (runErr error) {
 		}
 		p.quitting = true
 	})
+	mygo.App.OnNotificationClick(p.openSystemNotification)
 	mygo.App.WhenReady(func() {
 		p.applyPresentation()
 		mygo.App.OnLocaleChanged(func(string) { p.updateNativeLabels() })
 		opts := mygo.WindowOptions{Title: p.windowTitle(), Width: 1280, Height: 860, MinWidth: 840, MinHeight: 580, StateKey: "main", Content: ui.View(p.view)}
 		configureWindowChrome(&opts, runtime.GOOS)
 		p.window = mygo.NewWindow(opts)
+		p.notificationsSupported = mygo.NotificationsSupported()
+		p.notificationEvents = service.SubscribeDesktopNotifications()
+		p.notificationEvents.SetFocused(p.window.IsFocused())
+		p.window.OnFocus(func() { p.notificationEvents.SetFocused(true) })
+		p.window.OnBlur(func() { p.notificationEvents.SetFocused(false) })
+		p.window.OnHide(func() { p.notificationEvents.SetFocused(false) })
 		mygo.Theme.OnUpdated(p.broadcastDesktopAppearance)
 		if err := p.loadSettingsView(); err != nil {
 			p.settingsFailed = true
@@ -244,6 +268,9 @@ func runDesktop() (runErr error) {
 			if err != nil {
 				p.chatError(err)
 			}
+		}
+		if p.pendingNotification != nil {
+			p.openChat()
 		}
 		p.refreshGitHubCLI()
 		p.window.OnClose(func(e *mygo.CloseEvent) {
@@ -294,6 +321,7 @@ func runDesktop() (runErr error) {
 					agents, _ := service.Store.Agents()
 					projects, _ := service.Store.Projects()
 					p.window.Update(func() {
+						p.pollDesktopNotifications()
 						p.status, p.agents, p.projects = status, agents, projects
 						p.sendUpdateAvailability(p.chatView)
 					})
@@ -320,6 +348,7 @@ func runDesktop() (runErr error) {
 }
 func (p *panel) load() {
 	p.preferences, _ = p.service.Store.UIPreferences("")
+	p.notificationsEnabled, _ = p.service.Store.DesktopNotificationsEnabled()
 	p.settings, _ = p.service.Store.Settings()
 	p.port = strconv.Itoa(p.settings.Port)
 	p.idle = strconv.Itoa(p.settings.IdleMinutes)
