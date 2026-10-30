@@ -141,10 +141,23 @@ async function checkCustomSelects(report) {
     doc.querySelector('[data-restart-service]').click();
     await waitFor(() => doc.querySelector('code')?.textContent === "https://spool.example.ts.net" && idle(), "assigned HTTPS origin");
     report.tailnetConnected = !fixture.snapshot.status.TSNetAuthKeySet && !button("Clear pending key") && !button("Sign in to Tailscale") && !doc.querySelector('[data-restart-service]');
+    const assertSettingsViewport = () => {
+      const view = frame.contentWindow;
+      const root = doc.scrollingElement;
+      const shell = doc.querySelector('.desktop-settings-shell').getBoundingClientRect();
+      const main = doc.querySelector('.settings-main');
+      const mainBounds = main.getBoundingClientRect();
+      const footer = doc.querySelector('.settings-sidebar-bottom').getBoundingClientRect();
+      if (root.scrollHeight > view.innerHeight || root.scrollWidth > view.innerWidth || root.scrollTop || shell.top !== 0 || Math.abs(footer.bottom - view.innerHeight) > 1)
+        throw new Error("Settings escaped its content scroller: " + JSON.stringify({ height: view.innerHeight, scrollHeight: root.scrollHeight, scrollTop: root.scrollTop, shellTop: shell.top, shellHeight: shell.height, mainTop: mainBounds.top, mainBottom: mainBounds.bottom, mainHeight: mainBounds.height, mainScrollHeight: main.scrollHeight, footerBottom: footer.bottom }));
+    };
+    assertSettingsViewport();
     const copy = doc.querySelector('.settings-copy-address');
     copy.scrollIntoView({ block: "center", behavior: "instant" });
     copy.focus({ preventScroll: true });
     await pause(180);
+    frame.contentWindow.scrollTo(0, 100000);
+    assertSettingsViewport();
     const main = doc.querySelector('.settings-main');
     const service = doc.querySelector('[data-page="Service"]');
     const shape = () => {
@@ -172,6 +185,7 @@ async function checkCustomSelects(report) {
     observer.disconnect();
     report.settingsCopyStable = shape().every((value, index) => Math.abs(value - beforeCopy[index]) <= 0.5) && fixture.executes === executions && doc.activeElement === copy && mutations.every((record) => copy.contains(record.target));
     if (!report.settingsCopyStable) throw new Error("Copy mutated unrelated settings or lost scroll/focus");
+    assertSettingsViewport();
 
     // A complete unchanged bridge poll must not even mutate the visible DOM.
     await pause(100);

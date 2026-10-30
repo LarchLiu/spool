@@ -164,7 +164,7 @@ export function SettingsApp() {
     const timer = setTimeout(() => setSaved(false), 2500);
     return () => clearTimeout(timer);
   }, [saved]);
-  const [run] = useState<Run>(() => {
+  const [run] = useState<Run>((): Run => {
     const queued = createSettingsCommandQueue(
       async (command) => {
         operation.current = true;

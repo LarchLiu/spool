@@ -183,6 +183,10 @@
 .settings-page-controls {
   display: contents;
 }
+.settings-copy-address {
+  /* Keep the absolute live region inside the content scroller. */
+  position: relative;
+}
 .settings-copy-labels {
   display: grid;
 }
