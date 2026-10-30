@@ -17,6 +17,7 @@ import (
 	"spool/internal/agent"
 	"spool/internal/issues"
 	chatmodel "spool/internal/model"
+	"spool/internal/tailnet"
 )
 
 type User struct {
@@ -58,10 +59,14 @@ type Settings struct {
 	IdleMinutes     int    `json:"idle_minutes"`
 	AutoStart       bool   `json:"auto_start"`
 	HistoryCacheMiB int    `json:"history_cache_mib"`
+	TSNetEnabled    bool   `json:"tsnet_enabled"`
+	TSNetHostname   string `json:"tsnet_hostname"`
+	TSNetPort       int    `json:"tsnet_port"`
+	UseSystemProxy  bool   `json:"use_system_proxy"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{Host: "127.0.0.1", Port: 8787, IdleMinutes: 15, AutoStart: true, HistoryCacheMiB: 64}
+	return Settings{Host: "127.0.0.1", Port: 8787, IdleMinutes: 15, AutoStart: true, HistoryCacheMiB: 64, TSNetHostname: "spool-server", TSNetPort: 443}
 }
 func (s Settings) Address() string { return net.JoinHostPort(s.Host, fmt.Sprint(s.Port)) }
 func (s Settings) Validate() error {
@@ -76,6 +81,11 @@ func (s Settings) Validate() error {
 	}
 	if err := validateHistoryCacheMiB(s.HistoryCacheMiB); err != nil {
 		return err
+	}
+	if s.TSNetEnabled {
+		if err := (tailnet.Options{Hostname: s.TSNetHostname, Port: s.TSNetPort}).Validate(); err != nil {
+			return err
+		}
 	}
 	if s.PublicURL != "" {
 		u, e := url.Parse(s.PublicURL)
@@ -106,14 +116,37 @@ func (s *Store) Settings() (Settings, error) {
 	return v, err
 }
 func (s *Store) SaveSettings(v Settings) error {
+	if !v.TSNetEnabled {
+		if v.TSNetHostname == "" {
+			v.TSNetHostname = DefaultSettings().TSNetHostname
+		}
+		if v.TSNetPort == 0 {
+			v.TSNetPort = DefaultSettings().TSNetPort
+		}
+	}
 	if err := v.Validate(); err != nil {
 		return err
 	}
 	v.PublicURL = strings.TrimSuffix(v.PublicURL, "/")
-	b, _ := json.Marshal(v)
 	// Keep persistence and the live cache target ordered across concurrent saves.
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
+	previous, err := s.Settings()
+	if err != nil {
+		return err
+	}
+	if v.TSNetEnabled && sameTailnetSettings(previous, v) {
+		// A settings snapshot may predate asynchronous enrollment. The tsnet
+		// origin is managed by the service, never by a stale autosave payload.
+		v.PublicURL = previous.PublicURL
+	} else if previous.TSNetEnabled && !v.TSNetEnabled && v.PublicURL == previous.PublicURL {
+		v.PublicURL = ""
+	}
+	return s.saveSettingsLocked(v)
+}
+
+func (s *Store) saveSettingsLocked(v Settings) error {
+	b, _ := json.Marshal(v)
 	_, err := s.db.Exec(`INSERT INTO settings VALUES('server',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, string(b))
 	if err == nil {
 		s.historyCache.setMaxBytes(v.HistoryCacheMiB * 1024 * 1024)

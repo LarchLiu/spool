@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	resources "spool"
@@ -25,6 +26,7 @@ type App struct {
 	store           *Store
 	runner          agent.AgentRunner
 	settings        Settings
+	publicOrigin    atomic.Pointer[string]
 	streamHeartbeat time.Duration
 	realtimePing    time.Duration
 	realtimeTimeout time.Duration
@@ -81,6 +83,13 @@ func NewApp(store *Store, runner agent.AgentRunner, _, _ string) *App {
 	settings, _ := store.Settings()
 	assets, _ := fs.Sub(resources.Frontend(), "frontend")
 	return &App{store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, realtimePing: 15 * time.Second, realtimeTimeout: 45 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{changed: func() { store.changes.publish(changePresence) }}, assets: http.FileServer(http.FS(assets)), pushClient: newPushHTTPClient()}
+}
+
+func (a *App) publicURL() string {
+	if origin := a.publicOrigin.Load(); origin != nil {
+		return *origin
+	}
+	return a.settings.PublicURL
 }
 func apiJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

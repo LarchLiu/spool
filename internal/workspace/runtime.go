@@ -11,24 +11,32 @@ import (
 
 	"spool/internal/agent"
 	chatmodel "spool/internal/model"
+	"spool/internal/tailnet"
 )
 
 type Service struct {
-	Store          *Store
-	Registry       *Registry
-	mu             sync.Mutex
-	server         *http.Server
-	app            *App
-	runner         *agent.CLIRunner
-	ctx            context.Context
-	cancel         context.CancelFunc
-	workers        sync.WaitGroup
-	lease          string
-	lastError      string
-	closed         bool
-	updating       bool
-	runningAddress string
-	localAddress   string
+	Store               *Store
+	Registry            *Registry
+	mu                  sync.Mutex
+	server              *http.Server
+	app                 *App
+	runner              *agent.CLIRunner
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	workers             sync.WaitGroup
+	lease               string
+	lastError           string
+	closed              bool
+	updating            bool
+	runningAddress      string
+	localAddress        string
+	tailnet             *tailnetRuntime
+	tailnetMu           sync.Mutex
+	openTailnet         tailnetOpener
+	enrollTailnet       func(context.Context, string, tailnet.Options, func(tailnet.Status)) error
+	tailnetAuthKey      string
+	tailnetAuthRevision uint64
+	useSystemProxy      bool
 }
 type ServiceStatus struct {
 	Running         bool
@@ -36,6 +44,8 @@ type ServiceStatus struct {
 	Address         string
 	Error           string
 	Online          []PresenceUser
+	TSNet           tailnet.Status
+	TSNetAuthKeySet bool
 }
 
 func OpenService(root string) (*Service, error) {
@@ -59,6 +69,14 @@ func OpenService(root string) (*Service, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Service{Store: store, Registry: NewRegistry(store), ctx: ctx, cancel: cancel, lease: lease}
+	settings, err := store.Settings()
+	if err == nil {
+		err = s.applyNetworkSettingsLocked(settings)
+	}
+	if err != nil {
+		s.Close()
+		return nil, err
+	}
 	if err = store.SetInterrupted(); err != nil {
 		s.Close()
 		return nil, err
@@ -119,6 +137,9 @@ func (s *Service) startLocked() error {
 	if err = settings.Validate(); err != nil {
 		return err
 	}
+	if err = s.applyNetworkSettingsLocked(settings); err != nil {
+		return err
+	}
 	listener, err := net.Listen("tcp", settings.Address())
 	if err != nil {
 		s.lastError = err.Error()
@@ -163,20 +184,44 @@ func (s *Service) startLocked() error {
 		listeners = append(listeners, localListener)
 	}
 	for _, listener := range listeners {
-		s.workers.Add(1)
-		go func() {
-			defer s.workers.Done()
-			if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-				log.Printf("event=http_server_failed error=%q", err)
-				s.mu.Lock()
-				s.lastError = err.Error()
-				s.mu.Unlock()
-			}
-		}()
+		s.serveLocked(server, listener)
+	}
+	if settings.TSNetEnabled {
+		s.startTailnetLocked(settings)
 	}
 	log.Printf("event=service_started address=%q", s.runningAddress)
 	return nil
 }
+
+// ServeListener adds an ingress to the running service, sharing its App and
+// shutdown lifecycle. Ownership transfers only on success; Stop closes it.
+// A subsequent Start/Restart does not recreate caller-supplied listeners.
+func (s *Service) ServeListener(listener net.Listener) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.server == nil {
+		return fmt.Errorf("chat service is not running")
+	}
+	if listener == nil {
+		return fmt.Errorf("listener is required")
+	}
+	s.serveLocked(s.server, listener)
+	return nil
+}
+
+func (s *Service) serveLocked(server *http.Server, listener net.Listener) {
+	s.workers.Add(1)
+	go func() {
+		defer s.workers.Done()
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			log.Printf("event=http_server_failed error=%q", err)
+			s.mu.Lock()
+			s.lastError = err.Error()
+			s.mu.Unlock()
+		}
+	}()
+}
+
 func (s *Service) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -197,6 +242,10 @@ func (s *Service) Restart() error {
 }
 
 func (s *Service) stopLocked() error {
+	if s.tailnet != nil {
+		s.tailnet.cancel()
+		s.tailnet = nil
+	}
 	if s.server == nil {
 		return nil
 	}
@@ -227,10 +276,19 @@ func (s *Service) Status() ServiceStatus {
 		if s.app != nil {
 			active := s.app.settings
 			restartRequired = active.Host != settings.Host || active.Port != settings.Port ||
-				active.PublicURL != settings.PublicURL || active.IdleMinutes != settings.IdleMinutes
+				s.app.publicURL() != settings.PublicURL || active.IdleMinutes != settings.IdleMinutes ||
+				!sameTailnetSettings(active, settings) || active.TSNetEnabled && active.UseSystemProxy != settings.UseSystemProxy
 		}
 	}
-	return ServiceStatus{Running: s.server != nil, RestartRequired: restartRequired, Address: address, Error: message, Online: online}
+	tailnetStatus := tailnet.Status{State: "Disabled"}
+	if settings.TSNetEnabled {
+		tailnetStatus.State = "Stopped"
+	}
+	if s.tailnet != nil {
+		tailnetStatus = s.tailnet.snapshot()
+		restartRequired = restartRequired || s.tailnet.authRevision != s.tailnetAuthRevision || tailnetStatus.State == "Registered"
+	}
+	return ServiceStatus{Running: s.server != nil, RestartRequired: restartRequired, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != ""}
 }
 func (s *Service) WebURL() string {
 	s.mu.Lock()
@@ -238,6 +296,7 @@ func (s *Service) WebURL() string {
 	settings, _ := s.Store.Settings()
 	if s.app != nil {
 		settings = s.app.settings
+		settings.PublicURL = s.app.publicURL()
 	}
 	if settings.PublicURL != "" {
 		return settings.PublicURL

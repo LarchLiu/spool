@@ -33,7 +33,7 @@ func (a *App) realtimeConnectSources(r *http.Request) string {
 		scheme = "https"
 	}
 	sources := "'self'"
-	for _, origin := range []string{scheme + "://" + r.Host, a.settings.PublicURL} {
+	for _, origin := range []string{scheme + "://" + r.Host, a.publicURL()} {
 		u, err := url.Parse(origin)
 		if err != nil || u.Host == "" || strings.IndexFunc(u.Host, func(c rune) bool {
 			return !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune(".-:[]", c))

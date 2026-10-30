@@ -423,7 +423,7 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 		}
 	}
 	// Native navigation events and all seven pages must work in one window.
-	for _, section := range []string{"People", "Projects", "Agents", "Online", "Appearance", "About", "Service"} {
+	for _, section := range []string{"People", "Projects", "Agents", "Online", "Network", "Appearance", "About", "Service"} {
 		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-section="%s"]').click();`, section)); err != nil {
 			return err
 		}

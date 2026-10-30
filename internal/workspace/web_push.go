@@ -472,7 +472,7 @@ func (a *App) sendPush(ctx context.Context, sub pushSubscription, job pushJob) e
 		topic = base64.RawURLEncoding.EncodeToString(hash[:16])
 	}
 	payload, _ := json.Marshal(map[string]string{"title": title, "body": message, "url": target, "tag": tag})
-	subject := a.settings.PublicURL
+	subject := a.publicURL()
 	if !strings.HasPrefix(subject, "https://") || strings.Contains(subject, "localhost") {
 		subject = "https://github.com/LarchLiu/spool"
 	}

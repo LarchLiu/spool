@@ -173,14 +173,36 @@
   font-size: 12px;
   margin: 0;
 }
-.settings-content {
+.settings-content,
+.settings-page-controls {
   border: 0;
   padding: 0;
   margin: 0;
   min-width: 0;
 }
-.settings-content > div {
-  animation: settings-reveal 180ms ease-out;
+.settings-page-controls {
+  display: contents;
+}
+.settings-copy-labels {
+  display: grid;
+}
+.settings-copy-labels > span {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+.settings-copy-labels > .active {
+  visibility: visible;
+}
+.settings-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 .settings-content > div[hidden] {
   display: none;
@@ -766,16 +788,6 @@
 @keyframes settings-spin {
   to {
     transform: rotate(360deg);
-  }
-}
-@keyframes settings-reveal {
-  from {
-    opacity: 0.6;
-    transform: translateY(3px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }
 @media (max-width: 1050px) {

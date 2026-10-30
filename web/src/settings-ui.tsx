@@ -1,4 +1,10 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { Check, FolderOpen } from "lucide-react";
 import en from "../../locales/en.json";
 import type { MessageKey, Translator } from "./i18n";
@@ -60,6 +66,68 @@ export function Row({
 export function Hint({ children }: { children: ReactNode }) {
   return <p className="settings-hint">{children}</p>;
 }
+
+// Copy/reveal actions are not settings mutations. Feedback belongs to this
+// button, not to the page-wide queue, disabled state, or snapshot refresh.
+export function CopyAddressButton({ t }: { t: Translator }) {
+  const [state, setState] = useState<"idle" | "pending" | "copied" | "failed">(
+    "idle",
+  );
+  const pending = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (state !== "copied" && state !== "failed") return;
+    const timer = setTimeout(() => setState("idle"), 2000);
+    return () => clearTimeout(timer);
+  }, [state]);
+  const copy = async () => {
+    if (pending.current) return;
+    pending.current = true;
+    setState("pending");
+    try {
+      await settingsCall<boolean>("Action", { kind: "copy-tsnet-url" });
+      if (mounted.current) setState("copied");
+    } catch {
+      if (mounted.current) setState("failed");
+    } finally {
+      pending.current = false;
+    }
+  };
+  const message =
+    state === "copied"
+      ? t("Copied")
+      : state === "failed"
+        ? t("Could not copy address. Try again.")
+        : "";
+  return (
+    <button
+      type="button"
+      className="settings-copy-address"
+      onClick={() => void copy()}
+      aria-label={t("Copy address")}
+      aria-busy={state === "pending"}
+      title={message || t("Copy address")}
+    >
+      <span className="settings-copy-labels" aria-hidden="true">
+        <span className={state === "copied" ? "" : "active"}>
+          {t("Copy address")}
+        </span>
+        <span className={state === "copied" ? "active" : ""}>
+          {t("Copied")}
+        </span>
+      </span>
+      <span className="settings-sr-only" role="status">
+        {message}
+      </span>
+    </button>
+  );
+}
 export function Toggle({
   label,
   value,
@@ -95,6 +163,7 @@ export function TextField({
   max,
   required,
   onCommit,
+  disabled,
 }: {
   title: string;
   value: string | number;
@@ -105,6 +174,7 @@ export function TextField({
   max?: number;
   required?: boolean;
   onCommit?: () => void;
+  disabled?: boolean;
 }) {
   return (
     <Row title={title} help={help}>
@@ -112,6 +182,7 @@ export function TextField({
         aria-label={title}
         type={type}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         onBlur={
           onCommit

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -49,8 +50,10 @@ func TestSettingsBridgeRejectsCallsWithoutDesktopPage(t *testing.T) {
 		if _, err := bridge.Snapshot(context.Background()); err == nil {
 			t.Fatal("snapshot allowed without calling page")
 		}
-		if _, err := bridge.Execute(context.Background(), settingsCommand{Kind: "stop-service"}); err == nil {
-			t.Fatal("mutation allowed without calling page")
+		for _, kind := range []string{"stop-service", "save-tsnet-auth-key", "tsnet-login", "copy-tsnet-url"} {
+			if _, err := bridge.Execute(context.Background(), settingsCommand{Kind: kind}); err == nil {
+				t.Fatal("mutation allowed without calling page", kind)
+			}
 		}
 		if _, err := bridge.ChoosePath(context.Background(), "directory", ""); err == nil {
 			t.Fatal("dialog allowed without calling page")
@@ -58,6 +61,47 @@ func TestSettingsBridgeRejectsCallsWithoutDesktopPage(t *testing.T) {
 		if _, err := bridge.ReleaseNotes(context.Background()); err == nil {
 			t.Fatal("release history allowed without calling page")
 		}
+		if _, err := bridge.TSNetLogin(context.Background()); err == nil {
+			t.Fatal("login request allowed without calling page")
+		}
+		if _, err := bridge.TSNetRegister(context.Background(), "tskey-auth-test"); err == nil {
+			t.Fatal("key registration allowed without calling page")
+		}
+		if _, err := bridge.Action(context.Background(), settingsCommand{Kind: "copy-tsnet-url"}); err == nil {
+			t.Fatal("clipboard action allowed without calling page")
+		}
+	}
+}
+
+func TestSettingsActionIsSeparateFromMutationReloads(t *testing.T) {
+	for _, kind := range []string{"navigate", "open-chat", "open-browser", "show-file", "copy-tsnet-url"} {
+		if !settingsActionAllowed(kind) {
+			t.Fatal("missing action", kind)
+		}
+	}
+	for _, kind := range []string{"save-settings", "save-person", "restart-service", "restart-update", "unknown"} {
+		if settingsActionAllowed(kind) {
+			t.Fatal("mutation classified as UI action", kind)
+		}
+	}
+	data, err := os.ReadFile("settings_web.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	start := strings.Index(source, "func (s *desktopSettings) Action(")
+	end := strings.Index(source, "func (s *desktopSettings) Execute(")
+	if start < 0 || end < start {
+		t.Fatal("missing independent actions method")
+	}
+	action := source[start:end]
+	for _, forbidden := range []string{"s.mu.", "p.load()", "applyPresentation()", "s.Snapshot("} {
+		if strings.Contains(action, forbidden) {
+			t.Fatal("lightweight action causes full refresh or locks settings", forbidden)
+		}
+	}
+	if !strings.Contains(action, "settingsUI(") {
+		t.Fatal("missing caller-page authorization")
 	}
 }
 
@@ -117,7 +161,7 @@ func TestSettingsAssetsForbidRemoteContentAndHTTPAdminFallback(t *testing.T) {
 }
 
 func TestSettingsSectionsAreAllowlisted(t *testing.T) {
-	for _, section := range []string{"Service", "People", "Projects", "Agents", "Online", "Appearance", "About"} {
+	for _, section := range []string{"Service", "People", "Projects", "Agents", "Online", "Network", "Appearance", "About"} {
 		if !settingsTabAllowed(section) {
 			t.Fatal(section)
 		}
@@ -126,5 +170,25 @@ func TestSettingsSectionsAreAllowlisted(t *testing.T) {
 		if settingsTabAllowed(section) {
 			t.Fatal(section)
 		}
+	}
+}
+
+func TestSettingsLoginUsesAnIndependentWorkerWithoutMutationLock(t *testing.T) {
+	source, err := os.ReadFile("settings_web.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	start := strings.Index(text, "func (s *desktopSettings) TSNetLogin(")
+	end := strings.Index(text, "func (s *desktopSettings) Execute(")
+	if start < 0 || end < start {
+		t.Fatal("missing independent login method")
+	}
+	login := text[start:end]
+	if strings.Contains(login, "s.mu.") || strings.Contains(login, "s.Snapshot(") {
+		t.Fatal("login locks settings mutations or returns a stale full snapshot")
+	}
+	if !strings.Contains(login, "settingsUI(") || !strings.Contains(login, "s.loginMu.TryLock()") {
+		t.Fatal("login lost its page authorization or duplicate-request guard")
 	}
 }

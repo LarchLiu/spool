@@ -38,6 +38,10 @@ func run() (runErr error) {
 	port := flag.Int("port", 0, "persist a new Web port")
 	host := flag.String("host", "", "persist a listen IP (default 127.0.0.1)")
 	publicURL := flag.String("public-url", "", "persist reverse proxy public origin (HTTPS for remote PWA)")
+	tailnetEnabled := flag.Bool("tsnet", false, "persist embedded Tailscale HTTPS enablement (no system VPN or Funnel)")
+	tailnetHostname := flag.String("tsnet-hostname", "spool-server", "embedded Tailscale node hostname (state persists in data-dir/tsnet)")
+	tailnetPort := flag.Int("tsnet-port", 443, "HTTPS port on the embedded Tailscale node (does not bind a host TCP port)")
+	systemProxy := flag.Bool("system-proxy", false, "persist use of system HTTP/HTTPS proxy settings for Spool (macOS)")
 	historyCache := flag.Int("history-cache-mib", 0, "persist shared history cache target in MiB (default 64)")
 	issuesProject := flag.String("issues-project", "", "configure issue automation for an existing project ID (service must be stopped)")
 	listProjects := flag.Bool("list-projects", false, "list local project IDs/names as JSON while service is stopped")
@@ -56,6 +60,8 @@ func run() (runErr error) {
 	issuesEffort := flag.String("issues-effort", "", "issue automation reasoning level")
 	issuesPermission := flag.String("issues-permission", "", "native permission mode for issue automation")
 	flag.Parse()
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 	logs, err := diagnostics.Start(*root, "server", "", production != "1")
 	if err != nil {
 		log.Printf("event=file_logging_unavailable error=%q", err)
@@ -184,24 +190,36 @@ func run() (runErr error) {
 	if *host != "" {
 		settings.Host = *host
 	}
-	if *publicURL != "" {
-		settings.PublicURL = *publicURL
-	}
 	flag.Visit(func(f *flag.Flag) {
-		if f.Name == "history-cache-mib" {
+		switch f.Name {
+		case "public-url":
+			settings.PublicURL = *publicURL
+		case "tsnet":
+			settings.TSNetEnabled = *tailnetEnabled
+		case "tsnet-hostname":
+			settings.TSNetHostname = *tailnetHostname
+		case "tsnet-port":
+			settings.TSNetPort = *tailnetPort
+		case "system-proxy":
+			settings.UseSystemProxy = *systemProxy
+		case "history-cache-mib":
 			settings.HistoryCacheMiB = *historyCache
 		}
 	})
-	if err = service.Store.SaveSettings(settings); err != nil {
+	if err = settings.Validate(); err != nil {
+		return err
+	}
+	if err = service.SaveSettings(settings); err != nil {
 		return err
 	}
 	if err = service.Start(); err != nil {
 		return err
 	}
+	if settings.TSNetEnabled {
+		log.Print("Embedded Tailscale is starting; follow its login URL and approve the node if required")
+	}
 	log.Printf("Spool Web: %s", service.WebURL())
 	log.Printf("SQLite: %s", service.Store.DatabasePath())
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
 	<-ctx.Done()
 	log.Print("Stopping service and saving active turns")
 	return nil

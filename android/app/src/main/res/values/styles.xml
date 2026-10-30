@@ -1,0 +1,12 @@
+<resources>
+    <style name="SpoolBaseTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:colorAccent">#266B5E</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#F3F5EE</item>
+        <item name="android:navigationBarColor">#153D3B</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">#F3F5EE</item>
+    </style>
+    <style name="SpoolTheme" parent="SpoolBaseTheme" />
+</resources>

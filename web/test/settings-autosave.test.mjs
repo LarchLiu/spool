@@ -13,6 +13,9 @@ const initial = () => ({
   idle_minutes: 15,
   history_cache_mib: 64,
   auto_start: true,
+  tsnet_enabled: false,
+  tsnet_hostname: "spool-server",
+  tsnet_port: 443,
 });
 function fixture(execute) {
   const commands = [];
@@ -57,6 +60,26 @@ test("service inputs keep raw numeric drafts and save only the committed field",
   });
 });
 
+test("unchanged polling and unrelated proxy changes do not redraw service drafts", () => {
+  let redraws = 0;
+  const autosave = new ServiceSettingsAutosave(initial(), async () => undefined, () => redraws++);
+  const draft = autosave.draft;
+  autosave.sync({ ...initial() });
+  autosave.sync({ ...initial(), use_system_proxy: true });
+  autosave.edit("host", initial().host);
+  assert.equal(redraws, 0);
+  assert.equal(autosave.draft, draft);
+  autosave.edit("host", "localhost");
+  const edited = autosave.draft;
+  autosave.sync({ ...initial() });
+  assert.equal(redraws, 1);
+  assert.equal(autosave.draft, edited);
+  autosave.sync({ ...initial(), port: 9000 });
+  assert.equal(redraws, 2);
+  assert.equal(autosave.draft.host, "localhost");
+  assert.equal(autosave.draft.port, "9000");
+});
+
 test("every connection/runtime setting saves without an explicit save action", async () => {
   const { autosave, commands } = fixture();
   for (const [key, value] of [
@@ -66,11 +89,14 @@ test("every connection/runtime setting saves without an explicit save action", a
     ["idle_minutes", "30"],
     ["history_cache_mib", "128"],
     ["auto_start", false],
+    ["tsnet_hostname", "spool-office"],
+    ["tsnet_port", "8443"],
+    ["tsnet_enabled", true],
   ]) {
     autosave.edit(key, value);
     await autosave.commit(key);
   }
-  assert.equal(commands.length, 6);
+  assert.equal(commands.length, 9);
   assert.deepEqual(commands.at(-1).settings, {
     host: "localhost",
     port: 9000,
@@ -78,9 +104,12 @@ test("every connection/runtime setting saves without an explicit save action", a
     idle_minutes: 30,
     history_cache_mib: 128,
     auto_start: false,
+    tsnet_enabled: true,
+    tsnet_hostname: "spool-office",
+    tsnet_port: 8443,
   });
   await autosave.commit("auto_start");
-  assert.equal(commands.length, 6, "unchanged values must not be resaved");
+  assert.equal(commands.length, 9, "unchanged values must not be resaved");
   assert.ok(commands.every((command) => command.kind === "save-settings"));
 });
 
@@ -246,7 +275,7 @@ test("service UI commits on blur/Enter, removes save controls and restarts only 
     pages.indexOf("export function PeoplePage"),
   );
   assert.doesNotMatch(service, /<form|<Save|Save settings|submit\(/);
-  assert.equal((service.match(/onCommit=/g) ?? []).length, 5);
+  assert.equal((service.match(/onCommit=/g) ?? []).length, 7);
   assert.match(
     service,
     /autosave\.edit\("auto_start", v\);\s*void autosave\.commit\("auto_start"\)/,

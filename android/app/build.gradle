@@ -1,0 +1,50 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.cloudgeek.spool.android'
+    buildToolsVersion '36.1.0'
+    compileSdk {
+        version = release(36) { minorApiLevel = 1 }
+    }
+
+    defaultConfig {
+        applicationId 'com.cloudgeek.spool.android'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '0.1.0-prototype'
+        ndk { abiFilters 'arm64-v8a', 'x86_64' }
+    }
+
+    signingConfigs {
+        debug {
+            storeFile rootProject.file('../build/android/debug.keystore')
+        }
+    }
+
+    buildTypes {
+        debug { applicationIdSuffix '.dev' }
+        release { minifyEnabled false }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation files('../../build/android/spoolnet.aar')
+    implementation 'androidx.webkit:webkit:1.18.0'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+tasks.named('preBuild').configure {
+    doFirst {
+        if (!rootProject.file('../build/android/spoolnet.aar').isFile()) {
+            throw new GradleException('Missing spoolnet.aar. Run sh android/tools/build.sh from the repository root first.')
+        }
+    }
+}

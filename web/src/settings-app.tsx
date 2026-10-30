@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Check,
   ChevronRight,
   FolderOpen,
   Info,
+  Network,
   Radio,
   RefreshCw,
   Server,
@@ -24,18 +25,50 @@ import {
   type SettingsSection,
   type SettingsSnapshot,
 } from "./settings-client";
-import { Hint, knownMessage, type Run } from "./settings-ui";
+import { Hint, knownMessage, type PageProps, type Run } from "./settings-ui";
 import {
   ServicePage,
   PeoplePage,
   AgentsPage,
   OnlinePage,
+  NetworkPage,
   AppearancePage,
   AboutPage,
 } from "./settings-pages";
 import { ProjectsPage } from "./settings-projects";
 import { createSettingsCommandQueue } from "./settings-autosave";
 import { UpdateIndicator } from "./update-controls";
+import {
+  isSettingsAction,
+  settingsCommandScope,
+  settingsPageDataEqual,
+  shareSettingsSnapshot,
+} from "./settings-snapshot";
+
+const pages = {
+  Service: ServicePage,
+  People: PeoplePage,
+  Projects: ProjectsPage,
+  Agents: AgentsPage,
+  Online: OnlinePage,
+  Network: NetworkPage,
+  Appearance: AppearancePage,
+  About: AboutPage,
+};
+const SettingsPageBody = memo(
+  function SettingsPageBody({
+    section,
+    ...props
+  }: PageProps & { section: SettingsSection }) {
+    const Page = pages[section];
+    return <Page {...props} />;
+  },
+  (a, b) =>
+    a.section === b.section &&
+    a.run === b.run &&
+    a.t === b.t &&
+    settingsPageDataEqual(a.section, a.data, b.data),
+);
 
 const icons = {
   Service: Server,
@@ -43,6 +76,7 @@ const icons = {
   Projects: FolderOpen,
   Agents: Workflow,
   Online: Radio,
+  Network,
   Appearance: SlidersHorizontal,
   About: Info,
 };
@@ -53,6 +87,7 @@ const descriptions: Record<SettingsSection, MessageKey> = {
   Projects: "Local directories, project access and scheduled tasks.",
   Agents: "Your local coding tools, connected to Spool.",
   Online: "See who is connected to your workspace.",
+  Network: "Manage Spool's built-in network connections.",
   Appearance: "Make this workspace feel like yours.",
   About: "Keep Spool up to date, on your terms.",
 };
@@ -62,6 +97,7 @@ export function SettingsApp() {
   const snapshot = useRef<SettingsSnapshot>(undefined);
   const [section, setSection] = useState<SettingsSection>("Service");
   const [busy, setBusy] = useState(false);
+  const [pendingScope, setPendingScope] = useState<SettingsSection>();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saveError, setSaveError] = useState("");
@@ -70,20 +106,42 @@ export function SettingsApp() {
   const revision = useRef(0);
   const content = useRef<HTMLElement>(null);
   const available = hasSettingsBridge();
-  const refresh = useCallback(async (initial = false) => {
-    const generation = revision.current;
-    if (operation.current) return;
-    try {
-      const next = await settingsCall<SettingsSnapshot>("Snapshot");
-      if (operation.current || generation !== revision.current) return;
-      snapshot.current = next;
-      setData(next);
-      if (initial && settingsSections.includes(next.section as SettingsSection))
-        setSection(next.section as SettingsSection);
-    } catch (e) {
-      if (initial) setError(String(e instanceof Error ? e.message : e));
+  const acceptSnapshot = useCallback((next: SettingsSnapshot) => {
+    const shared = snapshot.current
+      ? shareSettingsSnapshot(snapshot.current, next)
+      : next;
+    if (shared !== snapshot.current) {
+      snapshot.current = shared;
+      setData(shared);
     }
+    return shared;
   }, []);
+  const pollRequest = useRef(0);
+  const refresh = useCallback(
+    async (initial = false) => {
+      const generation = revision.current;
+      const request = ++pollRequest.current;
+      if (operation.current) return;
+      try {
+        const next = await settingsCall<SettingsSnapshot>("Snapshot");
+        if (
+          operation.current ||
+          generation !== revision.current ||
+          request !== pollRequest.current
+        )
+          return;
+        acceptSnapshot(next);
+        if (
+          initial &&
+          settingsSections.includes(next.section as SettingsSection)
+        )
+          setSection(next.section as SettingsSection);
+      } catch (e) {
+        if (initial) setError(String(e instanceof Error ? e.message : e));
+      }
+    },
+    [acceptSnapshot],
+  );
   useEffect(() => {
     content.current?.scrollTo(0, 0);
   }, [section]);
@@ -106,22 +164,22 @@ export function SettingsApp() {
     const timer = setTimeout(() => setSaved(false), 2500);
     return () => clearTimeout(timer);
   }, [saved]);
-  const [run] = useState<Run>(() =>
-    createSettingsCommandQueue(
+  const [run] = useState<Run>(() => {
+    const queued = createSettingsCommandQueue(
       async (command) => {
         operation.current = true;
         revision.current++;
         setBusy(command.kind !== "save-settings");
+        setPendingScope(settingsCommandScope(command));
         setSaving(command.kind === "save-settings");
         setError("");
         if (command.kind === "save-settings") setSaveError("");
         setSaved(false);
         try {
           const next = await settingsCall<SettingsSnapshot>("Execute", command);
-          snapshot.current = next;
-          setData(next);
+          const shared = acceptSnapshot(next);
           if (command.kind.startsWith("save-")) setSaved(true);
-          return next;
+          return shared;
         } catch (e) {
           const message = String(e instanceof Error ? e.message : e);
           if (command.kind === "save-settings") setSaveError(message);
@@ -129,12 +187,25 @@ export function SettingsApp() {
         } finally {
           operation.current = false;
           setBusy(false);
+          setPendingScope(undefined);
           setSaving(false);
         }
       },
       () => snapshot.current,
-    ),
-  );
+    );
+    return async (command) => {
+      if (typeof command !== "function" && isSettingsAction(command)) {
+        try {
+          await settingsCall<boolean>("Action", command);
+          return snapshot.current;
+        } catch (error) {
+          setError(error instanceof Error ? error.message : String(error));
+          return undefined;
+        }
+      }
+      return queued(command);
+    };
+  });
   const navigate = (next: SettingsSection) => {
     setSection(next);
     setSaved(false);
@@ -160,7 +231,6 @@ export function SettingsApp() {
                         type="button"
                         className={section === key ? "selected" : ""}
                         aria-current={section === key ? "page" : undefined}
-                        disabled={busy}
                         onClick={() => navigate(key)}
                         data-section={key}
                       >
@@ -184,7 +254,7 @@ export function SettingsApp() {
             className="icon"
             aria-label={t("Back to Chat")}
             title={t("Back to Chat")}
-            disabled={busy || !data}
+            disabled={!data}
             onClick={() => void run({ kind: "open-chat" })}
           >
             <ArrowLeft size={18} />
@@ -232,32 +302,18 @@ export function SettingsApp() {
               {!props ? (
                 <Hint>{t("Working…")}</Hint>
               ) : (
-                <fieldset
-                  className="settings-content"
-                  disabled={busy}
-                  aria-busy={busy}
-                >
-                  <div data-page="Service" hidden={section !== "Service"}>
-                    <ServicePage {...props} />
-                  </div>
-                  <div data-page="People" hidden={section !== "People"}>
-                    <PeoplePage {...props} />
-                  </div>
-                  <div data-page="Projects" hidden={section !== "Projects"}>
-                    <ProjectsPage {...props} />
-                  </div>
-                  <div data-page="Agents" hidden={section !== "Agents"}>
-                    <AgentsPage {...props} />
-                  </div>
-                  <div data-page="Online" hidden={section !== "Online"}>
-                    <OnlinePage {...props} />
-                  </div>
-                  <div data-page="Appearance" hidden={section !== "Appearance"}>
-                    <AppearancePage {...props} />
-                  </div>
-                  <div data-page="About" hidden={section !== "About"}>
-                    <AboutPage {...props} />
-                  </div>
+                <fieldset className="settings-content">
+                  {settingsSections.map((key) => (
+                    <div key={key} data-page={key} hidden={section !== key}>
+                      <fieldset
+                        className="settings-page-controls"
+                        disabled={pendingScope === key}
+                        aria-busy={pendingScope === key}
+                      >
+                        <SettingsPageBody section={key} {...props} />
+                      </fieldset>
+                    </div>
+                  ))}
                 </fieldset>
               )}
             </>

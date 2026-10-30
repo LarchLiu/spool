@@ -406,7 +406,7 @@ func (p *panel) view(c *ui.Context) {
 			}
 			ui.Text(c, "Spool").Bold().FontSize(16)
 			ui.Text(c, p.tr("Control Center")).FontSize(12)
-			for _, tab := range []string{"Chat", "Service", "People", "Projects", "Agents", "Online", "Appearance", "About"} {
+			for _, tab := range []string{"Chat", "Service", "People", "Projects", "Agents", "Online", "Network", "Appearance", "About"} {
 				c.Key("tab-" + tab)
 				button := ui.Button
 				if p.tab == tab {
@@ -445,6 +445,8 @@ func (p *panel) view(c *ui.Context) {
 					p.agentView(c)
 				case "Online":
 					p.onlineView(c)
+				case "Network":
+					p.networkView(c)
 				case "Appearance":
 					p.appearanceView(c)
 				case "About":
@@ -523,6 +525,21 @@ func (p *panel) serviceView(c *ui.Context) {
 	ui.Text(c, p.tr("Users can execute agent tools in granted projects. Only grant access to trusted people. HTTPS is required for remote PWA installation.")).Wrap().FontSize(12)
 }
 
+func (p *panel) networkView(c *ui.Context) {
+	if ui.Checkbox(c, &p.settings.UseSystemProxy, p.tr("Use system proxy")).Disabled(p.busy).Changed() {
+		useProxy := p.settings.UseSystemProxy
+		p.saveServiceSetting(func(settings *workspace.Settings) error { settings.UseSystemProxy = useProxy; return nil })
+	}
+	ui.Text(c, p.tr("Use macOS system HTTP/HTTPS proxy settings for Spool's built-in network requests, including updates and Tailscale. Environment proxy variables take priority and remain active when this switch is off.")).Wrap().FontSize(12)
+	ui.Text(c, p.tr("New built-in HTTP requests use this setting immediately. Restart the service to reconnect Tailscale. Local loopback access, push security checks and external agent tools keep their own network rules.")).Wrap().FontSize(12)
+	if p.status.RestartRequired {
+		ui.Text(c, p.tr("Restarting the service applies pending connection changes and interrupts active tasks.")).Wrap()
+		if ui.Button(c, p.tr("Restart service")).Disabled(p.busy).Clicked() {
+			p.action(p.service.Restart)
+		}
+	}
+}
+
 func (p *panel) saveServiceSetting(update func(*workspace.Settings) error) {
 	// This local write must not disable the next field or reload other drafts
 	// when focus moves between inputs in the native fallback.
@@ -531,7 +548,7 @@ func (p *panel) saveServiceSetting(update func(*workspace.Settings) error) {
 		err = update(&settings)
 	}
 	if err == nil {
-		err = p.service.Store.SaveSettings(settings)
+		err = p.service.SaveSettings(settings)
 	}
 	if err != nil {
 		p.message = err.Error()

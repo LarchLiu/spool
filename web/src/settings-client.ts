@@ -7,6 +7,7 @@ export const settingsSections = [
   "Projects",
   "Agents",
   "Online",
+  "Network",
   "Appearance",
   "About",
 ] as const;
@@ -19,6 +20,10 @@ export type ServerSettings = {
   idle_minutes: number;
   history_cache_mib: number;
   auto_start: boolean;
+  tsnet_enabled: boolean;
+  tsnet_hostname: string;
+  tsnet_port: number;
+  use_system_proxy: boolean;
 };
 export type Person = User & {
   disabled: boolean;
@@ -102,6 +107,8 @@ export type SettingsSnapshot = {
     Address: string;
     Error: string;
     Online: (Online & Pick<User, "nickname" | "avatar">)[];
+    TSNet?: { State: string; AuthURL: string; URL: string; Error: string };
+    TSNetAuthKeySet?: boolean;
   };
   users: Person[];
   projects: ManagedProject[];
@@ -134,6 +141,7 @@ export type SettingsSnapshot = {
 export type SettingsCommand =
   | { kind: "navigate"; section: SettingsSection }
   | { kind: "save-settings"; settings: ServerSettings }
+  | { kind: "save-tsnet-auth-key"; auth_key: string }
   | { kind: "save-appearance"; preferences: UIPreferences }
   | { kind: "save-notifications"; enabled: boolean }
   | { kind: "test-notification" }
@@ -150,6 +158,8 @@ export type SettingsCommand =
       kind:
         | "open-chat"
         | "open-browser"
+        | "tsnet-login"
+        | "copy-tsnet-url"
         | "start-service"
         | "stop-service"
         | "restart-service"
@@ -181,7 +191,14 @@ export function hasSettingsBridge(surface: unknown = globalThis) {
   return !!runtime(surface);
 }
 export function settingsCall<T>(
-  method: "Snapshot" | "Execute" | "ChoosePath" | "ReleaseNotes",
+  method:
+    | "Action"
+    | "Snapshot"
+    | "Execute"
+    | "ChoosePath"
+    | "ReleaseNotes"
+    | "TSNetLogin"
+    | "TSNetRegister",
   ...args: unknown[]
 ): Promise<T> {
   const bridge = runtime();

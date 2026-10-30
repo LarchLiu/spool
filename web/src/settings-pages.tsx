@@ -15,6 +15,7 @@ import { UserAvatar } from "./user-avatar";
 import { languages, type UIPreferences } from "./preferences";
 import {
   newPerson,
+  settingsCall,
   type PersonDraft,
   type ManagedAgent,
   type Backend,
@@ -28,6 +29,7 @@ import { UpdateCheckInterval } from "./update-controls";
 import { ReleaseNotesPanel } from "./release-notes";
 import {
   Card,
+  CopyAddressButton,
   Row,
   Toggle,
   TextField,
@@ -38,6 +40,65 @@ import {
   knownMessage,
   type PageProps,
 } from "./settings-ui";
+
+export function NetworkPage({ data, run, t }: PageProps) {
+  const [pending, setPending] = useState<boolean>();
+  return (
+    <>
+      <Card title={t("Proxy")}>
+        <Row
+          title={t("Use system proxy")}
+          help={t(
+            "Use macOS system HTTP/HTTPS proxy settings for Spool's built-in network requests, including updates and Tailscale. Environment proxy variables take priority and remain active when this switch is off.",
+          )}
+        >
+          <Toggle
+            label={t("Use system proxy")}
+            value={pending ?? data.settings.use_system_proxy ?? false}
+            disabled={pending !== undefined}
+            onChange={async (value) => {
+              setPending(value);
+              try {
+                await run((latest) => ({
+                  kind: "save-settings",
+                  settings: {
+                    ...(latest?.settings ?? data.settings),
+                    use_system_proxy: value,
+                  },
+                }));
+              } finally {
+                setPending(undefined);
+              }
+            }}
+          />
+        </Row>
+        <Hint>
+          {t(
+            "New built-in HTTP requests use this setting immediately. Restart the service to reconnect Tailscale. Local loopback access, push security checks and external agent tools keep their own network rules.",
+          )}
+        </Hint>
+      </Card>
+      {data.status.RestartRequired && (
+        <div className="settings-notice" role="status">
+          <RefreshCw size={18} />
+          <div>
+            <p>
+              {t(
+                "Restarting the service applies pending connection changes and interrupts active tasks.",
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={() => void run({ kind: "restart-service" })}
+            >
+              {t("Restart service")}
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 export function ServicePage({ data, run, t }: PageProps) {
   const runRef = useRef(run);
@@ -59,6 +120,39 @@ export function ServicePage({ data, run, t }: PageProps) {
   );
   useEffect(() => autosave.sync(data.settings), [autosave, data.settings]);
   const draft = autosave.draft;
+  const [authKey, setAuthKey] = useState("");
+  const [requestingLogin, setRequestingLogin] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const loginAttempt = useRef(0);
+  const [registeringKey, setRegisteringKey] = useState(false);
+  const [registrationError, setRegistrationError] = useState("");
+  const [authRegistered, setAuthRegistered] = useState(false);
+  const tailnet = data.status.TSNet;
+  useEffect(() => {
+    if (tailnet?.State === "Running") setAuthRegistered(false);
+  }, [tailnet?.State]);
+  const canLogin =
+    !registeringKey &&
+    !authRegistered &&
+    (tailnet?.State === "NeedsLogin" ||
+      tailnet?.State === "NoState" ||
+      Boolean(tailnet?.AuthURL));
+  const tailnetState =
+    tailnet?.State === "Running"
+      ? t("Connected to tailnet")
+      : tailnet?.State === "Registered"
+        ? t("Registered. Restart the service to activate Tailscale HTTPS.")
+        : tailnet?.State === "Registering"
+          ? t("Registering with Auth Key...")
+          : tailnet?.State === "NeedsLogin"
+            ? t("Waiting for Tailscale login")
+            : tailnet?.State === "NeedsMachineAuth"
+              ? t("Waiting for device approval")
+              : tailnet?.State === "Error"
+                ? t("Tailscale unavailable")
+                : tailnet?.State === "Starting" || tailnet?.State === "NoState"
+                  ? t("Starting Tailscale")
+                  : t("Stopped");
   return (
     <>
       <Card title={t("Web service")}>
@@ -151,10 +245,183 @@ export function ServicePage({ data, run, t }: PageProps) {
         <TextField
           title={t("Public origin (HTTPS reverse proxy for remote PWA)")}
           value={draft.public_url}
+          disabled={draft.tsnet_enabled}
+          help={
+            draft.tsnet_enabled
+              ? t("Tailscale manages the HTTPS origin automatically.")
+              : undefined
+          }
           onChange={(v) => autosave.edit("public_url", v)}
           onCommit={() => void autosave.commit("public_url")}
         />
       </Card>
+      <Card title="Tailscale (tsnet)">
+        <Row
+          title={t("Enable embedded Tailscale")}
+          help={t(
+            "Connect this workspace to your tailnet without a system VPN or a separate Serve proxy.",
+          )}
+        >
+          <Toggle
+            label={t("Enable embedded Tailscale")}
+            value={draft.tsnet_enabled}
+            onChange={(v) => {
+              autosave.edit("tsnet_enabled", v);
+              void autosave.commit("tsnet_enabled");
+            }}
+          />
+        </Row>
+        <TextField
+          title={t("Tailscale node name")}
+          value={draft.tsnet_hostname}
+          onChange={(v) => autosave.edit("tsnet_hostname", v)}
+          onCommit={() => void autosave.commit("tsnet_hostname")}
+          required
+        />
+        <TextField
+          title={t("Tailnet HTTPS port")}
+          value={draft.tsnet_port}
+          type="number"
+          min={1}
+          max={65535}
+          onChange={(v) => autosave.edit("tsnet_port", v)}
+          onCommit={() => void autosave.commit("tsnet_port")}
+          help={t(
+            "This port belongs to the embedded node, not the host computer.",
+          )}
+          required
+        />
+        <TextField
+          title={t("Tailscale Auth Key (optional)")}
+          type="password"
+          value={authKey}
+          disabled={registeringKey}
+          onChange={setAuthKey}
+          help={t(
+            "Click Use Auth Key to register now without stopping the current service. After success, restart the service to activate the saved identity. The key is never saved in settings.",
+          )}
+        />
+        <div className="settings-card-actions">
+          <button
+            type="button"
+            disabled={registeringKey || !authKey.trim() || !draft.tsnet_enabled}
+            onClick={async () => {
+              loginAttempt.current++;
+              setRequestingLogin(false);
+              setLoginError("");
+              setRegistrationError("");
+              setAuthRegistered(false);
+              setRegisteringKey(true);
+              try {
+                await settingsCall<boolean>("TSNetRegister", authKey);
+                setAuthKey("");
+                setAuthRegistered(true);
+              } catch (error) {
+                setRegistrationError(
+                  error instanceof Error ? error.message : String(error),
+                );
+              } finally {
+                setRegisteringKey(false);
+              }
+            }}
+          >
+            {t(
+              registeringKey ? "Registering with Auth Key..." : "Use Auth Key",
+            )}
+          </button>
+        </div>
+        {registrationError && (
+          <div className="settings-error" role="alert">
+            {knownMessage(registrationError, t)}
+          </div>
+        )}
+        {(authRegistered || tailnet?.State === "Registered") && (
+          <div className="settings-notice" role="status">
+            <div>
+              <p>
+                {t(
+                  "Registered. Restart the service to activate Tailscale HTTPS.",
+                )}
+              </p>
+              {!data.status.RestartRequired && (
+                <button
+                  type="button"
+                  onClick={() => void run({ kind: "restart-service" })}
+                >
+                  {t("Restart service")}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        <Row title={t("Tailnet status")} help={tailnetState}>
+          {canLogin && (
+            <button
+              type="button"
+              disabled={requestingLogin}
+              onClick={async () => {
+                const attempt = ++loginAttempt.current;
+                setRequestingLogin(true);
+                setLoginError("");
+                try {
+                  await settingsCall<boolean>("TSNetLogin");
+                } catch (error) {
+                  if (attempt === loginAttempt.current)
+                    setLoginError(
+                      error instanceof Error ? error.message : String(error),
+                    );
+                } finally {
+                  if (attempt === loginAttempt.current)
+                    setRequestingLogin(false);
+                }
+              }}
+            >
+              {t(
+                requestingLogin
+                  ? "Getting login link..."
+                  : "Sign in to Tailscale",
+              )}
+              <ArrowUpRight size={14} />
+            </button>
+          )}
+        </Row>
+        {loginError && (
+          <div className="settings-error" role="alert">
+            {knownMessage(loginError, t)}
+          </div>
+        )}
+        {canLogin && !tailnet?.AuthURL && (
+          <Hint>
+            {t(
+              "This node is not signed in yet. Click Sign in to request its login link. If no link is available, check network access to Tailscale.",
+            )}
+          </Hint>
+        )}
+        {tailnet?.URL && (
+          <Row
+            title={t("Tailnet HTTPS address")}
+            help={<code>{tailnet.URL}</code>}
+          >
+            <CopyAddressButton t={t} />
+          </Row>
+        )}
+        {tailnet?.Error && (
+          <div className="settings-error" role="alert">
+            <p>{tailnet.Error}</p>
+            <button
+              type="button"
+              onClick={() => void run({ kind: "restart-service" })}
+            >
+              {t("Restart service")}
+            </button>
+          </div>
+        )}
+      </Card>
+      <Hint>
+        {t(
+          "Enable MagicDNS and HTTPS certificates in the Tailscale admin DNS settings. Spool login is still required. The existing Android APK only needs this HTTPS address.",
+        )}
+      </Hint>
       <Card title={t("Runtime")}>
         <TextField
           title={t("Release completed agents after idle minutes")}
@@ -499,10 +766,10 @@ export function OnlinePage({ data, t }: PageProps) {
 }
 export function AppearancePage({ data, run, t }: PageProps) {
   const save = (change: Partial<UIPreferences>) =>
-    void run({
+    void run((latest) => ({
       kind: "save-appearance",
-      preferences: { ...data.preferences, ...change },
-    });
+      preferences: { ...(latest ?? data).preferences, ...change },
+    }));
   return (
     <>
       <Card title={t("Appearance and language")}>

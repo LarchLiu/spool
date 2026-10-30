@@ -99,7 +99,7 @@ func (a *App) secureCookie(r *http.Request) bool {
 	if localHost && net.ParseIP(peer).IsLoopback() && r.Header.Get("Origin") == "http://"+r.Host {
 		return false
 	}
-	return strings.HasPrefix(a.settings.PublicURL, "https://")
+	return strings.HasPrefix(a.publicURL(), "https://")
 }
 func (a *App) sameOrigin(r *http.Request) bool {
 	if strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
@@ -120,7 +120,7 @@ func (a *App) sameOrigin(r *http.Request) bool {
 	if origin == scheme+"://"+r.Host {
 		return true
 	}
-	return a.settings.PublicURL != "" && origin == a.settings.PublicURL
+	return a.publicURL() != "" && origin == a.publicURL()
 }
 func (a *App) authorizeMutation(w http.ResponseWriter, r *http.Request, id authIdentity) bool {
 	provided := r.Header.Get("X-CSRF-Token")

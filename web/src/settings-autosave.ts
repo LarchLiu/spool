@@ -38,15 +38,23 @@ type ServiceDraft = {
   idle_minutes: string;
   history_cache_mib: string;
   auto_start: boolean;
+  tsnet_enabled: boolean;
+  tsnet_hostname: string;
+  tsnet_port: string;
 };
 type ServiceField = keyof ServiceDraft;
 
 function toDraft(settings: ServerSettings): ServiceDraft {
   return {
-    ...settings,
+    host: settings.host,
+    public_url: settings.public_url,
+    auto_start: settings.auto_start,
     port: String(settings.port),
     idle_minutes: String(settings.idle_minutes),
     history_cache_mib: String(settings.history_cache_mib),
+    tsnet_enabled: settings.tsnet_enabled ?? false,
+    tsnet_hostname: settings.tsnet_hostname ?? "spool-server",
+    tsnet_port: String(settings.tsnet_port ?? 443),
   };
 }
 
@@ -68,6 +76,7 @@ export class ServiceSettingsAutosave {
   }
 
   edit<K extends ServiceField>(key: K, value: ServiceDraft[K]) {
+    if (this.draft[key] === value) return;
     this.draft = { ...this.draft, [key]: value };
     this.edits[key] = (this.edits[key] ?? 0) + 1;
     this.changed();
@@ -78,7 +87,7 @@ export class ServiceSettingsAutosave {
     const next = toDraft(settings);
     // Polling and save acknowledgements may update untouched fields, but must
     // not replace a newer edit or another field's incomplete input.
-    this.draft = Object.fromEntries(
+    const draft = Object.fromEntries(
       (Object.keys(next) as ServiceField[]).map((key) => [
         key,
         (!this.pendingFields[key] && this.draft[key] === previous[key]) ||
@@ -88,7 +97,14 @@ export class ServiceSettingsAutosave {
       ]),
     ) as ServiceDraft;
     this.saved = { ...settings };
-    this.changed();
+    if (
+      (Object.keys(draft) as ServiceField[]).some(
+        (key) => draft[key] !== this.draft[key],
+      )
+    ) {
+      this.draft = draft;
+      this.changed();
+    }
   }
 
   async commit(key: ServiceField) {
@@ -97,6 +113,7 @@ export class ServiceSettingsAutosave {
     let value: string | number | boolean = raw;
     if (
       key === "port" ||
+      key === "tsnet_port" ||
       key === "idle_minutes" ||
       key === "history_cache_mib"
     ) {
@@ -104,7 +121,7 @@ export class ServiceSettingsAutosave {
       if (
         !Number.isSafeInteger(value) ||
         value < 1 ||
-        (key === "port" && value > 65535) ||
+        ((key === "port" || key === "tsnet_port") && value > 65535) ||
         (key === "idle_minutes" && value > 10080)
       )
         return;

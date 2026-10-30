@@ -51,7 +51,8 @@ test("About replaces Updates, marks pending updates and ends with a safe reposit
   assert.equal(settingsSections.includes("Updates"), false);
   const app = await readFile(new URL("../src/settings-app.tsx", import.meta.url), "utf8");
   assert.match(app, /key === "About" &&\s*data\?\.updates\.Enabled &&\s*data\.updates\.Version &&\s*<UpdateIndicator/);
-  assert.match(app, /data-page="About" hidden=\{section !== "About"\}/);
+  assert.match(app, /About: AboutPage/);
+  assert.match(app, /data-page=\{key\} hidden=\{section !== key\}/);
   const pages = await readFile(new URL("../src/settings-pages.tsx", import.meta.url), "utf8");
   assert.match(pages, /export function AboutPage/);
   assert.match(pages, /<Row title=\{t\("Check interval"\)\}>\s*<UpdateCheckInterval/);

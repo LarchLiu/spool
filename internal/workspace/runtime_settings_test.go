@@ -66,6 +66,9 @@ func TestSavingServiceSettingsOnlyMarksChangesThatNeedRestart(t *testing.T) {
 		{"idle timeout", func(s *Settings) { s.IdleMinutes++ }, true},
 		{"cache", func(s *Settings) { s.HistoryCacheMiB++ }, false},
 		{"auto-start", func(s *Settings) { s.AutoStart = false }, false},
+		{"enable tsnet", func(s *Settings) { s.TSNetEnabled = true }, true},
+		{"inactive tsnet hostname", func(s *Settings) { s.TSNetHostname = "other-node" }, false},
+		{"inactive tsnet port", func(s *Settings) { s.TSNetPort = 8443 }, false},
 		{"unchanged", func(s *Settings) {}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

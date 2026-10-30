@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo"
 
@@ -15,6 +16,7 @@ import (
 	"spool/internal/appupdate"
 	"spool/internal/issues"
 	chatmodel "spool/internal/model"
+	"spool/internal/tailnet"
 	"spool/internal/workspace"
 )
 
@@ -30,8 +32,10 @@ func desktopVersion() string {
 }
 
 type desktopSettings struct {
-	panel *panel
-	mu    sync.Mutex
+	panel      *panel
+	mu         sync.Mutex
+	loginMu    sync.Mutex
+	registerMu sync.Mutex
 }
 
 type settingsProject struct {
@@ -98,6 +102,7 @@ type settingsCommand struct {
 	Enabled           bool                        `json:"enabled"`
 	Path              string                      `json:"path"`
 	Target            string                      `json:"target"`
+	AuthKey           string                      `json:"auth_key,omitempty"`
 }
 
 func settingsDocumentAllowed(address string) bool {
@@ -248,7 +253,7 @@ func (s *desktopSettings) Snapshot(ctx context.Context) (settingsSnapshot, error
 
 func settingsTabAllowed(tab string) bool {
 	switch tab {
-	case "Service", "People", "Projects", "Agents", "Online", "Appearance", "About":
+	case "Service", "People", "Projects", "Agents", "Online", "Network", "Appearance", "About":
 		return true
 	}
 	return false
@@ -275,8 +280,127 @@ func (s *desktopSettings) ReleaseNotes(ctx context.Context) (appupdate.ReleaseHi
 	return history, nil
 }
 
+// TSNetLogin deliberately bypasses the settings mutation lock. Waiting for the
+// control plane must not block navigation, autosaves, or stopping the service.
+// It returns no settings snapshot that could overwrite newer concurrent edits.
+func (s *desktopSettings) TSNetLogin(ctx context.Context) (bool, error) {
+	p := s.panel
+	if _, err := settingsUI(ctx, p, func() (bool, error) { return true, nil }); err != nil {
+		return false, err
+	}
+	if !s.loginMu.TryLock() {
+		return false, errors.New("Getting login link...")
+	}
+	defer s.loginMu.Unlock()
+	loginCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	address, err := p.service.TSNetLoginURL(loginCtx)
+	if err != nil {
+		return false, err
+	}
+	return settingsUI(ctx, p, func() (bool, error) {
+		if !tailnet.IsLoginURL(address) {
+			return false, errors.New("Tailscale returned an invalid login link.")
+		}
+		p.openChatLink(address)
+		return true, nil
+	})
+}
+
+func (s *desktopSettings) TSNetRegister(ctx context.Context, key string) (bool, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return false, err
+	}
+	if !s.registerMu.TryLock() {
+		return false, errors.New("Tailscale registration is already in progress.")
+	}
+	defer s.registerMu.Unlock()
+	registerCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	if err := s.panel.service.RegisterTSNetAuthKey(registerCtx, key); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func settingsActionAllowed(kind string) bool {
+	switch kind {
+	case "navigate", "open-chat", "open-browser", "show-file", "copy-tsnet-url":
+		return true
+	}
+	return false
+}
+
+// Action performs UI-only side effects, with the same caller-page checks but
+// without reloading settings, returning full DTOs, or blocking mutation workers.
+func (s *desktopSettings) Action(ctx context.Context, command settingsCommand) (bool, error) {
+	return settingsUI(ctx, s.panel, func() (bool, error) {
+		p := s.panel
+		switch command.Kind {
+		case "navigate":
+			if !settingsTabAllowed(command.Section) {
+				return false, errors.New("invalid settings section")
+			}
+			p.selectTab(command.Section)
+		case "open-chat":
+			p.openChat()
+		case "open-browser":
+			p.openBrowser()
+		case "copy-tsnet-url":
+			address := p.service.Status().TSNet.URL
+			if address == "" {
+				return false, errors.New("Tailscale HTTPS address is unavailable")
+			}
+			mygo.Clipboard.WriteText(address)
+		case "show-file":
+			path := ""
+			switch command.Target {
+			case "database":
+				path = p.service.Store.DatabasePath()
+			case "application":
+				if p.runtimeDiagnostics != nil {
+					path = p.runtimeDiagnostics.Path
+				}
+			case "crash":
+				if p.runtimeDiagnostics != nil {
+					path = p.runtimeDiagnostics.PreviousCrashPath
+				}
+			case "update":
+				if p.updateDiagnostics != nil {
+					path = p.updateDiagnostics.Path
+				}
+			}
+			if path == "" {
+				return false, errors.New("file is unavailable")
+			}
+			mygo.Shell.ShowItemInFolder(path)
+		default:
+			return false, errors.New("unknown desktop settings action")
+		}
+		return true, nil
+	})
+}
+
 func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) (settingsSnapshot, error) {
 	p := s.panel
+	if settingsActionAllowed(command.Kind) {
+		if _, err := s.Action(ctx, command); err != nil {
+			return settingsSnapshot{}, err
+		}
+		return s.Snapshot(ctx)
+	}
+	if command.Kind == "tsnet-login" {
+		if _, err := s.TSNetLogin(ctx); err != nil {
+			return settingsSnapshot{}, err
+		}
+		return s.Snapshot(ctx)
+	}
+	if command.Kind == "save-tsnet-auth-key" && strings.TrimSpace(command.AuthKey) != "" {
+		if _, err := s.TSNetRegister(ctx, command.AuthKey); err != nil {
+			return settingsSnapshot{}, err
+		}
+		return s.Snapshot(ctx)
+	}
 	if _, err := settingsUI(ctx, p, func() (bool, error) { return true, nil }); err != nil {
 		return settingsSnapshot{}, err
 	}
@@ -288,45 +412,8 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 	var err error
 	var savedID, repository string
 	switch command.Kind {
-	case "navigate", "open-chat", "open-browser", "show-file", "restart-update":
-		_, err = settingsUI(ctx, p, func() (bool, error) {
-			switch command.Kind {
-			case "navigate":
-				if !settingsTabAllowed(command.Section) {
-					return false, errors.New("invalid settings section")
-				}
-				p.selectTab(command.Section)
-			case "open-chat":
-				p.openChat()
-			case "open-browser":
-				p.openBrowser()
-			case "restart-update":
-				return true, p.restartForUpdate()
-			case "show-file":
-				path := ""
-				switch command.Target {
-				case "database":
-					path = store.DatabasePath()
-				case "application":
-					if p.runtimeDiagnostics != nil {
-						path = p.runtimeDiagnostics.Path
-					}
-				case "crash":
-					if p.runtimeDiagnostics != nil {
-						path = p.runtimeDiagnostics.PreviousCrashPath
-					}
-				case "update":
-					if p.updateDiagnostics != nil {
-						path = p.updateDiagnostics.Path
-					}
-				}
-				if path == "" {
-					return false, errors.New("file is unavailable")
-				}
-				mygo.Shell.ShowItemInFolder(path)
-			}
-			return true, nil
-		})
+	case "restart-update":
+		_, err = settingsUI(ctx, p, func() (bool, error) { return true, p.restartForUpdate() })
 	case "start-service":
 		err = p.service.Start()
 	case "stop-service":
@@ -334,7 +421,9 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 	case "restart-service":
 		err = p.service.Restart()
 	case "save-settings":
-		err = store.SaveSettings(command.Settings)
+		err = p.service.SaveSettings(command.Settings)
+	case "save-tsnet-auth-key":
+		err = p.service.SetTSNetAuthKey(command.AuthKey)
 	case "save-appearance":
 		err = store.SaveUIPreferences("", command.Preferences)
 	case "save-notifications":

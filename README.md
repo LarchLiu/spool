@@ -700,6 +700,98 @@ Only one desktop/headless service may own a database at a time. A SQLite lease
 prevents accidentally running two managers and marking live tasks interrupted;
 after a forced crash, wait up to 30 seconds for the lease to expire.
 
+### Embedded Tailscale Server
+
+Both Desktop and the headless Go server can join a tailnet themselves, without
+a system Tailscale daemon, a system VPN, or a separate `tailscale serve` proxy.
+This mode is disabled by default and shares the same saved settings.
+
+In Desktop, open **Service > Tailscale (tsnet)**, enable embedded Tailscale, and
+choose a node name and HTTPS port. Optionally enter an **Auth Key** and click
+**Use Auth Key** to register immediately. Enrollment runs separately: the current
+local service and active tasks are not restarted. Failures are shown next to the
+key input and can be retried; success shows **Registered**. Then explicitly
+restart the service to activate HTTPS using the saved identity. Registration
+itself does not publish a new ingress, and the key is not retained for restart.
+Device approval, if required by your tailnet, must still be completed in the admin
+console. Registration verifies membership; HTTPS activation additionally requires
+MagicDNS and HTTPS certificates as described below.
+
+Without a key, start the service and click **Sign in to Tailscale** to request
+this node's login link, even if no link has arrived yet. Only the login button
+waits: navigation, settings edits and service stop/restart remain available.
+Stop/restart cancels pending enrollment/login requests. A valid Auth Key avoids
+browser login but does not bypass control-plane connectivity or device approval.
+Keys are never written to application settings, SQLite, or settings snapshots.
+The Tailscale SDK persists the enrolled node identity under its private state
+folder; later starts reuse that identity without the original key.
+
+For a headless server, enable it using:
+
+```sh
+./build/spool-server -tsnet -tsnet-hostname spool-server
+```
+
+The flags persist enablement, node name, and port; subsequent launches need not
+repeat them. On first launch, follow the login URL printed in the terminal, then
+approve the node in the admin console if required. For unattended enrollment,
+inject `TS_AUTHKEY` through the process environment or a secret manager; do not
+commit a key or pass it as a command-line argument. Persistent node state lives
+in **`<data-dir>/tsnet/`**, inside the same private data root selected by
+`SPOOL_HOME` / `-data-dir`. Restarting reuses that identity. Bootstrap commands
+such as `-add-user` and `-add-project` never start tsnet.
+
+Enable **MagicDNS and HTTPS certificates** in the Tailscale admin DNS settings.
+Enrollment runs in the background while the normal local HTTP service remains
+available. Ctrl-C cancels enrollment and shuts down the service. Once connected,
+the server validates these capabilities and prints its actual assigned URL, such as
+`https://spool-server.example.ts.net`. Use this exact URL in the Android app or
+a browser whose device can reach the tailnet. The existing Android APK works
+unchanged; only its saved server address needs to change. Tailnet policy must
+allow the client node to reach this server node's TCP port.
+
+- HTTPS defaults to **443 inside the embedded node**. This does not bind the
+  host's TCP 443 and does not need root. `-tsnet-port 8443` selects another
+  tailnet HTTPS port; the printed URL then includes `:8443`.
+- The normal HTTP listener remains configured as before (default
+  `127.0.0.1:8787`). Both listeners share one App, database, user sessions, agent
+  tasks, SSE and WebSocket connections, and service shutdown lifecycle. An
+  existing LAN binding is not changed automatically.
+- The assigned HTTPS origin is managed automatically as **Public origin**,
+  replacing any saved reverse-proxy origin. The desktop origin field is disabled
+  while tsnet is enabled. To return to local HTTP, disable tsnet in Desktop and
+  restart, or launch with `-tsnet=false`. Disabling clears the managed origin;
+  pass `-public-url https://your-proxy.example` if switching to a separate proxy.
+- This is **tailnet-only**, not Funnel. HTTPS does not bypass Spool login,
+  project permissions, CSRF checks, or Secure/HttpOnly/SameSite cookies.
+  No auth key is embedded in the Android APK.
+- A first HTTPS request may provision a certificate through Tailscale. These
+  certificates use public certificate transparency logs, so the DNS name is
+  not secret. Keep the state directory private and do not copy an enrolled
+  node's state to a second running instance.
+
+### Application Network Settings
+
+In Desktop, **Application > Network > Use system proxy** is an application-level
+setting, not a Tailscale option. On macOS it reads static system HTTP/HTTPS proxy
+configuration (including bypass exceptions). Both built-in HTTP clients, such as
+signed update checks/downloads, and embedded Tailscale use the shared policy.
+The headless equivalent is `-system-proxy` (`-system-proxy=false` to disable);
+the choice is saved in `use_system_proxy` alongside the other application settings.
+
+The switch defaults off. `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` environment
+variables still take priority and remain effective when system discovery is off.
+Other platforms retain their existing environment/SDK proxy behavior; this switch
+currently adds macOS system discovery. PAC/auto-discovery and SOCKS-only macOS
+configurations are not supported and produce an explicit error rather than a
+silent fallback.
+
+Saving applies to new built-in HTTP requests immediately, without restarting
+active tasks. Explicitly restart the service to reconnect Tailscale through the
+new proxy. Loopback access remains direct; Web Push keeps its public-destination
+SSRF protection and does not use a proxy. External agent/GitHub CLI subprocesses
+retain their own proxy settings. The setting does not modify the OS or Android APK.
+
 ## Projects, Accounts, And Trust
 
 Each chat is permanently associated with a project and its creating user.
