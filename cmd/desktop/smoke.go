@@ -384,6 +384,18 @@ func (p *panel) probeEmbeddedChat(ctx context.Context) error {
 	return probeWeb(ctx, p.service.Status().Address)
 }
 
+// Saves disable the page's controls, not the outer settings fieldset. A bridge
+// snapshot can observe persisted data before React has enabled those controls.
+const smokeSettingsReadyScript = `
+	window.smokeSettingsReady = (section, selector) => {
+		const page = document.querySelector('[data-page="' + section + '"]');
+		const controls = page?.querySelector('.settings-page-controls');
+		const target = selector ? page?.querySelector(selector) : controls;
+		return !!page && !page.hidden && !!controls && !controls.matches(':disabled') &&
+			!!target && !target.matches(':disabled');
+	};
+`
+
 func smokeSettingsCommand(ctx context.Context, page *mygo.Page, command settingsCommand) error {
 	body, err := json.Marshal(command)
 	if err != nil {
@@ -406,8 +418,11 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 		return fmt.Errorf("settings WebView was not created")
 	}
 	page := view.Page()
-	if err := waitChatScript(ctx, page, `return !!document.querySelector('[data-page="Service"] input') && !document.querySelector('.settings-content')?.disabled && !document.querySelector('.settings-brand, .settings-breadcrumb, .settings-search, .settings-version') && !!document.querySelector('.settings-sidebar-bottom button.icon') && !!document.querySelector('.settings-sidebar-status .settings-status-dot')`); err != nil {
+	if err := waitChatScript(ctx, page, `return !!document.querySelector('[data-page="Service"] input') && !!document.querySelector('[data-page="Service"] .settings-page-controls:not(:disabled)') && !document.querySelector('.settings-brand, .settings-breadcrumb, .settings-search, .settings-version') && !!document.querySelector('.settings-sidebar-bottom button.icon') && !!document.querySelector('.settings-sidebar-status .settings-status-dot')`); err != nil {
 		return fmt.Errorf("settings render: %w", err)
+	}
+	if _, err := page.EvalContext(ctx, smokeSettingsReadyScript); err != nil {
+		return err
 	}
 	// This exercises the real native bridge, not an HTTP management endpoint.
 	for _, kind := range []string{"stop-service", "start-service"} {
@@ -427,7 +442,7 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-section="%s"]').click();`, section)); err != nil {
 			return err
 		}
-		if err := waitChatScript(ctx, page, fmt.Sprintf(`return document.querySelector('[data-section="%s"]')?.getAttribute('aria-current') === 'page' && !document.querySelector('[data-page="%s"]').hidden && !document.querySelector('.settings-content').disabled`, section, section)); err != nil {
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`return document.querySelector('[data-section="%s"]')?.getAttribute('aria-current') === 'page' && smokeSettingsReady(%q);`, section, section)); err != nil {
 			return err
 		}
 		if section == "People" || section == "Projects" || section == "Agents" {
@@ -444,7 +459,7 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 	if err := p.probeThemePicker(ctx, view, report); err != nil {
 		return fmt.Errorf("appearance controls: %w", err)
 	}
-	if err := waitChatScript(ctx, page, `return !document.querySelector('[data-page="Service"]').hidden && !document.querySelector('.settings-content').disabled && (await mygo.call('DesktopSettings.Snapshot')).section === 'Service';`); err != nil {
+	if err := waitChatScript(ctx, page, `return smokeSettingsReady('Service') && (await mygo.call('DesktopSettings.Snapshot')).section === 'Service';`); err != nil {
 		return err
 	}
 	// An inactive WebView can change activeElement without emitting focus/blur.
@@ -484,7 +499,7 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 			blur: window.smokeServiceBlurred === true,
 			saved: snapshot.settings.host === 'localhost',
 			navigated: snapshot.section === 'People' && !document.querySelector('[data-page="People"]').hidden,
-			idle: !document.querySelector('.settings-content').disabled
+			idle: smokeSettingsReady('People')
 		};
 		return {ready: Object.values(checks).every(Boolean), checks, host: snapshot.settings.host, focused: document.hasFocus()};
 	`); err != nil {
@@ -506,7 +521,7 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 	if _, err := page.EvalContext(ctx, `document.querySelector('[data-page="People"] form').requestSubmit();`); err != nil {
 		return err
 	}
-	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).users.some(u => u.username === 'smoke-person') && !document.querySelector('.settings-content').disabled && document.querySelector('[data-page="People"] input[type="password"]').value === ''`); err != nil {
+	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).users.some(u => u.username === 'smoke-person') && smokeSettingsReady('People', '.settings-back') && document.querySelector('[data-page="People"] input[type="password"]').value === ''`); err != nil {
 		return fmt.Errorf("settings person save: %w", err)
 	}
 	users, err := p.service.Store.Users()
@@ -520,7 +535,7 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 	if _, err := page.EvalContext(ctx, `document.querySelector('[data-section="Projects"]').click();`); err != nil {
 		return err
 	}
-	if err := waitChatScript(ctx, page, `return !document.querySelector('[data-page="Projects"]').hidden && !document.querySelector('.settings-content').disabled`); err != nil {
+	if err := waitChatScript(ctx, page, `return smokeSettingsReady('Projects');`); err != nil {
 		return err
 	}
 	if _, err := page.EvalContext(ctx, `document.querySelector('[data-page="Projects"] [data-new-entity]').click();`); err != nil {
@@ -539,7 +554,7 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 	if _, err := page.EvalContext(ctx, `document.querySelector('[data-page="Projects"] form').requestSubmit();`); err != nil {
 		return err
 	}
-	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).projects.length === 1 && !document.querySelector('.settings-content').disabled`); err != nil {
+	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).projects.length === 1 && smokeSettingsReady('Projects', '.settings-back');`); err != nil {
 		return fmt.Errorf("settings project form: %w", err)
 	}
 	if projects, err := p.service.Store.Projects(); err != nil || len(projects) != 1 || projects[0].Path != directory {
@@ -557,10 +572,10 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 	if _, err := page.EvalContext(ctx, `document.querySelector('[data-section="Service"]').click();`); err != nil {
 		return err
 	}
-	if err := waitChatScript(ctx, page, `return !document.querySelector('[data-page="Service"]').hidden && !document.querySelector('.settings-content').disabled && document.querySelector('[data-page="Service"] input').value === 'localhost'`); err != nil {
+	if err := waitChatScript(ctx, page, `return smokeSettingsReady('Service') && document.querySelector('[data-page="Service"] input').value === 'localhost'`); err != nil {
 		return fmt.Errorf("settings autosave lost: %w", err)
 	}
-	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).settings.host === 'localhost' && !document.querySelector('.settings-content').disabled`); err != nil {
+	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).settings.host === 'localhost' && smokeSettingsReady('Service');`); err != nil {
 		return fmt.Errorf("service field was not autosaved: %w", err)
 	}
 	if err := waitChatScript(ctx, page, `const section = document.querySelector('[data-page="Service"]'); return !section.querySelector('form, button[type="submit"]') && (await mygo.call('DesktopSettings.Snapshot')).status.RestartRequired && !!section.querySelector('[data-restart-service]');`); err != nil {
@@ -639,12 +654,12 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 			const checks = {
 				nativeSection: snapshot.section === %q,
 				visible: !document.querySelector('[data-page="%s"]').hidden,
-				idle: !document.querySelector('.settings-content').disabled && !document.querySelector('[data-section="%s"]').disabled,
+				idle: smokeSettingsReady(%q) && !document.querySelector('[data-section="%s"]').matches(':disabled'),
 				noOverflow: main.scrollWidth <= main.clientWidth
 			};
 			return {ready: Object.values(checks).every(Boolean), checks, section: snapshot.section,
 				width: main.clientWidth, scrollWidth: main.scrollWidth};
-		`, section, section, section)); err != nil {
+		`, section, section, section, section)); err != nil {
 			return fmt.Errorf("compact settings %s: %w", section, err)
 		}
 		if section == "About" {
@@ -673,7 +688,7 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 	if _, err := page.EvalContext(ctx, `document.querySelector('[data-restart-service]').click();`); err != nil {
 		return err
 	}
-	if err := waitChatScript(ctx, page, `const snapshot = await mygo.call('DesktopSettings.Snapshot'); return snapshot.status.Running && !snapshot.status.RestartRequired && !document.querySelector('[data-restart-service]') && !document.querySelector('.settings-content').disabled;`); err != nil {
+	if err := waitChatScript(ctx, page, `const snapshot = await mygo.call('DesktopSettings.Snapshot'); return snapshot.status.Running && !snapshot.status.RestartRequired && !document.querySelector('[data-restart-service]') && smokeSettingsReady('Service');`); err != nil {
 		return fmt.Errorf("explicit settings restart: %w", err)
 	}
 	// Restore the original listen address before chat's origin is established.
@@ -718,7 +733,7 @@ func (p *panel) probeAboutSettings(ctx context.Context, view *mygo.WebView, repo
 		if err := waitChatScript(ctx, page, fmt.Sprintf(`
 			return (await mygo.call('DesktopSettings.Snapshot')).update_preferences.check_interval_minutes === %d &&
 				document.querySelectorAll('[data-page="About"] .settings-check-interval button')[%d].getAttribute('aria-pressed') === 'true' &&
-				!document.querySelector('.settings-content').disabled;
+				smokeSettingsReady('About');
 		`, minutes, index)); err != nil {
 			return fmt.Errorf("interval %d: %w", minutes, err)
 		}
@@ -738,7 +753,7 @@ func (p *panel) probeAboutSettings(ctx context.Context, view *mygo.WebView, repo
 		const preferences = (await mygo.call('DesktopSettings.Snapshot')).update_preferences;
 		return !preferences.automatic_checks && preferences.check_interval_minutes === 1440 &&
 			[...document.querySelectorAll('[data-page="About"] .settings-check-interval button')].every(button => button.disabled) &&
-			!document.querySelector('.settings-content').disabled;
+			smokeSettingsReady('About');
 	`); err != nil {
 		return err
 	}
@@ -904,7 +919,7 @@ func (p *panel) probeThemePicker(ctx context.Context, view *mygo.WebView, report
 		const language = section?.querySelector('.custom-select-trigger[aria-haspopup="listbox"]');
 		const checks = {
 			visible: !!section && !section.hidden,
-			idle: !!document.querySelector('.settings-content') && !document.querySelector('.settings-content').disabled,
+			idle: smokeSettingsReady('Appearance'),
 			themes: section?.querySelectorAll('.settings-theme-picker button').length === 3,
 			language: !!language && !language.matches(':disabled') && language.getAttribute('aria-expanded') === 'false'
 		};
@@ -923,7 +938,7 @@ func (p *panel) probeThemePicker(ctx context.Context, view *mygo.WebView, report
 			const snapshot = await mygo.call('DesktopSettings.Snapshot');
 			const selected = document.querySelector('[data-theme-choice="%s"]');
 			const bounds = selected.getBoundingClientRect();
-			return !document.querySelector('.settings-content').disabled && snapshot.preferences.theme === %q &&
+			return smokeSettingsReady('Appearance') && snapshot.preferences.theme === %q &&
 				snapshot.preferences.language === 'zh-CN' && selected.getAttribute('aria-pressed') === 'true' &&
 				document.querySelectorAll('.settings-theme-picker [aria-pressed="true"]').length === 1 &&
 				bounds.width === bounds.height && getComputedStyle(selected).borderRadius === '50%%';
@@ -976,7 +991,7 @@ func (p *panel) probeSettingsLanguage(ctx context.Context, page *mygo.Page) erro
 			const snapshot = await mygo.call('DesktopSettings.Snapshot');
 			const trigger = document.querySelector('[data-page="Appearance"] .custom-select-trigger');
 			return snapshot.preferences.language === %q && snapshot.preferences.theme === 'system' &&
-				document.documentElement.lang === %q && !document.querySelector('.settings-content').disabled &&
+				document.documentElement.lang === %q && smokeSettingsReady('Appearance') &&
 				!trigger.matches(':disabled') && trigger.getAttribute('aria-expanded') === 'false' &&
 				!document.querySelector('.custom-select-menu');
 		`, language, language)); err != nil {
@@ -992,12 +1007,12 @@ func (p *panel) probeManagementLists(ctx context.Context, view *mygo.WebView, re
 		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-section="%s"]').click();`, section)); err != nil {
 			return err
 		}
-		if err := waitChatScript(ctx, page, fmt.Sprintf(`return !document.querySelector('[data-page="%s"]').hidden && !document.querySelector('.settings-content').disabled;`, section)); err != nil {
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`return smokeSettingsReady(%q);`, section)); err != nil {
 			return err
 		}
 		// Created entries remain in their editor until Back; no tabs or editors
 		// are mixed into the overview list.
-		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-page="%s"] .settings-back')?.click();`, section)); err != nil {
+		if _, err := page.EvalContext(ctx, fmt.Sprintf(`const back = document.querySelector('[data-page="%s"] .settings-back'); if (back) { if (back.matches(':disabled')) throw new Error('settings Back is disabled'); back.click(); }`, section)); err != nil {
 			return err
 		}
 		count := 1
@@ -1062,7 +1077,19 @@ func (p *panel) probeManagementLists(ctx context.Context, view *mygo.WebView, re
 		if _, err := page.EvalContext(ctx, script); err != nil {
 			return err
 		}
-		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-page="%s"] form').requestSubmit();`, section)); err != nil {
+		// Keep the form disabled after persistence so the probe cannot confuse a
+		// fresh native snapshot with the UI's save acknowledgement.
+		if _, err := page.EvalContext(ctx, fmt.Sprintf(`
+			const call = window.mygo.call;
+			window.mygo.call = async function(method, ...args) {
+				if (method !== 'DesktopSettings.Execute') return call.call(this, method, ...args);
+				window.mygo.call = call;
+				const result = await call.call(this, method, ...args);
+				await new Promise(resolve => setTimeout(resolve, 200));
+				return result;
+			};
+			document.querySelector('[data-page="%s"] form').requestSubmit();
+		`, section)); err != nil {
 			return err
 		}
 		condition := map[string]string{
@@ -1070,10 +1097,10 @@ func (p *panel) probeManagementLists(ctx context.Context, view *mygo.WebView, re
 			"Projects": `snapshot.projects.length === 1 && snapshot.projects[0].name === 'Smoke Project Updated'`,
 			"Agents":   `snapshot.agents.find(agent => agent.backend === 'codex').enabled === false`,
 		}[section]
-		if err := waitChatScript(ctx, page, `const snapshot = await mygo.call('DesktopSettings.Snapshot'); return !document.querySelector('.settings-content').disabled && `+condition+`;`); err != nil {
+		if err := waitChatScript(ctx, page, fmt.Sprintf(`const snapshot = await mygo.call('DesktopSettings.Snapshot'); return smokeSettingsReady(%q, '.settings-back') && %s;`, section, condition)); err != nil {
 			return fmt.Errorf("settings edit %s: %w", section, err)
 		}
-		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('[data-page="%s"] .settings-back').click();`, section)); err != nil {
+		if _, err := page.EvalContext(ctx, fmt.Sprintf(`const back = document.querySelector('[data-page="%s"] .settings-back'); if (!back || back.matches(':disabled')) throw new Error('settings Back is unavailable'); back.click();`, section)); err != nil {
 			return err
 		}
 		if err := waitChatScript(ctx, page, fmt.Sprintf(`return document.querySelectorAll('[data-page="%s"] .settings-list-item').length === %d && !document.querySelector('[data-page="%s"] form');`, section, count, section)); err != nil {
@@ -1105,7 +1132,7 @@ func (p *panel) probeManagementLists(ctx context.Context, view *mygo.WebView, re
 			if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: "save-appearance", Preferences: workspace.UIPreferences{Theme: theme, Language: "zh-CN"}}); err != nil {
 				return err
 			}
-			if err := waitChatScript(ctx, page, fmt.Sprintf(`return document.documentElement.dataset.theme === %q && document.documentElement.lang === 'zh-CN' && !document.querySelector('.settings-content').disabled;`, theme)); err != nil {
+			if err := waitChatScript(ctx, page, fmt.Sprintf(`return document.documentElement.dataset.theme === %q && document.documentElement.lang === 'zh-CN' && smokeSettingsReady(%q);`, theme, section)); err != nil {
 				return err
 			}
 			if _, err := page.EvalContext(ctx, `await new Promise(resolve => setTimeout(resolve, 200)); const main = document.querySelector('.settings-main'); if (main.scrollWidth > main.clientWidth) throw new Error('management list overflows');`); err != nil {

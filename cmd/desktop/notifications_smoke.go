@@ -83,7 +83,7 @@ func (p *panel) probeDesktopNotifications(ctx context.Context, report string) er
 	if err := smokeSettingsCommand(ctx, settings, settingsCommand{Kind: "navigate", Section: "Appearance"}); err != nil {
 		return err
 	}
-	if err := waitChatScript(ctx, settings, `return !document.querySelector('.settings-content').disabled && !document.querySelector('[data-page="Appearance"]').hidden && document.querySelector('[data-page="Appearance"] [role="switch"]')?.getAttribute('aria-checked') === 'true';`); err != nil {
+	if err := waitChatScript(ctx, settings, `return smokeSettingsReady('Appearance', '[role="switch"]') && document.querySelector('[data-page="Appearance"] [role="switch"]')?.getAttribute('aria-checked') === 'true';`); err != nil {
 		return err
 	}
 	if _, err := settings.EvalContext(ctx, `await new Promise(resolve => setTimeout(resolve, 200));`); err != nil {
