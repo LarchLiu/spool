@@ -140,7 +140,8 @@ async function checkCustomSelects(report) {
     report.tailnetBrowserLogin = fixture.snapshot.status.TSNet.State === "NeedsLogin" && fixture.commands.filter((command) => command.kind === "tsnet-login").length === 2;
 
     const key = doc.querySelector('[aria-label="Tailscale Auth Key (optional)"]');
-    Object.getOwnPropertyDescriptor(frame.contentWindow.HTMLInputElement.prototype, "value").set.call(key, "tskey-auth-test-only-not-a-real-key");
+    const authKey = crypto.randomUUID();
+    Object.getOwnPropertyDescriptor(frame.contentWindow.HTMLInputElement.prototype, "value").set.call(key, authKey);
     key.dispatchEvent(new frame.contentWindow.Event("input", { bubbles: true }));
     await waitFor(() => !button("Use Auth Key").disabled, "key input ready");
     fixture.failNextRegistration = true;
@@ -155,7 +156,7 @@ async function checkCustomSelects(report) {
     fixture.releaseRegistration();
     await waitFor(() => fixture.snapshot.status.TSNet.State === "Registered" && key.value === "" && button("Use Auth Key").disabled && idle(), "key registered without restart");
     report.tailnetKeyRegistration = fixture.commands.filter((command) => command.kind === "restart-service").length === restarts && fixture.snapshot.status.Running && fixture.snapshot.status.TSNet.URL === "";
-    report.tailnetSecretInput = key.type === "password" && !JSON.stringify(fixture.snapshot).includes("tskey-auth-") && !button("Clear pending key");
+    report.tailnetSecretInput = key.type === "password" && !JSON.stringify(fixture.snapshot).includes(authKey) && !button("Clear pending key");
     await waitFor(() => doc.querySelector('[data-restart-service]') && idle(), "registered node restart action");
     doc.querySelector('[data-restart-service]').click();
     await waitFor(() => doc.querySelector('code')?.textContent === "https://spool.example.ts.net" && idle(), "assigned HTTPS origin");

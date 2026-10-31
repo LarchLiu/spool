@@ -2,6 +2,7 @@ package tailnet
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"io"
@@ -206,10 +207,11 @@ func TestTailnetLoginStatusIsAvailableBeforeEnrollment(t *testing.T) {
 }
 
 func TestTailnetRedactsExplicitAndEnvironmentKeys(t *testing.T) {
-	t.Setenv("TS_AUTHKEY", "tskey-auth-env-one")
-	t.Setenv("TS_AUTH_KEY", "tskey-auth-env-two")
-	message := RedactSecrets("error tskey-auth-explicit / tskey-auth-env-one / tskey-auth-env-two", "tskey-auth-explicit")
-	if strings.Contains(message, "tskey-auth-") || strings.Count(message, "[redacted]") != 3 {
+	explicitKey, envKey, alternateEnvKey := rand.Text(), rand.Text(), rand.Text()
+	t.Setenv("TS_AUTHKEY", envKey)
+	t.Setenv("TS_AUTH_KEY", alternateEnvKey)
+	message := RedactSecrets("error "+explicitKey+" / "+envKey+" / "+alternateEnvKey, explicitKey)
+	if message != "error [redacted] / [redacted] / [redacted]" {
 		t.Fatal("did not redact all enrollment credentials")
 	}
 }

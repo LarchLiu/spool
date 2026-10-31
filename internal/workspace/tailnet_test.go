@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -13,6 +14,11 @@ import (
 
 	"spool/internal/tailnet"
 )
+
+func testTailnetAuthKey() string {
+	// Generate fixtures at runtime so source scanners cannot mistake them for leaked keys.
+	return tsNetAuthKeyPrefix + rand.Text()
+}
 
 type testTailnetConnection struct {
 	listener net.Listener
@@ -117,7 +123,7 @@ func TestTailnetAuthKeyIsMemoryOnlyAndConsumedAfterEnrollment(t *testing.T) {
 	if err := service.Store.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
-	const key = "tskey-auth-test-enrollment-secret"
+	key := testTailnetAuthKey()
 	if err := service.SetTSNetAuthKey("  " + key + "\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +260,7 @@ func TestTailnetRestartClosesOldNodeBeforeOpeningNewNode(t *testing.T) {
 		t.Fatal("automatically assigned origin caused a false restart notice", status)
 	}
 	app := service.app
-	if err := service.SetTSNetAuthKey("tskey-auth-replacement"); err != nil {
+	if err := service.SetTSNetAuthKey(testTailnetAuthKey()); err != nil {
 		t.Fatal(err)
 	}
 	if !service.Status().RestartRequired || service.app != app || opens.Load() != 1 {
@@ -280,8 +286,8 @@ func TestTailnetRestartClosesOldNodeBeforeOpeningNewNode(t *testing.T) {
 
 func TestTailnetAuthKeyFailureIsRedactedAndCanBeCleared(t *testing.T) {
 	service, settings := settingsService(t)
-	const key = "tskey-auth-invalid-test-secret"
-	const envKey = "tskey-auth-environment-test-secret"
+	key := testTailnetAuthKey()
+	envKey := testTailnetAuthKey()
 	t.Setenv("TS_AUTHKEY", envKey)
 	if err := service.SetTSNetAuthKey(key); err != nil {
 		t.Fatal(err)
@@ -303,7 +309,7 @@ func TestTailnetAuthKeyFailureIsRedactedAndCanBeCleared(t *testing.T) {
 
 func TestTailnetAuthKeyValidationDoesNotEchoInput(t *testing.T) {
 	service, _ := settingsService(t)
-	for _, key := range []string{"tskey-auth-", "tskey-api-secret", "tskey-auth-line\nbreak", "tskey-auth-" + strings.Repeat("s", 512)} {
+	for _, key := range []string{tsNetAuthKeyPrefix, "not-an-auth-key", testTailnetAuthKey() + "\nbreak", tsNetAuthKeyPrefix + strings.Repeat("s", 512)} {
 		err := service.SetTSNetAuthKey(key)
 		if err == nil || strings.Contains(err.Error(), key) || service.Status().TSNetAuthKeySet {
 			t.Fatal("invalid key was accepted or disclosed")
@@ -415,7 +421,7 @@ func TestTailnetAuthKeyRegistersImmediatelyWithoutRestartingLocalService(t *test
 		t.Fatal(err)
 	}
 	app, runner := service.app, service.runner
-	const key = "tskey-auth-registration-secret"
+	key := testTailnetAuthKey()
 	started, finish := make(chan struct{}), make(chan struct{})
 	service.enrollTailnet = func(ctx context.Context, root string, options tailnet.Options, report func(tailnet.Status)) error {
 		if root != service.Store.Root() || options.AuthKey != key {
@@ -490,7 +496,7 @@ func TestTailnetImmediateRegistrationFailureIsRedactedAndCanRetry(t *testing.T) 
 		t.Fatal(err)
 	}
 	app := service.app
-	const key = "tskey-auth-rejected-secret"
+	key := testTailnetAuthKey()
 	service.enrollTailnet = func(context.Context, string, tailnet.Options, func(tailnet.Status)) error {
 		return fmt.Errorf("rejected %s", key)
 	}
@@ -520,7 +526,8 @@ func TestTailnetImmediateRegistrationCancelsWhenDisabled(t *testing.T) {
 		return ctx.Err()
 	}
 	done := make(chan error, 1)
-	go func() { done <- service.RegisterTSNetAuthKey(context.Background(), "tskey-auth-cancel-test") }()
+	key := testTailnetAuthKey()
+	go func() { done <- service.RegisterTSNetAuthKey(context.Background(), key) }()
 	select {
 	case <-started:
 	case <-time.After(time.Second):

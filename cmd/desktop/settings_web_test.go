@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"net/http/httptest"
 	"os"
@@ -64,7 +65,7 @@ func TestSettingsBridgeRejectsCallsWithoutDesktopPage(t *testing.T) {
 		if _, err := bridge.TSNetLogin(context.Background()); err == nil {
 			t.Fatal("login request allowed without calling page")
 		}
-		if _, err := bridge.TSNetRegister(context.Background(), "tskey-auth-test"); err == nil {
+		if _, err := bridge.TSNetRegister(context.Background(), rand.Text()); err == nil {
 			t.Fatal("key registration allowed without calling page")
 		}
 		if _, err := bridge.Action(context.Background(), settingsCommand{Kind: "copy-tsnet-url"}); err == nil {

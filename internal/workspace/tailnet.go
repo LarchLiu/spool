@@ -14,6 +14,8 @@ import (
 	"spool/internal/tailnet"
 )
 
+const tsNetAuthKeyPrefix = "tskey-auth-"
+
 type tailnetConnection interface {
 	Listener() net.Listener
 	Origin() string
@@ -287,7 +289,7 @@ func (s *Service) SetTSNetAuthKey(key string) error {
 }
 
 func validateTSNetAuthKey(key string) error {
-	if key != "" && (!strings.HasPrefix(key, "tskey-auth-") || len(key) <= len("tskey-auth-") || len(key) > 512 || strings.ContainsAny(key, " \t\r\n")) {
+	if key != "" && (!strings.HasPrefix(key, tsNetAuthKeyPrefix) || len(key) <= len(tsNetAuthKeyPrefix) || len(key) > 512 || strings.ContainsAny(key, " \t\r\n")) {
 		return fmt.Errorf("invalid Tailscale Auth Key")
 	}
 	return nil
