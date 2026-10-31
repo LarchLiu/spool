@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
@@ -19,7 +20,9 @@ import (
 
 // System WebViews may share cookies with an installed app. Keep their page
 // signed out; use isolated HTTP clients for both chat identities, inject only
-// the cookie lookup and OS display, and exercise the real native event routing.
+// the cookie lookup, OS display and focus policy, and exercise real native event
+// routing. CI desktops may deny foreground activation after hiding a window, so
+// drive notification focus with real visibility instead of OS focus stealing.
 func (p *panel) probeDesktopNotifications(ctx context.Context, report string) error {
 	address, err := p.service.LocalWebURL()
 	if err != nil {
@@ -53,12 +56,18 @@ func (p *panel) probeDesktopNotifications(ctx context.Context, report string) er
 	ready := make(chan struct{}, 1)
 	p.window.Update(func() {
 		p.showMainWindow()
+		p.notificationFocused = p.window.IsVisible
+		p.setDesktopNotificationFocused(true)
 		p.notificationsSupported = true
 		p.notificationShow = func(opts mygo.NotificationOptions) error { shown <- opts; return nil }
 		p.notificationCookies = func(string) ([]mygo.Cookie, error) {
 			return []mygo.Cookie{{Name: "spool_session", Value: token, HTTPOnly: true, Path: "/"}}, nil
 		}
 		ready <- struct{}{}
+	})
+	defer p.window.Update(func() {
+		p.notificationFocused = nil
+		p.setDesktopNotificationFocused(p.desktopNotificationFocused())
 	})
 	select {
 	case <-ready:
@@ -95,7 +104,7 @@ func (p *panel) probeDesktopNotifications(ctx context.Context, report string) er
 		return err
 	}
 	page := p.chatView.Page()
-	if _, err := page.EvalContext(ctx, `window.addEventListener('spool:notification-changed', () => { window.spoolSmokeNotification = window.spoolNotificationTarget; }, true); window.spoolSmokeTimeOrigin = performance.timeOrigin;`); err != nil {
+	if _, err := page.EvalContext(ctx, smokeNotificationObserverScript); err != nil {
 		return err
 	}
 	if err := conn.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"type":"direct_message","request_id":"native-foreground-smoke","to":%q,"text":"foreground native message body"}`, receiver))); err != nil {
@@ -106,7 +115,7 @@ func (p *panel) probeDesktopNotifications(ctx context.Context, report string) er
 	}
 	checked := make(chan error, 1)
 	p.window.Update(func() {
-		if !p.window.IsFocused() || len(p.notificationEvents.Events()) != 0 || len(shown) != 0 {
+		if !p.desktopNotificationFocused() || len(p.notificationEvents.Events()) != 0 || len(shown) != 0 {
 			checked <- fmt.Errorf("focused desktop queued or showed an automatic notification")
 			return
 		}
@@ -157,7 +166,7 @@ func (p *panel) probeDesktopNotifications(ctx context.Context, report string) er
 		return fmt.Errorf("native private notification metadata/content incorrect")
 	}
 	p.window.Update(func() { p.openSystemNotification(private.ID) })
-	if err := waitChatScript(ctx, page, fmt.Sprintf(`return window.spoolSmokeNotification?.url === %q && window.spoolSmokeNotification?.user === %q && performance.timeOrigin === window.spoolSmokeTimeOrigin;`, target.URL, receiver)); err != nil {
+	if err := waitSmokeNotification(ctx, page, target); err != nil {
 		return err
 	}
 	if err := conn.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"type":"group_create","request_id":"native-group-smoke","name":"Native notification group","members":[%q]}`, receiver))); err != nil {
@@ -196,10 +205,34 @@ func (p *panel) probeDesktopNotifications(ctx context.Context, report string) er
 		return fmt.Errorf("native group click target invalid")
 	}
 	p.window.Update(func() { p.openSystemNotification(groupNote.ID) })
-	if err := waitChatScript(ctx, page, fmt.Sprintf(`return window.spoolSmokeNotification?.url === %q && performance.timeOrigin === window.spoolSmokeTimeOrigin && !!document.querySelector('input[name="password"]');`, groupTarget.URL)); err != nil {
+	if err := waitSmokeNotification(ctx, page, groupTarget); err != nil {
 		return err
 	}
 	return smokeSettingsCommand(ctx, settings, settingsCommand{Kind: "save-notifications", Enabled: false})
+}
+
+// The frontend consumes and deletes spoolNotificationTarget synchronously.
+// Observing that buffer from a later DOM listener races even with capture=true
+// on window. Subscribe to the native payload without consuming the UI buffer.
+const smokeNotificationObserverScript = `
+	window.spoolSmokeNotification = null;
+	window.mygo.on('spool:notification-open', target => {
+		window.spoolSmokeNotification = target;
+	});
+	window.spoolSmokeTimeOrigin = performance.timeOrigin;
+`
+
+func waitSmokeNotification(ctx context.Context, page *mygo.Page, target notificationTarget) error {
+	return waitChatChecks(ctx, page, fmt.Sprintf(`
+		const checks = {
+			target: window.spoolSmokeNotification?.url === %q,
+			account: window.spoolSmokeNotification?.user === %q,
+			same_page: performance.timeOrigin === window.spoolSmokeTimeOrigin,
+			consumed: !('spoolNotificationTarget' in window),
+			signed_out: !!document.querySelector('input[name="password"]')
+		};
+		return {ready: Object.values(checks).every(Boolean), checks};
+	`, target.URL, target.User))
 }
 
 func (p *panel) waitNotificationWindow(ctx context.Context, focused, visible bool) error {
@@ -207,19 +240,25 @@ func (p *panel) waitNotificationWindow(ctx context.Context, focused, visible boo
 	defer ticker.Stop()
 	for {
 		state := make(chan bool, 1)
-		p.window.Update(func() { state <- p.window.IsFocused() == focused && p.window.IsVisible() == visible })
+		p.window.Update(func() {
+			matches := p.desktopNotificationFocused() == focused && p.window.IsVisible() == visible
+			if matches {
+				log.Printf("event=smoke_notification_focus native=%v policy=%v visible=%v", p.window.IsFocused(), p.desktopNotificationFocused(), p.window.IsVisible())
+			}
+			state <- matches
+		})
 		select {
 		case matches := <-state:
 			if matches {
 				return nil
 			}
 		case <-ctx.Done():
-			return fmt.Errorf("notification window focus=%v visible=%v: %w", focused, visible, ctx.Err())
+			return fmt.Errorf("notification window focus policy=%v visible=%v: %w", focused, visible, ctx.Err())
 		}
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():
-			return fmt.Errorf("notification window focus=%v visible=%v: %w", focused, visible, ctx.Err())
+			return fmt.Errorf("notification window focus policy=%v visible=%v: %w", focused, visible, ctx.Err())
 		}
 	}
 }

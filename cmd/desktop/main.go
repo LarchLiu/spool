@@ -78,6 +78,7 @@ type panel struct {
 	notificationShow       func(mygo.NotificationOptions) error
 	notificationClear      func()
 	notificationCookies    func(string) ([]mygo.Cookie, error)
+	notificationFocused    func() bool
 }
 
 func main() {
@@ -250,10 +251,10 @@ func runDesktop() (runErr error) {
 		p.window = mygo.NewWindow(opts)
 		p.notificationsSupported = mygo.NotificationsSupported()
 		p.notificationEvents = service.SubscribeDesktopNotifications()
-		p.notificationEvents.SetFocused(p.window.IsFocused())
-		p.window.OnFocus(func() { p.notificationEvents.SetFocused(true) })
-		p.window.OnBlur(func() { p.notificationEvents.SetFocused(false) })
-		p.window.OnHide(func() { p.notificationEvents.SetFocused(false) })
+		p.setDesktopNotificationFocused(p.window.IsFocused())
+		p.window.OnFocus(func() { p.setDesktopNotificationFocused(true) })
+		p.window.OnBlur(func() { p.setDesktopNotificationFocused(false) })
+		p.window.OnHide(func() { p.setDesktopNotificationFocused(false) })
 		mygo.Theme.OnUpdated(p.broadcastDesktopAppearance)
 		if err := p.loadSettingsView(); err != nil {
 			p.settingsFailed = true

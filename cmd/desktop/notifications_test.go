@@ -66,3 +66,24 @@ func TestSystemNotificationTestsHandleSupportAndPermissionFailures(t *testing.T)
 		}
 	}
 }
+
+func TestDesktopNotificationFocusDefaultsToNativeAndSupportsIsolatedProbes(t *testing.T) {
+	p := &panel{}
+	if p.desktopNotificationFocused() {
+		t.Fatal("a missing native window must not suppress notifications")
+	}
+	// Smoke runs must be able to exercise both policies even when a CI desktop
+	// refuses foreground activation. No override is installed in normal startup.
+	focused := false
+	p.notificationFocused = func() bool { return focused }
+	for _, focused = range []bool{true, false, true} {
+		if got := p.desktopNotificationFocused(); got != focused {
+			t.Fatalf("notification focus = %v, want %v", got, focused)
+		}
+	}
+	p.notificationFocused = nil
+	if p.desktopNotificationFocused() {
+		t.Fatal("clearing the probe override did not restore native focus lookup")
+	}
+	p.setDesktopNotificationFocused(false) // Safe before a subscription is installed.
+}

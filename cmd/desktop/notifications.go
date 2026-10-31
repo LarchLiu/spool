@@ -69,6 +69,22 @@ func (p *panel) desktopSessionCookies(address string) ([]mygo.Cookie, error) {
 	return mygo.Cookies.List(mygo.CookieFilter{URL: address, Name: "spool_session", Path: "/"})
 }
 
+func (p *panel) desktopNotificationFocused() bool {
+	if p.notificationFocused != nil {
+		return p.notificationFocused()
+	}
+	return p.window != nil && p.window.IsFocused()
+}
+
+func (p *panel) setDesktopNotificationFocused(focused bool) {
+	if p.notificationFocused != nil {
+		focused = p.notificationFocused()
+	}
+	if p.notificationEvents != nil {
+		p.notificationEvents.SetFocused(focused)
+	}
+}
+
 func showSystemTest(supported bool, opts mygo.NotificationOptions, show func(mygo.NotificationOptions) error) error {
 	if !supported {
 		return errors.New("System notifications are unavailable. On macOS, use the packaged desktop app.")
@@ -109,7 +125,7 @@ func (p *panel) pollDesktopNotifications() {
 	}
 	p.notificationPolling = true
 	defer func() { p.notificationPolling = false }()
-	p.notificationEvents.SetFocused(p.window != nil && p.window.IsFocused())
+	p.setDesktopNotificationFocused(p.desktopNotificationFocused())
 	var token, account string
 	if p.notificationsEnabled && p.notificationsSupported {
 		address, err := p.service.LocalWebURL()
@@ -141,11 +157,11 @@ func (p *panel) pollDesktopNotifications() {
 			if !open {
 				return
 			}
-			if account == "" || p.window != nil && p.window.IsFocused() {
+			if account == "" || p.desktopNotificationFocused() {
 				continue
 			}
 			note, allowed := event.Resolve(token, mygo.App.Locale())
-			if !allowed || p.window != nil && p.window.IsFocused() {
+			if !allowed || p.desktopNotificationFocused() {
 				continue
 			}
 			id := notificationID(notificationTarget{note.URL, note.UserID})
