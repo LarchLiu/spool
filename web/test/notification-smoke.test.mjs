@@ -8,7 +8,8 @@ const chrome = await readFile(new URL("../../cmd/desktop/window_chrome.go", impo
 const smoke = await readFile(new URL("../../cmd/desktop/notifications_smoke.go", import.meta.url), "utf8");
 const preload = chrome.match(/const desktopWindowPreload = `([^`]+)`/)?.[1];
 const observer = smoke.match(/const smokeNotificationObserverScript = `([^`]+)`/)?.[1];
-assert.ok(preload && observer, "exercise the actual native preload and smoke observer");
+const checks = smoke.match(/func waitSmokeNotification[\s\S]*?fmt\.Sprintf\(`([^`]+)`/)?.[1];
+assert.ok(preload && observer && checks, "exercise the actual native preload, smoke observer and assertions");
 
 function fixture() {
   const window = new EventTarget();
@@ -22,7 +23,13 @@ function fixture() {
     },
   };
   const performance = { timeOrigin: 12345 };
-  const context = vm.createContext({ window, Event, performance });
+  const document = {
+    querySelector(selector) {
+      assert.equal(selector, 'input[name="password"]');
+      return {};
+    },
+  };
+  const context = vm.createContext({ window, Event, performance, document });
   vm.runInContext(preload, context);
   const received = [];
   window.addEventListener("spool:notification-changed", () => {
@@ -32,11 +39,16 @@ function fixture() {
   const emit = (target) => {
     for (const listener of listeners.get("spool:notification-open") ?? []) listener(target);
   };
-  return { window, performance, received, emit };
+  const check = (target) => {
+    const args = [target.url, target.user];
+    const script = checks.replace(/%q/g, () => JSON.stringify(args.shift()));
+    return vm.runInContext(`(function () { ${script} })()`, context);
+  };
+  return { window, performance, document, context, received, emit, check };
 }
 
 test("native smoke observes clicks after the frontend consumes the one-shot target", () => {
-  const { window, performance, received, emit } = fixture();
+  const { window, document, received, emit, check } = fixture();
   assert.equal(window.spoolSmokeNotification, null);
   // Direct window dispatch does not put a later capture listener ahead of the
   // already registered consumer on every WebView engine.
@@ -53,7 +65,8 @@ test("native smoke observes clicks after the frontend consumes the one-shot targ
     assert.equal("spoolNotificationTarget" in window, false);
     assert.deepEqual(received.at(-1), target, "the real frontend still consumes each target");
     assert.deepEqual(window.spoolSmokeNotification, target, "the smoke sees the native payload independently");
-    assert.equal(window.spoolSmokeTimeOrigin, performance.timeOrigin);
+    assert.equal(window.spoolSmokeDocument, document);
+    assert.equal(check(target).ready, true);
   }
   assert.equal(received.length, 2);
 });
@@ -63,4 +76,20 @@ test("a DOM notification alone cannot satisfy the native click smoke observer", 
   window.dispatchEvent(new Event("spool:notification-changed"));
   assert.deepEqual(received, [null]);
   assert.equal(window.spoolSmokeNotification, null);
+});
+
+test("same-page notification checks use document identity, not a floating point clock", () => {
+  const { performance, document, context, emit, check } = fixture();
+  const target = { url: "/?chat=chat-12345678", user: "user-12345678" };
+  emit(target);
+  assert.equal(check(target).ready, true);
+  // WebKit can expose tiny timeOrigin variations within the same document.
+  performance.timeOrigin += 0.001;
+  assert.equal(check(target).ready, true);
+  context.document = { ...document };
+  const result = check(target);
+  assert.equal(result.checks.target, true);
+  assert.equal(result.checks.consumed, true);
+  assert.equal(result.checks.same_page, false, "a replaced document must still fail the smoke");
+  assert.equal(result.ready, false);
 });

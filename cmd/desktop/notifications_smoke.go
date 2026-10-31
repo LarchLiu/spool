@@ -214,12 +214,13 @@ func (p *panel) probeDesktopNotifications(ctx context.Context, report string) er
 // The frontend consumes and deletes spoolNotificationTarget synchronously.
 // Observing that buffer from a later DOM listener races even with capture=true
 // on window. Subscribe to the native payload without consuming the UI buffer.
+// Keep the Document itself as the reload sentinel, not a clock reading.
 const smokeNotificationObserverScript = `
 	window.spoolSmokeNotification = null;
 	window.mygo.on('spool:notification-open', target => {
 		window.spoolSmokeNotification = target;
 	});
-	window.spoolSmokeTimeOrigin = performance.timeOrigin;
+	window.spoolSmokeDocument = document;
 `
 
 func waitSmokeNotification(ctx context.Context, page *mygo.Page, target notificationTarget) error {
@@ -227,7 +228,7 @@ func waitSmokeNotification(ctx context.Context, page *mygo.Page, target notifica
 		const checks = {
 			target: window.spoolSmokeNotification?.url === %q,
 			account: window.spoolSmokeNotification?.user === %q,
-			same_page: performance.timeOrigin === window.spoolSmokeTimeOrigin,
+			same_page: document === window.spoolSmokeDocument,
 			consumed: !('spoolNotificationTarget' in window),
 			signed_out: !!document.querySelector('input[name="password"]')
 		};
