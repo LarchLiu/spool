@@ -1651,8 +1651,10 @@ The WebView control center has an **About** page and the tray has **Check for
 updates**. Official CI builds check shortly after launch and every 12 hours by
 default. In **About**, the automatic check interval can be set to 30 minutes,
 1 hour, 6 hours, 12 hours, or 24 hours; changes are saved immediately in SQLite
-and reschedule the next check without restarting. Automatic installation is **opt-in**, stored locally in SQLite, and
-never forces a restart. Development builds and read-only installations explain
+and reschedule the next check without restarting. Automatic installation and
+restart share one **opt-in** switch, stored locally in SQLite. When enabled,
+updates install and restart the app only while no chats are running.
+Development builds and read-only installations explain
 why updates are unavailable instead of checking in the background.
 
 Installation and restart both acquire an exclusive service lease under the
@@ -1662,7 +1664,10 @@ with a visible explanation. No update download starts in that case. During
 installation, new message submissions receive a retryable HTTP 503 without
 starting a turn; existing history remains readable. Automatic installs retry
 once a minute after busy chats finish. After installation, chats can run again;
-**Restart to update** rechecks for active turns before relaunching. Shutdown
+automatic restart and **Restart to update** both recheck for active turns before
+relaunching. If a new chat starts after installation, automatic restart waits
+and retries once a minute until idle. Turning off the same switch cancels pending
+automatic restarts; manual installation/restart remains available. Shutdown
 closes the service and releases the database lease before the new process
 starts. App updates never replace `~/.spool` or update the installed agent CLIs.
 

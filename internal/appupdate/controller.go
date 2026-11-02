@@ -16,7 +16,7 @@ type Release struct {
 
 type Preferences struct {
 	AutomaticChecks   bool
-	AutomaticInstalls bool
+	AutomaticInstalls bool // Also restarts the app when idle after installation.
 	CheckInterval     time.Duration
 }
 
@@ -26,7 +26,12 @@ type Options struct {
 	ReleaseNotes func(context.Context, string, string) ([]ReleaseNotes, error)
 	Acquire      func() (func(), error)
 	Preferences  func() (Preferences, error)
-	Log          func(phase, version string, err error)
+
+	// Restart must schedule the UI-thread restart without waiting for shutdown:
+	// shutdown closes the controller and waits for the poller to exit.
+	// The UI callback must use PrepareRestart to recheck and hold the idle lease.
+	Restart func()
+	Log     func(phase, version string, err error)
 }
 
 type State struct {
@@ -185,7 +190,7 @@ func (c *Controller) Install() {
 }
 
 // Start checks shortly after launch and periodically afterwards. Automatic
-// installs retry when idle, but never force a restart or interrupt a chat.
+// installs and restarts retry when idle, without interrupting a chat.
 func (c *Controller) Start() {
 	c.mu.Lock()
 	if c.closed || c.started || !c.state.Enabled {
@@ -240,6 +245,15 @@ func (c *Controller) poll(lastAttempt time.Time) time.Time {
 	c.mu.Unlock()
 	if p.AutomaticInstalls && !held {
 		c.Install()
+	}
+	c.mu.Lock()
+	restart := !c.closed && c.state.Installed && c.opts.Restart != nil
+	c.mu.Unlock()
+	if restart {
+		// Installation can take a while; honor a switch turned off meanwhile.
+		if p, err := c.opts.Preferences(); err == nil && p.AutomaticInstalls {
+			c.opts.Restart()
+		}
 	}
 	return lastAttempt
 }

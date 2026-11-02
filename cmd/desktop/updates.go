@@ -28,6 +28,7 @@ func (p *panel) initUpdates() {
 			return &appupdate.Release{Version: up.Version, Notes: up.Notes, Install: up.Install}, nil
 		},
 		Acquire: p.service.AcquireUpdate,
+		Restart: func() { p.window.Update(p.autoRestartForUpdate) },
 		ReleaseNotes: func(ctx context.Context, current, target string) ([]appupdate.ReleaseNotes, error) {
 			return appupdate.FetchReleaseNotes(ctx, http.DefaultClient, appupdate.Repository(), current, target)
 		},
@@ -87,7 +88,11 @@ func (p *panel) updatesView(c *ui.Context) {
 			ui.Text(c, fmt.Sprintf("%.0f%% (%d / %d MB)", float64(state.Downloaded)*100/float64(state.Total), state.Downloaded/(1024*1024), state.Total/(1024*1024))).FontSize(12)
 		}
 	case state.Installed:
-		ui.Text(c, p.tr("Update installed. Restart when all chats have finished, or use it on the next launch.")).Wrap()
+		if p.updatePreferences.AutomaticInstalls {
+			ui.Text(c, p.tr("Update installed. The app will restart automatically when no chats are running.")).Wrap()
+		} else {
+			ui.Text(c, p.tr("Update installed. Restart when all chats have finished, or use it on the next launch.")).Wrap()
+		}
 	case state.Version != "":
 		ui.Text(c, p.tr("Update {version} is available.", "version", state.Version)).Bold()
 	case !state.LastCheck.IsZero():
@@ -128,14 +133,14 @@ func (p *panel) updatesView(c *ui.Context) {
 			}
 		}
 	}
-	ui.Checkbox(c, &p.updatePreferences.AutomaticInstalls, p.tr("Automatically install updates when no chats are running"))
+	ui.Checkbox(c, &p.updatePreferences.AutomaticInstalls, p.tr("Automatically install updates and restart when no chats are running"))
 	if previous != p.updatePreferences {
 		if err := p.service.Store.SaveUpdatePreferences(p.updatePreferences); err != nil {
 			p.updatePreferences = previous
 			p.message = err.Error()
 		}
 	}
-	ui.Text(c, p.tr("Automatic updates never restart the app. Busy updates are retried after chats finish.")).Wrap().FontSize(12)
+	ui.Text(c, p.tr("Automatic updates install and restart the app when no chats are running. Busy updates are retried after chats finish.")).Wrap().FontSize(12)
 	if state.Notes != "" {
 		ui.Text(c, p.tr("Release notes")).Bold()
 		ui.Text(c, state.Notes).Wrap().FontSize(13)
@@ -148,6 +153,19 @@ func (p *panel) aboutRepository(c *ui.Context) {
 	if ui.Button(c, "GitHub - LarchLiu/spool").Clicked() {
 		p.openChatLink("https://github.com/LarchLiu/spool")
 	}
+}
+
+// Runs on the UI thread, including while the main window is hidden.
+func (p *panel) autoRestartForUpdate() {
+	if p.quitting || p.updateRelease != nil {
+		return
+	}
+	// Recheck the saved preference after dispatch, not the UI's cached copy.
+	preferences, err := p.service.Store.UpdatePreferences()
+	if err != nil || !preferences.AutomaticInstalls {
+		return
+	}
+	_ = p.restartForUpdate()
 }
 
 func (p *panel) restartForUpdate() error {
@@ -166,6 +184,10 @@ func (p *panel) restartForUpdate() error {
 		}
 	}
 	p.updateRelease = release
-	mygo.App.Relaunch()
+	if p.updateRelaunch != nil {
+		p.updateRelaunch()
+	} else {
+		mygo.App.Relaunch()
+	}
 	return nil
 }

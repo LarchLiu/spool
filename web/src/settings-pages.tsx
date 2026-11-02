@@ -915,7 +915,9 @@ export function AboutPage({ data, run, t }: PageProps) {
       ? t("Installing update. New chat responses are temporarily paused.")
       : state.Installed
         ? t(
-            "Update installed. Restart when all chats have finished, or use it on the next launch.",
+            data.update_preferences.automatic_installs
+              ? "Update installed. The app will restart automatically when no chats are running."
+              : "Update installed. Restart when all chats have finished, or use it on the next launch.",
           )
         : state.Version
           ? t("Update {version} is available.", { version: state.Version })
@@ -1021,10 +1023,14 @@ export function AboutPage({ data, run, t }: PageProps) {
           />
         </Row>
         <Row
-          title={t("Automatically install updates when no chats are running")}
+          title={t(
+            "Automatically install updates and restart when no chats are running",
+          )}
         >
           <Toggle
-            label={t("Automatically install updates when no chats are running")}
+            label={t(
+              "Automatically install updates and restart when no chats are running",
+            )}
             value={data.update_preferences.automatic_installs}
             onChange={(automatic_installs) => save({ automatic_installs })}
           />
@@ -1032,7 +1038,7 @@ export function AboutPage({ data, run, t }: PageProps) {
       </Card>
       <Hint>
         {t(
-          "Automatic updates never restart the app. Busy updates are retried after chats finish.",
+          "Automatic updates install and restart the app when no chats are running. Busy updates are retried after chats finish.",
         )}
       </Hint>
       <Hint>

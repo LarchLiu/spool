@@ -31,6 +31,20 @@ test("automatic checks can be disabled without losing the chosen interval", () =
   assert.match(html, /aria-pressed="true"[^>]*>24 hours<\/button>/);
 });
 
+test("one saved switch controls automatic installation and restart, including the installed message", async () => {
+  const pages = await readFile(new URL("../src/settings-pages.tsx", import.meta.url), "utf8");
+  const label = "Automatically install updates and restart when no chats are running";
+  assert.match(pages, /<Row\s+title=\{t\(\s*"Automatically install updates and restart when no chats are running",?\s*\)\}\s*>\s*<Toggle\s+label=\{t\(\s*"Automatically install updates and restart when no chats are running",?\s*\)\}\s+value=\{data\.update_preferences\.automatic_installs\}\s+onChange=\{\(automatic_installs\) => save\(\{ automatic_installs \}\)\}/);
+  assert.match(pages, /data\.update_preferences\.automatic_installs\s*\? "Update installed\. The app will restart automatically when no chats are running\."\s*: "Update installed\. Restart when all chats have finished, or use it on the next launch\."/);
+  assert.doesNotMatch(pages, /automatic_restarts|Automatic updates never restart/);
+  for (const locale of ["en", "zh-CN", "ja"]) {
+    const catalog = JSON.parse(await readFile(new URL(`../../locales/${locale}.json`, import.meta.url), "utf8"));
+    assert.ok(catalog[label]);
+    assert.ok(catalog["Update installed. The app will restart automatically when no chats are running."]);
+    assert.ok(catalog["Automatic updates install and restart the app when no chats are running. Busy updates are retried after chats finish."]);
+  }
+});
+
 test("project permissions and update intervals share segmented buttons with theme-colored selection", async () => {
   const css = await readFile(new URL("../src/settings.css", import.meta.url), "utf8");
   assert.match(css, /\.settings-check-interval,\s*\.settings-member-access \{[^}]*display: inline-flex;[^}]*background: var\(--soft\)/);

@@ -67,6 +67,7 @@ type panel struct {
 	updates                *appupdate.Controller
 	updatePreferences      workspace.UpdatePreferences
 	updateRelease          func()
+	updateRelaunch         func()
 	updateDiagnostics      *appupdate.Diagnostics
 	runtimeDiagnostics     *diagnostics.Session
 	notificationEvents     *workspace.DesktopNotificationSubscription

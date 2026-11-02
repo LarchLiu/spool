@@ -71,7 +71,7 @@ func TestRetryCancellationAndURLRedaction(t *testing.T) {
 
 func TestControllerRetriesDownloadWithoutRepeatingSecurityFailures(t *testing.T) {
 	for _, secure := range []bool{false, true} {
-		installs, checks, retries := 0, 0, 0
+		installs, checks, retries, restarts := 0, 0, 0, 0
 		c := New(Options{
 			Enabled: true, Preferences: func() (Preferences, error) { return Preferences{AutomaticChecks: true, AutomaticInstalls: true}, nil },
 			Check: func(context.Context) (*Release, error) {
@@ -88,6 +88,7 @@ func TestControllerRetriesDownloadWithoutRepeatingSecurityFailures(t *testing.T)
 				}}, nil
 			},
 			Acquire: func() (func(), error) { return func() {}, nil },
+			Restart: func() { restarts++ },
 			Log: func(phase, version string, err error) {
 				if phase == "install_retry" {
 					retries++
@@ -100,14 +101,14 @@ func TestControllerRetriesDownloadWithoutRepeatingSecurityFailures(t *testing.T)
 			c.poll(next)
 			c.Check() // Finding the same version does not clear its security hold.
 			c.poll(time.Now().Add(time.Hour))
-			if installs != 1 || retries != 0 || c.State().Installed {
+			if installs != 1 || retries != 0 || restarts != 0 || c.State().Installed {
 				t.Fatalf("security failure was retried: %d", installs)
 			}
 			c.Install() // An explicit user request can retry after fixing the cause.
 			if installs != 2 {
 				t.Fatal("manual retry was blocked")
 			}
-		} else if installs != 3 || retries != 2 || !c.State().Installed || checks != 1 {
+		} else if installs != 3 || retries != 2 || restarts != 1 || !c.State().Installed || checks != 1 {
 			t.Fatalf("retry failed: %+v %d %d", c.State(), installs, retries)
 		}
 		c.Close()

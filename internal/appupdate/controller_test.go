@@ -165,10 +165,11 @@ func TestFailedInstallReleasesLeaseAndCanRetry(t *testing.T) {
 	}
 }
 
-func TestAutomaticUpdatesRetryWithoutRecheckingOrRestarting(t *testing.T) {
-	checks, installs := 0, 0
+func TestAutomaticUpdatesRetryWhenIdleThenRestartWithoutRechecking(t *testing.T) {
+	checks, installs, restarts := 0, 0, 0
 	busy := true
-	c := New(Options{
+	var c *Controller
+	c = New(Options{
 		Enabled:     true,
 		Preferences: func() (Preferences, error) { return Preferences{AutomaticChecks: true, AutomaticInstalls: true}, nil },
 		Check: func(context.Context) (*Release, error) {
@@ -181,16 +182,141 @@ func TestAutomaticUpdatesRetryWithoutRecheckingOrRestarting(t *testing.T) {
 			}
 			return func() {}, nil
 		},
+		Restart: func() {
+			release, err := c.PrepareRestart()
+			if err != nil {
+				t.Fatal(err)
+			}
+			release()
+			restarts++
+		},
 	})
 	t.Cleanup(c.Close)
 	next := c.poll(time.Time{})
-	if checks != 1 || installs != 0 || c.State().Error == "" {
+	if checks != 1 || installs != 0 || restarts != 0 || c.State().Error == "" {
 		t.Fatal("automatic update ignored active chats")
 	}
 	busy = false
 	c.poll(next)
-	if checks != 1 || installs != 1 || !c.State().Installed {
-		t.Fatal("idle retry did not install the pending update")
+	if checks != 1 || installs != 1 || restarts != 1 || !c.State().Installed {
+		t.Fatal("idle retry did not install and restart the pending update")
+	}
+}
+
+func TestAutomaticRestartWaitsForChatsStartedAfterInstallation(t *testing.T) {
+	checks, installs, restarts, attempts := 0, 0, 0, 0
+	busy := false
+	var c *Controller
+	c = New(Options{
+		Enabled: true,
+		Preferences: func() (Preferences, error) {
+			return Preferences{AutomaticChecks: true, AutomaticInstalls: true}, nil
+		},
+		Check: func(context.Context) (*Release, error) {
+			checks++
+			return &Release{Version: "2.0.0", Install: func(context.Context, func(int64, int64)) error {
+				installs++
+				return nil
+			}}, nil
+		},
+		Acquire: func() (func(), error) {
+			if busy {
+				return nil, errors.New("chats running")
+			}
+			return func() { busy = true }, nil
+		},
+		Restart: func() {
+			attempts++
+			if release, err := c.PrepareRestart(); err == nil {
+				restarts++
+				release()
+			}
+		},
+	})
+	t.Cleanup(c.Close)
+	last := c.poll(time.Time{})
+	if installs != 1 || restarts != 0 || attempts != 1 || c.State().ErrorPhase != "restart" {
+		t.Fatalf("new chat did not defer restart: %+v", c.State())
+	}
+	busy = false
+	c.poll(last)
+	if checks != 1 || installs != 1 || restarts != 1 || attempts != 2 || c.State().Error != "" {
+		t.Fatalf("idle restart did not retry without reinstalling: %+v", c.State())
+	}
+}
+
+func TestAutomaticInstallSwitchAlsoControlsRestartOfManuallyInstalledUpdates(t *testing.T) {
+	p := Preferences{}
+	checks, installs, restarts := 0, 0, 0
+	c := New(Options{
+		Enabled:     true,
+		Preferences: func() (Preferences, error) { return p, nil },
+		Check: func(context.Context) (*Release, error) {
+			checks++
+			return &Release{Version: "2.0.0", Install: func(context.Context, func(int64, int64)) error {
+				installs++
+				return nil
+			}}, nil
+		},
+		Acquire: func() (func(), error) { return func() {}, nil },
+		Restart: func() { restarts++ },
+	})
+	t.Cleanup(c.Close)
+	c.Check()
+	c.poll(time.Time{})
+	if installs != 0 || restarts != 0 {
+		t.Fatal("disabled automatic installation still ran")
+	}
+	c.Install()
+	c.poll(time.Time{})
+	if installs != 1 || restarts != 0 || !c.State().Installed {
+		t.Fatal("manual installation with the switch off must wait for a manual restart")
+	}
+	p.AutomaticInstalls = true
+	c.poll(time.Time{})
+	if checks != 1 || installs != 1 || restarts != 1 {
+		t.Fatal("enabling automatic installation did not restart the installed update")
+	}
+	p.AutomaticInstalls = false
+	c.poll(time.Time{})
+	if restarts != 1 {
+		t.Fatal("disabling automatic installation did not cancel the pending restart")
+	}
+	p.AutomaticInstalls = true
+	c.Close()
+	c.poll(time.Time{})
+	if restarts != 1 {
+		t.Fatal("controller requested an automatic restart after closing")
+	}
+}
+
+func TestAutomaticRestartRechecksPreferencesAfterInstallation(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(map[bool]string{false: "disabled", true: "unavailable"}[fail], func(t *testing.T) {
+			installed, restarted := false, false
+			c := New(Options{
+				Enabled: true,
+				Preferences: func() (Preferences, error) {
+					if installed && fail {
+						return Preferences{}, errors.New("preferences unavailable")
+					}
+					return Preferences{AutomaticChecks: true, AutomaticInstalls: !installed}, nil
+				},
+				Check: func(context.Context) (*Release, error) {
+					return &Release{Version: "2.0.0", Install: func(context.Context, func(int64, int64)) error {
+						installed = true
+						return nil
+					}}, nil
+				},
+				Acquire: func() (func(), error) { return func() {}, nil },
+				Restart: func() { restarted = true },
+			})
+			t.Cleanup(c.Close)
+			c.poll(time.Time{})
+			if !installed || restarted {
+				t.Fatal("restart ignored preferences changed during installation")
+			}
+		})
 	}
 }
 
