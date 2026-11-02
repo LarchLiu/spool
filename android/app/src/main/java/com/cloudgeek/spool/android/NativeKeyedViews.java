@@ -21,10 +21,12 @@ final class NativeKeyedViews {
     private final ViewGroup parent;
     private Map<String, Entry> current = new HashMap<>(), next = new HashMap<>();
     private final List<View> wanted = new ArrayList<>();
+    // A committed but not yet attached pass; the owner attaches it when the parent becomes visible.
+    private List<View> pending;
 
     NativeKeyedViews(ViewGroup parent) { this.parent = parent; }
 
-    void begin() { next.clear(); wanted.clear(); }
+    void begin() { next.clear(); wanted.clear(); pending = null; }
 
     View use(String key, Object value, Supplier<? extends View> create) {
         Entry entry = current.get(key);
@@ -38,7 +40,23 @@ final class NativeKeyedViews {
     void end() {
         sync(parent, wanted);
         Map<String, Entry> old = current; current = next; next = old;
-        next.clear(); wanted.clear();
+        next.clear(); wanted.clear(); pending = null;
+    }
+
+    /** The same reuse/create commit as end(), without touching the parent; attach() reconciles later. */
+    void commit() {
+        Map<String, Entry> old = current; current = next; next = old;
+        next.clear(); pending = new ArrayList<>(wanted); wanted.clear();
+    }
+
+    boolean staged() { return pending != null; }
+
+    /** The committed, detached views in sibling order; callers must not modify the list. */
+    List<View> stagedViews() { return pending; }
+
+    void attach() {
+        if (pending == null) return;
+        sync(parent, pending); pending = null;
     }
 
     static void sync(ViewGroup parent, List<? extends View> wanted) {

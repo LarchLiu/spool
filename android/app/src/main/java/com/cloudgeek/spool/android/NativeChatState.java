@@ -105,10 +105,16 @@ final class NativeChatState {
         return result;
     }
 
-    static JSONObject event(JSONObject previous, String kind, JSONObject data) {
-        if (kind.equals("snapshot")) return reconcile(previous, data);
-        if (kind.equals("metadata")) return metadata(previous, data);
-        if (!kind.equals("turn") || previous == null) return previous;
+    static JSONObject event(JSONObject previous, String kind, JSONObject data) { return eventTracked(previous, kind, data).chat; }
+
+    /** Apply one SSE frame and report which turns a render must rebind. */
+    static Merge eventTracked(JSONObject previous, String kind, JSONObject data) {
+        if (kind.equals("snapshot")) return reconcileTracked(previous, data);
+        if (kind.equals("metadata")) {
+            JSONObject next = metadata(previous, data);
+            return new Merge(next, java.util.Collections.emptySet(), false, !topChanged(previous, next));
+        }
+        if (!kind.equals("turn") || previous == null) return Merge.same(previous);
         JSONObject next = shallow(previous);
         for (String key : new String[] {"title", "backend", "model", "reasoning_effort", "permission_mode", "status", "transcript", "history", "updated_at"}) nullable(next, data, key);
         JSONArray supplied = data.optJSONArray("turns");
@@ -121,13 +127,13 @@ final class NativeChatState {
             }
         }
         JSONObject incoming = data.optJSONObject("turn");
-        if (incoming == null) return previous;
+        if (incoming == null) return Merge.same(previous);
         int index = -1;
         for (int i = 0; i < turns.length(); i++) if (part(turns, i).optString("id").equals(incoming.optString("id"))) index = i;
         if (index < 0) turns.put(incoming);
         else try { turns.put(index, incoming); } catch (Exception error) { throw new IllegalArgumentException(error); }
         put(next, "turns", turns);
-        return reconcile(previous, next);
+        return reconcileTracked(previous, next);
     }
 
     static JSONArray eventList(JSONArray chats, String chatID, String kind, JSONObject data) {
@@ -185,15 +191,50 @@ final class NativeChatState {
         return reconcile(previous, next);
     }
 
-    static JSONObject reconcile(JSONObject previous, JSONObject next) {
-        if (previous == null || !previous.optString("id").equals(next.optString("id"))) return next;
-        if (previous.optDouble("updated_at") > next.optDouble("updated_at")) return previous;
-        return mergeTurns(previous, next, false);
+    static JSONObject reconcile(JSONObject previous, JSONObject next) { return reconcileTracked(previous, next).chat; }
+
+    static Merge reconcileTracked(JSONObject previous, JSONObject next) {
+        if (previous == null || !previous.optString("id").equals(next.optString("id"))) return Merge.all(next);
+        if (previous.optDouble("updated_at") > next.optDouble("updated_at")) return Merge.same(previous);
+        return mergeTurnsTracked(previous, next, false);
     }
 
-    static JSONObject prepend(JSONObject previous, JSONObject page) {
-        if (previous == null || !previous.optString("id").equals(page.optString("id"))) return previous;
-        return mergeTurns(previous, page, true);
+    static JSONObject prepend(JSONObject previous, JSONObject page) { return prependTracked(previous, page).chat; }
+
+    static Merge prependTracked(JSONObject previous, JSONObject page) {
+        if (previous == null || !previous.optString("id").equals(page.optString("id"))) return Merge.same(previous);
+        return mergeTurnsTracked(previous, page, true);
+    }
+
+    /** A merged chat plus the turns whose data changed, so a render can rebind only those rows. */
+    static final class Merge {
+        final JSONObject chat;
+        /** Changed turn ids; null means every turn must be rebound. */
+        final java.util.Set<String> changedTurns;
+        final boolean reordered, unchanged;
+        Merge(JSONObject chat, java.util.Set<String> changedTurns, boolean reordered, boolean unchanged) {
+            this.chat = chat; this.changedTurns = changedTurns; this.reordered = reordered; this.unchanged = unchanged;
+        }
+        static Merge all(JSONObject chat) { return new Merge(chat, null, true, false); }
+        static Merge same(JSONObject chat) { return new Merge(chat, java.util.Collections.emptySet(), false, true); }
+    }
+
+    // mergeParts restores the old reference of every unchanged part, so identity decides cheaply.
+    private static boolean sameParts(JSONArray old, JSONArray next) {
+        if (old == next) return true;
+        if (old.length() != next.length()) return false;
+        for (int i = 0; i < old.length(); i++) if (old.opt(i) != next.opt(i)) return false;
+        return true;
+    }
+    private static JSONObject stripRanges(JSONObject turn) {
+        JSONObject copy = shallow(turn); copy.remove("part_start"); copy.remove("input_end"); copy.remove("part_end"); return copy;
+    }
+    private static boolean topChanged(JSONObject previous, JSONObject next) {
+        if (previous == next) return false;
+        if (previous == null || next == null) return true;
+        JSONObject a = shallow(previous), b = shallow(next);
+        for (String key : new String[] {"turns", "transcript"}) { a.remove(key); b.remove(key); }
+        return !equivalent(a, b);
     }
 
     private static JSONArray mergeParts(JSONArray old, JSONArray next) {
@@ -234,7 +275,8 @@ final class NativeChatState {
         Entry(JSONObject turn, JSONArray parts) { this.turn = turn; this.parts = parts; }
     }
 
-    private static JSONObject mergeTurns(JSONObject previous, JSONObject next, boolean older) {
+    private static Merge mergeTurnsTracked(JSONObject previous, JSONObject next, boolean older) {
+        java.util.Set<String> changedIDs = new java.util.HashSet<>();
         Map<String, Entry> entries = new LinkedHashMap<>(); Map<String, String> aliases = new LinkedHashMap<>(), renamed = new LinkedHashMap<>();
         JSONArray oldTurns = array(previous, "turns"), incoming = array(next, "turns");
         JSONArray oldParts = array(previous.optJSONObject("transcript"), "parts"), incomingParts = array(next.optJSONObject("transcript"), "parts");
@@ -258,6 +300,8 @@ final class NativeChatState {
             int inputs = old != null && parts == old.parts ? old.turn.optInt("input_end") - old.turn.optInt("part_start") : turn.optInt("input_end") - turn.optInt("part_start");
             JSONObject before = old == null ? null : put(shallow(old.turn), "id", id);
             JSONObject merged = shallow(mergeTurn(before, turn)); put(merged, "part_start", 0); put(merged, "input_end", inputs);
+            // Rebased ranges are not data changes; renamed, new, re-sliced or edited turns are.
+            if (old == null || !oldID.equals(id) || !sameParts(old.parts, parts) || !equivalent(stripRanges(old.turn), stripRanges(merged))) changedIDs.add(id);
             entries.put(id, new Entry(merged, parts));
         }
         JSONObject history = next.optJSONObject("history");
@@ -278,8 +322,9 @@ final class NativeChatState {
             order.addAll(incomingIDs);
             for (String id : missing) if (id.startsWith("pending-") || entries.get(id).turn.optString("status").equals("running")) order.add(id);
         }
+        List<String> sequence = new ArrayList<>(new LinkedHashSet<>(order));
         JSONArray parts = new JSONArray(), turns = new JSONArray();
-        for (String id : new LinkedHashSet<>(order)) {
+        for (String id : sequence) {
             Entry entry = entries.get(id); int start = parts.length();
             int inputs = Math.min(entry.parts.length(), entry.turn.optInt("input_end") - entry.turn.optInt("part_start"));
             for (int i = 0; i < entry.parts.length(); i++) parts.put(entry.parts.opt(i));
@@ -295,6 +340,9 @@ final class NativeChatState {
         JSONObject base = older ? previous.optJSONObject("transcript") : transcript;
         put(result, "transcript", put(base == null ? new JSONObject() : shallow(base), "parts", parts));
         if (turns.length() > 0) put(result, "status", part(turns, turns.length() - 1).optString("status"));
-        return result;
+        List<String> oldOrder = new ArrayList<>();
+        for (int i = 0; i < oldTurns.length(); i++) { String id = part(oldTurns, i).optString("id"); oldOrder.add(renamed.containsKey(id) ? renamed.get(id) : id); }
+        boolean reordered = !oldOrder.equals(sequence);
+        return new Merge(result, changedIDs, reordered, changedIDs.isEmpty() && !reordered && !topChanged(previous, result));
     }
 }

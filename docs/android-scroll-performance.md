@@ -18,6 +18,10 @@ one small interval. `--allow-hydrating` explicitly opts into measuring initial
 history hydration; settled-history measurements reject it by default.
 `--wait-history-seconds 180` waits for hydration on the same focused chat before
 issuing any gesture (maximum 300 seconds); navigation/focus changes still abort.
+`--pause-seconds 3` lengthens the pause between flings (default 1.25 seconds). A
+7000px/s fling decelerates for about two seconds, so the default cadence never
+lets the scroller rest; pauses of three seconds or more emulate reading between
+gestures, which is the only time offscreen row preparation can run.
 
 ## Scope And Safety
 
@@ -308,3 +312,116 @@ Remaining upward cost is first-time mounting: about 1.4s of view construction
 across 12 flings with a 191ms maximum for one row, plus roughly 360ms of measure.
 Raw reports are `build/artifacts/android-scroll-fix/{baseline,instr,fix4}-*.json`.
 The server-side page shape (one turn per page for this session) is unchanged.
+
+## Offscreen Row Preparation And Incremental Rebinds
+
+The remaining upward-traversal cost after the origin fixes was first-time row
+construction itself: about 1.4s of view building across 12 flings with a 191ms
+maximum for one row, plus roughly 360ms of first measure, all executed inside
+the fling's pre-draw pass, followed by a placeholder-to-real height correction
+that cancelled the frame. Two architectural changes move that work off the
+gesture path.
+
+### Preparing rows between frames
+
+`NativeKeyedViews` now separates committing a reconcile pass from attaching it:
+`commit()` performs the same reuse/create bookkeeping as `end()` but leaves the
+views detached, and `attach()` reconciles them into the parent later. A
+`NativeTranscriptViewport.Row` uses this to `prepare()` its document while
+unmounted: the keyed views are built into a throwaway `LinearLayout` stage that
+is never added to a window, measured there with the row's own `EXACTLY` width
+and `UNSPECIFIED` height, removed again, and kept in the row's warm-cache slot
+with the measured height as the row's retained height. Because the stage is
+detached, attach-driven work (syntax highlighting, tool-detail requests, precise
+diff layout, summary ticks, origin observers) does not start for offscreen rows.
+Entering the viewport then attaches an already-built, already-sized document, so
+the existing known-height in-place layout path draws without cancelling the
+frame. A `bind()` that arrives while a row is prepared marks it stale; the mount
+refreshes it through the normal keyed path instead of attaching stale views.
+
+Preparation is scheduled by the viewport itself through a main-thread `Handler`,
+never inside measure, layout or draw. Every pre-draw pass samples `scrollY`; a
+change re-arms a 48ms quiet window (three missed frames), so the chain only runs
+once the scroller has actually stopped; a fling's decelerating tail still
+produces a frame every 16ms until then. Frames that also restored the reading anchor do not define the
+direction of travel. Each turn prepares one row, then re-arms with no delay
+until the bounded candidate set is exhausted: the nearest unbuilt rows beyond the
+overscan band, up to three on the preferred side and three on the other side
+when the preferred side is exhausted or already warm. Rows above the retainable
+size (more than 512 parts, or a built document over the view/character limits)
+are never prepared and are marked so they are not rebuilt. Prepared rows share
+the existing warm-cache budget and eviction, so memory does not grow; the real
+height is applied in the quiet window with the same anchor restoration a
+correction frame uses. `NativeHistoryScroll` gained two read-only queries
+(`animating()`, `restores()`); its listeners and behavior are unchanged.
+
+The debug dump's `viewport` object gained `prepares`, `prepareMs`,
+`maxPrepareMs`, `preparedRows`, `preparedMounts`, `stalePrepares`,
+`heightMisses`, `preparedEvictions`, `preparedSkips` and `preparedCorrections`.
+`heightMisses` counts prepared rows whose attached measure disagreed with the
+detached one; it is the load-bearing check of this design and should stay at 0.
+
+### Rebinding only changed turns
+
+`NativeChatState` merges now report what changed. `mergeParts` already restores
+the old reference of every unchanged part, so a turn is unchanged when its parts
+are identical by reference and its fields, ignoring the rebased part ranges, are
+equivalent. `eventTracked`, `reconcileTracked` and `prependTracked` return the
+merged chat together with the changed turn ids, a reorder flag and an unchanged
+flag; the previous entry points delegate to them and produce the same JSON.
+`renderChat` still reconciles every row's position and part count, but only
+rebinds rows whose turn is in the change set (or which were never bound).
+Untouched mounted rows no longer run the two whole-part deep comparisons in
+`NativeTurn.bind` and `NativeActivityList.bind` on every SSE frame or poll, and
+untouched unmounted rows keep their closures. An unchanged frame keeps the
+current state object, as an unchanged poll already did. Callers outside the
+event path (profile refresh, send flow, history retry) still rebind every turn.
+
+Robolectric API26/35 tests pin: prepared rows enter at their real height without
+a cancelled frame and with `heightMisses == 0`; preparation attaches nothing and
+waits for the scroller to be quiet; stale prepared rows are refreshed at mount;
+prepared rows respect the cache bounds and are cleared on dispose; giant rows
+are never prepared; the production Activity prepares between frames without
+changing what is attached and a prepended page detaches nothing; tracked merges
+equal the untracked ones for every `web-behavior.json` case while every unlisted
+turn keeps identical part references; turn events rebind only their turn, an
+identical snapshot rebinds nothing, and a full render still rebinds everything.
+
+### Device A/B on the same build
+
+The debug probe accepts `spool-performance prepare on|off`, so the same APK
+measures both arms on the same chat (67 turns, 16,720 parts, API34 phone).
+At the tool's default 1.25-second cadence the mechanism cannot engage: a
+7000px/s fling decelerates for about two seconds, each gesture restarts the
+scroller after about 3,050px, and the quiet window never opens (`prepareTurns`
+stayed at 0 or 2 across 12 flings; both arms then measured 2.3-3.4% janky
+frames that reflect cold mounts alone). With `--pause-seconds 3`, each arm ran in
+a fresh process after full hydration, traversing older rows upward from the same
+start position; the order was reversed for the second pair.
+
+| 3s pauses, 12 upward flings | Prepare on #1 | Prepare off #1 | Prepare off #2 | Prepare on #2 |
+| --- | --- | --- | --- | --- |
+| Janky frames | 89 / 3,356 (2.65%) | 364 / 2,667 (13.65%) | 201 / 2,844 (7.07%) | 142 / 3,334 (4.26%) |
+| P50 / P90 / P95 / P99 | 10 / 14 / 18 / 57ms | 17 / 40 / 44 / 57ms | 17 / 29 / 40 / 53ms | 10 / 17 / 23 / 57ms |
+| Mounts: cold / warm / prepared | 0 / 26 / 15 | 12 / 8 / 3 | 12 / 8 / 3 | 0 / 25 / 15 |
+| Cancelled frames / anchor corrections | 0 / 15 | 12 / 12 | 12 / 12 | 0 / 15 |
+| Mount time (max per row) | 422ms (180ms) | 1,750ms (227ms) | 1,710ms (255ms) | 400ms (175ms) |
+| Prepares, time in pauses (max) | 30, 3,152ms (243ms) | 0 | 0 | 29, 3,078ms (242ms) |
+| `heightMisses` | 0 | - | - | 0 |
+
+Both arms are deterministic enough to reproduce their trajectories exactly
+(identical start and end `scrollY`). The "on" arms' janky-frame totals include
+the frames delayed by preparation itself during the pauses, when nothing is
+moving; the gesture-time tail is better read from P90/P95 and from the zero
+cold mounts and cancelled frames. The two "off" arms differ in total janky
+share (13.65% versus 7.07%) with the same mount counts, so that total carries
+run-to-run noise; P50 and P95 are stable. The 15 anchor corrections in the "on"
+arms happen in the pauses when a prepared row above the reader takes its real
+height; the reading position does not move. `heightMisses` stayed at 0, so the
+detached stage measured exactly like the attached rows for this chat's content.
+
+Residual cost is unchanged by design: a prepared row still costs 100-250ms of
+main-thread time when it is built, a fling that never pauses still mounts cold,
+and the first CSS baseline snap remains on the mount path. Raw content-free
+reports are `build/artifacts/android-scroll-prefetch/pause3-{on,off}-up*.json`;
+the 1.25-second-cadence runs are `up.json`, `alternate.json` and `ab*.json`.

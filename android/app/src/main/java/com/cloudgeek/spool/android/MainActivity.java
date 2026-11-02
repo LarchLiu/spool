@@ -260,6 +260,8 @@ public final class MainActivity extends Activity {
         boolean historyVisible = history != null && history.isShown() && !settingsOpen && peoplePanel == null;
         Integer velocity = performanceProbe.fling(args, foreground && focused && historyVisible && !destroyed, selectionEpoch);
         if (velocity != null) history.fling(velocity);
+        // Debug-only A/B switch for offscreen preparation; "viewport" reports its state.
+        if (args.length >= 3 && args[1].equals("prepare")) NativeTranscriptViewport.prepareEnabled = !args[2].equals("off");
         int rows = 0, mounted = 0;
         if (historyContent != null) for (int i = 0; i < historyContent.getChildCount(); i++) {
             View child = historyContent.getChildAt(i);
@@ -1296,9 +1298,13 @@ public final class MainActivity extends Activity {
         startChat();
     }
 
+    // Turn ids whose rows the next renderChat must rebind; null rebinds every turn.
+    private java.util.Set<String> pendingRebinds;
+
     private void renderChat() { renderChat(null); }
 
     private void renderChat(NativeHistoryScroll.Anchor anchor) {
+        java.util.Set<String> rebinds = pendingRebinds; pendingRebinds = null;
         updateChatRefresh();
         updateMissingProfiles();
         if (historyContent == null) return;
@@ -1327,6 +1333,7 @@ public final class MainActivity extends Activity {
                     ui.t("Run locally. Pick up anytime.")));
             transcriptViews.end();
             historyScroll.changed();
+            if (transcriptViewport != null) transcriptViewport.dataChanged();
             updateComposer();
             return;
         }
@@ -1347,11 +1354,13 @@ public final class MainActivity extends Activity {
                         () -> new NativeTranscriptViewport.Row(ui));
                 int partCount = array(page.optJSONObject("transcript"), "parts").length();
                 row.partCount = Math.max(0, Math.min(partCount, turn.optInt("part_end", partCount)) - Math.max(0, turn.optInt("part_start")));
-                row.bind(children -> renderTurn(page, turn, key, children));
+                // Live events name the turns they changed; untouched rows keep their documents and closures.
+                if (rebinds == null || id.isEmpty() || rebinds.contains(id) || !row.bound()) row.bind(children -> renderTurn(page, turn, key, children));
             } else renderTurn(chat, turn, key, transcriptViews);
         }
         transcriptViews.end();
         historyScroll.changed();
+        if (transcriptViewport != null) transcriptViewport.dataChanged();
         updateComposer();
     }
 
@@ -1459,7 +1468,8 @@ public final class MainActivity extends Activity {
             public void received(NativeHistoryLoader.Cursor from, JSONObject page) {
                 if (chat == null || !from.id.equals(chat.optString("id")) || !from.before.equals(historyCursor(chat).before)) return;
                 NativeHistoryScroll.Anchor anchor = historyScroll == null ? null : historyScroll.anchor();
-                chat = NativeChatState.prepend(chat, page);
+                NativeChatState.Merge merge = NativeChatState.prependTracked(chat, page);
+                chat = merge.chat; pendingRebinds = merge.changedTurns;
                 renderChat(anchor);
             }
             public void failed(Exception error) {
@@ -2072,7 +2082,9 @@ public final class MainActivity extends Activity {
     private void receiveChatEvent(String kind, JSONObject data) throws Exception {
         JSONObject previous = chat;
         boolean initial = previous == null;
-        chat = NativeChatState.event(chat, kind, data);
+        NativeChatState.Merge merge = NativeChatState.eventTracked(chat, kind, data);
+        // An unchanged frame keeps the current state object, like an unchanged poll.
+        chat = merge.unchanged ? chat : merge.chat;
         chats = NativeChatState.eventList(chats, chatID, kind, data);
         if (chat == null) { renderNavigation(); return; }
         if (initial) {
@@ -2082,7 +2094,7 @@ public final class MainActivity extends Activity {
             permission = chat.optString("permission_mode");
             renderFiles(); loadPermissions();
         }
-        if (!NativeChatState.equivalent(previous, chat)) renderChat();
+        if (!merge.unchanged) { pendingRebinds = merge.changedTurns; renderChat(); }
         else updateChatRefresh();
         renderNavigation();
     }
@@ -2108,10 +2120,10 @@ public final class MainActivity extends Activity {
         }, new NativeChatRefresh.Listener<JSONObject>() {
             public void received(JSONObject next) {
                 if (chat == null || !id.equals(chatID) || !id.equals(chat.optString("id"))) return;
-                JSONObject merged = NativeChatState.reconcile(chat, next);
+                NativeChatState.Merge merge = NativeChatState.reconcileTracked(chat, next);
                 chats = NativeChatState.reconcileList(chats, next);
                 // React retains keyed transcript nodes for an unchanged poll; do not rebuild native selection/Views either.
-                if (!NativeChatState.equivalent(chat, merged)) { chat = merged; renderChat(); }
+                if (!merge.unchanged) { chat = merge.chat; pendingRebinds = merge.changedTurns; renderChat(); }
                 else { updateChatRefresh(); renderNavigation(); }
             }
             public void failed(Exception error) {

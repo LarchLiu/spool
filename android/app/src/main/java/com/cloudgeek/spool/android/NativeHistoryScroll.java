@@ -73,6 +73,10 @@ final class NativeHistoryScroll implements ViewTreeObserver.OnPreDrawListener {
 
     private void cancelAnimation() { if (animation != null) { animation.cancel(); animation = null; } }
     void suspend() { cancelAnimation(); }
+    /** Offscreen preparation must not restore an anchor while "latest" is still animating. */
+    boolean animating() { return animation != null && animation.isRunning(); }
+    /** Anchor restores move scrollY without a gesture; the viewport must not read them as a direction. */
+    long restores() { return anchorRestores; }
 
     Anchor anchor() {
         if (content instanceof android.view.ViewGroup) {
