@@ -1,0 +1,3987 @@
+{
+  "scope": "Original Web MarkdownMessage/CSS with byte-matched native test fonts; actual line contents and intrinsic inline widths. Not device/raster equivalence.",
+  "browser": "156.0.8078.74",
+  "fixtures": [
+    {
+      "id": "boundary",
+      "locale": "en",
+      "source": "| Name | Value |\n| --- | ---: |\n| [A long linked label that wraps across several native text lines while keeping its original selection and link behavior.](https://example.com/table) | 1 |"
+    },
+    {
+      "id": "ordinary",
+      "locale": "en",
+      "source": "| Name | Value |\n| --- | ---: |\n| [Another long linked label with enough words to exercise centered cells next to a wrapped paragraph.](https://example.com/table) | 1 |"
+    },
+    {
+      "id": "bold",
+      "locale": "en",
+      "source": "| Name | Value |\n| --- | ---: |\n| [**A long bold label that wraps across several native text lines while retaining its selection and clickable source.**](https://example.com/table) | 1 |"
+    },
+    {
+      "id": "italic",
+      "locale": "en",
+      "source": "| Name | Value |\n| --- | ---: |\n| [*An italic label checks the original font advances and normal whitespace when a narrow table needs several lines.*](https://example.com/table) | 1 |"
+    },
+    {
+      "id": "mixed",
+      "locale": "en",
+      "source": "| Name | Value |\n| --- | ---: |\n| [A **bold phrase** followed by *italic words* and ordinary content retains every native span while it wraps.](https://example.com/table) | 1 |"
+    },
+    {
+      "id": "accented",
+      "locale": "en",
+      "source": "| Name | Value |\n| --- | ---: |\n| [Crème brûlée et café déjà préparés: un texte sélectionnable conserve ses accents et ses espaces dans chaque ligne.](https://example.com/table) | 1 |"
+    },
+    {
+      "id": "chinese",
+      "locale": "zh-CN",
+      "source": "| Name | Value |\n| --- | ---: |\n| [这里是一段需要在手机表格中自动换行的中文链接，检查原生字体、标点、选区和链接位置是否保持正确。](https://example.com/table) | 1 |"
+    },
+    {
+      "id": "japanese",
+      "locale": "ja",
+      "source": "| Name | Value |\n| --- | ---: |\n| [モバイルの表に表示する長いリンクです。日本語の折り返し、句読点、文字選択とリンクの位置を確認します。](https://example.com/table) | 1 |"
+    }
+  ],
+  "cases": [
+    {
+      "id": "boundary",
+      "locale": "en",
+      "density": 1,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long linked label that wraps across several native text lines while keeping its original selection and link behavior.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 134.0625,
+          "lines": [
+            "A long linked label that wraps",
+            "across several native text",
+            "lines while keeping its",
+            "original selection and link",
+            "behavior."
+          ],
+          "advance": 647.5
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 134.0625,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "boundary",
+      "locale": "en",
+      "density": 1,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long linked label that wraps across several native text lines while keeping its original selection and link behavior.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "A long linked label that wraps",
+            "across several native text lines",
+            "while keeping its original selection",
+            "and link behavior."
+          ],
+          "advance": 647.5
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "boundary",
+      "locale": "en",
+      "density": 1,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long linked label that wraps across several native text lines while keeping its original selection and link behavior.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "A long linked label that wraps across several",
+            "native text lines while keeping its original",
+            "selection and link behavior."
+          ],
+          "advance": 647.5
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "ordinary",
+      "locale": "en",
+      "density": 1,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Another long linked label with enough words to exercise centered cells next to a wrapped paragraph.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 110.25,
+          "lines": [
+            "Another long linked label",
+            "with enough words to",
+            "exercise centered cells next",
+            "to a wrapped paragraph."
+          ],
+          "advance": 570.609375
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "ordinary",
+      "locale": "en",
+      "density": 1,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Another long linked label with enough words to exercise centered cells next to a wrapped paragraph.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 86.4375,
+          "lines": [
+            "Another long linked label with",
+            "enough words to exercise centered",
+            "cells next to a wrapped paragraph."
+          ],
+          "advance": 570.609375
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "ordinary",
+      "locale": "en",
+      "density": 1,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Another long linked label with enough words to exercise centered cells next to a wrapped paragraph.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "Another long linked label with enough words",
+            "to exercise centered cells next to a wrapped",
+            "paragraph."
+          ],
+          "advance": 570.609375
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "bold",
+      "locale": "en",
+      "density": 1,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long bold label that wraps across several native text lines while retaining its selection and clickable source.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 134.0625,
+          "lines": [
+            "A long bold label that wraps",
+            "across several native text",
+            "lines while retaining its",
+            "selection and clickable",
+            "source."
+          ],
+          "advance": 630.203125
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 134.0625,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "bold",
+      "locale": "en",
+      "density": 1,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long bold label that wraps across several native text lines while retaining its selection and clickable source.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "A long bold label that wraps across",
+            "several native text lines while",
+            "retaining its selection and clickable",
+            "source."
+          ],
+          "advance": 630.203125
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "bold",
+      "locale": "en",
+      "density": 1,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long bold label that wraps across several native text lines while retaining its selection and clickable source.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "A long bold label that wraps across several",
+            "native text lines while retaining its selection",
+            "and clickable source."
+          ],
+          "advance": 630.203125
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "italic",
+      "locale": "en",
+      "density": 1,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "An italic label checks the original font advances and normal whitespace when a narrow table needs several lines.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 134.0625,
+          "lines": [
+            "An italic label checks the",
+            "original font advances and",
+            "normal whitespace when a",
+            "narrow table needs several",
+            "lines."
+          ],
+          "advance": 623.90625
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 134.0625,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "italic",
+      "locale": "en",
+      "density": 1,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "An italic label checks the original font advances and normal whitespace when a narrow table needs several lines.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "An italic label checks the original font",
+            "advances and normal whitespace",
+            "when a narrow table needs several",
+            "lines."
+          ],
+          "advance": 623.90625
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "italic",
+      "locale": "en",
+      "density": 1,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "An italic label checks the original font advances and normal whitespace when a narrow table needs several lines.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "An italic label checks the original font",
+            "advances and normal whitespace when a",
+            "narrow table needs several lines."
+          ],
+          "advance": 623.90625
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "mixed",
+      "locale": "en",
+      "density": 1,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A bold phrase followed by italic words and ordinary content retains every native span while it wraps.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 110.25,
+          "lines": [
+            "A bold phrase followed by",
+            "italic words and ordinary",
+            "content retains every native",
+            "span while it wraps."
+          ],
+          "advance": 566.21875
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "mixed",
+      "locale": "en",
+      "density": 1,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A bold phrase followed by italic words and ordinary content retains every native span while it wraps.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 86.4375,
+          "lines": [
+            "A bold phrase followed by italic",
+            "words and ordinary content retains",
+            "every native span while it wraps."
+          ],
+          "advance": 566.21875
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "mixed",
+      "locale": "en",
+      "density": 1,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A bold phrase followed by italic words and ordinary content retains every native span while it wraps.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "A bold phrase followed by italic words and",
+            "ordinary content retains every native span",
+            "while it wraps."
+          ],
+          "advance": 566.21875
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "accented",
+      "locale": "en",
+      "density": 1,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Crème brûlée et café déjà préparés: un texte sélectionnable conserve ses accents et ses espaces dans chaque ligne.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 134.0625,
+          "lines": [
+            "Crème brûlée et café déjà",
+            "préparés: un texte",
+            "sélectionnable conserve ses",
+            "accents et ses espaces dans",
+            "chaque ligne."
+          ],
+          "advance": 664.515625
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 134.0625,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "accented",
+      "locale": "en",
+      "density": 1,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Crème brûlée et café déjà préparés: un texte sélectionnable conserve ses accents et ses espaces dans chaque ligne.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "Crème brûlée et café déjà préparés:",
+            "un texte sélectionnable conserve",
+            "ses accents et ses espaces dans",
+            "chaque ligne."
+          ],
+          "advance": 664.515625
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "accented",
+      "locale": "en",
+      "density": 1,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Crème brûlée et café déjà préparés: un texte sélectionnable conserve ses accents et ses espaces dans chaque ligne.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "Crème brûlée et café déjà préparés: un texte",
+            "sélectionnable conserve ses accents et ses",
+            "espaces dans chaque ligne."
+          ],
+          "advance": 664.515625
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "chinese",
+      "locale": "zh-CN",
+      "density": 1,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "这里是一段需要在手机表格中自动换行的中文链接，检查原生字体、标点、选区和链接位置是否保持正确。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 110.25,
+          "lines": [
+            "这里是一段需要在手机表格中",
+            "自动换行的中文链接，检查原",
+            "生字体、标点、选区和链接位",
+            "置是否保持正确。"
+          ],
+          "advance": 605.375
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "chinese",
+      "locale": "zh-CN",
+      "density": 1,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "这里是一段需要在手机表格中自动换行的中文链接，检查原生字体、标点、选区和链接位置是否保持正确。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 86.4375,
+          "lines": [
+            "这里是一段需要在手机表格中自动换",
+            "行的中文链接，检查原生字体、标",
+            "点、选区和链接位置是否保持正确。"
+          ],
+          "advance": 605.375
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "chinese",
+      "locale": "zh-CN",
+      "density": 1,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "这里是一段需要在手机表格中自动换行的中文链接，检查原生字体、标点、选区和链接位置是否保持正确。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "这里是一段需要在手机表格中自动换行的中文",
+            "链接，检查原生字体、标点、选区和链接位置",
+            "是否保持正确。"
+          ],
+          "advance": 605.375
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "japanese",
+      "locale": "ja",
+      "density": 1,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "モバイルの表に表示する長いリンクです。日本語の折り返し、句読点、文字選択とリンクの位置を確認します。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 110.25,
+          "lines": [
+            "モバイルの表に表示する長い",
+            "リンクです。日本語の折り返",
+            "し、句読点、文字選択とリン",
+            "クの位置を確認します。"
+          ],
+          "advance": 641.4375
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "japanese",
+      "locale": "ja",
+      "density": 1,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "モバイルの表に表示する長いリンクです。日本語の折り返し、句読点、文字選択とリンクの位置を確認します。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "モバイルの表に表示する長いリンク",
+            "です。日本語の折り返し、句読点、",
+            "文字選択とリンクの位置を確認しま",
+            "す。"
+          ],
+          "advance": 641.4375
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "japanese",
+      "locale": "ja",
+      "density": 1,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "モバイルの表に表示する長いリンクです。日本語の折り返し、句読点、文字選択とリンクの位置を確認します。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "モバイルの表に表示する長いリンクです。日",
+            "本語の折り返し、句読点、文字選択とリンク",
+            "の位置を確認します。"
+          ],
+          "advance": 641.4375
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "boundary",
+      "locale": "en",
+      "density": 2.625,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long linked label that wraps across several native text lines while keeping its original selection and link behavior.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 134.0625,
+          "lines": [
+            "A long linked label that wraps",
+            "across several native text",
+            "lines while keeping its",
+            "original selection and link",
+            "behavior."
+          ],
+          "advance": 647.5
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 134.0625,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "boundary",
+      "locale": "en",
+      "density": 2.625,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long linked label that wraps across several native text lines while keeping its original selection and link behavior.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "A long linked label that wraps",
+            "across several native text lines",
+            "while keeping its original selection",
+            "and link behavior."
+          ],
+          "advance": 647.5
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "boundary",
+      "locale": "en",
+      "density": 2.625,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long linked label that wraps across several native text lines while keeping its original selection and link behavior.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "A long linked label that wraps across several",
+            "native text lines while keeping its original",
+            "selection and link behavior."
+          ],
+          "advance": 647.5
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "ordinary",
+      "locale": "en",
+      "density": 2.625,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Another long linked label with enough words to exercise centered cells next to a wrapped paragraph.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 110.25,
+          "lines": [
+            "Another long linked label",
+            "with enough words to",
+            "exercise centered cells next",
+            "to a wrapped paragraph."
+          ],
+          "advance": 570.609375
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "ordinary",
+      "locale": "en",
+      "density": 2.625,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Another long linked label with enough words to exercise centered cells next to a wrapped paragraph.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 86.4375,
+          "lines": [
+            "Another long linked label with",
+            "enough words to exercise centered",
+            "cells next to a wrapped paragraph."
+          ],
+          "advance": 570.609375
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "ordinary",
+      "locale": "en",
+      "density": 2.625,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Another long linked label with enough words to exercise centered cells next to a wrapped paragraph.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "Another long linked label with enough words",
+            "to exercise centered cells next to a wrapped",
+            "paragraph."
+          ],
+          "advance": 570.609375
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "bold",
+      "locale": "en",
+      "density": 2.625,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long bold label that wraps across several native text lines while retaining its selection and clickable source.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 134.0625,
+          "lines": [
+            "A long bold label that wraps",
+            "across several native text",
+            "lines while retaining its",
+            "selection and clickable",
+            "source."
+          ],
+          "advance": 630.203125
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 134.0625,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "bold",
+      "locale": "en",
+      "density": 2.625,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long bold label that wraps across several native text lines while retaining its selection and clickable source.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "A long bold label that wraps across",
+            "several native text lines while",
+            "retaining its selection and clickable",
+            "source."
+          ],
+          "advance": 630.203125
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "bold",
+      "locale": "en",
+      "density": 2.625,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long bold label that wraps across several native text lines while retaining its selection and clickable source.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "A long bold label that wraps across several",
+            "native text lines while retaining its selection",
+            "and clickable source."
+          ],
+          "advance": 630.203125
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "italic",
+      "locale": "en",
+      "density": 2.625,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "An italic label checks the original font advances and normal whitespace when a narrow table needs several lines.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 134.0625,
+          "lines": [
+            "An italic label checks the",
+            "original font advances and",
+            "normal whitespace when a",
+            "narrow table needs several",
+            "lines."
+          ],
+          "advance": 623.90625
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 134.0625,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "italic",
+      "locale": "en",
+      "density": 2.625,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "An italic label checks the original font advances and normal whitespace when a narrow table needs several lines.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "An italic label checks the original font",
+            "advances and normal whitespace",
+            "when a narrow table needs several",
+            "lines."
+          ],
+          "advance": 623.90625
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "italic",
+      "locale": "en",
+      "density": 2.625,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "An italic label checks the original font advances and normal whitespace when a narrow table needs several lines.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "An italic label checks the original font",
+            "advances and normal whitespace when a",
+            "narrow table needs several lines."
+          ],
+          "advance": 623.90625
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "mixed",
+      "locale": "en",
+      "density": 2.625,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A bold phrase followed by italic words and ordinary content retains every native span while it wraps.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 110.25,
+          "lines": [
+            "A bold phrase followed by",
+            "italic words and ordinary",
+            "content retains every native",
+            "span while it wraps."
+          ],
+          "advance": 566.21875
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "mixed",
+      "locale": "en",
+      "density": 2.625,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A bold phrase followed by italic words and ordinary content retains every native span while it wraps.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 86.4375,
+          "lines": [
+            "A bold phrase followed by italic",
+            "words and ordinary content retains",
+            "every native span while it wraps."
+          ],
+          "advance": 566.21875
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "mixed",
+      "locale": "en",
+      "density": 2.625,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A bold phrase followed by italic words and ordinary content retains every native span while it wraps.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "A bold phrase followed by italic words and",
+            "ordinary content retains every native span",
+            "while it wraps."
+          ],
+          "advance": 566.21875
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "accented",
+      "locale": "en",
+      "density": 2.625,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Crème brûlée et café déjà préparés: un texte sélectionnable conserve ses accents et ses espaces dans chaque ligne.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 134.0625,
+          "lines": [
+            "Crème brûlée et café déjà",
+            "préparés: un texte",
+            "sélectionnable conserve ses",
+            "accents et ses espaces dans",
+            "chaque ligne."
+          ],
+          "advance": 664.515625
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 134.0625,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "accented",
+      "locale": "en",
+      "density": 2.625,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Crème brûlée et café déjà préparés: un texte sélectionnable conserve ses accents et ses espaces dans chaque ligne.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "Crème brûlée et café déjà préparés:",
+            "un texte sélectionnable conserve",
+            "ses accents et ses espaces dans",
+            "chaque ligne."
+          ],
+          "advance": 664.515625
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "accented",
+      "locale": "en",
+      "density": 2.625,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Crème brûlée et café déjà préparés: un texte sélectionnable conserve ses accents et ses espaces dans chaque ligne.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "Crème brûlée et café déjà préparés: un texte",
+            "sélectionnable conserve ses accents et ses",
+            "espaces dans chaque ligne."
+          ],
+          "advance": 664.515625
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "chinese",
+      "locale": "zh-CN",
+      "density": 2.625,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "这里是一段需要在手机表格中自动换行的中文链接，检查原生字体、标点、选区和链接位置是否保持正确。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 110.25,
+          "lines": [
+            "这里是一段需要在手机表格中",
+            "自动换行的中文链接，检查原",
+            "生字体、标点、选区和链接位",
+            "置是否保持正确。"
+          ],
+          "advance": 605.375
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "chinese",
+      "locale": "zh-CN",
+      "density": 2.625,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "这里是一段需要在手机表格中自动换行的中文链接，检查原生字体、标点、选区和链接位置是否保持正确。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 86.4375,
+          "lines": [
+            "这里是一段需要在手机表格中自动换",
+            "行的中文链接，检查原生字体、标",
+            "点、选区和链接位置是否保持正确。"
+          ],
+          "advance": 605.375
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "chinese",
+      "locale": "zh-CN",
+      "density": 2.625,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "这里是一段需要在手机表格中自动换行的中文链接，检查原生字体、标点、选区和链接位置是否保持正确。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "这里是一段需要在手机表格中自动换行的中文",
+            "链接，检查原生字体、标点、选区和链接位置",
+            "是否保持正确。"
+          ],
+          "advance": 605.375
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "japanese",
+      "locale": "ja",
+      "density": 2.625,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "モバイルの表に表示する長いリンクです。日本語の折り返し、句読点、文字選択とリンクの位置を確認します。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 110.25,
+          "lines": [
+            "モバイルの表に表示する長い",
+            "リンクです。日本語の折り返",
+            "し、句読点、文字選択とリン",
+            "クの位置を確認します。"
+          ],
+          "advance": 641.4375
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "japanese",
+      "locale": "ja",
+      "density": 2.625,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "モバイルの表に表示する長いリンクです。日本語の折り返し、句読点、文字選択とリンクの位置を確認します。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "モバイルの表に表示する長いリンク",
+            "です。日本語の折り返し、句読点、",
+            "文字選択とリンクの位置を確認しま",
+            "す。"
+          ],
+          "advance": 641.4375
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "japanese",
+      "locale": "ja",
+      "density": 2.625,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "モバイルの表に表示する長いリンクです。日本語の折り返し、句読点、文字選択とリンクの位置を確認します。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "モバイルの表に表示する長いリンクです。日",
+            "本語の折り返し、句読点、文字選択とリンク",
+            "の位置を確認します。"
+          ],
+          "advance": 641.4375
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "boundary",
+      "locale": "en",
+      "density": 3,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long linked label that wraps across several native text lines while keeping its original selection and link behavior.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 134.0625,
+          "lines": [
+            "A long linked label that wraps",
+            "across several native text",
+            "lines while keeping its",
+            "original selection and link",
+            "behavior."
+          ],
+          "advance": 647.5
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 134.0625,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "boundary",
+      "locale": "en",
+      "density": 3,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long linked label that wraps across several native text lines while keeping its original selection and link behavior.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "A long linked label that wraps",
+            "across several native text lines",
+            "while keeping its original selection",
+            "and link behavior."
+          ],
+          "advance": 647.5
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "boundary",
+      "locale": "en",
+      "density": 3,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long linked label that wraps across several native text lines while keeping its original selection and link behavior.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "A long linked label that wraps across several",
+            "native text lines while keeping its original",
+            "selection and link behavior."
+          ],
+          "advance": 647.5
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "ordinary",
+      "locale": "en",
+      "density": 3,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Another long linked label with enough words to exercise centered cells next to a wrapped paragraph.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 110.25,
+          "lines": [
+            "Another long linked label",
+            "with enough words to",
+            "exercise centered cells next",
+            "to a wrapped paragraph."
+          ],
+          "advance": 570.609375
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "ordinary",
+      "locale": "en",
+      "density": 3,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Another long linked label with enough words to exercise centered cells next to a wrapped paragraph.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 86.4375,
+          "lines": [
+            "Another long linked label with",
+            "enough words to exercise centered",
+            "cells next to a wrapped paragraph."
+          ],
+          "advance": 570.609375
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "ordinary",
+      "locale": "en",
+      "density": 3,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Another long linked label with enough words to exercise centered cells next to a wrapped paragraph.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "Another long linked label with enough words",
+            "to exercise centered cells next to a wrapped",
+            "paragraph."
+          ],
+          "advance": 570.609375
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "bold",
+      "locale": "en",
+      "density": 3,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long bold label that wraps across several native text lines while retaining its selection and clickable source.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 134.0625,
+          "lines": [
+            "A long bold label that wraps",
+            "across several native text",
+            "lines while retaining its",
+            "selection and clickable",
+            "source."
+          ],
+          "advance": 630.203125
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 134.0625,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "bold",
+      "locale": "en",
+      "density": 3,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long bold label that wraps across several native text lines while retaining its selection and clickable source.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "A long bold label that wraps across",
+            "several native text lines while",
+            "retaining its selection and clickable",
+            "source."
+          ],
+          "advance": 630.203125
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "bold",
+      "locale": "en",
+      "density": 3,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A long bold label that wraps across several native text lines while retaining its selection and clickable source.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "A long bold label that wraps across several",
+            "native text lines while retaining its selection",
+            "and clickable source."
+          ],
+          "advance": 630.203125
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "italic",
+      "locale": "en",
+      "density": 3,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "An italic label checks the original font advances and normal whitespace when a narrow table needs several lines.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 134.0625,
+          "lines": [
+            "An italic label checks the",
+            "original font advances and",
+            "normal whitespace when a",
+            "narrow table needs several",
+            "lines."
+          ],
+          "advance": 623.90625
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 134.0625,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "italic",
+      "locale": "en",
+      "density": 3,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "An italic label checks the original font advances and normal whitespace when a narrow table needs several lines.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "An italic label checks the original font",
+            "advances and normal whitespace",
+            "when a narrow table needs several",
+            "lines."
+          ],
+          "advance": 623.90625
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "italic",
+      "locale": "en",
+      "density": 3,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "An italic label checks the original font advances and normal whitespace when a narrow table needs several lines.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "An italic label checks the original font",
+            "advances and normal whitespace when a",
+            "narrow table needs several lines."
+          ],
+          "advance": 623.90625
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "mixed",
+      "locale": "en",
+      "density": 3,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A bold phrase followed by italic words and ordinary content retains every native span while it wraps.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 110.25,
+          "lines": [
+            "A bold phrase followed by",
+            "italic words and ordinary",
+            "content retains every native",
+            "span while it wraps."
+          ],
+          "advance": 566.21875
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "mixed",
+      "locale": "en",
+      "density": 3,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A bold phrase followed by italic words and ordinary content retains every native span while it wraps.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 86.4375,
+          "lines": [
+            "A bold phrase followed by italic",
+            "words and ordinary content retains",
+            "every native span while it wraps."
+          ],
+          "advance": 566.21875
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "mixed",
+      "locale": "en",
+      "density": 3,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "A bold phrase followed by italic words and ordinary content retains every native span while it wraps.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "A bold phrase followed by italic words and",
+            "ordinary content retains every native span",
+            "while it wraps."
+          ],
+          "advance": 566.21875
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "accented",
+      "locale": "en",
+      "density": 3,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Crème brûlée et café déjà préparés: un texte sélectionnable conserve ses accents et ses espaces dans chaque ligne.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 134.0625,
+          "lines": [
+            "Crème brûlée et café déjà",
+            "préparés: un texte",
+            "sélectionnable conserve ses",
+            "accents et ses espaces dans",
+            "chaque ligne."
+          ],
+          "advance": 664.515625
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 134.0625,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "accented",
+      "locale": "en",
+      "density": 3,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Crème brûlée et café déjà préparés: un texte sélectionnable conserve ses accents et ses espaces dans chaque ligne.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "Crème brûlée et café déjà préparés:",
+            "un texte sélectionnable conserve",
+            "ses accents et ses espaces dans",
+            "chaque ligne."
+          ],
+          "advance": 664.515625
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "accented",
+      "locale": "en",
+      "density": 3,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "Crème brûlée et café déjà préparés: un texte sélectionnable conserve ses accents et ses espaces dans chaque ligne.",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "Crème brûlée et café déjà préparés: un texte",
+            "sélectionnable conserve ses accents et ses",
+            "espaces dans chaque ligne."
+          ],
+          "advance": 664.515625
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "chinese",
+      "locale": "zh-CN",
+      "density": 3,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "这里是一段需要在手机表格中自动换行的中文链接，检查原生字体、标点、选区和链接位置是否保持正确。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 110.25,
+          "lines": [
+            "这里是一段需要在手机表格中",
+            "自动换行的中文链接，检查原",
+            "生字体、标点、选区和链接位",
+            "置是否保持正确。"
+          ],
+          "advance": 605.375
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "chinese",
+      "locale": "zh-CN",
+      "density": 3,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "这里是一段需要在手机表格中自动换行的中文链接，检查原生字体、标点、选区和链接位置是否保持正确。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 86.4375,
+          "lines": [
+            "这里是一段需要在手机表格中自动换",
+            "行的中文链接，检查原生字体、标",
+            "点、选区和链接位置是否保持正确。"
+          ],
+          "advance": 605.375
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "chinese",
+      "locale": "zh-CN",
+      "density": 3,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "这里是一段需要在手机表格中自动换行的中文链接，检查原生字体、标点、选区和链接位置是否保持正确。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "这里是一段需要在手机表格中自动换行的中文",
+            "链接，检查原生字体、标点、选区和链接位置",
+            "是否保持正确。"
+          ],
+          "advance": 605.375
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "japanese",
+      "locale": "ja",
+      "density": 3,
+      "width": 320,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 193,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 211.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "モバイルの表に表示する長いリンクです。日本語の折り返し、句読点、文字選択とリンクの位置を確認します。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 193,
+          "height": 110.25,
+          "lines": [
+            "モバイルの表に表示する長い",
+            "リンクです。日本語の折り返",
+            "し、句読点、文字選択とリン",
+            "クの位置を確認します。"
+          ],
+          "advance": 641.4375
+        },
+        {
+          "text": "1",
+          "x": 211.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "japanese",
+      "locale": "ja",
+      "density": 3,
+      "width": 360,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 233,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 251.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "モバイルの表に表示する長いリンクです。日本語の折り返し、句読点、文字選択とリンクの位置を確認します。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 233,
+          "height": 110.25,
+          "lines": [
+            "モバイルの表に表示する長いリンク",
+            "です。日本語の折り返し、句読点、",
+            "文字選択とリンクの位置を確認しま",
+            "す。"
+          ],
+          "advance": 641.4375
+        },
+        {
+          "text": "1",
+          "x": 251.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 110.25,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    },
+    {
+      "id": "japanese",
+      "locale": "ja",
+      "density": 3,
+      "width": 412,
+      "cells": [
+        {
+          "text": "Name",
+          "x": 18.5,
+          "y": 25.5,
+          "width": 285,
+          "height": 38.8125,
+          "lines": [
+            "Name"
+          ],
+          "advance": 34.125
+        },
+        {
+          "text": "Value",
+          "x": 303.5,
+          "y": 25.5,
+          "width": 90,
+          "height": 38.8125,
+          "lines": [
+            "Value"
+          ],
+          "advance": 32.640625
+        },
+        {
+          "text": "モバイルの表に表示する長いリンクです。日本語の折り返し、句読点、文字選択とリンクの位置を確認します。",
+          "x": 18.5,
+          "y": 64.3125,
+          "width": 285,
+          "height": 86.4375,
+          "lines": [
+            "モバイルの表に表示する長いリンクです。日",
+            "本語の折り返し、句読点、文字選択とリンク",
+            "の位置を確認します。"
+          ],
+          "advance": 641.4375
+        },
+        {
+          "text": "1",
+          "x": 303.5,
+          "y": 64.3125,
+          "width": 90,
+          "height": 86.4375,
+          "lines": [
+            "1"
+          ],
+          "advance": 7.25
+        }
+      ]
+    }
+  ]
+}

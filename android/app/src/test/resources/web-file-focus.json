@@ -1,0 +1,2466 @@
+{
+  "browser": "156.0.8078.74",
+  "purpose": "Actual FileSidebar external-search and tree focus transitions, not a full raster/device pass",
+  "cases": [
+    {
+      "locale": "zh-CN",
+      "name": "共享项目",
+      "density": 1,
+      "theme": "light",
+      "records": [
+        {
+          "id": "closed",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "open-empty",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "unmatched",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-cjk",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-latin",
+          "paths": [
+            "plain.txt"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "clear",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "escape",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "tree-keyboard",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "tree-blur",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "reopen",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "rematch",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "search-blur",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "close",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        }
+      ]
+    },
+    {
+      "locale": "zh-CN",
+      "name": "共享项目",
+      "density": 1,
+      "theme": "dark",
+      "records": [
+        {
+          "id": "closed",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "open-empty",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "unmatched",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-cjk",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-latin",
+          "paths": [
+            "plain.txt"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "clear",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "escape",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "tree-keyboard",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "tree-blur",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "reopen",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "rematch",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "search-blur",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "close",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        }
+      ]
+    },
+    {
+      "locale": "ja",
+      "name": "共有項目",
+      "density": 1,
+      "theme": "light",
+      "records": [
+        {
+          "id": "closed",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "open-empty",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "unmatched",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-cjk",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-latin",
+          "paths": [
+            "plain.txt"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "clear",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "escape",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "tree-keyboard",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "tree-blur",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "reopen",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "rematch",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "search-blur",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "close",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        }
+      ]
+    },
+    {
+      "locale": "ja",
+      "name": "共有項目",
+      "density": 1,
+      "theme": "dark",
+      "records": [
+        {
+          "id": "closed",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "open-empty",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "unmatched",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-cjk",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-latin",
+          "paths": [
+            "plain.txt"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "clear",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "escape",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "tree-keyboard",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "tree-blur",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "reopen",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "rematch",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "search-blur",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "close",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        }
+      ]
+    },
+    {
+      "locale": "zh-CN",
+      "name": "共享项目",
+      "density": 2.625,
+      "theme": "light",
+      "records": [
+        {
+          "id": "closed",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "open-empty",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "unmatched",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-cjk",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-latin",
+          "paths": [
+            "plain.txt"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "clear",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "escape",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "tree-keyboard",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "tree-blur",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "reopen",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "rematch",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "search-blur",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "close",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        }
+      ]
+    },
+    {
+      "locale": "zh-CN",
+      "name": "共享项目",
+      "density": 2.625,
+      "theme": "dark",
+      "records": [
+        {
+          "id": "closed",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "open-empty",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "unmatched",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-cjk",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-latin",
+          "paths": [
+            "plain.txt"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "clear",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "escape",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "tree-keyboard",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "tree-blur",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "reopen",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "rematch",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "search-blur",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "close",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        }
+      ]
+    },
+    {
+      "locale": "ja",
+      "name": "共有項目",
+      "density": 2.625,
+      "theme": "light",
+      "records": [
+        {
+          "id": "closed",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "open-empty",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "unmatched",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-cjk",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-latin",
+          "paths": [
+            "plain.txt"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "clear",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "escape",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "tree-keyboard",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "tree-blur",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "reopen",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "rematch",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "search-blur",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "close",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        }
+      ]
+    },
+    {
+      "locale": "ja",
+      "name": "共有項目",
+      "density": 2.625,
+      "theme": "dark",
+      "records": [
+        {
+          "id": "closed",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "open-empty",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "unmatched",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-cjk",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-latin",
+          "paths": [
+            "plain.txt"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "clear",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "escape",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "tree-keyboard",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "tree-blur",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "reopen",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "rematch",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "search-blur",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "close",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        }
+      ]
+    },
+    {
+      "locale": "zh-CN",
+      "name": "共享项目",
+      "density": 3,
+      "theme": "light",
+      "records": [
+        {
+          "id": "closed",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "open-empty",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "unmatched",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-cjk",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-latin",
+          "paths": [
+            "plain.txt"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "clear",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "escape",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "tree-keyboard",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "tree-blur",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "reopen",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "rematch",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "search-blur",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "close",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        }
+      ]
+    },
+    {
+      "locale": "zh-CN",
+      "name": "共享项目",
+      "density": 3,
+      "theme": "dark",
+      "records": [
+        {
+          "id": "closed",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "open-empty",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "unmatched",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-cjk",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-latin",
+          "paths": [
+            "plain.txt"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "clear",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "escape",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "tree-keyboard",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "tree-blur",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "reopen",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "rematch",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "search-blur",
+          "paths": [
+            "共享项目"
+          ],
+          "focus": "共享项目",
+          "logicalFocus": "共享项目",
+          "search": true,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "close",
+          "paths": [
+            "plain.txt",
+            "共享项目"
+          ],
+          "focus": "",
+          "logicalFocus": "共享项目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        }
+      ]
+    },
+    {
+      "locale": "ja",
+      "name": "共有項目",
+      "density": 3,
+      "theme": "light",
+      "records": [
+        {
+          "id": "closed",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "open-empty",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "unmatched",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-cjk",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-latin",
+          "paths": [
+            "plain.txt"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "clear",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "escape",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "tree-keyboard",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "tree-blur",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "reopen",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "rematch",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "search-blur",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "close",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        }
+      ]
+    },
+    {
+      "locale": "ja",
+      "name": "共有項目",
+      "density": 3,
+      "theme": "dark",
+      "records": [
+        {
+          "id": "closed",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "open-empty",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "unmatched",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-cjk",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "match-latin",
+          "paths": [
+            "plain.txt"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "clear",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "plain.txt",
+          "logicalFocus": "plain.txt",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "escape",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "plain.txt",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "tree-keyboard",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "tree-blur",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        },
+        {
+          "id": "reopen",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "rematch",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": true,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "search-blur",
+          "paths": [
+            "共有項目"
+          ],
+          "focus": "共有項目",
+          "logicalFocus": "共有項目",
+          "search": true,
+          "searchFocused": false,
+          "ring": {
+            "width": 1,
+            "offset": -1,
+            "color": "rgb(0, 159, 255)",
+            "radius": 6
+          }
+        },
+        {
+          "id": "close",
+          "paths": [
+            "plain.txt",
+            "共有項目"
+          ],
+          "focus": "",
+          "logicalFocus": "共有項目",
+          "search": false,
+          "searchFocused": false,
+          "ring": null
+        }
+      ]
+    }
+  ]
+}

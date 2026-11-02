@@ -1,0 +1,129 @@
+{
+  "browser": "156.0.8078.74",
+  "source": "web/src/style.css",
+  "sourceSha256": "51b616103959642878c578860666e6c9c461e919692943a8423788b04b7199cc",
+  "command": "sh android/tools/run.sh node android/tools/probe-css-paint.mjs --write-border-fixtures",
+  "purpose": "Unmodified full-viewport actual CSS screenshots, without shadows, at three densities and both themes. No cropping, rescaling, or native-derived pixels.",
+  "fixtures": [
+    {
+      "name": "dpr1-light.png",
+      "density": 1,
+      "theme": "light",
+      "viewport": {
+        "width": 360,
+        "height": 237
+      },
+      "box": {
+        "left": 12,
+        "top": 64,
+        "right": 348,
+        "bottom": 163,
+        "radius": 19,
+        "border": 1,
+        "fill": "rgb(255, 255, 255)",
+        "color": "rgb(218, 221, 211)"
+      },
+      "sha256": "e440d5c0bb46865be84071f541b2aa61d1aa602dca471ce3b00012f857da8067"
+    },
+    {
+      "name": "dpr1-dark.png",
+      "density": 1,
+      "theme": "dark",
+      "viewport": {
+        "width": 360,
+        "height": 237
+      },
+      "box": {
+        "left": 12,
+        "top": 64,
+        "right": 348,
+        "bottom": 163,
+        "radius": 19,
+        "border": 1,
+        "fill": "rgb(43, 43, 41)",
+        "color": "rgb(65, 66, 61)"
+      },
+      "sha256": "31ee7b247a426b47bd391bc09598e3c840fa05b53c21e5d7d580f8783bad148f"
+    },
+    {
+      "name": "dpr2.625-light.png",
+      "density": 2.625,
+      "theme": "light",
+      "viewport": {
+        "width": 360,
+        "height": 240
+      },
+      "box": {
+        "left": 12,
+        "top": 64,
+        "right": 348,
+        "bottom": 163,
+        "radius": 19,
+        "border": 1,
+        "fill": "rgb(255, 255, 255)",
+        "color": "rgb(218, 221, 211)"
+      },
+      "sha256": "a5ca6908f988375f94a8ea4b6eb62cf448bce8ef8be488204ab4371ac08a47af"
+    },
+    {
+      "name": "dpr2.625-dark.png",
+      "density": 2.625,
+      "theme": "dark",
+      "viewport": {
+        "width": 360,
+        "height": 240
+      },
+      "box": {
+        "left": 12,
+        "top": 64,
+        "right": 348,
+        "bottom": 163,
+        "radius": 19,
+        "border": 1,
+        "fill": "rgb(43, 43, 41)",
+        "color": "rgb(65, 66, 61)"
+      },
+      "sha256": "2955c2798f908c765171da92ff3046e7ece99d3a051b4e1c4844eff7fc24fdfa"
+    },
+    {
+      "name": "dpr3-light.png",
+      "density": 3,
+      "theme": "light",
+      "viewport": {
+        "width": 360,
+        "height": 237
+      },
+      "box": {
+        "left": 12,
+        "top": 64,
+        "right": 348,
+        "bottom": 163,
+        "radius": 19,
+        "border": 1,
+        "fill": "rgb(255, 255, 255)",
+        "color": "rgb(218, 221, 211)"
+      },
+      "sha256": "dce82f8ec2e9bf4a247c57df2480ca8e6d8ff89b8e250e4ba75bfc986cb2c885"
+    },
+    {
+      "name": "dpr3-dark.png",
+      "density": 3,
+      "theme": "dark",
+      "viewport": {
+        "width": 360,
+        "height": 237
+      },
+      "box": {
+        "left": 12,
+        "top": 64,
+        "right": 348,
+        "bottom": 163,
+        "radius": 19,
+        "border": 1,
+        "fill": "rgb(43, 43, 41)",
+        "color": "rgb(65, 66, 61)"
+      },
+      "sha256": "3de14a1cbc73c6ea1736cf7836a9dbf1ee3b701c31a1c632993315dbad753094"
+    }
+  ]
+}

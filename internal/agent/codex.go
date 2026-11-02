@@ -120,6 +120,7 @@ func (p *agentProcess) denyCodexRequest(value map[string]any) error {
 }
 
 func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit func(AgentEvent) error) (AgentResult, error, bool) {
+	emit = compactionEvents(emit)
 	p.approve = request.Approve
 	defer func() { p.approve = nil }()
 	reviewer := "user"
@@ -273,6 +274,14 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 			}
 			continue
 		}
+		// Legacy thread/compacted has no turnId. Thread identity was checked
+		// above; modern contextCompaction items additionally match this turn.
+		if method == "thread/compacted" {
+			if err := emit(AgentEvent{Type: "compaction"}); err != nil {
+				return result, err, false
+			}
+			continue
+		}
 		eventTurn := stringValue(params["turnId"])
 		if method == "turn/completed" || method == "turn/started" {
 			eventTurn = nestedString(params, "turn", "id")
@@ -360,6 +369,12 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 			}
 		case "item/started", "item/completed":
 			item, _ := params["item"].(map[string]any)
+			if codexCompactionItem(item) {
+				if err := emit(AgentEvent{Type: "compaction", Compacting: method == "item/started"}); err != nil {
+					return result, err, false
+				}
+				continue
+			}
 			if isCodexAgentMessage(item["type"]) {
 				id := stringValue(item["id"])
 				if phase := stringValue(item["phase"]); phase != "" {
@@ -449,6 +464,9 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 				}
 			}
 		case "turn/completed":
+			if err := emit(AgentEvent{Type: "compaction"}); err != nil {
+				return result, err, false
+			}
 			switch nestedString(params, "turn", "status") {
 			case "completed":
 				if strings.TrimSpace(result.Text) == "" {

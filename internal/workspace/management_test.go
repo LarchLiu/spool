@@ -141,7 +141,8 @@ func TestHistoryCacheSettingsResizeImmediatelyEvictsWholeSessions(t *testing.T) 
 		}
 	}
 	for _, path := range paths {
-		appendNativeTurns(t, path, 0, 1, 50)
+		// Distinct bodies exercise the byte budget rather than deduplication.
+		appendNativeTurns(t, path, 0, 1, 50, true)
 		load(path)
 	}
 	if len(s.historyCache.files) != 3 || reads.Load() != 3 {
@@ -169,7 +170,7 @@ func TestHistoryCacheSettingsResizeImmediatelyEvictsWholeSessions(t *testing.T) 
 		t.Fatal("larger target was not applied immediately", err)
 	}
 	oversized := filepath.Join(root, "oversized.jsonl")
-	appendNativeTurns(t, oversized, 0, 1, 160)
+	appendNativeTurns(t, oversized, 0, 1, 160, true)
 	bigChat := chatmodel.Session{ID: "oversized", Backend: chatmodel.BackendCodex, NativeSessionPath: oversized}
 	if _, err := s.readHistory(bigChat); err != nil {
 		t.Fatal(err)

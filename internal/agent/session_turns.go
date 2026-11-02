@@ -234,7 +234,7 @@ func indexClaudeTurns(path string, offset, end int64, title *nativeSessionTitle)
 			if previous, ok := byPrompt[prompt]; ok && prompt != "" {
 				owner = previous
 			}
-			input := record["type"] == "user" && record["isMeta"] != true && record["isCompactSummary"] != true && record["isVisibleInTranscriptOnly"] != true && genuineUserContent(message["content"])
+			input := record["type"] == "user" && record["isMeta"] != true && !claudeCompactionRecord(record) && record["isVisibleInTranscriptOnly"] != true && genuineUserContent(message["content"])
 			_, known := byPrompt[prompt]
 			if input && (prompt == "" || !known) {
 				if current >= 0 && turns[current].Status == chatmodel.StatusRunning {
@@ -256,33 +256,35 @@ func indexClaudeTurns(path string, offset, end int64, title *nativeSessionTitle)
 					byUUID[id] = owner
 				}
 				turn := &turns[owner]
-				if model := stringValue(message["model"]); model != "" && model != "<synthetic>" {
-					turn.Model = model
-				}
-				if effort := stringValue(record["perTurnEffort"]); effort != "" {
-					turn.ReasoningEffort = effort
-				}
-				meaningful := record["type"] == "user" || record["type"] == "assistant" || record["subtype"] == "turn_duration"
-				if stamp := nativeTimestamp(record["timestamp"]); stamp > 0 && meaningful {
-					turn.FinishedAt = stamp
-				}
-				if turn.Status != chatmodel.StatusStopped {
-					switch stringValue(message["stop_reason"]) {
-					case "end_turn", "stop_sequence", "max_tokens":
-						turn.Status = chatmodel.StatusCompleted
-					case "":
-						// Older and converted sessions omit stop_reason. Tool-use
-						// and thinking-only records are not a completed answer.
-						if record["type"] == "assistant" && claudeFinalText(message["content"]) {
+				if !claudeCompactionRecord(record) {
+					if model := stringValue(message["model"]); model != "" && model != "<synthetic>" {
+						turn.Model = model
+					}
+					if effort := stringValue(record["perTurnEffort"]); effort != "" {
+						turn.ReasoningEffort = effort
+					}
+					meaningful := record["type"] == "user" || record["type"] == "assistant" || record["subtype"] == "turn_duration"
+					if stamp := nativeTimestamp(record["timestamp"]); stamp > 0 && meaningful {
+						turn.FinishedAt = stamp
+					}
+					if turn.Status != chatmodel.StatusStopped {
+						switch stringValue(message["stop_reason"]) {
+						case "end_turn", "stop_sequence", "max_tokens":
+							turn.Status = chatmodel.StatusCompleted
+						case "":
+							// Older and converted sessions omit stop_reason. Tool-use
+							// and thinking-only records are not a completed answer.
+							if record["type"] == "assistant" && claudeFinalText(message["content"]) {
+								turn.Status = chatmodel.StatusCompleted
+							}
+						}
+						if record["subtype"] == "turn_duration" {
 							turn.Status = chatmodel.StatusCompleted
 						}
 					}
-					if record["subtype"] == "turn_duration" {
-						turn.Status = chatmodel.StatusCompleted
+					if record["type"] == "user" && interruptedUserContent(message["content"]) {
+						turn.Status = chatmodel.StatusStopped
 					}
-				}
-				if record["type"] == "user" && interruptedUserContent(message["content"]) {
-					turn.Status = chatmodel.StatusStopped
 				}
 				n := len(turn.Ranges)
 				if n > 0 && turn.Ranges[n-1].End == start {

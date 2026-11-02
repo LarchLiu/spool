@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	_ "modernc.org/sqlite"
 
@@ -465,6 +466,7 @@ func (s *Store) finishTurn(id, turnID string, result agent.AgentResult, runErr e
 	t.Parts, t.Prompt, t.Reply, t.Activities = nil, "", "", nil
 	t.PartStart, t.InputEnd, t.PartEnd = 0, 0, 0
 	t.PendingApproval = nil
+	t.Compacting = false
 	if result.TurnID != "" {
 		t.NativeTurnID = result.TurnID
 	}
@@ -582,6 +584,9 @@ func appendTurnPart(turn *chatmodel.Turn, part chatmodel.Part) {
 		chatmodel.AppendPart(&transcript, part)
 	}
 	turn.Parts = transcript.Parts
+	if last := len(turn.Parts) - 1; last >= 0 && toolPart(turn.Parts[last]) {
+		turn.Parts[last].Tool = summarizeTool(turn.Parts[last])
+	}
 	turn.PartEnd = turn.PartStart + len(turn.Parts)
 }
 
@@ -589,6 +594,9 @@ func appendTurnText(turn *chatmodel.Turn, part chatmodel.Part) {
 	transcript := chatmodel.Transcript{Parts: turn.Parts}
 	chatmodel.AppendStreamText(&transcript, part)
 	turn.Parts = transcript.Parts
+	if last := len(turn.Parts) - 1; last >= 0 && toolPart(turn.Parts[last]) {
+		turn.Parts[last].Tool = summarizeTool(turn.Parts[last])
+	}
 	turn.PartEnd = turn.PartStart + len(turn.Parts)
 }
 
@@ -605,6 +613,16 @@ func runningTranscript(previous chatmodel.Transcript, turn chatmodel.Turn) chatm
 func cloneTranscript(transcript chatmodel.Transcript) chatmodel.Transcript {
 	clone := transcript
 	clone.Parts = append([]chatmodel.Part(nil), transcript.Parts...)
+	for i := range clone.Parts {
+		if summary := clone.Parts[i].Tool; summary != nil {
+			copy := *summary
+			if summary.Changes != nil {
+				changes := *summary.Changes
+				copy.Changes = &changes
+			}
+			clone.Parts[i].Tool = &copy
+		}
+	}
 	return clone
 }
 
@@ -620,7 +638,7 @@ func populateTurnContent(turn *chatmodel.Turn) {
 		case part.Kind == "tool_use" || part.Kind == "tool_result" || part.Kind == "context":
 			text := part.Text
 			if part.Name != "" && text != "" {
-				text = part.Name + ": " + text
+				text = activityPreview(part.Name, text)
 			} else if part.Name != "" {
 				text = part.Name
 			}
@@ -634,6 +652,25 @@ func populateTurnContent(turn *chatmodel.Turn) {
 	turn.Activities = boundedActivities(activities)
 }
 
+// Activities are legacy 240-byte metadata, not a second copy of tool output.
+// Clip the virtual concatenation before allocating a multi-megabyte string.
+func activityPreview(name, text string) string {
+	prefix := strings.TrimLeftFunc(name+": ", unicode.IsSpace)
+	text = strings.TrimRightFunc(text, unicode.IsSpace)
+	if text == "" {
+		return chatmodel.Clip(strings.TrimSpace(prefix), 240)
+	}
+	if len(prefix) > 240 {
+		return chatmodel.Clip(prefix, 240)
+	}
+	clipped := len(prefix)+len(text) > 240
+	value := prefix + toolBounded(text, 240-len(prefix))
+	if clipped {
+		value += "\n\u2026"
+	}
+	return value
+}
+
 func (s *Store) SetInterrupted() error {
 	_, err := s.db.Exec(`UPDATE sessions SET status=?,updated_at=MAX(updated_at+1,?) WHERE status=?`, chatmodel.StatusInterrupted, time.Now().UnixMilli(), chatmodel.StatusRunning)
 	if err != nil {
@@ -644,6 +681,7 @@ func (s *Store) SetInterrupted() error {
 	for id, t := range s.runtimeTurns {
 		if t.Status == chatmodel.StatusRunning {
 			t.Status, t.FinishedAt, t.PendingApproval = chatmodel.StatusInterrupted, time.Now().UnixMilli(), nil
+			t.Compacting = false
 			t.Error = "Go agent server restarted before this turn finished"
 			s.runtimeTurns[id] = t
 		}

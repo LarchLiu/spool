@@ -288,6 +288,33 @@ func Run(t *testing.T) {
 			params["threadId"], params["turnId"] = thread, turnID
 			send(map[string]any{"method": method, "params": params})
 		}
+		if strings.Contains(prompt, "compact-stream") {
+			if codex {
+				// Other threads/turns must not change this run's state.
+				send(map[string]any{"method": "item/started", "params": map[string]any{"threadId": "other-thread", "turnId": turnID, "item": map[string]any{"type": "contextCompaction"}}})
+				send(map[string]any{"method": "item/started", "params": map[string]any{"threadId": thread, "turnId": "other-turn", "item": map[string]any{"type": "contextCompaction"}}})
+				for i := 0; i < 2; i++ {
+					notify("item/started", map[string]any{"item": map[string]any{"type": "contextCompaction", "id": "compact"}})
+				}
+				if strings.Contains(prompt, "legacy-end") {
+					send(map[string]any{"method": "thread/compacted", "params": map[string]any{"threadId": thread}})
+				} else if !strings.Contains(prompt, "no-end") {
+					notify("item/completed", map[string]any{"item": map[string]any{"type": "contextCompaction", "id": "compact", "text": "INTERNAL COMPACTION SUMMARY"}})
+				}
+			} else {
+				send(map[string]any{"type": "system", "subtype": "status", "status": "compacting", "parent_tool_use_id": "nested-tool"})
+				for i := 0; i < 2; i++ {
+					send(map[string]any{"type": "system", "subtype": "status", "status": "compacting"})
+				}
+				send(map[string]any{"type": "assistant", "isCompactSummary": true, "message": map[string]any{"content": []any{map[string]any{"type": "text", "text": "INTERNAL COMPACTION SUMMARY"}}}})
+				send(map[string]any{"type": "user", "isCompactSummary": true, "message": map[string]any{"content": "INTERNAL COMPACTION SUMMARY"}})
+				if strings.Contains(prompt, "legacy-end") {
+					send(map[string]any{"type": "system", "subtype": "status", "status": nil})
+				} else if !strings.Contains(prompt, "no-end") {
+					send(map[string]any{"type": "system", "subtype": "compact_boundary"})
+				}
+			}
+		}
 		text := "Hello world"
 		if strings.Contains(prompt, "large-reply") {
 			text = strings.Repeat("x", 900_000)

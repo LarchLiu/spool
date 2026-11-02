@@ -7,6 +7,38 @@ import {
   LocalSessionIcon,
   SidebarChatList,
 } from "../.test-build/components/web/src/sidebar-chat-list.js";
+import {
+  sortedSidebarChats,
+  revealSidebarProject,
+  revealSidebarChat,
+} from "../.test-build/components/web/src/sidebar-state.js";
+
+test("sidebar sort is newest-first, stable for equal timestamps and leaves navigation data untouched", () => {
+  const chats = [
+    { id: "old", updated_at: 1 },
+    { id: "first", updated_at: 3 },
+    { id: "second", updated_at: 3 },
+  ];
+  const sorted = sortedSidebarChats(chats);
+  assert.deepEqual(
+    sorted.map((chat) => chat.id),
+    ["first", "second", "old"],
+  );
+  assert.deepEqual(
+    chats.map((chat) => chat.id),
+    ["old", "first", "second"],
+  );
+  assert.equal(sorted[0], chats[1]);
+});
+
+test("selection reveals an off-page project and chat without collapsing an expanded list", () => {
+  const projects = Array.from({ length: 9 }, (_, i) => ({ id: `p-${i}` }));
+  const chats = Array.from({ length: 20 }, (_, i) => ({ id: `c-${i}` }));
+  assert.equal(revealSidebarProject(projects, "p-7", 5), 8);
+  assert.equal(revealSidebarProject(projects, "missing", 10), 10);
+  assert.equal(revealSidebarChat(chats, "c-12", 5), 13);
+  assert.equal(revealSidebarChat(chats, "c-2", 15), 15);
+});
 
 test("local sessions have a compact monitor icon with an accessible source label", () => {
   const html = renderToStaticMarkup(

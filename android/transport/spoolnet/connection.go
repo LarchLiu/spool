@@ -62,12 +62,7 @@ func inspectConnection(ctx context.Context, api connectionAPI, hostname string) 
 		info.Reason = "target_unknown"
 		return info, nil
 	}
-	var target netip.Addr
-	for _, ip := range peer.TailscaleIPs {
-		if ip.IsValid() && (!target.IsValid() || ip.Is4()) {
-			target = ip
-		}
-	}
+	target := serverIP(peer, "tcp")
 	if !target.IsValid() {
 		info.Reason = "target_unknown"
 		return info, nil

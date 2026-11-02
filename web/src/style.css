@@ -1246,6 +1246,9 @@ button:disabled {
   margin: 0 auto 24px;
   padding: 8px 12px;
 }
+.history-older.quiet {
+  font-size: 10px;
+}
 .welcome {
   padding: 12vh 0 35px;
   text-align: center;
@@ -2285,6 +2288,9 @@ a.attachment-open {
 }
 .bypass-confirmation .danger {
   color: var(--error-text);
+}
+.permission-popover .bypass-confirmation .quiet {
+  font-size: 10px;
 }
 .approval-card {
   margin: 16px 0;
@@ -3909,4 +3915,13 @@ option {
   .header-actions {
     gap: 8px;
   }
+}
+.tool-detail-pages {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
 }

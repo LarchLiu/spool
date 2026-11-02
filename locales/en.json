@@ -427,6 +427,7 @@
   "Refresh files": "Refresh files",
   "Search files": "Search files",
   "Close file search": "Close file search",
+  "Clear file search": "Clear file search",
   "Project file tree": "Project file tree",
   "Loading files…": "Loading files…",
   "This directory is empty.": "This directory is empty.",
@@ -661,5 +662,10 @@
   "Tailscale registration timed out. Check network access or device approval, then retry.": "Tailscale registration timed out. Check network access or device approval, then retry.",
   "Tailscale registration was canceled. Try again when the service is ready.": "Tailscale registration was canceled. Try again when the service is ready.",
   "Copied": "Copied",
-  "Could not copy address. Try again.": "Could not copy address. Try again."
+  "Could not copy address. Try again.": "Could not copy address. Try again.",
+  "Loading tool details…": "Loading tool details…",
+  "Showing bytes {start}–{end} of {total}": "Showing bytes {start}–{end} of {total}",
+  "Back to start": "Back to start",
+  "Load next section": "Load next section",
+  "Compacting context…": "Compacting context…"
 }

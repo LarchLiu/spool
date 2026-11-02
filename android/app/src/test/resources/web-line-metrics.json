@@ -1,0 +1,162 @@
+{
+  "purpose": "Actual Web CSS explicit line-height struts with byte-matched Android test fonts; desktop mobile viewport, not Android Chrome/OEM parity",
+  "browser": "156.0.8078.74",
+  "host": "darwin",
+  "cases": [
+    {
+      "id": "plain",
+      "locale": "en",
+      "text": "Before agjpqy after.",
+      "size": 14,
+      "weight": 400,
+      "lineHeight": 25.9,
+      "measuredHeight": 25.890625,
+      "baselineOffset": 17,
+      "metrics": {
+        "ascent": 13,
+        "descent": 3
+      }
+    },
+    {
+      "id": "chinese",
+      "locale": "zh-CN",
+      "text": "查看共享组件与原生链接。",
+      "size": 14,
+      "weight": 400,
+      "lineHeight": 25.9,
+      "measuredHeight": 25.890625,
+      "baselineOffset": 17,
+      "metrics": {
+        "ascent": 13,
+        "descent": 3
+      }
+    },
+    {
+      "id": "japanese",
+      "locale": "ja",
+      "text": "リンクと共通コンポーネントを確認。",
+      "size": 14,
+      "weight": 400,
+      "lineHeight": 25.9,
+      "measuredHeight": 25.890625,
+      "baselineOffset": 17,
+      "metrics": {
+        "ascent": 13,
+        "descent": 3
+      }
+    },
+    {
+      "id": "heading-one",
+      "locale": "en",
+      "text": "agjpqy",
+      "size": 23.1,
+      "weight": 650,
+      "lineHeight": 32.34,
+      "measuredHeight": 32.328125,
+      "baselineOffset": 23,
+      "metrics": {
+        "ascent": 21,
+        "descent": 6
+      }
+    },
+    {
+      "id": "heading-two",
+      "locale": "en",
+      "text": "agjpqy",
+      "size": 19.6,
+      "weight": 650,
+      "lineHeight": 27.44,
+      "measuredHeight": 27.421875,
+      "baselineOffset": 20,
+      "metrics": {
+        "ascent": 18,
+        "descent": 5
+      }
+    },
+    {
+      "id": "heading-three",
+      "locale": "en",
+      "text": "agjpqy",
+      "size": 16.52,
+      "weight": 650,
+      "lineHeight": 23.128,
+      "measuredHeight": 23.109375,
+      "baselineOffset": 17,
+      "metrics": {
+        "ascent": 15,
+        "descent": 4
+      }
+    }
+  ],
+  "table": {
+    "rowHeight": 38.8125,
+    "fontSize": 12.88,
+    "lineHeight": 23.828
+  },
+  "wrappingCases": [
+    {
+      "id": "wrapped",
+      "source": "Before [A long linked label wraps across several lines without losing its underline or native selection behavior.](https://example.com) after.",
+      "text": "Before A long linked label wraps across several lines without losing its underline or native selection behavior. after.",
+      "lineCount": 3,
+      "lines": [
+        {
+          "line": 0,
+          "left": 44.515625,
+          "right": 295.328125
+        },
+        {
+          "line": 1,
+          "left": 0,
+          "right": 320.46875
+        },
+        {
+          "line": 2,
+          "left": 0,
+          "right": 56.28125
+        }
+      ]
+    },
+    {
+      "id": "wrapped-hard-break",
+      "source": "[First linked line  \nSecond linked line](https://example.com) after.",
+      "text": "First linked line\n\nSecond linked line after.",
+      "lineCount": 3,
+      "lines": [
+        {
+          "line": 0,
+          "left": 0,
+          "right": 93.421875
+        },
+        {
+          "line": 2,
+          "left": 0,
+          "right": 112.40625
+        }
+      ]
+    },
+    {
+      "id": "wrapped-word",
+      "source": "[abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz](https://example.com) after.",
+      "text": "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz after.",
+      "lineCount": 3,
+      "lines": [
+        {
+          "line": 0,
+          "left": 0,
+          "right": 317.578125
+        },
+        {
+          "line": 1,
+          "left": 0,
+          "right": 322.75
+        },
+        {
+          "line": 2,
+          "left": 0,
+          "right": 85.890625
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,9 @@
 import type { Chat, Turn } from "./types";
 
+export function hasRunningTurn(chat: Chat | null): boolean {
+  return chat?.turns.some((turn) => turn.status === "running") ?? false;
+}
+
 export function runningTurn(chat: Chat | null): Turn | undefined {
   const turn = chat?.turns.at(-1);
   return chat?.status === "running" && turn?.status === "running"

@@ -1,0 +1,133 @@
+package com.cloudgeek.spool.android;
+
+/** Generated from Pierre Trees' standard icon resolver and exact SVG sprite. */
+final class NativeTreeIcons {
+    static String file(String path) {
+        String name = path.substring(path.lastIndexOf('/') + 1).toLowerCase(java.util.Locale.ROOT);
+        switch (name) {
+            case ".bash_profile": return "tree-bash";
+            case ".bashrc": return "tree-bash";
+            case ".gitattributes": return "tree-git";
+            case ".gitignore": return "tree-git";
+            case ".gitkeep": return "tree-git";
+            case ".gitmodules": return "tree-git";
+            case ".zprofile": return "tree-bash";
+            case ".zshenv": return "tree-bash";
+            case ".zshrc": return "tree-bash";
+            case "gemfile": return "tree-ruby";
+            case "rakefile": return "tree-ruby";
+            case "readme.md": return "tree-markdown";
+            default: break;
+        }
+        for (int dot = name.indexOf('.'); dot >= 0; dot = name.indexOf('.', dot + 1)) {
+            switch (name.substring(dot + 1)) {
+            case "7z": return "tree-zip";
+            case "authors": return "tree-text";
+            case "avif": return "tree-image";
+            case "bash": return "tree-bash";
+            case "bmp": return "tree-image";
+            case "bz2": return "tree-zip";
+            case "c": return "tree-c";
+            case "cc": return "tree-cpp";
+            case "cfg": return "tree-text";
+            case "changelog": return "tree-text";
+            case "cjs": return "tree-javascript";
+            case "conf": return "tree-text";
+            case "contributors": return "tree-text";
+            case "cpp": return "tree-cpp";
+            case "csh": return "tree-bash";
+            case "css": return "tree-css";
+            case "csv": return "tree-table";
+            case "cts": return "tree-typescript";
+            case "cxx": return "tree-cpp";
+            case "db": return "tree-database";
+            case "editorconfig": return "tree-text";
+            case "env": return "tree-text";
+            case "env.development": return "tree-text";
+            case "env.local": return "tree-text";
+            case "env.production": return "tree-text";
+            case "eot": return "tree-font";
+            case "erb": return "tree-ruby";
+            case "fish": return "tree-bash";
+            case "gemspec": return "tree-ruby";
+            case "gif": return "tree-image";
+            case "go": return "tree-go";
+            case "gz": return "tree-zip";
+            case "h": return "tree-c";
+            case "hh": return "tree-cpp";
+            case "hpp": return "tree-cpp";
+            case "htm": return "tree-html";
+            case "html": return "tree-html";
+            case "hxx": return "tree-cpp";
+            case "icns": return "tree-image";
+            case "ico": return "tree-image";
+            case "ini": return "tree-text";
+            case "inl": return "tree-cpp";
+            case "jar": return "tree-zip";
+            case "jpeg": return "tree-image";
+            case "jpg": return "tree-image";
+            case "js": return "tree-javascript";
+            case "json": return "tree-json";
+            case "json5": return "tree-json";
+            case "jsonc": return "tree-json";
+            case "jsonl": return "tree-json";
+            case "jsx": return "tree-javascript";
+            case "ksh": return "tree-bash";
+            case "less": return "tree-css";
+            case "license": return "tree-text";
+            case "log": return "tree-text";
+            case "markdown": return "tree-markdown";
+            case "mcp": return "tree-mcp";
+            case "md": return "tree-markdown";
+            case "mdx": return "tree-markdown";
+            case "mdx.tsx": return "tree-markdown";
+            case "mjs": return "tree-javascript";
+            case "mm": return "tree-cpp";
+            case "mts": return "tree-typescript";
+            case "ods": return "tree-table";
+            case "otf": return "tree-font";
+            case "png": return "tree-image";
+            case "postcss": return "tree-css";
+            case "py": return "tree-python";
+            case "pyi": return "tree-python";
+            case "pyw": return "tree-python";
+            case "pyx": return "tree-python";
+            case "rake": return "tree-ruby";
+            case "rar": return "tree-zip";
+            case "rb": return "tree-ruby";
+            case "rs": return "tree-rust";
+            case "rst": return "tree-text";
+            case "rtf": return "tree-text";
+            case "sass": return "tree-css";
+            case "scss": return "tree-css";
+            case "sh": return "tree-bash";
+            case "sql": return "tree-database";
+            case "sqlite": return "tree-database";
+            case "sqlite3": return "tree-database";
+            case "styl": return "tree-css";
+            case "swift": return "tree-swift";
+            case "tar": return "tree-zip";
+            case "tgz": return "tree-zip";
+            case "tif": return "tree-image";
+            case "tiff": return "tree-image";
+            case "ts": return "tree-typescript";
+            case "tsv": return "tree-table";
+            case "tsx": return "tree-typescript";
+            case "ttf": return "tree-font";
+            case "txt": return "tree-text";
+            case "war": return "tree-zip";
+            case "webp": return "tree-image";
+            case "woff": return "tree-font";
+            case "woff2": return "tree-font";
+            case "xhtml": return "tree-html";
+            case "xls": return "tree-table";
+            case "xlsx": return "tree-table";
+            case "xz": return "tree-zip";
+            case "zip": return "tree-zip";
+            case "zsh": return "tree-bash";
+                default: break;
+            }
+        }
+        return "tree-default";
+    }
+}

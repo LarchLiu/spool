@@ -1,0 +1,242 @@
+package com.cloudgeek.spool.android;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.json.JSONObject;
+
+/** Web tool-activity.tsx's classification, adjacent result pairing, grouping and change statistics. */
+final class NativeActivityModel {
+    static final class Activity {
+        JSONObject use, result;
+        String kind, label, detail, stats;
+    }
+    static final class Group {
+        String kind, label;
+        final List<Activity> activities = new ArrayList<>();
+    }
+    private static final Pattern PATCH_FILE = Pattern.compile("^\\*\\*\\* (Add|Update|Delete) File: (.+)\\r?$", Pattern.MULTILINE);
+    private static final Pattern PATCH_START = Pattern.compile("(?:^|\\n)(?:diff --git |--- [^\\n]+\\n\\+\\+\\+ |\\*\\*\\* Begin Patch)");
+    private static final Pattern STATS = Pattern.compile("(?:^|\\s)(\\+\\d+)\\s+(-\\d+)\\s*$");
+
+    static List<Activity> fromParts(NativeUi ui, List<JSONObject> parts, String backend) {
+        List<Activity> activities = new ArrayList<>();
+        for (JSONObject part : parts) {
+            if (part.optString("role").equals("user")) continue;
+            String kind = part.optString("kind"), text = part.optString("text");
+            if (part.optString("role").equals("assistant") && kind.equals("text")) {
+                if (!text.trim().isEmpty()) {
+                    Activity item = new Activity();
+                    item.use = part;
+                    item.kind = "message";
+                    item.label = "";
+                    item.detail = text;
+                    activities.add(item);
+                }
+            } else if (kind.equals("tool_result")) {
+                Activity last = activities.isEmpty() ? null : activities.get(activities.size() - 1);
+                if (last != null && last.use != null && last.use.optString("kind").equals("tool_use") && last.result == null)
+                    last.result = part;
+                else {
+                    Activity item = new Activity();
+                    item.kind = "other";
+                    item.label = ui.t("Tool result");
+                    item.detail = "";
+                    item.result = part;
+                    activities.add(item);
+                }
+            } else if (kind.equals("tool_use") || kind.equals("thinking")) activities.add(display(ui, part, backend));
+        }
+        return activities;
+    }
+
+    static Activity display(NativeUi ui, JSONObject part, String backend) {
+        Activity item = new Activity();
+        item.use = part;
+        JSONObject summary = part.optJSONObject("tool");
+        item.kind = summary == null ? classify(part) : summary.optString("kind", "other");
+        item.detail = part.optString("text");
+        JSONObject data = summary == null ? payload(item.detail) : null;
+        String path = summary == null ? path(part, data) : summary.optString("path"),
+                query = summary == null ? field(data, "pattern", "query", "search_query", "searchTerm", "glob", "include") : summary.optString("query");
+        String name = part.optString("name").trim();
+        if (name.isEmpty()) name = backend.equals("claude") ? "Claude tool" : "Codex tool";
+        switch (item.kind) {
+            case "read": item.label = path.isEmpty() ? ui.t("Read files") : ui.t("Read {path}", "path", shortPath(path)); break;
+            case "write": item.label = path.isEmpty() ? ui.t("Edited files") : ui.t("Edited {path}", "path", shortPath(path)); break;
+            case "create": item.label = path.isEmpty() ? ui.t("Created files") : ui.t("Created {path}", "path", shortPath(path)); break;
+            case "delete": item.label = path.isEmpty() ? ui.t("Deleted files") : ui.t("Deleted {path}", "path", shortPath(path)); break;
+            case "search": item.label = query.isEmpty() ? ui.t("Searched files") : path.isEmpty()
+                    ? ui.t("Searched for {query}", "query", oneLine(query, 80))
+                    : ui.t("Searched for {query} in {path}", "query", oneLine(query, 80), "path", shortPath(path)); break;
+            case "list": item.label = path.isEmpty() ? ui.t("Listed files") : ui.t("Listed files in {path}", "path", shortPath(path)); break;
+            case "web": item.label = query.isEmpty() ? ui.t("Searched the web") : ui.t("Searched web for {query}", "query", oneLine(query, 80)); break;
+            case "shell": item.label = ui.t("Ran command"); break;
+            case "thinking": item.label = ui.t("Think"); break;
+            default:
+                name = name.replaceAll("[_-]+", " ").trim();
+                name = name.isEmpty() ? name : name.substring(0, 1).toUpperCase(Locale.ROOT) + name.substring(1);
+                item.label = name.isEmpty() ? ui.t("Used tool") : ui.t("Used {tool}", "tool", name);
+        }
+        Matcher stats = STATS.matcher(item.detail);
+        item.stats = summary != null ? summary.optString("stats") : stats.find() ? stats.group(1) + " " + stats.group(2) : "";
+        return item;
+    }
+
+    private static String classify(JSONObject part) {
+        String tool = part.optString("name").trim().toLowerCase(Locale.ROOT);
+        if (part.optString("kind").equals("thinking") || tool.matches("reason|reasoning|think|thinking")) return "thinking";
+        tool = tool.substring(tool.lastIndexOf('.') + 1);
+        if (tool.matches("apply_?patch|patch|file_?change")) {
+            List<String[]> files = patchFiles(part);
+            if (!files.isEmpty() && files.stream().allMatch(file -> file[0].equals("Add"))) return "create";
+            if (!files.isEmpty() && files.stream().allMatch(file -> file[0].equals("Delete"))) return "delete";
+            return "write";
+        }
+        if (tool.matches("write|write_?file|create_?file")) return "create";
+        if (tool.matches("edit|edit_?file|multi_?edit|replace")) return "write";
+        if (tool.matches("delete_?file|remove_?file|unlink")) return "delete";
+        String source = (part.optString("name") + " " + part.optString("text")).toLowerCase(Locale.ROOT);
+        if (has("websearch|web.?fetch|browser|internet|search the web|lookup url", source)) return "web";
+        if (has("glob|list.?files|list files|directory listing|readdir|ls\\b|find\\b", source)) return "list";
+        if (has("grep|ripgrep|rg\\b|search files|search code|find in files|regex", source)) return "search";
+        if (has("\\bread\\b|cat\\b|head\\b|tail\\b|get.?file|open.?file|view file", source)) return "read";
+        if (part.optString("name").trim().equalsIgnoreCase("write") || has("create|created|new file|add file|add_file", source)) return "create";
+        if (has("delete|deleted|remove|removed|unlink|delete_file", source)) return "delete";
+        if (has("write|edit|filechange|apply.?patch|patch|replace|create.?file|delete.?file", source)) return "write";
+        if (has("shell|bash|zsh|command|terminal|exec|run command", source)) return "shell";
+        return "other";
+    }
+
+    private static boolean has(String pattern, String value) { return Pattern.compile(pattern).matcher(value).find(); }
+
+    private static List<String[]> patchFiles(JSONObject part) {
+        List<String[]> files = new ArrayList<>();
+        if (!has("(?:^|\\.)(?:apply_?patch|patch|file_?change)$", part.optString("name").trim().toLowerCase(Locale.ROOT))) return files;
+        Matcher matcher = PATCH_FILE.matcher(part.optString("text"));
+        while (matcher.find()) files.add(new String[] {matcher.group(1), matcher.group(2).trim()});
+        return files;
+    }
+
+    private static JSONObject payload(String text) {
+        String value = text.trim();
+        if (!value.startsWith("{") || !value.endsWith("}")) return null;
+        try { return new JSONObject(value); } catch (org.json.JSONException ignored) { return null; }
+    }
+
+    private static String field(JSONObject data, String... keys) {
+        if (data != null) for (String key : keys) {
+            Object value = data.opt(key);
+            if (value instanceof String && !((String) value).trim().isEmpty()) return ((String) value).trim();
+        }
+        return "";
+    }
+
+    private static String path(JSONObject part, JSONObject data) {
+        String value = field(data, "file_path", "path", "file", "filename", "target_file", "notebook_path");
+        if (!value.isEmpty()) return value;
+        List<String[]> files = patchFiles(part);
+        if (files.size() == 1) return files.get(0)[1];
+        if (files.size() > 1) return "";
+        Matcher matcher = Pattern.compile("(?:^|\\s)([\\w./~-]+\\.[\\w-]+)(?:\\s|$)").matcher(part.optString("text"));
+        return matcher.find() ? matcher.group(1) : "";
+    }
+
+    private static String shortPath(String value) {
+        List<String> pieces = new ArrayList<>();
+        for (String piece : value.replace('\\', '/').split("/")) if (!piece.isEmpty()) pieces.add(piece);
+        return pieces.size() > 3 ? "\u2026/" + String.join("/", pieces.subList(pieces.size() - 3, pieces.size())) : value;
+    }
+
+    private static String oneLine(String value, int limit) {
+        String text = value.replaceAll("\\s+", " ").trim();
+        return text.length() > limit ? text.substring(0, limit - 1) + "\u2026" : text;
+    }
+
+    static List<Group> groups(NativeUi ui, List<Activity> activities) {
+        List<Group> groups = new ArrayList<>();
+        for (Activity activity : activities) {
+            Group last = groups.isEmpty() ? null : groups.get(groups.size() - 1);
+            if (last != null && last.kind.equals(activity.kind) && !activity.kind.equals("message")) {
+                last.activities.add(activity);
+                last.label = groupLabel(ui, last.kind);
+            } else {
+                Group group = new Group();
+                group.kind = activity.kind;
+                group.label = activity.label;
+                group.activities.add(activity);
+                groups.add(group);
+            }
+        }
+        return groups;
+    }
+
+    private static String groupLabel(NativeUi ui, String kind) {
+        switch (kind) {
+            case "read": return ui.t("Read files");
+            case "write": return ui.t("Edited files");
+            case "create": return ui.t("Created files");
+            case "delete": return ui.t("Deleted files");
+            case "search": return ui.t("Searched files");
+            case "list": return ui.t("Listed files");
+            case "web": return ui.t("Searched the web");
+            case "shell": return ui.t("Ran commands");
+            case "thinking": return ui.t("Thought through tasks");
+            default: return ui.t("Used tools");
+        }
+    }
+
+    static String icon(String kind) {
+        switch (kind) {
+            case "read": return "book-open";
+            case "write": return "file-pen";
+            case "create": return "file-plus";
+            case "delete": return "file-x";
+            case "search": return "search";
+            case "list": return "list";
+            case "web": return "globe";
+            case "shell": return "terminal";
+            case "thinking": return "brain";
+            default: return "wrench";
+        }
+    }
+
+    static String patchText(String value) {
+        Matcher matcher = PATCH_START.matcher(value);
+        if (!matcher.find()) return "";
+        String patch = value.substring(matcher.start()).replaceFirst("^\\n", "");
+        return patch.contains("@@") || patch.contains("*** Begin Patch") ? patch : "";
+    }
+
+    static String changeStats(List<Activity> activities) {
+        long additions = 0, deletions = 0;
+        for (Activity activity : activities) {
+            if (!activity.kind.matches("write|create|delete")) return "";
+            JSONObject resultSummary = activity.result == null ? null : activity.result.optJSONObject("tool");
+            JSONObject useSummary = activity.use == null ? null : activity.use.optJSONObject("tool");
+            JSONObject changes = resultSummary == null ? null : resultSummary.optJSONObject("changes");
+            if (changes == null && useSummary != null) changes = useSummary.optJSONObject("changes");
+            if (changes != null) { additions += changes.optInt("additions"); deletions += changes.optInt("deletions"); continue; }
+            String patch = patchText(activity.result == null ? "" : activity.result.optString("text"));
+            if (patch.isEmpty()) patch = patchText(activity.use == null ? "" : activity.use.optString("text"));
+            if (!patch.isEmpty()) {
+                for (String line : patch.split("\\r?\\n", -1)) {
+                    if (line.startsWith("+++") || line.startsWith("---")) continue;
+                    if (line.startsWith("+")) additions++;
+                    else if (line.startsWith("-")) deletions++;
+                }
+            } else if (activity.stats != null && activity.stats.matches("\\+\\d+\\s+-\\d+")) {
+                String[] counts = activity.stats.split("\\s+");
+                try {
+                    additions += Long.parseLong(counts[0].substring(1));
+                    deletions += Long.parseLong(counts[1].substring(1));
+                } catch (NumberFormatException ignored) {
+                    // Malformed tool text must remain readable, not crash the transcript.
+                }
+            }
+        }
+        return additions != 0 || deletions != 0 ? "+" + additions + " -" + deletions : "";
+    }
+}

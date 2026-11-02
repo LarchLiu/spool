@@ -1,0 +1,37 @@
+plugins { id 'java-library' }
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+configurations { upstream }
+def adapted = layout.buildDirectory.file('adapted/tm4e-core-0.14.1-android.jar')
+tasks.register('adaptTextMate', Exec) {
+    inputs.files(configurations.upstream)
+    inputs.file('../tools/prepare-textmate.py')
+    outputs.file(adapted)
+    doFirst {
+        commandLine 'python3', rootProject.file('tools/prepare-textmate.py'), configurations.upstream.singleFile, adapted.get().asFile
+    }
+}
+
+tasks.register('buildAndroidSyntax', Exec) {
+    inputs.dir('src/main/cpp')
+    inputs.file('../tools/build-syntax-native.py')
+    outputs.dir(rootProject.file('../build/android/syntax/jni'))
+    commandLine 'python3', rootProject.file('tools/build-syntax-native.py'), '--android'
+}
+tasks.register('buildHostSyntax', Exec) {
+    inputs.dir('src/main/cpp')
+    inputs.file('../tools/build-syntax-native.py')
+    outputs.file(rootProject.file('../build/android/syntax/host/libspool-textmate' + (System.getProperty('os.name').contains('Mac') ? '.dylib' : '.so')))
+    commandLine 'python3', rootProject.file('tools/build-syntax-native.py'), '--host'
+}
+
+dependencies {
+    upstream('org.netbeans.external:org.eclipse.tm4e.core-0.14.1:RELEASE300') { transitive = false }
+    api files(adapted).builtBy(tasks.named('adaptTextMate'))
+    api 'com.google.code.gson:gson:2.13.1'
+    implementation 'org.snakeyaml:snakeyaml-engine:2.9'
+    compileOnly 'org.eclipse.jdt:org.eclipse.jdt.annotation:2.3.100'
+}

@@ -7,6 +7,7 @@ import notionists from "@dicebear/styles/notionists.json" with { type: "json" };
 import toonHead from "@dicebear/styles/toon-head.json" with { type: "json" };
 import voxelArt from "@dicebear/styles/voxel-art.json" with { type: "json" };
 import thumbs from "@dicebear/styles/thumbs.json" with { type: "json" };
+import { avatarMetadata } from "./avatar-meta.js";
 
 export const avatarStyles = [
   ["clay", "Clay"],
@@ -43,11 +44,13 @@ const definitions = {
   thumbs,
 };
 const styles: Partial<Record<AvatarStyle, Style>> = {};
-const avatarCacheLimit = 256;
 const avatarCache = new Map<string, string>();
+let avatarCacheBytes = 0;
+const avatarCacheLimit = 256;
+const avatarCacheByteLimit = 8 * 1024 * 1024;
 
 export function avatarAttribution(style: AvatarStyle) {
-  return definitions[style].meta;
+  return avatarMetadata[style];
 }
 
 export function avatarName(person: AvatarIdentity): string {
@@ -84,19 +87,23 @@ export function avatarDataURI(person: AvatarIdentity): string {
     avatarCache.set(key, cached);
     return cached;
   }
-  const options = {
+  const style = (styles[config.style] ??= new Style(definitions[config.style]));
+  const uri = new Avatar(style, {
     seed,
     size: 96,
     backgroundColor: ["dbe8d2", "f2d5c8", "e8dfb4", "cce2e5", "d8dded"],
-  };
-  // Validate and clone each bundled definition once, not for every thumbnail.
-  const style = (styles[config.style] ??= new Style(definitions[config.style]));
-  const uri = new Avatar(style, options).toDataUri();
-  // Share images across component instances without retaining every picker page.
+  }).toDataUri();
+  // One local image per resolved identity, shared across components and sizes.
   avatarCache.set(key, uri);
-  if (avatarCache.size > avatarCacheLimit) {
+  avatarCacheBytes += uri.length;
+  while (
+    avatarCache.size > avatarCacheLimit ||
+    avatarCacheBytes > avatarCacheByteLimit
+  ) {
     const oldest = avatarCache.keys().next().value;
-    if (oldest !== undefined) avatarCache.delete(oldest);
+    if (oldest === undefined) break;
+    avatarCacheBytes -= avatarCache.get(oldest)!.length;
+    avatarCache.delete(oldest);
   }
   return uri;
 }

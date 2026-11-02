@@ -14,7 +14,8 @@ android {
         minSdk 26
         targetSdk 36
         versionCode 1
-        versionName '0.1.0-prototype'
+        versionName '0.2.0-native'
+        testInstrumentationRunner 'com.cloudgeek.spool.android.NativePerformanceInstrumentation'
         ndk { abiFilters 'arm64-v8a', 'x86_64' }
     }
 
@@ -26,22 +27,63 @@ android {
 
     buildTypes {
         debug { applicationIdSuffix '.dev' }
+        nativeVerify {
+            initWith debug
+            applicationIdSuffix '.nativeverify'
+            versionNameSuffix '-verify'
+            matchingFallbacks = ['debug']
+        }
         release { minifyEnabled false }
     }
 
     compileOptions {
+        coreLibraryDesugaringEnabled true
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+
+    bundle { language { enableSplit = false } }
+
+    sourceSets.test.java.srcDir 'src/uiTest/java'
+    sourceSets.main.jniLibs.srcDir '../../build/android/syntax/jni'
+    sourceSets.test.resources.srcDir '../../internal/avatar/testdata'
+    sourceSets.nativeVerify.assets.srcDir '../../build/android/native-verify/assets'
+    testOptions {
+        unitTests.includeAndroidResources = true
+        unitTests.all {
+            dependsOn ':textmate:buildHostSyntax'
+            systemProperty 'spool.syntax.library', rootProject.file('../build/android/syntax/host/libspool-textmate' + (System.getProperty('os.name').contains('Mac') ? '.dylib' : '.so')).absolutePath
+            systemProperty 'java.io.tmpdir', System.getenv('TMPDIR')
+            systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
+            systemProperty 'spool.ui.artifacts', rootProject.file('../build/artifacts/android-native').absolutePath
+        }
+    }
 }
 
+def nativeVerifyFixtures = tasks.register('prepareNativeVerifyFixtures', Copy) {
+    from('src/test/resources') { include 'web-behavior.json' }
+    from('../../internal/avatar/testdata') { include 'web-fixtures.json' }
+    into '../../build/android/native-verify/assets'
+}
+tasks.matching { it.name == 'preNativeVerifyBuild' }.configureEach { dependsOn nativeVerifyFixtures }
+
 dependencies {
+    implementation project(':textmate')
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
     implementation files('../../build/android/spoolnet.aar')
-    implementation 'androidx.webkit:webkit:1.18.0'
+    implementation 'org.commonmark:commonmark:0.24.0'
+    implementation 'org.commonmark:commonmark-ext-gfm-tables:0.24.0'
+    implementation 'org.commonmark:commonmark-ext-gfm-strikethrough:0.24.0'
+    implementation 'org.commonmark:commonmark-ext-task-list-items:0.24.0'
+    implementation 'com.caverock:androidsvg-aar:1.4'
+    implementation 'androidx.core:core:1.17.0'
+    implementation 'androidx.exifinterface:exifinterface:1.4.1'
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
 }
 
 tasks.named('preBuild').configure {
+    dependsOn ':textmate:buildAndroidSyntax'
     doFirst {
         if (!rootProject.file('../build/android/spoolnet.aar').isFile()) {
             throw new GradleException('Missing spoolnet.aar. Run sh android/tools/build.sh from the repository root first.')

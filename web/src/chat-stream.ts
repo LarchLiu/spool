@@ -29,7 +29,7 @@ export function subscribeChatEvents(
     checkAuth: (signal: AbortSignal) => Promise<unknown>;
   },
 ): () => void {
-  const source = transport.open("/api/chats/" + chatID + "/events");
+  const source = transport.open("/api/chats/" + chatID + "/events?tool_details=lazy");
   const controller = new AbortController();
   let initialized = false;
   let fallback: AbortController | undefined;

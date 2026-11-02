@@ -25,8 +25,9 @@ func cleanUserText(text string, hasImages bool) userTextProjection {
 	result := userTextProjection{Text: text}
 	for {
 		before := result.Text
-		lines := userMarkdownLines(before)
-		if prefix, ok := attachedFilesPrefix(before, lines); ok {
+		result.Text = stripAgentNotifications(result.Text)
+		lines := userMarkdownLines(result.Text)
+		if prefix, ok := attachedFilesPrefix(result.Text, lines); ok {
 			result.Text, result.HasAttachments = prefix, true
 		}
 		result.Text = stripUserContext(result.Text)
@@ -129,6 +130,48 @@ var nativeUserTags = map[string]bool{
 	"bash-input": true, "bash-stdout": true, "bash-stderr": true, "user-memory-input": true,
 	"command-name": true, "command-message": true, "command-args": true,
 	"local-command-stdout": true, "local-command-stderr": true, "local-command-caveat": true,
+	"codex_internal_context": true, "subagent_notification": true, "task-notification": true,
+}
+
+// Unlike general XML examples, these standalone blocks are provider-owned
+// notifications and can also be appended after the user's request.
+func stripAgentNotifications(text string) string {
+	lines := userMarkdownLines(text)
+	var out strings.Builder
+	cursor := 0
+	for _, line := range lines {
+		start := line.start + len(text[line.start:line.end]) - len(strings.TrimLeft(text[line.start:line.end], " "))
+		if line.start < cursor || !userMarkdownOutside(text, lines, start) {
+			continue
+		}
+		for _, tag := range []string{"codex_internal_context", "subagent_notification", "task-notification"} {
+			if !strings.HasPrefix(text[start:], "<"+tag) {
+				continue
+			}
+			end := completeUserTagEnd(text, lines, start, tag)
+			if end <= start {
+				continue
+			}
+			next := len(text)
+			if at := strings.IndexByte(text[end:], '\n'); at >= 0 {
+				next = end + at + 1
+			}
+			if strings.TrimSpace(text[end:next]) != "" {
+				continue
+			}
+			out.WriteString(text[cursor:line.start])
+			cursor = next
+			break
+		}
+	}
+	if cursor == 0 {
+		return text
+	}
+	if strings.TrimSpace(text[cursor:]) == "" {
+		return strings.TrimRight(out.String(), "\r\n")
+	}
+	out.WriteString(text[cursor:])
+	return out.String()
 }
 
 func stripUserContext(text string) string {
@@ -227,6 +270,11 @@ func nativeUserBlockEnd(text string, lines []userMarkdownLine, start int) int {
 	}
 	if end := strings.IndexByte(rest, '>'); end > 1 {
 		tag := rest[1:end]
+		if !nativeUserTags[tag] {
+			if at := strings.IndexAny(tag, " \t\r\n"); at >= 0 {
+				tag = tag[:at]
+			}
+		}
 		if nativeUserTags[tag] || (strings.HasPrefix(tag, "ide_") && validIDETag(tag)) {
 			return completeUserTagEnd(text, lines, start, tag)
 		}
@@ -253,27 +301,92 @@ func validIDETag(tag string) bool {
 }
 
 func completeUserTagEnd(text string, lines []userMarkdownLine, start int, tag string) int {
-	open, close := "<"+tag+">", "</"+tag+">"
+	openEnd, empty := userTagOpeningEnd(text, start, tag)
+	if openEnd == start || empty {
+		return openEnd
+	}
+	close := "</" + tag + ">"
 	depth := 1
-	for at := start + len(open); at < len(text); {
+	for at := openEnd; at < len(text); {
 		index := strings.IndexByte(text[at:], '<')
 		if index < 0 {
 			break
 		}
 		at += index
 		if userMarkdownOutside(text, lines, at) {
-			if strings.HasPrefix(text[at:], open) {
-				depth++
-			} else if strings.HasPrefix(text[at:], close) {
+			if strings.HasPrefix(text[at:], close) {
 				depth--
 				if depth == 0 {
 					return at + len(close)
 				}
+			} else if end, empty := userTagOpeningEnd(text, at, tag); end > at {
+				if !empty {
+					depth++
+				}
+				at = end
+				continue
 			}
 		}
 		at++
 	}
 	return start
+}
+
+// Parse only complete, quoted attributes, not arbitrary angle-bracket text.
+func userTagOpeningEnd(text string, start int, tag string) (int, bool) {
+	open := "<" + tag
+	if !strings.HasPrefix(text[start:], open) {
+		return start, false
+	}
+	at := start + len(open)
+	for at < len(text) {
+		if text[at] == '>' {
+			return at + 1, false
+		}
+		if strings.HasPrefix(text[at:], "/>") {
+			return at + 2, true
+		}
+		if !strings.ContainsRune(" \t\r\n", rune(text[at])) {
+			return start, false
+		}
+		for at < len(text) && strings.ContainsRune(" \t\r\n", rune(text[at])) {
+			at++
+		}
+		if at == len(text) {
+			break
+		}
+		if text[at] == '>' || strings.HasPrefix(text[at:], "/>") {
+			continue
+		}
+		name := at
+		for at < len(text) && (text[at] >= 'a' && text[at] <= 'z' || text[at] >= 'A' && text[at] <= 'Z' || text[at] >= '0' && text[at] <= '9' || strings.ContainsRune("_:-", rune(text[at]))) {
+			at++
+		}
+		if at == name {
+			break
+		}
+		for at < len(text) && strings.ContainsRune(" \t\r\n", rune(text[at])) {
+			at++
+		}
+		if at == len(text) || text[at] != '=' {
+			break
+		}
+		at++
+		for at < len(text) && strings.ContainsRune(" \t\r\n", rune(text[at])) {
+			at++
+		}
+		if at == len(text) || text[at] != '"' && text[at] != '\'' {
+			break
+		}
+		quote := text[at]
+		at++
+		end := strings.IndexByte(text[at:], quote)
+		if end < 0 {
+			break
+		}
+		at += end + 1
+	}
+	return start, false
 }
 
 var imageLabel = regexp.MustCompile(`^<image(?:[ \t]+[^<>]+)?>$|^</image>$`)

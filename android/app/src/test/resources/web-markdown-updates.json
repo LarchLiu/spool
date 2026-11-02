@@ -1,0 +1,1623 @@
+{
+  "scope": "Actual original TurnResponse/MarkdownMessage DOM identity, selection and copy through source updates. Chrome local fixture, not device/raster/tsnet parity.",
+  "browser": "156.0.8078.74",
+  "apiRequests": 0,
+  "cases": [
+    {
+      "id": "changed-text",
+      "select": "first",
+      "selectionReset": true,
+      "targets": {
+        "first": {
+          "tag": "p",
+          "index": 0,
+          "selector": "p"
+        }
+      },
+      "sources": [
+        "Streaming answer.",
+        "Streaming answer grows."
+      ],
+      "snapshots": [
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": false,
+              "text": "Streaming answer.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": false,
+          "copyFeedbackRetained": false,
+          "copied": "Streaming answer."
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Streaming answer grows.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "Streaming answer grows."
+        }
+      ]
+    },
+    {
+      "id": "paragraphs",
+      "select": "first",
+      "targets": {
+        "first": {
+          "tag": "p",
+          "index": 0,
+          "selector": "p"
+        },
+        "second": {
+          "tag": "p",
+          "index": 1,
+          "selector": "p"
+        },
+        "third": {
+          "tag": "p",
+          "index": 2,
+          "selector": "p"
+        }
+      },
+      "sources": [
+        "Keep selectable introduction.\n\nStreaming answer.",
+        "Keep selectable introduction.\n\nStreaming answer grows.",
+        "Keep selectable introduction.\n\nStreaming answer grows.\n\nNew third paragraph.",
+        "Keep selectable introduction.\n\nStreaming answer grows."
+      ],
+      "snapshots": [
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": false,
+              "text": "Keep selectable introduction.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": false,
+              "text": "Streaming answer.",
+              "checked": null
+            },
+            "third": {
+              "present": false,
+              "retained": false,
+              "text": "",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": false,
+          "copyFeedbackRetained": false,
+          "copied": "Keep selectable introduction.\n\nStreaming answer."
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep selectable introduction.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Streaming answer grows.",
+              "checked": null
+            },
+            "third": {
+              "present": false,
+              "retained": false,
+              "text": "",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep s"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "Keep selectable introduction.\n\nStreaming answer grows."
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep selectable introduction.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Streaming answer grows.",
+              "checked": null
+            },
+            "third": {
+              "present": true,
+              "retained": false,
+              "text": "New third paragraph.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep s"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "Keep selectable introduction.\n\nStreaming answer grows.\n\nNew third paragraph."
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep selectable introduction.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Streaming answer grows.",
+              "checked": null
+            },
+            "third": {
+              "present": false,
+              "retained": false,
+              "text": "",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep s"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "Keep selectable introduction.\n\nStreaming answer grows."
+        }
+      ]
+    },
+    {
+      "id": "tag-keys",
+      "select": "first",
+      "selectionMoves": [
+        1
+      ],
+      "targets": {
+        "first": {
+          "tag": "p",
+          "index": 0,
+          "selector": "p"
+        },
+        "second": {
+          "tag": "p",
+          "index": 1,
+          "selector": "p"
+        },
+        "heading": {
+          "tag": "h2",
+          "index": 0,
+          "selector": "h2"
+        },
+        "replacement": {
+          "tag": "h3",
+          "index": 0,
+          "selector": "h3"
+        }
+      },
+      "sources": [
+        "Keep first paragraph.\n\nKeep second paragraph.",
+        "## Inserted heading\n\nKeep first paragraph.\n\nKeep second paragraph.",
+        "## Changed heading\n\nKeep first paragraph.\n\nKeep second paragraph.",
+        "### New heading type\n\nKeep first paragraph.\n\nKeep second paragraph."
+      ],
+      "snapshots": [
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": false,
+              "text": "Keep first paragraph.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": false,
+              "text": "Keep second paragraph.",
+              "checked": null
+            },
+            "heading": {
+              "present": false,
+              "retained": false,
+              "text": "",
+              "checked": null
+            },
+            "replacement": {
+              "present": false,
+              "retained": false,
+              "text": "",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": false,
+          "copyFeedbackRetained": false,
+          "copied": "Keep first paragraph.\n\nKeep second paragraph."
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep first paragraph.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Keep second paragraph.",
+              "checked": null
+            },
+            "heading": {
+              "present": true,
+              "retained": false,
+              "text": "Inserted heading",
+              "checked": null
+            },
+            "replacement": {
+              "present": false,
+              "retained": false,
+              "text": "",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "## Inserted heading\n\nKeep first paragraph.\n\nKeep second paragraph."
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep first paragraph.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Keep second paragraph.",
+              "checked": null
+            },
+            "heading": {
+              "present": true,
+              "retained": true,
+              "text": "Changed heading",
+              "checked": null
+            },
+            "replacement": {
+              "present": false,
+              "retained": false,
+              "text": "",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep f"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "## Changed heading\n\nKeep first paragraph.\n\nKeep second paragraph."
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep first paragraph.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Keep second paragraph.",
+              "checked": null
+            },
+            "heading": {
+              "present": false,
+              "retained": false,
+              "text": "",
+              "checked": null
+            },
+            "replacement": {
+              "present": true,
+              "retained": false,
+              "text": "New heading type",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep f"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "### New heading type\n\nKeep first paragraph.\n\nKeep second paragraph."
+        }
+      ]
+    },
+    {
+      "id": "quote",
+      "select": "first",
+      "targets": {
+        "quote": {
+          "tag": "blockquote",
+          "index": 0,
+          "selector": "blockquote"
+        },
+        "first": {
+          "tag": "p",
+          "index": 0,
+          "selector": "p"
+        },
+        "second": {
+          "tag": "p",
+          "index": 1,
+          "selector": "p"
+        }
+      },
+      "sources": [
+        "> Keep quote selection.\n>\n> Streaming quote.",
+        "> Keep quote selection.\n>\n> Streaming quote grows.",
+        "> Keep quote selection.\n>\n> Streaming quote grows.\n>\n> Third quote paragraph."
+      ],
+      "snapshots": [
+        {
+          "nodes": {
+            "quote": {
+              "present": true,
+              "retained": false,
+              "text": "\nKeep quote selection.\nStreaming quote.\n",
+              "checked": null
+            },
+            "first": {
+              "present": true,
+              "retained": false,
+              "text": "Keep quote selection.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": false,
+              "text": "Streaming quote.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": false,
+          "copyFeedbackRetained": false,
+          "copied": "> Keep quote selection.\n>\n> Streaming quote."
+        },
+        {
+          "nodes": {
+            "quote": {
+              "present": true,
+              "retained": true,
+              "text": "\nKeep quote selection.\nStreaming quote grows.\n",
+              "checked": null
+            },
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep quote selection.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Streaming quote grows.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep q"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "> Keep quote selection.\n>\n> Streaming quote grows."
+        },
+        {
+          "nodes": {
+            "quote": {
+              "present": true,
+              "retained": true,
+              "text": "\nKeep quote selection.\nStreaming quote grows.\nThird quote paragraph.\n",
+              "checked": null
+            },
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep quote selection.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Streaming quote grows.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep q"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "> Keep quote selection.\n>\n> Streaming quote grows.\n>\n> Third quote paragraph."
+        }
+      ]
+    },
+    {
+      "id": "list",
+      "select": "first",
+      "targets": {
+        "list": {
+          "tag": "ul",
+          "index": 0,
+          "selector": "ul"
+        },
+        "row": {
+          "tag": "li",
+          "index": 0,
+          "selector": "li"
+        },
+        "first": {
+          "tag": "p",
+          "index": 0,
+          "selector": "p"
+        },
+        "second": {
+          "tag": "p",
+          "index": 1,
+          "selector": "p"
+        }
+      },
+      "sources": [
+        "- Keep list selection.\n\n- Streaming list item.",
+        "- Keep list selection.\n\n- Streaming list item grows.",
+        "- Keep list selection.\n\n- Streaming list item grows.\n\n- Added item."
+      ],
+      "snapshots": [
+        {
+          "nodes": {
+            "list": {
+              "present": true,
+              "retained": false,
+              "text": "\n\nKeep list selection.\n\n\nStreaming list item.\n\n",
+              "checked": null
+            },
+            "row": {
+              "present": true,
+              "retained": false,
+              "text": "\nKeep list selection.\n",
+              "checked": null
+            },
+            "first": {
+              "present": true,
+              "retained": false,
+              "text": "Keep list selection.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": false,
+              "text": "Streaming list item.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": false,
+          "copyFeedbackRetained": false,
+          "copied": "- Keep list selection.\n\n- Streaming list item."
+        },
+        {
+          "nodes": {
+            "list": {
+              "present": true,
+              "retained": true,
+              "text": "\n\nKeep list selection.\n\n\nStreaming list item grows.\n\n",
+              "checked": null
+            },
+            "row": {
+              "present": true,
+              "retained": true,
+              "text": "\nKeep list selection.\n",
+              "checked": null
+            },
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep list selection.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Streaming list item grows.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep l"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "- Keep list selection.\n\n- Streaming list item grows."
+        },
+        {
+          "nodes": {
+            "list": {
+              "present": true,
+              "retained": true,
+              "text": "\n\nKeep list selection.\n\n\nStreaming list item grows.\n\n\nAdded item.\n\n",
+              "checked": null
+            },
+            "row": {
+              "present": true,
+              "retained": true,
+              "text": "\nKeep list selection.\n",
+              "checked": null
+            },
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep list selection.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Streaming list item grows.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep l"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "- Keep list selection.\n\n- Streaming list item grows.\n\n- Added item."
+        }
+      ]
+    },
+    {
+      "id": "tasks",
+      "targets": {
+        "list": {
+          "tag": "ul",
+          "index": 0,
+          "selector": "ul"
+        },
+        "row": {
+          "tag": "li",
+          "index": 0,
+          "selector": "li"
+        },
+        "check": {
+          "tag": "input",
+          "index": 0,
+          "selector": "input"
+        },
+        "secondCheck": {
+          "tag": "input",
+          "index": 1,
+          "selector": "input"
+        }
+      },
+      "sources": [
+        "- [ ] First task.\n- [x] Second task.",
+        "- [x] First task.\n- [x] Second task.",
+        "- [x] First task.\n- [ ] Second task.\n- [ ] Third task."
+      ],
+      "snapshots": [
+        {
+          "nodes": {
+            "list": {
+              "present": true,
+              "retained": false,
+              "text": "\n First task.\n Second task.\n",
+              "checked": null
+            },
+            "row": {
+              "present": true,
+              "retained": false,
+              "text": " First task.",
+              "checked": null
+            },
+            "check": {
+              "present": true,
+              "retained": false,
+              "text": "",
+              "checked": false
+            },
+            "secondCheck": {
+              "present": true,
+              "retained": false,
+              "text": "",
+              "checked": true
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": false,
+          "copyFeedbackRetained": false,
+          "copied": "- [ ] First task.\n- [x] Second task."
+        },
+        {
+          "nodes": {
+            "list": {
+              "present": true,
+              "retained": true,
+              "text": "\n First task.\n Second task.\n",
+              "checked": null
+            },
+            "row": {
+              "present": true,
+              "retained": true,
+              "text": " First task.",
+              "checked": null
+            },
+            "check": {
+              "present": true,
+              "retained": true,
+              "text": "",
+              "checked": true
+            },
+            "secondCheck": {
+              "present": true,
+              "retained": true,
+              "text": "",
+              "checked": true
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "- [x] First task.\n- [x] Second task."
+        },
+        {
+          "nodes": {
+            "list": {
+              "present": true,
+              "retained": true,
+              "text": "\n First task.\n Second task.\n Third task.\n",
+              "checked": null
+            },
+            "row": {
+              "present": true,
+              "retained": true,
+              "text": " First task.",
+              "checked": null
+            },
+            "check": {
+              "present": true,
+              "retained": true,
+              "text": "",
+              "checked": true
+            },
+            "secondCheck": {
+              "present": true,
+              "retained": true,
+              "text": "",
+              "checked": false
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "- [x] First task.\n- [ ] Second task.\n- [ ] Third task."
+        }
+      ]
+    },
+    {
+      "id": "table",
+      "select": "first",
+      "targets": {
+        "table": {
+          "tag": "table",
+          "index": 0,
+          "selector": "table"
+        },
+        "row": {
+          "tag": "tr",
+          "index": 1,
+          "selector": "tr"
+        },
+        "first": {
+          "tag": "td",
+          "index": 0,
+          "selector": "td"
+        },
+        "second": {
+          "tag": "td",
+          "index": 2,
+          "selector": "td"
+        },
+        "head": {
+          "tag": "th",
+          "index": 0,
+          "selector": "th"
+        }
+      },
+      "sources": [
+        "| Name | Value |\n| --- | ---: |\n| Keep cell selection. | 1 |\n| Streaming cell. | 2 |",
+        "| Name | Value |\n| --- | ---: |\n| Keep cell selection. | 1 |\n| Streaming cell grows. | 2 |",
+        "| Name | Value |\n| :---: | ---: |\n| Keep cell selection. | 1 |\n| Streaming cell grows. | 2 |\n| New row. | 3 |"
+      ],
+      "snapshots": [
+        {
+          "nodes": {
+            "table": {
+              "present": true,
+              "retained": false,
+              "text": "NameValueKeep cell selection.1Streaming cell.2",
+              "checked": null
+            },
+            "row": {
+              "present": true,
+              "retained": false,
+              "text": "Keep cell selection.1",
+              "checked": null
+            },
+            "first": {
+              "present": true,
+              "retained": false,
+              "text": "Keep cell selection.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": false,
+              "text": "Streaming cell.",
+              "checked": null
+            },
+            "head": {
+              "present": true,
+              "retained": false,
+              "text": "Name",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": false,
+          "copyFeedbackRetained": false,
+          "copied": "| Name | Value |\n| --- | ---: |\n| Keep cell selection. | 1 |\n| Streaming cell. | 2 |"
+        },
+        {
+          "nodes": {
+            "table": {
+              "present": true,
+              "retained": true,
+              "text": "NameValueKeep cell selection.1Streaming cell grows.2",
+              "checked": null
+            },
+            "row": {
+              "present": true,
+              "retained": true,
+              "text": "Keep cell selection.1",
+              "checked": null
+            },
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep cell selection.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Streaming cell grows.",
+              "checked": null
+            },
+            "head": {
+              "present": true,
+              "retained": true,
+              "text": "Name",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep c"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "| Name | Value |\n| --- | ---: |\n| Keep cell selection. | 1 |\n| Streaming cell grows. | 2 |"
+        },
+        {
+          "nodes": {
+            "table": {
+              "present": true,
+              "retained": true,
+              "text": "NameValueKeep cell selection.1Streaming cell grows.2New row.3",
+              "checked": null
+            },
+            "row": {
+              "present": true,
+              "retained": true,
+              "text": "Keep cell selection.1",
+              "checked": null
+            },
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep cell selection.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Streaming cell grows.",
+              "checked": null
+            },
+            "head": {
+              "present": true,
+              "retained": true,
+              "text": "Name",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep c"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "| Name | Value |\n| :---: | ---: |\n| Keep cell selection. | 1 |\n| Streaming cell grows. | 2 |\n| New row. | 3 |"
+        }
+      ]
+    },
+    {
+      "id": "code",
+      "select": "first",
+      "targets": {
+        "first": {
+          "tag": "p",
+          "index": 0,
+          "selector": "p"
+        },
+        "code": {
+          "tag": "pre",
+          "index": 0,
+          "selector": "pre"
+        }
+      },
+      "sources": [
+        "Keep code introduction.\n\n```js\nlet value = 1;",
+        "Keep code introduction.\n\n```js\nlet value = 1;\nvalue++;",
+        "Keep code introduction.\n\n```ts\nlet value = 1;\nvalue++;\n```"
+      ],
+      "snapshots": [
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": false,
+              "text": "Keep code introduction.",
+              "checked": null
+            },
+            "code": {
+              "present": true,
+              "retained": false,
+              "text": "let value = 1;\n",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": false,
+          "copyFeedbackRetained": false,
+          "copied": "Keep code introduction.\n\n```js\nlet value = 1;"
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep code introduction.",
+              "checked": null
+            },
+            "code": {
+              "present": true,
+              "retained": true,
+              "text": "let value = 1;\nvalue++;\n",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep c"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "Keep code introduction.\n\n```js\nlet value = 1;\nvalue++;"
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep code introduction.",
+              "checked": null
+            },
+            "code": {
+              "present": true,
+              "retained": true,
+              "text": "let value = 1;\nvalue++;\n",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep c"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "Keep code introduction.\n\n```ts\nlet value = 1;\nvalue++;\n```"
+        }
+      ]
+    },
+    {
+      "id": "reference",
+      "select": "first",
+      "targets": {
+        "first": {
+          "tag": "p",
+          "index": 0,
+          "selector": "p"
+        },
+        "second": {
+          "tag": "p",
+          "index": 1,
+          "selector": "p"
+        }
+      },
+      "sources": [
+        "[Selectable label][ref]\n\nKeep tail.\n\n[ref]: https://example.com/old",
+        "[Selectable label][ref]\n\nKeep tail.\n\n[ref]: https://example.com/new"
+      ],
+      "snapshots": [
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": false,
+              "text": "Selectable label",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": false,
+              "text": "Keep tail.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": false,
+          "copyFeedbackRetained": false,
+          "copied": "[Selectable label][ref]\n\nKeep tail.\n\n[ref]: https://example.com/old"
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Selectable label",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Keep tail.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "elect"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "[Selectable label][ref]\n\nKeep tail.\n\n[ref]: https://example.com/new"
+        }
+      ]
+    },
+    {
+      "id": "inline-format",
+      "select": "second",
+      "targets": {
+        "first": {
+          "tag": "p",
+          "index": 0,
+          "selector": "p"
+        },
+        "second": {
+          "tag": "p",
+          "index": 1,
+          "selector": "p"
+        }
+      },
+      "sources": [
+        "**Formatting sample**\n\nKeep stable selection.",
+        "*Formatting sample*\n\nKeep stable selection.",
+        "~~Formatting sample~~\n\nKeep stable selection.",
+        "`Formatting sample`\n\nKeep stable selection.",
+        "[Formatting sample](https://example.com/format)\n\nKeep stable selection."
+      ],
+      "snapshots": [
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": false,
+              "text": "Formatting sample",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": false,
+              "text": "Keep stable selection.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": false,
+          "copyFeedbackRetained": false,
+          "copied": "**Formatting sample**\n\nKeep stable selection."
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Formatting sample",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Keep stable selection.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep s"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "*Formatting sample*\n\nKeep stable selection."
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Formatting sample",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Keep stable selection.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep s"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "~~Formatting sample~~\n\nKeep stable selection."
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Formatting sample",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Keep stable selection.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep s"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "`Formatting sample`\n\nKeep stable selection."
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Formatting sample",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "Keep stable selection.",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep s"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "[Formatting sample](https://example.com/format)\n\nKeep stable selection."
+        }
+      ]
+    },
+    {
+      "id": "chinese-format",
+      "select": "second",
+      "targets": {
+        "first": {
+          "tag": "p",
+          "index": 0,
+          "selector": "p"
+        },
+        "second": {
+          "tag": "p",
+          "index": 1,
+          "selector": "p"
+        }
+      },
+      "sources": [
+        "**需要实时更新的中文样式。**\n\n保留这段中文文字选区。",
+        "*需要实时更新的中文样式。*\n\n保留这段中文文字选区。",
+        "[需要实时更新的中文样式。](https://example.com/zh)\n\n保留这段中文文字选区。"
+      ],
+      "snapshots": [
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": false,
+              "text": "需要实时更新的中文样式。",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": false,
+              "text": "保留这段中文文字选区。",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": false,
+          "copyFeedbackRetained": false,
+          "copied": "**需要实时更新的中文样式。**\n\n保留这段中文文字选区。"
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "需要实时更新的中文样式。",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "保留这段中文文字选区。",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "留这段中文"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "*需要实时更新的中文样式。*\n\n保留这段中文文字选区。"
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "需要实时更新的中文样式。",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "保留这段中文文字选区。",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "留这段中文"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "[需要实时更新的中文样式。](https://example.com/zh)\n\n保留这段中文文字选区。"
+        }
+      ]
+    },
+    {
+      "id": "japanese-format",
+      "select": "second",
+      "targets": {
+        "first": {
+          "tag": "p",
+          "index": 0,
+          "selector": "p"
+        },
+        "second": {
+          "tag": "p",
+          "index": 1,
+          "selector": "p"
+        }
+      },
+      "sources": [
+        "**更新する日本語の書式です。**\n\nこちらの文字選択を保持します。",
+        "*更新する日本語の書式です。*\n\nこちらの文字選択を保持します。",
+        "~~更新する日本語の書式です。~~\n\nこちらの文字選択を保持します。"
+      ],
+      "snapshots": [
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": false,
+              "text": "更新する日本語の書式です。",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": false,
+              "text": "こちらの文字選択を保持します。",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": false,
+          "copyFeedbackRetained": false,
+          "copied": "**更新する日本語の書式です。**\n\nこちらの文字選択を保持します。"
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "更新する日本語の書式です。",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "こちらの文字選択を保持します。",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "ちらの文字"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "*更新する日本語の書式です。*\n\nこちらの文字選択を保持します。"
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "更新する日本語の書式です。",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": true,
+              "text": "こちらの文字選択を保持します。",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "ちらの文字"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "~~更新する日本語の書式です。~~\n\nこちらの文字選択を保持します。"
+        }
+      ]
+    },
+    {
+      "id": "reparse",
+      "select": "first",
+      "targets": {
+        "first": {
+          "tag": "p",
+          "index": 0,
+          "selector": "p"
+        },
+        "second": {
+          "tag": "p",
+          "index": 1,
+          "selector": "p"
+        },
+        "table": {
+          "tag": "table",
+          "index": 0,
+          "selector": "table"
+        }
+      },
+      "sources": [
+        "Keep introduction.\n\n| Name | Value |",
+        "Keep introduction.\n\n| Name | Value |\n| --- | --- |\n| Cell | 1 |",
+        "Keep introduction.\n\nPlain paragraph again."
+      ],
+      "snapshots": [
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": false,
+              "text": "Keep introduction.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": false,
+              "text": "| Name | Value |",
+              "checked": null
+            },
+            "table": {
+              "present": false,
+              "retained": false,
+              "text": "",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": false,
+            "start": 0,
+            "end": 0,
+            "text": ""
+          },
+          "footerRetained": false,
+          "copyFeedbackRetained": false,
+          "copied": "Keep introduction.\n\n| Name | Value |"
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep introduction.",
+              "checked": null
+            },
+            "second": {
+              "present": false,
+              "retained": false,
+              "text": "",
+              "checked": null
+            },
+            "table": {
+              "present": true,
+              "retained": false,
+              "text": "NameValueCell1",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep i"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "Keep introduction.\n\n| Name | Value |\n| --- | --- |\n| Cell | 1 |"
+        },
+        {
+          "nodes": {
+            "first": {
+              "present": true,
+              "retained": true,
+              "text": "Keep introduction.",
+              "checked": null
+            },
+            "second": {
+              "present": true,
+              "retained": false,
+              "text": "Plain paragraph again.",
+              "checked": null
+            },
+            "table": {
+              "present": false,
+              "retained": false,
+              "text": "",
+              "checked": null
+            }
+          },
+          "selection": {
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "eep i"
+          },
+          "footerRetained": true,
+          "copyFeedbackRetained": true,
+          "copied": "Keep introduction.\n\nPlain paragraph again."
+        }
+      ]
+    }
+  ],
+  "copyFeedback": {
+    "labels": [
+      "Message copied",
+      "Message copied",
+      "Copy message"
+    ],
+    "latestCopied": "Latest copied source",
+    "elapsedMs": 2100,
+    "scope": "Repeated same-state copy retains the original effect deadline; source rebind does not reset it."
+  }
+}

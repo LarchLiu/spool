@@ -298,7 +298,7 @@
   "More avatars": "もっと見る",
   "Avatar choices": "アバター候補",
   "Avatar {number}": "アバター {number}",
-  "Generated on your device. Your name is never sent to DiceBear.": "デバイス上で生成され、名前は DiceBear に送信されません。",
+  "Generated on your device. Your name is never sent to DiceBear.": "お使いのデバイス上で生成され、名前は DiceBear に送信されません。",
   "Save avatar": "アバターを保存",
   "Could not save avatar": "アバターを保存できませんでした",
   "Invalid avatar style": "無効なアバタースタイルです",
@@ -427,6 +427,7 @@
   "Refresh files": "ファイルを更新",
   "Search files": "ファイルを検索",
   "Close file search": "ファイル検索を閉じる",
+  "Clear file search": "ファイル検索をクリア",
   "Project file tree": "プロジェクトのファイルツリー",
   "Loading files…": "ファイル一覧を読み込み中…",
   "This directory is empty.": "このフォルダーは空です。",
@@ -661,5 +662,10 @@
   "Tailscale registration timed out. Check network access or device approval, then retry.": "Tailscale の登録がタイムアウトしました。ネットワーク接続またはデバイス承認を確認して再試行してください。",
   "Tailscale registration was canceled. Try again when the service is ready.": "Tailscale の登録がキャンセルされました。サービスの準備ができたら再試行してください。",
   "Copied": "コピーしました",
-  "Could not copy address. Try again.": "アドレスをコピーできませんでした。再試行してください。"
+  "Could not copy address. Try again.": "アドレスをコピーできませんでした。再試行してください。",
+  "Loading tool details…": "ツールの詳細を読み込み中…",
+  "Showing bytes {start}–{end} of {total}": "{total} バイト中 {start}–{end} バイトを表示",
+  "Back to start": "先頭に戻る",
+  "Load next section": "次の部分を読み込む",
+  "Compacting context…": "コンテキストを圧縮中…"
 }

@@ -16,6 +16,7 @@ import (
 
 	resources "spool"
 	"spool/internal/agent"
+	"spool/internal/avatar"
 	"spool/internal/i18n"
 	"spool/internal/issues"
 	chatmodel "spool/internal/model"
@@ -56,6 +57,7 @@ type App struct {
 	automation *issueScheduler
 	push       pushDispatcher
 	pushClient *http.Client
+	avatars    *avatar.Renderer
 }
 
 type completedTurn struct {
@@ -80,7 +82,7 @@ func sessionMetadata(chat chatmodel.Session) chatMetadata {
 func NewApp(store *Store, runner agent.AgentRunner, _, _ string) *App {
 	settings, _ := store.Settings()
 	assets, _ := fs.Sub(resources.Frontend(), "frontend")
-	return &App{store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, realtimePing: 15 * time.Second, realtimeTimeout: 45 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{changed: func() { store.changes.publish(changePresence) }}, assets: http.FileServer(http.FS(assets)), pushClient: newPushHTTPClient()}
+	return &App{store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, realtimePing: 15 * time.Second, realtimeTimeout: 45 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{changed: func() { store.changes.publish(changePresence) }}, assets: http.FileServer(http.FS(assets)), pushClient: newPushHTTPClient(), avatars: avatar.NewRenderer()}
 }
 
 func (a *App) publicURL() string { return a.settings.PublicURL }
@@ -179,6 +181,8 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case path == "/api/avatars.svg" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+		a.avatarImage(w, r)
 	case strings.HasPrefix(path, "/api/push/"):
 		a.pushRoute(w, r, id, path)
 	case path == "/api/events" && r.Method == "GET":
@@ -466,6 +470,7 @@ func nativeOutputCovers(native, live []chatmodel.Part) bool {
 }
 
 func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity, path string) {
+	started := time.Now()
 	parts := strings.Split(strings.TrimPrefix(path, "/api/chats/"), "/")
 	if len(parts) > 2 || !chatmodel.ValidID(parts[0]) {
 		apiError(w, 404, "聊天不存在")
@@ -477,7 +482,11 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		return
 	}
 	if len(parts) == 1 && r.Method == "GET" {
-		apiJSON(w, 200, historyWindow(a.snapshot(chat)))
+		apiJSON(w, 200, transportWindow(r, a.snapshot(chat)))
+		return
+	}
+	if len(parts) == 2 && parts[1] == "tool-detail" && r.Method == "GET" {
+		a.toolDetailResponse(w, r, a.snapshot(chat), started)
 		return
 	}
 	if len(parts) == 2 && parts[1] == "history" && r.Method == "GET" {
@@ -491,7 +500,7 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 			apiError(w, 400, "Invalid history cursor")
 			return
 		}
-		apiJSON(w, 200, page)
+		apiJSON(w, 200, transportSession(r, page))
 		return
 	}
 	if len(parts) == 2 && parts[1] == "events" && r.Method == "GET" {
@@ -540,7 +549,7 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		fork.NativeSessionID = ""
 		allowed := a.store.CanControlChat(id.User.ID, fork.ID)
 		fork.CanControl = &allowed
-		apiJSON(w, 201, historyWindow(fork))
+		apiJSON(w, 201, transportWindow(r, fork))
 		return
 	}
 	if len(parts) == 2 && parts[1] == "approvals" && r.Method == "POST" {
@@ -629,7 +638,7 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 	latest, _ := a.store.Get(chat.ID)
 	allowed := a.store.CanControlChat(id.User.ID, chat.ID)
 	latest.CanControl = &allowed
-	apiJSON(w, 202, historyWindow(a.snapshot(latest)))
+	apiJSON(w, 202, transportWindow(r, a.snapshot(latest)))
 }
 func (a *App) validateSelection(ctx context.Context, chat chatmodel.Session, options chatmodel.CodexOptions) error {
 	if err := chatmodel.ValidateCodexOptions(options); err != nil {
@@ -795,6 +804,7 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 				terminal.NativeTurnID = persisted.NativeTurnID
 			}
 			terminal.Status = statusForAgentError(runErr)
+			terminal.Compacting = false
 			terminal.FinishedAt = time.Now().UnixMilli()
 			if saved, ok := a.store.runtimeTurn(id); ok && saved.ID == turn.ID {
 				terminal.Status, terminal.FinishedAt, terminal.Error = saved.Status, saved.FinishedAt, saved.Error
@@ -836,6 +846,7 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 			failed := turn
 			failed.Reply, failed.Model, failed.Activities = result.Text, result.Model, result.Activities
 			failed.Status, failed.FinishedAt, failed.Error = chatmodel.StatusFailed, time.Now().UnixMilli(), "Could not persist this response: "+err.Error()
+			failed.Compacting = false
 			a.live[id] = failed
 		}
 		a.liveMu.Unlock()
@@ -896,6 +907,8 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 			return errTurnChanged
 		}
 		switch event.Type {
+		case "compaction":
+			current.Compacting = event.Compacting
 		case "turn":
 			current.NativeTurnID = event.TurnID
 		case "delta":
@@ -1029,7 +1042,7 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 		return
 	}
 	chat = a.snapshot(chat)
-	initial := historyWindow(chat)
+	initial := transportWindow(r, chat)
 	if err := writeSSE(w, "snapshot", initial); err != nil {
 		return
 	}
@@ -1122,7 +1135,7 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 			if len(window.Turns) > 0 && window.Turns[len(window.Turns)-1].ID == current.ID {
 				window.Turns[len(window.Turns)-1] = current
 			}
-			window = historyWindow(window)
+			window = transportWindow(r, window)
 			if len(window.Turns) > 0 {
 				current = window.Turns[len(window.Turns)-1]
 			}

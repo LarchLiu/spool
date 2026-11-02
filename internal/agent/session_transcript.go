@@ -58,7 +58,7 @@ func parseTranscriptReader(backend chatmodel.Backend, reader io.Reader, model st
 		case chatmodel.BackendClaude:
 			parts = claudeSessionParts(record)
 			message, _ := record["message"].(map[string]any)
-			if id, phase := stringValue(message["id"]), claudeMessagePhase(message); record["type"] == "assistant" && record["isSidechain"] != true && id != "" && phase != "" && message["model"] != "<synthetic>" {
+			if id, phase := stringValue(message["id"]), claudeMessagePhase(message); record["type"] == "assistant" && !claudeCompactionRecord(record) && record["isSidechain"] != true && id != "" && phase != "" && message["model"] != "<synthetic>" {
 				// Native Claude files can store blocks of one message on separate
 				// lines, with the stop reason appearing only on the last block.
 				for i := range transcript.Parts {
@@ -81,6 +81,9 @@ func parseTranscriptReader(backend chatmodel.Backend, reader io.Reader, model st
 			case "event_msg":
 				payload, _ := record["payload"].(map[string]any)
 				parts = codex.addEvent(payload, model, &transcript)
+			case "compacted":
+				payload, _ := record["payload"].(map[string]any)
+				codex.hideCompaction(payload, &transcript)
 			}
 		default:
 			return fmt.Errorf("unsupported session backend %q", backend)
@@ -118,12 +121,15 @@ type codexHistory struct {
 	byCallID             map[string]*codexCallRef
 	pendingAgentMessages map[string]int
 	eventCursor          int
+	compactionStart      int
+	compactionText       string
 }
 
 func newCodexHistory() *codexHistory {
 	return &codexHistory{
 		byCallID:             make(map[string]*codexCallRef),
 		pendingAgentMessages: make(map[string]int),
+		compactionStart:      -1,
 	}
 }
 
@@ -204,7 +210,35 @@ func (h *codexHistory) addResponse(item map[string]any, model string, transcript
 			}
 		}
 	}
+	// Some Codex versions persist the internal compaction response as an
+	// ordinary final_answer (and reasoning) before the compacted record. Only
+	// that record's matching message may retract this uncorroborated tail.
+	if kind == "reasoning" {
+		h.compactionStart, h.compactionText = len(transcript.Parts), ""
+	} else if kind == "message" && item["role"] == "assistant" && len(parts) > 0 {
+		if h.compactionStart < 0 || h.compactionText != "" {
+			h.compactionStart = len(transcript.Parts)
+		}
+		var texts []string
+		for _, part := range parts {
+			if part.Kind == "text" {
+				texts = append(texts, part.Text)
+			}
+		}
+		h.compactionText = strings.Join(texts, "\n\n")
+	} else {
+		h.compactionStart, h.compactionText = -1, ""
+	}
 	return parts
+}
+
+func (h *codexHistory) hideCompaction(payload map[string]any, transcript *chatmodel.Transcript) {
+	message := stringValue(payload["message"])
+	text := h.compactionText
+	if h.compactionStart >= 0 && text != "" && (message == text || strings.HasSuffix(message, "\n"+text)) {
+		transcript.Parts = transcript.Parts[:h.compactionStart]
+	}
+	h.compactionStart, h.compactionText = -1, ""
 }
 
 func (h *codexHistory) addEvent(payload map[string]any, model string, transcript *chatmodel.Transcript) []chatmodel.Part {
@@ -214,6 +248,9 @@ func (h *codexHistory) addEvent(payload map[string]any, model string, transcript
 	item, _ := payload["item"].(map[string]any)
 	if item == nil {
 		return nil
+	}
+	if !codexCompactionItem(item) {
+		h.compactionStart, h.compactionText = -1, ""
 	}
 	switch kind := codexItemKind(item); kind {
 	case "reasoning":
@@ -390,6 +427,9 @@ func codexReasoningSummary(item map[string]any) string {
 }
 
 func claudeSessionParts(record map[string]any) []chatmodel.Part {
+	if claudeCompactionRecord(record) {
+		return nil
+	}
 	typ := stringValue(record["type"])
 	if typ != "user" && typ != "assistant" {
 		return nil

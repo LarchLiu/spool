@@ -1,0 +1,1050 @@
+{
+  "browser": "156.0.8078.74",
+  "purpose": "Actual FileSidebar/FileTree visible filename fonts during real search, not a forced CSS-attribute control or native/device raster pass",
+  "cases": [
+    {
+      "locale": "zh-CN",
+      "name": "共享项目",
+      "density": 1,
+      "theme": "light",
+      "noMatchPaths": [
+        "plain.txt",
+        "共享项目"
+      ],
+      "records": [
+        {
+          "match": false,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": true,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 1,
+          "row": {
+            "x": 45.8125,
+            "y": 58,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": false,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "locale": "zh-CN",
+      "name": "共享项目",
+      "density": 1,
+      "theme": "dark",
+      "noMatchPaths": [
+        "plain.txt",
+        "共享项目"
+      ],
+      "records": [
+        {
+          "match": false,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": true,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 1,
+          "row": {
+            "x": 45.8125,
+            "y": 58,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": false,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "locale": "ja",
+      "name": "共有項目",
+      "density": 1,
+      "theme": "light",
+      "noMatchPaths": [
+        "plain.txt",
+        "共有項目"
+      ],
+      "records": [
+        {
+          "match": false,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": true,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 1,
+          "row": {
+            "x": 45.8125,
+            "y": 58,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": false,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "locale": "ja",
+      "name": "共有項目",
+      "density": 1,
+      "theme": "dark",
+      "noMatchPaths": [
+        "plain.txt",
+        "共有項目"
+      ],
+      "records": [
+        {
+          "match": false,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": true,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 1,
+          "row": {
+            "x": 45.8125,
+            "y": 58,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": false,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "locale": "zh-CN",
+      "name": "共享项目",
+      "density": 2.625,
+      "theme": "light",
+      "noMatchPaths": [
+        "plain.txt",
+        "共享项目"
+      ],
+      "records": [
+        {
+          "match": false,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": true,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 1,
+          "row": {
+            "x": 45.8125,
+            "y": 58,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": false,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "locale": "zh-CN",
+      "name": "共享项目",
+      "density": 2.625,
+      "theme": "dark",
+      "noMatchPaths": [
+        "plain.txt",
+        "共享项目"
+      ],
+      "records": [
+        {
+          "match": false,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": true,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 1,
+          "row": {
+            "x": 45.8125,
+            "y": 58,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": false,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "locale": "ja",
+      "name": "共有項目",
+      "density": 2.625,
+      "theme": "light",
+      "noMatchPaths": [
+        "plain.txt",
+        "共有項目"
+      ],
+      "records": [
+        {
+          "match": false,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": true,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 1,
+          "row": {
+            "x": 45.8125,
+            "y": 58,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": false,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "locale": "ja",
+      "name": "共有項目",
+      "density": 2.625,
+      "theme": "dark",
+      "noMatchPaths": [
+        "plain.txt",
+        "共有項目"
+      ],
+      "records": [
+        {
+          "match": false,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": true,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 1,
+          "row": {
+            "x": 45.8125,
+            "y": 58,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": false,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "locale": "zh-CN",
+      "name": "共享项目",
+      "density": 3,
+      "theme": "light",
+      "noMatchPaths": [
+        "plain.txt",
+        "共享项目"
+      ],
+      "records": [
+        {
+          "match": false,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": true,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 1,
+          "row": {
+            "x": 45.8125,
+            "y": 58,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": false,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "locale": "zh-CN",
+      "name": "共享项目",
+      "density": 3,
+      "theme": "dark",
+      "noMatchPaths": [
+        "plain.txt",
+        "共享项目"
+      ],
+      "records": [
+        {
+          "match": false,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": true,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 1,
+          "row": {
+            "x": 45.8125,
+            "y": 58,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": false,
+          "text": "共享项目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "locale": "ja",
+      "name": "共有項目",
+      "density": 3,
+      "theme": "light",
+      "noMatchPaths": [
+        "plain.txt",
+        "共有項目"
+      ],
+      "records": [
+        {
+          "match": false,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": true,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 1,
+          "row": {
+            "x": 45.8125,
+            "y": 58,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": false,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(48, 51, 46)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "locale": "ja",
+      "name": "共有項目",
+      "density": 3,
+      "theme": "dark",
+      "noMatchPaths": [
+        "plain.txt",
+        "共有項目"
+      ],
+      "records": [
+        {
+          "match": false,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": true,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 1,
+          "row": {
+            "x": 45.8125,
+            "y": 58,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "match": false,
+          "text": "共有項目",
+          "weight": "400",
+          "size": 13,
+          "style": "normal",
+          "synthesis": "none",
+          "color": "rgb(208, 208, 206)",
+          "matchAttribute": null,
+          "rowCount": 2,
+          "row": {
+            "x": 45.8125,
+            "y": 88,
+            "width": 298.1875,
+            "height": 30
+          },
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

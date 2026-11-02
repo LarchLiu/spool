@@ -78,9 +78,20 @@ func (s *Store) readHistorySnapshot(chat chatmodel.Session, file *nativeHistory)
 	if file.title != "" {
 		chat.Title = file.title
 	}
+	partCount := 0
+	for _, transcript := range transcripts {
+		partCount += len(transcript.Parts)
+	}
+	chat.Transcript.Parts = make([]chatmodel.Part, 0, partCount)
+	chat.Turns = make([]chatmodel.Turn, 0, len(file.index))
 	for i, native := range file.index {
 		transcript := transcripts[i]
-		parts := make([]chatmodel.Part, 0, len(transcript.Parts))
+		// transcripts already owns response-local slices; filter those in place
+		// instead of allocating another complete set of tool part containers.
+		parts := transcript.Parts[:0]
+		if parts == nil {
+			parts = []chatmodel.Part{}
+		}
 		for _, part := range transcript.Parts {
 			if part.Role == "user" && part.Kind == "context" {
 				continue
@@ -133,6 +144,7 @@ func (s *Store) withRuntimeTurn(chat chatmodel.Session) chatmodel.Session {
 		native := chat.Turns[matched]
 		native.ID = current.ID
 		native.Status, native.Error, native.PendingApproval = current.Status, current.Error, current.PendingApproval
+		native.Compacting = current.Status == chatmodel.StatusRunning && current.Compacting
 		native.PermissionMode, native.RequestedModel = current.PermissionMode, current.RequestedModel
 		native.Attachments = append([]chatmodel.Attachment(nil), current.Attachments...)
 		if native.StartedAt == 0 {

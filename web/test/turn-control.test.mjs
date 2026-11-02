@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runningTurn, stopReply } from "../.test-build/turn-control.js";
+import { hasRunningTurn, runningTurn, stopReply } from "../.test-build/turn-control.js";
 import { reconcile } from "../.test-build/chat-state.js";
 
 const turn = {
@@ -27,6 +27,16 @@ const stopped = {
     { ...turn, status: "stopped", reply: "Partial reply", finished_at: 20 },
   ],
 };
+
+test("running-chat refresh follows any running turn, not only the last active turn", () => {
+  assert.equal(hasRunningTurn(null), false);
+  assert.equal(hasRunningTurn({ ...chat, turns: [] }), false);
+  assert.equal(hasRunningTurn(stopped), false);
+  assert.equal(hasRunningTurn(chat), true);
+  const earlierRunning = { ...stopped, turns: [turn, ...stopped.turns] };
+  assert.equal(hasRunningTurn(earlierRunning), true);
+  assert.equal(runningTurn(earlierRunning), undefined);
+});
 
 test("stop targets the exact active server turn and preserves the partial reply", async () => {
   assert.equal(runningTurn(chat), turn);

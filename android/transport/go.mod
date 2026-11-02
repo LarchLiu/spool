@@ -5,8 +5,11 @@ go 1.27.3
 require (
 	github.com/coder/websocket v1.8.15
 	golang.org/x/mobile v0.0.0-20261011034528-197770444867
+	spool v0.0.0
 	tailscale.com v1.104.4
 )
+
+replace spool => ../..
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
@@ -14,6 +17,9 @@ require (
 	github.com/alexbrainman/sspi v0.0.0-20250919150558-7d374ff0d59e // indirect
 	github.com/creachadair/msync v0.10.1 // indirect
 	github.com/dblohm7/wingoes v0.0.0-20260526185140-fb298caac7ca // indirect
+	github.com/dicebear/dicebear-go/v11 v11.0.0-rc.2 // indirect
+	github.com/dicebear/schema/v2 v2.0.2 // indirect
+	github.com/dicebear/styles/v10 v10.6.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/gaissmai/bart v0.29.0 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
@@ -30,6 +36,7 @@ require (
 	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/pires/go-proxyproto v0.15.0 // indirect
 	github.com/safchain/ethtool v0.7.0 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/tailscale/certstore v0.1.1-0.20260409135935-3638fb84b77d // indirect
 	github.com/tailscale/go-winio v0.0.0-20231025203758-c4f33415bf55 // indirect
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f // indirect

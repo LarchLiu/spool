@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Folder, FolderOpen, LogOut, PanelLeftClose, Plus, X } from "lucide-react";
+import {
+  Folder,
+  FolderOpen,
+  LogOut,
+  PanelLeftClose,
+  Plus,
+  X,
+} from "lucide-react";
 import type { Translator } from "./i18n";
 import type { Backend, Chat, Project, User } from "./types";
 import type { AvatarIdentity } from "./avatar";
@@ -9,6 +16,11 @@ import { ChatOperatorAvatars } from "./turn-identity";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { ChatSettingsControl } from "./desktop-settings";
 import { isMacDesktop } from "./runtime";
+import {
+  sortedSidebarChats,
+  revealSidebarProject,
+  revealSidebarChat,
+} from "./sidebar-state";
 import {
   INITIAL_CHAT_LIMIT,
   LocalSessionIcon,
@@ -50,25 +62,21 @@ export function Sidebar(props: Props) {
       list.push(chat);
       groups.set(chat.project_id, list);
     }
-    for (const list of groups.values())
-      list.sort((a, b) => b.updated_at - a.updated_at);
+    for (const [id, list] of groups) groups.set(id, sortedSidebarChats(list));
     return groups;
   }, [chats]);
-  const recents = useMemo(
-    () => [...chats].sort((a, b) => b.updated_at - a.updated_at),
-    [chats],
-  );
+  const recents = useMemo(() => sortedSidebarChats(chats), [chats]);
   useEffect(() => {
     if (!project) return;
     setExpanded((old) => new Set([...old, project]));
-    const index = projects.findIndex((p) => p.id === project);
-    setProjectLimit((old) => Math.max(old, index + 1));
-    const chatIndex = (byProject.get(project) || []).findIndex(
-      (chat) => chat.id === chatID,
-    );
+    setProjectLimit((old) => revealSidebarProject(projects, project, old));
     setChatLimits((old) => ({
       ...old,
-      [project]: Math.max(old[project] || INITIAL_CHAT_LIMIT, chatIndex + 1),
+      [project]: revealSidebarChat(
+        byProject.get(project) || [],
+        chatID,
+        old[project] || INITIAL_CHAT_LIMIT,
+      ),
     }));
     // Metadata refreshes must not reopen a project the user just collapsed.
   }, [project, chatID]);

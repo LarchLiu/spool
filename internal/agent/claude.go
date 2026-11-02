@@ -73,6 +73,7 @@ func (p *agentProcess) handleClaudeApproval(ctx context.Context, value map[strin
 }
 
 func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit func(AgentEvent) error) (AgentResult, error, bool) {
+	emit = compactionEvents(emit)
 	p.approve = request.Approve
 	defer func() { p.approve = nil }()
 	result := AgentResult{SessionID: p.sessionID, Model: p.model}
@@ -220,6 +221,12 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				return result, err, false
 			}
 		case "system":
+			if value["subtype"] == "status" || value["subtype"] == "compact_boundary" {
+				if err := emit(AgentEvent{Type: "compaction", Compacting: value["subtype"] == "status" && value["status"] == "compacting"}); err != nil {
+					return result, err, false
+				}
+				continue
+			}
 			if stringValue(value["subtype"]) != "init" {
 				continue
 			}
@@ -277,6 +284,9 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				}
 			}
 		case "assistant":
+			if claudeCompactionRecord(value) {
+				continue
+			}
 			message, _ := value["message"].(map[string]any)
 			id := stringValue(message["id"])
 			if id == "" || (!messageStarted && currentMessage != "") {
@@ -359,6 +369,9 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				streamedThinking = ""
 			}
 		case "user":
+			if claudeCompactionRecord(value) {
+				continue
+			}
 			message, _ := value["message"].(map[string]any)
 			content, _ := message["content"].([]any)
 			for _, block := range content {
@@ -384,6 +397,9 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				}
 			}
 		case "result":
+			if err := emit(AgentEvent{Type: "compaction"}); err != nil {
+				return result, err, false
+			}
 			if id := stringValue(value["session_id"]); chatmodel.ValidID(id) {
 				if p.sessionID != "" && id != p.sessionID {
 					return result, fmt.Errorf("Claude returned a different session ID"), false

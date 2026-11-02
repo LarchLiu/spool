@@ -1,0 +1,3420 @@
+{
+  "scope": "Original main.tsx keyed JSX/scroll callback/latest button and original React components, synthetic local Chrome. Not real server/device/IME or raster/compositor equality.",
+  "browser": "156.0.8078.74",
+  "scenes": [
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "light",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "light",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "light",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "light",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "light",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "light",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "dark",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "dark",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "dark",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "dark",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "dark",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "dark",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "light",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "light",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "light",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "light",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "light",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "light",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "light",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "light",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "light",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "light",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "light",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "light",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "dark",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "dark",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "dark",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "dark",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "dark",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "dark",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "Scroll to latest",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "滚动到最新消息",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "light",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "light",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "light",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "light",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "light",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "light",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(48, 51, 46)",
+      "background": "rgb(255, 255, 255)",
+      "shadow": "rgba(24, 36, 22, 0.086) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 320,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 142.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 320,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 320,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 142.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 151,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 320,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 360,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 162.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 360,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 360,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 162.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 171,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 360,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 412,
+      "height": 800,
+      "footerHeight": 108,
+      "button": {
+        "x": 188.5,
+        "y": 647,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 655.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 692,
+        "width": 412,
+        "height": 108
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "dark",
+      "width": 412,
+      "height": 600,
+      "footerHeight": 180,
+      "button": {
+        "x": 188.5,
+        "y": 375,
+        "width": 35,
+        "height": 35
+      },
+      "arrow": {
+        "x": 197,
+        "y": 383.5,
+        "width": 18,
+        "height": 18
+      },
+      "footer": {
+        "x": 0,
+        "y": 420,
+        "width": 412,
+        "height": 180
+      },
+      "label": "最新メッセージへ移動",
+      "border": "1px",
+      "color": "rgb(208, 208, 206)",
+      "background": "rgb(43, 43, 41)",
+      "shadow": "rgba(0, 0, 0, 0.27) 0px 3px 10px 0px"
+    }
+  ],
+  "reuse": {
+    "live": {
+      "article": true,
+      "bubble": true,
+      "footer": true,
+      "answer": true,
+      "avatar": true,
+      "expanded": true,
+      "copy": true,
+      "selection": true
+    },
+    "history": {
+      "article": true,
+      "bubble": true,
+      "footer": true,
+      "answer": true,
+      "avatar": true,
+      "expanded": true,
+      "copy": true,
+      "selection": true
+    },
+    "profile": {
+      "article": true,
+      "bubble": true,
+      "footer": true,
+      "answer": true,
+      "avatar": true,
+      "expanded": true,
+      "copy": true,
+      "selection": true,
+      "name": "Renamed"
+    },
+    "changedAnswerElementRetained": true
+  },
+  "latestTrace": {
+    "following": true,
+    "calls": [
+      {
+        "top": 2050,
+        "behavior": "smooth"
+      }
+    ]
+  },
+  "thresholds": [
+    {
+      "gap": 91,
+      "following": false,
+      "shown": true
+    },
+    {
+      "gap": 90,
+      "following": false,
+      "shown": true
+    },
+    {
+      "gap": 89,
+      "following": true,
+      "shown": false
+    },
+    {
+      "gap": 0,
+      "following": true,
+      "shown": false
+    }
+  ],
+  "apiRequests": 0
+}

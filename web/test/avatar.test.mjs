@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { Avatar } from "@dicebear/core";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Avatar } from "@dicebear/core";
 import {
   avatarChoices,
   avatarAttribution,
@@ -16,8 +17,11 @@ import {
 import { AvatarStack, UserAvatar } from "../.test-build/user-avatar.js";
 
 const user = { id: "user-alice", nickname: "Alice", username: "alice" };
-const svg = (person) =>
-  decodeURIComponent(avatarDataURI(person).split(",").slice(1).join(","));
+const imageSVG = (person) => {
+  const uri = avatarDataURI(person);
+  assert.ok(uri.startsWith("data:image/svg+xml;charset=utf-8,"));
+  return decodeURIComponent(uri.slice(uri.indexOf(",") + 1));
+};
 
 test("the style picker contains exactly the requested eight styles in order", () => {
   assert.deepEqual(avatarStyles, [
@@ -37,7 +41,7 @@ test("the style picker contains exactly the requested eight styles in order", ()
   assert.equal(new Set(images).size, 8);
 });
 
-test("existing users get a stable, locally generated name-based avatar", () => {
+test("existing users get a stable local image from their display name", () => {
   assert.deepEqual(avatarConfig(user), defaultAvatar);
   assert.equal(avatarName(user), "Alice");
   assert.equal(avatarName({ ...user, nickname: "  " }), "alice");
@@ -53,8 +57,7 @@ test("existing users get a stable, locally generated name-based avatar", () => {
   );
 });
 
-test("avatar images are shared across identities, component mounts and display sizes", (t) => {
-  const generated = t.mock.method(Avatar.prototype, "toDataUri");
+test("local avatar cache shares images across identities and display sizes", () => {
   const person = {
     ...user,
     avatar: { style: "clay", seed: "cache:shared-components" },
@@ -70,11 +73,9 @@ test("avatar images are shared across identities, component mounts and display s
     assert.ok(html.includes(uri.replaceAll("&", "&amp;")));
     assert.match(html, new RegExp(`width="${size}" height="${size}"`));
   }
-  assert.equal(generated.mock.callCount(), 1);
 });
 
-test("avatar cache uses resolved style and seed and respects configuration changes", (t) => {
-  const generated = t.mock.method(Avatar.prototype, "toDataUri");
+test("avatar cache keys use resolved style and seed and respect configuration changes", () => {
   const person = { ...user, nickname: "cache:automatic-name" };
   const automatic = avatarDataURI(person);
   assert.equal(
@@ -89,7 +90,6 @@ test("avatar cache uses resolved style and seed and respects configuration chang
     avatarDataURI({ ...person, avatar: { style: "initials", seed: "" } }),
     automatic,
   );
-  assert.equal(generated.mock.callCount(), 1);
   const renamed = avatarDataURI({ ...person, nickname: "cache:renamed" });
   const picked = avatarDataURI({
     ...person,
@@ -100,40 +100,66 @@ test("avatar cache uses resolved style and seed and respects configuration chang
     avatar: { style: "thumbs", seed: "cache:picked" },
   });
   assert.equal(new Set([automatic, renamed, picked, restyled]).size, 4);
-  assert.equal(generated.mock.callCount(), 4);
   assert.equal(avatarDataURI(person), automatic);
-  assert.equal(generated.mock.callCount(), 4);
 });
 
-test("avatar cache evicts the least recently used image after 256 entries", (t) => {
-  const generated = t.mock.method(Avatar.prototype, "toDataUri");
-  const person = (index) => ({
-    ...user,
-    avatar: { style: "thumbs", seed: `cache:lru-${index}` },
-  });
-  const images = Array.from({ length: 256 }, (_, index) =>
-    avatarDataURI(person(index)),
-  );
-  generated.mock.resetCalls();
-  assert.equal(avatarDataURI(person(0)), images[0]);
-  assert.equal(generated.mock.callCount(), 0);
-  avatarDataURI(person(256));
-  assert.equal(generated.mock.callCount(), 1);
-  assert.equal(avatarDataURI(person(0)), images[0]);
-  assert.equal(generated.mock.callCount(), 1);
-  assert.equal(avatarDataURI(person(1)), images[1]);
-  assert.equal(generated.mock.callCount(), 2);
+test("avatars are generated locally by the original JS package without image API requests", () => {
+  const source = readFileSync(new URL("../src/avatar.ts", import.meta.url), "utf8");
+  assert.match(source, /@dicebear\/core/);
+  assert.match(source, /new Avatar/);
+  assert.doesNotMatch(source, /\/api\/avatars|fetch\(/);
+  assert.match(imageSVG(user), /^<svg /);
 });
 
-test("Spool Bot reuses its static logo without generating an avatar", (t) => {
-  const generated = t.mock.method(Avatar.prototype, "toDataUri");
+test("local JS images remain byte-identical to all 24 Go and Android golden vectors", () => {
+  const cases = JSON.parse(readFileSync(new URL("../../internal/avatar/testdata/web-fixtures.json", import.meta.url), "utf8"));
+  assert.equal(cases.length, 24);
+  for (const item of cases) {
+    const svg = imageSVG({ ...user, avatar: { style: item.name, seed: item.seed } });
+    assert.equal(svg, item.svg);
+    assert.equal(createHash("sha256").update(svg).digest("hex"), item.sha256);
+  }
+});
+
+test("local generation is reused and its LRU retains at most 256 image entries", () => {
+  const original = Avatar.prototype.toDataUri;
+  let calls = 0;
+  Avatar.prototype.toDataUri = function () { calls++; return original.call(this); };
+  const person = (i) => ({ ...user, avatar: { style: "clay", seed: `lru-local:${i}` } });
+  try {
+    for (let i = 0; i < 256; i++) avatarDataURI(person(i));
+    assert.equal(calls, 256);
+    avatarDataURI(person(0));
+    assert.equal(calls, 256);
+    avatarDataURI(person(256));
+    assert.equal(calls, 257);
+    avatarDataURI(person(0));
+    assert.equal(calls, 257);
+    avatarDataURI(person(1));
+    assert.equal(calls, 258);
+  } finally { Avatar.prototype.toDataUri = original; }
+});
+
+test("the local URI cache also evicts by its eight-MiB content budget", () => {
+  const original = Avatar.prototype.toDataUri;
+  let calls = 0;
+  Avatar.prototype.toDataUri = () => { calls++; return "x".repeat(3 * 1024 * 1024); };
+  const person = (i) => ({ ...user, avatar: { style: "clay", seed: `byte-budget:${i}` } });
+  try {
+    for (let i = 0; i < 3; i++) avatarDataURI(person(i));
+    assert.equal(calls, 3);
+    avatarDataURI(person(2)); assert.equal(calls, 3);
+    avatarDataURI(person(0)); assert.equal(calls, 4);
+  } finally { Avatar.prototype.toDataUri = original; }
+});
+
+test("Spool Bot reuses its static logo without requesting an avatar", () => {
   for (const size of [16, 28]) {
     const html = renderToStaticMarkup(
       createElement(UserAvatar, { person: { ...user, bot: true }, size }),
     );
     assert.match(html, /src="\/logo\.png"/);
   }
-  assert.equal(generated.mock.callCount(), 0);
 });
 
 test("hand-picked avatars survive renames and resetting the seed restores auto mode", () => {
@@ -147,8 +173,7 @@ test("hand-picked avatars survive renames and resetting the seed restores auto m
       avatarDataURI({ ...picked, avatar: { style, seed: "" } }),
       avatarDataURI(picked),
     );
-    assert.match(svg(picked), /^<svg /);
-    assert.doesNotMatch(svg(picked), /<script|<image|<foreignObject|onload=/i);
+    assert.match(imageSVG(picked), /^<svg /);
   }
 });
 
@@ -171,7 +196,7 @@ test("gallery choices are stable, paginated, unique seeds within API UTF-8 limit
   }
 });
 
-test("Unicode names work and names cannot inject executable SVG", () => {
+test("Unicode and markup-like names remain safe local generation data", () => {
   for (const nickname of [
     "小明",
     "あきら",
@@ -180,8 +205,10 @@ test("Unicode names work and names cannot inject executable SVG", () => {
   ]) {
     for (const [style] of avatarStyles) {
       const person = { ...user, nickname, avatar: { style, seed: "" } };
-      assert.match(svg(person), /^<svg /);
-      assert.doesNotMatch(svg(person), /<script|onload="alert|<foreignObject/i);
+      const svg = imageSVG(person);
+      assert.match(svg, /^<svg /);
+      assert.doesNotMatch(svg, /<(?:script|image|foreignObject)\b|\sonload\s*=/i);
+      assert.doesNotMatch(avatarDataURI(person), /<|>|[\x00-\x1f]/);
     }
   }
   assert.deepEqual(
@@ -203,14 +230,13 @@ test("retired styles use Clay while keeping picked or automatic seeds", () => {
   }
 });
 
-test("bundled styles retain their attribution and SVG license metadata", () => {
+test("local styles retain their matching attribution in the picker", () => {
   for (const [style] of avatarStyles) {
     const meta = avatarAttribution(style);
     assert.ok(meta.creator.name);
     assert.ok(meta.source.name);
     assert.ok(meta.license.name);
     assert.match(meta.license.url, /^https:\/\//);
-    assert.match(svg({ ...user, avatar: { style, seed: "" } }), /<metadata\b/);
   }
   assert.equal(avatarAttribution("croodles").creator.name, "vijay verma");
   assert.equal(avatarAttribution("toon-head").creator.name, "Johan Melin");
@@ -218,11 +244,11 @@ test("bundled styles retain their attribution and SVG license metadata", () => {
   assert.equal(avatarAttribution("toon-head").license.name, "CC BY 4.0");
 });
 
-test("avatar image uses a data URI and the picker exposes accessible selection controls", () => {
+test("avatar image uses a local data URI and the picker exposes accessible selection controls", () => {
   const html = renderToStaticMarkup(
     createElement(UserAvatar, { person: user }),
   );
-  assert.match(html, /src="data:image\/svg\+xml/);
+  assert.match(html, /src="data:image\/svg\+xml;charset=utf-8,/);
   assert.match(html, /alt=""/);
   assert.doesNotMatch(html, /src="https?:/);
   const dialog = readFileSync(
@@ -235,6 +261,8 @@ test("avatar image uses a data URI and the picker exposes accessible selection c
   assert.match(dialog, /aria-pressed=\{draft.seed === seed\}/);
   assert.match(dialog, /Use my name/);
   assert.match(dialog, /disabled=\{saving \|\| !changed\}/);
+  assert.match(dialog, /Generated on your device/);
+  assert.doesNotMatch(dialog, /Generated on your Spool server/);
 });
 
 test("online avatar stack shows up to three people and summarizes the rest", () => {

@@ -15,7 +15,7 @@ import (
 	chatmodel "spool/internal/model"
 )
 
-func appendNativeTurns(t *testing.T, path string, first, count, outputs int) {
+func appendNativeTurns(t *testing.T, path string, first, count, outputs int, distinctOutputs ...bool) {
 	t.Helper()
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
@@ -36,7 +36,11 @@ func appendNativeTurns(t *testing.T, path string, first, count, outputs int) {
 		add("turn_context", map[string]any{"turn_id": id, "model": "model-" + fmt.Sprint(i), "effort": "high"}, stamp)
 		add("response_item", map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": fmt.Sprintf("prompt-%03d", i)}}}, stamp)
 		for j := 0; j < outputs; j++ {
-			add("response_item", map[string]any{"type": "function_call_output", "call_id": fmt.Sprint(j), "output": strings.Repeat("x", 8000)}, stamp)
+			output := strings.Repeat("x", 8000)
+			if len(distinctOutputs) > 0 && distinctOutputs[0] {
+				output = fmt.Sprintf("%08d", j) + output[8:]
+			}
+			add("response_item", map[string]any{"type": "function_call_output", "call_id": fmt.Sprint(j), "output": output}, stamp)
 		}
 		add("response_item", map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": fmt.Sprintf("answer-%03d", i)}}}, stamp.Add(12*time.Second))
 		add("event_msg", map[string]any{"type": "task_complete", "turn_id": id}, stamp.Add(12*time.Second))

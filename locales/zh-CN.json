@@ -298,7 +298,7 @@
   "More avatars": "换一批",
   "Avatar choices": "可选头像",
   "Avatar {number}": "头像 {number}",
-  "Generated on your device. Your name is never sent to DiceBear.": "在本机生成，不会向 DiceBear 发送你的名字。",
+  "Generated on your device. Your name is never sent to DiceBear.": "在你的设备上生成，不会向 DiceBear 发送你的名字。",
   "Save avatar": "保存头像",
   "Could not save avatar": "无法保存头像",
   "Invalid avatar style": "无效的头像风格",
@@ -427,6 +427,7 @@
   "Refresh files": "刷新文件",
   "Search files": "搜索文件",
   "Close file search": "关闭文件搜索",
+  "Clear file search": "清空文件搜索",
   "Project file tree": "项目文件树",
   "Loading files…": "正在加载文件…",
   "This directory is empty.": "此目录为空。",
@@ -661,5 +662,10 @@
   "Tailscale registration timed out. Check network access or device approval, then retry.": "Tailscale 注册超时。请检查网络连接或设备审批状态，然后重试。",
   "Tailscale registration was canceled. Try again when the service is ready.": "Tailscale 注册已取消，请在服务就绪后重试。",
   "Copied": "已复制",
-  "Could not copy address. Try again.": "复制地址失败，请重试。"
+  "Could not copy address. Try again.": "复制地址失败，请重试。",
+  "Loading tool details…": "正在加载工具详情…",
+  "Showing bytes {start}–{end} of {total}": "显示第 {start}–{end} 字节，共 {total} 字节",
+  "Back to start": "回到开头",
+  "Load next section": "加载下一段",
+  "Compacting context…": "正在压缩上下文…"
 }

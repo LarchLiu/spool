@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -21,6 +21,7 @@ import { patchText, toolResultDiffs } from "./tool-diff.js";
 import { turnPresentation } from "./turn-presentation.js";
 import { MessageFooter } from "./message-footer.js";
 import type { Locale } from "./preferences.js";
+import { firstToolDetailCursor, mergeToolDetailPage, requestToolDetail, toolDetailCache, type ToolDetailCursor, type ToolDetailPage } from "./tool-detail.js";
 
 export { toolResultDiffs } from "./tool-diff.js";
 
@@ -172,11 +173,11 @@ export function displayActivity(
   backend: Backend | undefined,
   t: Translator,
 ): Omit<Activity, "result"> {
-  const data = payload(part.text);
-  const kind = classify(part);
+  const data = part.tool ? undefined : payload(part.text);
+  const kind = part.tool?.kind || classify(part);
   const name = part.name?.trim() || (backend === "claude" ? "Claude tool" : "Codex tool");
-  const path = extractPath(part, data);
-  const query = extractQuery(part, data);
+  const path = part.tool?.path || extractPath(part, data);
+  const query = part.tool?.query || extractQuery(part, data);
   let label = "";
   switch (kind) {
     case "read":
@@ -231,7 +232,7 @@ export function displayActivity(
       label = name ? t("Used {tool}", { tool: titleName(name) }) : t("Used tool");
       break;
   }
-  return { use: part, kind, label, detail: part.text, stats: inlineChangeStats(part.text) };
+  return { use: part, kind, label, detail: part.text, stats: part.tool?.stats || inlineChangeStats(part.text) };
 }
 
 export function activitiesFromParts(
@@ -378,6 +379,12 @@ export function changeStats(activities: Activity[]) {
   let additions = 0;
   let deletions = 0;
   for (const activity of activities) {
+    const changes = activity.result?.tool?.changes || activity.use?.tool?.changes;
+    if (changes) {
+      additions += changes.additions;
+      deletions += changes.deletions;
+      continue;
+    }
     const value = patchText(activity.result?.text || "") || patchText(activity.use?.text || "");
     if (value) {
       for (const line of value.split(/\r?\n/)) {
@@ -401,28 +408,94 @@ function inlineChangeStats(value: string) {
   return match ? `${match[1]} ${match[2]}` : "";
 }
 
+function LazyToolBody({ part, t, thinking, input }: { part: TranscriptPart; t: Translator; thinking: boolean; input: boolean }) {
+  const tool = part.tool!;
+  const [cursor, setCursor] = useState<ToolDetailCursor>(firstToolDetailCursor);
+  const [page, setPage] = useState<ToolDetailPage>();
+  const current = useRef<ToolDetailPage>(undefined);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const latestVersion = useRef(tool.version);
+  latestVersion.current = tool.version;
+  const refresh = useRef<() => void>(() => {});
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let busy = false;
+    let completedVersion = "";
+    const load = () => {
+      if (busy || controller.signal.aborted || completedVersion === latestVersion.current) return;
+      busy = true;
+      const version = latestVersion.current;
+      setLoading(true); setError("");
+      const previous = current.current;
+      const from = previous && previous.next === previous.total && previous.next - previous.offset < 32 * 1024
+        ? { offset: previous.next, prefix: previous.prefix } : cursor;
+      void toolDetailCache.load(requestToolDetail, tool.href!, version, from, controller.signal)
+        .then((incoming) => {
+          if (controller.signal.aborted) return;
+          const merged = mergeToolDetailPage(current.current, incoming);
+          current.current = merged; setPage(merged);
+          completedVersion = version;
+          setLoading(false);
+        })
+        .catch((reason: unknown) => {
+          if (!controller.signal.aborted) { setLoading(false); setError(String(reason instanceof Error ? reason.message : reason)); }
+        })
+        .finally(() => {
+          busy = false;
+          if (!controller.signal.aborted && version !== latestVersion.current) schedule();
+        });
+    };
+    // Throttle rather than debounce: continuous output must not keep cancelling
+    // the request and prevent a Think/tool body from ever appearing.
+    const schedule = () => {
+      if (timer !== undefined || controller.signal.aborted) return;
+      timer = setTimeout(() => { timer = undefined; load(); }, 100);
+    };
+    refresh.current = schedule;
+    schedule();
+    return () => { clearTimeout(timer); controller.abort(); refresh.current = () => {}; };
+  }, [tool.href, cursor, retry]);
+  useEffect(() => { refresh.current(); }, [tool.version]);
+  const move = (next: ToolDetailCursor) => { current.current = undefined; setPage(undefined); setCursor(next); };
+  return <>
+    {page && (page.offset === 0 && page.next === page.total
+      ? thinking ? <MarkdownMessage>{page.text}</MarkdownMessage> : <ToolPatch text={page.text} t={t} input={input} />
+      : <pre>{page.text}</pre>)}
+    {loading && !page && <p role="status">{t("Loading tool details…")}</p>}
+    {error && <p role="alert">{error} <button type="button" onClick={() => setRetry((value) => value + 1)}>{t("Retry")}</button></p>}
+    {page && (page.offset > 0 || page.next < page.total) && <div className="tool-detail-pages">
+      <span>{t("Showing bytes {start}–{end} of {total}", { start: page.offset, end: page.next, total: page.total })}</span>
+      {page.offset > 0 && <button type="button" onClick={() => move(firstToolDetailCursor)}>{t("Back to start")}</button>}
+      {page.next < page.total && <button type="button" onClick={() => move({ offset: page.next, prefix: page.prefix })}>{t("Load next section")}</button>}
+    </div>}
+  </>;
+}
+
 export function ActivityDetail({ activity, t }: { activity: Activity; t: Translator }) {
-  const command = activity.use?.text;
-  const result = activity.result?.text;
+  const command = activity.use?.text || "";
+  const result = activity.result?.text || "";
   return (
     <div className="tool-detail">
-      {command?.trim() && (
+      {(command?.trim() || activity.use?.tool?.href) && (
         <div className="tool-detail-block">
           <span className="tool-detail-label">
             {activity.kind === "thinking" ? t("Thought") : t("Command")}
             {activity.kind !== "thinking" && activity.use?.name && ` · ${activity.use.name}`}
           </span>
-          {activity.kind === "thinking" ? (
+          {activity.use?.tool?.href ? <LazyToolBody key={activity.use.tool.ref} part={activity.use} t={t} thinking={activity.kind === "thinking"} input /> : activity.kind === "thinking" ? (
             <MarkdownMessage>{command}</MarkdownMessage>
           ) : (
             <ToolPatch text={command} t={t} input />
           )}
         </div>
       )}
-      {result && (
+      {(result || activity.result?.tool?.href) && (
         <div className="tool-detail-block">
           <span className="tool-detail-label">{t("Result")}</span>
-          <ToolPatch text={result} t={t} />
+          {activity.result?.tool?.href ? <LazyToolBody key={activity.result.tool.ref} part={activity.result} t={t} thinking={false} input={false} /> : <ToolPatch text={result!} t={t} />}
         </div>
       )}
     </div>
@@ -431,18 +504,19 @@ export function ActivityDetail({ activity, t }: { activity: Activity; t: Transla
 
 function ActivityLabel({ activity }: { activity: Activity }) {
   if (activity.kind !== "thinking") return <span>{activity.label}</span>;
+  const preview = activity.use?.tool?.preview || activity.use?.text;
   // Render the prefix separately so Markdown at the beginning of a thought
   // (for example, a heading or a list) is still parsed before it is clipped.
   return (
     <span className="tool-thinking-label">
       <span className="tool-thinking-label-prefix">{activity.label}</span>
-      {activity.use?.text.trim() && (
+      {preview?.trim() && (
         <>
           <span className="tool-thinking-label-separator" aria-hidden="true">
             {" "}·{" "}
           </span>
           <span className="tool-thinking-label-preview">
-            <MarkdownPreview>{activity.use.text}</MarkdownPreview>
+            <MarkdownPreview>{preview}</MarkdownPreview>
           </span>
         </>
       )}

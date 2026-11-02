@@ -1,0 +1,1600 @@
+{
+  "purpose": "Actual Web MarkdownMessage inline text/link ranges; actionable additionally excludes encoded control characters and credential-bearing URLs before native Intent dispatch",
+  "cases": [
+    {
+      "id": "http",
+      "source": "Visit https://example.com and http://example.org/a.",
+      "text": "Visit https://example.com and http://example.org/a.",
+      "links": [
+        {
+          "start": 6,
+          "end": 25,
+          "target": "https://example.com"
+        },
+        {
+          "start": 30,
+          "end": 50,
+          "target": "http://example.org/a"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 6,
+          "end": 25,
+          "target": "https://example.com"
+        },
+        {
+          "start": 30,
+          "end": 50,
+          "target": "http://example.org/a"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 6,
+          "end": 25,
+          "href": "https://example.com",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 30,
+          "end": 50,
+          "href": "http://example.org/a",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "www",
+      "source": "Visit www.example.com and WWW.EXAMPLE.ORG/docs.",
+      "text": "Visit www.example.com and WWW.EXAMPLE.ORG/docs.",
+      "links": [
+        {
+          "start": 6,
+          "end": 21,
+          "target": "http://www.example.com"
+        },
+        {
+          "start": 26,
+          "end": 46,
+          "target": "http://WWW.EXAMPLE.ORG/docs"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 6,
+          "end": 21,
+          "target": "http://www.example.com"
+        },
+        {
+          "start": 26,
+          "end": 46,
+          "target": "http://WWW.EXAMPLE.ORG/docs"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 6,
+          "end": 21,
+          "href": "http://www.example.com",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 26,
+          "end": 46,
+          "href": "http://WWW.EXAMPLE.ORG/docs",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "email",
+      "source": "Contact person+tag@example.com or other@example.org.",
+      "text": "Contact person+tag@example.com or other@example.org.",
+      "links": [
+        {
+          "start": 8,
+          "end": 30,
+          "target": "mailto:person+tag@example.com"
+        },
+        {
+          "start": 34,
+          "end": 51,
+          "target": "mailto:other@example.org"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 8,
+          "end": 30,
+          "target": "mailto:person+tag@example.com"
+        },
+        {
+          "start": 34,
+          "end": 51,
+          "target": "mailto:other@example.org"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 8,
+          "end": 30,
+          "href": "mailto:person+tag@example.com",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 34,
+          "end": 51,
+          "href": "mailto:other@example.org",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "balanced",
+      "source": "Read https://example.com/wiki/Function_(math).",
+      "text": "Read https://example.com/wiki/Function_(math).",
+      "links": [
+        {
+          "start": 5,
+          "end": 45,
+          "target": "https://example.com/wiki/Function_(math)"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 5,
+          "end": 45,
+          "target": "https://example.com/wiki/Function_(math)"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 5,
+          "end": 45,
+          "href": "https://example.com/wiki/Function_(math)",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "extra-parens",
+      "source": "(https://example.com/a(b))) and www.example.org/a(b).",
+      "text": "(https://example.com/a(b))) and www.example.org/a(b).",
+      "links": [
+        {
+          "start": 1,
+          "end": 25,
+          "target": "https://example.com/a(b)"
+        },
+        {
+          "start": 32,
+          "end": 52,
+          "target": "http://www.example.org/a(b)"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 1,
+          "end": 25,
+          "target": "https://example.com/a(b)"
+        },
+        {
+          "start": 32,
+          "end": 52,
+          "target": "http://www.example.org/a(b)"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 1,
+          "end": 25,
+          "href": "https://example.com/a(b)",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 32,
+          "end": 52,
+          "href": "http://www.example.org/a(b)",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "query",
+      "source": "https://example.com/a%2Fb?q=a%26b&c=d#part",
+      "text": "https://example.com/a%2Fb?q=a%26b&c=d#part",
+      "links": [
+        {
+          "start": 0,
+          "end": 42,
+          "target": "https://example.com/a%2Fb?q=a%26b&c=d#part"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 42,
+          "target": "https://example.com/a%2Fb?q=a%26b&c=d#part"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 42,
+          "href": "https://example.com/a%2Fb?q=a%26b&c=d#part",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "punctuation",
+      "source": "https://example.com/a, www.example.org/b! https://example.com/c?",
+      "text": "https://example.com/a, www.example.org/b! https://example.com/c?",
+      "links": [
+        {
+          "start": 0,
+          "end": 21,
+          "target": "https://example.com/a"
+        },
+        {
+          "start": 23,
+          "end": 40,
+          "target": "http://www.example.org/b"
+        },
+        {
+          "start": 42,
+          "end": 63,
+          "target": "https://example.com/c"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 21,
+          "target": "https://example.com/a"
+        },
+        {
+          "start": 23,
+          "end": 40,
+          "target": "http://www.example.org/b"
+        },
+        {
+          "start": 42,
+          "end": 63,
+          "target": "https://example.com/c"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 21,
+          "href": "https://example.com/a",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 23,
+          "end": 40,
+          "href": "http://www.example.org/b",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 42,
+          "end": 63,
+          "href": "https://example.com/c",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "quotes",
+      "source": "\"https://example.com/a\" and 'www.example.org/b'.",
+      "text": "\"https://example.com/a\" and 'www.example.org/b'.",
+      "links": [
+        {
+          "start": 1,
+          "end": 22,
+          "target": "https://example.com/a"
+        },
+        {
+          "start": 29,
+          "end": 46,
+          "target": "http://www.example.org/b"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 1,
+          "end": 22,
+          "target": "https://example.com/a"
+        },
+        {
+          "start": 29,
+          "end": 46,
+          "target": "http://www.example.org/b"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 1,
+          "end": 22,
+          "href": "https://example.com/a",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 29,
+          "end": 46,
+          "href": "http://www.example.org/b",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "port",
+      "source": "http://localhost:8080/path and https://example.org:443/a",
+      "text": "http://localhost:8080/path and https://example.org:443/a",
+      "links": [
+        {
+          "start": 0,
+          "end": 26,
+          "target": "http://localhost:8080/path"
+        },
+        {
+          "start": 31,
+          "end": 56,
+          "target": "https://example.org:443/a"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 26,
+          "target": "http://localhost:8080/path"
+        },
+        {
+          "start": 31,
+          "end": 56,
+          "target": "https://example.org:443/a"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 26,
+          "href": "http://localhost:8080/path",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 31,
+          "end": 56,
+          "href": "https://example.org:443/a",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "prefix",
+      "source": "xhttps://example.com 1https://example.org xwww.example.net",
+      "text": "xhttps://example.com 1https://example.org xwww.example.net",
+      "links": [
+        {
+          "start": 22,
+          "end": 41,
+          "target": "https://example.org"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 22,
+          "end": 41,
+          "target": "https://example.org"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 22,
+          "end": 41,
+          "href": "https://example.org",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "unicode-prefix",
+      "source": "中文https://example.com 中文www.example.org",
+      "text": "中文https://example.com 中文www.example.org",
+      "links": [
+        {
+          "start": 2,
+          "end": 21,
+          "target": "https://example.com"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 2,
+          "end": 21,
+          "target": "https://example.com"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 2,
+          "end": 21,
+          "href": "https://example.com",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "underscore",
+      "source": "https://a_b.example.com https://example.a_b.com www.a_b.example.org",
+      "text": "https://a_b.example.com https://example.a_b.com www.a_b.example.org",
+      "links": [
+        {
+          "start": 0,
+          "end": 23,
+          "target": "https://a_b.example.com"
+        },
+        {
+          "start": 48,
+          "end": 67,
+          "target": "http://www.a_b.example.org"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 23,
+          "target": "https://a_b.example.com"
+        },
+        {
+          "start": 48,
+          "end": 67,
+          "target": "http://www.a_b.example.org"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 23,
+          "href": "https://a_b.example.com",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 48,
+          "end": 67,
+          "href": "http://www.a_b.example.org",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "no-domain",
+      "source": "http:// https://. www. person@localhost",
+      "text": "http:// https://. www. person@localhost",
+      "links": [
+        {
+          "start": 18,
+          "end": 21,
+          "target": "http://www"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 18,
+          "end": 21,
+          "target": "http://www"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 18,
+          "end": 21,
+          "href": "http://www",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "email-punctuation",
+      "source": "(a+b@example.com), a@example.org! /skip@example.com",
+      "text": "(a+b@example.com), a@example.org! /skip@example.com",
+      "links": [
+        {
+          "start": 1,
+          "end": 16,
+          "target": "mailto:a+b@example.com"
+        },
+        {
+          "start": 19,
+          "end": 32,
+          "target": "mailto:a@example.org"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 1,
+          "end": 16,
+          "target": "mailto:a+b@example.com"
+        },
+        {
+          "start": 19,
+          "end": 32,
+          "target": "mailto:a@example.org"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 1,
+          "end": 16,
+          "href": "mailto:a+b@example.com",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 19,
+          "end": 32,
+          "href": "mailto:a@example.org",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "email-invalid",
+      "source": "a@example.c0 a@example.c_ a@example.c- a@domain a@.org",
+      "text": "a@example.c0 a@example.c_ a@example.c- a@domain a@.org",
+      "links": [
+        {
+          "start": 48,
+          "end": 54,
+          "target": "mailto:a@.org"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 48,
+          "end": 54,
+          "target": "mailto:a@.org"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 48,
+          "end": 54,
+          "href": "mailto:a@.org",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "explicit",
+      "source": "[Website](https://example.com/a%2Fb?q=a%26b \"Title\")",
+      "text": "Website",
+      "links": [
+        {
+          "start": 0,
+          "end": 7,
+          "target": "https://example.com/a%2Fb?q=a%26b"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 7,
+          "target": "https://example.com/a%2Fb?q=a%26b"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 7,
+          "href": "https://example.com/a%2Fb?q=a%26b",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "explicit-nested",
+      "source": "[**https://label.example.com**](https://destination.example.org)",
+      "text": "https://label.example.com",
+      "links": [
+        {
+          "start": 0,
+          "end": 25,
+          "target": "https://destination.example.org"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 25,
+          "target": "https://destination.example.org"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 25,
+          "href": "https://destination.example.org",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "explicit-www",
+      "source": "[www.label.example.com](https://destination.example.org)",
+      "text": "www.label.example.com",
+      "links": [
+        {
+          "start": 0,
+          "end": 21,
+          "target": "https://destination.example.org"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 21,
+          "target": "https://destination.example.org"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 21,
+          "href": "https://destination.example.org",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "image",
+      "source": "![https://label.example.com](https://image.example.org/a.png)",
+      "text": "https://label.example.com",
+      "links": [
+        {
+          "start": 0,
+          "end": 25,
+          "target": "https://image.example.org/a.png"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 25,
+          "target": "https://image.example.org/a.png"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 25,
+          "href": "https://image.example.org/a.png",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "image-no-alt",
+      "source": "![](https://image.example.org/a.png)",
+      "text": "https://image.example.org/a.png",
+      "links": [
+        {
+          "start": 0,
+          "end": 31,
+          "target": "https://image.example.org/a.png"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 31,
+          "target": "https://image.example.org/a.png"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 31,
+          "href": "https://image.example.org/a.png",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "local",
+      "source": "[Source](src/main.tsx#L12C3) and [File](file:///project/README.md)",
+      "text": "Source and File",
+      "links": [
+        {
+          "start": 0,
+          "end": 6,
+          "target": "src/main.tsx#L12C3"
+        },
+        {
+          "start": 11,
+          "end": 15,
+          "target": "file:///project/README.md"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 6,
+          "target": "src/main.tsx#L12C3"
+        },
+        {
+          "start": 11,
+          "end": 15,
+          "target": "file:///project/README.md"
+        }
+      ],
+      "anchors": []
+    },
+    {
+      "id": "mail-link",
+      "source": "[Email](mailto:person@example.com) and <person@example.org>",
+      "text": "Email and person@example.org",
+      "links": [
+        {
+          "start": 0,
+          "end": 5,
+          "target": "mailto:person@example.com"
+        },
+        {
+          "start": 10,
+          "end": 28,
+          "target": "mailto:person@example.org"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 5,
+          "target": "mailto:person@example.com"
+        },
+        {
+          "start": 10,
+          "end": 28,
+          "target": "mailto:person@example.org"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 5,
+          "href": "mailto:person@example.com",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 10,
+          "end": 28,
+          "href": "mailto:person@example.org",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "protocols",
+      "source": "[IRC](irc://irc.example.org/channel) [Secure](ircs://irc.example.org/channel) [Chat](xmpp:person@example.com)",
+      "text": "IRC Secure Chat",
+      "links": [
+        {
+          "start": 0,
+          "end": 3,
+          "target": "irc://irc.example.org/channel"
+        },
+        {
+          "start": 4,
+          "end": 10,
+          "target": "ircs://irc.example.org/channel"
+        },
+        {
+          "start": 11,
+          "end": 15,
+          "target": "xmpp:person@example.com"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 3,
+          "target": "irc://irc.example.org/channel"
+        },
+        {
+          "start": 4,
+          "end": 10,
+          "target": "ircs://irc.example.org/channel"
+        },
+        {
+          "start": 11,
+          "end": 15,
+          "target": "xmpp:person@example.com"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 3,
+          "href": "irc://irc.example.org/channel",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 4,
+          "end": 10,
+          "href": "ircs://irc.example.org/channel",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 11,
+          "end": 15,
+          "href": "xmpp:person@example.com",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "blocked",
+      "source": "[unsafe](javascript:alert%281%29) [data](data:text/html,test) [tel](tel:123)",
+      "text": "unsafe data tel",
+      "links": [],
+      "actionable": [],
+      "anchors": []
+    },
+    {
+      "id": "encoded-unsafe",
+      "source": "[bad](javascript%3Aalert%281%29) [data](%64ata:text/html,test)",
+      "text": "bad data",
+      "links": [],
+      "actionable": [],
+      "anchors": []
+    },
+    {
+      "id": "encoded-controls",
+      "source": "[bad](https://example.com/%0a) [badmail](mailto:a@example.com?body=%0aInjected)",
+      "text": "bad badmail",
+      "links": [
+        {
+          "start": 0,
+          "end": 3,
+          "target": "https://example.com/%0a"
+        },
+        {
+          "start": 4,
+          "end": 11,
+          "target": "mailto:a@example.com?body=%0aInjected"
+        }
+      ],
+      "actionable": [],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 3,
+          "href": "https://example.com/%0a",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 4,
+          "end": 11,
+          "href": "mailto:a@example.com?body=%0aInjected",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "inline-code",
+      "source": "`https://example.com` and `www.example.org` and `a@example.com`",
+      "text": "https://example.com and www.example.org and a@example.com",
+      "links": [],
+      "actionable": [],
+      "anchors": []
+    },
+    {
+      "id": "emphasis",
+      "source": "**https://example.com** and *www.example.org* and ~~a@example.net~~",
+      "text": "https://example.com and www.example.org and a@example.net",
+      "links": [
+        {
+          "start": 0,
+          "end": 19,
+          "target": "https://example.com"
+        },
+        {
+          "start": 24,
+          "end": 39,
+          "target": "http://www.example.org"
+        },
+        {
+          "start": 44,
+          "end": 57,
+          "target": "mailto:a@example.net"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 19,
+          "target": "https://example.com"
+        },
+        {
+          "start": 24,
+          "end": 39,
+          "target": "http://www.example.org"
+        },
+        {
+          "start": 44,
+          "end": 57,
+          "target": "mailto:a@example.net"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 19,
+          "href": "https://example.com",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 24,
+          "end": 39,
+          "href": "http://www.example.org",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 44,
+          "end": 57,
+          "href": "mailto:a@example.net",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "html",
+      "source": "Before <b>https://example.com</b> after",
+      "text": "Before https://example.com after",
+      "links": [
+        {
+          "start": 7,
+          "end": 26,
+          "target": "https://example.com"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 7,
+          "end": 26,
+          "target": "https://example.com"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 7,
+          "end": 26,
+          "href": "https://example.com",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "escaped",
+      "source": "https://example.com/a\\) and www.example.org/a\\*",
+      "text": "https://example.com/a\\) and www.example.org/a\\*",
+      "links": [
+        {
+          "start": 0,
+          "end": 22,
+          "target": "https://example.com/a%5C"
+        },
+        {
+          "start": 28,
+          "end": 46,
+          "target": "http://www.example.org/a%5C"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 22,
+          "target": "https://example.com/a%5C"
+        },
+        {
+          "start": 28,
+          "end": 46,
+          "target": "http://www.example.org/a%5C"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 22,
+          "href": "https://example.com/a%5C",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 28,
+          "end": 46,
+          "href": "http://www.example.org/a%5C",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "entities",
+      "source": "https://example.com/a&amp; and www.example.org/b&copy;",
+      "text": "https://example.com/a& and www.example.org/b©",
+      "links": [
+        {
+          "start": 0,
+          "end": 21,
+          "target": "https://example.com/a"
+        },
+        {
+          "start": 27,
+          "end": 44,
+          "target": "http://www.example.org/b"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 21,
+          "target": "https://example.com/a"
+        },
+        {
+          "start": 27,
+          "end": 44,
+          "target": "http://www.example.org/b"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 21,
+          "href": "https://example.com/a",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 27,
+          "end": 44,
+          "href": "http://www.example.org/b",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "supplementary",
+      "source": "😀 https://example.com/😀 and 日本語 www.example.org/a",
+      "text": "😀 https://example.com/😀 and 日本語 www.example.org/a",
+      "links": [
+        {
+          "start": 3,
+          "end": 25,
+          "target": "https://example.com/%F0%9F%98%80"
+        },
+        {
+          "start": 34,
+          "end": 51,
+          "target": "http://www.example.org/a"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 3,
+          "end": 25,
+          "target": "https://example.com/%F0%9F%98%80"
+        },
+        {
+          "start": 34,
+          "end": 51,
+          "target": "http://www.example.org/a"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 3,
+          "end": 25,
+          "href": "https://example.com/%F0%9F%98%80",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 34,
+          "end": 51,
+          "href": "http://www.example.org/a",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "fragment",
+      "source": "[Section](#section)",
+      "text": "Section",
+      "links": [
+        {
+          "start": 0,
+          "end": 7,
+          "target": "#section"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 7,
+          "target": "#section"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 7,
+          "href": "#section",
+          "target": "",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "uppercase",
+      "source": "HTTPS://EXAMPLE.COM/a and [Mail](MAILTO:a@example.org)",
+      "text": "HTTPS://EXAMPLE.COM/a and Mail",
+      "links": [
+        {
+          "start": 0,
+          "end": 21,
+          "target": "HTTPS://EXAMPLE.COM/a"
+        },
+        {
+          "start": 26,
+          "end": 30,
+          "target": "MAILTO:a@example.org"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 21,
+          "target": "HTTPS://EXAMPLE.COM/a"
+        },
+        {
+          "start": 26,
+          "end": 30,
+          "target": "MAILTO:a@example.org"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 21,
+          "href": "HTTPS://EXAMPLE.COM/a",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 26,
+          "end": 30,
+          "href": "MAILTO:a@example.org",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "idn",
+      "source": "https://例子.测试/页面 and www.日本語.jp/案内",
+      "text": "https://例子.测试/页面 and www.日本語.jp/案内",
+      "links": [
+        {
+          "start": 0,
+          "end": 16,
+          "target": "https://%E4%BE%8B%E5%AD%90.%E6%B5%8B%E8%AF%95/%E9%A1%B5%E9%9D%A2"
+        },
+        {
+          "start": 21,
+          "end": 34,
+          "target": "http://www.%E6%97%A5%E6%9C%AC%E8%AA%9E.jp/%E6%A1%88%E5%86%85"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 16,
+          "target": "https://%E4%BE%8B%E5%AD%90.%E6%B5%8B%E8%AF%95/%E9%A1%B5%E9%9D%A2"
+        },
+        {
+          "start": 21,
+          "end": 34,
+          "target": "http://www.%E6%97%A5%E6%9C%AC%E8%AA%9E.jp/%E6%A1%88%E5%86%85"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 16,
+          "href": "https://%E4%BE%8B%E5%AD%90.%E6%B5%8B%E8%AF%95/%E9%A1%B5%E9%9D%A2",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 21,
+          "end": 34,
+          "href": "http://www.%E6%97%A5%E6%9C%AC%E8%AA%9E.jp/%E6%A1%88%E5%86%85",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "explicit-unicode",
+      "source": "[Unicode](https://example.com/页面?q=😀)",
+      "text": "Unicode",
+      "links": [
+        {
+          "start": 0,
+          "end": 7,
+          "target": "https://example.com/%E9%A1%B5%E9%9D%A2?q=%F0%9F%98%80"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 7,
+          "target": "https://example.com/%E9%A1%B5%E9%9D%A2?q=%F0%9F%98%80"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 7,
+          "href": "https://example.com/%E9%A1%B5%E9%9D%A2?q=%F0%9F%98%80",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "ipv6",
+      "source": "[Loopback](http://[::1]:8080/a)",
+      "text": "Loopback",
+      "links": [
+        {
+          "start": 0,
+          "end": 8,
+          "target": "http://%5B::1%5D:8080/a"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 8,
+          "target": "http://%5B::1%5D:8080/a"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 8,
+          "href": "http://%5B::1%5D:8080/a",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "tail",
+      "source": "https://example.com/a*** https://example.org/a___ https://example.net/a~~~",
+      "text": "https://example.com/a*** https://example.org/a___ https://example.net/a~~~",
+      "links": [
+        {
+          "start": 0,
+          "end": 21,
+          "target": "https://example.com/a"
+        },
+        {
+          "start": 25,
+          "end": 46,
+          "target": "https://example.org/a"
+        },
+        {
+          "start": 50,
+          "end": 71,
+          "target": "https://example.net/a"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 21,
+          "target": "https://example.com/a"
+        },
+        {
+          "start": 25,
+          "end": 46,
+          "target": "https://example.org/a"
+        },
+        {
+          "start": 50,
+          "end": 71,
+          "target": "https://example.net/a"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 21,
+          "href": "https://example.com/a",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 25,
+          "end": 46,
+          "href": "https://example.org/a",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 50,
+          "end": 71,
+          "href": "https://example.net/a",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "symbols",
+      "source": "Visit https://example.com/a}> and www.example.org/a]: done",
+      "text": "Visit https://example.com/a}> and www.example.org/a]: done",
+      "links": [
+        {
+          "start": 6,
+          "end": 29,
+          "target": "https://example.com/a%7D%3E"
+        },
+        {
+          "start": 34,
+          "end": 51,
+          "target": "http://www.example.org/a"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 6,
+          "end": 29,
+          "target": "https://example.com/a%7D%3E"
+        },
+        {
+          "start": 34,
+          "end": 51,
+          "target": "http://www.example.org/a"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 6,
+          "end": 29,
+          "href": "https://example.com/a%7D%3E",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 34,
+          "end": 51,
+          "href": "http://www.example.org/a",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "credentials",
+      "source": "[Login](https://user:secret@example.org/a)",
+      "text": "Login",
+      "links": [
+        {
+          "start": 0,
+          "end": 5,
+          "target": "https://user:secret@example.org/a"
+        }
+      ],
+      "actionable": [],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 5,
+          "href": "https://user:secret@example.org/a",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    },
+    {
+      "id": "bad-utf8",
+      "source": "[Invalid](https://example.com/%FF)",
+      "text": "Invalid",
+      "links": [],
+      "actionable": [],
+      "anchors": []
+    },
+    {
+      "id": "separated",
+      "source": "a@example.com/http://example.org https://example.com/a@example.net",
+      "text": "a@example.com/http://example.org https://example.com/a@example.net",
+      "links": [
+        {
+          "start": 0,
+          "end": 13,
+          "target": "mailto:a@example.com"
+        },
+        {
+          "start": 14,
+          "end": 32,
+          "target": "http://example.org"
+        },
+        {
+          "start": 33,
+          "end": 66,
+          "target": "https://example.com/a@example.net"
+        }
+      ],
+      "actionable": [
+        {
+          "start": 0,
+          "end": 13,
+          "target": "mailto:a@example.com"
+        },
+        {
+          "start": 14,
+          "end": 32,
+          "target": "http://example.org"
+        },
+        {
+          "start": 33,
+          "end": 66,
+          "target": "https://example.com/a@example.net"
+        }
+      ],
+      "anchors": [
+        {
+          "start": 0,
+          "end": 13,
+          "href": "mailto:a@example.com",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 14,
+          "end": 32,
+          "href": "http://example.org",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        },
+        {
+          "start": 33,
+          "end": 66,
+          "href": "https://example.com/a@example.net",
+          "target": "_blank",
+          "rel": "noopener noreferrer"
+        }
+      ]
+    }
+  ],
+  "decorationCases": [
+    {
+      "id": "plain",
+      "text": "Before [agjpqy](https://example.com) after."
+    },
+    {
+      "id": "bold-parent",
+      "text": "**[agjpqy](https://example.com)**"
+    },
+    {
+      "id": "bold-child",
+      "text": "[**agjpqy**](https://example.com)"
+    },
+    {
+      "id": "italic-parent",
+      "text": "*[agjpqy](https://example.com)*"
+    },
+    {
+      "id": "italic-child",
+      "text": "[*agjpqy*](https://example.com)"
+    },
+    {
+      "id": "adjacent",
+      "text": "[First](https://example.com) [second](https://example.org) and [third](src/main.tsx)"
+    },
+    {
+      "id": "wrapped",
+      "text": "Before [A long linked label wraps across several lines without losing its underline or native selection behavior.](https://example.com) after."
+    },
+    {
+      "id": "email",
+      "text": "Contact person+tag@example.org."
+    },
+    {
+      "id": "chinese",
+      "locale": "zh-CN",
+      "text": "查看[共享组件与原生链接](src/main.tsx#L12C3)。"
+    },
+    {
+      "id": "japanese",
+      "locale": "ja",
+      "text": "[リンクと共通コンポーネント](src/main.tsx#L12C3)を確認。"
+    },
+    {
+      "id": "code-child",
+      "text": "[`agjpqy`](https://example.com)"
+    },
+    {
+      "id": "mixed",
+      "text": "[Plain **bold** *italic* and `code`](https://example.com)"
+    },
+    {
+      "id": "heading-one",
+      "text": "# [agjpqy](https://example.com)"
+    },
+    {
+      "id": "heading-two",
+      "text": "## [agjpqy](https://example.com)"
+    },
+    {
+      "id": "heading-three",
+      "text": "### [agjpqy](https://example.com)"
+    },
+    {
+      "id": "wrapped-hard-break",
+      "text": "[First linked line  \nSecond linked line](https://example.com) after."
+    },
+    {
+      "id": "wrapped-word",
+      "text": "[abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz](https://example.com) after."
+    }
+  ]
+}

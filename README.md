@@ -7,6 +7,7 @@ bundle identifier is `com.cloudgeek.spool`.
 
 ## Architecture
 
+- `android`: native Android mobile workspace over embedded tsnet, with connection controls in Settings; see [Android setup](android/README.md).
 - `cmd/desktop`: one MyGo native window switching between WebView settings and
   full-window WebView chat, reusing the Web client and Go service, plus a native tray.
 - `cmd/server`: optional headless HTTP server using the exact same services.
@@ -557,15 +558,28 @@ Clay is the default. Pick a suggested avatar, use **More avatars** to browse ano
 batch, then **Save avatar**. **Use my name** restores automatic generation in
 the selected style; automatic avatars follow display-name changes, while picked
 avatars stay unchanged. Canceling the picker leaves the saved avatar untouched.
+Native Android provides the same picker from the sidebar avatar and Settings.
 
 Avatars appear in the sidebar and online people list. Choices are stored per
 account in SQLite and restored on other devices. Existing databases receive the
-avatar table automatically; accounts and login credentials are unchanged. The
-version-pinned DiceBear SDK renders SVG locally: names are not sent to DiceBear,
-no external avatar service is required, and arbitrary SVG/URLs are not accepted.
+avatar table automatically; accounts and login credentials are unchanged.
+Images are generated locally, not fetched from an avatar API: Web uses the
+original pinned `@dicebear/core` JS package, and Android calls the official
+DiceBear Go v11 SDK compiled into its existing gomobile AAR, then draws the SVG
+with AndroidSVG. No WebView or JavaScript runtime is used by Android. Both use
+the same eight style definitions, resolved style/seed and palette; only profile
+configuration is synchronized with the server. Names are not sent to DiceBear
+and no external avatar service is required.
+Web caches up to 256 local data URIs with an 8 MiB content budget. Android's
+local Go renderer caches up to 256 SVGs/8 MiB across display sizes, with a
+separate 8 MiB native bitmap cache and pending-job coalescing. Generation and
+rasterization run off Android's UI thread. The pinned Go v11 version is currently
+`v11.0.0-rc.2` (a prerelease). The server's authenticated `/api/avatars.svg`
+endpoint remains available for older clients, but these clients do not use it.
 The former Robots, Shapes and Initials styles migrate to Clay on startup while
 preserving automatic/picked seeds; Thumbs choices remain selected. Only the eight
-selected style definitions from `@dicebear/styles` are bundled. Style credits
+selected style definitions from `github.com/dicebear/styles/v10` are bundled in
+Go; Web bundles the matching `@dicebear/styles` definitions. Style credits
 and license links appear in the picker and remain embedded in each SVG, including
 CC BY 4.0 attribution for Croodles (vijay verma) and Toon Head (Johan Melin).
 
@@ -1083,8 +1097,9 @@ chats, and online identities. The WebSocket sends scoped `profiles` snapshots
 before navigation/presence updates, including after reconnects and permission
 changes. Durable profile revisions and HTTP request fencing keep delayed replies
 or old chat SSE frames from reverting newer avatars/names. Missing identities
-use an ID placeholder until the batch lookup completes; avatar rendering still
-shares the bounded SVG cache rather than fetching an image for each component.
+use an ID placeholder until the batch lookup completes; images are generated
+locally and shared through bounded client caches, without an image API request
+for each component.
 
 Presence is kept in memory and deduplicated by account, aggregating tab/device
 connections. A visible page is online and an account with only background pages

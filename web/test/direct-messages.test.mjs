@@ -14,6 +14,8 @@ import { DirectMessagePanel } from "../.test-build/components/web/src/direct-mes
 import { PeopleGroupPicker } from "../.test-build/components/web/src/people-group-picker.js";
 import { PeopleConversationList } from "../.test-build/components/web/src/people-conversation-list.js";
 import { PeopleGroupAvatar } from "../.test-build/components/web/src/people-group-avatar.js";
+import { OnlinePeopleMenu } from "../.test-build/components/web/src/online-people-menu.js";
+import { avatarDataURI } from "../.test-build/avatar.js";
 
 const people = [
   { id: "bob", nickname: "Bob", avatar: { style: "thumbs", seed: "bob" } },
@@ -25,6 +27,22 @@ const message = (id, from = "bob", to = "alice") => ({
   to,
   text: "hello",
   sent_at: 123,
+});
+
+test("shared online menu preserves mobile inbox, group actions and presence avatars", () => {
+  const identities = [{ id: "alice", nickname: "Alice", state: "online" }, { ...people[0], state: "away" }];
+  const html = renderToStaticMarkup(createElement(OnlinePeopleMenu, {
+    self: "alice", people: identities, groups: [{ id: "group-test", name: "Design", members: ["alice", "bob"] }],
+    unread: { "online-room": 11, bob: 2 }, unreadMessages: 13,
+    resolvePerson: id => identities.find(person => person.id === id) || { id, nickname: "Design" },
+    t: key => key, onInbox() {}, onPeer() {}, onNewGroup() {},
+  }));
+  assert.match(html, /class="online-list"/); assert.match(html, /class="online-inbox-row"/);
+  assert.match(html, /People chat/); assert.match(html, /Online group chat/); assert.match(html, /New group chat/);
+  assert.match(html, /data-conversation="group-test"/); assert.match(html, /people-group-avatar/);
+  assert.match(html, /class="online-dot"/); assert.match(html, /class="away-dot"/); assert.match(html, />9\+</);
+  assert.equal((html.match(/class="online-chat-person"/g) || []).length, 3);
+  assert.ok(html.includes(`src="${avatarDataURI(people[0]).replaceAll("&", "&amp;")}"`));
 });
 
 test("inbox separates people, deduplicates echoes and tracks unread messages", () => {

@@ -1,0 +1,101 @@
+package com.cloudgeek.spool.android;
+
+import android.content.Context;
+import android.graphics.drawable.Drawable;
+
+/** Generated from the Web client's Lucide and LobeHub SVGs; see android/THIRD_PARTY_NOTICES. */
+final class NativeIcons {
+    static Drawable drawable(Context context, String name, int color, int size) {
+        int resource;
+        switch (name.replace('-', '_')) {
+            case "menu": resource = R.drawable.web_icon_menu; break;
+            case "close": resource = R.drawable.web_icon_close; break;
+            case "back": resource = R.drawable.web_icon_back; break;
+            case "send": resource = R.drawable.web_icon_send; break;
+            case "stop": resource = R.drawable.web_icon_stop; break;
+            case "arrow_down": resource = R.drawable.web_icon_arrow_down; break;
+            case "files_close": resource = R.drawable.web_icon_files_close; break;
+            case "file": resource = R.drawable.web_icon_file; break;
+            case "plus": resource = R.drawable.web_icon_plus; break;
+            case "folder": resource = R.drawable.web_icon_folder; break;
+            case "folder_open": resource = R.drawable.web_icon_folder_open; break;
+            case "files": resource = R.drawable.web_icon_files; break;
+            case "project_folder": resource = R.drawable.web_icon_project_folder; break;
+            case "project_folder_open": resource = R.drawable.web_icon_project_folder_open; break;
+            case "people": resource = R.drawable.web_icon_people; break;
+            case "user_plus": resource = R.drawable.web_icon_user_plus; break;
+            case "attach": resource = R.drawable.web_icon_attach; break;
+            case "settings": resource = R.drawable.web_icon_settings; break;
+            case "file_text": resource = R.drawable.web_icon_file_text; break;
+            case "file_code": resource = R.drawable.web_icon_file_code; break;
+            case "chevron_down": resource = R.drawable.web_icon_chevron_down; break;
+            case "chevron_up": resource = R.drawable.web_icon_chevron_up; break;
+            case "chevron_right": resource = R.drawable.web_icon_chevron_right; break;
+            case "download": resource = R.drawable.web_icon_download; break;
+            case "log_out": resource = R.drawable.web_icon_log_out; break;
+            case "monitor": resource = R.drawable.web_icon_monitor; break;
+            case "sun": resource = R.drawable.web_icon_sun; break;
+            case "moon": resource = R.drawable.web_icon_moon; break;
+            case "check": resource = R.drawable.web_icon_check; break;
+            case "command": resource = R.drawable.web_icon_command; break;
+            case "copy": resource = R.drawable.web_icon_copy; break;
+            case "circle_alert": resource = R.drawable.web_icon_circle_alert; break;
+            case "shield_check": resource = R.drawable.web_icon_shield_check; break;
+            case "shield_question": resource = R.drawable.web_icon_shield_question; break;
+            case "message": resource = R.drawable.web_icon_message; break;
+            case "search": resource = R.drawable.web_icon_search; break;
+            case "refresh": resource = R.drawable.web_icon_refresh; break;
+            case "spinner": resource = R.drawable.web_icon_spinner; break;
+            case "brain": resource = R.drawable.web_icon_brain; break;
+            case "wrench": resource = R.drawable.web_icon_wrench; break;
+            case "terminal": resource = R.drawable.web_icon_terminal; break;
+            case "globe": resource = R.drawable.web_icon_globe; break;
+            case "list": resource = R.drawable.web_icon_list; break;
+            case "book_open": resource = R.drawable.web_icon_book_open; break;
+            case "file_pen": resource = R.drawable.web_icon_file_pen; break;
+            case "file_plus": resource = R.drawable.web_icon_file_plus; break;
+            case "file_x": resource = R.drawable.web_icon_file_x; break;
+            case "crosshair": resource = R.drawable.web_icon_crosshair; break;
+            case "codex": resource = R.drawable.web_icon_codex; break;
+            case "claude": resource = R.drawable.web_icon_claude; break;
+            case "diff_symbol_added": resource = R.drawable.web_icon_diff_symbol_added; break;
+            case "diff_symbol_deleted": resource = R.drawable.web_icon_diff_symbol_deleted; break;
+            case "diff_symbol_modified": resource = R.drawable.web_icon_diff_symbol_modified; break;
+            case "diff_symbol_moved": resource = R.drawable.web_icon_diff_symbol_moved; break;
+            case "diff_arrow_right_short": resource = R.drawable.web_icon_diff_arrow_right_short; break;
+            case "tree_chevron": resource = R.drawable.web_icon_tree_chevron; break;
+            case "tree_dot": resource = R.drawable.web_icon_tree_dot; break;
+            case "tree_file": resource = R.drawable.web_icon_tree_file; break;
+            case "tree_lock": resource = R.drawable.web_icon_tree_lock; break;
+            case "tree_ellipsis": resource = R.drawable.web_icon_tree_ellipsis; break;
+            case "tree_bash": resource = R.drawable.web_icon_tree_bash; break;
+            case "tree_c": resource = R.drawable.web_icon_tree_c; break;
+            case "tree_cpp": resource = R.drawable.web_icon_tree_cpp; break;
+            case "tree_css": resource = R.drawable.web_icon_tree_css; break;
+            case "tree_database": resource = R.drawable.web_icon_tree_database; break;
+            case "tree_default": resource = R.drawable.web_icon_tree_default; break;
+            case "tree_font": resource = R.drawable.web_icon_tree_font; break;
+            case "tree_git": resource = R.drawable.web_icon_tree_git; break;
+            case "tree_go": resource = R.drawable.web_icon_tree_go; break;
+            case "tree_html": resource = R.drawable.web_icon_tree_html; break;
+            case "tree_image": resource = R.drawable.web_icon_tree_image; break;
+            case "tree_javascript": resource = R.drawable.web_icon_tree_javascript; break;
+            case "tree_json": resource = R.drawable.web_icon_tree_json; break;
+            case "tree_markdown": resource = R.drawable.web_icon_tree_markdown; break;
+            case "tree_mcp": resource = R.drawable.web_icon_tree_mcp; break;
+            case "tree_python": resource = R.drawable.web_icon_tree_python; break;
+            case "tree_ruby": resource = R.drawable.web_icon_tree_ruby; break;
+            case "tree_rust": resource = R.drawable.web_icon_tree_rust; break;
+            case "tree_swift": resource = R.drawable.web_icon_tree_swift; break;
+            case "tree_table": resource = R.drawable.web_icon_tree_table; break;
+            case "tree_text": resource = R.drawable.web_icon_tree_text; break;
+            case "tree_typescript": resource = R.drawable.web_icon_tree_typescript; break;
+            case "tree_zip": resource = R.drawable.web_icon_tree_zip; break;
+            default: throw new IllegalArgumentException("Unknown Web icon: " + name);
+        }
+        Drawable icon = context.getDrawable(resource).mutate();
+        icon.setTint(color);
+        icon.setBounds(0, 0, size, size);
+        return icon;
+    }
+}

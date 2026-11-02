@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = 'SpoolAndroid'
-include ':app'
+include ':app', ':textmate'

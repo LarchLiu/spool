@@ -1,0 +1,4163 @@
+{
+  "purpose": "Actual Web workspace-stream.ts and main.tsx connected/unauthenticated callbacks; integer browser timer conversion, control sends exclude Go-owned hello/pong. Not real transport/device parity.",
+  "cases": [
+    {
+      "id": "backoff-cap-and-ready-reset",
+      "random": 0,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              500
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 500,
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 2,
+            "received": [],
+            "controls": [],
+            "timers": [
+              1000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 1000,
+          "expected": {
+            "connections": 3,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 2,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 3,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 2,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 3,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 3,
+            "received": [],
+            "controls": [],
+            "timers": [
+              2000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 2000,
+          "expected": {
+            "connections": 4,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 3,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 4,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 3,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 4,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 4,
+            "received": [],
+            "controls": [],
+            "timers": [
+              4000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 4000,
+          "expected": {
+            "connections": 5,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 4,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 5,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 4,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 5,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 5,
+            "received": [],
+            "controls": [],
+            "timers": [
+              8000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 8000,
+          "expected": {
+            "connections": 6,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 5,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 6,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 5,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 6,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 6,
+            "received": [],
+            "controls": [],
+            "timers": [
+              16000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 16000,
+          "expected": {
+            "connections": 7,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 6,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 7,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 6,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 7,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 7,
+            "received": [],
+            "controls": [],
+            "timers": [
+              30000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 30000,
+          "expected": {
+            "connections": 8,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 7,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 8,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 7,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 8,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 8,
+            "received": [],
+            "controls": [],
+            "timers": [
+              30000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 30000,
+          "expected": {
+            "connections": 9,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 8,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 9,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 8,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 9,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 8,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 9,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 9,
+            "received": [],
+            "controls": [],
+            "timers": [
+              500
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 500,
+          "expected": {
+            "connections": 10,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 9,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "heartbeat-rearms-watchdog-and-resume-refreshes",
+      "random": 0,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 44999,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              1
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ping",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 44999,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              1
+            ]
+          }
+        },
+        {
+          "type": "resume",
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              1
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 1,
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              500
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "resume-bypasses-disconnected-backoff",
+      "random": 0,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "resume",
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              500
+            ]
+          }
+        },
+        {
+          "type": "resume",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "handshake-watchdog",
+      "random": 0,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 45000,
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              500
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 500,
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "policy-close-expires-and-rejects-late-frames",
+      "random": 0,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "policy",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 1,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": []
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "stale"
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 1,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": []
+          }
+        },
+        {
+          "type": "resume",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 1,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": []
+          }
+        },
+        {
+          "type": "advance",
+          "value": 60000,
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 1,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "synchronous-open-failure",
+      "random": 0,
+      "blocked": true,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 0,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              500
+            ]
+          }
+        },
+        {
+          "type": "block",
+          "value": false,
+          "expected": {
+            "connections": 0,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              500
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 500,
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "late-old-socket-cannot-clear-new-state",
+      "random": 0,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              500
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 500,
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "old-frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "stale"
+            }
+          ],
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "old-error",
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "backoff-cap-and-ready-reset",
+      "random": 0.5,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              550
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 550,
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 2,
+            "received": [],
+            "controls": [],
+            "timers": [
+              1100
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 1100,
+          "expected": {
+            "connections": 3,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 2,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 3,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 2,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 3,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 3,
+            "received": [],
+            "controls": [],
+            "timers": [
+              2200
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 2200,
+          "expected": {
+            "connections": 4,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 3,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 4,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 3,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 4,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 4,
+            "received": [],
+            "controls": [],
+            "timers": [
+              4400
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 4400,
+          "expected": {
+            "connections": 5,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 4,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 5,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 4,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 5,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 5,
+            "received": [],
+            "controls": [],
+            "timers": [
+              8800
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 8800,
+          "expected": {
+            "connections": 6,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 5,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 6,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 5,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 6,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 6,
+            "received": [],
+            "controls": [],
+            "timers": [
+              17600
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 17600,
+          "expected": {
+            "connections": 7,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 6,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 7,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 6,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 7,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 7,
+            "received": [],
+            "controls": [],
+            "timers": [
+              33000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 33000,
+          "expected": {
+            "connections": 8,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 7,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 8,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 7,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 8,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 8,
+            "received": [],
+            "controls": [],
+            "timers": [
+              33000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 33000,
+          "expected": {
+            "connections": 9,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 8,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 9,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 8,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 9,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 8,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 9,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 9,
+            "received": [],
+            "controls": [],
+            "timers": [
+              550
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 550,
+          "expected": {
+            "connections": 10,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 9,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "heartbeat-rearms-watchdog-and-resume-refreshes",
+      "random": 0.5,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 44999,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              1
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ping",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 44999,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              1
+            ]
+          }
+        },
+        {
+          "type": "resume",
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              1
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 1,
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              550
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "resume-bypasses-disconnected-backoff",
+      "random": 0.5,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "resume",
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              550
+            ]
+          }
+        },
+        {
+          "type": "resume",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "handshake-watchdog",
+      "random": 0.5,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 45000,
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              550
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 550,
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "policy-close-expires-and-rejects-late-frames",
+      "random": 0.5,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "policy",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 1,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": []
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "stale"
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 1,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": []
+          }
+        },
+        {
+          "type": "resume",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 1,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": []
+          }
+        },
+        {
+          "type": "advance",
+          "value": 60000,
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 1,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "synchronous-open-failure",
+      "random": 0.5,
+      "blocked": true,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 0,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              550
+            ]
+          }
+        },
+        {
+          "type": "block",
+          "value": false,
+          "expected": {
+            "connections": 0,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              550
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 550,
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "late-old-socket-cannot-clear-new-state",
+      "random": 0.5,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              550
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 550,
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "old-frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "stale"
+            }
+          ],
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "old-error",
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "backoff-cap-and-ready-reset",
+      "random": 0.999,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              599
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 599,
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 2,
+            "received": [],
+            "controls": [],
+            "timers": [
+              1199
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 1199,
+          "expected": {
+            "connections": 3,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 2,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 3,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 2,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 3,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 3,
+            "received": [],
+            "controls": [],
+            "timers": [
+              2399
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 2399,
+          "expected": {
+            "connections": 4,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 3,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 4,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 3,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 4,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 4,
+            "received": [],
+            "controls": [],
+            "timers": [
+              4799
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 4799,
+          "expected": {
+            "connections": 5,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 4,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 5,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 4,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 5,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 5,
+            "received": [],
+            "controls": [],
+            "timers": [
+              9598
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 9598,
+          "expected": {
+            "connections": 6,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 5,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 6,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 5,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 6,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 6,
+            "received": [],
+            "controls": [],
+            "timers": [
+              19196
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 19196,
+          "expected": {
+            "connections": 7,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 6,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 7,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 6,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 7,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 7,
+            "received": [],
+            "controls": [],
+            "timers": [
+              35994
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 35994,
+          "expected": {
+            "connections": 8,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 7,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 8,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 7,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 8,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 8,
+            "received": [],
+            "controls": [],
+            "timers": [
+              35994
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 35994,
+          "expected": {
+            "connections": 9,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 8,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 9,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 8,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 9,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 8,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 9,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 9,
+            "received": [],
+            "controls": [],
+            "timers": [
+              599
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 599,
+          "expected": {
+            "connections": 10,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 9,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "heartbeat-rearms-watchdog-and-resume-refreshes",
+      "random": 0.999,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 44999,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              1
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ping",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 44999,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              1
+            ]
+          }
+        },
+        {
+          "type": "resume",
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              1
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 1,
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              599
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "resume-bypasses-disconnected-backoff",
+      "random": 0.999,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "resume",
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              599
+            ]
+          }
+        },
+        {
+          "type": "resume",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [
+              "refresh"
+            ],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "handshake-watchdog",
+      "random": 0.999,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 45000,
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              599
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 599,
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "policy-close-expires-and-rejects-late-frames",
+      "random": 0.999,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "policy",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 1,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": []
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "stale"
+            }
+          ],
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 1,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": []
+          }
+        },
+        {
+          "type": "resume",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 1,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": []
+          }
+        },
+        {
+          "type": "advance",
+          "value": 60000,
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 1,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "synchronous-open-failure",
+      "random": 0.999,
+      "blocked": true,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 0,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              599
+            ]
+          }
+        },
+        {
+          "type": "block",
+          "value": false,
+          "expected": {
+            "connections": 0,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              599
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 599,
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "late-old-socket-cannot-clear-new-state",
+      "random": 0.999,
+      "blocked": false,
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 1,
+            "connected": null,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 1,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 0,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "connections": 1,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              599
+            ]
+          }
+        },
+        {
+          "type": "advance",
+          "value": 599,
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "open",
+          "expected": {
+            "connections": 2,
+            "connected": false,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "ready",
+          "value": true,
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "bob",
+              "devices": 1
+            }
+          ],
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "old-frame",
+          "kind": "presence",
+          "value": [
+            {
+              "id": "stale"
+            }
+          ],
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        },
+        {
+          "type": "old-error",
+          "expected": {
+            "connections": 2,
+            "connected": true,
+            "presence": [
+              {
+                "id": "bob",
+                "devices": 1
+              }
+            ],
+            "expired": 0,
+            "authRequests": 1,
+            "received": [],
+            "controls": [],
+            "timers": [
+              45000
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

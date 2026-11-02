@@ -1,0 +1,4621 @@
+{
+  "purpose": "Original main.tsx history JSX/CSS with byte-matched Android test fonts and actual history functions in Chrome; not real API/tsnet/device parity.",
+  "browser": "156.0.8078.74",
+  "cases": [
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 320,
+      "id": "unavailable",
+      "width": 284,
+      "height": 38,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 320,
+      "id": "loading",
+      "width": 284,
+      "height": 38,
+      "children": [
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 320,
+      "id": "retry",
+      "width": 284,
+      "height": 51,
+      "children": [
+        {
+          "text": "Retry loading earlier messages",
+          "x": 61.609375,
+          "y": 0,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 320,
+      "id": "unavailable-loading",
+      "width": 284,
+      "height": 76,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 38,
+          "width": 284,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 320,
+      "id": "unavailable-retry",
+      "width": 284,
+      "height": 89,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Retry loading earlier messages",
+          "x": 61.609375,
+          "y": 38,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 38,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 38,
+      "children": [
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 51,
+      "children": [
+        {
+          "text": "Retry loading earlier messages",
+          "x": 81.609375,
+          "y": 0,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 76,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 38,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 89,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Retry loading earlier messages",
+          "x": 81.609375,
+          "y": 38,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 412,
+      "id": "unavailable",
+      "width": 376,
+      "height": 38,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 412,
+      "id": "loading",
+      "width": 376,
+      "height": 38,
+      "children": [
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 412,
+      "id": "retry",
+      "width": 376,
+      "height": 51,
+      "children": [
+        {
+          "text": "Retry loading earlier messages",
+          "x": 107.609375,
+          "y": 0,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 412,
+      "id": "unavailable-loading",
+      "width": 376,
+      "height": 76,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 38,
+          "width": 376,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 412,
+      "id": "unavailable-retry",
+      "width": 376,
+      "height": 89,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Retry loading earlier messages",
+          "x": 107.609375,
+          "y": 38,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "unavailable",
+      "width": 284,
+      "height": 38,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "loading",
+      "width": 284,
+      "height": 38,
+      "children": [
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "retry",
+      "width": 284,
+      "height": 51,
+      "children": [
+        {
+          "text": "Retry loading earlier messages",
+          "x": 61.609375,
+          "y": 0,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "unavailable-loading",
+      "width": 284,
+      "height": 76,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 38,
+          "width": 284,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "unavailable-retry",
+      "width": 284,
+      "height": 89,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Retry loading earlier messages",
+          "x": 61.609375,
+          "y": 38,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 38,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 38,
+      "children": [
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 51,
+      "children": [
+        {
+          "text": "Retry loading earlier messages",
+          "x": 81.609375,
+          "y": 0,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 76,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 38,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 89,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Retry loading earlier messages",
+          "x": 81.609375,
+          "y": 38,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "unavailable",
+      "width": 376,
+      "height": 38,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "loading",
+      "width": 376,
+      "height": 38,
+      "children": [
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "retry",
+      "width": 376,
+      "height": 51,
+      "children": [
+        {
+          "text": "Retry loading earlier messages",
+          "x": 107.609375,
+          "y": 0,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "unavailable-loading",
+      "width": 376,
+      "height": 76,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 38,
+          "width": 376,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "unavailable-retry",
+      "width": 376,
+      "height": 89,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Retry loading earlier messages",
+          "x": 107.609375,
+          "y": 38,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 320,
+      "id": "unavailable",
+      "width": 284,
+      "height": 42,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 320,
+      "id": "loading",
+      "width": 284,
+      "height": 42,
+      "children": [
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 320,
+      "id": "retry",
+      "width": 284,
+      "height": 55,
+      "children": [
+        {
+          "text": "重试加载更早的消息",
+          "x": 85,
+          "y": 0,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 320,
+      "id": "unavailable-loading",
+      "width": 284,
+      "height": 84,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 42,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 320,
+      "id": "unavailable-retry",
+      "width": 284,
+      "height": 97,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "重试加载更早的消息",
+          "x": 85,
+          "y": 42,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 55,
+      "children": [
+        {
+          "text": "重试加载更早的消息",
+          "x": 105,
+          "y": 0,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 84,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 42,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 97,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "重试加载更早的消息",
+          "x": 105,
+          "y": 42,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 412,
+      "id": "unavailable",
+      "width": 376,
+      "height": 42,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 412,
+      "id": "loading",
+      "width": 376,
+      "height": 42,
+      "children": [
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 412,
+      "id": "retry",
+      "width": 376,
+      "height": 55,
+      "children": [
+        {
+          "text": "重试加载更早的消息",
+          "x": 131,
+          "y": 0,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 412,
+      "id": "unavailable-loading",
+      "width": 376,
+      "height": 84,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 42,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 412,
+      "id": "unavailable-retry",
+      "width": 376,
+      "height": 97,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "重试加载更早的消息",
+          "x": 131,
+          "y": 42,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "unavailable",
+      "width": 284,
+      "height": 42,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "loading",
+      "width": 284,
+      "height": 42,
+      "children": [
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "retry",
+      "width": 284,
+      "height": 55,
+      "children": [
+        {
+          "text": "重试加载更早的消息",
+          "x": 85,
+          "y": 0,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "unavailable-loading",
+      "width": 284,
+      "height": 84,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 42,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "unavailable-retry",
+      "width": 284,
+      "height": 97,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "重试加载更早的消息",
+          "x": 85,
+          "y": 42,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 55,
+      "children": [
+        {
+          "text": "重试加载更早的消息",
+          "x": 105,
+          "y": 0,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 84,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 42,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 97,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "重试加载更早的消息",
+          "x": 105,
+          "y": 42,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "unavailable",
+      "width": 376,
+      "height": 42,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "loading",
+      "width": 376,
+      "height": 42,
+      "children": [
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "retry",
+      "width": 376,
+      "height": 55,
+      "children": [
+        {
+          "text": "重试加载更早的消息",
+          "x": 131,
+          "y": 0,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "unavailable-loading",
+      "width": 376,
+      "height": 84,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 42,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "unavailable-retry",
+      "width": 376,
+      "height": 97,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "重试加载更早的消息",
+          "x": 131,
+          "y": 42,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 320,
+      "id": "unavailable",
+      "width": 284,
+      "height": 42,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 320,
+      "id": "loading",
+      "width": 284,
+      "height": 42,
+      "children": [
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 320,
+      "id": "retry",
+      "width": 284,
+      "height": 55,
+      "children": [
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 60.09375,
+          "y": 0,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 320,
+      "id": "unavailable-loading",
+      "width": 284,
+      "height": 84,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 42,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 320,
+      "id": "unavailable-retry",
+      "width": 284,
+      "height": 97,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 60.09375,
+          "y": 42,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 55,
+      "children": [
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 80.09375,
+          "y": 0,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 84,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 42,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 97,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 80.09375,
+          "y": 42,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 412,
+      "id": "unavailable",
+      "width": 376,
+      "height": 42,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 412,
+      "id": "loading",
+      "width": 376,
+      "height": 42,
+      "children": [
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 412,
+      "id": "retry",
+      "width": 376,
+      "height": 55,
+      "children": [
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 106.09375,
+          "y": 0,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 412,
+      "id": "unavailable-loading",
+      "width": 376,
+      "height": 84,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 42,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 412,
+      "id": "unavailable-retry",
+      "width": 376,
+      "height": 97,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 106.09375,
+          "y": 42,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "unavailable",
+      "width": 284,
+      "height": 42,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "loading",
+      "width": 284,
+      "height": 42,
+      "children": [
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "retry",
+      "width": 284,
+      "height": 55,
+      "children": [
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 60.09375,
+          "y": 0,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "unavailable-loading",
+      "width": 284,
+      "height": 84,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 42,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 320,
+      "id": "unavailable-retry",
+      "width": 284,
+      "height": 97,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 284,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 60.09375,
+          "y": 42,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 55,
+      "children": [
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 80.09375,
+          "y": 0,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 84,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 42,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 97,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 80.09375,
+          "y": 42,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "unavailable",
+      "width": 376,
+      "height": 42,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "loading",
+      "width": 376,
+      "height": 42,
+      "children": [
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "retry",
+      "width": 376,
+      "height": 55,
+      "children": [
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 106.09375,
+          "y": 0,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "unavailable-loading",
+      "width": 376,
+      "height": 84,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 42,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 1,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 412,
+      "id": "unavailable-retry",
+      "width": 376,
+      "height": 97,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 376,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 106.09375,
+          "y": 42,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 38,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 38,
+      "children": [
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 51,
+      "children": [
+        {
+          "text": "Retry loading earlier messages",
+          "x": 81.609375,
+          "y": 0,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 76,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 38,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 89,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Retry loading earlier messages",
+          "x": 81.609375,
+          "y": 38,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 38,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 38,
+      "children": [
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 51,
+      "children": [
+        {
+          "text": "Retry loading earlier messages",
+          "x": 81.609375,
+          "y": 0,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 76,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 38,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 89,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Retry loading earlier messages",
+          "x": 81.609375,
+          "y": 38,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 55,
+      "children": [
+        {
+          "text": "重试加载更早的消息",
+          "x": 105,
+          "y": 0,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 84,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 42,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 97,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "重试加载更早的消息",
+          "x": 105,
+          "y": 42,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 55,
+      "children": [
+        {
+          "text": "重试加载更早的消息",
+          "x": 105,
+          "y": 0,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 84,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 42,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 97,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "重试加载更早的消息",
+          "x": 105,
+          "y": 42,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 55,
+      "children": [
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 80.09375,
+          "y": 0,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 84,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 42,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 97,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 80.09375,
+          "y": 42,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 55,
+      "children": [
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 80.09375,
+          "y": 0,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 84,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 42,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 2.625,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 97,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 80.09375,
+          "y": 42,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 38,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 38,
+      "children": [
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 51,
+      "children": [
+        {
+          "text": "Retry loading earlier messages",
+          "x": 81.609375,
+          "y": 0,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 76,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 38,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 89,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Retry loading earlier messages",
+          "x": 81.609375,
+          "y": 38,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 38,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 38,
+      "children": [
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 51,
+      "children": [
+        {
+          "text": "Retry loading earlier messages",
+          "x": 81.609375,
+          "y": 0,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 76,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Loading earlier messages…",
+          "x": 0,
+          "y": 38,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "en",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 89,
+      "children": [
+        {
+          "text": "Native session history is unavailable",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 14,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "Retry loading earlier messages",
+          "x": 81.609375,
+          "y": 38,
+          "width": 160.78125,
+          "height": 27,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 55,
+      "children": [
+        {
+          "text": "重试加载更早的消息",
+          "x": 105,
+          "y": 0,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 84,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 42,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 97,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "重试加载更早的消息",
+          "x": 105,
+          "y": 42,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 55,
+      "children": [
+        {
+          "text": "重试加载更早的消息",
+          "x": 105,
+          "y": 0,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 84,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "正在加载更早的消息…",
+          "x": 0,
+          "y": 42,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "zh-CN",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 97,
+      "children": [
+        {
+          "text": "原始会话历史暂不可用",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "重试加载更早的消息",
+          "x": 105,
+          "y": 42,
+          "width": 114,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 55,
+      "children": [
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 80.09375,
+          "y": 0,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 84,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 42,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "light",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 97,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 80.09375,
+          "y": 42,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(133, 137, 129)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "loading",
+      "width": 324,
+      "height": 42,
+      "children": [
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "retry",
+      "width": 324,
+      "height": 55,
+      "children": [
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 80.09375,
+          "y": 0,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-loading",
+      "width": 324,
+      "height": 84,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを読み込み中…",
+          "x": 0,
+          "y": 42,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        }
+      ]
+    },
+    {
+      "density": 3,
+      "locale": "ja",
+      "theme": "dark",
+      "viewport": 360,
+      "id": "unavailable-retry",
+      "width": 324,
+      "height": 97,
+      "children": [
+        {
+          "text": "元のセッション履歴を読み込めません",
+          "x": 0,
+          "y": 0,
+          "width": 324,
+          "height": 18,
+          "fontSize": 12,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 0,
+          "paddingTop": 0,
+          "marginBottom": 24,
+          "tag": "P",
+          "role": "status"
+        },
+        {
+          "text": "以前のメッセージを再読み込み",
+          "x": 80.09375,
+          "y": 42,
+          "width": 163.8125,
+          "height": 31,
+          "fontSize": 10,
+          "color": "rgb(151, 151, 149)",
+          "paddingLeft": 12,
+          "paddingTop": 8,
+          "marginBottom": 24,
+          "tag": "BUTTON",
+          "role": null
+        }
+      ]
+    }
+  ],
+  "lifecycle": {
+    "trace": [
+      {
+        "path": "/chats/chat-one/history?before=first",
+        "before": 0,
+        "frame": 1
+      },
+      {
+        "path": "/chats/chat-one/history?before=last",
+        "before": 1,
+        "frame": 2
+      }
+    ],
+    "canceledRequests": 0,
+    "canceled": null,
+    "anchor": {
+      "id": "chat-one",
+      "height": 1200,
+      "top": 150
+    },
+    "restored": 2350,
+    "followed": 3200,
+    "scrollHeight": 3400,
+    "clientHeight": 200
+  }
+}

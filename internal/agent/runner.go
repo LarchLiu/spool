@@ -38,6 +38,7 @@ type AgentRequest struct {
 
 type AgentEvent struct {
 	Type            string          `json:"type"`
+	Compacting      bool            `json:"compacting,omitempty"`
 	TurnID          string          `json:"turn_id,omitempty"`
 	Text            string          `json:"text,omitempty"`
 	SessionID       string          `json:"session_id,omitempty"`
@@ -225,6 +226,9 @@ func codexTranscriptPart(item map[string]any, model string) chatmodel.Part {
 // Keeping the conversion here makes the stored transcript independent of the
 // agent protocol used to produce it.
 func codexTranscriptParts(item map[string]any, model string) []chatmodel.Part {
+	if codexCompactionItem(item) {
+		return nil
+	}
 	kind := codexItemKind(item)
 	switch kind {
 	case "message":

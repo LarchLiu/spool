@@ -42,6 +42,7 @@ type nativeHistory struct {
 	index   []agent.NativeTurn
 	title   string
 	parts   []chatmodel.Transcript
+	details map[string]string
 	bytes   int
 	lru     *list.Element
 }
@@ -130,8 +131,9 @@ func (c *nativeHistoryCache) read(backend chatmodel.Backend, path string, use fu
 func (c *nativeHistoryCache) transcripts(file *nativeHistory) ([]chatmodel.Transcript, error) {
 	c.mu.Lock()
 	if cached := file.parts; cached != nil {
+		transcripts := restoreToolBodies(cached, file.details)
 		c.mu.Unlock()
-		return cloneTranscripts(cached), nil
+		return transcripts, nil
 	}
 	c.mu.Unlock()
 	read := c.readTurn
@@ -139,17 +141,46 @@ func (c *nativeHistoryCache) transcripts(file *nativeHistory) ([]chatmodel.Trans
 		read = agent.ReadSessionTurn
 	}
 	transcripts := make([]chatmodel.Transcript, len(file.index))
+	details := make(map[string]string)
+	outputs := make(map[string]*chatmodel.ToolSummary)
 	bytes := 0
 	for i, turn := range file.index {
 		transcript, err := read(file.backend, file.path, turn)
 		if err != nil {
 			return nil, err
 		}
+		// The browsing cache retains small parts separately from tool bodies.
+		// Internal consumers can reattach immutable strings without parsing JSON.
+		for j := range transcript.Parts {
+			part := &transcript.Parts[j]
+			if toolPart(*part) {
+				if part.Kind == "tool_result" {
+					version := toolBodyVersion(part.Text)
+					if summary := outputs[version]; summary != nil {
+						copy := *summary
+						part.Tool = &copy
+					} else {
+						part.Tool = summarizeToolChanges(part.Text, &chatmodel.ToolSummary{Version: version, Bytes: len(part.Text), Kind: "other"})
+						outputs[version] = part.Tool
+					}
+				} else {
+					part.Tool = summarizeTool(*part)
+				}
+				details[part.Tool.Version] = part.Text
+				part.Tool.SourceText, part.Text = "", ""
+			}
+		}
 		transcripts[i] = transcript
 		bytes += 128
 		for _, part := range transcript.Parts {
 			bytes += 128 + len(part.Role) + len(part.Kind) + len(part.Name) + len(part.Model) + len(part.Text) + len(part.ImageURL)
+			if part.Tool != nil {
+				bytes += 256 + len(part.Tool.Path) + len(part.Tool.Query) + len(part.Tool.Preview) + len(part.Tool.Stats)
+			}
 		}
+	}
+	for _, text := range details {
+		bytes += 64 + len(text)
 	}
 	c.mu.Lock()
 	limit := c.maxBytes
@@ -158,7 +189,7 @@ func (c *nativeHistoryCache) transcripts(file *nativeHistory) ([]chatmodel.Trans
 	}
 	if c.files[file.key] != file {
 		c.mu.Unlock()
-		return transcripts, nil
+		return restoreToolBodies(transcripts, details), nil
 	}
 	// Retain an entire session together. Evicting its early turns while filling
 	// a large snapshot would make every subsequent full read decode it again.
@@ -166,10 +197,24 @@ func (c *nativeHistoryCache) transcripts(file *nativeHistory) ([]chatmodel.Trans
 	for c.bytes+bytes > limit && c.fileLRU.Len() > 1 {
 		c.removeFile(c.fileLRU.Back().Value.(*nativeHistory))
 	}
-	file.parts, file.bytes = transcripts, bytes
+	file.parts, file.details, file.bytes = transcripts, details, bytes
 	c.bytes += bytes
 	c.mu.Unlock()
-	return cloneTranscripts(transcripts), nil
+	return restoreToolBodies(transcripts, details), nil
+}
+
+func restoreToolBodies(transcripts []chatmodel.Transcript, details map[string]string) []chatmodel.Transcript {
+	clones := cloneTranscripts(transcripts)
+	for i := range clones {
+		for j := range clones[i].Parts {
+			part := &clones[i].Parts[j]
+			if part.Tool != nil {
+				part.Text = details[part.Tool.Version]
+				part.Tool.SourceText = part.Text
+			}
+		}
+	}
+	return clones
 }
 
 func cloneTranscripts(transcripts []chatmodel.Transcript) []chatmodel.Transcript {
@@ -183,7 +228,7 @@ func cloneTranscripts(transcripts []chatmodel.Transcript) []chatmodel.Transcript
 // The caller holds c.mu for all LRU and cache membership changes.
 func (c *nativeHistoryCache) removeFile(file *nativeHistory) {
 	c.bytes -= file.bytes
-	file.parts, file.bytes = nil, 0
+	file.parts, file.details, file.bytes = nil, nil, 0
 	delete(c.files, file.key)
 	c.fileLRU.Remove(file.lru)
 }

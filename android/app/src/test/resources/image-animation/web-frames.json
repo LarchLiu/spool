@@ -1,0 +1,255 @@
+[
+  {
+    "name": "restore.gif",
+    "loops": 3,
+    "frames": [
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 80,
+        "pixels": "/wAA//8AAP//AAD//wAA/wAAAAAAAAAAAAAAAAAAAAD/AAD//wAA//8AAP//AAD/AAAAAAAAAAAAAAAAAAAAAP8AAP//AAD//wAA//8AAP8AAAAAAAAAAAAAAAAAAAAA/wAA//8AAP//AAD//wAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 120,
+        "pixels": "/wAA//8AAP//AAD//wAA/wAAAAAAAAAAAAAAAAAAAAD/AAD//wAA//8AAP//AAD/AAAAAAAAAAAAAAAAAAAAAP8AAP//AAD/AP8A/wD/AP8A/wD/AP8A/wAAAAAAAAAA/wAA//8AAP8A/wD/AP8A/wD/AP8A/wD/AAAAAAAAAAAAAAAAAAAAAAD/AP8A/wD/AP8A/wD/AP8AAAAAAAAAAAAAAAAAAAAAAP8A/wD/AP8A/wD/AP8A/wAAAAAAAAAA"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 160,
+        "pixels": "/wAA//8AAP//AAD//wAA/wAA//8AAP//AAD//wAA////AAD//wAA//8AAP//AAD/AAD//wAA//8AAP//AAD///8AAP//AAD//wAA//8AAP8AAP//AAD//wAA//8AAP///wAA//8AAP//AAD//wAA/wAA//8AAP//AAD//wAA//8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 200,
+        "pixels": "/wAA//8AAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/AAD//wAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAP//AAD/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wAA//8AAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD/"
+      }
+    ],
+    "poster": {
+      "width": 8,
+      "height": 6,
+      "pixels": "/wAA//8AAP//AAD//wAA/wAAAAAAAAAAAAAAAAAAAAD/AAD//wAA//8AAP//AAD/AAAAAAAAAAAAAAAAAAAAAP8AAP//AAD//wAA//8AAP8AAAAAAAAAAAAAAAAAAAAA/wAA//8AAP//AAD//wAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "elementWidth": 8,
+      "elementHeight": 6
+    }
+  },
+  {
+    "name": "clear.gif",
+    "loops": 1,
+    "frames": [
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 80,
+        "pixels": "/wAA//8AAP//AAD//wAA/wAAAAAAAAAAAAAAAAAAAAD/AAD//wAA//8AAP//AAD/AAAAAAAAAAAAAAAAAAAAAP8AAP//AAD//wAA//8AAP8AAAAAAAAAAAAAAAAAAAAA/wAA//8AAP//AAD//wAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 120,
+        "pixels": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8A/wD/AP8A/wD/AP8A/wAAAAAAAAAAAAAAAAAAAAAA/wD/AP8A/wD/AP8A/wD/AAAAAAAAAAAAAAAAAAAAAAD/AP8A/wD/AP8A/wD/AP8AAAAAAAAAAAAAAAAAAAAAAP8A/wD/AP8A/wD/AP8A/wAAAAAAAAAA"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 160,
+        "pixels": "AAAAAAAAAAAAAAAAAAAAAAAA//8AAP//AAD//wAA//8AAAAAAAAAAAAAAAAAAAAAAAD//wAA//8AAP//AAD//wAAAAAAAAAAAAAAAAAAAAAAAP//AAD//wAA//8AAP//AAAAAAAAAAAAAAAAAAAAAAAA//8AAP//AAD//wAA//8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 200,
+        "pixels": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD/"
+      }
+    ],
+    "poster": {
+      "width": 8,
+      "height": 6,
+      "pixels": "/wAA//8AAP//AAD//wAA/wAAAAAAAAAAAAAAAAAAAAD/AAD//wAA//8AAP//AAD/AAAAAAAAAAAAAAAAAAAAAP8AAP//AAD//wAA//8AAP8AAAAAAAAAAAAAAAAAAAAA/wAA//8AAP//AAD//wAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "elementWidth": 8,
+      "elementHeight": 6
+    }
+  },
+  {
+    "name": "fast.gif",
+    "loops": 0,
+    "frames": [
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 0,
+        "pixels": "/wAA//8AAP//AAD//wAA/wAAAAAAAAAAAAAAAAAAAAD/AAD//wAA//8AAP//AAD/AAAAAAAAAAAAAAAAAAAAAP8AAP//AAD//wAA//8AAP8AAAAAAAAAAAAAAAAAAAAA/wAA//8AAP//AAD//wAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 10,
+        "pixels": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8A/wD/AP8A/wD/AP8A/wAAAAAAAAAAAAAAAAAAAAAA/wD/AP8A/wD/AP8A/wD/AAAAAAAAAAAAAAAAAAAAAAD/AP8A/wD/AP8A/wD/AP8AAAAAAAAAAAAAAAAAAAAAAP8A/wD/AP8A/wD/AP8A/wAAAAAAAAAA"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 20,
+        "pixels": "AAAAAAAAAAAAAAAAAAAAAAAA//8AAP//AAD//wAA//8AAAAAAAAAAAAAAAAAAAAAAAD//wAA//8AAP//AAD//wAAAAAAAAAAAAAAAAAAAAAAAP//AAD//wAA//8AAP//AAAAAAAAAAAAAAAAAAAAAAAA//8AAP//AAD//wAA//8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      }
+    ],
+    "poster": {
+      "width": 8,
+      "height": 6,
+      "pixels": "/wAA//8AAP//AAD//wAA/wAAAAAAAAAAAAAAAAAAAAD/AAD//wAA//8AAP//AAD/AAAAAAAAAAAAAAAAAAAAAP8AAP//AAD//wAA//8AAP8AAAAAAAAAAAAAAAAAAAAA/wAA//8AAP//AAD//wAA/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "elementWidth": 8,
+      "elementHeight": 6
+    }
+  },
+  {
+    "name": "blend.webp",
+    "loops": 2,
+    "frames": [
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 80,
+        "pixels": "/wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD/"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 120,
+        "pixels": "/wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA/35/AP9+fwD/fn8A//8AAP//AAD//wAA//8AAP//AAD/fn8A/35/AP9+fwD//wAA//8AAP//AAD//wAA//8AAP9+fwD/fn8A/35/AP//AAD//wAA//8AAP//AAD//wAA/35/AP9+fwD/fn8A//8AAP//AAD/"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 160,
+        "pixels": "/wAA//8AAP//AAD//wAA/wAA//8AAP//AAD//wAA////AAD//wAA//8AAP//AAD/AAD//wAA//8AAP//AAD///8AAP//AAD/AAAAAAAAAAAAAP//AAD//wAA//8AAP///wAA//8AAP8AAAAAAAAAAAAA//8AAP//AAD//wAA////AAD//wAA/wAAAAAAAAAAAAAAAAAAAAD/AAD//wAA//8AAP//AAD/AAAAAAAAAAAAAAAAAAAAAP8AAP//AAD/"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 200,
+        "pixels": "/wAA//8AAP//AAD//wAA/wAA//8AAP//AAD//wAA////AAD//wAA//8AAP//AAD/AAD//wAA//8AAP//AAD//wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD/"
+      }
+    ],
+    "poster": {
+      "width": 8,
+      "height": 6,
+      "pixels": "/wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD/",
+      "elementWidth": 8,
+      "elementHeight": 6
+    }
+  },
+  {
+    "name": "alpha-lossy.webp",
+    "loops": 0,
+    "frames": [
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 80,
+        "pixels": "/wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD/"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 120,
+        "pixels": "/wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA/36AAP9+gAD/f4AB//8BAP//AQD//wEA//8BAP//AQD/foAA/36AAP9/gAH//wEA//8BAP//AQD//wEA//8BAP9+gAD/foAA/3+AAf//AQD//wEA//8BAP//AQD//wEA/36AAP9+gAD/f4AB//8BAP//AQD/"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 160,
+        "pixels": "/wEA//8BAP//AQD//wEA/wAA//8AAP//AAD//wAA////AQD//wEA//8BAP//AQD/AAD//wAA//8AAP//AAD///8BAP//AQD/AAAAAAAAAAAAAP//AAD//wAA//8AAP///wEA//8BAP8AAAAAAAAAAAAA//8AAP//AAD//wAA////AQD//wEA/wAAAAAAAAAAAAAAAAAAAAD/AQD//wEA//8BAP//AQD/AAAAAAAAAAAAAAAAAAAAAP8BAP//AQD/"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 200,
+        "pixels": "/wEA//8BAP//AQD//wEA/wAA//8AAP//AAD//wAA////AQD//wEA//8BAP//AQD/AAD//wAA//8AAP//AAD//wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD49zj/+Pc4//j3OP/49zj/+Pc4//j3OP/49zj/+Pc4////AP///wD///8A////AP///wD///8A////AP///wD/"
+      }
+    ],
+    "poster": {
+      "width": 8,
+      "height": 6,
+      "pixels": "/wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD//wEA//8BAP//AQD/",
+      "elementWidth": 8,
+      "elementHeight": 6
+    }
+  },
+  {
+    "name": "fast.webp",
+    "loops": 0,
+    "frames": [
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 0,
+        "pixels": "/wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD/"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 10,
+        "pixels": "/wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA/35/AP9+fwD/fn8A//8AAP//AAD//wAA//8AAP//AAD/fn8A/35/AP9+fwD//wAA//8AAP//AAD//wAA//8AAP9+fwD/fn8A/35/AP//AAD//wAA//8AAP//AAD//wAA/35/AP9+fwD/fn8A//8AAP//AAD/"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 20,
+        "pixels": "/wAA//8AAP//AAD//wAA/wAA//8AAP//AAD//wAA////AAD//wAA//8AAP//AAD/AAD//wAA//8AAP//AAD///8AAP//AAD/AAAAAAAAAAAAAP//AAD//wAA//8AAP///wAA//8AAP8AAAAAAAAAAAAA//8AAP//AAD//wAA////AAD//wAA/wAAAAAAAAAAAAAAAAAAAAD/AAD//wAA//8AAP//AAD/AAAAAAAAAAAAAAAAAAAAAP8AAP//AAD/"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 100,
+        "pixels": "/wAA//8AAP//AAD//wAA/wAA//8AAP//AAD//wAA////AAD//wAA//8AAP//AAD/AAD//wAA//8AAP//AAD//wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD/"
+      }
+    ],
+    "poster": {
+      "width": 8,
+      "height": 6,
+      "pixels": "/wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD//wAA//8AAP//AAD/",
+      "elementWidth": 8,
+      "elementHeight": 6
+    }
+  },
+  {
+    "name": "oriented-profile.webp",
+    "loops": 2,
+    "frames": [
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 80,
+        "pixels": "/wAA//8AAP//AAD//wAA/wAA//8AAP//AAD//wAA////AAD//wAA//8AAP//AAD/AAD//wAA//8AAP//AAD///8AAP//AAD//wAA//8AAP8AAP//AAD//wAA//8AAP///wAA//8AAP//AAD//wAA/wAA//8AAP//AAD//wAA////AAD//wAA//8AAP//AAD/AAD//wAA//8AAP//AAD///8AAP//AAD//wAA//8AAP8AAP//AAD//wAA//8AAP//"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 120,
+        "pixels": "/wAA//8AAP//AAD//wAA/wAA//8AAP//AAD//wAA////AAD//wAA//8AAP//AAD/AAD//wAA//8AAP//AAD///8AAP//AAD//wAA/35/AP8Af37/AH9+/wAA//8AAP///wAA//8AAP//AAD/fn8A/wB/fv8Af37/AAD//wAA////AAD//wAA//8AAP9+fwD/AH9+/wB/fv8AAP//AAD///8AAP//AAD//wAA/35/AP8Af37/AH9+/wAA//8AAP//"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 160,
+        "pixels": "/wAA//8AAP//AAD//wAA/wAA//8AAP//AAD//wAA////AAD//wAA//8AAP//AAD/AAD//wAA//8AAP//AAD///8AAP//AAD/AAAAAAAAAAAAAP//AAD//wAA//8AAP///wAA//8AAP8AAAAAAAAAAAAA//8AAP//AAD//wAA////AAD//wAA/wAAAAAAAAAAAAAAAAAAAAAAAP//AAD///8AAP//AAD/AAAAAAAAAAAAAAAAAAAAAAAA//8AAP//"
+      },
+      {
+        "width": 8,
+        "height": 6,
+        "duration": 200,
+        "pixels": "/wAA//8AAP//AAD//wAA/wAA//8AAP//AAD//wAA////AAD//wAA//8AAP//AAD/AAD//wAA//8AAP//AAD//wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD//wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD///8A////AP///wD/"
+      }
+    ],
+    "poster": {
+      "width": 8,
+      "height": 6,
+      "pixels": "/wAA//8AAP//AAD//wAA/wAA//8AAP//AAD//wAA////AAD//wAA//8AAP//AAD/AAD//wAA//8AAP//AAD///8AAP//AAD//wAA//8AAP8AAP//AAD//wAA//8AAP///wAA//8AAP//AAD//wAA/wAA//8AAP//AAD//wAA////AAD//wAA//8AAP//AAD/AAD//wAA//8AAP//AAD///8AAP//AAD//wAA//8AAP8AAP//AAD//wAA//8AAP//",
+      "elementWidth": 8,
+      "elementHeight": 6
+    }
+  }
+]

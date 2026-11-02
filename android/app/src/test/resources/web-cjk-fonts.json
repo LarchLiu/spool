@@ -1,0 +1,522 @@
+{
+  "browser": "156.0.8078.74",
+  "purpose": "Actual Web font-synthesis:none face discovery with an explicitly separate synthetic control; not native/device raster parity",
+  "cases": [
+    {
+      "locale": "zh-CN",
+      "density": 1,
+      "source": "| 名称与数值 | **共享项目** |\n| --- | --- |\n| **中文**与*汉字* | Latin **Bold** |",
+      "records": [
+        {
+          "selector": "th:first-child",
+          "text": "名称与数值",
+          "weight": "650",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 5
+            }
+          ]
+        },
+        {
+          "selector": "th strong",
+          "text": "共享项目",
+          "weight": "900",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "selector": "td strong",
+          "text": "中文",
+          "weight": "700",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 2
+            }
+          ]
+        },
+        {
+          "selector": "td em",
+          "text": "汉字",
+          "weight": "400",
+          "style": "italic",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 2
+            }
+          ]
+        },
+        {
+          "selector": "td:last-child strong",
+          "text": "Bold",
+          "weight": "700",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Roboto21382017",
+              "postScriptName": "Roboto-Bold",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ],
+      "syntheticControl": {
+        "maximum": 209,
+        "different": 1508
+      }
+    },
+    {
+      "locale": "ja",
+      "density": 1,
+      "source": "| 名前と数値 | **共有の項目** |\n| --- | --- |\n| **日本語**と*仮名* | Latin **Bold** |",
+      "records": [
+        {
+          "selector": "th:first-child",
+          "text": "名前と数値",
+          "weight": "650",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 5
+            }
+          ]
+        },
+        {
+          "selector": "th strong",
+          "text": "共有の項目",
+          "weight": "900",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 5
+            }
+          ]
+        },
+        {
+          "selector": "td strong",
+          "text": "日本語",
+          "weight": "700",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 3
+            }
+          ]
+        },
+        {
+          "selector": "td em",
+          "text": "仮名",
+          "weight": "400",
+          "style": "italic",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 2
+            }
+          ]
+        },
+        {
+          "selector": "td:last-child strong",
+          "text": "Bold",
+          "weight": "700",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Roboto21382017",
+              "postScriptName": "Roboto-Bold",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ],
+      "syntheticControl": {
+        "maximum": 209,
+        "different": 1793
+      }
+    },
+    {
+      "locale": "zh-CN",
+      "density": 2.625,
+      "source": "| 名称与数值 | **共享项目** |\n| --- | --- |\n| **中文**与*汉字* | Latin **Bold** |",
+      "records": [
+        {
+          "selector": "th:first-child",
+          "text": "名称与数值",
+          "weight": "650",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 5
+            }
+          ]
+        },
+        {
+          "selector": "th strong",
+          "text": "共享项目",
+          "weight": "900",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "selector": "td strong",
+          "text": "中文",
+          "weight": "700",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 2
+            }
+          ]
+        },
+        {
+          "selector": "td em",
+          "text": "汉字",
+          "weight": "400",
+          "style": "italic",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 2
+            }
+          ]
+        },
+        {
+          "selector": "td:last-child strong",
+          "text": "Bold",
+          "weight": "700",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Roboto21382017",
+              "postScriptName": "Roboto-Bold",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ],
+      "syntheticControl": {
+        "maximum": 209,
+        "different": 5429
+      }
+    },
+    {
+      "locale": "ja",
+      "density": 2.625,
+      "source": "| 名前と数値 | **共有の項目** |\n| --- | --- |\n| **日本語**と*仮名* | Latin **Bold** |",
+      "records": [
+        {
+          "selector": "th:first-child",
+          "text": "名前と数値",
+          "weight": "650",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 5
+            }
+          ]
+        },
+        {
+          "selector": "th strong",
+          "text": "共有の項目",
+          "weight": "900",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 5
+            }
+          ]
+        },
+        {
+          "selector": "td strong",
+          "text": "日本語",
+          "weight": "700",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 3
+            }
+          ]
+        },
+        {
+          "selector": "td em",
+          "text": "仮名",
+          "weight": "400",
+          "style": "italic",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 2
+            }
+          ]
+        },
+        {
+          "selector": "td:last-child strong",
+          "text": "Bold",
+          "weight": "700",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Roboto21382017",
+              "postScriptName": "Roboto-Bold",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ],
+      "syntheticControl": {
+        "maximum": 209,
+        "different": 6304
+      }
+    },
+    {
+      "locale": "zh-CN",
+      "density": 3,
+      "source": "| 名称与数值 | **共享项目** |\n| --- | --- |\n| **中文**与*汉字* | Latin **Bold** |",
+      "records": [
+        {
+          "selector": "th:first-child",
+          "text": "名称与数值",
+          "weight": "650",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 5
+            }
+          ]
+        },
+        {
+          "selector": "th strong",
+          "text": "共享项目",
+          "weight": "900",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        },
+        {
+          "selector": "td strong",
+          "text": "中文",
+          "weight": "700",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 2
+            }
+          ]
+        },
+        {
+          "selector": "td em",
+          "text": "汉字",
+          "weight": "400",
+          "style": "italic",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK SC Regular",
+              "postScriptName": "NotoSansCJKsc-Regular",
+              "isCustomFont": true,
+              "glyphCount": 2
+            }
+          ]
+        },
+        {
+          "selector": "td:last-child strong",
+          "text": "Bold",
+          "weight": "700",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Roboto21382017",
+              "postScriptName": "Roboto-Bold",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ],
+      "syntheticControl": {
+        "maximum": 209,
+        "different": 6615
+      }
+    },
+    {
+      "locale": "ja",
+      "density": 3,
+      "source": "| 名前と数値 | **共有の項目** |\n| --- | --- |\n| **日本語**と*仮名* | Latin **Bold** |",
+      "records": [
+        {
+          "selector": "th:first-child",
+          "text": "名前と数値",
+          "weight": "650",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 5
+            }
+          ]
+        },
+        {
+          "selector": "th strong",
+          "text": "共有の項目",
+          "weight": "900",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 5
+            }
+          ]
+        },
+        {
+          "selector": "td strong",
+          "text": "日本語",
+          "weight": "700",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 3
+            }
+          ]
+        },
+        {
+          "selector": "td em",
+          "text": "仮名",
+          "weight": "400",
+          "style": "italic",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Noto Sans CJK JP Regular",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": true,
+              "glyphCount": 2
+            }
+          ]
+        },
+        {
+          "selector": "td:last-child strong",
+          "text": "Bold",
+          "weight": "700",
+          "style": "normal",
+          "synthesis": "none",
+          "fonts": [
+            {
+              "familyName": "Roboto21382017",
+              "postScriptName": "Roboto-Bold",
+              "isCustomFont": true,
+              "glyphCount": 4
+            }
+          ]
+        }
+      ],
+      "syntheticControl": {
+        "maximum": 209,
+        "different": 7732
+      }
+    }
+  ]
+}

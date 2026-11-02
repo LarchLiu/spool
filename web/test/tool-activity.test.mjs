@@ -12,12 +12,23 @@ import {
   ToolDiffBoundary,
   toolResultDiffs,
 } from "../.test-build/components/web/src/tool-activity.js";
-import { turnPresentation } from "../.test-build/components/web/src/turn-presentation.js";
+import { turnPresentation, turnWorkLabel } from "../.test-build/components/web/src/turn-presentation.js";
 
 const t = (message, values = {}) =>
   message.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? key));
 const tool = (name, text) => ({ role: "assistant", kind: "tool_use", name, text });
 const message = (text, phase, id) => ({ role: "assistant", kind: "text", text, phase, id });
+
+test("compaction is only a live work label, never a historical status", () => {
+  const turn = { status: "running", compacting: true, started_at: 1000 };
+  assert.equal(turnWorkLabel(turn, t, 6000), "Compacting context…");
+  assert.equal(turnWorkLabel(turn, t, 6000, true), "Compacting context…");
+  assert.equal(turnWorkLabel({ ...turn, compacting: false }, t, 6000), "Working for 5s");
+  assert.equal(turnWorkLabel({ ...turn, compacting: false }, t, 62000, true), "Worked for 1m 1s");
+  for (const status of ["completed", "stopped", "failed", "interrupted"]) {
+    assert.doesNotMatch(turnWorkLabel({ ...turn, status, finished_at: 6000 }, t, 9000), /Compacting/);
+  }
+});
 
 test("thinking summaries keep their icon and full Markdown in a compact preview", () => {
   const title = "Designing the animation ".repeat(30).trim();

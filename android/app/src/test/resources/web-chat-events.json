@@ -1,0 +1,3496 @@
+{
+  "purpose": "Actual Web chat-stream.ts asynchronous subscription and main.tsx event callbacks, not native network or visual/device parity",
+  "cases": [
+    {
+      "id": "healthy-sse-and-reconnect",
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 0,
+            "connected": null
+          }
+        },
+        {
+          "type": "snapshot",
+          "value": {
+            "id": "chat-one",
+            "updated_at": 10,
+            "turns": []
+          },
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 10,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 0,
+            "connected": true
+          }
+        },
+        {
+          "type": "metadata",
+          "value": {
+            "id": "chat-one",
+            "title": "New title"
+          },
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 10,
+                  "turns": []
+                }
+              ],
+              [
+                "metadata",
+                {
+                  "id": "chat-one",
+                  "title": "New title"
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 0,
+            "connected": true
+          }
+        },
+        {
+          "type": "turn",
+          "value": {
+            "turn": {
+              "id": "turn-one"
+            }
+          },
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 10,
+                  "turns": []
+                }
+              ],
+              [
+                "metadata",
+                {
+                  "id": "chat-one",
+                  "title": "New title"
+                }
+              ],
+              [
+                "turn",
+                {
+                  "turn": {
+                    "id": "turn-one"
+                  }
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 0,
+            "connected": true
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 10,
+                  "turns": []
+                }
+              ],
+              [
+                "metadata",
+                {
+                  "id": "chat-one",
+                  "title": "New title"
+                }
+              ],
+              [
+                "turn",
+                {
+                  "turn": {
+                    "id": "turn-one"
+                  }
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 1,
+            "connected": false
+          }
+        },
+        {
+          "type": "reconnect",
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 10,
+                  "turns": []
+                }
+              ],
+              [
+                "metadata",
+                {
+                  "id": "chat-one",
+                  "title": "New title"
+                }
+              ],
+              [
+                "turn",
+                {
+                  "turn": {
+                    "id": "turn-one"
+                  }
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 1,
+            "connected": false
+          }
+        },
+        {
+          "type": "snapshot",
+          "value": {
+            "id": "chat-one",
+            "updated_at": 20,
+            "turns": []
+          },
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 10,
+                  "turns": []
+                }
+              ],
+              [
+                "metadata",
+                {
+                  "id": "chat-one",
+                  "title": "New title"
+                }
+              ],
+              [
+                "turn",
+                {
+                  "turn": {
+                    "id": "turn-one"
+                  }
+                }
+              ],
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 20,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 1,
+            "connected": true
+          }
+        },
+        {
+          "type": "close",
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 10,
+                  "turns": []
+                }
+              ],
+              [
+                "metadata",
+                {
+                  "id": "chat-one",
+                  "title": "New title"
+                }
+              ],
+              [
+                "turn",
+                {
+                  "turn": {
+                    "id": "turn-one"
+                  }
+                }
+              ],
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 20,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 1,
+            "connected": true
+          }
+        },
+        {
+          "type": "turn",
+          "value": {
+            "turn": {
+              "id": "stale"
+            }
+          },
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 10,
+                  "turns": []
+                }
+              ],
+              [
+                "metadata",
+                {
+                  "id": "chat-one",
+                  "title": "New title"
+                }
+              ],
+              [
+                "turn",
+                {
+                  "turn": {
+                    "id": "turn-one"
+                  }
+                }
+              ],
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 20,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 1,
+            "connected": true
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 10,
+                  "turns": []
+                }
+              ],
+              [
+                "metadata",
+                {
+                  "id": "chat-one",
+                  "title": "New title"
+                }
+              ],
+              [
+                "turn",
+                {
+                  "turn": {
+                    "id": "turn-one"
+                  }
+                }
+              ],
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 20,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 1,
+            "connected": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "one-fallback-across-repeated-errors",
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 0,
+            "connected": null
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "reconnect",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "resolve",
+          "value": {
+            "id": "chat-one",
+            "updated_at": 10,
+            "turns": []
+          },
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 10,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "reconnect",
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 10,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 10,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 1,
+            "connected": false
+          }
+        },
+        {
+          "type": "close",
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 10,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 1,
+            "connected": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "failed-fallback-can-retry",
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 0,
+            "connected": null
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "reject",
+          "value": "Chat not found",
+          "expected": {
+            "events": [],
+            "errors": [
+              "Chat not found"
+            ],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "reconnect",
+          "expected": {
+            "events": [],
+            "errors": [
+              "Chat not found"
+            ],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "events": [],
+            "errors": [
+              "Chat not found"
+            ],
+            "snapshotRequests": 2,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "resolve",
+          "value": {
+            "id": "chat-one",
+            "updated_at": 20,
+            "turns": []
+          },
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 20,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [
+              "Chat not found"
+            ],
+            "snapshotRequests": 2,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "close",
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 20,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [
+              "Chat not found"
+            ],
+            "snapshotRequests": 2,
+            "authRequests": 0,
+            "connected": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "sse-revokes-late-resolve",
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 0,
+            "connected": null
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "reconnect",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "snapshot",
+          "value": {
+            "id": "chat-one",
+            "updated_at": 20,
+            "turns": []
+          },
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 20,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": true
+          }
+        },
+        {
+          "type": "resolve",
+          "value": {
+            "id": "chat-one",
+            "updated_at": 10,
+            "turns": []
+          },
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 20,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": true
+          }
+        },
+        {
+          "type": "close",
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 20,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "sse-revokes-late-reject",
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 0,
+            "connected": null
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "reconnect",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "snapshot",
+          "value": {
+            "id": "chat-one",
+            "updated_at": 20,
+            "turns": []
+          },
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 20,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": true
+          }
+        },
+        {
+          "type": "reject",
+          "value": "Stale error",
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 20,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": true
+          }
+        },
+        {
+          "type": "close",
+          "expected": {
+            "events": [
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 20,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "leaving-revokes-fallback-and-events",
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 0,
+            "connected": null
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "close",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "resolve",
+          "value": {
+            "id": "chat-one",
+            "updated_at": 10,
+            "turns": []
+          },
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "snapshot",
+          "value": {
+            "id": "chat-one",
+            "updated_at": 30,
+            "turns": []
+          },
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "metadata",
+          "value": {
+            "id": "chat-one",
+            "title": "Stale"
+          },
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "turn",
+          "value": {
+            "turn": {
+              "id": "stale"
+            }
+          },
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "metadata-does-not-initialize-history",
+      "records": [
+        {
+          "type": "initial",
+          "expected": {
+            "events": [],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 0,
+            "connected": null
+          }
+        },
+        {
+          "type": "metadata",
+          "value": {
+            "id": "chat-one",
+            "title": "Early title"
+          },
+          "expected": {
+            "events": [
+              [
+                "metadata",
+                {
+                  "id": "chat-one",
+                  "title": "Early title"
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 0,
+            "connected": true
+          }
+        },
+        {
+          "type": "turn",
+          "value": {
+            "turn": {
+              "id": "early"
+            }
+          },
+          "expected": {
+            "events": [
+              [
+                "metadata",
+                {
+                  "id": "chat-one",
+                  "title": "Early title"
+                }
+              ],
+              [
+                "turn",
+                {
+                  "turn": {
+                    "id": "early"
+                  }
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 0,
+            "authRequests": 0,
+            "connected": true
+          }
+        },
+        {
+          "type": "error",
+          "expected": {
+            "events": [
+              [
+                "metadata",
+                {
+                  "id": "chat-one",
+                  "title": "Early title"
+                }
+              ],
+              [
+                "turn",
+                {
+                  "turn": {
+                    "id": "early"
+                  }
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "resolve",
+          "value": {
+            "id": "chat-one",
+            "updated_at": 20,
+            "turns": []
+          },
+          "expected": {
+            "events": [
+              [
+                "metadata",
+                {
+                  "id": "chat-one",
+                  "title": "Early title"
+                }
+              ],
+              [
+                "turn",
+                {
+                  "turn": {
+                    "id": "early"
+                  }
+                }
+              ],
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 20,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        },
+        {
+          "type": "close",
+          "expected": {
+            "events": [
+              [
+                "metadata",
+                {
+                  "id": "chat-one",
+                  "title": "Early title"
+                }
+              ],
+              [
+                "turn",
+                {
+                  "turn": {
+                    "id": "early"
+                  }
+                }
+              ],
+              [
+                "snapshot",
+                {
+                  "id": "chat-one",
+                  "updated_at": 20,
+                  "turns": []
+                }
+              ]
+            ],
+            "errors": [],
+            "snapshotRequests": 1,
+            "authRequests": 0,
+            "connected": false
+          }
+        }
+      ]
+    }
+  ],
+  "applicationCases": [
+    {
+      "id": "initial-snapshot",
+      "previous": null,
+      "kind": "snapshot",
+      "value": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "Old title",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "completed",
+        "updated_at": 20,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0
+          }
+        ],
+        "transcript": {
+          "parts": []
+        }
+      },
+      "chats": [
+        {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          },
+          "automation_chat": true,
+          "collaborator_ids": [
+            "alice"
+          ],
+          "artifacts": [
+            "artifact"
+          ]
+        },
+        {
+          "id": "chat-two",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        }
+      ],
+      "expected": {
+        "chat": {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 20,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        },
+        "chats": [
+          {
+            "id": "chat-one",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 10,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            },
+            "automation_chat": true,
+            "collaborator_ids": [
+              "alice"
+            ],
+            "artifacts": [
+              "artifact"
+            ]
+          },
+          {
+            "id": "chat-two",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 10,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "snapshot-updates-listed-title-and-participants-only",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "Old title",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "completed",
+        "updated_at": 10,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0
+          }
+        ],
+        "transcript": {
+          "parts": []
+        }
+      },
+      "kind": "snapshot",
+      "value": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "Snapshot title",
+        "backend": "codex",
+        "model": "changed",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "completed",
+        "updated_at": 20,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "bob"
+          }
+        ],
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0
+          }
+        ],
+        "transcript": {
+          "parts": []
+        }
+      },
+      "chats": [
+        {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        },
+        {
+          "id": "chat-two",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        }
+      ],
+      "expected": {
+        "chat": {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Snapshot title",
+          "backend": "codex",
+          "model": "changed",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 20,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "bob"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        },
+        "chats": [
+          {
+            "id": "chat-one",
+            "project_id": "project-one",
+            "title": "Snapshot title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 10,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "bob"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          },
+          {
+            "id": "chat-two",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 10,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "older-snapshot",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "Old title",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "completed",
+        "updated_at": 30,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0
+          }
+        ],
+        "transcript": {
+          "parts": []
+        }
+      },
+      "kind": "snapshot",
+      "value": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "Old title",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "completed",
+        "updated_at": 20,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0
+          }
+        ],
+        "transcript": {
+          "parts": []
+        }
+      },
+      "chats": [
+        {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 30,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        },
+        {
+          "id": "chat-two",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        }
+      ],
+      "expected": {
+        "chat": {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 30,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        },
+        "chats": [
+          {
+            "id": "chat-one",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 30,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          },
+          {
+            "id": "chat-two",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 10,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "metadata-resets-missing-optional-fields",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "Old title",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "completed",
+        "updated_at": 10,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0
+          }
+        ],
+        "transcript": {
+          "parts": []
+        },
+        "automation_chat": true,
+        "collaborator_ids": [
+          "alice"
+        ],
+        "artifacts": [
+          "artifact"
+        ]
+      },
+      "kind": "metadata",
+      "value": {
+        "id": "chat-one",
+        "title": "Renamed",
+        "updated_at": 20
+      },
+      "chats": [
+        {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          },
+          "automation_chat": true,
+          "collaborator_ids": [
+            "alice"
+          ],
+          "artifacts": [
+            "artifact"
+          ]
+        },
+        {
+          "id": "chat-two",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        }
+      ],
+      "expected": {
+        "chat": {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Renamed",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 20,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          },
+          "automation_chat": false,
+          "collaborator_ids": [],
+          "artifacts": []
+        },
+        "chats": [
+          {
+            "id": "chat-one",
+            "project_id": "project-one",
+            "title": "Renamed",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 20,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            },
+            "automation_chat": false,
+            "collaborator_ids": [],
+            "artifacts": []
+          },
+          {
+            "id": "chat-two",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 10,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "metadata-nullish-fields",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "Old title",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "completed",
+        "updated_at": 10,
+        "can_control": false,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0
+          }
+        ],
+        "transcript": {
+          "parts": []
+        },
+        "automation_chat": true,
+        "collaborator_ids": [
+          "alice"
+        ],
+        "artifacts": [
+          "artifact"
+        ]
+      },
+      "kind": "metadata",
+      "value": {
+        "id": "chat-one",
+        "title": null,
+        "updated_at": 20,
+        "participants": null,
+        "can_control": null,
+        "automation_chat": null,
+        "collaborator_ids": null,
+        "artifacts": null
+      },
+      "chats": [
+        {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": false,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          },
+          "automation_chat": true,
+          "collaborator_ids": [
+            "alice"
+          ],
+          "artifacts": [
+            "artifact"
+          ]
+        },
+        {
+          "id": "chat-two",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        }
+      ],
+      "expected": {
+        "chat": {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 20,
+          "can_control": false,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          },
+          "automation_chat": false,
+          "collaborator_ids": [],
+          "artifacts": []
+        },
+        "chats": [
+          {
+            "id": "chat-one",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 20,
+            "can_control": false,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            },
+            "automation_chat": false,
+            "collaborator_ids": [],
+            "artifacts": []
+          },
+          {
+            "id": "chat-two",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 10,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "metadata-other-listed-chat",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "Old title",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "completed",
+        "updated_at": 10,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0
+          }
+        ],
+        "transcript": {
+          "parts": []
+        }
+      },
+      "kind": "metadata",
+      "value": {
+        "id": "chat-two",
+        "title": "Other title",
+        "updated_at": 20
+      },
+      "chats": [
+        {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        },
+        {
+          "id": "chat-two",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        }
+      ],
+      "expected": {
+        "chat": {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        },
+        "chats": [
+          {
+            "id": "chat-one",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 10,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          },
+          {
+            "id": "chat-two",
+            "project_id": "project-one",
+            "title": "Other title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 20,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            },
+            "automation_chat": false,
+            "collaborator_ids": [],
+            "artifacts": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "metadata-before-initial-snapshot",
+      "previous": null,
+      "kind": "metadata",
+      "value": {
+        "id": "chat-one",
+        "title": "Early title",
+        "updated_at": 20
+      },
+      "chats": [
+        {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          },
+          "automation_chat": true,
+          "collaborator_ids": [
+            "alice"
+          ],
+          "artifacts": [
+            "artifact"
+          ]
+        },
+        {
+          "id": "chat-two",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        }
+      ],
+      "expected": {
+        "chat": null,
+        "chats": [
+          {
+            "id": "chat-one",
+            "project_id": "project-one",
+            "title": "Early title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 20,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            },
+            "automation_chat": false,
+            "collaborator_ids": [],
+            "artifacts": []
+          },
+          {
+            "id": "chat-two",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 10,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "older-metadata",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "Old title",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "completed",
+        "updated_at": 30,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0
+          }
+        ],
+        "transcript": {
+          "parts": []
+        }
+      },
+      "kind": "metadata",
+      "value": {
+        "id": "chat-one",
+        "title": "Old metadata",
+        "updated_at": 20
+      },
+      "chats": [
+        {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 30,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        },
+        {
+          "id": "chat-two",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        }
+      ],
+      "expected": {
+        "chat": {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 30,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        },
+        "chats": [
+          {
+            "id": "chat-one",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 30,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          },
+          {
+            "id": "chat-two",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 10,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "turn-removes-pending-input",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "Old title",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "completed",
+        "updated_at": 10,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0
+          },
+          {
+            "id": "pending-local",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0
+          }
+        ],
+        "transcript": {
+          "parts": []
+        }
+      },
+      "kind": "turn",
+      "value": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "New turn",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "running",
+        "updated_at": 20,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "transcript": {
+          "parts": []
+        },
+        "turn": {
+          "id": "turn-two",
+          "status": "running",
+          "part_start": 0,
+          "input_end": 0,
+          "part_end": 0
+        }
+      },
+      "chats": [
+        {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            },
+            {
+              "id": "pending-local",
+              "status": "running",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        },
+        {
+          "id": "chat-two",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        }
+      ],
+      "expected": {
+        "chat": {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "New turn",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "running",
+          "updated_at": 20,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            },
+            {
+              "id": "turn-two",
+              "status": "running",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        },
+        "chats": [
+          {
+            "id": "chat-one",
+            "project_id": "project-one",
+            "title": "New turn",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "running",
+            "updated_at": 20,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              },
+              {
+                "id": "pending-local",
+                "status": "running",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          },
+          {
+            "id": "chat-two",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 10,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "turn-explicit-turn-list",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "Old title",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "completed",
+        "updated_at": 10,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0
+          }
+        ],
+        "transcript": {
+          "parts": []
+        }
+      },
+      "kind": "turn",
+      "value": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "New turn",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "running",
+        "updated_at": 20,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "turns": [
+          {
+            "id": "turn-two",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0
+          }
+        ],
+        "transcript": {
+          "parts": []
+        },
+        "turn": {
+          "id": "turn-two",
+          "status": "running",
+          "part_start": 0,
+          "input_end": 0,
+          "part_end": 0
+        }
+      },
+      "chats": [
+        {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        },
+        {
+          "id": "chat-two",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        }
+      ],
+      "expected": {
+        "chat": {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "New turn",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "running",
+          "updated_at": 20,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            },
+            {
+              "id": "turn-two",
+              "status": "running",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          },
+          "history": {}
+        },
+        "chats": [
+          {
+            "id": "chat-one",
+            "project_id": "project-one",
+            "title": "New turn",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "running",
+            "updated_at": 20,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          },
+          {
+            "id": "chat-two",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 10,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "turn-does-not-revive-a-terminal-turn",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "Old title",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "completed",
+        "updated_at": 10,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "turns": [
+          {
+            "id": "turn-two",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0
+          }
+        ],
+        "transcript": {
+          "parts": []
+        }
+      },
+      "kind": "turn",
+      "value": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "New turn",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "running",
+        "updated_at": 20,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "transcript": {
+          "parts": []
+        },
+        "turn": {
+          "id": "turn-two",
+          "status": "running",
+          "part_start": 0,
+          "input_end": 0,
+          "part_end": 0
+        }
+      },
+      "chats": [
+        {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-two",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        },
+        {
+          "id": "chat-two",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        }
+      ],
+      "expected": {
+        "chat": {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "New turn",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 20,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-two",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        },
+        "chats": [
+          {
+            "id": "chat-one",
+            "project_id": "project-one",
+            "title": "New turn",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "running",
+            "updated_at": 20,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-two",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          },
+          {
+            "id": "chat-two",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 10,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "turn-before-initial-snapshot",
+      "previous": null,
+      "kind": "turn",
+      "value": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "title": "New turn",
+        "backend": "codex",
+        "model": "old-model",
+        "reasoning_effort": "medium",
+        "permission_mode": "ask",
+        "status": "running",
+        "updated_at": 20,
+        "can_control": true,
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "transcript": {
+          "parts": []
+        },
+        "turn": {
+          "id": "turn-two",
+          "status": "running",
+          "part_start": 0,
+          "input_end": 0,
+          "part_end": 0
+        }
+      },
+      "chats": [
+        {
+          "id": "chat-one",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          },
+          "automation_chat": true,
+          "collaborator_ids": [
+            "alice"
+          ],
+          "artifacts": [
+            "artifact"
+          ]
+        },
+        {
+          "id": "chat-two",
+          "project_id": "project-one",
+          "title": "Old title",
+          "backend": "codex",
+          "model": "old-model",
+          "reasoning_effort": "medium",
+          "permission_mode": "ask",
+          "status": "completed",
+          "updated_at": 10,
+          "can_control": true,
+          "participants": [
+            {
+              "id": "alice"
+            }
+          ],
+          "turns": [
+            {
+              "id": "turn-one",
+              "status": "completed",
+              "part_start": 0,
+              "input_end": 0,
+              "part_end": 0
+            }
+          ],
+          "transcript": {
+            "parts": []
+          }
+        }
+      ],
+      "expected": {
+        "chat": null,
+        "chats": [
+          {
+            "id": "chat-one",
+            "project_id": "project-one",
+            "title": "New turn",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "running",
+            "updated_at": 20,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            },
+            "automation_chat": true,
+            "collaborator_ids": [
+              "alice"
+            ],
+            "artifacts": [
+              "artifact"
+            ]
+          },
+          {
+            "id": "chat-two",
+            "project_id": "project-one",
+            "title": "Old title",
+            "backend": "codex",
+            "model": "old-model",
+            "reasoning_effort": "medium",
+            "permission_mode": "ask",
+            "status": "completed",
+            "updated_at": 10,
+            "can_control": true,
+            "participants": [
+              {
+                "id": "alice"
+              }
+            ],
+            "turns": [
+              {
+                "id": "turn-one",
+                "status": "completed",
+                "part_start": 0,
+                "input_end": 0,
+                "part_end": 0
+              }
+            ],
+            "transcript": {
+              "parts": []
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

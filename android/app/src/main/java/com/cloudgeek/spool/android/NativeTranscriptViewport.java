@@ -1,0 +1,186 @@
+package com.cloudgeek.spool.android;
+
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.function.Consumer;
+
+/** Long histories retain data/heights, not thousands of offscreen text/layout/syntax trees. */
+final class NativeTranscriptViewport implements ViewTreeObserver.OnPreDrawListener {
+    static final class Row extends LinearLayout {
+        private NativeKeyedViews children, cached;
+        private Consumer<NativeKeyedViews> render;
+        private int retainedHeight, measuredWidth;
+        int partCount;
+        private boolean expanded;
+
+        Row(NativeUi ui) { super(ui.context); setOrientation(VERTICAL); retainedHeight = ui.dp(220); }
+
+        void bind(Consumer<NativeKeyedViews> render) {
+            this.render = render;
+            if (children != null) update();
+        }
+
+        private void update() { children.begin(); render.accept(children); children.end(); }
+
+        boolean mounted() { return children != null; }
+
+        void mount() {
+            if (mounted() || render == null) return;
+            children = cached == null ? new NativeKeyedViews(this) : cached;
+            cached = null; update();
+            for (int i = 0; i < getChildCount(); i++) if (getChildAt(i) instanceof NativeUserRow) {
+                NativeMessage message = ((NativeUserRow) getChildAt(i)).message;
+                message.restoreExpanded(expanded);
+            }
+            requestLayout();
+        }
+
+        void release(boolean retain) {
+            if (!mounted()) return;
+            retainedHeight = Math.max(1, getMeasuredHeight());
+            for (int i = 0; i < getChildCount(); i++) if (getChildAt(i) instanceof NativeUserRow)
+                expanded = ((NativeUserRow) getChildAt(i)).message.content.expanded;
+            removeAllViews(); cached = retain ? children : null; children = null;
+        }
+
+        boolean pinned() { return mounted() && (hasFocus() || selected(this)); }
+
+        private static boolean selected(View view) {
+            if (view instanceof TextView) {
+                TextView text = (TextView) view;
+                if (text.getSelectionStart() >= 0 && text.getSelectionEnd() >= 0 && text.getSelectionEnd() != text.getSelectionStart()) return true;
+            }
+            if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++)
+                if (selected(((ViewGroup) view).getChildAt(i))) return true;
+            return false;
+        }
+
+        @Override protected void onMeasure(int widthSpec, int heightSpec) {
+            int width = MeasureSpec.getSize(widthSpec);
+            if (mounted()) {
+                super.onMeasure(widthSpec, heightSpec); retainedHeight = getMeasuredHeight(); measuredWidth = width;
+            } else {
+                // Keep the last height through resize until this row is actually laid out again.
+                if (measuredWidth == 0) measuredWidth = width;
+                setMeasuredDimension(resolveSize(width, widthSpec), resolveSize(retainedHeight, heightSpec));
+            }
+        }
+    }
+
+    private final View scroll;
+    private final LinearLayout content;
+    private final NativeHistoryScroll behavior;
+    private final NativeHistoryScroll.State state;
+    private final ViewTreeObserver observer;
+    private boolean disposed;
+    private long mounts, releases, drawDeferrals, mountNanos, maxMountNanos, maxBurstNanos;
+    private long measureNanos, maxMeasureNanos, inPlaceLayouts, inPlaceNanos;
+    private static final int CACHE_ROWS = 12, CACHE_VIEWS = 768, CACHE_CHARACTERS = 262144, CACHE_PARTS = 2048;
+    private static final class Cost {
+        int views, characters, parts;
+        void count(View view) {
+            views++;
+            if (view instanceof TextView) characters += ((TextView) view).length();
+            if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount() && retainable(); i++)
+                count(((ViewGroup) view).getChildAt(i));
+        }
+        boolean retainable() { return views <= 160 && characters <= 65536 && parts <= 512; }
+    }
+    private final Map<Row, Cost> cache = new LinkedHashMap<>();
+    private int cachedViews, cachedCharacters, cachedParts;
+    private long cacheHits;
+
+    NativeTranscriptViewport(View scroll, LinearLayout content, NativeHistoryScroll behavior, NativeHistoryScroll.State state) {
+        this.scroll = scroll; this.content = content; this.behavior = behavior; this.state = state;
+        observer = scroll.getViewTreeObserver(); observer.addOnPreDrawListener(this);
+    }
+
+    @Override public boolean onPreDraw() {
+        if (disposed || scroll.getHeight() <= 0) return true;
+        int top = state.following ? Math.max(0, content.getHeight() - scroll.getHeight()) : scroll.getScrollY();
+        int overscan = scroll.getHeight(), bottom = top + scroll.getHeight();
+        boolean changed = false;
+        long burstNanos = 0;
+        NativeHistoryScroll.Anchor anchor = behavior.anchor();
+        java.util.Iterator<Map.Entry<Row, Cost>> stale = cache.entrySet().iterator();
+        while (stale.hasNext()) {
+            Map.Entry<Row, Cost> entry = stale.next();
+            if (entry.getKey().getParent() != content) { discard(entry); stale.remove(); }
+        }
+        for (int i = 0; i < content.getChildCount(); i++) {
+            View view = content.getChildAt(i); if (!(view instanceof Row)) continue;
+            Row row = (Row) view;
+            if (row.getBottom() >= top - overscan && row.getTop() <= bottom + overscan) {
+                if (!row.mounted()) {
+                    Cost restored = cache.remove(row);
+                    if (restored != null) { cachedViews -= restored.views; cachedCharacters -= restored.characters; cachedParts -= restored.parts; cacheHits++; }
+                    long started = System.nanoTime(); row.mount(); long elapsed = System.nanoTime() - started;
+                    mounts++; mountNanos += elapsed; burstNanos += elapsed; maxMountNanos = Math.max(maxMountNanos, elapsed);
+                    long measureStarted = System.nanoTime();
+                    row.measure(View.MeasureSpec.makeMeasureSpec(row.getWidth(), View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+                    long measured = System.nanoTime() - measureStarted;
+                    measureNanos += measured; maxMeasureNanos = Math.max(maxMeasureNanos, measured);
+                    // A known-height document can paint immediately, without cancelling the whole scroll frame.
+                    if (row.getMeasuredHeight() == row.getHeight()) {
+                        long layoutStarted = System.nanoTime();
+                        row.layout(row.getLeft(), row.getTop(), row.getRight(), row.getBottom());
+                        inPlaceLayouts++; inPlaceNanos += System.nanoTime() - layoutStarted;
+                    } else changed = true;
+                }
+            } else if (row.mounted() && !row.pinned()) {
+                Cost cost = new Cost(); cost.parts = row.partCount; cost.count(row);
+                row.release(cost.retainable()); releases++;
+                if (row.cached != null) {
+                    cache.put(row, cost); cachedViews += cost.views; cachedCharacters += cost.characters; cachedParts += cost.parts;
+                    trimCache();
+                }
+            }
+        }
+        maxBurstNanos = Math.max(maxBurstNanos, burstNanos);
+        if (changed) {
+            drawDeferrals++;
+            behavior.changing(state.following ? null : anchor); behavior.changed(); content.requestLayout();
+            return false;
+        }
+        return true;
+    }
+
+    private void discard(Map.Entry<Row, Cost> entry) {
+        entry.getKey().cached = null;
+        cachedViews -= entry.getValue().views; cachedCharacters -= entry.getValue().characters; cachedParts -= entry.getValue().parts;
+    }
+
+    private void trimCache() {
+        java.util.Iterator<Map.Entry<Row, Cost>> oldest = cache.entrySet().iterator();
+        while ((cache.size() > CACHE_ROWS || cachedViews > CACHE_VIEWS || cachedCharacters > CACHE_CHARACTERS || cachedParts > CACHE_PARTS) && oldest.hasNext()) {
+            discard(oldest.next()); oldest.remove();
+        }
+    }
+
+    org.json.JSONObject metrics() {
+        org.json.JSONObject result = new org.json.JSONObject();
+        try { result.put("mounts", mounts).put("releases", releases).put("drawDeferrals", drawDeferrals)
+                .put("mountMs", mountNanos / 1_000_000d).put("maxMountMs", maxMountNanos / 1_000_000d)
+                .put("maxBurstMs", maxBurstNanos / 1_000_000d).put("cacheHits", cacheHits).put("cachedRows", cache.size())
+                .put("measureMs", measureNanos / 1_000_000d).put("maxMeasureMs", maxMeasureNanos / 1_000_000d)
+                .put("inPlaceLayouts", inPlaceLayouts).put("inPlaceMs", inPlaceNanos / 1_000_000d)
+                .put("cachedViews", cachedViews).put("cachedCharacters", cachedCharacters).put("cachedParts", cachedParts); }
+        catch (org.json.JSONException impossible) { throw new IllegalStateException(impossible); }
+        return result;
+    }
+
+    void dispose() {
+        disposed = true;
+        for (Map.Entry<Row, Cost> entry : cache.entrySet()) discard(entry);
+        cache.clear();
+        if (observer.isAlive()) observer.removeOnPreDrawListener(this);
+        ViewTreeObserver current = scroll.getViewTreeObserver();
+        if (current != observer && current.isAlive()) current.removeOnPreDrawListener(this);
+    }
+}

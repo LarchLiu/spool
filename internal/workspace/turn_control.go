@@ -72,6 +72,7 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string, user string) (chat
 	a.liveMu.Lock()
 	if live, ok := a.live[chat.ID]; ok && live.ID == turnID {
 		live.Status = chatmodel.StatusStopped
+		live.Compacting = false
 		if len(latest.Turns) > 0 {
 			finished := latest.Turns[len(latest.Turns)-1]
 			live.FinishedAt = finished.FinishedAt
@@ -129,7 +130,7 @@ func (a *App) stopTurnResponse(w http.ResponseWriter, r *http.Request, chat chat
 		if ok && len(latest.Turns) > 0 {
 			last := latest.Turns[len(latest.Turns)-1]
 			if last.ID == input.TurnID && last.Status != chatmodel.StatusRunning {
-				apiJSON(w, 200, historyWindow(a.snapshot(latest)))
+				apiJSON(w, 200, transportWindow(r, a.snapshot(latest)))
 				return
 			}
 			// The process may have disappeared while the server was still alive
@@ -141,7 +142,7 @@ func (a *App) stopTurnResponse(w http.ResponseWriter, r *http.Request, chat chat
 					apiError(w, 500, "Could not stop this turn")
 					return
 				}
-				apiJSON(w, 200, historyWindow(stopped))
+				apiJSON(w, 200, transportWindow(r, stopped))
 				return
 			}
 		}
@@ -163,5 +164,5 @@ func (a *App) stopTurnResponse(w http.ResponseWriter, r *http.Request, chat chat
 	if stopper, ok := a.runner.(interface{ Stop(string) }); ok {
 		stopper.Stop(chat.ID)
 	}
-	apiJSON(w, http.StatusOK, historyWindow(latest))
+	apiJSON(w, http.StatusOK, transportWindow(r, latest))
 }

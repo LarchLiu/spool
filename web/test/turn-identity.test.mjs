@@ -18,6 +18,7 @@ import {
 import { MessageFooter } from "../.test-build/components/web/src/message-footer.js";
 import { TurnResponse } from "../.test-build/components/web/src/tool-activity.js";
 import { profileLookup } from "../.test-build/user-profiles.js";
+import { avatarDataURI } from "../.test-build/avatar.js";
 
 const alice = {
   id: "alice",
@@ -83,7 +84,7 @@ test("Spool Bot renders the logo, while human operators use their selected avata
   assert.doesNotMatch(logo, /data:image\/svg/);
   const human = render(TurnOperatorAvatar, { person: bob });
   assert.match(human, /aria-label="Bob"/);
-  assert.match(human, /data:image\/svg/);
+  assert.ok(human.includes(`src="${avatarDataURI(bob).replaceAll("&", "&amp;")}"`));
   assert.equal(render(TurnOperatorAvatar, {}), "");
 });
 
@@ -301,7 +302,7 @@ test("message avatars sit to the right", async () => {
   );
   assert.match(
     main,
-    /<\/div>\s*<TurnOperatorAvatar person=\{operator\} \/>\s*<\/div>\s*<TurnResponse/,
+    /<\/div>\s*<TurnOperatorAvatar person=\{operator\} \/>\s*<\/div>\s*\)\}\s*<TurnResponse/,
   );
   assert.match(main, /actions=\{\s*<TurnActions[\s\S]*?\/>\s*\}/);
   const css = await readFile(

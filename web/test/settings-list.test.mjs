@@ -93,7 +93,7 @@ test("people list rows render the user's selected chat avatar before their name"
       ],
     }),
   );
-  assert.ok(html.includes(`src="${avatarDataURI(person)}"`));
+  assert.ok(html.includes(`src="${avatarDataURI(person).replaceAll("&", "&amp;")}"`));
   assert.match(
     html,
     /settings-list-icon[^>]*aria-hidden="true"><img class="user-avatar"/,

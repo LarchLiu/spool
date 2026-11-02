@@ -345,8 +345,13 @@ func TestNativeHistoryCacheRetainsOversizedSessionAsAWhole(t *testing.T) {
 		if err != nil || len(snapshot.Turns) != 3 || len(snapshot.Transcript.Parts) != 9 || snapshot.Turns[0].Prompt != "prompt-000" || snapshot.Turns[2].Reply != "answer-002" {
 			t.Fatal("oversized session lost content", err)
 		}
-		if len(store.historyCache.files) != 1 || store.historyCache.bytes < 24000 {
+		if len(store.historyCache.files) != 1 || store.historyCache.bytes < 8000 {
 			t.Fatal("oversized session was not cached intact")
+		}
+		for i := range 3 {
+			if snapshot.Transcript.Parts[i*3+1].Text != strings.Repeat("x", 8000) {
+				t.Fatal("separated/deduplicated body was not restored for every turn")
+			}
 		}
 	}
 	load(first)

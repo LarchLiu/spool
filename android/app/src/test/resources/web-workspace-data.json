@@ -1,0 +1,1228 @@
+{
+  "purpose": "Actual Web main.tsx loading/navigation/missing-profile effect and user-profiles.ts cache, executed without a browser or network",
+  "navigationCases": [
+    {
+      "id": "first-project",
+      "initial": {
+        "project": "",
+        "chatID": "",
+        "chat": null,
+        "chats": []
+      },
+      "steps": [
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              }
+            ],
+            "chats": [
+              {
+                "id": "latest",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "latest",
+                "can_control": true,
+                "participants": []
+              },
+              {
+                "id": "older",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "older",
+                "can_control": true,
+                "participants": []
+              }
+            ]
+          },
+          "expected": {
+            "project": "one",
+            "chatID": "latest",
+            "chat": null,
+            "chats": [
+              {
+                "id": "latest",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "latest",
+                "can_control": true,
+                "participants": []
+              },
+              {
+                "id": "older",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "older",
+                "can_control": true,
+                "participants": []
+              }
+            ],
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "existing-project",
+      "initial": {
+        "project": "one",
+        "chatID": "",
+        "chat": null,
+        "chats": []
+      },
+      "steps": [
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              }
+            ],
+            "chats": [
+              {
+                "id": "latest",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "latest",
+                "can_control": true,
+                "participants": []
+              }
+            ]
+          },
+          "expected": {
+            "project": "one",
+            "chatID": "latest",
+            "chat": null,
+            "chats": [
+              {
+                "id": "latest",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "latest",
+                "can_control": true,
+                "participants": []
+              }
+            ],
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "new-chat-stays-blank",
+      "initial": {
+        "project": "one",
+        "chatID": "",
+        "chat": null,
+        "chats": []
+      },
+      "steps": [
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              }
+            ],
+            "chats": []
+          },
+          "expected": {
+            "project": "one",
+            "chatID": "",
+            "chat": null,
+            "chats": [],
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              }
+            ]
+          }
+        },
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              }
+            ],
+            "chats": [
+              {
+                "id": "later",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "later",
+                "can_control": true,
+                "participants": []
+              }
+            ]
+          },
+          "expected": {
+            "project": "one",
+            "chatID": "",
+            "chat": null,
+            "chats": [
+              {
+                "id": "later",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "later",
+                "can_control": true,
+                "participants": []
+              }
+            ],
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "deleted-current-chat",
+      "initial": {
+        "project": "one",
+        "chatID": "latest",
+        "chat": null,
+        "chats": []
+      },
+      "steps": [
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              }
+            ],
+            "chats": [
+              {
+                "id": "latest",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "latest",
+                "can_control": true,
+                "participants": []
+              }
+            ]
+          },
+          "expected": {
+            "project": "one",
+            "chatID": "latest",
+            "chat": null,
+            "chats": [
+              {
+                "id": "latest",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "latest",
+                "can_control": true,
+                "participants": []
+              }
+            ],
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              }
+            ]
+          }
+        },
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              }
+            ],
+            "chats": [
+              {
+                "id": "other",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "other",
+                "can_control": true,
+                "participants": []
+              }
+            ]
+          },
+          "expected": {
+            "project": "one",
+            "chatID": "",
+            "chat": null,
+            "chats": [
+              {
+                "id": "other",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "other",
+                "can_control": true,
+                "participants": []
+              }
+            ],
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "removed-project",
+      "initial": {
+        "project": "gone",
+        "chatID": "old",
+        "chat": null,
+        "chats": []
+      },
+      "steps": [
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ],
+            "chats": [
+              {
+                "id": "new",
+                "project_id": "two",
+                "updated_at": 1,
+                "title": "new",
+                "can_control": true,
+                "participants": []
+              }
+            ]
+          },
+          "expected": {
+            "project": "two",
+            "chatID": "new",
+            "chat": null,
+            "chats": [
+              {
+                "id": "new",
+                "project_id": "two",
+                "updated_at": 1,
+                "title": "new",
+                "can_control": true,
+                "participants": []
+              }
+            ],
+            "projects": [
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "empty-workspace",
+      "initial": {
+        "project": "one",
+        "chatID": "old",
+        "chat": null,
+        "chats": []
+      },
+      "steps": [
+        {
+          "navigation": {
+            "projects": [],
+            "chats": []
+          },
+          "expected": {
+            "project": "",
+            "chatID": "",
+            "chat": null,
+            "chats": [],
+            "projects": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "preserve-newer-metadata-not-membership",
+      "initial": {
+        "project": "one",
+        "chatID": "kept",
+        "chat": {
+          "id": "kept",
+          "project_id": "one",
+          "updated_at": 20,
+          "title": "kept",
+          "can_control": true,
+          "participants": []
+        },
+        "chats": [
+          {
+            "id": "kept",
+            "project_id": "one",
+            "updated_at": 20,
+            "title": "kept",
+            "can_control": true,
+            "participants": []
+          },
+          {
+            "id": "removed",
+            "project_id": "one",
+            "updated_at": 30,
+            "title": "removed",
+            "can_control": true,
+            "participants": []
+          }
+        ]
+      },
+      "steps": [
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              }
+            ],
+            "chats": [
+              {
+                "id": "kept",
+                "project_id": "one",
+                "updated_at": 10,
+                "title": "kept",
+                "can_control": false,
+                "participants": []
+              }
+            ]
+          },
+          "expected": {
+            "project": "one",
+            "chatID": "kept",
+            "chat": {
+              "id": "kept",
+              "project_id": "one",
+              "updated_at": 20,
+              "title": "kept",
+              "can_control": false,
+              "participants": []
+            },
+            "chats": [
+              {
+                "id": "kept",
+                "project_id": "one",
+                "updated_at": 20,
+                "title": "kept",
+                "can_control": false,
+                "participants": []
+              }
+            ],
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "loadingCases": [
+    {
+      "mode": "batch",
+      "requests": [
+        "/profiles",
+        "/navigation",
+        "/agents"
+      ],
+      "restNavigation": {
+        "projects": [
+          {
+            "id": "one",
+            "name": "one"
+          }
+        ],
+        "chats": [
+          {
+            "id": "rest",
+            "project_id": "one",
+            "updated_at": 1,
+            "title": "rest",
+            "can_control": true,
+            "participants": []
+          }
+        ]
+      },
+      "pushNavigation": {
+        "projects": [
+          {
+            "id": "one",
+            "name": "one"
+          }
+        ],
+        "chats": [
+          {
+            "id": "push",
+            "project_id": "one",
+            "updated_at": 1,
+            "title": "push",
+            "can_control": true,
+            "participants": []
+          }
+        ]
+      },
+      "profilePush": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Latest"
+          },
+          {
+            "id": "new",
+            "nickname": "New"
+          }
+        ]
+      },
+      "profileSave": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Saved"
+          },
+          {
+            "id": "revoked",
+            "nickname": "Revoked"
+          }
+        ]
+      },
+      "restProfiles": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Stale"
+          },
+          {
+            "id": "revoked",
+            "nickname": "Revoked"
+          }
+        ]
+      },
+      "beforeAgents": {
+        "navigationCount": 0,
+        "agentCount": 0,
+        "failures": [],
+        "profiles": {
+          "revision": -1,
+          "people": []
+        }
+      },
+      "expected": {
+        "navigationCount": 1,
+        "agentCount": 1,
+        "failures": [],
+        "profiles": {
+          "revision": 4,
+          "people": [
+            {
+              "id": "alice",
+              "nickname": "Stale"
+            },
+            {
+              "id": "revoked",
+              "nickname": "Revoked"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "mode": "navigation-push",
+      "requests": [
+        "/profiles",
+        "/navigation",
+        "/agents"
+      ],
+      "restNavigation": {
+        "projects": [
+          {
+            "id": "one",
+            "name": "one"
+          }
+        ],
+        "chats": [
+          {
+            "id": "rest",
+            "project_id": "one",
+            "updated_at": 1,
+            "title": "rest",
+            "can_control": true,
+            "participants": []
+          }
+        ]
+      },
+      "pushNavigation": {
+        "projects": [
+          {
+            "id": "one",
+            "name": "one"
+          }
+        ],
+        "chats": [
+          {
+            "id": "push",
+            "project_id": "one",
+            "updated_at": 1,
+            "title": "push",
+            "can_control": true,
+            "participants": []
+          }
+        ]
+      },
+      "profilePush": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Latest"
+          },
+          {
+            "id": "new",
+            "nickname": "New"
+          }
+        ]
+      },
+      "profileSave": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Saved"
+          },
+          {
+            "id": "revoked",
+            "nickname": "Revoked"
+          }
+        ]
+      },
+      "restProfiles": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Stale"
+          },
+          {
+            "id": "revoked",
+            "nickname": "Revoked"
+          }
+        ]
+      },
+      "beforeAgents": {
+        "navigationCount": 0,
+        "agentCount": 0,
+        "failures": [],
+        "profiles": {
+          "revision": -1,
+          "people": []
+        }
+      },
+      "expected": {
+        "navigationCount": 1,
+        "agentCount": 0,
+        "failures": [],
+        "profiles": {
+          "revision": 4,
+          "people": [
+            {
+              "id": "alice",
+              "nickname": "Stale"
+            },
+            {
+              "id": "revoked",
+              "nickname": "Revoked"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "mode": "profile-push",
+      "requests": [
+        "/profiles",
+        "/navigation",
+        "/agents"
+      ],
+      "restNavigation": {
+        "projects": [
+          {
+            "id": "one",
+            "name": "one"
+          }
+        ],
+        "chats": [
+          {
+            "id": "rest",
+            "project_id": "one",
+            "updated_at": 1,
+            "title": "rest",
+            "can_control": true,
+            "participants": []
+          }
+        ]
+      },
+      "pushNavigation": {
+        "projects": [
+          {
+            "id": "one",
+            "name": "one"
+          }
+        ],
+        "chats": [
+          {
+            "id": "push",
+            "project_id": "one",
+            "updated_at": 1,
+            "title": "push",
+            "can_control": true,
+            "participants": []
+          }
+        ]
+      },
+      "profilePush": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Latest"
+          },
+          {
+            "id": "new",
+            "nickname": "New"
+          }
+        ]
+      },
+      "profileSave": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Saved"
+          },
+          {
+            "id": "revoked",
+            "nickname": "Revoked"
+          }
+        ]
+      },
+      "restProfiles": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Stale"
+          },
+          {
+            "id": "revoked",
+            "nickname": "Revoked"
+          }
+        ]
+      },
+      "beforeAgents": {
+        "navigationCount": 0,
+        "agentCount": 0,
+        "failures": [],
+        "profiles": {
+          "revision": -1,
+          "people": []
+        }
+      },
+      "expected": {
+        "navigationCount": 1,
+        "agentCount": 1,
+        "failures": [],
+        "profiles": {
+          "revision": 4,
+          "people": [
+            {
+              "id": "alice",
+              "nickname": "Latest"
+            },
+            {
+              "id": "new",
+              "nickname": "New"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "mode": "profile-save",
+      "requests": [
+        "/profiles",
+        "/navigation",
+        "/agents"
+      ],
+      "restNavigation": {
+        "projects": [
+          {
+            "id": "one",
+            "name": "one"
+          }
+        ],
+        "chats": [
+          {
+            "id": "rest",
+            "project_id": "one",
+            "updated_at": 1,
+            "title": "rest",
+            "can_control": true,
+            "participants": []
+          }
+        ]
+      },
+      "pushNavigation": {
+        "projects": [
+          {
+            "id": "one",
+            "name": "one"
+          }
+        ],
+        "chats": [
+          {
+            "id": "push",
+            "project_id": "one",
+            "updated_at": 1,
+            "title": "push",
+            "can_control": true,
+            "participants": []
+          }
+        ]
+      },
+      "profilePush": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Latest"
+          },
+          {
+            "id": "new",
+            "nickname": "New"
+          }
+        ]
+      },
+      "profileSave": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Saved"
+          },
+          {
+            "id": "revoked",
+            "nickname": "Revoked"
+          }
+        ]
+      },
+      "restProfiles": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Stale"
+          },
+          {
+            "id": "revoked",
+            "nickname": "Revoked"
+          }
+        ]
+      },
+      "beforeAgents": {
+        "navigationCount": 0,
+        "agentCount": 0,
+        "failures": [],
+        "profiles": {
+          "revision": -1,
+          "people": []
+        }
+      },
+      "expected": {
+        "navigationCount": 1,
+        "agentCount": 1,
+        "failures": [],
+        "profiles": {
+          "revision": 4,
+          "people": [
+            {
+              "id": "alice",
+              "nickname": "Saved"
+            },
+            {
+              "id": "new",
+              "nickname": "New"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "mode": "navigation-failure",
+      "requests": [
+        "/profiles",
+        "/navigation",
+        "/agents"
+      ],
+      "restNavigation": {
+        "projects": [
+          {
+            "id": "one",
+            "name": "one"
+          }
+        ],
+        "chats": [
+          {
+            "id": "rest",
+            "project_id": "one",
+            "updated_at": 1,
+            "title": "rest",
+            "can_control": true,
+            "participants": []
+          }
+        ]
+      },
+      "pushNavigation": {
+        "projects": [
+          {
+            "id": "one",
+            "name": "one"
+          }
+        ],
+        "chats": [
+          {
+            "id": "push",
+            "project_id": "one",
+            "updated_at": 1,
+            "title": "push",
+            "can_control": true,
+            "participants": []
+          }
+        ]
+      },
+      "profilePush": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Latest"
+          },
+          {
+            "id": "new",
+            "nickname": "New"
+          }
+        ]
+      },
+      "profileSave": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Saved"
+          },
+          {
+            "id": "revoked",
+            "nickname": "Revoked"
+          }
+        ]
+      },
+      "restProfiles": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Stale"
+          },
+          {
+            "id": "revoked",
+            "nickname": "Revoked"
+          }
+        ]
+      },
+      "beforeAgents": {
+        "navigationCount": 0,
+        "agentCount": 0,
+        "failures": [
+          "[object Object]"
+        ],
+        "profiles": {
+          "revision": -1,
+          "people": []
+        }
+      },
+      "expected": {
+        "navigationCount": 0,
+        "agentCount": 0,
+        "failures": [
+          "[object Object]"
+        ],
+        "profiles": {
+          "revision": 4,
+          "people": [
+            {
+              "id": "alice",
+              "nickname": "Stale"
+            },
+            {
+              "id": "revoked",
+              "nickname": "Revoked"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "mode": "agents-failure",
+      "requests": [
+        "/profiles",
+        "/navigation",
+        "/agents"
+      ],
+      "restNavigation": {
+        "projects": [
+          {
+            "id": "one",
+            "name": "one"
+          }
+        ],
+        "chats": [
+          {
+            "id": "rest",
+            "project_id": "one",
+            "updated_at": 1,
+            "title": "rest",
+            "can_control": true,
+            "participants": []
+          }
+        ]
+      },
+      "pushNavigation": {
+        "projects": [
+          {
+            "id": "one",
+            "name": "one"
+          }
+        ],
+        "chats": [
+          {
+            "id": "push",
+            "project_id": "one",
+            "updated_at": 1,
+            "title": "push",
+            "can_control": true,
+            "participants": []
+          }
+        ]
+      },
+      "profilePush": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Latest"
+          },
+          {
+            "id": "new",
+            "nickname": "New"
+          }
+        ]
+      },
+      "profileSave": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Saved"
+          },
+          {
+            "id": "revoked",
+            "nickname": "Revoked"
+          }
+        ]
+      },
+      "restProfiles": {
+        "revision": 4,
+        "people": [
+          {
+            "id": "alice",
+            "nickname": "Stale"
+          },
+          {
+            "id": "revoked",
+            "nickname": "Revoked"
+          }
+        ]
+      },
+      "beforeAgents": {
+        "navigationCount": 0,
+        "agentCount": 0,
+        "failures": [],
+        "profiles": {
+          "revision": -1,
+          "people": []
+        }
+      },
+      "expected": {
+        "navigationCount": 0,
+        "agentCount": 0,
+        "failures": [
+          ""
+        ],
+        "profiles": {
+          "revision": 4,
+          "people": [
+            {
+              "id": "alice",
+              "nickname": "Stale"
+            },
+            {
+              "id": "revoked",
+              "nickname": "Revoked"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "missingCases": [
+    {
+      "profiles": {
+        "revision": 0,
+        "people": []
+      },
+      "chats": [
+        {
+          "participants": [
+            {
+              "id": "bob"
+            },
+            {
+              "id": "spool-bot"
+            }
+          ]
+        }
+      ],
+      "chat": {
+        "user_id": "carol",
+        "participants": [
+          {
+            "id": "alice"
+          }
+        ],
+        "turns": [
+          {
+            "actions": [
+              {
+                "user_id": "dave"
+              }
+            ]
+          }
+        ]
+      },
+      "online": [
+        {
+          "id": "eve"
+        },
+        {
+          "id": "bob"
+        }
+      ],
+      "expected": "alice,bob,carol,dave,eve"
+    },
+    {
+      "profiles": {
+        "revision": 1,
+        "people": [
+          {
+            "id": "alice"
+          },
+          {
+            "id": "bob"
+          }
+        ]
+      },
+      "chats": [
+        {
+          "participants": [
+            {
+              "id": "alice"
+            },
+            {
+              "id": "bob"
+            }
+          ]
+        }
+      ],
+      "chat": null,
+      "online": [
+        {
+          "id": "spool-bot"
+        }
+      ],
+      "expected": ""
+    },
+    {
+      "profiles": {
+        "revision": 0,
+        "people": []
+      },
+      "chats": [],
+      "chat": {
+        "user_id": "owner",
+        "participants": [],
+        "turns": [
+          {
+            "user_id": "operator",
+            "actions": [
+              {
+                "user_id": ""
+              },
+              {
+                "user_id": "action"
+              }
+            ]
+          }
+        ]
+      },
+      "online": [],
+      "expected": "action,operator"
+    }
+  ],
+  "timings": {
+    "fallback": 15000,
+    "missing": 50
+  }
+}

@@ -5,8 +5,18 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   observeUserMessageOverflow,
+  hasUserMessage,
   UserMessage,
 } from "../.test-build/components/web/src/user-message.js";
+
+test("filtered provider-only input hides the whole row while attachment-only input remains visible", async () => {
+  assert.equal(hasUserMessage("", []), false);
+  assert.equal(hasUserMessage(" \n\t", []), false);
+  assert.equal(hasUserMessage("Real prompt", []), true);
+  assert.equal(hasUserMessage("", [{ id: "attachment" }]), true);
+  const source = await readFile(new URL("../src/main.tsx", import.meta.url), "utf8");
+  assert.match(source, /hasUserMessage\(userText, turnFiles\) && \(/);
+});
 
 function overflowFixture(t, height = 40) {
   const previousStyle = globalThis.getComputedStyle;

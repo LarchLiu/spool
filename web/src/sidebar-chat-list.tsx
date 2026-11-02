@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import type { Translator } from "./i18n";
 import type { Chat } from "./types";
 import { Monitor } from "lucide-react";
+import { INITIAL_CHAT_LIMIT, nextSidebarChatLimit } from "./sidebar-state.js";
+export { INITIAL_CHAT_LIMIT } from "./sidebar-state.js";
 
 export function LocalSessionIcon({ t }: { t: Translator }) {
   return (
@@ -15,9 +17,6 @@ export function LocalSessionIcon({ t }: { t: Translator }) {
     </span>
   );
 }
-
-export const INITIAL_CHAT_LIMIT = 5;
-const CHAT_PAGE_SIZE = 10;
 
 type Props = {
   chats: Chat[];
@@ -49,13 +48,7 @@ export function SidebarChatList({
         <button
           type="button"
           className={"show-more" + (nested ? " nested" : "")}
-          onClick={() =>
-            onLimit(
-              hasMore
-                ? Math.min(limit + CHAT_PAGE_SIZE, chats.length)
-                : INITIAL_CHAT_LIMIT,
-            )
-          }
+          onClick={() => onLimit(nextSidebarChatLimit(chats.length, limit))}
         >
           {t(hasMore ? "Show more" : "Show less")}
         </button>

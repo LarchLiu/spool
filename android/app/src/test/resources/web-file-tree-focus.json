@@ -1,0 +1,722 @@
+{
+  "purpose": "Installed actual Web FileTree controller across lazy listings, normalized queries and hidden descendants; not UI raster evidence",
+  "cases": [
+    {
+      "operation": {
+        "type": "load",
+        "path": ".",
+        "entries": [
+          {
+            "name": "src",
+            "path": "src",
+            "kind": "directory"
+          },
+          {
+            "name": "docs",
+            "path": "docs",
+            "kind": "directory"
+          },
+          {
+            "name": "empty",
+            "path": "empty",
+            "kind": "directory"
+          },
+          {
+            "name": "apple.txt",
+            "path": "apple.txt",
+            "kind": "text"
+          },
+          {
+            "name": "readme.txt",
+            "path": "readme.txt",
+            "kind": "text"
+          },
+          {
+            "name": "z-last.txt",
+            "path": "z-last.txt",
+            "kind": "text"
+          }
+        ]
+      },
+      "focus": "docs",
+      "rows": [
+        {
+          "path": "docs",
+          "expanded": false
+        },
+        {
+          "path": "empty",
+          "expanded": false
+        },
+        {
+          "path": "src",
+          "expanded": false
+        },
+        {
+          "path": "apple.txt",
+          "expanded": false
+        },
+        {
+          "path": "readme.txt",
+          "expanded": false
+        },
+        {
+          "path": "z-last.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "focus",
+        "path": "z-last.txt"
+      },
+      "focus": "z-last.txt",
+      "rows": [
+        {
+          "path": "docs",
+          "expanded": false
+        },
+        {
+          "path": "empty",
+          "expanded": false
+        },
+        {
+          "path": "src",
+          "expanded": false
+        },
+        {
+          "path": "apple.txt",
+          "expanded": false
+        },
+        {
+          "path": "readme.txt",
+          "expanded": false
+        },
+        {
+          "path": "z-last.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "open"
+      },
+      "focus": "z-last.txt",
+      "rows": [
+        {
+          "path": "docs",
+          "expanded": false
+        },
+        {
+          "path": "empty",
+          "expanded": false
+        },
+        {
+          "path": "src",
+          "expanded": false
+        },
+        {
+          "path": "apple.txt",
+          "expanded": false
+        },
+        {
+          "path": "readme.txt",
+          "expanded": false
+        },
+        {
+          "path": "z-last.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "query",
+        "value": "src"
+      },
+      "focus": "src",
+      "rows": [
+        {
+          "path": "src",
+          "expanded": true
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "load",
+        "path": "src",
+        "entries": [
+          {
+            "name": "alpha.txt",
+            "path": "src/alpha.txt",
+            "kind": "text"
+          },
+          {
+            "name": "zeta.md",
+            "path": "src/zeta.md",
+            "kind": "text"
+          },
+          {
+            "name": "nested",
+            "path": "src/nested",
+            "kind": "directory"
+          }
+        ]
+      },
+      "focus": "src/nested",
+      "rows": [
+        {
+          "path": "src",
+          "expanded": true
+        },
+        {
+          "path": "src/nested",
+          "expanded": true
+        },
+        {
+          "path": "src/alpha.txt",
+          "expanded": false
+        },
+        {
+          "path": "src/zeta.md",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "focus",
+        "path": "src/zeta.md"
+      },
+      "focus": "src/zeta.md",
+      "rows": [
+        {
+          "path": "src",
+          "expanded": true
+        },
+        {
+          "path": "src/nested",
+          "expanded": true
+        },
+        {
+          "path": "src/alpha.txt",
+          "expanded": false
+        },
+        {
+          "path": "src/zeta.md",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "query",
+        "value": " SRC "
+      },
+      "focus": "src/zeta.md",
+      "rows": [
+        {
+          "path": "src",
+          "expanded": true
+        },
+        {
+          "path": "src/nested",
+          "expanded": true
+        },
+        {
+          "path": "src/alpha.txt",
+          "expanded": false
+        },
+        {
+          "path": "src/zeta.md",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "query",
+        "value": "src\\nested"
+      },
+      "focus": "src/nested",
+      "rows": [
+        {
+          "path": "src",
+          "expanded": true
+        },
+        {
+          "path": "src/nested",
+          "expanded": true
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "load",
+        "path": "src/nested",
+        "entries": [
+          {
+            "name": "child.txt",
+            "path": "src/nested/child.txt",
+            "kind": "text"
+          }
+        ]
+      },
+      "focus": "src/nested/child.txt",
+      "rows": [
+        {
+          "path": "src",
+          "expanded": true
+        },
+        {
+          "path": "src/nested",
+          "expanded": true
+        },
+        {
+          "path": "src/nested/child.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "query",
+        "value": "alpha"
+      },
+      "focus": "src/alpha.txt",
+      "rows": [
+        {
+          "path": "src",
+          "expanded": true
+        },
+        {
+          "path": "src/alpha.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "query",
+        "value": "__missing__"
+      },
+      "focus": "src",
+      "rows": [
+        {
+          "path": "docs",
+          "expanded": false
+        },
+        {
+          "path": "empty",
+          "expanded": false
+        },
+        {
+          "path": "src",
+          "expanded": false
+        },
+        {
+          "path": "apple.txt",
+          "expanded": false
+        },
+        {
+          "path": "readme.txt",
+          "expanded": false
+        },
+        {
+          "path": "z-last.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "close"
+      },
+      "focus": "src",
+      "rows": [
+        {
+          "path": "docs",
+          "expanded": false
+        },
+        {
+          "path": "empty",
+          "expanded": false
+        },
+        {
+          "path": "src",
+          "expanded": false
+        },
+        {
+          "path": "apple.txt",
+          "expanded": false
+        },
+        {
+          "path": "readme.txt",
+          "expanded": false
+        },
+        {
+          "path": "z-last.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "expand",
+        "path": "src"
+      },
+      "focus": "src",
+      "rows": [
+        {
+          "path": "docs",
+          "expanded": false
+        },
+        {
+          "path": "empty",
+          "expanded": false
+        },
+        {
+          "path": "src",
+          "expanded": true
+        },
+        {
+          "path": "src/nested",
+          "expanded": false
+        },
+        {
+          "path": "src/alpha.txt",
+          "expanded": false
+        },
+        {
+          "path": "src/zeta.md",
+          "expanded": false
+        },
+        {
+          "path": "apple.txt",
+          "expanded": false
+        },
+        {
+          "path": "readme.txt",
+          "expanded": false
+        },
+        {
+          "path": "z-last.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "expand",
+        "path": "src/nested"
+      },
+      "focus": "src",
+      "rows": [
+        {
+          "path": "docs",
+          "expanded": false
+        },
+        {
+          "path": "empty",
+          "expanded": false
+        },
+        {
+          "path": "src",
+          "expanded": true
+        },
+        {
+          "path": "src/nested",
+          "expanded": true
+        },
+        {
+          "path": "src/nested/child.txt",
+          "expanded": false
+        },
+        {
+          "path": "src/alpha.txt",
+          "expanded": false
+        },
+        {
+          "path": "src/zeta.md",
+          "expanded": false
+        },
+        {
+          "path": "apple.txt",
+          "expanded": false
+        },
+        {
+          "path": "readme.txt",
+          "expanded": false
+        },
+        {
+          "path": "z-last.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "focus",
+        "path": "src/nested/child.txt"
+      },
+      "focus": "src/nested/child.txt",
+      "rows": [
+        {
+          "path": "docs",
+          "expanded": false
+        },
+        {
+          "path": "empty",
+          "expanded": false
+        },
+        {
+          "path": "src",
+          "expanded": true
+        },
+        {
+          "path": "src/nested",
+          "expanded": true
+        },
+        {
+          "path": "src/nested/child.txt",
+          "expanded": false
+        },
+        {
+          "path": "src/alpha.txt",
+          "expanded": false
+        },
+        {
+          "path": "src/zeta.md",
+          "expanded": false
+        },
+        {
+          "path": "apple.txt",
+          "expanded": false
+        },
+        {
+          "path": "readme.txt",
+          "expanded": false
+        },
+        {
+          "path": "z-last.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "collapse",
+        "path": "src/nested"
+      },
+      "focus": "src/nested",
+      "rows": [
+        {
+          "path": "docs",
+          "expanded": false
+        },
+        {
+          "path": "empty",
+          "expanded": false
+        },
+        {
+          "path": "src",
+          "expanded": true
+        },
+        {
+          "path": "src/nested",
+          "expanded": false
+        },
+        {
+          "path": "src/alpha.txt",
+          "expanded": false
+        },
+        {
+          "path": "src/zeta.md",
+          "expanded": false
+        },
+        {
+          "path": "apple.txt",
+          "expanded": false
+        },
+        {
+          "path": "readme.txt",
+          "expanded": false
+        },
+        {
+          "path": "z-last.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "collapse",
+        "path": "src"
+      },
+      "focus": "src",
+      "rows": [
+        {
+          "path": "docs",
+          "expanded": false
+        },
+        {
+          "path": "empty",
+          "expanded": false
+        },
+        {
+          "path": "src",
+          "expanded": false
+        },
+        {
+          "path": "apple.txt",
+          "expanded": false
+        },
+        {
+          "path": "readme.txt",
+          "expanded": false
+        },
+        {
+          "path": "z-last.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "open"
+      },
+      "focus": "src",
+      "rows": [
+        {
+          "path": "docs",
+          "expanded": false
+        },
+        {
+          "path": "empty",
+          "expanded": false
+        },
+        {
+          "path": "src",
+          "expanded": false
+        },
+        {
+          "path": "apple.txt",
+          "expanded": false
+        },
+        {
+          "path": "readme.txt",
+          "expanded": false
+        },
+        {
+          "path": "z-last.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "query",
+        "value": "empty"
+      },
+      "focus": "empty",
+      "rows": [
+        {
+          "path": "empty",
+          "expanded": true
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "load",
+        "path": "empty",
+        "entries": [
+          {
+            "name": "later.txt",
+            "path": "empty/later.txt",
+            "kind": "text"
+          }
+        ]
+      },
+      "focus": "empty/later.txt",
+      "rows": [
+        {
+          "path": "empty",
+          "expanded": true
+        },
+        {
+          "path": "empty/later.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "query",
+        "value": ""
+      },
+      "focus": "empty",
+      "rows": [
+        {
+          "path": "docs",
+          "expanded": false
+        },
+        {
+          "path": "empty",
+          "expanded": false
+        },
+        {
+          "path": "src",
+          "expanded": false
+        },
+        {
+          "path": "apple.txt",
+          "expanded": false
+        },
+        {
+          "path": "readme.txt",
+          "expanded": false
+        },
+        {
+          "path": "z-last.txt",
+          "expanded": false
+        }
+      ]
+    },
+    {
+      "operation": {
+        "type": "close"
+      },
+      "focus": "empty",
+      "rows": [
+        {
+          "path": "docs",
+          "expanded": false
+        },
+        {
+          "path": "empty",
+          "expanded": false
+        },
+        {
+          "path": "src",
+          "expanded": false
+        },
+        {
+          "path": "apple.txt",
+          "expanded": false
+        },
+        {
+          "path": "readme.txt",
+          "expanded": false
+        },
+        {
+          "path": "z-last.txt",
+          "expanded": false
+        }
+      ]
+    }
+  ]
+}

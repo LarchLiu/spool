@@ -1,0 +1,30 @@
+[
+  {
+    "name": "restore.gif",
+    "description": "GIF local/global palettes, cropped frames, transparency and disposal [1, 3, 2, 1]"
+  },
+  {
+    "name": "clear.gif",
+    "description": "GIF local/global palettes, cropped frames, transparency and disposal [2, 2, 2, 2]"
+  },
+  {
+    "name": "fast.gif",
+    "description": "GIF browser minimum-delay clamping and infinite loop"
+  },
+  {
+    "name": "blend.webp",
+    "description": "WebP VP8L"
+  },
+  {
+    "name": "alpha-lossy.webp",
+    "description": "WebP VP8 + ALPH; cropped blend, no-blend and clear disposal"
+  },
+  {
+    "name": "fast.webp",
+    "description": "WebP VP8L"
+  },
+  {
+    "name": "oriented-profile.webp",
+    "description": "Animated WebP with ICC profile and EXIF clockwise orientation"
+  }
+]

@@ -1,0 +1,548 @@
+{
+  "purpose": "Actual Web painted baselines during fractional inset and ancestor layout changes; desktop mobile viewport, not device parity",
+  "browser": "156.0.8078.74",
+  "host": "darwin",
+  "source": "[agjpqy](https://example.com)\n[agjpqy](https://example.org)",
+  "cases": [
+    {
+      "density": 1,
+      "padding": 25,
+      "offsetPhysical": 0,
+      "y": 25,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        42,
+        68
+      ]
+    },
+    {
+      "density": 1,
+      "padding": 25,
+      "offsetPhysical": 1,
+      "y": 26,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 1,
+      "padding": 25,
+      "offsetPhysical": 2,
+      "y": 27,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        44,
+        70
+      ]
+    },
+    {
+      "density": 1,
+      "padding": 25,
+      "offsetPhysical": 3,
+      "y": 28,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        45,
+        71
+      ]
+    },
+    {
+      "density": 1,
+      "padding": 25,
+      "offsetPhysical": 7,
+      "y": 32,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        49,
+        75
+      ]
+    },
+    {
+      "density": 1,
+      "padding": 25.484375,
+      "offsetPhysical": 0,
+      "y": 25.484375,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        42,
+        68
+      ]
+    },
+    {
+      "density": 1,
+      "padding": 25.484375,
+      "offsetPhysical": 1,
+      "y": 26.484375,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 1,
+      "padding": 25.484375,
+      "offsetPhysical": 2,
+      "y": 27.484375,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        44,
+        70
+      ]
+    },
+    {
+      "density": 1,
+      "padding": 25.484375,
+      "offsetPhysical": 3,
+      "y": 28.484375,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        45,
+        71
+      ]
+    },
+    {
+      "density": 1,
+      "padding": 25.484375,
+      "offsetPhysical": 7,
+      "y": 32.484375,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        49,
+        75
+      ]
+    },
+    {
+      "density": 1,
+      "padding": 25.5,
+      "offsetPhysical": 0,
+      "y": 25.5,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        68
+      ]
+    },
+    {
+      "density": 1,
+      "padding": 25.5,
+      "offsetPhysical": 1,
+      "y": 26.5,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        44,
+        69
+      ]
+    },
+    {
+      "density": 1,
+      "padding": 25.5,
+      "offsetPhysical": 2,
+      "y": 27.5,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        45,
+        70
+      ]
+    },
+    {
+      "density": 1,
+      "padding": 25.5,
+      "offsetPhysical": 3,
+      "y": 28.5,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        46,
+        71
+      ]
+    },
+    {
+      "density": 1,
+      "padding": 25.5,
+      "offsetPhysical": 7,
+      "y": 32.5,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        50,
+        75
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25,
+      "offsetPhysical": 0,
+      "y": 25,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        42,
+        68
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25,
+      "offsetPhysical": 1,
+      "y": 25.375,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        42,
+        68
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25,
+      "offsetPhysical": 2,
+      "y": 25.75,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25,
+      "offsetPhysical": 3,
+      "y": 26.140625,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25,
+      "offsetPhysical": 7,
+      "y": 27.65625,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        45,
+        71
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25.484375,
+      "offsetPhysical": 0,
+      "y": 25.484375,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        42,
+        68
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25.484375,
+      "offsetPhysical": 1,
+      "y": 25.859375,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25.484375,
+      "offsetPhysical": 2,
+      "y": 26.234375,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25.484375,
+      "offsetPhysical": 3,
+      "y": 26.625,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        44,
+        70
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25.484375,
+      "offsetPhysical": 7,
+      "y": 28.140625,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        45,
+        71
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25.5,
+      "offsetPhysical": 0,
+      "y": 25.5,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        68
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25.5,
+      "offsetPhysical": 1,
+      "y": 25.875,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25.5,
+      "offsetPhysical": 2,
+      "y": 26.25,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25.5,
+      "offsetPhysical": 3,
+      "y": 26.640625,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        44,
+        70
+      ]
+    },
+    {
+      "density": 2.625,
+      "padding": 25.5,
+      "offsetPhysical": 7,
+      "y": 28.15625,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        45,
+        71
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25,
+      "offsetPhysical": 0,
+      "y": 25,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        42,
+        68
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25,
+      "offsetPhysical": 1,
+      "y": 25.328125,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        42,
+        68
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25,
+      "offsetPhysical": 2,
+      "y": 25.65625,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25,
+      "offsetPhysical": 3,
+      "y": 26,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25,
+      "offsetPhysical": 7,
+      "y": 27.328125,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        44,
+        70
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25.484375,
+      "offsetPhysical": 0,
+      "y": 25.484375,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        42,
+        68
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25.484375,
+      "offsetPhysical": 1,
+      "y": 25.8125,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25.484375,
+      "offsetPhysical": 2,
+      "y": 26.140625,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25.484375,
+      "offsetPhysical": 3,
+      "y": 26.484375,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25.484375,
+      "offsetPhysical": 7,
+      "y": 27.8125,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        45,
+        71
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25.5,
+      "offsetPhysical": 0,
+      "y": 25.5,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        68
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25.5,
+      "offsetPhysical": 1,
+      "y": 25.828125,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25.5,
+      "offsetPhysical": 2,
+      "y": 26.15625,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        43,
+        69
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25.5,
+      "offsetPhysical": 3,
+      "y": 26.5,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        44,
+        69
+      ]
+    },
+    {
+      "density": 3,
+      "padding": 25.5,
+      "offsetPhysical": 7,
+      "y": 27.828125,
+      "height": 51.78125,
+      "text": "agjpqy\nagjpqy",
+      "baselines": [
+        45,
+        71
+      ]
+    }
+  ]
+}

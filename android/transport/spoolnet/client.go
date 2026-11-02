@@ -1,39 +1,45 @@
-// Package spoolnet is the small gomobile boundary used by the Android shell.
+// Package spoolnet provides the native Android API transport over embedded tsnet.
 package spoolnet
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
-	"spool/android/transport/internal/connectproxy"
 	"tailscale.com/client/local"
 	"tailscale.com/tsnet"
 )
 
+const maxResponseBytes = 16 << 20
+
 type Client struct {
-	mu     sync.Mutex
-	server *tsnet.Server
-	local  *local.Client
-	proxy  *connectproxy.Proxy
-	origin *url.URL
-	closed bool
-	ctx    context.Context
-	cancel context.CancelFunc
+	mu        sync.Mutex
+	server    *tsnet.Server
+	local     *local.Client
+	origin    *url.URL
+	http      *http.Client
+	transport *http.Transport
+	closed    bool
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
-// NewClient starts one persistent userspace node. Call it on a worker thread.
-// dataDir must be an app-private, non-backed-up directory, not a provider home.
+// NewClient starts one app-private userspace node. No WebView or local proxy is used.
 func NewClient(dataDir, serverURL string) (*Client, error) {
-	origin, target, err := parseEndpoint(serverURL)
+	origin, authority, err := parseEndpoint(serverURL)
 	if err != nil {
 		return nil, err
 	}
@@ -46,11 +52,7 @@ func NewClient(dataDir, serverURL string) (*Client, error) {
 	if err := prepareLogStorage(dataDir); err != nil {
 		return nil, fmt.Errorf("prepare tsnet logs: %w", err)
 	}
-	server := &tsnet.Server{
-		Dir: dataDir, Hostname: "spool-android",
-		// Do not leak login URLs or node details into Android's shared log buffer.
-		UserLogf: func(string, ...any) {},
-	}
+	server := &tsnet.Server{Dir: dataDir, Hostname: "spool-android", UserLogf: func(string, ...any) {}}
 	if err := server.Start(); err != nil {
 		server.Close()
 		return nil, fmt.Errorf("start tsnet: %w", err)
@@ -60,22 +62,32 @@ func NewClient(dataDir, serverURL string) (*Client, error) {
 		server.Close()
 		return nil, err
 	}
-	proxy, err := connectproxy.Start(target, server.Dial)
-	if err != nil {
-		server.Close()
-		return nil, err
-	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Client{server: server, local: lc, proxy: proxy, origin: origin, ctx: ctx, cancel: cancel}, nil
+	// Server.Dial can fall back to system DNS/dialing on a MagicDNS miss.
+	// Use the pinned SDK's netstack-only TCP hook, even if a peer disappears.
+	dialer := tailnetDialer{api: lc, authority: authority, lifetime: ctx, dialTCP: server.Sys().Dialer.Get().NetstackDialTCP}
+	httpClient, transport := nativeHTTPClient(dialer.DialContext)
+	httpClient.Jar, err = newSessionJar(dataDir, origin)
+	if err != nil {
+		cancel()
+		server.Close()
+		return nil, fmt.Errorf("prepare native session: %w", err)
+	}
+	return &Client{server: server, local: lc, origin: origin, ctx: ctx, cancel: cancel, transport: transport, http: httpClient}, nil
 }
 
-func (c *Client) ServerURL() string     { return c.origin.String() }
-func (c *Client) ProxyAddress() string  { return c.proxy.Address }
-func (c *Client) ProxyUsername() string { return connectproxy.Username }
-func (c *Client) ProxyPassword() string { return c.proxy.Password }
-func (c *Client) ProxyRealm() string    { return c.proxy.Realm }
+func nativeHTTPClient(dial func(context.Context, string, string) (net.Conn, error)) (*http.Client, *http.Transport) {
+	// No HTTP proxy is inherited. The supplied dialer enforces tailnet-only
+	// routing; TLS still verifies the original URL hostname, not the dialed IP.
+	transport := &http.Transport{DialContext: dial, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 25 * time.Second, IdleConnTimeout: 60 * time.Second}
+	jar, _ := cookiejar.New(nil)
+	return &http.Client{Transport: transport, Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return errors.New("redirects are not allowed")
+	}}, transport
+}
 
-// Status returns only the fields needed by the native connection page.
+func (c *Client) ServerURL() string { return c.origin.String() }
+
 func (c *Client) Status() (string, error) {
 	ctx, cancel := context.WithTimeout(c.ctx, 3*time.Second)
 	defer cancel()
@@ -96,31 +108,86 @@ func (c *Client) Login() error {
 	return c.local.StartLoginInteractive(ctx)
 }
 
-// Probe checks TLS and Spool's unauthenticated health endpoint through tsnet.
-func (c *Client) Probe() error {
-	ctx, cancel := context.WithTimeout(c.ctx, 20*time.Second)
-	defer cancel()
-	transport := &http.Transport{DialContext: c.server.Dial, TLSHandshakeTimeout: 10 * time.Second}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error {
-		return errors.New("health check must not redirect")
-	}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.origin.String()+"/healthz", nil)
-	if err != nil {
-		return err
+// apiURL confines every native request, including encoded paths, to this server's API.
+func (c *Client) apiURL(path string) (string, error) {
+	u, err := url.ParseRequestURI(path)
+	if err != nil || u.IsAbs() || u.Host != "" || u.Fragment != "" || !strings.HasPrefix(u.Path, "/api/") || strings.ContainsAny(u.Path, "\\\r\n") {
+		return "", errors.New("only relative Spool API paths are allowed")
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("Spool HTTPS health check failed: %w", err)
+	for _, part := range strings.Split(u.Path, "/") {
+		if part == ".." || part == "." {
+			return "", errors.New("invalid API path")
+		}
 	}
+	return c.origin.String() + u.String(), nil
+}
+
+func (c *Client) request(ctx context.Context, method, path string, body io.Reader, contentType, csrf, language string) (*http.Response, error) {
+	address, err := c.apiURL(path)
+	if err != nil {
+		return nil, err
+	}
+	if method != http.MethodGet && method != http.MethodPost {
+		return nil, errors.New("unsupported API method")
+	}
+	req, err := http.NewRequestWithContext(ctx, method, address, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Origin", c.origin.String())
+	req.Header.Set("X-UI-Language", language)
+	req.Header.Set("Accept", "application/json")
+	if strings.HasPrefix(path, "/api/chats/") {
+		req.Header.Set("X-Tool-Details", "lazy")
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if method == http.MethodPost {
+		req.Header.Set("X-CSRF-Token", csrf)
+	}
+	return c.http.Do(req)
+}
+
+type apiResponse struct {
+	Status    int    `json:"status"`
+	Body      string `json:"body"`
+	MediaType string `json:"mediaType,omitempty"`
+	Base64    bool   `json:"base64,omitempty"`
+}
+
+func encodeResponse(resp *http.Response) (string, error) {
 	defer resp.Body.Close()
-	var health struct {
-		OK bool `json:"ok"`
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil {
+		return "", err
 	}
-	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&health) != nil || !health.OK {
-		return fmt.Errorf("endpoint is not a healthy Spool server (HTTP %d)", resp.StatusCode)
+	if len(data) > maxResponseBytes {
+		return "", errors.New("API response is too large")
 	}
-	return nil
+	mediaType := resp.Header.Get("Content-Type")
+	result := apiResponse{Status: resp.StatusCode, Body: string(data), MediaType: mediaType}
+	// JSON strings cannot preserve invalid UTF-8 in downloaded text files.
+	if !utf8.Valid(data) || !strings.Contains(mediaType, "json") && !strings.HasPrefix(mediaType, "text/") {
+		result.Body, result.Base64 = base64.StdEncoding.EncodeToString(data), true
+	}
+	encoded, err := json.Marshal(result)
+	return string(encoded), err
+}
+
+// Request retains session cookies privately; credentials never cross the Go boundary.
+func (c *Client) Request(method, path, body, csrf, language string) (string, error) {
+	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
+	defer cancel()
+	contentType := ""
+	if method == http.MethodPost {
+		contentType = "application/json"
+	}
+	resp, err := c.request(ctx, method, path, strings.NewReader(body), contentType, csrf, language)
+	if err != nil {
+		return "", err
+	}
+	return encodeResponse(resp)
 }
 
 func (c *Client) Close() error {
@@ -131,5 +198,6 @@ func (c *Client) Close() error {
 	}
 	c.closed = true
 	c.cancel()
-	return errors.Join(c.proxy.Close(), c.server.Close())
+	c.transport.CloseIdleConnections()
+	return c.server.Close()
 }

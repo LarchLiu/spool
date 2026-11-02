@@ -43,6 +43,7 @@ type Turn struct {
 	StartedAt       int64            `json:"started_at"`
 	FinishedAt      int64            `json:"finished_at,omitempty"`
 	Status          SessionStatus    `json:"status"`
+	Compacting      bool             `json:"compacting,omitempty"`
 	Model           string           `json:"model,omitempty"`
 	RequestedModel  string           `json:"requested_model,omitempty"`
 	ReasoningEffort string           `json:"reasoning_effort,omitempty"`

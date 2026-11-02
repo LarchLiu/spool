@@ -1,7 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolveLanguage, resolveTheme } from "../.test-build/preferences.js";
+import { readFileSync, readdirSync } from "node:fs";
+import { languages, resolveLanguage, resolveTheme } from "../.test-build/preferences.js";
+
+test("interface languages are limited to Chinese, English and Japanese", () => {
+  assert.deepEqual(languages, [
+    ["zh-CN", "简体中文"],
+    ["en", "English"],
+    ["ja", "日本語"],
+  ]);
+  assert.deepEqual(
+    readdirSync(new URL("../../locales/", import.meta.url))
+      .filter((name) => name.endsWith(".json"))
+      .sort(),
+    ["en.json", "ja.json", "zh-CN.json"],
+  );
+});
 
 test("theme follows the OS only when system is selected", () => {
   assert.equal(resolveTheme("system", true), "dark");

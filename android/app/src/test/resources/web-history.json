@@ -1,0 +1,1774 @@
+{
+  "purpose": "Actual Web history-loading.ts and chat-state.ts; no real API/device equivalence claim.",
+  "merges": [
+    {
+      "id": "prepend-retains-live-metadata-and-authority",
+      "previous": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "live",
+            "status": "running",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Live output is longer"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "page": {
+        "id": "chat-one",
+        "title": "Old title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "old-model",
+        "permission_mode": "ask",
+        "updated_at": 1,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "oldest",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Oldest"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            }
+          ]
+        },
+        "status": "completed",
+        "history": {
+          "before": "oldest",
+          "has_more": true
+        }
+      },
+      "expected": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "oldest",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          },
+          {
+            "id": "live",
+            "status": "running",
+            "part_start": 2,
+            "input_end": 2,
+            "part_end": 3
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Oldest"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Live output is longer"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "before": "oldest",
+          "has_more": true
+        }
+      }
+    },
+    {
+      "id": "old-timestamps-and-file-order",
+      "previous": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1,
+            "started_at": -1
+          },
+          {
+            "id": "pending-local",
+            "status": "running",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "New"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Draft"
+            }
+          ]
+        },
+        "status": "running"
+      },
+      "page": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "zero",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1,
+            "started_at": 0
+          },
+          {
+            "id": "negative",
+            "status": "completed",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2,
+            "started_at": -50
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "First"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Second"
+            }
+          ]
+        },
+        "status": "completed",
+        "history": {
+          "has_more": false
+        }
+      },
+      "expected": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "zero",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1,
+            "started_at": 0
+          },
+          {
+            "id": "negative",
+            "status": "completed",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2,
+            "started_at": -50
+          },
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 2,
+            "input_end": 2,
+            "part_end": 3,
+            "started_at": -1
+          },
+          {
+            "id": "pending-local",
+            "status": "running",
+            "part_start": 3,
+            "input_end": 3,
+            "part_end": 4
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "First"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Second"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "New"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Draft"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "has_more": false
+        }
+      }
+    },
+    {
+      "id": "running-overlap-cannot-regress-terminal",
+      "previous": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "same",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "new",
+            "status": "running",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Long completed"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Latest"
+            }
+          ]
+        },
+        "status": "running"
+      },
+      "page": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "older",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "same",
+            "status": "running",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "source": "metadata",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Older"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Short"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "has_more": false
+        }
+      },
+      "expected": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "older",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "same",
+            "status": "completed",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          },
+          {
+            "id": "new",
+            "status": "running",
+            "part_start": 2,
+            "input_end": 2,
+            "part_end": 3
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Older"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Long completed"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Latest"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "has_more": false
+        }
+      }
+    },
+    {
+      "id": "native-turn-alias-rebases-parts",
+      "previous": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "old-id",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1,
+            "native_turn_id": "native-one"
+          },
+          {
+            "id": "newer",
+            "status": "running",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Preserved longer output"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Newest"
+            }
+          ]
+        },
+        "status": "running"
+      },
+      "page": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "older",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "new-id",
+            "status": "completed",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2,
+            "native_turn_id": "native-one"
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Older"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Final native"
+            }
+          ]
+        },
+        "status": "completed",
+        "history": {
+          "before": "next",
+          "has_more": true
+        }
+      },
+      "expected": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "older",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "new-id",
+            "status": "completed",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2,
+            "native_turn_id": "native-one"
+          },
+          {
+            "id": "newer",
+            "status": "running",
+            "part_start": 2,
+            "input_end": 2,
+            "part_end": 3
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Older"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Final native"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Newest"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "before": "next",
+          "has_more": true
+        }
+      }
+    },
+    {
+      "id": "empty-terminal-page-keeps-current-turns",
+      "previous": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "live",
+            "status": "running",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Live output is longer"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "page": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [],
+        "transcript": {
+          "source": "codex-native",
+          "parts": []
+        },
+        "status": "completed",
+        "history": {
+          "has_more": false
+        }
+      },
+      "expected": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "live",
+            "status": "running",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Live output is longer"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "has_more": false
+        }
+      }
+    },
+    {
+      "id": "different-chat-is-inert",
+      "previous": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "live",
+            "status": "running",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Live output is longer"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "page": {
+        "id": "chat-other",
+        "title": "Old title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "old-model",
+        "permission_mode": "ask",
+        "updated_at": 1,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "oldest",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Oldest"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            }
+          ]
+        },
+        "status": "completed",
+        "history": {
+          "before": "oldest",
+          "has_more": true
+        }
+      },
+      "expected": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "live",
+            "status": "running",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Live output is longer"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      }
+    },
+    {
+      "id": "unavailable-page-keeps-live-snapshot",
+      "previous": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "live",
+            "status": "running",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Live output is longer"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "page": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "older",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Older"
+            }
+          ]
+        },
+        "status": "completed",
+        "history": {
+          "error": "unavailable",
+          "has_more": false
+        }
+      },
+      "expected": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "older",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          },
+          {
+            "id": "live",
+            "status": "running",
+            "part_start": 2,
+            "input_end": 2,
+            "part_end": 3
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Older"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Live output is longer"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "error": "unavailable",
+          "has_more": false
+        }
+      }
+    },
+    {
+      "id": "longer-running-parts-survive-metadata",
+      "previous": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "live",
+            "status": "running",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Live output is longer"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "page": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "older",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "live",
+            "status": "running",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Older"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Live"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "has_more": false
+        }
+      },
+      "expected": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "older",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "live",
+            "status": "running",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          },
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 2,
+            "input_end": 2,
+            "part_end": 3
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Older"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Live output is longer"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            }
+          ]
+        },
+        "status": "completed",
+        "history": {
+          "has_more": false
+        }
+      }
+    },
+    {
+      "id": "live-snapshot-after-prepend",
+      "previous": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 30,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "oldest",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          },
+          {
+            "id": "live",
+            "status": "running",
+            "part_start": 2,
+            "input_end": 2,
+            "part_end": 3
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Oldest"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Live output is longer"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "before": "oldest",
+          "has_more": true
+        }
+      },
+      "page": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 40,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "live",
+            "status": "running",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Live output is even longer now"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "mode": "reconcile",
+      "expected": {
+        "id": "chat-one",
+        "title": "Current title",
+        "project_id": "project-one",
+        "backend": "codex",
+        "model": "current-model",
+        "permission_mode": "ask",
+        "updated_at": 40,
+        "can_control": true,
+        "turns": [
+          {
+            "id": "oldest",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "recent",
+            "status": "completed",
+            "part_start": 1,
+            "input_end": 1,
+            "part_end": 2
+          },
+          {
+            "id": "live",
+            "status": "running",
+            "part_start": 2,
+            "input_end": 2,
+            "part_end": 3
+          }
+        ],
+        "transcript": {
+          "source": "codex-native",
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Oldest"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Recent"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Live output is even longer now"
+            }
+          ]
+        },
+        "status": "running",
+        "history": {
+          "before": "oldest",
+          "has_more": true
+        }
+      }
+    }
+  ],
+  "fetches": [
+    {
+      "id": "valid-next-page",
+      "from": {
+        "id": "chat-one",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "page": {
+        "id": "chat-one",
+        "history": {
+          "before": "older",
+          "has_more": true
+        }
+      },
+      "expected": {
+        "page": {
+          "id": "chat-one",
+          "history": {
+            "before": "older",
+            "has_more": true
+          }
+        },
+        "requests": [
+          "/chats/chat-one/history?before=middle%2F%E6%97%A5%E6%9C%AC%20%3F%26"
+        ],
+        "yields": 1
+      }
+    },
+    {
+      "id": "terminal-page-needs-no-cursor",
+      "from": {
+        "id": "chat-one",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "page": {
+        "id": "chat-one",
+        "history": {
+          "has_more": false
+        }
+      },
+      "expected": {
+        "page": {
+          "id": "chat-one",
+          "history": {
+            "has_more": false
+          }
+        },
+        "requests": [
+          "/chats/chat-one/history?before=middle%2F%E6%97%A5%E6%9C%AC%20%3F%26"
+        ],
+        "yields": 1
+      }
+    },
+    {
+      "id": "missing-cursor-is-inert",
+      "from": {
+        "id": "chat-one",
+        "history": {
+          "before": "",
+          "has_more": true
+        }
+      },
+      "page": {
+        "id": "chat-one",
+        "history": {
+          "before": "older",
+          "has_more": true
+        }
+      },
+      "expected": {
+        "page": null,
+        "requests": [],
+        "yields": 0
+      }
+    },
+    {
+      "id": "unavailable-is-inert",
+      "from": {
+        "id": "chat-one",
+        "history": {
+          "before": "before",
+          "has_more": true,
+          "error": "unavailable"
+        }
+      },
+      "page": {
+        "id": "chat-one",
+        "history": {
+          "before": "older",
+          "has_more": true
+        }
+      },
+      "expected": {
+        "page": null,
+        "requests": [],
+        "yields": 0
+      }
+    },
+    {
+      "id": "complete-is-inert",
+      "from": {
+        "id": "chat-one",
+        "history": {
+          "before": "before",
+          "has_more": false
+        }
+      },
+      "page": {
+        "id": "chat-one",
+        "history": {
+          "before": "older",
+          "has_more": true
+        }
+      },
+      "expected": {
+        "page": null,
+        "requests": [],
+        "yields": 0
+      }
+    },
+    {
+      "id": "same-cursor-rejected",
+      "from": {
+        "id": "chat-one",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "page": {
+        "id": "chat-one",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "expected": {
+        "error": "Invalid history cursor",
+        "requests": [
+          "/chats/chat-one/history?before=middle%2F%E6%97%A5%E6%9C%AC%20%3F%26"
+        ],
+        "yields": 1
+      }
+    },
+    {
+      "id": "empty-next-cursor-rejected",
+      "from": {
+        "id": "chat-one",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "page": {
+        "id": "chat-one",
+        "history": {
+          "before": "",
+          "has_more": true
+        }
+      },
+      "expected": {
+        "error": "Invalid history cursor",
+        "requests": [
+          "/chats/chat-one/history?before=middle%2F%E6%97%A5%E6%9C%AC%20%3F%26"
+        ],
+        "yields": 1
+      }
+    },
+    {
+      "id": "different-chat-rejected",
+      "from": {
+        "id": "chat-one",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "page": {
+        "id": "other",
+        "history": {
+          "before": "older",
+          "has_more": true
+        }
+      },
+      "expected": {
+        "error": "Invalid history cursor",
+        "requests": [
+          "/chats/chat-one/history?before=middle%2F%E6%97%A5%E6%9C%AC%20%3F%26"
+        ],
+        "yields": 1
+      }
+    },
+    {
+      "id": "network-failure",
+      "from": {
+        "id": "chat-one",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "failure": "offline",
+      "expected": {
+        "error": "offline",
+        "requests": [
+          "/chats/chat-one/history?before=middle%2F%E6%97%A5%E6%9C%AC%20%3F%26"
+        ],
+        "yields": 1
+      }
+    },
+    {
+      "id": "cancel-before-paint",
+      "from": {
+        "id": "chat-one",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "page": {
+        "id": "chat-one",
+        "history": {
+          "before": "older",
+          "has_more": true
+        }
+      },
+      "cancel": "paint",
+      "expected": {
+        "page": null,
+        "requests": [],
+        "yields": 1
+      }
+    },
+    {
+      "id": "cancel-during-read",
+      "from": {
+        "id": "chat-one",
+        "history": {
+          "before": "middle/日本 ?&",
+          "has_more": true
+        }
+      },
+      "page": {
+        "id": "chat-one",
+        "history": {
+          "before": "older",
+          "has_more": true
+        }
+      },
+      "cancel": "read",
+      "expected": {
+        "page": null,
+        "requests": [
+          "/chats/chat-one/history?before=middle%2F%E6%97%A5%E6%9C%AC%20%3F%26"
+        ],
+        "yields": 1
+      }
+    }
+  ],
+  "scrolls": [
+    {
+      "following": true,
+      "anchor": null,
+      "height": 600,
+      "initialTop": 400,
+      "expectedTop": 600
+    },
+    {
+      "following": true,
+      "anchor": null,
+      "height": 1200,
+      "initialTop": 400,
+      "expectedTop": 1200
+    },
+    {
+      "following": true,
+      "anchor": null,
+      "height": 5000,
+      "initialTop": 400,
+      "expectedTop": 5000
+    },
+    {
+      "following": true,
+      "anchor": {
+        "id": "chat-one",
+        "height": 1200,
+        "top": 150
+      },
+      "height": 600,
+      "initialTop": 400,
+      "expectedTop": 600
+    },
+    {
+      "following": true,
+      "anchor": {
+        "id": "chat-one",
+        "height": 1200,
+        "top": 150
+      },
+      "height": 1200,
+      "initialTop": 400,
+      "expectedTop": 1200
+    },
+    {
+      "following": true,
+      "anchor": {
+        "id": "chat-one",
+        "height": 1200,
+        "top": 150
+      },
+      "height": 5000,
+      "initialTop": 400,
+      "expectedTop": 5000
+    },
+    {
+      "following": true,
+      "anchor": {
+        "id": "chat-one",
+        "height": 3400,
+        "top": 1900
+      },
+      "height": 600,
+      "initialTop": 400,
+      "expectedTop": 600
+    },
+    {
+      "following": true,
+      "anchor": {
+        "id": "chat-one",
+        "height": 3400,
+        "top": 1900
+      },
+      "height": 1200,
+      "initialTop": 400,
+      "expectedTop": 1200
+    },
+    {
+      "following": true,
+      "anchor": {
+        "id": "chat-one",
+        "height": 3400,
+        "top": 1900
+      },
+      "height": 5000,
+      "initialTop": 400,
+      "expectedTop": 5000
+    },
+    {
+      "following": false,
+      "anchor": null,
+      "height": 600,
+      "initialTop": 400,
+      "expectedTop": 400
+    },
+    {
+      "following": false,
+      "anchor": null,
+      "height": 1200,
+      "initialTop": 400,
+      "expectedTop": 400
+    },
+    {
+      "following": false,
+      "anchor": null,
+      "height": 5000,
+      "initialTop": 400,
+      "expectedTop": 400
+    },
+    {
+      "following": false,
+      "anchor": {
+        "id": "chat-one",
+        "height": 1200,
+        "top": 150
+      },
+      "height": 600,
+      "initialTop": 400,
+      "expectedTop": -450
+    },
+    {
+      "following": false,
+      "anchor": {
+        "id": "chat-one",
+        "height": 1200,
+        "top": 150
+      },
+      "height": 1200,
+      "initialTop": 400,
+      "expectedTop": 150
+    },
+    {
+      "following": false,
+      "anchor": {
+        "id": "chat-one",
+        "height": 1200,
+        "top": 150
+      },
+      "height": 5000,
+      "initialTop": 400,
+      "expectedTop": 3950
+    },
+    {
+      "following": false,
+      "anchor": {
+        "id": "chat-one",
+        "height": 3400,
+        "top": 1900
+      },
+      "height": 600,
+      "initialTop": 400,
+      "expectedTop": -900
+    },
+    {
+      "following": false,
+      "anchor": {
+        "id": "chat-one",
+        "height": 3400,
+        "top": 1900
+      },
+      "height": 1200,
+      "initialTop": 400,
+      "expectedTop": -300
+    },
+    {
+      "following": false,
+      "anchor": {
+        "id": "chat-one",
+        "height": 3400,
+        "top": 1900
+      },
+      "height": 5000,
+      "initialTop": 400,
+      "expectedTop": 3500
+    }
+  ]
+}

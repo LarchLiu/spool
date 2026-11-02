@@ -3,6 +3,10 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import type { Translator } from "./i18n";
 import { MarkdownMessage } from "./markdown-message.js";
 
+export function hasUserMessage(text: string, files: readonly unknown[]) {
+  return !!text.trim() || files.length > 0;
+}
+
 export function observeUserMessageOverflow(
   content: HTMLDivElement,
   onChange: (overflow: boolean) => void,

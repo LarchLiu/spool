@@ -1,4 +1,19 @@
-import type { TranscriptPart } from "./types";
+import type { TranscriptPart, Turn } from "./types";
+import type { Translator } from "./i18n";
+
+export function turnWorkLabel(turn: Turn, t: Translator, now: number, answered = false) {
+  const running = turn.status === "running";
+  if (running && turn.compacting) return t("Compacting context…");
+  if (!running && turn.status === "stopped") return t("Stopped");
+  if (!running && (!turn.started_at || !turn.finished_at)) return t("Completed");
+  const seconds = Math.max(0, Math.round(((running ? now : turn.finished_at!) - turn.started_at) / 1000));
+  const working = running && !answered;
+  return seconds < 60
+    ? t(working ? "Working for {seconds}s" : "Worked for {seconds}s", { seconds })
+    : t(working ? "Working for {minutes}m {seconds}s" : "Worked for {minutes}m {seconds}s", {
+        minutes: Math.floor(seconds / 60), seconds: seconds % 60,
+      });
+}
 
 export function turnPresentation(parts: TranscriptPart[], running: boolean) {
   const isText = (part: TranscriptPart) =>

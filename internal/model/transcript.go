@@ -2,15 +2,38 @@ package model
 
 // Part is one normalized piece of a session transcript.
 type Part struct {
-	ID       string `json:"id,omitempty"`
-	Phase    string `json:"phase,omitempty"`
-	Role     string `json:"role"`
-	Kind     string `json:"kind"`
-	Name     string `json:"name,omitempty"`
-	Text     string `json:"text"`
-	Cut      int    `json:"cut,omitempty"`
-	Model    string `json:"model,omitempty"`
-	ImageURL string `json:"image_url,omitempty"`
+	ID       string       `json:"id,omitempty"`
+	Phase    string       `json:"phase,omitempty"`
+	Role     string       `json:"role"`
+	Kind     string       `json:"kind"`
+	Name     string       `json:"name,omitempty"`
+	Text     string       `json:"text"`
+	Cut      int          `json:"cut,omitempty"`
+	Model    string       `json:"model,omitempty"`
+	ImageURL string       `json:"image_url,omitempty"`
+	Tool     *ToolSummary `json:"tool,omitempty"`
+}
+
+// ToolSummary is enough to render a collapsed activity without its input/output.
+// Ref identifies the part within an authorized chat; Version identifies its body.
+type ToolSummary struct {
+	Ref     string       `json:"ref,omitempty"`
+	Href    string       `json:"href,omitempty"`
+	Version string       `json:"version"`
+	Bytes   int          `json:"bytes"`
+	Kind    string       `json:"kind"`
+	Path    string       `json:"path,omitempty"`
+	Query   string       `json:"query,omitempty"`
+	Preview string       `json:"preview,omitempty"`
+	Stats   string       `json:"stats,omitempty"`
+	Changes *ToolChanges `json:"changes,omitempty"`
+	// Shared immutable source used to detect edits to hydrated cache responses.
+	SourceText string `json:"-"`
+}
+
+type ToolChanges struct {
+	Additions int `json:"additions"`
+	Deletions int `json:"deletions"`
 }
 
 // Transcript is a session's conversation in the order it was said.

@@ -1,0 +1,40 @@
+{
+  "source": "https://chromium.googlesource.com/chromium/src/",
+  "resourceDeclaration": "third_party/blink/public/blink_image_resources.grd",
+  "selection": "IDR_SEARCH_CANCEL / IDR_SEARCH_CANCEL_PRESSED and their DARK_MODE variants; 100% assets are the declared fallback for 200%",
+  "license": "android/licenses/Chromium.txt",
+  "files": [
+    {
+      "path": "android/app/src/main/res/drawable-nodpi/web_search_cancel_light.png",
+      "upstreamPath": "third_party/blink/public/default_100_percent/blink/search_cancel.png",
+      "gitBlobSHA1": "1291bf84302b5864e069f00068d2b322d77746fd",
+      "sha256": "df60228f846500f98c768ae9c88672b6e1486e7f06b51aa27aa334ae10d3eabb",
+      "width": 28,
+      "height": 28
+    },
+    {
+      "path": "android/app/src/main/res/drawable-nodpi/web_search_cancel_light_pressed.png",
+      "upstreamPath": "third_party/blink/public/default_100_percent/blink/search_cancel_pressed.png",
+      "gitBlobSHA1": "4abc0fd4ac0d136c7edf2f51703cb71606361514",
+      "sha256": "96bc18feaab6defe7d5d8354840cfaf6dfbd3c4940a85af72cc98dcc659d743e",
+      "width": 28,
+      "height": 28
+    },
+    {
+      "path": "android/app/src/main/res/drawable-nodpi/web_search_cancel_dark.png",
+      "upstreamPath": "third_party/blink/public/default_100_percent/blink/search_cancel_dark_mode.png",
+      "gitBlobSHA1": "a2df359f654f5bd400531badc2aa4c9b7d3706c7",
+      "sha256": "eb30fe9f03a4933e89466c2608a82d0706885f882791781cb11316f3e80a8711",
+      "width": 28,
+      "height": 28
+    },
+    {
+      "path": "android/app/src/main/res/drawable-nodpi/web_search_cancel_dark_pressed.png",
+      "upstreamPath": "third_party/blink/public/default_100_percent/blink/search_cancel_pressed_dark_mode.png",
+      "gitBlobSHA1": "fe14a4525b29c345f9aa5b19551982182a08bbbf",
+      "sha256": "af99f8326115fa3e44b542d3be0defc810ea6b4e75d968c8ee132b29f12657b1",
+      "width": 28,
+      "height": 28
+    }
+  ]
+}

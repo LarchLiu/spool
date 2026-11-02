@@ -88,6 +88,19 @@ export type TranscriptPart = {
   text: string;
   cut?: number;
   model?: string;
+  tool?: ToolSummary;
+};
+export type ToolSummary = {
+  ref?: string;
+  href?: string;
+  version: string;
+  bytes: number;
+  kind: "read" | "write" | "create" | "delete" | "search" | "list" | "web" | "shell" | "thinking" | "other";
+  path?: string;
+  query?: string;
+  preview?: string;
+  stats?: string;
+  changes?: { additions: number; deletions: number };
 };
 export type Transcript = {
   parts: TranscriptPart[];
@@ -108,6 +121,7 @@ export type Turn = {
   started_at: number;
   finished_at?: number;
   status: string;
+  compacting?: boolean;
   model?: string;
   requested_model?: string;
   reasoning_effort?: string;

@@ -24,8 +24,6 @@ import {
   Download,
   Command,
   Plus,
-  Square,
-  LoaderCircle,
   MessageCircle,
 } from "lucide-react";
 import { api, getCSRF, setCSRF } from "./api";
@@ -37,6 +35,7 @@ import {
 import { DesktopSettingsLink } from "./desktop-settings";
 import { DesktopWindowChrome } from "./desktop-window-chrome";
 import { LoginStory } from "./login-story";
+import { ComposerSendButton } from "./composer-send-button";
 import { subscribeChatEvents } from "./chat-stream";
 import {
   mergeNavigationChats,
@@ -57,7 +56,7 @@ import {
   restoreHistoryScroll,
   type HistoryAnchor,
 } from "./history-loading";
-import { runningTurn, stopReply } from "./turn-control";
+import { hasRunningTurn, runningTurn, stopReply } from "./turn-control";
 import type {
   User,
   Project,
@@ -77,11 +76,11 @@ import {
   syncExistingPush,
 } from "./web-push";
 import { AvatarDialog } from "./avatar-dialog";
-import { AvatarStack, UserAvatar } from "./user-avatar";
+import { AvatarStack } from "./user-avatar";
 import { DirectMessagePanel } from "./direct-message-panel";
 import type { FloatingWindowBounds } from "./floating-window";
 import { PeopleGroupPicker } from "./people-group-picker";
-import { PeopleGroupAvatar } from "./people-group-avatar";
+import { OnlinePeopleMenu } from "./online-people-menu";
 import {
   createDirectInbox,
   formatUnreadCount,
@@ -109,10 +108,11 @@ import { AgentIcon } from "./agent-icon";
 import { AutosizeTextarea } from "./autosize-textarea";
 import { SlashCommandMenu } from "./slash-command-menu";
 import { goalSuggestion, parseGoalCommand } from "./slash-commands";
-import { UserMessage } from "./user-message";
+import { hasUserMessage, UserMessage } from "./user-message";
 import { MessageFooter } from "./message-footer";
 import { TurnActions, TurnOperatorAvatar } from "./turn-identity";
 import { TurnResponse } from "./tool-activity";
+import { turnWorkLabel } from "./turn-presentation";
 import { chatSelection, chooseModel } from "./model-selection";
 import { effortLabel as formatEffort } from "./i18n";
 import type { Translator } from "./i18n";
@@ -996,8 +996,7 @@ function App() {
     );
     historyAnchor.current = null;
   }, [chat?.turns]);
-  const turnRunning =
-    chat?.turns.some((turn) => turn.status === "running") ?? false;
+  const turnRunning = hasRunningTurn(chat);
   useEffect(() => {
     if (!turnRunning) return;
     setClock(Date.now());
@@ -1628,117 +1627,18 @@ function App() {
                   </span>
                 )}
               </summary>
-              <div className="online-list">
-                <div className="online-inbox-row">
-                  <button
-                    className="online-chat-person online-inbox-button"
-                    onClick={(event) => {
-                      openDirectInbox();
-                      event.currentTarget
-                        .closest("details")
-                        ?.removeAttribute("open");
-                    }}
-                  >
-                    {t("People chat")}
-                    {!!unreadMessages && (
-                      <span className="direct-unread">
-                        {formatUnreadCount(unreadMessages)}
-                      </span>
-                    )}
-                  </button>
-                </div>
-                <div className="online-group-row">
-                  <button
-                    className="online-chat-person"
-                    onClick={(event) => {
-                      openDirectChat(onlineChatRoom);
-                      event.currentTarget
-                        .closest("details")
-                        ?.removeAttribute("open");
-                    }}
-                  >
-                    <Users size={16} aria-hidden="true" />
-                    {t("Online group chat")}
-                    {!!inbox.unread[onlineChatRoom] && (
-                      <span className="direct-unread">
-                        {formatUnreadCount(inbox.unread[onlineChatRoom])}
-                      </span>
-                    )}
-                  </button>
-                  <button
-                    className="quiet online-new-group"
-                    onClick={(event) => {
-                      setGroupPicker("");
-                      event.currentTarget
-                        .closest("details")
-                        ?.removeAttribute("open");
-                    }}
-                  >
-                    <Plus size={14} />
-                    {t("New group chat")}
-                  </button>
-                </div>
-                {inbox.groups.map((group) => (
-                  <div className="online-group-row" key={group.id}>
-                    <button
-                      className="online-chat-person"
-                      data-conversation={group.id}
-                      onClick={(event) => {
-                        openDirectChat(group.id);
-                        event.currentTarget
-                          .closest("details")
-                          ?.removeAttribute("open");
-                      }}
-                    >
-                      <PeopleGroupAvatar
-                        people={group.members.map(chatPeerIdentity)}
-                      />
-                      {chatPeerIdentity(group.id).nickname}
-                      {!!inbox.unread[group.id] && (
-                        <span className="direct-unread">
-                          {formatUnreadCount(inbox.unread[group.id])}
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                ))}
-                {displayOnline.map((u) => (
-                  <div key={u.id}>
-                    <UserAvatar person={u} size={26} />
-                    <span
-                      className={
-                        u.state === "online" ? "online-dot" : "away-dot"
-                      }
-                    />
-                    {u.id === user!.id ? (
-                      <span>{u.nickname}</span>
-                    ) : (
-                      <button
-                        className="online-chat-person"
-                        onClick={(event) => {
-                          openDirectChat(u.id);
-                          event.currentTarget
-                            .closest("details")
-                            ?.removeAttribute("open");
-                        }}
-                        title={t("Chat with {name}", { name: u.nickname })}
-                      >
-                        {u.nickname}
-                        {!!inbox.unread[u.id] && (
-                          <span className="direct-unread">
-                            {formatUnreadCount(inbox.unread[u.id])}
-                          </span>
-                        )}
-                        <MessageCircle size={13} aria-hidden="true" />
-                      </button>
-                    )}
-                    <small>
-                      {u.state === "online" ? t("Online") : t("Away")}
-                    </small>
-                  </div>
-                ))}
-                {!online.length && <small>{t("Updating presence…")}</small>}
-              </div>
+              <OnlinePeopleMenu
+                self={user!.id}
+                people={displayOnline}
+                groups={inbox.groups}
+                unread={inbox.unread}
+                unreadMessages={unreadMessages}
+                resolvePerson={chatPeerIdentity}
+                t={t}
+                onInbox={openDirectInbox}
+                onPeer={openDirectChat}
+                onNewGroup={() => setGroupPicker("")}
+              />
             </details>
             <button
               className="icon direct-inbox-button"
@@ -1906,15 +1806,16 @@ function App() {
                   : nativeImages;
                 return (
                   <article className="turn" key={turn.id}>
-                    <div className="user-row">
-                      <div className="user-message">
-                        {!!turnFiles.length && (
-                          <AttachmentCards
-                            files={turnFiles}
-                            chatID={chat.id}
-                            t={t}
-                            onPreview={(file, url) => setPreview({ file, url })}
-                          />
+                    {hasUserMessage(userText, turnFiles) && (
+                      <div className="user-row">
+                        <div className="user-message">
+                          {!!turnFiles.length && (
+                            <AttachmentCards
+                              files={turnFiles}
+                              chatID={chat.id}
+                              t={t}
+                              onPreview={(file, url) => setPreview({ file, url })}
+                            />
                         )}
                         {userText && <UserMessage text={userText} t={t} />}
                         <MessageFooter
@@ -1928,6 +1829,7 @@ function App() {
                       </div>
                       <TurnOperatorAvatar person={operator} />
                     </div>
+                    )}
                     <TurnResponse
                       parts={parts}
                       backend={turn.backend}
@@ -2196,21 +2098,11 @@ function App() {
                     )}
                   </div>
                 )}
-                <button
-                  className="send"
-                  type={activeTurn ? "button" : "submit"}
-                  aria-label={
-                    activeTurn
-                      ? t(stopping ? "Stopping…" : "Stop response")
-                      : t("Send message")
-                  }
-                  title={
-                    activeTurn
-                      ? t(stopping ? "Stopping…" : "Stop response")
-                      : t("Send message")
-                  }
-                  aria-busy={stopping || undefined}
-                  onClick={activeTurn ? () => void stop() : undefined}
+                <ComposerSendButton
+                  active={!!activeTurn}
+                  stopping={stopping}
+                  t={t}
+                  onStop={() => void stop()}
                   disabled={
                     activeTurn
                       ? !composerWritable || stopping
@@ -2221,17 +2113,7 @@ function App() {
                         preparingFiles ||
                         posting
                   }
-                >
-                  {activeTurn ? (
-                    stopping ? (
-                      <LoaderCircle className="stop-spinner" size={18} />
-                    ) : (
-                      <Square size={14} fill="currentColor" />
-                    )
-                  ) : (
-                    <ArrowUp size={20} />
-                  )}
-                </button>
+                />
               </div>
             </div>
           </form>
@@ -2337,15 +2219,6 @@ function App() {
     </LocalFileContext.Provider>
   );
 }
-function worked(turn: Turn, t: Translator) {
-  if (!turn.started_at || !turn.finished_at) return t("Completed");
-  return durationLabel(turn.finished_at - turn.started_at, t, "worked");
-}
-
-function working(turn: Turn, t: Translator, now: number) {
-  return durationLabel(now - turn.started_at, t, "working");
-}
-
 function workSummary(
   turn: Turn,
   t: Translator,
@@ -2353,14 +2226,7 @@ function workSummary(
   effortLabel: (value: string) => string,
   answered = false,
 ) {
-  const duration =
-    turn.status === "running"
-      ? answered
-        ? durationLabel(now - turn.started_at, t, "worked")
-        : working(turn, t, now)
-      : turn.status === "stopped"
-        ? t("Stopped")
-        : worked(turn, t);
+  const duration = turnWorkLabel(turn, t, now, answered);
   const metadata = [
     turn.backend === "codex"
       ? "Codex"
@@ -2378,28 +2244,6 @@ function workSummary(
       )}
     </>
   );
-}
-
-function durationLabel(
-  milliseconds: number,
-  t: Translator,
-  mode: "working" | "worked",
-) {
-  const seconds = Math.max(0, Math.round(milliseconds / 1000));
-  if (seconds < 60) {
-    return mode === "working"
-      ? t("Working for {seconds}s", { seconds })
-      : t("Worked for {seconds}s", { seconds });
-  }
-  return mode === "working"
-    ? t("Working for {minutes}m {seconds}s", {
-        minutes: Math.floor(seconds / 60),
-        seconds: seconds % 60,
-      })
-    : t("Worked for {minutes}m {seconds}s", {
-        minutes: Math.floor(seconds / 60),
-        seconds: seconds % 60,
-      });
 }
 
 function ChatStatusIndicator({ t }: { t: Translator }) {

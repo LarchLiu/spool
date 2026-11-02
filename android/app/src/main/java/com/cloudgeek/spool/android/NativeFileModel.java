@@ -1,0 +1,150 @@
+package com.cloudgeek.spool.android;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+/** Project-scoped lazy tree state; search only visits entries already authorized by the server. */
+final class NativeFileModel {
+    static final class Entry {
+        final String name, path;
+        final boolean directory;
+        final NativeFileOrder.Key sortKey;
+        Entry(JSONObject value) {
+            name = value.optString("name"); path = value.optString("path");
+            directory = value.optString("kind").equals("directory");
+            sortKey = new NativeFileOrder.Key(name);
+        }
+    }
+    static final class Row {
+        final Entry entry;
+        final int depth;
+        final boolean expanded, match;
+        Row(Entry entry, int depth, boolean expanded, boolean match) { this.entry = entry; this.depth = depth; this.expanded = expanded; this.match = match; }
+    }
+    final Map<String, List<Entry>> directories = new HashMap<>();
+    final Set<String> expanded = new LinkedHashSet<>(), requested = new LinkedHashSet<>();
+    private Set<String> beforeSearch;
+    final String project;
+    String query = "", selected = "", focused = "", error = "", fileError = "";
+    JSONObject file;
+    NativeFileTarget target;
+    NativeFileTarget loadedTarget;
+    boolean searchOpen, truncated;
+    int epoch, fileRequest;
+    double split = .32;
+
+    NativeFileModel(String project) { this.project = project; }
+
+    static String key(String path) { return path.replaceFirst("/+$", "").isEmpty() ? "." : path.replaceFirst("/+$", ""); }
+
+    void accept(String path, JSONObject listing) {
+        List<Entry> entries = new ArrayList<>();
+        JSONArray input = listing.optJSONArray("entries");
+        if (input != null) for (int i = 0; i < input.length(); i++) {
+            JSONObject item = input.optJSONObject(i);
+            if (item == null) continue;
+            Entry entry = new Entry(item);
+            if (!entry.name.isEmpty() && !entry.path.isEmpty()) entries.add(entry);
+        }
+        entries.sort((a, b) -> {
+            if (a.directory != b.directory) return a.directory ? -1 : 1;
+            return NativeFileOrder.compare(a.sortKey, b.sortKey);
+        });
+        directories.put(key(path), entries);
+        truncated |= listing.optBoolean("truncated");
+        if (!query.isEmpty()) refreshSearch();
+    }
+
+    void beginSearch() {
+        if (searchOpen) return;
+        searchOpen = true;
+        beforeSearch = new LinkedHashSet<>(expanded);
+    }
+
+    void closeSearch() {
+        query = ""; searchOpen = false;
+        if (beforeSearch != null) { expanded.clear(); expanded.addAll(beforeSearch); beforeSearch = null; }
+    }
+
+    void search(String input) {
+        String normalized = input.trim().replace('\\', '/').toLowerCase(Locale.ROOT);
+        if (query.equals(normalized)) return;
+        query = normalized;
+        refreshSearch();
+    }
+
+    private void refreshSearch() {
+        expanded.clear();
+        if (query.isEmpty()) { if (beforeSearch != null) expanded.addAll(beforeSearch); return; }
+        for (List<Entry> entries : directories.values()) for (Entry entry : entries) if (matches(entry)) {
+            if (entry.directory) expanded.add(entry.path);
+            ancestors(entry.path, expanded);
+        }
+        // Pierre searches canonical leaves before generated parent directories.
+        for (Row row : rows()) if (row.match && (!row.entry.directory
+                || directories.getOrDefault(key(row.entry.path), List.of()).isEmpty())) {
+            focused = row.entry.path;
+            return;
+        }
+        String directory = null;
+        for (List<Entry> entries : directories.values()) for (Entry entry : entries)
+            if (entry.directory && matches(entry) && (directory == null || entry.path.compareTo(directory) < 0)) directory = entry.path;
+        if (directory != null) focused = directory;
+    }
+
+    private boolean matches(Entry entry) { return !query.isEmpty() && (entry.path + (entry.directory ? "/" : "")).toLowerCase(Locale.ROOT).contains(query); }
+
+    static void ancestors(String path, Set<String> into) {
+        for (int slash = path.indexOf('/'); slash >= 0; slash = path.indexOf('/', slash + 1)) into.add(path.substring(0, slash));
+    }
+
+    List<Row> rows() {
+        Set<String> visible = new LinkedHashSet<>();
+        if (!query.isEmpty()) for (List<Entry> entries : directories.values()) for (Entry entry : entries) if (matches(entry)) {
+            visible.add(entry.path); ancestors(entry.path, visible);
+        }
+        List<Row> rows = new ArrayList<>();
+        append(".", 0, visible, rows);
+        return rows;
+    }
+
+    private void append(String path, int depth, Set<String> visible, List<Row> rows) {
+        if (depth > 128) return;
+        List<Entry> entries = directories.get(key(path));
+        if (entries == null) return;
+        for (Entry entry : entries) {
+            if (!visible.isEmpty() && !visible.contains(entry.path)) continue;
+            boolean open = entry.directory && expanded.contains(entry.path);
+            rows.add(new Row(entry, depth, open, matches(entry)));
+            if (open) append(entry.path, depth + 1, visible, rows);
+        }
+    }
+
+    void reset() {
+        epoch++; fileRequest++;
+        directories.clear(); requested.clear(); expanded.clear();
+        error = ""; truncated = false;
+        if (beforeSearch != null) beforeSearch.clear();
+    }
+
+    static String previewKind(JSONObject file) {
+        if (!file.optString("kind").equals("text")) return "";
+        String name = file.optString("name");
+        if (name.matches("(?i).*\\.md(?:own|x)?$")) return "markdown";
+        if (name.matches("(?i).*\\.html?$")) return "html";
+        return file.optString("media_type").split(";", 2)[0].trim().equalsIgnoreCase("text/html") ? "html" : "";
+    }
+
+    static String size(long size) {
+        if (size < 1024) return size + " B";
+        if (size < 1024 * 1024) return String.format(Locale.US, "%.1f KB", size / 1024d);
+        return String.format(Locale.US, "%.1f MB", size / (1024d * 1024));
+    }
+}

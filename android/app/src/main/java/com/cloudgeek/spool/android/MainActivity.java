@@ -2,638 +2,2739 @@ package com.cloudgeek.spool.android;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.Intent;
-import android.graphics.Color;
-import android.graphics.Typeface;
+import android.content.res.Configuration;
+import android.database.Cursor;
 import android.net.ConnectivityManager;
+import android.net.LinkProperties;
 import android.net.Network;
 import android.net.Uri;
-import android.net.http.SslError;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.OpenableColumns;
 import android.text.InputType;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.text.TextUtils;
+import android.text.method.LinkMovementMethod;
+import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
-import android.view.WindowInsets;
-import android.webkit.CookieManager;
-import android.webkit.HttpAuthHandler;
-import android.webkit.PermissionRequest;
-import android.webkit.RenderProcessGoneDetail;
-import android.webkit.SslErrorHandler;
-import android.webkit.ValueCallback;
-import android.webkit.WebChromeClient;
-import android.webkit.WebResourceError;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebResourceResponse;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
+import androidx.core.widget.NestedScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-import androidx.webkit.ProxyConfig;
-import androidx.webkit.ProxyController;
-import androidx.webkit.WebViewFeature;
+
 import go.Seq;
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.text.DateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+
+import org.json.JSONArray;
 import org.json.JSONObject;
+import org.json.JSONTokener;
+
 import spoolnet.Client;
+import spoolnet.EventStream;
 import spoolnet.Spoolnet;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.text.DateFormat;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/** All workspace views are native. Only explicit external links use a browser. */
 public final class MainActivity extends Activity {
-    private static final int FILE_REQUEST = 1;
+    private static final int PICK_FILES = 10;
+    private static final int SAVE_FILE = 11;
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final ExecutorService worker = Executors.newSingleThreadExecutor();
-    private final ExecutorService diagnosticWorker = Executors.newSingleThreadExecutor();
-    private final ConnectionMonitor connectionMonitor = new ConnectionMonitor(diagnosticWorker, new ConnectionMonitor.Dispatcher() {
-        @Override public void post(Runnable task) { main.post(task); }
-        @Override public void postDelayed(Runnable task, long delay) { main.postDelayed(task, delay); }
-        @Override public void remove(Runnable task) { main.removeCallbacks(task); }
+    private final ExecutorService io = Executors.newFixedThreadPool(3);
+    private final ExecutorService workspaceWorker = Executors.newFixedThreadPool(3);
+    private final ExecutorService payloadWorker = Executors.newSingleThreadExecutor();
+    private java.util.concurrent.Executor workspaceDecode = payloadWorker;
+    private final ExecutorService connectionWorker = Executors.newSingleThreadExecutor();
+    private final ExecutorService httpsWorker = Executors.newSingleThreadExecutor();
+    private final ExecutorService diagnostics = Executors.newSingleThreadExecutor();
+    private final ExecutorService imageWorker = Executors.newFixedThreadPool(2);
+    private final ExecutorService codeWorker = Executors.newSingleThreadExecutor();
+    private final NativeSyntax syntax = new NativeSyntax(codeWorker, new NativeSyntaxEngine(path -> new java.io.InputStreamReader(
+            getAssets().open("syntax/" + path), java.nio.charset.StandardCharsets.UTF_8)));
+    private final NativeAvatars avatarImages = new NativeAvatars(imageWorker);
+    private final NativeImages fileImages = new NativeImages(imageWorker, () -> {
+        Client captured = this.client;
+        return path -> loadBinary(captured, path);
     });
+    private final ConnectionMonitor monitor =
+            new ConnectionMonitor(
+                    diagnostics,
+                    new ConnectionMonitor.Dispatcher() {
+                        public void post(Runnable r) {
+                            main.post(r);
+                        }
+
+                        public void postDelayed(Runnable r, long delay) {
+                            main.postDelayed(r, delay);
+                        }
+
+                        public void remove(Runnable r) {
+                            main.removeCallbacks(r);
+                        }
+                    });
     private volatile int generation;
     private volatile boolean destroyed;
-    private Client client; // Only accessed by the serial worker.
+    private volatile int authEpoch;
+    private volatile int workspaceEpoch;
+    private int selectionEpoch, draftVersion;
+    private boolean foreground, connected, connecting, settingsOpen, busy, workspaceReady;
+    private final NativePerformanceProbe performanceProbe = new NativePerformanceProbe();
+    private volatile Client client;
+    private EventStream workspaceStream;
+    private NativeWorkspaceEvents<EventStream> workspaceEvents;
+    private NativeChatEvents<JSONObject> chatEvents;
     private ConnectivityManager connectivity;
     private ConnectivityManager.NetworkCallback networkCallback;
-    private FrameLayout root;
-    private ScrollView connectionPage;
-    private LinearLayout browserPage;
-    private EditText serverInput;
-    private TextView status;
-    private TextView browserStatus;
-    private TextView connectionDetails;
-    private TextView browserConnectionDetails;
-    private AlertDialog connectionDialog;
-    private JSONObject connectionInfo;
-    private String tailnetState = "Disconnected";
-    private boolean diagnosticsUnavailable;
-    private int httpsState = R.string.connection_not_checked;
-    private int pageState = R.string.connection_not_open;
-    private boolean pageLoadFailed;
-    private Button connectButton;
-    private Button loginButton;
-    private Button cancelButton;
-    private WebView web;
-    private String loginURL = "";
-    private boolean proxyConfigured;
-    private ValueCallback<Uri[]> pendingFiles;
+    private NativeUi ui;
+    private FrameLayout root, drawer;
+    private LinearLayout historyContent;
+    private NativeKeyedViews transcriptViews;
+    private NativeTranscriptViewport transcriptViewport;
+    private NativeComposerDock composerDock;
+    private NativeSidebar sidebar;
+    private NativeAttachmentCards fileBar;
+    private NestedScrollView history;
+    private EditText composer, serverInput, username, password;
+    private NativeUi.IconButton send;
+    private NativeUi.ChoiceButton modelButton, permissionButton;
+    private NativeUi.Composer composerView;
+    private NativeUi.Header workspaceHeader;
+    private NativeAgentModelMenu modelMenu;
+    private NativePopover modelPopover;
+    private NativePermissionMenu permissionMenu;
+    private boolean permissionLoading, permissionFailed;
+    private int permissionRequest;
+    private NativeSettings settingsDialog;
+    private NativeConnectionSettings connectionSettings;
+    private NativeFileBrowser fileBrowser;
+    private NativeFileModel fileState;
+    private boolean preferencesSaving;
+    private Button loginSubmit;
+    private TextView heading, subheading, connectionText, loginError, connectionHint;
+    private JSONObject user, chat, connectionInfo, permissionCatalog;
+    private JSONArray projects = new JSONArray(), chats = new JSONArray(), agents = new JSONArray();
+    private JSONArray profiles = new JSONArray(),
+            presence = new JSONArray(),
+            groups = new JSONArray();
+    private final Map<String, Draft> drafts = new HashMap<>();
+    private final Map<String, NativeActivityList.State> activityStates = new java.util.LinkedHashMap<>() {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, NativeActivityList.State> entry) { return size() > 200; }
+    };
+    private final NativePeopleModel inbox = new NativePeopleModel();
+    private final Map<String, NativeGroupPicker.Completion> pendingGroups = new java.util.LinkedHashMap<>();
+    private final NativeSidebarState sidebarState = new NativeSidebarState();
+    private Draft pickerDraft;
+    private String csrf = "", origin = "", authURL = "", connectionMessage = "";
+    private String tailnetState = "Disconnected", httpsState = "Not checked";
+    private String projectID = "",
+            chatID = "",
+            backend = "codex",
+            model = "",
+            effort = "",
+            permission = "";
+    private String theme = "system", language = "system", panel = "";
+    private String loginErrorText = "";
+    private String goalNotice = "", goalError = "";
+    private NativeSubmission<Attachment> pendingSend;
+    private NativeChatRefresh<JSONObject> chatRefresh;
+    private NativeWorkspaceData workspaceData;
+    private boolean agentsInitialized;
+    // Failed/partially acknowledged optimistic turns still own local attachment bytes until replaced.
+    private NativeSubmission<Attachment> optimisticSend;
+    private final java.util.Set<String> stoppingTurns = new java.util.HashSet<>();
+    private NativeHistoryLoader<JSONObject> historyLoader;
+    private NativeHistoryScroll historyScroll;
+    private final NativeHistoryScroll.State historyScrollState = new NativeHistoryScroll.State();
+    private NativePeoplePanel peoplePanel;
+    private NativePeopleMenu peopleMenu;
+    private NativeGroupPicker groupPicker;
+    private NativeFloatingWindow.Bounds peopleBounds;
+    private NativeAvatarPicker avatarDialog;
+    private NativeImagePreview imagePreview;
+    private PendingDownload pendingDownload;
+    private boolean downloading;
+    private int downloadRequest;
+    private final NativeProfiles profileCache = new NativeProfiles();
+    private final NativeNavigation navigation = new NativeNavigation();
 
-    @Override public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        Seq.setContext(getApplicationContext());
-        connectivity = getSystemService(ConnectivityManager.class);
-        createConnectionPage();
-        networkCallback = new ConnectivityManager.NetworkCallback() {
-            @Override public void onAvailable(Network network) { publishInterfaces(); }
-            @Override public void onLost(Network network) { publishInterfaces(); }
-            @Override public void onLinkPropertiesChanged(Network network, android.net.LinkProperties properties) {
-                publishInterfaces();
-            }
-        };
-        connectivity.registerDefaultNetworkCallback(networkCallback, main);
-        if (Build.VERSION.SDK_INT >= 33) {
-            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0, this::handleBack);
+    private static final class Attachment {
+        final String id = UUID.randomUUID().toString(), name, excerpt;
+        final byte[] data;
+        final NativeFileData file;
+
+        Attachment(String name, String mediaType, byte[] data) throws IOException {
+            this.name = name;
+            this.data = data;
+            this.file = new NativeFileData(mediaType, data);
+            this.excerpt = NativeFileData.excerpt(name, file.mediaType, data);
         }
     }
 
-    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
-
-    private TextView label(String value, int size, int color) {
-        TextView view = new TextView(this);
-        view.setText(value);
-        view.setTextSize(size);
-        view.setTextColor(color);
-        view.setPadding(0, dp(8), 0, dp(8));
-        return view;
+    private static final class PendingDownload {
+        final NativeFileData file;
+        final int session;
+        PendingDownload(NativeFileData file, int session) { this.file = file; this.session = session; }
     }
 
-    private void createConnectionPage() {
-        root = new FrameLayout(this);
-        root.setBackgroundColor(Color.rgb(243, 245, 238));
-        if (Build.VERSION.SDK_INT >= 30) getWindow().setDecorFitsSystemWindows(false);
-        root.setOnApplyWindowInsetsListener((view, insets) -> {
-            if (Build.VERSION.SDK_INT >= 30) {
-                android.graphics.Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.ime());
-                view.setPadding(bars.left, bars.top, bars.right, bars.bottom);
-            } else {
-                view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
-                        insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+    private static final class Draft {
+        String text = "";
+        final List<Attachment> files = new ArrayList<>();
+    }
+
+    private interface Result {
+        void accept(Object value) throws Exception;
+    }
+
+    private static final class ApiFailure extends IOException {
+        final int status;
+
+        ApiFailure(int status, String message) {
+            super(message);
+            this.status = status;
+        }
+    }
+
+    @Override
+    public void onCreate(Bundle state) {
+        super.onCreate(state);
+        Seq.setContext(getApplicationContext());
+        theme = getPreferences(MODE_PRIVATE).getString("theme", "system");
+        language = getPreferences(MODE_PRIVATE).getString("language", "system");
+        origin = getPreferences(MODE_PRIVATE).getString("serverOrigin", "");
+        connectivity = getSystemService(ConnectivityManager.class);
+        networkCallback =
+                new ConnectivityManager.NetworkCallback() {
+                    public void onAvailable(Network network) {
+                        publishInterfaces();
+                        resumeWorkspace();
+                    }
+
+                    public void onLost(Network network) {
+                        publishInterfaces();
+                    }
+
+                    public void onLinkPropertiesChanged(Network network, LinkProperties p) {
+                        publishInterfaces();
+                    }
+                };
+        connectivity.registerDefaultNetworkCallback(networkCallback, main);
+        if (Build.VERSION.SDK_INT >= 33)
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0, this::back);
+        render();
+        if (!origin.isEmpty()) connect(origin);
+    }
+
+    private String tr(String en, String zh) {
+        return locale().startsWith("zh") ? zh : NativeText.translate(en, locale());
+    }
+
+    @Override public void dump(String prefix, java.io.FileDescriptor fd, java.io.PrintWriter writer, String[] args) {
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0
+                || args == null || args.length == 0 || !args[0].equals("spool-performance")) {
+            super.dump(prefix, fd, writer, args); return;
+        }
+        // The random probe token is per Activity, not a session ID or credential.
+        // dumpsys visits background instances too: only the exact focused page may gesture.
+        boolean focused = hasWindowFocus();
+        boolean historyVisible = history != null && history.isShown() && !settingsOpen && peoplePanel == null;
+        Integer velocity = performanceProbe.fling(args, foreground && focused && historyVisible && !destroyed, selectionEpoch);
+        if (velocity != null) history.fling(velocity);
+        int rows = 0, mounted = 0;
+        if (historyContent != null) for (int i = 0; i < historyContent.getChildCount(); i++) {
+            View child = historyContent.getChildAt(i);
+            if (child instanceof NativeTranscriptViewport.Row) {
+                rows++; if (((NativeTranscriptViewport.Row) child).mounted()) mounted++;
             }
-            return insets;
+        }
+        Runtime runtime = Runtime.getRuntime();
+        writer.println("SPOOL_PERF " + object("probeVersion", 2, "probeToken", performanceProbe.token, "selectionEpoch", selectionEpoch,
+                "foreground", foreground, "focused", focused, "historyVisible", historyVisible, "flingAccepted", velocity != null,
+                "historyHasMore", chat != null && chat.optJSONObject("history") != null && chat.optJSONObject("history").optBoolean("has_more"),
+                "turns", array(chat, "turns").length(), "parts", array(chat == null ? null : chat.optJSONObject("transcript"), "parts").length(),
+                "views", diagnosticViewCount(root), "virtualRows", rows, "mountedRows", mounted,
+                "viewport", transcriptViewport == null ? new JSONObject() : transcriptViewport.metrics(),
+                "scrollAnchor", historyScroll == null ? new JSONObject() : historyScroll.metrics(),
+                "historyHeight", historyContent == null ? 0 : historyContent.getHeight(), "scrollY", history == null ? 0 : history.getScrollY(),
+                "javaUsedBytes", runtime.totalMemory() - runtime.freeMemory(), "javaMaxBytes", runtime.maxMemory(),
+                "toolDetails", ui == null || ui.toolDetails == null ? new JSONObject() : ui.toolDetails.metrics(),
+                "textOrigin", NativeTextView.diagnostics(),
+                "nativeAllocatedBytes", android.os.Debug.getNativeHeapAllocatedSize()));
+    }
+
+    private static int diagnosticViewCount(View view) {
+        if (view == null) return 0;
+        int count = 1;
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) count += diagnosticViewCount(group.getChildAt(i));
+        }
+        return count;
+    }
+
+    private String locale() {
+        android.os.LocaleList locales = getResources().getConfiguration().getLocales();
+        String[] preferred = new String[locales.size()];
+        for (int i = 0; i < locales.size(); i++) preferred[i] = locales.get(i).toLanguageTag();
+        return NativePreferences.language(language, preferred);
+    }
+
+    private String localizedString(int id, Object... arguments) {
+        Configuration config = new Configuration(getResources().getConfiguration());
+        config.setLocale(Locale.forLanguageTag(locale()));
+        return createConfigurationContext(config).getString(id, arguments);
+    }
+
+    private int dp(float n) {
+        return ui.dp(n);
+    }
+
+    private JSONObject object(Object... values) {
+        JSONObject result = new JSONObject();
+        try {
+            for (int i = 0; i < values.length; i += 2)
+                result.put((String) values[i], values[i + 1]);
+        } catch (Exception e) {
+            throw new IllegalArgumentException(e);
+        }
+        return result;
+    }
+
+    private static JSONObject at(JSONArray array, int index) {
+        JSONObject value = array.optJSONObject(index);
+        return value == null ? new JSONObject() : value;
+    }
+
+    private static JSONArray array(JSONObject object, String key) {
+        JSONArray value = object == null ? null : object.optJSONArray(key);
+        return value == null ? new JSONArray() : value;
+    }
+
+    private String selectionKey() {
+        return chatID.isEmpty() ? "new/" + projectID : chatID;
+    }
+
+    private Draft draft() {
+        return drafts.computeIfAbsent(selectionKey(), key -> new Draft());
+    }
+
+    private void captureDraft() {
+        if (composer != null) draft().text = composer.getText().toString();
+    }
+
+    private void discardComposerDrafts() {
+        // Web resets the composer on navigation, not on first-send ID adoption or a rerender.
+        composer = null;
+        pickerDraft = null;
+        for (Draft value : drafts.values()) { value.text = ""; value.files.clear(); }
+        drafts.clear();
+    }
+
+    private void post(int token, Runnable task) {
+        main.post(
+                () -> {
+                    if (!destroyed && generation == token) task.run();
+                });
+    }
+
+    private void toast(Throwable e) {
+        String text = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+        Toast.makeText(this, text.length() > 400 ? text.substring(0, 400) : text, Toast.LENGTH_LONG)
+                .show();
+    }
+
+    private Object decodeResponse(String raw) throws Exception {
+        JSONObject envelope = new JSONObject(raw);
+        int code = envelope.optInt("status");
+        Object value;
+        try {
+            value = new JSONTokener(envelope.optString("body")).nextValue();
+        } catch (Exception e) {
+            throw new ApiFailure(code, tr("The server returned an invalid response", "服务器返回了无效响应"));
+        }
+        if (code < 200 || code >= 300)
+            throw new ApiFailure(
+                    code,
+                    value instanceof JSONObject
+                            ? ((JSONObject) value).optString("error", "HTTP " + code)
+                            : "HTTP " + code);
+        return value;
+    }
+
+    private Object request(Client captured, String path, JSONObject body, String auth, String loc)
+            throws Exception {
+        if (captured == null)
+            throw new IOException(tr("Configure a server in Settings first.", "请先在设置中配置服务器。"));
+        return decodeResponse(
+                captured.request(
+                        body == null ? "GET" : "POST",
+                        "/api" + path,
+                        body == null ? "" : body.toString(),
+                        auth,
+                        loc));
+    }
+
+    private void api(String path, JSONObject body, Result done) {
+        api(path, body, done, this::toast);
+    }
+
+    private void api(String path, JSONObject body, Result done, java.util.function.Consumer<Exception> failed) {
+        final Client captured = client;
+        final int token = generation, session = authEpoch;
+        final String auth = csrf, loc = locale();
+        io.execute(
+                () -> {
+                    try {
+                        if (token != generation || session != authEpoch || destroyed) return;
+                        Object value = request(captured, path, body, auth, loc);
+                        post(
+                                token,
+                                () -> {
+                                    if (session != authEpoch) return;
+                                    try {
+                                        done.accept(value);
+                                    } catch (Exception e) {
+                                        toast(e);
+                                    }
+                                });
+                    } catch (Exception e) {
+                        post(
+                                token,
+                                () -> {
+                                    if (session != authEpoch) return;
+                                    if (e instanceof ApiFailure && ((ApiFailure) e).status == 401)
+                                        expire();
+                                    else failed.accept(e);
+                                });
+                    }
+                });
+    }
+
+    private void render() {
+        boolean reopenFiles = panel.equals("files");
+        captureDraft();
+        if (ui != null) ui.dismissMenus();
+        dismissSettingsDialog();
+        closeAvatarPicker();
+        closeImagePreview();
+        detachPeople();
+        if (sidebar != null) sidebar.deactivate();
+        sidebar = null;
+        if (fileBrowser != null) fileBrowser.deactivate();
+        fileBrowser = null;
+        boolean dark =
+                theme.equals("dark")
+                        || (theme.equals("system")
+                                && (getResources().getConfiguration().uiMode
+                                                & Configuration.UI_MODE_NIGHT_MASK)
+                                        == Configuration.UI_MODE_NIGHT_YES);
+        ui = new NativeUi(this, dark, locale());
+        ui.avatars = avatarImages;
+        ui.codeWorker = codeWorker;
+        ui.syntax = syntax;
+        final Client detailClient = client;
+        final int detailGeneration = generation, detailAuth = authEpoch;
+        final String detailCSRF = csrf, detailLocale = locale();
+        ui.toolDetails = new NativeToolDetails(io, task -> main.post(task), path -> {
+            if (detailGeneration != generation || detailAuth != authEpoch || destroyed) throw new IOException("Session changed");
+            return (JSONObject) request(detailClient, path, null, detailCSRF, detailLocale);
         });
-        connectionPage = new ScrollView(this);
-        connectionPage.setFillViewport(true);
-        LinearLayout form = new LinearLayout(this);
-        form.setOrientation(LinearLayout.VERTICAL);
-        form.setPadding(dp(28), dp(44), dp(28), dp(28));
-        form.addView(label(getString(R.string.prototype), 11, 0xFF526B60));
-        TextView title = label("Spool", 48, 0xFF153D3B);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        form.addView(title);
-        form.addView(label(getString(R.string.subtitle), 20, 0xFF153D3B));
-        TextView fieldLabel = label(getString(R.string.server_label), 14, 0xFF314D43);
-        LinearLayout.LayoutParams fieldSpace = new LinearLayout.LayoutParams(-1, -2);
-        fieldSpace.topMargin = dp(36);
-        form.addView(fieldLabel, fieldSpace);
-        serverInput = new EditText(this);
-        serverInput.setSingleLine(true);
-        serverInput.setTextSize(15);
-        serverInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        serverInput.setHint(R.string.server_hint);
-        serverInput.setText(getPreferences(MODE_PRIVATE).getString("serverOrigin", ""));
-        serverInput.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
-        fieldLabel.setLabelFor(View.generateViewId());
-        serverInput.setId(fieldLabel.getLabelFor());
-        form.addView(serverInput, new LinearLayout.LayoutParams(-1, dp(60)));
-        connectButton = new Button(this);
-        connectButton.setText(R.string.connect);
-        connectButton.setOnClickListener(view -> connect());
-        form.addView(connectButton, new LinearLayout.LayoutParams(-1, dp(56)));
-        loginButton = new Button(this);
-        loginButton.setText(R.string.tailnet_login);
-        loginButton.setVisibility(View.GONE);
-        loginButton.setOnClickListener(view -> {
-            if (OriginPolicy.isLoginURL(loginURL)) openBrowser(loginURL);
-        });
-        form.addView(loginButton, new LinearLayout.LayoutParams(-1, dp(56)));
-        cancelButton = new Button(this);
-        cancelButton.setText(R.string.disconnect);
-        cancelButton.setVisibility(View.GONE);
-        cancelButton.setOnClickListener(view -> disconnect());
-        form.addView(cancelButton, new LinearLayout.LayoutParams(-1, dp(56)));
-        status = label(getString(R.string.ready), 15, 0xFF314D43);
-        status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        form.addView(status);
-        form.addView(label(getString(R.string.connection_details), 14, 0xFF153D3B));
-        connectionDetails = label("", 13, 0xFF314D43);
-        connectionDetails.setMinLines(7);
-        form.addView(connectionDetails);
-        form.addView(label(getString(R.string.connection_note), 12, 0xFF66736A));
-        updateConnectionDetails();
-        TextView note = label(getString(R.string.note), 12, 0xFF66736A);
-        LinearLayout.LayoutParams noteSpace = new LinearLayout.LayoutParams(-1, -2);
-        noteSpace.topMargin = dp(40);
-        form.addView(note, noteSpace);
-        connectionPage.addView(form);
-        root.addView(connectionPage);
+        setTheme(dark ? R.style.SpoolDarkTheme : R.style.SpoolTheme);
+        root = NativeWindow.content(this, ui);
+        composer = null;
+        composerView = null;
+        modelMenu = null;
+        modelPopover = null;
+        workspaceHeader = null;
+        if (transcriptViewport != null) transcriptViewport.dispose();
+        transcriptViewport = null;
+        if (historyScroll != null) historyScroll.dispose();
+        historyScroll = null;
+        history = null;
+        historyContent = null;
+        transcriptViews = null;
+        composerDock = null;
+        connectionText = null;
+        connectionHint = null;
+        connectionSettings = null;
+        serverInput = null;
+        drawer = null;
+        panel = "";
+        if (user == null) loginPage();
+        else workspacePage();
         setContentView(root);
+        root.requestApplyInsets();
+        if (settingsOpen) settingsPage();
+        else if (reopenFiles && user != null) openFiles(".");
+        if (!settingsOpen && user != null && !inbox.active.isEmpty()) openPeople(inbox.active);
+        monitor.setActive(foreground && settingsOpen);
+        if (workspaceData != null) bindWorkspaceData(false);
+        if (workspaceEvents != null) startWorkspace();
+        if (chatEvents != null) startChat();
+    }
+
+    private LinearLayout padded(int horizontal, int vertical) {
+        return ui.padded(horizontal, vertical);
+    }
+
+    private void gap(LinearLayout parent, int size) {
+        parent.addView(ui.space(size));
+    }
+
+    private LinearLayout toolbar(String title, Runnable back) {
+        LinearLayout row = ui.toolbar(title, back);
+        row.getChildAt(0).setContentDescription(tr("Back", "返回"));
+        return row;
+    }
+
+    private void openSettings() {
+        if (settingsOpen) return;
+        captureDraft();
+        ui.dismissMenus();
+        closeDrawer();
+        closePeople();
+        settingsOpen = true;
+        settingsPage();
+        monitor.setActive(foreground);
+    }
+
+    private void closeSettings() {
+        settingsOpen = false;
+        dismissSettingsDialog();
+        connectionSettings = null;
+        serverInput = null;
+        connectionText = null;
+        connectionHint = null;
+        monitor.setActive(false);
+    }
+
+    private void dismissSettingsDialog() {
+        if (settingsDialog == null) return;
+        settingsDialog.dismiss();
+        settingsDialog = null;
+    }
+
+    private void loginPage() {
+        NativeLogin login = new NativeLogin(ui, loginErrorText, busy,
+                this::performLogin, this::openSettings);
+        username = login.username;
+        password = login.password;
+        loginError = login.error;
+        loginSubmit = login.submit;
+        root.addView(login, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private void showLoginError(String message) {
+        loginErrorText = message == null ? tr("Sign in failed", "登录失败") : message;
+        if (loginError != null) {
+            loginError.setText(loginErrorText);
+            loginError.setVisibility(loginErrorText.isEmpty() ? View.GONE : View.VISIBLE);
+        }
+    }
+
+    private void performLogin() {
+        if (!connected || client == null) {
+            showLoginError(tr("Connect to your server in Settings first.", "请先在设置中连接服务器。"));
+            return;
+        }
+        String name = username.getText().toString().trim(), secret = password.getText().toString();
+        if (name.isEmpty() || secret.isEmpty()) {
+            showLoginError(tr("Enter username and password.", "请输入用户名和密码。"));
+            return;
+        }
+        if (busy) return;
+        busy = true;
+        loginSubmit.setEnabled(false);
+        loginSubmit.setText(ui.t("Signing in…"));
+        final int token = generation, session = ++authEpoch;
+        final Client captured = client;
+        final String loc = locale();
+        JSONObject body = object("username", name, "password", secret);
+        io.execute(
+                () -> {
+                    try {
+                        JSONObject value = (JSONObject) request(captured, "/login", body, "", loc);
+                        post(
+                                token,
+                                () -> {
+                                    if (session != authEpoch) return;
+                                    busy = false;
+                                    user = value.optJSONObject("user");
+                                    csrf = value.optString("csrf");
+                                    loginErrorText = "";
+                                    JSONObject preferences = value.optJSONObject("preferences");
+                                    if (preferences != null) {
+                                        theme = preferences.optString("theme", theme);
+                                        language = preferences.optString("language", language);
+                                        saveLocalPreferences();
+                                    }
+                                    render();
+                                    refreshWorkspace();
+                                    startWorkspace();
+                                });
+                    } catch (Exception e) {
+                        post(
+                                token,
+                                () -> {
+                                    if (session != authEpoch) return;
+                                    busy = false;
+                                    loginErrorText = e.getMessage();
+                                    showLoginError(loginErrorText);
+                                    if (loginSubmit != null) {
+                                        loginSubmit.setEnabled(true);
+                                        loginSubmit.setText(tr("Enter workspace", "进入工作空间"));
+                                    }
+                                });
+                    }
+                });
     }
 
     private void publishInterfaces() {
-        if (destroyed || worker.isShutdown()) return;
-        worker.execute(() -> {
-            try {
-                Spoolnet.updateInterfaces(NetworkSnapshot.read(connectivity));
-            } catch (Exception e) {
-                int token = generation;
-                post(token, () -> status.setText(getString(R.string.network_failed, safeMessage(e))));
-            }
-        });
+        if (destroyed) return;
+        connectionWorker.execute(
+                () -> {
+                    try {
+                        Spoolnet.updateInterfaces(NetworkSnapshot.read(connectivity));
+                    } catch (Exception ignored) {
+                        /* A later network callback retries. */
+                    }
+                });
     }
 
-    private void connect() {
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
-            status.setText(R.string.proxy_unsupported);
-            return;
-        }
+    private void connect(String address) {
+        if (connecting || connected) return;
         final OriginPolicy policy;
         try {
-            policy = new OriginPolicy(serverInput.getText().toString());
-        } catch (IllegalArgumentException e) {
-            serverInput.setError(e.getMessage());
+            policy = new OriginPolicy(address);
+        } catch (Exception e) {
+            if (serverInput != null) serverInput.setError(e.getMessage());
             return;
         }
-        int token = ++generation;
-        connectionMonitor.stop();
-        connectionInfo = null;
-        diagnosticsUnavailable = false;
+        origin = policy.origin;
+        getPreferences(MODE_PRIVATE).edit().putString("serverOrigin", origin).apply();
+        final int token = ++generation;
+        final Client old = client;
+        client = null;
+        connecting = true;
         tailnetState = "Starting";
-        httpsState = R.string.connection_not_checked;
-        pageState = R.string.connection_not_open;
-        updateConnectionDetails();
-        getPreferences(MODE_PRIVATE).edit().putString("serverOrigin", policy.origin).apply();
-        serverInput.setEnabled(false);
-        connectButton.setEnabled(false);
-        loginButton.setVisibility(View.GONE);
-        cancelButton.setVisibility(View.VISIBLE);
-        status.setText(R.string.starting);
-        worker.execute(() -> {
-            closeClient();
-            try {
-                Spoolnet.updateInterfaces(NetworkSnapshot.read(connectivity));
-                Client created = Spoolnet.newClient(new File(getNoBackupFilesDir(), "tsnet").getAbsolutePath(), policy.origin);
-                if (generation != token || destroyed) {
-                    created.close();
-                    return;
-                }
-                client = created;
-                post(token, () -> {
-                    connectionMonitor.start(created::connectionInfo, snapshot -> {
-                        if (destroyed || generation != token) return;
-                        try {
-                            connectionInfo = snapshot == null ? null : new JSONObject(snapshot);
-                        } catch (Exception ignored) {
-                            connectionInfo = null;
+        httpsState = "Not checked";
+        connectionMessage = "";
+        connectionInfo = null;
+        monitor.stop();
+        updateConnectionSettings();
+        connectionWorker.execute(
+                () -> {
+                    try {
+                        if (old != null) old.close();
+                        Spoolnet.updateInterfaces(NetworkSnapshot.read(connectivity));
+                        Client next =
+                                Spoolnet.newClient(
+                                        new File(getNoBackupFilesDir(), "tsnet").getAbsolutePath(),
+                                        policy.origin);
+                        if (generation != token || destroyed) {
+                            next.close();
+                            return;
                         }
-                        diagnosticsUnavailable = connectionInfo == null;
-                        tailnetState = connectionInfo == null ? "Unknown" : connectionInfo.optString("state", "Unknown");
-                        updateConnectionDetails();
-                    });
-                    poll(token, policy, false);
-                });
-            } catch (Exception e) {
-                post(token, () -> fail(e));
-            }
-        });
-    }
-
-    private void poll(int token, OriginPolicy policy, boolean loginRequested) {
-        if (generation != token || destroyed) return;
-        worker.execute(() -> {
-            if (client == null || generation != token) return;
-            try {
-                JSONObject result = new JSONObject(client.status());
-                String state = result.getString("state");
-                String authURL = result.optString("authURL");
-                post(token, () -> { tailnetState = state; updateConnectionDetails(); });
-                boolean requested = loginRequested;
-                if ("NeedsLogin".equals(state) && !requested) {
-                    client.login();
-                    requested = true;
-                }
-                if ("Running".equals(state)) {
-                    post(token, () -> {
-                        status.setText(R.string.checking);
-                        httpsState = R.string.connection_checking;
-                        updateConnectionDetails();
-                    });
-                    client.probe();
-                    String address = client.proxyAddress();
-                    String username = client.proxyUsername();
-                    String password = client.proxyPassword();
-                    String realm = client.proxyRealm();
-                    post(token, () -> openWeb(token, policy, address, username, password, realm));
-                    return;
-                }
-                boolean nextRequested = requested;
-                post(token, () -> {
-                    loginURL = authURL;
-                    loginButton.setVisibility(OriginPolicy.isLoginURL(authURL) ? View.VISIBLE : View.GONE);
-                    status.setText("NeedsLogin".equals(state) ? getString(R.string.waiting_login)
-                            : "NeedsMachineAuth".equals(state) ? getString(R.string.waiting_approval)
-                            : getString(R.string.connecting, state));
-                    main.postDelayed(() -> poll(token, policy, nextRequested), 1500);
-                });
-            } catch (Exception e) {
-                post(token, () -> fail(e));
-            }
-        });
-    }
-
-    @SuppressLint("SetJavaScriptEnabled")
-    private void openWeb(int token, OriginPolicy policy, String proxyAddress, String username, String password, String realm) {
-        status.setText(R.string.opening);
-        httpsState = R.string.connection_verified;
-        pageState = R.string.connection_loading;
-        browserPage = new LinearLayout(this);
-        browserPage.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout toolbar = new LinearLayout(this);
-        toolbar.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        toolbar.setPadding(dp(12), 0, dp(8), 0);
-        browserStatus = label(policy.host, 12, 0xFF153D3B);
-        toolbar.addView(browserStatus, new LinearLayout.LayoutParams(0, -2, 1));
-        Button details = new Button(this);
-        details.setText(R.string.connection_details);
-        details.setOnClickListener(view -> {
-            connectionDialog = new AlertDialog.Builder(this).setTitle(R.string.connection_details)
-                    .setMessage(connectionDetails.getText() + "\n\n" + getString(R.string.connection_note))
-                    .setPositiveButton(R.string.close, null).create();
-            connectionDialog.setOnDismissListener(dialog -> connectionDialog = null);
-            connectionDialog.show();
-        });
-        toolbar.addView(details, new LinearLayout.LayoutParams(-2, dp(48)));
-        Button disconnect = new Button(this);
-        disconnect.setText(R.string.disconnect);
-        disconnect.setOnClickListener(view -> disconnect());
-        toolbar.addView(disconnect, new LinearLayout.LayoutParams(-2, dp(48)));
-        browserPage.addView(toolbar);
-        browserConnectionDetails = label("", 12, 0xFF526B60);
-        browserConnectionDetails.setPadding(dp(12), 0, dp(12), dp(8));
-        browserPage.addView(browserConnectionDetails);
-        updateConnectionDetails();
-        web = new WebView(this);
-        WebSettings settings = web.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(false);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setSafeBrowsingEnabled(true);
-        settings.setJavaScriptCanOpenWindowsAutomatically(false);
-        settings.setSupportMultipleWindows(false);
-        settings.setMediaPlaybackRequiresUserGesture(true);
-        CookieManager.getInstance().setAcceptCookie(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
-        web.setWebViewClient(new WebViewClient() {
-            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                pageLoadFailed = false;
-                pageState = R.string.connection_loading;
-                browserStatus.setText(policy.host);
-                updateConnectionDetails();
-            }
-
-            @Override public void onPageFinished(WebView view, String url) {
-                if (!pageLoadFailed) pageState = R.string.connection_page_ready;
-                updateConnectionDetails();
-            }
-
-            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                String address = request.getUrl().toString();
-                if (policy.matches(address)) return false;
-                if (request.isForMainFrame() && request.hasGesture() && OriginPolicy.isExternalWebURL(address)) {
-                    new AlertDialog.Builder(MainActivity.this).setMessage(R.string.open_external)
-                            .setPositiveButton(R.string.open, (dialog, which) -> openBrowser(address))
-                            .setNegativeButton(R.string.cancel, null).show();
-                }
-                return true;
-            }
-
-            @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                if (policy.allowsResource(request.getUrl().toString())) return null;
-                return new WebResourceResponse("text/plain", "UTF-8", 403, "Blocked origin", null,
-                        new ByteArrayInputStream("Blocked origin".getBytes(StandardCharsets.UTF_8)));
-            }
-
-            @Override public void onReceivedHttpAuthRequest(WebView view, HttpAuthHandler handler, String host, String challengeRealm) {
-                // The random proxy credential must never be supplied to the remote website.
-                if ("127.0.0.1".equals(host) && realm.equals(challengeRealm)) handler.proceed(username, password);
-                else handler.cancel();
-            }
-
-            @Override public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-                handler.cancel();
-                pageLoadFailed = true;
-                pageState = R.string.connection_failed;
-                browserStatus.setText(R.string.tls_failed);
-                updateConnectionDetails();
-            }
-
-            @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) {
-                    pageLoadFailed = true;
-                    pageState = R.string.connection_failed;
-                    browserStatus.setText(getString(R.string.web_failed, error.getDescription()));
-                    updateConnectionDetails();
-                }
-            }
-
-            @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
-                if (request.isForMainFrame()) {
-                    pageLoadFailed = true;
-                    pageState = R.string.connection_failed;
-                    browserStatus.setText(getString(R.string.web_http_failed, response.getStatusCode()));
-                    updateConnectionDetails();
-                }
-            }
-
-            @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
-                if (view != web) return true;
-                ViewGroup parent = (ViewGroup) view.getParent();
-                if (parent != null) parent.removeView(view);
-                web = null;
-                view.destroy();
-                disconnect();
-                status.setText(R.string.web_renderer_gone);
-                return true;
-            }
-        });
-        web.setWebChromeClient(new WebChromeClient() {
-            @Override public void onPermissionRequest(PermissionRequest request) { request.deny(); }
-
-            @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
-                if (pendingFiles != null) pendingFiles.onReceiveValue(null);
-                pendingFiles = callback;
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
-                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
-                try {
-                    startActivityForResult(Intent.createChooser(intent, getString(R.string.files)), FILE_REQUEST);
-                } catch (ActivityNotFoundException e) {
-                    pendingFiles.onReceiveValue(null);
-                    pendingFiles = null;
-                }
-                return true;
-            }
-        });
-        web.setDownloadListener((url, userAgent, disposition, mime, length) ->
-                Toast.makeText(this, R.string.download_unavailable, Toast.LENGTH_LONG).show());
-        browserPage.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
-        root.addView(browserPage, new FrameLayout.LayoutParams(-1, -1));
-        connectionPage.setVisibility(View.GONE);
-        ProxyConfig config = new ProxyConfig.Builder().addProxyRule("http://" + proxyAddress).removeImplicitRules().build();
-        // No direct fallback: losing the tsnet proxy must fail closed.
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
-            proxyConfigured = true;
-            ProxyController.getInstance().setProxyOverride(config, this::runOnUiThread, () -> {
-                if (generation == token && !destroyed && web != null) web.loadUrl(policy.origin + "/");
-            });
-        } else {
-            disconnect();
-            status.setText(R.string.proxy_unsupported);
-        }
-    }
-
-    private void fail(Exception e) {
-        if (httpsState == R.string.connection_checking) httpsState = R.string.connection_failed;
-        updateConnectionDetails();
-        status.setText(getString(R.string.failed, safeMessage(e)));
-        connectButton.setEnabled(true);
-        connectButton.setText(R.string.retry);
-        serverInput.setEnabled(true);
-    }
-
-    private void updateConnectionDetails() {
-        String route = getString(R.string.connection_path_waiting);
-        String latency = getString(R.string.connection_unknown_value);
-        String target = getString(R.string.connection_unknown_value);
-        String sampled = getString(R.string.connection_unknown_value);
-        if (diagnosticsUnavailable) route = getString(R.string.connection_unavailable);
-        if (connectionInfo != null) {
-            switch (connectionInfo.optString("path")) {
-                case "direct": route = getString(R.string.connection_direct); break;
-                case "derp":
-                    String relay = connectionInfo.optString("relay");
-                    route = getString(R.string.connection_derp) + (relay.isEmpty() ? "" : " (" + relay + ")");
-                    break;
-                case "peer-relay": route = getString(R.string.connection_peer_relay); break;
-                default:
-                    switch (connectionInfo.optString("reason")) {
-                        case "target_unknown": route = getString(R.string.connection_target_unknown); break;
-                        case "probe_timeout": route = getString(R.string.connection_probe_timeout); break;
-                        case "probe_failed": route = getString(R.string.connection_probe_failed); break;
-                        case "status_unavailable": route = getString(R.string.connection_unavailable); break;
-                        case "not_running": route = getString(R.string.connection_path_waiting); break;
-                        default: route = getString(R.string.connection_path_unknown);
+                        main.post(
+                                () -> {
+                                    if (destroyed || generation != token) {
+                                        try {
+                                            next.close();
+                                        } catch (Exception ignored) {
+                                        }
+                                        return;
+                                    }
+                                    client = next;
+                                    monitor.start(
+                                            next::connectionInfo,
+                                            snapshot -> {
+                                                if (generation != token) return;
+                                                try {
+                                                    connectionInfo =
+                                                            snapshot == null
+                                                                    ? null
+                                                                    : new JSONObject(snapshot);
+                                                } catch (Exception e) {
+                                                    connectionInfo = null;
+                                                }
+                                                updateConnectionSettings();
+                                            });
+                                    pollStatus(token, next, false);
+                                });
+                    } catch (Exception e) {
+                        post(token, () -> connectionFailed(e));
                     }
+                });
+    }
+
+    private void pollStatus(int token, Client captured, boolean requestedLogin) {
+        if (generation != token || destroyed) return;
+        connectionWorker.execute(
+                () -> {
+                    if (generation != token || destroyed) return;
+                    try {
+                        JSONObject value = new JSONObject(captured.status());
+                        String state = value.optString("state", "Unknown"),
+                                url = value.optString("authURL");
+                        post(
+                                token,
+                                () -> {
+                                    tailnetState = state;
+                                    authURL = url;
+                                    updateConnectionSettings();
+                                });
+                        boolean nextRequested = requestedLogin;
+                        if (state.equals("NeedsLogin") && !requestedLogin) {
+                            captured.login();
+                            nextRequested = true;
+                        }
+                        if (state.equals("Running")) {
+                            post(token, () -> probeHTTPS(token, captured));
+                            return;
+                        }
+                        final boolean again = nextRequested;
+                        post(
+                                token,
+                                () ->
+                                        main.postDelayed(
+                                                () -> pollStatus(token, captured, again), 1500));
+                    } catch (Exception e) {
+                        post(token, () -> connectionFailed(e));
+                    }
+                });
+    }
+
+    private void probeHTTPS(int token, Client captured) {
+        httpsState = "Checking";
+        updateConnectionSettings();
+        // Network updates and disconnect/Close must not queue behind probe retries.
+        httpsWorker.execute(() -> {
+            if (generation != token || destroyed) return;
+            try {
+                captured.probe();
+                post(token, () -> {
+                    connected = true;
+                    connecting = false;
+                    httpsState = "Verified";
+                    connectionMessage = "";
+                    updateConnectionSettings();
+                    restoreSession(captured, token);
+                });
+            } catch (Exception e) {
+                post(token, () -> connectionFailed(e));
             }
-            if (connectionInfo.has("latencyMs") && !connectionInfo.isNull("latencyMs")) {
-                latency = String.format(Locale.getDefault(), "%.1f ms", connectionInfo.optDouble("latencyMs"));
-            }
-            target = connectionInfo.optString("targetIP", target);
-            long timestamp = connectionInfo.optLong("sampledAtMs");
-            if (timestamp > 0) sampled = DateFormat.getTimeInstance(DateFormat.MEDIUM).format(new Date(timestamp));
-        }
-        String state;
-        switch (tailnetState) {
-            case "Running": state = getString(R.string.connection_tailnet_ready); break;
-            case "NeedsLogin": state = getString(R.string.connection_needs_login); break;
-            case "NeedsMachineAuth": state = getString(R.string.connection_needs_approval); break;
-            case "Starting": case "NoState": state = getString(R.string.connection_starting); break;
-            case "Disconnected": case "Stopped": state = getString(R.string.connection_disconnected); break;
-            case "Unknown": case "": state = getString(R.string.connection_path_unknown); break;
-            default: state = tailnetState;
-        }
-        String text = String.join("\n", getString(R.string.connection_tailnet_row, state),
-                getString(R.string.connection_path_row, route), getString(R.string.connection_latency_row, latency),
-                getString(R.string.connection_target_row, target), getString(R.string.connection_https_row, getString(httpsState)),
-                getString(R.string.connection_page_row, getString(pageState)), getString(R.string.connection_updated_row, sampled));
-        if (!text.contentEquals(connectionDetails.getText())) connectionDetails.setText(text);
-        if (browserConnectionDetails != null) {
-            String compact = getString(R.string.connection_compact, route, latency);
-            if (!compact.contentEquals(browserConnectionDetails.getText())) browserConnectionDetails.setText(compact);
-        }
-        if (connectionDialog != null) connectionDialog.setMessage(text + "\n\n" + getString(R.string.connection_note));
+        });
     }
 
-    private static String safeMessage(Exception e) {
-        String text = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-        return text.length() > 500 ? text.substring(0, 500) : text;
+    private void restoreSession(Client captured, int token) {
+        final int session = authEpoch;
+        final String loc = locale();
+        io.execute(
+                () -> {
+                    try {
+                        JSONObject result = (JSONObject) request(captured, "/me", null, "", loc);
+                        post(
+                                token,
+                                () -> {
+                                    if (session != authEpoch) return;
+                                    user = result.optJSONObject("user");
+                                    csrf = result.optString("csrf");
+                                    JSONObject preferences = result.optJSONObject("preferences");
+                                    if (preferences != null) {
+                                        theme = preferences.optString("theme", theme);
+                                        language = preferences.optString("language", language);
+                                        saveLocalPreferences();
+                                    }
+                                    render();
+                                    refreshWorkspace();
+                                    startWorkspace();
+                                });
+                    } catch (Exception e) {
+                        post(
+                                token,
+                                () -> {
+                                    if (session != authEpoch) return;
+                                    if (!(e instanceof ApiFailure)
+                                            || ((ApiFailure) e).status != 401)
+                                        connectionMessage = e.getMessage();
+                                    if (!settingsOpen) render();
+                                    else updateConnectionSettings();
+                                });
+                    }
+                });
     }
 
-    private void post(int token, Runnable action) {
-        main.post(() -> { if (!destroyed && generation == token) action.run(); });
-    }
-
-    private void openBrowser(String address) {
-        try {
-            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(address)).addCategory(Intent.CATEGORY_BROWSABLE));
-        } catch (ActivityNotFoundException e) {
-            Toast.makeText(this, R.string.no_browser, Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private void destroyWeb() {
-        if (connectionDialog != null) connectionDialog.dismiss();
-        browserConnectionDetails = null;
-        if (pendingFiles != null) { pendingFiles.onReceiveValue(null); pendingFiles = null; }
-        if (web != null) {
-            web.stopLoading();
-            web.setWebChromeClient(null);
-            ((ViewGroup) web.getParent()).removeView(web);
-            web.destroy();
-            web = null;
-        }
-        if (browserPage != null) { root.removeView(browserPage); browserPage = null; }
-        if (proxyConfigured) {
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
-                ProxyController.getInstance().clearProxyOverride(this::runOnUiThread, () -> {});
-            }
-            proxyConfigured = false;
-        }
+    private void connectionFailed(Exception e) {
+        connecting = false;
+        connectionMessage = e.getMessage();
+        if (httpsState.equals("Checking")) httpsState = "Failed";
+        updateConnectionSettings();
     }
 
     private void disconnect() {
         ++generation;
-        connectionMonitor.stop();
-        destroyWeb();
-        worker.execute(this::closeClient);
-        loginURL = "";
-        connectionPage.setVisibility(View.VISIBLE);
-        loginButton.setVisibility(View.GONE);
-        cancelButton.setVisibility(View.GONE);
-        serverInput.setEnabled(true);
-        connectButton.setEnabled(true);
-        connectButton.setText(R.string.connect);
-        status.setText(R.string.ready);
-        connectionInfo = null;
-        diagnosticsUnavailable = false;
-        tailnetState = "Disconnected";
-        httpsState = R.string.connection_not_checked;
-        pageState = R.string.connection_not_open;
-        updateConnectionDetails();
-    }
-
-    private void closeClient() {
-        if (client == null) return;
-        try { client.close(); } catch (Exception ignored) { /* State is retained for the next attempt. */ }
+        monitor.stop();
+        stopStreams();
+        clearWorkspace();
+        Client captured = client;
         client = null;
+        connectionWorker.execute(
+                () -> {
+                    if (captured != null)
+                        try {
+                            captured.close();
+                        } catch (Exception ignored) {
+                        }
+                });
+        connected = false;
+        connecting = false;
+        authURL = "";
+        tailnetState = "Disconnected";
+        httpsState = "Not checked";
+        connectionInfo = null;
+        connectionMessage = "";
+        settingsOpen = true;
+        render();
     }
 
-    private void handleBack() {
-        if (web != null && web.canGoBack()) web.goBack();
-        else if (web != null || !connectButton.isEnabled()) disconnect();
-        else finish();
+    private void clearWorkspace() {
+        if (workspaceData != null) workspaceData.stop();
+        agentsInitialized = false;
+        if (chatRefresh != null) chatRefresh.stop();
+        if (fileBrowser != null) fileBrowser.deactivate();
+        fileBrowser = null;
+        fileState = null;
+        avatarImages.clear();
+        fileImages.clear();
+        syntax.clear();
+        closeImagePreview();
+        pendingDownload = null;
+        downloading = false;
+        downloadRequest++;
+        ++authEpoch;
+        ++selectionEpoch;
+        user = null;
+        chat = null;
+        csrf = "";
+        chatID = "";
+        projectID = "";
+        busy = false;
+        pendingSend = null;
+        optimisticSend = null;
+        stoppingTurns.clear();
+        preferencesSaving = false;
+        goalNotice = goalError = "";
+        discardComposerDrafts();
+        activityStates.clear();
+        sidebarState.reset();
+        inbox.reset();
+        pendingGroups.clear();
+        peopleBounds = null;
+        stopHistory();
+        projects = new JSONArray();
+        chats = new JSONArray();
+        agents = new JSONArray();
+        profiles = new JSONArray();
+        profileCache.clear();
+        navigation.reset();
+        presence = new JSONArray();
+        groups = new JSONArray();
+        invalidatePermissions();
+        closeAvatarPicker();
+        closePeople();
     }
 
-    // Android 13+ uses the OnBackInvokedDispatcher callback registered in onCreate.
-    @SuppressLint("GestureBackNavigation")
-    @Override public void onBackPressed() { handleBack(); }
+    private void expire() {
+        stopStreams();
+        clearWorkspace();
+        loginErrorText = tr("Your session expired. Sign in again.", "会话已过期，请重新登录。");
+        render();
+    }
 
-    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != FILE_REQUEST || pendingFiles == null) return;
-        ArrayList<Uri> uris = new ArrayList<>();
-        if (resultCode == RESULT_OK && data != null) {
-            ClipData clips = data.getClipData();
-            if (clips != null) {
-                for (int i = 0; i < clips.getItemCount() && i < 32; i++) {
-                    Uri uri = clips.getItemAt(i).getUri();
-                    if ("content".equals(uri.getScheme())) uris.add(uri);
+    private void logout() {
+        api(
+                "/logout",
+                object(),
+                value -> {
+                    stopStreams();
+                    clearWorkspace();
+                    render();
+                });
+    }
+
+    private LinearLayout card(String title) {
+        LinearLayout view = padded(16, 16);
+        view.setBackground(ui.background(ui.sidebar, 12, true));
+        view.addView(ui.bold(title, 16));
+        gap(view, 12);
+        return view;
+    }
+
+    private void settingsPage() {
+        settingsDialog = new NativeSettings(ui, theme, language, "0.2.0-native",
+                this::updatePreferences, this::closeSettings);
+        settingsDialog.content.appearance.saving(preferencesSaving);
+        LinearLayout body = settingsDialog.content.additions;
+        if (user != null) {
+            gap(body, 22);
+            LinearLayout account = ui.row();
+            account.addView(ui.avatar(person(user.optString("id")), 48));
+            LinearLayout copy = ui.column();
+            copy.addView(ui.bold(NativeAvatars.name(user), 14));
+            Button choose = ui.quietButton(tr("Choose your avatar", "选择你的头像"), this::openAvatarPicker);
+            choose.setPadding(0, dp(6), 0, 0);
+            copy.addView(choose);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1);
+            params.setMarginStart(dp(14));
+            account.addView(copy, params);
+            body.addView(account);
+        }
+        gap(body, 22);
+        connectionSettings = new NativeConnectionSettings(ui, origin, localizedString(R.string.connection_note),
+                this::connect, this::disconnect,
+                () -> { if (OriginPolicy.isLoginURL(authURL)) openBrowser(authURL); });
+        serverInput = connectionSettings.server;
+        connectionText = connectionSettings.diagnostics;
+        connectionHint = connectionSettings.note;
+        body.addView(connectionSettings);
+        if (user != null) {
+            gap(body, 16);
+            body.addView(ui.button(tr("Sign out of Spool", "退出 Spool 账号"), false, this::logout));
+        }
+        settingsDialog.show();
+        updateConnectionSettings();
+    }
+
+    private void saveLocalPreferences() {
+        getPreferences(MODE_PRIVATE)
+                .edit()
+                .putString("theme", theme)
+                .putString("language", language)
+                .apply();
+    }
+
+    private void updatePreferences(String nextTheme, String nextLanguage) {
+        if (preferencesSaving || (theme.equals(nextTheme) && language.equals(nextLanguage))) return;
+        if (user == null) {
+            theme = nextTheme;
+            language = nextLanguage;
+            saveLocalPreferences();
+            render();
+            return;
+        }
+        preferencesSaving = true;
+        if (settingsDialog != null) settingsDialog.content.appearance.saving(true);
+        final Client captured = client;
+        final int token = generation, session = authEpoch;
+        final String auth = csrf, loc = locale();
+        io.execute(() -> {
+            try {
+                request(captured, "/preferences", object("theme", nextTheme, "language", nextLanguage), auth, loc);
+                post(token, () -> {
+                    if (session != authEpoch) return;
+                    preferencesSaving = false;
+                    theme = nextTheme;
+                    language = nextLanguage;
+                    saveLocalPreferences();
+                    render();
+                });
+            } catch (Exception error) {
+                post(token, () -> {
+                    if (session != authEpoch) return;
+                    preferencesSaving = false;
+                    if (settingsDialog != null) settingsDialog.content.appearance.saving(false);
+                    if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
+                    else toast(error);
+                });
+            }
+        });
+    }
+
+    private void updateConnectionSettings() {
+        if (!settingsOpen || connectionText == null) return;
+        String state =
+                tailnetState.equals("Running")
+                        ? tr("Connected", "已连接")
+                        : tailnetState.equals("NeedsLogin")
+                                ? tr("Sign-in required", "等待登录")
+                                : tailnetState.equals("NeedsMachineAuth")
+                                        ? tr("Device approval required", "等待设备批准")
+                                        : tailnetState.equals("Starting")
+                                                ? tr("Starting", "启动中")
+                                                : tr("Disconnected", "未连接");
+        String path = tr("Waiting for node probe", "等待节点探测"),
+                latency = "—",
+                target = "—",
+                sampled = "—";
+        if (connectionInfo != null) {
+            String kind = connectionInfo.optString("path");
+            path =
+                    kind.equals("direct")
+                            ? tr("Direct", "直连")
+                            : kind.equals("derp")
+                                    ? "DERP " + connectionInfo.optString("relay")
+                                    : kind.equals("peer-relay")
+                                            ? "Peer Relay"
+                                            : tr("Unknown", "未知");
+            if (connectionInfo.has("latencyMs") && !connectionInfo.isNull("latencyMs"))
+                latency =
+                        String.format(
+                                Locale.getDefault(),
+                                "%.1f ms",
+                                connectionInfo.optDouble("latencyMs"));
+            target = connectionInfo.optString("targetIP", "—");
+            long time = connectionInfo.optLong("sampledAtMs");
+            if (time > 0) sampled = DateFormat.getTimeInstance().format(new java.util.Date(time));
+        }
+        String summary =
+                localizedString(
+                        R.string.connection_summary,
+                        state,
+                        path,
+                        latency,
+                        target,
+                        httpsState,
+                        sampled,
+                        connectionMessage == null || connectionMessage.isEmpty()
+                                ? ""
+                                : "\n\n" + connectionMessage);
+        if (connectionSettings != null) connectionSettings.bind(connected, connecting, OriginPolicy.isLoginURL(authURL), summary);
+    }
+
+    private void workspacePage() {
+        LinearLayout page = ui.workspace();
+        NativeUi.Header header = ui.new Header(tr("Workspace", "工作空间"), projectName(),
+                this::openSidebar, this::openOnlinePeople, () -> openFiles("."));
+        workspaceHeader = header;
+        updateHeaderPeople();
+        heading = header.title;
+        subheading = header.subtitle;
+        page.addView(header);
+        page.addView(ui.divider());
+        // Delta-based fling steps preserve corrections when virtual rows change height.
+        history = new NestedScrollView(this);
+        history.setFillViewport(true);
+        history.setVerticalScrollBarEnabled(false);
+        historyContent = padded(18, 25);
+        transcriptViews = new NativeKeyedViews(historyContent);
+        history.addView(historyContent);
+        historyScrollState.select(authEpoch + "\n" + selectionEpoch + "\n" + chatID);
+        historyScroll = new NativeHistoryScroll(history, historyContent, historyScrollState, 90 * getResources().getDisplayMetrics().density);
+        page.addView(history, new LinearLayout.LayoutParams(-1, 0, 1));
+        composerView = ui.new Composer(composerHint(), this::pickFiles, this::chooseModel,
+                this::choosePermission, this::sendOrStop);
+        composer = composerView.input;
+        fileBar = composerView.attachments;
+        modelButton = composerView.model;
+        permissionButton = composerView.permission;
+        send = composerView.send;
+        composer.setText(draft().text);
+        composer.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence value, int start, int count, int after) {}
+            public void onTextChanged(CharSequence value, int start, int before, int count) {
+                draft().text = value.toString();
+                updateComposer();
+            }
+            public void afterTextChanged(Editable value) {}
+        });
+        page.addView(composerView, new LinearLayout.LayoutParams(-1, -2));
+        final NativeHistoryScroll behavior = historyScroll;
+        composerDock = new NativeComposerDock(ui, page, composerView, () -> {
+            if (foreground && !destroyed && historyScroll == behavior && user != null) behavior.latest();
+        });
+        behavior.onFollowing(composerDock::following);
+        root.addView(composerDock, new FrameLayout.LayoutParams(-1, -1));
+        renderFiles();
+        renderChat();
+        updateComposer();
+    }
+
+    private String composerHint() {
+        if (projectID.isEmpty()) return tr("Waiting for project access", "等待项目访问权限");
+        if (!writable()) return tr("Read-only", "只读");
+        return ui.t("Message {agent}", "agent", backend.equals("claude") ? "Claude" : "Codex");
+    }
+
+    private String projectName() {
+        for (int i = 0; i < projects.length(); i++)
+            if (at(projects, i).optString("id").equals(projectID))
+                return at(projects, i).optString("name");
+        return tr("Local agent workspace", "本地 agent 工作空间");
+    }
+
+    private boolean writable() {
+        boolean authorized = false;
+        for (int i = 0; i < projects.length(); i++) authorized |= at(projects, i).optString("id").equals(projectID);
+        if (user == null || !authorized || !chatID.isEmpty() && (chat == null || !chatID.equals(chat.optString("id")))) return false;
+        if (chat != null) return chat.optBoolean("can_control", false);
+        for (int i = 0; i < projects.length(); i++)
+            if (at(projects, i).optString("id").equals(projectID))
+                return at(projects, i).optBoolean("can_create", true);
+        return false;
+    }
+
+    private void updateComposer() {
+        renderNavigation();
+        if (composer == null || composerView == null) return;
+        JSONObject activeTurn = NativeChatState.runningTurn(chat);
+        boolean running = chat != null && chat.optString("status").equals("running");
+        boolean stopping = activeTurn != null && (stoppingTurns.contains(activeTurn.optString("id"))
+                || activeSubmission(activeTurn) != null && pendingSend.stopRequested);
+        composerView.commands.bind(writable(), busy, running);
+        composerView.commands.notice(goalNotice, () -> { goalNotice = ""; updateComposer(); });
+        composerView.commands.error(goalError);
+        composer.setEnabled(writable());
+        String hint = composerHint();
+        if (!TextUtils.equals(composer.getHint(), hint)) composer.setHint(hint);
+        composerView.add.setEnabled(!busy && writable());
+        modelButton.setEnabled(!busy && !running && writable());
+        permissionButton.setEnabled(!busy && !running && writable());
+        modelButton.setVisibility(projectID.isEmpty() ? View.GONE : View.VISIBLE);
+        permissionButton.setVisibility(projectID.isEmpty() ? View.GONE : View.VISIBLE);
+        send.setKind(activeTurn == null ? "send" : stopping ? "spinner" : "stop");
+        send.setContentDescription(activeTurn == null ? ui.t("Send message") : ui.t(stopping ? "Stopping…" : "Stop response"));
+        send.setEnabled(writable() && (activeTurn != null ? !stopping : !busy && selectedAgentAvailable() && permissionReady()
+                && (!NativeGoalCommand.trim(composer.getText().toString()).isEmpty() || !draft().files.isEmpty())));
+        String modelName = model.isEmpty() ? tr("CLI default", "CLI 默认") : model;
+        for (int i = 0; i < agents.length(); i++) {
+            JSONObject agent = at(agents, i);
+            if (!agent.optString("backend").equals(backend)) continue;
+            JSONArray models = array(agent.optJSONObject("catalog"), "models");
+            for (int j = 0; j < models.length(); j++)
+                if (at(models, j).optString("model").equals(model))
+                    modelName = at(models, j).optString("displayName", model);
+        }
+        modelButton.bind(modelName, backend.equals("claude") ? "claude" : "codex",
+                tr("Choose agent and model", "选择 Agent 与模型") + ": " + modelName);
+        String effectivePermission = permission.isEmpty() ? backend.equals("claude") ? "acceptEdits" : "ask" : permission;
+        permissionButton.bind(permissionLabel(effectivePermission),
+                effectivePermission.equals("ask") || effectivePermission.equals("manual") ? "shield-question" : "shield-check",
+                tr("Permissions", "权限") + ": " + permissionLabel(effectivePermission));
+        permissionButton.setDanger(permission.equals("bypassPermissions"));
+    }
+
+    private void openSidebar() {
+        closeDrawer();
+        panel = "sidebar";
+        NativeDrawer overlay = new NativeDrawer(ui, false, this::closeDrawer);
+        drawer = overlay;
+        sidebar = new NativeSidebar(ui, sidebarState, this::person, this::closeDrawer, this::openChat, this::newChat,
+                () -> { closeDrawer(); openAvatarPicker(); }, this::openSettings, this::logout);
+        overlay.sheet.addView(sidebar, new LinearLayout.LayoutParams(-1, -1));
+        root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+        renderNavigation();
+        overlay.show();
+    }
+
+    private void closeDrawer() {
+        if (fileBrowser != null) fileBrowser.deactivate();
+        fileBrowser = null;
+        FrameLayout previous = drawer;
+        drawer = null;
+        if (sidebar != null) sidebar.deactivate();
+        sidebar = null;
+        panel = "";
+        if (previous instanceof NativeDrawer) ((NativeDrawer) previous).dismiss();
+        else if (previous != null) root.removeView(previous);
+    }
+
+    private void renderNavigation() {
+        sidebarState.select(projectID, chatID, projects, chats);
+        if (!panel.equals("sidebar") || sidebar == null || user == null) return;
+        sidebar.bind(person(user.optString("id")), projects, chats, projectID, chatID,
+                chat != null && array(chat, "turns").length() == 0 ? backend : "", busy);
+    }
+
+    private void refreshWorkspace() {
+        bindWorkspaceData(true);
+    }
+
+    private void bindWorkspaceData(boolean reload) {
+        if (!foreground || destroyed || user == null || client == null) return;
+        if (workspaceData == null) workspaceData = new NativeWorkspaceData(workspaceWorker, new NativeWorkspaceData.Dispatcher() {
+            public void post(Runnable task) { main.post(task); }
+            public void postDelayed(Runnable task, long millis) { main.postDelayed(task, millis); }
+            public void remove(Runnable task) { main.removeCallbacks(task); }
+        }, profileCache);
+        final Client captured = client;
+        final int token = generation, session = authEpoch;
+        final String auth = csrf, loc = locale();
+        String key = token + "\n" + session + "\n" + user.optString("id") + "\n" + loc;
+        boolean bound = workspaceData.bind(key, path -> request(captured, path, null, auth, loc), new NativeWorkspaceData.Listener() {
+            public void navigation(JSONObject value) { acceptNavigation(value); }
+            public void agents(JSONArray value) { acceptAgents(value); }
+            public void profiles(JSONObject value) throws Exception { acceptProfiles(value); refreshProfileViews(); }
+            public void failed(Exception error, boolean initial) {
+                if (token != generation || session != authEpoch || user == null) return;
+                if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
+                else if (initial) toast(error);
+            }
+        });
+        workspaceData.ready(workspaceReady);
+        if (!bound && reload) workspaceData.reload();
+        updateMissingProfiles();
+    }
+
+    private void acceptAgents(JSONArray value) {
+        agents = value;
+        if (!agentsInitialized) { agentsInitialized = true; adoptModel(); }
+        else updateComposer();
+        if (modelPopover != null && modelPopover.isShowing()) modelMenu.bindAgents(agents);
+    }
+
+    private void updateMissingProfiles() {
+        if (workspaceData != null && user != null) workspaceData.missing(profileCache.missing(chats, chat, presence));
+    }
+
+    private void refreshProfileViews() {
+        updateHeaderPeople(); renderPeople();
+        if (!settingsOpen && historyContent != null) renderChat();
+    }
+
+    private void acceptNavigation(JSONObject value) {
+        projects = array(value, "projects");
+        JSONArray incoming = array(value, "chats");
+        chats = NativeNavigation.merge(chats, incoming);
+        NativeNavigation.Selection selected = navigation.select(projectID, chatID, projects, incoming);
+        if (!selected.project.equals(projectID) || !selected.chat.equals(chatID)) {
+            goalNotice = goalError = "";
+            discardComposerDrafts();
+            projectID = selected.project;
+            chatID = "";
+            chat = null;
+            invalidatePermissions();
+            permission = "";
+            stopHistory();
+            ++selectionEpoch;
+            stopChat();
+            if (!selected.chat.isEmpty()) openChat(selected.chat);
+            else { render(); loadPermissions(); }
+        }
+        if (chat != null)
+            for (int i = 0; i < incoming.length(); i++)
+                if (at(incoming, i).optString("id").equals(chatID)) {
+                    try {
+                        JSONObject next = at(incoming, i);
+                        if (next.optDouble("updated_at") >= chat.optDouble("updated_at")) {
+                            chat.put("title", next.opt("title"));
+                            chat.put("participants", next.opt("participants"));
+                        }
+                        chat.put("can_control", next.optBoolean("can_control"));
+                        if (heading != null) heading.setText(chat.optString("title"));
+                        if (subheading != null) subheading.setText(projectName());
+                    } catch (Exception ignored) {
+                    }
                 }
-            } else if (data.getData() != null && "content".equals(data.getData().getScheme())) {
-                uris.add(data.getData());
+        renderNavigation();
+        if (chat != null && !canCreateInProject() && !backend.equals(chat.optString("backend"))) {
+            NativeModelSelection selection = NativeModelSelection.chat(agents, chat);
+            backend = selection.backend;
+            model = selection.model;
+            effort = selection.effort;
+            invalidatePermissions();
+            permission = "";
+            loadPermissions();
+        }
+        updateComposer();
+        updateMissingProfiles();
+    }
+
+    private void newChat(String id) {
+        if (busy) return;
+        goalNotice = goalError = "";
+        discardComposerDrafts();
+        ++draftVersion;
+        ++selectionEpoch;
+        stopChat();
+        closeDrawer();
+        chatID = "";
+        projectID = id;
+        chat = null;
+        stopHistory();
+        invalidatePermissions();
+        permission = "";
+        render();
+        adoptModel();
+        loadPermissions();
+    }
+
+    private void openChat(String id) {
+        if (id.equals(chatID)) { closeDrawer(); return; }
+        goalNotice = goalError = "";
+        discardComposerDrafts();
+        ++selectionEpoch;
+        stopChat();
+        closeDrawer();
+        chatID = id;
+        for (int i = 0; i < chats.length(); i++)
+            if (at(chats, i).optString("id").equals(id)) projectID = at(chats, i).optString("project_id");
+        stopHistory();
+        chat = null;
+        invalidatePermissions();
+        permission = "";
+        render();
+        startChat();
+    }
+
+    private void renderChat() { renderChat(null); }
+
+    private void renderChat(NativeHistoryScroll.Anchor anchor) {
+        updateChatRefresh();
+        updateMissingProfiles();
+        if (historyContent == null) return;
+        if (optimisticSend != null) {
+            boolean visible = false;
+            for (int i = 0; i < array(chat, "turns").length(); i++)
+                visible |= optimisticSend.turnID.equals(at(array(chat, "turns"), i).optString("id"));
+            if (!visible) optimisticSend = null;
+        }
+        historyScroll.changing(anchor);
+        transcriptViews.begin();
+        updateHistoryLoading();
+        NativeHistoryLoader.Cursor cursor = historyCursor(chat);
+        boolean failed = historyLoader != null && historyLoader.failed();
+        if (!cursor.error.isEmpty() || cursor.more)
+            transcriptViews.use("history-notice", new JSONArray().put(!cursor.error.isEmpty()).put(cursor.more).put(failed),
+                    () -> new NativeHistoryNotice(ui, !cursor.error.isEmpty(), cursor.more, failed, this::loadEarlier));
+        if (chat == null || array(chat, "turns").length() == 0) {
+            heading.setText(projectID.isEmpty() ? tr("Workspace", "工作空间") : tr("New chat", "新对话"));
+            subheading.setText(projectName());
+            transcriptViews.use("welcome", projectID + "\n" + projectName(), () -> ui.welcome(
+                    ui.t(projectID.isEmpty() ? "Prepare a project first." : "What shall we build today?"),
+                    projectID.isEmpty() ? ui.t("Ask your desktop administrator to create a project and grant you access.")
+                            : ui.t("Describe your idea. Your agent takes it from here."),
+                    projectID.isEmpty() ? ui.t("Waiting for project access") : projectName(),
+                    ui.t("Run locally. Pick up anytime.")));
+            transcriptViews.end();
+            historyScroll.changed();
+            updateComposer();
+            return;
+        }
+        heading.setText(chat.optString("title", tr("New chat", "新对话")));
+        subheading.setText(projectName());
+        Map<String, Integer> occurrences = new HashMap<>();
+        boolean virtual = array(chat, "turns").length() > 32 || array(chat.optJSONObject("transcript"), "parts").length() > 256 || transcriptViewport != null;
+        if (virtual && transcriptViewport == null)
+            transcriptViewport = new NativeTranscriptViewport(history, historyContent, historyScroll, historyScrollState);
+        for (int i = 0; i < array(chat, "turns").length(); i++) {
+            JSONObject turn = at(array(chat, "turns"), i);
+            String id = turn.optString("id");
+            String key = new JSONArray().put(id.isEmpty() ? "index" : "turn").put(id.isEmpty() ? i : id)
+                    .put(occurrences.merge(id, 1, Integer::sum)).toString();
+            if (virtual) {
+                JSONObject page = chat;
+                NativeTranscriptViewport.Row row = (NativeTranscriptViewport.Row) transcriptViews.use(key + "/viewport", "viewport",
+                        () -> new NativeTranscriptViewport.Row(ui));
+                int partCount = array(page.optJSONObject("transcript"), "parts").length();
+                row.partCount = Math.max(0, Math.min(partCount, turn.optInt("part_end", partCount)) - Math.max(0, turn.optInt("part_start")));
+                row.bind(children -> renderTurn(page, turn, key, children));
+            } else renderTurn(chat, turn, key, transcriptViews);
+        }
+        transcriptViews.end();
+        historyScroll.changed();
+        updateComposer();
+    }
+
+    private void renderTurn(JSONObject page, JSONObject turn, String key, NativeKeyedViews transcriptViews) {
+        JSONArray parts = array(page.optJSONObject("transcript"), "parts");
+        int start = Math.max(0, turn.optInt("part_start")),
+                end = Math.min(parts.length(), turn.optInt("part_end", parts.length()));
+        String input = NativeUserRow.text(parts, start, end);
+        String operatorID = turn.optString("user_id");
+        if (operatorID.isEmpty()) operatorID = page.optString("user_id");
+        JSONObject operator = operatorID.isEmpty() ? null : person(operatorID);
+        if (NativeUserRow.hasContent(input, array(turn, "attachments"), parts, start, end)) {
+            NativeUserRow userRow = (NativeUserRow) transcriptViews.use(key + "/user", "user",
+                    () -> new NativeUserRow(ui, operator, input, turn.optLong("started_at"), null, this::openMessageLink));
+            userRow.bind(operator, input, turn.optLong("started_at"), userFiles(page, turn, userRow));
+            transcriptViews.use(key + "/user-gap", "", () -> ui.space(22));
+        }
+        String activityKey = turn.optString("id", page.optString("id") + ":" + turn.optInt("part_start"));
+        NativeTurn response = (NativeTurn) transcriptViews.use(key + "/response", "", () -> new NativeTurn(ui, parts, start, end, turn,
+                locale().startsWith("zh"), activityStates.computeIfAbsent(activityKey, value -> new NativeActivityList.State()), this::openMessageLink));
+        response.bind(parts, start, end, turn);
+        JSONObject approval = turn.optJSONObject("pending_approval");
+        if (approval != null) transcriptViews.use(key + "/approval/" + approval.optString("id"),
+                new JSONArray().put(approval).put(writable()), () -> approvalCard(page.optString("id"), turn.optString("id"), approval));
+        if (!turn.optString("error").isEmpty() && !turn.optString("status").equals("stopped"))
+            transcriptViews.use(key + "/error", turn.optString("error"), () -> ui.text(turn.optString("error"), 12, ui.error));
+        transcriptViews.use(key + "/turn-gap", "", () -> ui.space(38));
+    }
+
+    private List<NativeAttachmentCards.Item> userFiles(JSONObject page, JSONObject turn, NativeUserRow row) {
+        JSONArray files = array(turn, "attachments");
+        List<NativeAttachmentCards.Item> items = new ArrayList<>();
+        final int session = authEpoch, selected = selectionEpoch;
+        final String ownerChat = page.optString("id", chatID);
+        java.util.function.BooleanSupplier current = () -> !destroyed && foreground && user != null && session == authEpoch
+                && selected == selectionEpoch && ownerChat.equals(chatID) && row.isAttachedToWindow();
+        if (optimisticSend != null && optimisticSend.turnID.equals(turn.optString("id")) && !optimisticSend.files.isEmpty()) {
+            for (Attachment file : optimisticSend.files) {
+                items.add(new NativeAttachmentCards.Item(file.id, file.name, file.file.mediaType, file.excerpt, "local:" + file.id,
+                        () -> { if (current.getAsBoolean()) {
+                            if (NativeFileData.image(file.file.mediaType)) previewLocalImage(file);
+                            else chooseDownload(file.file, file.name, session);
+                        } }, image -> fileImages.local(image, file.id, file.file, Math.min(512, dp(120)), null)));
+            }
+        } else if (files.length() > 0) {
+            for (int i = 0; i < files.length(); i++) {
+                JSONObject file = at(files, i);
+                if (ownerChat.isEmpty() || file.optString("id").isEmpty()) continue;
+                String path = NativeFileData.attachmentPath(ownerChat, file.optString("id"));
+                String name = file.optString("name"), media = file.optString("media_type");
+                items.add(new NativeAttachmentCards.Item(file.optString("id"), name, media, file.optString("excerpt"), "remote:" + path,
+                        () -> { if (current.getAsBoolean()) {
+                            if (NativeFileData.image(media)) previewBinary(path, name); else downloadFile(path, name);
+                        } }, image -> fileImages.remote(image, path, Math.min(512, dp(120)), null)));
             }
         }
-        pendingFiles.onReceiveValue(uris.isEmpty() ? null : uris.toArray(new Uri[0]));
-        pendingFiles = null;
+        return items;
     }
 
-    @Override protected void onStart() {
+    private View approvalCard(String ownerChat, String turnID, JSONObject approval) {
+        final int session = authEpoch, selection = selectionEpoch;
+        final String approvalID = approval.optString("id");
+        LinearLayout card = card(approval.optString("title", tr("Approval required", "需要审批")));
+        card.addView(ui.text(approval.optString("detail"), 12, ui.text));
+        for (boolean allow : new boolean[] {false, true}) {
+            Button decision = ui.button(allow ? tr("Allow", "允许") : tr("Deny", "拒绝"), allow, () -> {
+                if (destroyed || !foreground || session != authEpoch || selection != selectionEpoch || !ownerChat.equals(chatID) || !writable()) return;
+                JSONObject pending = null;
+                for (int i = 0; i < array(chat, "turns").length(); i++) {
+                    JSONObject candidate = at(array(chat, "turns"), i);
+                    if (turnID.equals(candidate.optString("id"))) pending = candidate.optJSONObject("pending_approval");
+                }
+                if (pending == null || !approvalID.equals(pending.optString("id"))) return;
+                api("/chats/" + ownerChat + "/approvals", object("id", approvalID, "turn_id", turnID, "allow", allow), result -> {});
+            });
+            decision.setEnabled(writable()); card.addView(decision);
+        }
+        return card;
+    }
+
+    private NativeHistoryLoader.Cursor historyCursor(JSONObject value) {
+        JSONObject state = value == null ? null : value.optJSONObject("history");
+        return new NativeHistoryLoader.Cursor(value == null || value.isNull("id") ? "" : value.optString("id"), state == null || state.isNull("before") ? "" : state.optString("before"),
+                state != null && state.optBoolean("has_more"), state == null || state.isNull("error") ? "" : state.optString("error"));
+    }
+
+    private void stopHistory() { if (historyLoader != null) historyLoader.stop(); }
+
+    private void updateHistoryLoading() {
+        if (!foreground) { if (historyLoader != null) historyLoader.suspend(); return; }
+        if (destroyed || user == null || client == null || chat == null || !chatID.equals(chat.optString("id")) || history == null) {
+            stopHistory(); return;
+        }
+        if (historyLoader == null) historyLoader = new NativeHistoryLoader<>(workspaceWorker, main::post);
+        final Client captured = client;
+        final String auth = csrf, loc = locale();
+        String key = generation + "\n" + authEpoch + "\n" + selectionEpoch + "\n" + user.optString("id") + "\n" + chatID + "\n" + loc;
+        final View surface = history;
+        historyLoader.bind(key, historyCursor(chat), surface, task -> NativeAfterPaint.schedule(surface, task), new NativeHistoryLoader.Source<JSONObject>() {
+            public JSONObject read(NativeHistoryLoader.Cursor from) throws Exception {
+                return (JSONObject) request(captured, "/chats/" + Uri.encode(from.id) + "/history?before=" + Uri.encode(from.before), null, auth, loc);
+            }
+            public NativeHistoryLoader.Cursor cursor(JSONObject page) { return historyCursor(page); }
+        }, new NativeHistoryLoader.Listener<JSONObject>() {
+            public void received(NativeHistoryLoader.Cursor from, JSONObject page) {
+                if (chat == null || !from.id.equals(chat.optString("id")) || !from.before.equals(historyCursor(chat).before)) return;
+                NativeHistoryScroll.Anchor anchor = historyScroll == null ? null : historyScroll.anchor();
+                chat = NativeChatState.prepend(chat, page);
+                renderChat(anchor);
+            }
+            public void failed(Exception error) {
+                if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
+                else renderChat();
+            }
+        });
+    }
+
+    private void loadEarlier() {
+        if (historyLoader == null) return;
+        historyLoader.retry(); renderChat();
+    }
+
+    private void adoptModel() {
+        if (chat != null) { updateComposer(); return; }
+        // Workspace refreshes must not reset an explicit model/effort choice.
+        for (int i = 0; i < agents.length(); i++) {
+            JSONObject agent = at(agents, i);
+            if (!agent.optBoolean("enabled")
+                    || !agent.optBoolean("installed")
+                    || !agent.optString("backend").equals(backend)) continue;
+            JSONArray models = array(agent.optJSONObject("catalog"), "models");
+            for (int j = 0; j < models.length(); j++) {
+                if (at(models, j).optString("model").equals(model)) {
+                    updateComposer();
+                    return;
+                }
+            }
+        }
+        for (int i = 0; i < agents.length(); i++) {
+            JSONObject agent = at(agents, i);
+            if (!agent.optBoolean("enabled") || !agent.optBoolean("installed")) continue;
+            if (!backend.equals(agent.optString("backend"))) {
+                permission = "";
+                invalidatePermissions();
+            }
+            backend = agent.optString("backend", "codex");
+            JSONObject catalog = agent.optJSONObject("catalog");
+            if (catalog != null) {
+                NativeModelSelection selection = NativeModelSelection.choose(agent, catalog.optString("defaultModel"));
+                model = selection.model;
+                effort = selection.effort;
+            }
+            updateComposer();
+            loadPermissions();
+            return;
+        }
+    }
+
+    private void chooseModel() {
+        showModelMenu();
+    }
+
+    private void showModelMenu() {
+        NativePopover menu = NativePopover.model(ui);
+        NativeAgentModelMenu[] content = new NativeAgentModelMenu[1];
+        content[0] = new NativeAgentModelMenu(ui, agents,
+                new NativeModelSelection(backend, model, effort), chat == null ? "" : chat.optString("backend"), next -> {
+                    if (chat != null && !canCreateInProject() && !next.backend.equals(chat.optString("backend"))) {
+                        NativeModelSelection original = NativeModelSelection.chat(agents, chat);
+                        backend = original.backend;
+                        model = original.model;
+                        effort = original.effort;
+                        content[0].bind(original);
+                        updateComposer();
+                        return;
+                    }
+                    boolean changedBackend = !backend.equals(next.backend);
+                    backend = next.backend;
+                    model = next.model;
+                    effort = next.effort;
+                    if (changedBackend) {
+                        invalidatePermissions();
+                        permission = "";
+                        loadPermissions();
+                    }
+                    updateComposer();
+                });
+        menu.content.addView(content[0], new LinearLayout.LayoutParams(-1, -2));
+        modelMenu = content[0];
+        modelPopover = menu;
+        menu.show(modelButton, true);
+    }
+
+    private boolean canCreateInProject() {
+        for (int i = 0; i < projects.length(); i++) {
+            JSONObject project = at(projects, i);
+            if (project.optString("id").equals(projectID)) return project.optBoolean("can_create", true);
+        }
+        return false;
+    }
+
+    private boolean selectedAgentAvailable() {
+        for (int i = 0; i < agents.length(); i++) {
+            JSONObject agent = at(agents, i);
+            if (agent.optString("backend").equals(backend)) return agent.optBoolean("enabled") && agent.optBoolean("installed");
+        }
+        return false;
+    }
+
+    private String permissionLabel(String mode) {
+        return NativePermissionMenu.label(ui, backend, mode);
+    }
+
+    private void invalidatePermissions() {
+        permissionCatalog = null;
+        permissionLoading = permissionFailed = false;
+        ++permissionRequest;
+        if (permissionMenu != null) permissionMenu.popover.dismiss();
+        permissionMenu = null;
+    }
+
+    private void loadPermissions() {
+        if (projectID.isEmpty() || !writable() || user == null) return;
+        int selected = selectionEpoch, request = ++permissionRequest;
+        String selectedBackend = backend;
+        permissionCatalog = null;
+        permissionLoading = true;
+        permissionFailed = false;
+        updatePermissionMenu();
+        updateComposer();
+        api(
+                "/permissions?project_id="
+                        + Uri.encode(projectID)
+                        + "&backend="
+                        + Uri.encode(backend)
+                        + (chatID.isEmpty() ? "" : "&chat_id=" + Uri.encode(chatID)),
+                null,
+                value -> {
+                    if (request != permissionRequest || selected != selectionEpoch || !selectedBackend.equals(backend)) return;
+                    permissionCatalog = value instanceof JSONObject ? (JSONObject) value : new JSONObject();
+                    if (permission.isEmpty()) permission = permissionCatalog.optString("current");
+                    if (permission.isEmpty()) permission = permissionCatalog.optString("default");
+                    if (permission.isEmpty()) permission = backend.equals("claude") ? "acceptEdits" : "ask";
+                    permissionLoading = false;
+                    permissionFailed = false;
+                    updatePermissionMenu();
+                    updateComposer();
+                }, error -> {
+                    if (request != permissionRequest || selected != selectionEpoch || !selectedBackend.equals(backend)) return;
+                    permissionLoading = false;
+                    permissionFailed = true;
+                    updatePermissionMenu();
+                    updateComposer();
+                });
+    }
+
+    private boolean permissionReady() {
+        for (int i = 0; i < array(permissionCatalog, "modes").length(); i++) {
+            JSONObject mode = at(array(permissionCatalog, "modes"), i);
+            if (mode.optString("id").equals(permission)) return mode.optBoolean("available");
+        }
+        return false;
+    }
+
+    private void updatePermissionMenu() {
+        if (permissionMenu != null && permissionMenu.popover.isShowing())
+            permissionMenu.bind(permission, permissionCatalog, permissionLoading, permissionFailed);
+    }
+
+    private void choosePermission() {
+        if (permissionMenu != null && permissionMenu.popover.isShowing()) { permissionMenu.popover.dismiss(); return; }
+        if (permissionCatalog == null && !permissionLoading && !permissionFailed) loadPermissions();
+        String selectedBackend = backend;
+        int selected = selectionEpoch;
+        permissionMenu = new NativePermissionMenu(ui, backend, permission, permissionCatalog, permissionLoading, permissionFailed, id -> {
+            if (selected != selectionEpoch || !selectedBackend.equals(backend)) return;
+            permission = id;
+            updateComposer();
+        }, this::loadPermissions);
+        permissionMenu.show(permissionButton);
+    }
+
+    private void sendOrStop() {
+        if (!writable()) return;
+        JSONObject activeTurn = NativeChatState.runningTurn(chat);
+        if (activeTurn != null) { stopResponse(activeTurn); return; }
+        if (busy || chat != null && chat.optString("status").equals("running")) return;
+        if (!selectedAgentAvailable()) return;
+        captureDraft();
+        final Draft submitted = draft();
+        if (NativeGoalCommand.trim(submitted.text).isEmpty() && submitted.files.isEmpty()) return;
+        if (!permissionReady()) {
+            toast(new IOException(tr("Check project permissions before sending.", "请先检查项目权限。")));
+            loadPermissions();
+            return;
+        }
+        NativeGoalCommand command = NativeGoalCommand.parse(submitted.text);
+        if (command != null) {
+            String issue = command.validationError(!submitted.files.isEmpty());
+            if (!issue.isEmpty()) { goalError = ui.t(issue); updateComposer(); return; }
+            if (!command.action.equals("set")) { runGoalControl(command.action, submitted); return; }
+        }
+        goalNotice = goalError = "";
+        final String pid = projectID,
+                initialID = chatID,
+                auth = csrf,
+                loc = locale();
+        final Client captured = client;
+        final int token = generation, session = authEpoch;
+        final NativeSubmission<Attachment> sending = new NativeSubmission<>(session, selectionKey(), initialID, submitted.text, submitted.files);
+        JSONObject payload =
+                object(
+                        "message",
+                        sending.message,
+                        "backend",
+                        backend,
+                        "model",
+                        model,
+                        "reasoning_effort",
+                        effort,
+                        "permission_mode",
+                        permission);
+        final List<Attachment> files = sending.files;
+        final String agent = backend;
+        pendingSend = optimisticSend = sending;
+        JSONArray attached = new JSONArray();
+        for (Attachment file : files) {
+            attached.put(object("id", file.id, "name", file.name, "media_type", file.file.mediaType, "size", file.data.length, "excerpt", file.excerpt));
+        }
+        JSONObject turn = object("id", sending.turnID, "user_id", user == null ? "" : user.optString("id"), "backend", agent,
+                "requested_model", model, "reasoning_effort", effort, "permission_mode", permission,
+                "attachments", attached, "started_at", System.currentTimeMillis(), "status", "running");
+        JSONObject optimistic = NativeChatState.optimistic(chat, pid, turn, NativeChatState.input(sending.message, attached));
+        if (chat == null) NativeChatState.put(optimistic, "can_control", true);
+        chat = optimistic;
+        busy = true;
+        submitted.text = ""; submitted.files.clear(); composer.setText("");
+        if (modelPopover != null) modelPopover.dismiss();
+        if (permissionMenu != null) permissionMenu.popover.dismiss();
+        closeImagePreview(); renderFiles(); renderChat();
+        io.execute(
+                () -> {
+                    String id = initialID;
+                    try {
+                        if (token != generation || session != authEpoch || destroyed) return;
+                        if (id.isEmpty()) {
+                            final JSONObject created = (JSONObject) request(captured, "/chats",
+                                    object("project_id", pid, "backend", agent), auth, loc);
+                            id = created.optString("id");
+                            if (id.isEmpty()) throw new IOException(tr("The server returned an invalid response", "服务器返回了无效响应"));
+                            post(token, () -> {
+                                if (session != authEpoch || pendingSend != sending) return;
+                                boolean current = sending.current(authEpoch, selectionKey());
+                                sending.adopt(created.optString("id"));
+                                if (current) {
+                                    captureDraft();
+                                    chatID = created.optString("id"); drafts.put(chatID, submitted);
+                                    drafts.remove("new/" + pid);
+                                    ++selectionEpoch;
+                                    chat = NativeChatState.adoptCreated(chat, created);
+                                    NativeChatState.put(chat, "can_control", created.optBoolean("can_control", true));
+                                    renderChat(); startChat();
+                                }
+                            });
+                        }
+                        if (token != generation || session != authEpoch || destroyed) return;
+                        Object value;
+                        if (files.isEmpty())
+                            value =
+                                    request(
+                                            captured,
+                                            "/chats/" + id + "/messages",
+                                            payload,
+                                            auth,
+                                            loc);
+                        else {
+                            JSONArray upload = new JSONArray();
+                            for (Attachment file : files)
+                                upload.put(
+                                        object(
+                                                "name",
+                                                file.name,
+                                                "data",
+                                                android.util.Base64.encodeToString(
+                                                        file.data, android.util.Base64.NO_WRAP)));
+                            value =
+                                    decodeResponse(
+                                            captured.upload(
+                                                    id,
+                                                    object("fields", payload, "files", upload)
+                                                            .toString(),
+                                                    auth,
+                                                    loc));
+                        }
+                        final JSONObject result = (JSONObject) value;
+                        if (result.optString("id").isEmpty()) throw new IOException(tr("The server returned an invalid response", "服务器返回了无效响应"));
+                        post(
+                                token,
+                                () -> {
+                                    if (session != authEpoch || pendingSend != sending) return;
+                                    busy = false;
+                                    boolean current = sending.current(authEpoch, selectionKey());
+                                    if (current) {
+                                        captureDraft();
+                                        Draft currentDraft = draft();
+                                        if (!chatID.equals(result.optString("id"))) {
+                                            drafts.remove(sending.key);
+                                            chatID = result.optString("id");
+                                            sending.adopt(chatID); ++selectionEpoch;
+                                        }
+                                        chat = NativeChatState.reconcile(chat, result);
+                                        drafts.put(chatID, currentDraft);
+                                    }
+                                    pendingSend = null;
+                                    if (sending.stopRequested) stopAccepted(result, sending.turnID);
+                                    if (current) { renderFiles(); renderChat(); startChat(); }
+                                    else updateComposer();
+                                    refreshWorkspace();
+                                });
+                    } catch (Exception e) {
+                        final String createdID = id;
+                        post(
+                                token,
+                                () -> {
+                                    if (session != authEpoch || pendingSend != sending) return;
+                                    busy = false;
+                                    pendingSend = null; stoppingTurns.remove(sending.turnID);
+                                    if (e instanceof ApiFailure && ((ApiFailure) e).status == 401) {
+                                        expire();
+                                        return;
+                                    }
+                                    if (sending.current(authEpoch, selectionKey())) {
+                                        // Web restores the submitted draft, including exact whitespace and attachments.
+                                        Draft restored = draft();
+                                        restored.text = sending.message;
+                                        restored.files.clear(); restored.files.addAll(files);
+                                        composer.setText(restored.text);
+                                        goalError = e.getMessage() == null ? e.toString() : e.getMessage();
+                                        if (createdID.isEmpty()) chat = null;
+                                        else {
+                                            // Keep any live SSE state until the authoritative recovery read finishes.
+                                            chatID = createdID; drafts.put(chatID, restored);
+                                            final String target = createdID;
+                                            final int selected = selectionEpoch;
+                                            api("/chats/" + Uri.encode(target), null, value -> {
+                                                if (selected != selectionEpoch || !target.equals(chatID)) return;
+                                                chat = (JSONObject) value; renderChat();
+                                            }, ignored -> {});
+                                        }
+                                        renderFiles(); renderChat();
+                                    }
+                                    updateComposer();
+                                });
+                    }
+                });
+    }
+
+    private NativeSubmission<Attachment> activeSubmission(JSONObject turn) {
+        return pendingSend != null && (pendingSend.turnID.equals(turn.optString("id")) || pendingSend.chatID.equals(chatID)) ? pendingSend : null;
+    }
+
+    private void stopResponse(JSONObject turn) {
+        String id = turn.optString("id");
+        if (stoppingTurns.contains(id)) return;
+        NativeSubmission<Attachment> pending = activeSubmission(turn);
+        goalError = "";
+        if (pending != null) {
+            if (!pending.requestStop()) return;
+            stoppingTurns.add(id); stoppingTurns.add(pending.turnID); updateComposer();
+        } else stopAccepted(chat, id);
+    }
+
+    private void stopAccepted(JSONObject accepted, String pendingID) {
+        JSONObject turn = NativeChatState.runningTurn(accepted);
+        if (turn == null || turn.optString("id").startsWith("pending-")) { stoppingTurns.remove(pendingID); updateComposer(); return; }
+        String turnID = turn.optString("id"), target = accepted.optString("id");
+        stoppingTurns.add(pendingID); stoppingTurns.add(turnID); updateComposer();
+        api("/chats/" + Uri.encode(target) + "/stop", object("turn_id", turnID), value -> {
+            stoppingTurns.remove(pendingID); stoppingTurns.remove(turnID);
+            chats = NativeChatState.reconcileList(chats, (JSONObject) value);
+            if (target.equals(chatID)) { chat = NativeChatState.reconcile(chat, (JSONObject) value); renderChat(); }
+            updateComposer();
+        }, failure -> {
+            stoppingTurns.remove(pendingID); stoppingTurns.remove(turnID);
+            if (target.equals(chatID)) goalError = failure.getMessage() == null ? failure.toString() : failure.getMessage();
+            updateComposer();
+        });
+    }
+
+    private void runGoalControl(String action, Draft submitted) {
+        if (chat != null && !backend.equals(chat.optString("backend"))) {
+            goalError = ui.t("Select this chat's current agent to view or clear its goal"); updateComposer(); return;
+        }
+        NativeGoalRequest request = new NativeGoalRequest(authEpoch, selectionEpoch, selectionKey(), submitted.text);
+        goalNotice = goalError = "";
+        if (chatID.isEmpty()) {
+            goalNotice = ui.t("No goal set."); submitted.text = ""; composer.setText(""); updateComposer(); return;
+        }
+        busy = true; updateComposer();
+        api("/chats/" + Uri.encode(chatID) + "/goal", object("action", action), value -> {
+            busy = false;
+            if (request.current(authEpoch, selectionEpoch, selectionKey())) {
+                goalNotice = ((JSONObject) value).optString("message");
+                if (request.clears(submitted.text)) submitted.text = "";
+                if (composer != null && request.clears(composer.getText().toString())) composer.setText("");
+            }
+            updateComposer();
+        }, failure -> {
+            busy = false;
+            if (request.current(authEpoch, selectionEpoch, selectionKey())) goalError = failure.getMessage() == null ? failure.toString() : failure.getMessage();
+            updateComposer();
+        });
+    }
+
+    private void pickFiles() {
+        if (!writable() || busy) return;
+        captureDraft();
+        pickerDraft = draft();
+        Intent intent =
+                new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                        .addCategory(Intent.CATEGORY_OPENABLE)
+                        .setType("*/*")
+                        .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        try {
+            startActivityForResult(
+                    Intent.createChooser(intent, tr("Choose attachments", "选择附件")), PICK_FILES);
+        } catch (ActivityNotFoundException e) {
+            toast(e);
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == SAVE_FILE) {
+            PendingDownload selected = pendingDownload;
+            pendingDownload = null;
+            downloading = false;
+            if (selected == null || selected.session != authEpoch || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+            Uri destination = data.getData();
+            if (!"content".equals(destination.getScheme())) { toast(new IOException("Only document-provider destinations are supported")); return; }
+            int token = generation;
+            io.execute(() -> {
+                try (OutputStream output = getContentResolver().openOutputStream(destination, "wt")) {
+                    if (output == null) throw new IOException("Cannot write file");
+                    output.write(selected.file.bytes);
+                } catch (Exception error) { post(token, () -> { if (selected.session == authEpoch) toast(error); }); }
+            });
+            return;
+        }
+        if (requestCode != PICK_FILES) return;
+        boolean selecting = pickerDraft != null;
+        pickerDraft = null;
+        if (resultCode != RESULT_OK || data == null || !selecting) return;
+        final String key = selectionKey();
+        final String selectedProject = projectID;
+        final int version = draftVersion;
+        List<Uri> uris = new ArrayList<>();
+        ClipData clips = data.getClipData();
+        if (clips != null)
+            for (int i = 0; i < clips.getItemCount() && i < 6; i++)
+                uris.add(clips.getItemAt(i).getUri());
+        else if (data.getData() != null) uris.add(data.getData());
+        final int token = generation, session = authEpoch;
+        io.execute(
+                () -> {
+                    List<Attachment> picked = new ArrayList<>();
+                    try {
+                        for (Uri uri : uris) {
+                            if (!"content".equals(uri.getScheme()))
+                                throw new IOException(
+                                        "Only document-provider attachments are supported");
+                            String name = "attachment";
+                            try (Cursor cursor =
+                                    getContentResolver()
+                                            .query(
+                                                    uri,
+                                                    new String[] {OpenableColumns.DISPLAY_NAME},
+                                                    null,
+                                                    null,
+                                                    null)) {
+                                if (cursor != null && cursor.moveToFirst())
+                                    name = cursor.getString(0);
+                            }
+                            try (InputStream in = getContentResolver().openInputStream(uri);
+                                    ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                                if (in == null) throw new IOException("Cannot read attachment");
+                                byte[] buffer = new byte[8192];
+                                int n;
+                                while ((n = in.read(buffer)) != -1) {
+                                    if (out.size() + n > 4 * 1024 * 1024)
+                                        throw new IOException(
+                                                tr(
+                                                        "Each attachment must be at most 4 MB",
+                                                        "每个附件不能超过 4 MB"));
+                                    out.write(buffer, 0, n);
+                                }
+                                if (out.size() == 0)
+                                    throw new IOException(tr("Empty attachment", "附件为空"));
+                                String mediaType = getContentResolver().getType(uri);
+                                if (mediaType == null || mediaType.isEmpty()) {
+                                    mediaType = java.net.URLConnection.guessContentTypeFromName(name);
+                                }
+                                picked.add(new Attachment(name, mediaType, out.toByteArray()));
+                            }
+                        }
+                        post(
+                                token,
+                                () -> {
+                                    if (session != authEpoch || version != draftVersion
+                                            || !selectedProject.equals(projectID) || !key.equals(selectionKey())) return;
+                                    Draft target = draft();
+                                    int bytes = 0;
+                                    for (Attachment file : target.files) bytes += file.data.length;
+                                    for (Attachment file : picked) bytes += file.data.length;
+                                    if (target.files.size() + picked.size() > 6
+                                            || bytes > 16 * 1024 * 1024) {
+                                        toast(
+                                                new IOException(
+                                                        tr(
+                                                                "Attach at most 6 files, up to 16"
+                                                                        + " MB total",
+                                                                "最多 6 个附件，总计不超过 16 MB")));
+                                        return;
+                                    }
+                                    target.files.addAll(picked);
+                                    renderFiles();
+                                });
+                    } catch (Exception e) {
+                        post(token, () -> toast(e));
+                    }
+                });
+    }
+
+    private void renderFiles() {
+        if (composer == null || fileBar == null || composerView == null) return;
+        fileBar.removeAllViews();
+        Draft owner = draft();
+        for (Attachment file : new ArrayList<>(owner.files)) {
+            NativeAttachmentCard card = new NativeAttachmentCard(ui, file.name, file.file.mediaType, file.excerpt, null,
+                    NativeFileData.image(file.file.mediaType) ? () -> previewLocalImage(file) : null, () -> {
+                if (!busy) {
+                    owner.files.remove(file);
+                    if (owner == draft()) renderFiles();
+                }
+            });
+            if (card.remove != null) card.remove.setEnabled(!busy);
+            fileBar.addView(card);
+            if (card.image != null) fileImages.local(card.image, file.id, file.file, Math.min(512, dp(120)), null);
+        }
+        composerView.attachmentScroll.setVisibility(draft().files.isEmpty() ? View.GONE : View.VISIBLE);
+        updateComposer();
+    }
+
+    private void stopChat() {
+        if (historyLoader != null) historyLoader.suspend();
+        if (chatEvents != null) chatEvents.stop();
+    }
+
+    private void stopStreams() {
+        if (workspaceData != null) workspaceData.stop();
+        if (chatRefresh != null) chatRefresh.stop();
+        ++workspaceEpoch;
+        if (workspaceEvents != null) workspaceEvents.stop();
+        else if (workspaceStream != null) workspaceStream.close();
+        workspaceStream = null;
+        setWorkspaceConnected(false);
+        stopChat();
+    }
+
+    private void startChat() {
+        updateChatRefresh();
+        if (!foreground || destroyed || client == null || user == null || chatID.isEmpty()) { stopChat(); return; }
+        if (chatEvents == null) chatEvents = new NativeChatEvents<>(io, new NativeChatRefresh.Dispatcher() {
+            public void post(Runnable task) { main.post(task); }
+            public void postDelayed(Runnable task, long millis) { main.postDelayed(task, millis); }
+            public void remove(Runnable task) { main.removeCallbacks(task); }
+        });
+        final String id = chatID, auth = csrf, loc = locale();
+        final Client captured = client;
+        String key = generation + "\n" + authEpoch + "\n" + user.optString("id") + "\n" + id + "\n" + loc;
+        chatEvents.bind(key, new NativeChatEvents.Source<JSONObject>() {
+            public Runnable open(NativeChatEvents.Events<JSONObject> events) throws Exception {
+                EventStream stream = captured.subscribeChat(id, loc, (kind, raw) -> {
+                    if (kind.equals("transport_error")) { events.error(); return; }
+                    if (!kind.equals("snapshot") && !kind.equals("metadata") && !kind.equals("turn")) return;
+                    try {
+                        JSONObject value = new JSONObject(raw);
+                        if (kind.equals("snapshot") && !id.equals(value.optString("id"))) return;
+                        events.event(kind, value);
+                    } catch (Exception ignored) { /* An invalid frame is not a chat snapshot. */ }
+                });
+                return () -> { if (stream != null) stream.close(); };
+            }
+            public JSONObject snapshot() throws Exception {
+                JSONObject value = (JSONObject) request(captured, "/chats/" + Uri.encode(id), null, auth, loc);
+                if (!id.equals(value.optString("id"))) throw new IOException("Unexpected chat in initialization response");
+                return value;
+            }
+            public void checkAuth() throws Exception { request(captured, "/me", null, auth, loc); }
+        }, new NativeChatEvents.Listener<JSONObject>() {
+            public void event(String kind, JSONObject value) {
+                try { receiveChatEvent(kind, value); }
+                catch (Exception error) { toast(error); }
+            }
+            public void connected(boolean value) { /* Ordinary headers intentionally contain no connection diagnostics. */ }
+            public void failed(Exception error) {
+                if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) { expire(); return; }
+                goalError = error.getMessage() == null ? error.toString() : error.getMessage();
+                updateComposer();
+            }
+            public void authFailed(Exception error) {
+                if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
+            }
+        });
+    }
+
+    private void receiveChatEvent(String kind, JSONObject data) throws Exception {
+        JSONObject previous = chat;
+        boolean initial = previous == null;
+        chat = NativeChatState.event(chat, kind, data);
+        chats = NativeChatState.eventList(chats, chatID, kind, data);
+        if (chat == null) { renderNavigation(); return; }
+        if (initial) {
+            projectID = chat.optString("project_id"); sidebarState.expanded.add(projectID);
+            NativeModelSelection selection = NativeModelSelection.chat(agents, chat);
+            backend = selection.backend; model = selection.model; effort = selection.effort;
+            permission = chat.optString("permission_mode");
+            renderFiles(); loadPermissions();
+        }
+        if (!NativeChatState.equivalent(previous, chat)) renderChat();
+        else updateChatRefresh();
+        renderNavigation();
+    }
+
+    private void updateChatRefresh() {
+        if (!foreground || destroyed || client == null || user == null || chatID.isEmpty()
+                || chat == null || !chatID.equals(chat.optString("id")) || !NativeChatState.hasRunningTurn(chat)) {
+            if (chatRefresh != null) chatRefresh.stop();
+            return;
+        }
+        if (chatRefresh == null) chatRefresh = new NativeChatRefresh<>(io, new NativeChatRefresh.Dispatcher() {
+            public void post(Runnable task) { main.post(task); }
+            public void postDelayed(Runnable task, long millis) { main.postDelayed(task, millis); }
+            public void remove(Runnable task) { main.removeCallbacks(task); }
+        });
+        final String id = chatID, auth = csrf, loc = locale();
+        final Client captured = client;
+        String key = generation + "\n" + authEpoch + "\n" + user.optString("id") + "\n" + id + "\n" + loc;
+        chatRefresh.bind(key, () -> {
+            JSONObject value = (JSONObject) request(captured, "/chats/" + Uri.encode(id), null, auth, loc);
+            if (!id.equals(value.optString("id"))) throw new IOException("Unexpected chat in refresh response");
+            return value;
+        }, new NativeChatRefresh.Listener<JSONObject>() {
+            public void received(JSONObject next) {
+                if (chat == null || !id.equals(chatID) || !id.equals(chat.optString("id"))) return;
+                JSONObject merged = NativeChatState.reconcile(chat, next);
+                chats = NativeChatState.reconcileList(chats, next);
+                // React retains keyed transcript nodes for an unchanged poll; do not rebuild native selection/Views either.
+                if (!NativeChatState.equivalent(chat, merged)) { chat = merged; renderChat(); }
+                else { updateChatRefresh(); renderNavigation(); }
+            }
+            public void failed(Exception error) {
+                if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
+            }
+        });
+    }
+
+    private boolean startWorkspace() {
+        if (!foreground || destroyed || user == null || client == null) return false;
+        if (workspaceEvents == null) workspaceEvents = new NativeWorkspaceEvents<>(io, new NativeWorkspaceEvents.Scheduler() {
+            public void post(Runnable task) { main.post(task); }
+            public void postDelayed(Runnable task, long millis) { main.postDelayed(task, millis); }
+            public void remove(Runnable task) { main.removeCallbacks(task); }
+            // Resume must count deep sleep even before paused Handler timers can fire.
+            public long now() { return android.os.SystemClock.elapsedRealtime(); }
+            public double random() { return Math.random(); }
+        });
+        final Client captured = client;
+        final String auth = csrf, loc = locale();
+        String key = generation + "\n" + authEpoch + "\n" + user.optString("id") + "\n" + loc;
+        boolean bound = workspaceEvents.bind(key, new NativeWorkspaceEvents.Source<EventStream>() {
+            public EventStream open(NativeWorkspaceEvents.Events events) throws Exception {
+                return captured.subscribeWorkspace(auth, loc, events::event);
+            }
+            public void close(EventStream stream) { if (stream != null) stream.close(); }
+            public void send(EventStream stream, String type) throws Exception { stream.send(object("type", type, "visible", foreground).toString()); }
+            public void checkAuth() throws Exception { request(captured, "/me", null, auth, loc); }
+        }, new NativeWorkspaceEvents.Listener<EventStream>() {
+            public void connection(EventStream stream) { workspaceStream = stream; ++workspaceEpoch; }
+            public void event(String kind, String value) {
+                decodeWorkspaceEvent(kind, value, workspaceEpoch);
+            }
+            public void connected(boolean value) { setWorkspaceConnected(value); }
+            public void expired() { expire(); }
+            public void authFailed(Exception error) {
+                if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
+            }
+        });
+        if (bound) setWorkspaceConnected(false);
+        return bound;
+    }
+
+    private void setWorkspaceConnected(boolean value) {
+        workspaceReady = value;
+        if (workspaceData != null) workspaceData.ready(value);
+        if (!value) {
+            presence = new JSONArray();
+            disconnectPeople(); updateHeaderPeople(); updateMissingProfiles();
+        } else renderPeople();
+    }
+
+    private void resumeWorkspace() {
+        if (!foreground || destroyed || user == null || client == null) return;
+        boolean bound = startWorkspace();
+        if (!bound) workspaceEvents.resume();
+        if (!workspaceReady) refreshWorkspace();
+        if (!inbox.active.isEmpty()) { inbox.open(inbox.active, profiles); updateHeaderPeople(); renderPeople(); }
+    }
+
+    private void workspaceEvent(String kind, String raw, int epoch) throws Exception {
+        if (workspaceEpoch != epoch || user == null) return;
+        if (kind.equals("ready")) { setWorkspaceConnected(true); return; }
+        if (kind.equals("transport_error")) { if (workspaceEvents != null) workspaceEvents.failed(); return; }
+        if (kind.equals("auth_expired")) { expire(); return; }
+        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result").contains(kind)) return;
+        Object value = new JSONTokener(raw).nextValue();
+        applyWorkspaceEvent(kind, value, epoch);
+    }
+
+    private void decodeWorkspaceEvent(String kind, String raw, int epoch) {
+        if (kind.equals("ready") || kind.equals("transport_error") || kind.equals("auth_expired")) {
+            try { workspaceEvent(kind, raw, epoch); } catch (Exception error) { toast(error); }
+            return;
+        }
+        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result").contains(kind)) return;
+        final int token = generation, session = authEpoch;
+        workspaceDecode.execute(() -> {
+            if (destroyed || epoch != workspaceEpoch || token != generation || session != authEpoch) return;
+            try {
+                Object value = new JSONTokener(raw).nextValue();
+                post(token, () -> {
+                    if (session != authEpoch) return;
+                    try { applyWorkspaceEvent(kind, value, epoch); } catch (Exception error) { toast(error); }
+                });
+            } catch (Exception error) {
+                post(token, () -> { if (session == authEpoch && epoch == workspaceEpoch) toast(error); });
+            }
+        });
+    }
+
+    private void applyWorkspaceEvent(String kind, Object value, int epoch) throws Exception {
+        if (destroyed || workspaceEpoch != epoch || user == null) return;
+        switch (kind) {
+            case "navigation":
+                if (workspaceData != null) workspaceData.navigation((JSONObject) value);
+                else acceptNavigation((JSONObject) value);
+                break;
+            case "agents":
+                acceptAgents((JSONArray) value);
+                break;
+            case "profiles":
+                acceptProfiles((JSONObject) value);
+                refreshProfileViews();
+                break;
+            case "presence":
+                presence = (JSONArray) value;
+                updateHeaderPeople();
+                renderPeople();
+                updateMissingProfiles();
+                break;
+            case "chat_groups":
+                groups = (JSONArray) value;
+                inbox.groups(groups);
+                renderPeople();
+                break;
+            case "direct_message":
+            case "group_message": {
+                JSONObject message = (JSONObject) value;
+                inbox.acknowledge(message);
+                inbox.receive(message, user.optString("id"), foreground && peoplePanel != null, profiles);
+                updateHeaderPeople();
+                renderPeople();
+                break;
+            }
+            case "direct_message_error": {
+                JSONObject error = (JSONObject) value;
+                failPeople(error.optString("request_id"), error.optString("code"));
+                break;
+            }
+            case "group_result": {
+                JSONObject result = (JSONObject) value;
+                NativeGroupPicker.Completion completion = pendingGroups.remove(result.optString("request_id"));
+                if (completion != null) completion.done(result.optJSONObject("group"), "");
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    private String personName(String id) {
+        if (user != null && user.optString("id").equals(id))
+            return user.optString("nickname", user.optString("username"));
+        if (id.equals("online-room")) return tr("Online group chat", "在线群聊");
+        for (int i = 0; i < groups.length(); i++)
+            if (at(groups, i).optString("id").equals(id)) return at(groups, i).optString("name");
+        for (int i = 0; i < profiles.length(); i++)
+            if (at(profiles, i).optString("id").equals(id))
+                return at(profiles, i).optString("nickname");
+        return tr("Workspace member", "工作空间成员");
+    }
+
+    private JSONObject person(String id) {
+        if (id.equals("spool-bot")) return object("id", id, "nickname", "Spool Bot", "bot", true);
+        for (int i = 0; i < profiles.length(); i++)
+            if (at(profiles, i).optString("id").equals(id)) return at(profiles, i);
+        if (user != null && user.optString("id").equals(id)) return user;
+        for (int i = 0; i < presence.length(); i++)
+            if (at(presence, i).optString("id").equals(id)) return at(presence, i);
+        return object("id", id, "nickname", id);
+    }
+
+    private void acceptProfiles(JSONObject snapshot) throws Exception {
+        if (!profileCache.accept(snapshot)) return;
+        updateOwnProfile();
+        renderNavigation();
+        updateMissingProfiles();
+    }
+
+    private void updateOwnProfile() throws Exception {
+        profiles = profileCache.people;
+        if (user != null) {
+            for (int i = 0; i < profiles.length(); i++) {
+                JSONObject profile = at(profiles, i);
+                if (!profile.optString("id").equals(user.optString("id"))) continue;
+                user.put("nickname", profile.optString("nickname"));
+                user.put("avatar", profile.optJSONObject("avatar"));
+                break;
+            }
+        }
+    }
+
+    private void closeAvatarPicker() {
+        if (avatarDialog != null) avatarDialog.dismiss();
+        avatarDialog = null;
+    }
+
+    private void openAvatarPicker() {
+        if (user == null || avatarDialog != null) return;
+        final int token = generation, session = authEpoch;
+        final Client captured = client;
+        final String auth = csrf, loc = locale();
+        avatarDialog = new NativeAvatarPicker(ui, person(user.optString("id")), (avatar, completion) -> {
+            io.execute(() -> {
+                try {
+                    JSONObject result = (JSONObject) request(captured, "/me/avatar", avatar, auth, loc);
+                    post(token, () -> {
+                        if (session != authEpoch || user == null) return;
+                        try {
+                            profileCache.acceptSaved(result.getJSONObject("profiles"), user.optString("id"));
+                            updateOwnProfile();
+                            completion.accept(null);
+                            render();
+                        } catch (Exception error) {
+                            completion.accept(error.getMessage());
+                        }
+                    });
+                } catch (Exception error) {
+                    post(token, () -> {
+                        if (session != authEpoch) return;
+                        if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
+                        else completion.accept(error.getMessage() == null
+                                ? tr("Could not save avatar", "无法保存头像") : error.getMessage());
+                    });
+                }
+            });
+        }, this::openMessageLink);
+        avatarDialog.setOnDismissListener(dialog -> avatarDialog = null);
+        avatarDialog.show();
+    }
+
+    private void updateHeaderPeople() {
+        if (workspaceHeader == null) return;
+        List<JSONObject> people = new ArrayList<>();
+        for (int i = 0; i < presence.length(); i++) people.add(person(at(presence, i).optString("id")));
+        workspaceHeader.bindPeople(people, inbox.unreadCount());
+    }
+
+    private void openPeople() {
+        openPeople(inbox.initial(user.optString("id")));
+    }
+
+    private void openOnlinePeople() {
+        if (user == null || workspaceHeader == null) return;
+        if (peopleMenu != null && peopleMenu.isShowing()) { peopleMenu.dismiss(); return; }
+        peopleMenu = new NativePeopleMenu(ui, this::openPeople, this::openPeople, () -> openGroupPicker(""));
+        peopleMenu.bind(user.optString("id"), presence, inbox, this::peopleIdentity);
+        peopleMenu.show(workspaceHeader.online);
+    }
+
+    private void openPeople(String id) {
+        if (user == null) return;
+        ui.dismissMenus();
+        closeDrawer();
+        inbox.open(id, profiles);
+        if (peoplePanel == null) {
+            peoplePanel = new NativePeoplePanel(ui, inbox, this::peopleIdentity, peopleBounds, value -> peopleBounds = value,
+                    this::openPeople, text -> inbox.draft(inbox.active, text), this::sendPeople, this::closePeople,
+                    () -> openGroupPicker(""), () -> openGroupPicker(inbox.active));
+            root.addView(peoplePanel, new FrameLayout.LayoutParams(-1, -1));
+        }
+        renderPeople();
+        updateHeaderPeople();
+    }
+
+    private JSONObject peopleIdentity(String id) {
+        if (NativePeopleModel.group(id)) {
+            String name = id.equals(NativePeopleModel.ROOM) ? ui.t("Online group chat") : inbox.groupNames.getOrDefault(id, "Group chat");
+            return object("id", id, "nickname", name.equals("Group chat") ? ui.t("Group chat") : name);
+        }
+        for (int i = 0; i < profiles.length(); i++) if (at(profiles, i).optString("id").equals(id)) return at(profiles, i);
+        JSONObject remembered = inbox.remembered.get(id);
+        return remembered == null ? person(id) : remembered;
+    }
+
+    private void detachPeople() {
+        if (peopleMenu != null) peopleMenu.dismiss();
+        peopleMenu = null;
+        if (peoplePanel != null && peoplePanel.getParent() instanceof android.view.ViewGroup)
+            ((android.view.ViewGroup) peoplePanel.getParent()).removeView(peoplePanel);
+        peoplePanel = null;
+        if (groupPicker != null) groupPicker.dismiss();
+        groupPicker = null;
+    }
+
+    private void closePeople() {
+        inbox.close();
+        detachPeople();
+    }
+
+    private void renderPeople() {
+        if (user == null) return;
+        inbox.profiles(profiles);
+        if (peopleMenu != null && peopleMenu.isShowing()) peopleMenu.bind(user.optString("id"), presence, inbox, this::peopleIdentity);
+        if (peoplePanel != null) peoplePanel.bind(user.optString("id"), presence, workspaceReady);
+        if (groupPicker != null) {
+            JSONObject group = inbox.groupInfo(groupPicker.target);
+            JSONArray members = group == null ? new JSONArray() : array(group, "members");
+            JSONArray available = new JSONArray();
+            for (int i = 0; i < presence.length(); i++) {
+                String id = at(presence, i).optString("id");
+                boolean included = id.equals(user.optString("id"));
+                for (int j = 0; j < members.length(); j++) included |= members.optString(j).equals(id);
+                if (!included) available.put(peopleIdentity(id));
+            }
+            groupPicker.bind(available, group);
+        }
+    }
+
+    private void openGroupPicker(String target) {
+        if (groupPicker != null || user == null) return;
+        groupPicker = new NativeGroupPicker(ui, inbox.groupInfo(target), (name, members, completion) -> {
+            String request = UUID.randomUUID().toString();
+            pendingGroups.put(request, completion);
+            JSONObject payload = object("type", target.isEmpty() ? "group_create" : "group_invite", "request_id", request,
+                    "name", name, "to", target, "members", new JSONArray(members), "visible", foreground);
+            dispatchPeople(request, payload);
+        }, group -> {
+            if (groupPicker != null) groupPicker.dismiss();
+            groupPicker = null;
+            openPeople(group.optString("id"));
+        });
+        groupPicker.setOnDismissListener(dialog -> groupPicker = null);
+        renderPeople();
+        groupPicker.show();
+    }
+
+    private void sendPeople() {
+        if (user == null || inbox.active.isEmpty()) return;
+        if (!workspaceReady || workspaceStream == null) { inbox.errors.put(inbox.active, "unavailable"); renderPeople(); return; }
+        String target = inbox.active;
+        if (NativePeopleModel.group(target) ? !target.equals(NativePeopleModel.ROOM) && inbox.groupInfo(target) == null : NativePeopleModel.status(presence, target).isEmpty()) {
+            inbox.errors.put(target, NativePeopleModel.group(target) ? "forbidden" : "offline"); renderPeople(); return;
+        }
+        String request = UUID.randomUUID().toString();
+        NativePeopleModel.Send sending = inbox.begin(target, request);
+        if (sending == null) return;
+        dispatchPeople(request, object("type", NativePeopleModel.group(target) ? "group_message" : "direct_message", "request_id", request,
+                "to", target, "text", sending.text, "visible", foreground));
+        renderPeople();
+    }
+
+    private void dispatchPeople(String request, JSONObject payload) {
+        EventStream captured = workspaceStream;
+        int token = generation, session = authEpoch, streamEpoch = workspaceEpoch;
+        if (!workspaceReady || captured == null) { failPeople(request, "unavailable"); return; }
+        io.execute(() -> {
+            if (token != generation || session != authEpoch || streamEpoch != workspaceEpoch) return;
+            try { captured.send(payload.toString()); }
+            catch (Exception error) { post(token, () -> {
+                if (session != authEpoch || streamEpoch != workspaceEpoch) return;
+                failPeople(request, "unknown");
+                if (workspaceEvents != null) workspaceEvents.failed();
+            }); }
+        });
+        main.postDelayed(() -> { if (token == generation && session == authEpoch && streamEpoch == workspaceEpoch) failPeople(request, "unknown"); }, 10000);
+    }
+
+    private void failPeople(String request, String code) {
+        inbox.fail(request, code);
+        NativeGroupPicker.Completion completion = pendingGroups.remove(request);
+        if (completion != null) completion.done(null, code);
+        renderPeople();
+    }
+
+    private void disconnectPeople() {
+        inbox.disconnected();
+        for (NativeGroupPicker.Completion completion : new ArrayList<>(pendingGroups.values())) completion.done(null, "unknown");
+        pendingGroups.clear();
+        renderPeople();
+    }
+
+    private void openFiles(String path) {
+        closeDrawer();
+        panel = "files";
+        NativeDrawer overlay = new NativeDrawer(ui, true, this::closeDrawer);
+        drawer = overlay;
+        if (fileState == null || !fileState.project.equals(projectID)) {
+            fileState = new NativeFileModel(projectID);
+            fileState.split = getPreferences(MODE_PRIVATE).getFloat("fileTreeFraction", .32f);
+        }
+        String ownerProject = projectID;
+        fileBrowser = new NativeFileBrowser(ui, projectID.isEmpty() ? "" : projectName(), fileState, fileImages,
+                this::readProjectFile, file -> downloadFile(NativeFileData.projectPath(ownerProject, file.optString("path"), "download"), file.optString("name")),
+                this::openExternalLink, this::closeDrawer,
+                value -> getPreferences(MODE_PRIVATE).edit().putFloat("fileTreeFraction", (float) value).apply());
+        overlay.sheet.addView(fileBrowser, new LinearLayout.LayoutParams(-1, -1));
+        root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+        overlay.show();
+        fileBrowser.start();
+    }
+
+    private void readProjectFile(String path, NativeFileBrowser.Completion completion) {
+        Client captured = client;
+        int token = generation, session = authEpoch;
+        String auth = csrf, loc = locale();
+        io.execute(() -> {
+            try {
+                if (token != generation || session != authEpoch) return;
+                JSONObject value = (JSONObject) request(captured, path.substring(4), null, auth, loc);
+                post(token, () -> { if (session == authEpoch) completion.done(value, null); });
+            } catch (Exception error) {
+                post(token, () -> {
+                    if (session != authEpoch) return;
+                    if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
+                    else completion.done(null, error);
+                });
+            }
+        });
+    }
+
+    private void openFile(NativeFileTarget target) {
+        if (projectID.isEmpty()) return;
+        if (fileBrowser == null) openFiles(".");
+        fileBrowser.select(target);
+    }
+
+    private void previewBinary(String path, String title) {
+        if (!NativeFileData.allowedPath(path)) { toast(new IOException("Invalid image API path")); return; }
+        NativeImagePreview preview = showImagePreview(title, () -> downloadFile(path, title));
+        fileImages.remote(preview.content.image, path, previewEdge(), preview.completion());
+    }
+
+    private NativeFileData loadBinary(Client captured, String path) throws Exception {
+        if (!NativeFileData.allowedPath(path)) throw new IOException("Invalid file API path");
+        if (captured == null) throw new IOException("No file server configured");
+        JSONObject response = new JSONObject(captured.request("GET", path, "", "", ""));
+        if (response.optInt("status") != 200) throw new ApiFailure(response.optInt("status"), tr("File unavailable", "文件不可用"));
+        return NativeFileData.response(response);
+    }
+
+    private int previewEdge() {
+        return Math.min(2048, Math.max(getResources().getDisplayMetrics().widthPixels, getResources().getDisplayMetrics().heightPixels));
+    }
+
+    private NativeImagePreview showImagePreview(String name, Runnable download) {
+        closeImagePreview();
+        NativeImagePreview preview = new NativeImagePreview(ui, name, download);
+        imagePreview = preview;
+        preview.setOnDismissListener(dialog -> { if (imagePreview == preview) imagePreview = null; });
+        preview.show();
+        return preview;
+    }
+
+    private void previewLocalImage(Attachment file) {
+        NativeImagePreview preview = showImagePreview(file.name, () -> chooseDownload(file.file, file.name, authEpoch));
+        fileImages.local(preview.content.image, file.id, file.file, previewEdge(), preview.completion());
+    }
+
+    private void closeImagePreview() {
+        NativeImagePreview preview = imagePreview;
+        imagePreview = null;
+        if (preview != null) preview.dismiss();
+    }
+
+    private void downloadFile(String path, String name) {
+        if (downloading) return;
+        downloading = true;
+        int token = generation, session = authEpoch, request = ++downloadRequest;
+        Client captured = client;
+        io.execute(() -> {
+            try {
+                if (token != generation) return;
+                NativeFileData file = loadBinary(captured, path);
+                post(token, () -> {
+                    if (session != authEpoch || request != downloadRequest) return;
+                    downloading = false;
+                    chooseDownload(file, name, session);
+                });
+            } catch (Exception error) {
+                post(token, () -> {
+                    if (session != authEpoch || request != downloadRequest) return;
+                    downloading = false;
+                    if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
+                    else toast(error);
+                });
+            }
+        });
+    }
+
+    private void chooseDownload(NativeFileData file, String name, int session) {
+        if (session != authEpoch || downloading || destroyed || !foreground) return;
+        String filename = name.replaceAll("[\\\\/\\p{Cntrl}]", "_");
+        if (filename.isEmpty()) filename = "attachment";
+        pendingDownload = new PendingDownload(file, session);
+        downloading = true;
+        try {
+            startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType(file.mediaType).putExtra(Intent.EXTRA_TITLE, filename), SAVE_FILE);
+        } catch (ActivityNotFoundException error) {
+            pendingDownload = null;
+            downloading = false;
+            toast(error);
+        }
+    }
+
+    private void openMessageLink(String address) {
+        if (destroyed || !foreground || user == null) return;
+        NativeFileTarget file = NativeFileTarget.parse(address);
+        if (file != null) {
+            if (!projectID.isEmpty()) openFile(file);
+        } else openExternalLink(address);
+    }
+
+    private void openExternalLink(String address) {
+        if (destroyed || !foreground || user == null) return;
+        // Web anchors hand off on the user's click, without an extra in-app modal.
+        dispatchExternal(address);
+    }
+
+    private void openBrowser(String address) {
+        if (!OriginPolicy.isExternalWebURL(address)) return;
+        dispatchExternal(address);
+    }
+
+    private void dispatchExternal(String address) {
+        if (destroyed || !foreground || !NativeExternalLink.allowed(address)) return;
+        try {
+            startActivity(
+                    new Intent(Intent.ACTION_VIEW, Uri.parse(address).normalizeScheme())
+                            .addCategory(Intent.CATEGORY_BROWSABLE));
+        } catch (ActivityNotFoundException e) {
+            toast(e);
+        }
+    }
+
+    private void back() {
+        if (ui.activePopover != null) {
+            ui.dismissMenus();
+            return;
+        }
+        if (peoplePanel != null) {
+            closePeople();
+            return;
+        }
+        if (drawer != null) {
+            closeDrawer();
+            return;
+        }
+        if (settingsOpen) {
+            closeSettings();
+            return;
+        }
+        if (!chatID.isEmpty()) {
+            newChat(projectID);
+            return;
+        }
+        finish();
+    }
+
+    // API 33+ uses the OnBackInvokedDispatcher registered in onCreate.
+    @SuppressLint("GestureBackNavigation")
+    @Override
+    public void onBackPressed() {
+        back();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration config) {
+        super.onConfigurationChanged(config);
+        render();
+    }
+
+    @Override
+    protected void onStart() {
         super.onStart();
-        connectionMonitor.setActive(true);
+        foreground = true;
+        monitor.setActive(settingsOpen);
+        if (user != null) {
+            resumeWorkspace();
+            startChat();
+            updateHistoryLoading();
+            if (!inbox.active.isEmpty() && peoplePanel == null && !settingsOpen) openPeople(inbox.active);
+        }
     }
 
-    @Override protected void onStop() {
-        connectionMonitor.setActive(false);
+    @Override public void onWindowFocusChanged(boolean focused) {
+        super.onWindowFocusChanged(focused);
+        if (focused) resumeWorkspace();
+    }
+
+    @Override
+    protected void onStop() {
+        foreground = false;
+        if (historyScroll != null) historyScroll.suspend();
+        if (ui != null) ui.dismissMenus();
+        monitor.setActive(false);
+        closeImagePreview();
+        detachPeople();
+        stopStreams();
         super.onStop();
     }
 
-    @Override protected void onDestroy() {
+    @Override
+    protected void onDestroy() {
+        if (fileBrowser != null) fileBrowser.deactivate();
+        fileBrowser = null;
         destroyed = true;
+        if (historyScroll != null) historyScroll.dispose();
+        if (transcriptViewport != null) transcriptViewport.dispose();
         ++generation;
-        connectionMonitor.stop();
-        diagnosticWorker.shutdown();
+        monitor.stop();
+        dismissSettingsDialog();
+        closeAvatarPicker();
+        closeImagePreview();
+        detachPeople();
+        stopStreams();
         main.removeCallbacksAndMessages(null);
         if (networkCallback != null) connectivity.unregisterNetworkCallback(networkCallback);
-        destroyWeb();
-        worker.execute(this::closeClient);
-        worker.shutdown();
+        Client captured = client;
+        client = null;
+        connectionWorker.execute(
+                () -> {
+                    if (captured != null)
+                        try {
+                            captured.close();
+                        } catch (Exception ignored) {
+                        }
+                });
+        connectionWorker.shutdown();
+        httpsWorker.shutdown();
+        io.shutdown();
+        workspaceWorker.shutdown();
+        payloadWorker.shutdown();
+        diagnostics.shutdown();
+        avatarImages.clear();
+        fileImages.clear();
+        pendingDownload = null;
+        // Revoked image reads skip their work; let queued animation-surface cleanup finish.
+        imageWorker.shutdown();
+        syntax.close();
+        codeWorker.shutdown();
         super.onDestroy();
     }
 }

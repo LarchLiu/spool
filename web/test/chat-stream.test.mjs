@@ -22,7 +22,7 @@ function fixture() {
     ),
     {
       open: (path) => {
-        assert.equal(path, "/api/chats/chat-1/events");
+        assert.equal(path, "/api/chats/chat-1/events?tool_details=lazy");
         return source;
       },
       snapshot: (signal) =>
