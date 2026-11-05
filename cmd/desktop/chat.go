@@ -162,6 +162,7 @@ func (p *panel) selectTab(tab string) {
 }
 
 func (p *panel) showMainWindow() {
+	mygo.App.Dock.Show()
 	p.window.Show()
 	if p.window.IsMinimized() {
 		p.window.Restore()

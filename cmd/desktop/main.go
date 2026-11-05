@@ -279,6 +279,7 @@ func runDesktop() (runErr error) {
 			if !p.quitting {
 				e.PreventDefault()
 				p.window.Hide()
+				mygo.App.Dock.Hide()
 			}
 		})
 		mygo.App.OnSecondInstance(func([]string, string) { p.showMainWindow() })
