@@ -5,9 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"spool/internal/testutil/voxlfixture"
 )
 
 func TestMain(m *testing.M) {
+	if voxlfixture.Run() {
+		return
+	}
 	// Mock native IDs must never cause tests to scan a developer's actual
 	// provider history. Individual native-history tests can override these.
 	root, err := os.MkdirTemp("", "spool-test-native-homes-")

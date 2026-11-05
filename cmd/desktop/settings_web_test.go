@@ -51,7 +51,7 @@ func TestSettingsBridgeRejectsCallsWithoutDesktopPage(t *testing.T) {
 		if _, err := bridge.Snapshot(context.Background()); err == nil {
 			t.Fatal("snapshot allowed without calling page")
 		}
-		for _, kind := range []string{"stop-service", "save-tsnet-auth-key", "tsnet-login", "copy-tsnet-url"} {
+		for _, kind := range []string{"stop-service", "save-tsnet-auth-key", "tsnet-login", "copy-tsnet-url", "install-voxl", "set-remote-desktop", "disconnect-remote-desktop"} {
 			if _, err := bridge.Execute(context.Background(), settingsCommand{Kind: kind}); err == nil {
 				t.Fatal("mutation allowed without calling page", kind)
 			}

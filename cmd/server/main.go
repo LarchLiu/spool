@@ -46,6 +46,10 @@ func run() (runErr error) {
 	proxyURL := flag.String("proxy-url", "", "persist a custom outbound proxy URL (used when proxies are enabled and system proxy is off; blank inherits environment)")
 	noProxy := flag.String("no-proxy", "", "persist comma-separated proxy bypass hosts (blank inherits NO_PROXY)")
 	historyCache := flag.Int("history-cache-mib", 0, "persist shared history cache target in MiB (default 64)")
+	installVoxl := flag.Bool("install-voxl", false, "copy or build voxl locally in data-dir/voxl, then exit (macOS: Homebrew; Linux: system build libraries; Windows: MSVC, LLVM, esbuild and vcpkg)")
+	voxlBinary := flag.String("voxl-binary", "", "existing local voxl executable to copy with -install-voxl (defaults to ~/.cargo/bin/voxl or PATH)")
+	remoteDesktop := flag.Bool("remote-desktop", false, "persist local voxl enablement; no remote installation/configuration API")
+	remoteUser := flag.String("remote-desktop-user", "", "set remote desktop authorization for a local username, then exit (use -remote-desktop=true/false)")
 	issuesProject := flag.String("issues-project", "", "configure issue automation for an existing project ID (service must be stopped)")
 	listProjects := flag.Bool("list-projects", false, "list local project IDs/names as JSON while service is stopped")
 	issuesEnabled := flag.Bool("issues-enabled", true, "enable issue automation; false pauses future checks")
@@ -91,6 +95,22 @@ func run() (runErr error) {
 			}
 		}
 	}()
+	if *installVoxl {
+		return service.InstallVoxl(ctx, *voxlBinary)
+	}
+	if *remoteUser != "" {
+		users, e := service.Store.Users()
+		if e != nil {
+			return e
+		}
+		for _, u := range users {
+			if strings.EqualFold(u.Username, *remoteUser) {
+				_, e = service.Store.SaveUser(workspace.UserInput{ID: u.ID, Username: u.Username, Nickname: u.Nickname, Disabled: u.Disabled, RemoteDesktop: *remoteDesktop})
+				return e
+			}
+		}
+		return fmt.Errorf("unknown username %q", *remoteUser)
+	}
 	if *listProjects {
 		projects, e := service.Store.Projects()
 		if e != nil {
@@ -153,7 +173,7 @@ func run() (runErr error) {
 		if name == "" {
 			name = *user
 		}
-		_, err = service.Store.SaveUser(workspace.UserInput{Username: *user, Nickname: name, Password: os.Getenv("SPOOL_NEW_PASSWORD")})
+		_, err = service.Store.SaveUser(workspace.UserInput{Username: *user, Nickname: name, Password: os.Getenv("SPOOL_NEW_PASSWORD"), RemoteDesktop: *remoteDesktop})
 		if err == nil {
 			log.Print("User created")
 		}
@@ -213,6 +233,8 @@ func run() (runErr error) {
 			settings.NoProxy = *noProxy
 		case "history-cache-mib":
 			settings.HistoryCacheMiB = *historyCache
+		case "remote-desktop":
+			settings.RemoteDesktopEnabled = *remoteDesktop
 		}
 	})
 	if err = settings.Validate(); err != nil {

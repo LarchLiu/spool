@@ -3021,6 +3021,7 @@ option {
   z-index: 2;
 }
 .appearance-dialog,
+.remote-desktop-dialog,
 .avatar-dialog {
   width: min(430px, calc(100vw - 32px));
   max-height: calc(100dvh - 40px);
@@ -3033,6 +3034,7 @@ option {
   box-shadow: 0 20px 100px #0004;
 }
 .appearance-dialog::backdrop,
+.remote-desktop-dialog::backdrop,
 .avatar-dialog::backdrop {
   background: #0007;
 }
@@ -3210,6 +3212,46 @@ option {
 }
 .notification-settings .notification-error {
   color: var(--error-text);
+}
+.remote-desktop-dialog {
+  width: min(1280px, calc(100vw - 24px));
+  height: min(850px, calc(100dvh - 24px));
+  max-width: none;
+  max-height: none;
+  padding: 16px;
+  overflow: hidden;
+}
+.remote-desktop-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.remote-desktop-dialog .dialog-heading {
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.remote-desktop-dialog h2,
+.remote-desktop-dialog .dialog-heading button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.remote-desktop-dialog .dialog-heading button {
+  flex-shrink: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--input);
+  font-size: 12px;
+}
+.remote-desktop-frame {
+  display: block;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  border-radius: 9px;
+  background: #000;
 }
 .avatar-dialog {
   --avatar-dialog-padding: 24px;

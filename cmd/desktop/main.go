@@ -511,6 +511,35 @@ func (p *panel) serviceView(c *ui.Context) {
 		p.saveServiceSetting(func(settings *workspace.Settings) error { settings.AutoStart = autoStart; return nil })
 	}
 	ui.Text(c, p.tr("Changes are saved on blur or Enter; switches save immediately. The service never restarts automatically. Closing this window keeps it in the tray; Quit stops it.")).Wrap().FontSize(12)
+	ui.Text(c, p.tr("Remote desktop")).Bold()
+	ui.Text(c, p.status.Voxl.Directory).Selectable().Wrap().FontSize(12)
+	ui.Text(c, p.tr("Only authorized users can connect while Spool is running. voxl starts on demand and stops when the last connection closes. Turning this off disconnects everyone.")).Wrap().FontSize(12)
+	if !p.status.Voxl.Installed {
+		if ui.Button(c, p.tr("Install voxl")).Disabled(p.busy || p.status.Voxl.Installing).Clicked() {
+			p.action(func() error { return p.service.BeginVoxlInstall() })
+		}
+	} else {
+		enabled := p.settings.RemoteDesktopEnabled
+		if ui.Checkbox(c, &enabled, p.tr("Enable remote desktop")).Disabled(p.busy).Changed() {
+			p.action(func() error { return p.service.SetRemoteDesktopEnabled(enabled) })
+		}
+	}
+	if p.status.Voxl.Installing {
+		step := p.status.Voxl.InstallStep
+		if step == "" {
+			step = "Installing voxl…"
+		}
+		ui.Text(c, p.tr(step)).Wrap()
+	} else if p.status.Voxl.Running {
+		ui.Text(c, p.tr("Running")).Wrap()
+	} else if p.settings.RemoteDesktopEnabled && p.status.Running && p.status.Voxl.Installed {
+		ui.Text(c, p.tr("Waiting for connection")).Wrap()
+	}
+	if p.status.Voxl.Error != "" {
+		for _, line := range strings.Split(p.status.Voxl.Error, "\n") {
+			ui.Text(c, p.tr(line)).Wrap()
+		}
+	}
 	ui.Text(c, "SQLite · "+p.service.Store.DatabasePath()).Wrap().FontSize(12)
 	if p.runtimeDiagnostics != nil {
 		ui.Text(c, p.tr("Application log")+": "+p.runtimeDiagnostics.Path).Selectable().Wrap().FontSize(12)
@@ -604,22 +633,37 @@ func (p *panel) serviceSettingFieldWithDisabled(c *ui.Context, label string, val
 		}
 	})
 }
+
+var remoteDesktopIcon = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 10 3-3 3 3M12 7v7"/><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M12 17v4M8 21h8"/></svg>`))
+
 func (p *panel) peopleView(c *ui.Context) {
 	ui.Text(c, p.tr("Accounts are created here. Web clients cannot register or administer users.")).Wrap().FontSize(12)
-	ui.Row(c).Gap(8).Children(func() {
+	ui.Column(c).Gap(8).FillWidth().Children(func() {
 		if ui.Button(c, p.tr("New person")).Clicked() {
 			p.user = workspace.UserInput{}
 		}
 		for _, u := range p.users {
 			u := u
 			c.Key(u.ID)
-			label := u.Nickname
-			if u.Disabled {
-				label += " (" + p.tr("Disabled") + ")"
-			}
-			if ui.Button(c, label).Clicked() {
-				p.user = workspace.UserInput{ID: u.ID, Username: u.Username, Nickname: u.Nickname, Disabled: u.Disabled}
-			}
+			ui.Row(c).Gap(8).AlignItems(ui.Center).FillWidth().Children(func() {
+				label := u.Nickname
+				if u.Disabled {
+					label += " (" + p.tr("Disabled") + ")"
+				}
+				if ui.Button(c, label).FillWidth().Clicked() {
+					p.user = workspace.UserInput{ID: u.ID, Username: u.Username, Nickname: u.Nickname, Disabled: u.Disabled, RemoteDesktop: u.RemoteDesktop}
+				}
+				if u.RemoteDesktop {
+					ui.Icon(c, remoteDesktopIcon).Size(17, 17).Label(p.tr("Remote desktop allowed")).Tooltip(p.tr("Remote desktop allowed"))
+					count := p.status.RemoteDesktopConnections[u.ID]
+					ui.Box(c).Size(25, 25).Radius(13).Border(1, c.Theme().Border).Center().Tooltip(p.tr("Remote connections · {count}", "count", strconv.Itoa(count))).Children(func() {
+						ui.Text(c, strconv.Itoa(count)).FontSize(11)
+					})
+					if count > 0 && ui.Button(c, p.tr("Disconnect desktop")).Disabled(p.busy).Clicked() {
+						p.action(func() error { return p.service.DisconnectRemoteDesktopUser(u.ID) })
+					}
+				}
+			})
 		}
 	})
 	p.field(c, "Username", &p.user.Username)
@@ -627,6 +671,8 @@ func (p *panel) peopleView(c *ui.Context) {
 	ui.Text(c, p.tr("Password (12–72 bytes; blank keeps existing password)")).FontSize(12)
 	ui.TextInput(c, &p.user.Password).Password().FillWidth().Label(p.tr("Password"))
 	ui.Checkbox(c, &p.user.Disabled, p.tr("Disable account"))
+	ui.Checkbox(c, &p.user.RemoteDesktop, p.tr("Allow remote desktop connection"))
+	ui.Text(c, p.tr("Allows control of this computer's entire desktop, beyond project permissions.")).Wrap().FontSize(12)
 	if ui.PrimaryButton(c, p.tr("Save person")).Disabled(p.busy).Clicked() {
 		input := p.user
 		p.user.Password = ""

@@ -57,11 +57,12 @@ type settingsAgent struct {
 }
 
 type settingsPerson struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-	Nickname string `json:"nickname"`
-	Password string `json:"password"`
-	Disabled bool   `json:"disabled"`
+	ID            string `json:"id"`
+	Username      string `json:"username"`
+	Nickname      string `json:"nickname"`
+	Password      string `json:"password"`
+	Disabled      bool   `json:"disabled"`
+	RemoteDesktop bool   `json:"remote_desktop"`
 }
 
 type settingsSnapshot struct {
@@ -412,6 +413,14 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 	var err error
 	var savedID, repository string
 	switch command.Kind {
+	case "install-voxl":
+		// Installation belongs to the local service lifetime, not the settings
+		// tab. Polling reports progress without locking the management UI.
+		err = p.service.BeginVoxlInstall(command.Path)
+	case "set-remote-desktop":
+		err = p.service.SetRemoteDesktopEnabled(command.Enabled)
+	case "disconnect-remote-desktop":
+		err = p.service.DisconnectRemoteDesktopUser(command.Target)
 	case "restart-update":
 		_, err = settingsUI(ctx, p, func() (bool, error) { return true, p.restartForUpdate() })
 	case "start-service":
@@ -443,7 +452,7 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 	case "save-person":
 		person := command.Person
 		var saved workspace.User
-		saved, err = store.SaveUser(workspace.UserInput{ID: person.ID, Username: person.Username, Nickname: person.Nickname, Password: person.Password, Disabled: person.Disabled})
+		saved, err = store.SaveUser(workspace.UserInput{ID: person.ID, Username: person.Username, Nickname: person.Nickname, Password: person.Password, Disabled: person.Disabled, RemoteDesktop: person.RemoteDesktop})
 		savedID = saved.ID
 	case "save-project":
 		project := command.Project.Project

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	chatmodel "spool/internal/model"
 	"spool/internal/netproxy"
 	"spool/internal/tailnet"
+	"spool/internal/voxl"
 )
 
 type Service struct {
@@ -38,15 +40,18 @@ type Service struct {
 	tailnetAuthKey      string
 	tailnetAuthRevision uint64
 	networkProxy        netproxy.Options
+	desktop             *voxl.Manager
 }
 type ServiceStatus struct {
-	Running         bool
-	RestartRequired bool
-	Address         string
-	Error           string
-	Online          []PresenceUser
-	TSNet           tailnet.Status
-	TSNetAuthKeySet bool
+	Running                  bool
+	RestartRequired          bool
+	Address                  string
+	Error                    string
+	Online                   []PresenceUser
+	TSNet                    tailnet.Status
+	TSNetAuthKeySet          bool
+	Voxl                     voxl.Status
+	RemoteDesktopConnections map[string]int
 }
 
 func OpenService(root string) (*Service, error) {
@@ -70,6 +75,7 @@ func OpenService(root string) (*Service, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Service{Store: store, Registry: NewRegistry(store), ctx: ctx, cancel: cancel, lease: lease}
+	s.desktop = voxl.New(filepath.Join(store.Root(), "voxl"), func() { store.changes.publish(changeRemoteDesktop) })
 	settings, err := store.Settings()
 	if err == nil {
 		err = s.applyNetworkSettingsLocked(settings)
@@ -171,6 +177,7 @@ func (s *Service) startLocked() error {
 	runner.ConfigureBinaries(agentBinaries(agents))
 	runner.IdleTimeout = time.Duration(settings.IdleMinutes) * time.Minute
 	app := NewApp(s.Store, runner, "", "")
+	app.desktop = s.desktop
 	app.startLocalSessionSync()
 	app.startIssueScheduler(s.lease)
 	server := &http.Server{Handler: app, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
@@ -190,6 +197,7 @@ func (s *Service) startLocked() error {
 	if settings.TSNetEnabled {
 		s.startTailnetLocked(settings)
 	}
+	s.desktop.SetEnabled(s.ctx, settings.RemoteDesktopEnabled)
 	log.Printf("event=service_started address=%q", s.runningAddress)
 	return nil
 }
@@ -243,6 +251,9 @@ func (s *Service) Restart() error {
 }
 
 func (s *Service) stopLocked() error {
+	if s.desktop != nil {
+		s.desktop.SetEnabled(s.ctx, false)
+	}
 	if s.tailnet != nil {
 		s.tailnet.cancel()
 		s.tailnet = nil
@@ -267,8 +278,10 @@ func (s *Service) Status() ServiceStatus {
 		message = err.Error()
 	}
 	online := []PresenceUser{}
+	connections := map[string]int{}
 	if s.app != nil {
 		online = s.app.presence.List(s.Store)
+		connections = s.app.remoteDesktopConnections()
 	}
 	address := settings.Address()
 	restartRequired := false
@@ -289,7 +302,11 @@ func (s *Service) Status() ServiceStatus {
 		tailnetStatus = s.tailnet.snapshot()
 		restartRequired = restartRequired || s.tailnet.authRevision != s.tailnetAuthRevision || tailnetStatus.State == "Registered"
 	}
-	return ServiceStatus{Running: s.server != nil, RestartRequired: restartRequired, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != ""}
+	var desktopStatus voxl.Status
+	if s.desktop != nil {
+		desktopStatus = s.desktop.Status()
+	}
+	return ServiceStatus{Running: s.server != nil, RestartRequired: restartRequired, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != "", Voxl: desktopStatus, RemoteDesktopConnections: connections}
 }
 func (s *Service) WebURL() string {
 	s.mu.Lock()

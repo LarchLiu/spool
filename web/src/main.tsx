@@ -77,6 +77,10 @@ import {
 } from "./web-push";
 import { AvatarDialog } from "./avatar-dialog";
 import { AvatarStack } from "./user-avatar";
+import {
+  RemoteDesktopDialog,
+  RemoteDesktopSettings,
+} from "./remote-desktop-settings";
 import { DirectMessagePanel } from "./direct-message-panel";
 import type { FloatingWindowBounds } from "./floating-window";
 import { PeopleGroupPicker } from "./people-group-picker";
@@ -138,6 +142,7 @@ function App() {
   const [preferences, setPreferences] =
     useState<UIPreferences>(defaultPreferences);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [remoteDesktopOpen, setRemoteDesktopOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [version, setVersion] = useState("");
@@ -422,6 +427,7 @@ function App() {
       setProject("");
       setChatID("");
       setAppearanceOpen(false);
+      setRemoteDesktopOpen(false);
       setAvatarOpen(false);
       setPreferences(defaultPreferences);
       setDraft("");
@@ -1468,6 +1474,16 @@ function App() {
       onClose={() => setAppearanceOpen(false)}
     >
       {user && <NotificationSettings key={user.id} t={t} language={locale} />}
+      {user && (
+        <RemoteDesktopSettings
+          key={`desktop-${user.id}`}
+          t={t}
+          onConnect={() => {
+            setAppearanceOpen(false);
+            setRemoteDesktopOpen(true);
+          }}
+        />
+      )}
     </AppearanceDialog>
   );
   if (!ready)
@@ -2227,6 +2243,12 @@ function App() {
           t={t}
           onSave={updateAvatar}
           onClose={() => setAvatarOpen(false)}
+        />
+      )}
+      {remoteDesktopOpen && (
+        <RemoteDesktopDialog
+          t={t}
+          onClose={() => setRemoteDesktopOpen(false)}
         />
       )}
       {preview && (

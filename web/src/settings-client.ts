@@ -27,9 +27,11 @@ export type ServerSettings = {
   use_system_proxy: boolean;
   proxy_url: string;
   no_proxy: string;
+  remote_desktop_enabled?: boolean;
 };
 export type Person = User & {
   disabled: boolean;
+  remote_desktop?: boolean;
 };
 export type PersonDraft = Person & { password: string };
 export type Automation = {
@@ -113,6 +115,15 @@ export type SettingsSnapshot = {
     Online: (Online & Pick<User, "nickname" | "avatar">)[];
     TSNet?: { State: string; AuthURL: string; URL: string; Error: string };
     TSNetAuthKeySet?: boolean;
+    RemoteDesktopConnections?: Record<string, number>;
+    Voxl?: {
+      installed: boolean;
+      installing: boolean;
+      running: boolean;
+      directory: string;
+      error?: string;
+      install_step?: string;
+    };
   };
   users: Person[];
   projects: ManagedProject[];
@@ -148,6 +159,8 @@ export type SettingsCommand =
   | { kind: "save-tsnet-auth-key"; auth_key: string }
   | { kind: "save-appearance"; preferences: UIPreferences }
   | { kind: "save-notifications"; enabled: boolean }
+  | { kind: "set-remote-desktop"; enabled: boolean }
+  | { kind: "disconnect-remote-desktop"; target: string }
   | { kind: "test-notification" }
   | { kind: "save-updates"; update_preferences: UpdatePreferences }
   | { kind: "save-person"; person: PersonDraft }
@@ -167,6 +180,7 @@ export type SettingsCommand =
         | "start-service"
         | "stop-service"
         | "restart-service"
+        | "install-voxl"
         | "refresh-agents"
         | "check-github"
         | "check-updates"
@@ -231,6 +245,7 @@ export function newPerson(): PersonDraft {
     nickname: "",
     password: "",
     disabled: false,
+    remote_desktop: false,
   };
 }
 export function newProject(): ManagedProject {

@@ -6,6 +6,7 @@ import {
   Github,
   Globe2,
   Monitor,
+  MonitorUp,
   Plus,
   Radio,
   RefreshCw,
@@ -24,6 +25,7 @@ import {
 } from "./settings-client";
 import { SettingsBack, SettingsList } from "./settings-list";
 import { ThemePicker } from "./theme-picker";
+import { VoxlSettings } from "./voxl-settings";
 import { CustomSelect } from "./custom-select";
 import {
   NetworkSettingsAutosave,
@@ -539,6 +541,7 @@ export function ServicePage({ data, run, t }: PageProps) {
           </Row>
         )}
       </Card>
+      <VoxlSettings data={data} run={run} t={t} />
       <Hint>
         {t(
           "Users can execute agent tools in granted projects. Only grant access to trusted people. HTTPS is required for remote PWA installation.",
@@ -567,6 +570,44 @@ export function PeoplePage({ data, run, t }: PageProps) {
           title: person.nickname || person.username,
           description: person.username,
           status: person.disabled ? t("Disabled") : "",
+          action: person.remote_desktop && (
+            <div className="settings-person-remote">
+              <span
+                className="settings-person-remote-icon"
+                role="img"
+                aria-label={t("Remote desktop allowed")}
+                title={t("Remote desktop allowed")}
+              >
+                <MonitorUp size={17} aria-hidden="true" />
+              </span>
+              <span
+                className={`settings-remote-count${(data.status.RemoteDesktopConnections?.[person.id] ?? 0) > 0 ? " is-connected" : ""}`}
+                role="status"
+                aria-label={t("Remote connections · {count}", {
+                  count: data.status.RemoteDesktopConnections?.[person.id] ?? 0,
+                })}
+                title={t("Remote connections · {count}", {
+                  count: data.status.RemoteDesktopConnections?.[person.id] ?? 0,
+                })}
+              >
+                {data.status.RemoteDesktopConnections?.[person.id] ?? 0}
+              </span>
+              {(data.status.RemoteDesktopConnections?.[person.id] ?? 0) > 0 && (
+                <button
+                  type="button"
+                  aria-label={`${t("Disconnect desktop")} · ${person.nickname || person.username}`}
+                  onClick={() =>
+                    void run({
+                      kind: "disconnect-remote-desktop",
+                      target: person.id,
+                    })
+                  }
+                >
+                  {t("Disconnect desktop")}
+                </button>
+              )}
+            </div>
+          ),
           icon: <UserAvatar person={person} size={34} />,
         }))}
         onSelect={(id) => {
@@ -633,6 +674,20 @@ export function PeoplePage({ data, run, t }: PageProps) {
               label={t("Disable account")}
               value={draft.disabled}
               onChange={(disabled) => setDraft({ ...draft, disabled })}
+            />
+          </Row>
+          <Row
+            title={t("Allow remote desktop connection")}
+            help={t(
+              "Allows control of this computer's entire desktop, beyond project permissions.",
+            )}
+          >
+            <Toggle
+              label={t("Allow remote desktop connection")}
+              value={!!draft.remote_desktop}
+              onChange={(remote_desktop) =>
+                setDraft({ ...draft, remote_desktop })
+              }
             />
           </Row>
         </Card>

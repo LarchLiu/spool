@@ -22,19 +22,21 @@ import (
 )
 
 type User struct {
-	ID        string `json:"id"`
-	Username  string `json:"username"`
-	Nickname  string `json:"nickname"`
-	Disabled  bool   `json:"disabled"`
-	CreatedAt int64  `json:"created_at"`
-	Avatar    Avatar `json:"avatar"`
+	ID            string `json:"id"`
+	Username      string `json:"username"`
+	Nickname      string `json:"nickname"`
+	Disabled      bool   `json:"disabled"`
+	CreatedAt     int64  `json:"created_at"`
+	Avatar        Avatar `json:"avatar"`
+	RemoteDesktop bool   `json:"remote_desktop"`
 }
 type UserInput struct {
-	ID       string
-	Username string
-	Nickname string
-	Password string
-	Disabled bool
+	ID            string
+	Username      string
+	Nickname      string
+	Password      string
+	Disabled      bool
+	RemoteDesktop bool
 }
 
 const productionBcryptCost = 12
@@ -55,19 +57,20 @@ type Project struct {
 	Issues             IssuesAutomation  `json:"-"`
 }
 type Settings struct {
-	Host            string `json:"host"`
-	Port            int    `json:"port"`
-	PublicURL       string `json:"public_url"`
-	IdleMinutes     int    `json:"idle_minutes"`
-	AutoStart       bool   `json:"auto_start"`
-	HistoryCacheMiB int    `json:"history_cache_mib"`
-	TSNetEnabled    bool   `json:"tsnet_enabled"`
-	TSNetHostname   string `json:"tsnet_hostname"`
-	TSNetPort       int    `json:"tsnet_port"`
-	ProxyEnabled    bool   `json:"proxy_enabled"`
-	UseSystemProxy  bool   `json:"use_system_proxy"`
-	ProxyURL        string `json:"proxy_url"`
-	NoProxy         string `json:"no_proxy"`
+	Host                 string `json:"host"`
+	Port                 int    `json:"port"`
+	PublicURL            string `json:"public_url"`
+	IdleMinutes          int    `json:"idle_minutes"`
+	AutoStart            bool   `json:"auto_start"`
+	HistoryCacheMiB      int    `json:"history_cache_mib"`
+	TSNetEnabled         bool   `json:"tsnet_enabled"`
+	TSNetHostname        string `json:"tsnet_hostname"`
+	TSNetPort            int    `json:"tsnet_port"`
+	ProxyEnabled         bool   `json:"proxy_enabled"`
+	UseSystemProxy       bool   `json:"use_system_proxy"`
+	ProxyURL             string `json:"proxy_url"`
+	NoProxy              string `json:"no_proxy"`
+	RemoteDesktopEnabled bool   `json:"remote_desktop_enabled"`
 }
 
 func DefaultSettings() Settings {
@@ -150,7 +153,7 @@ func (s *Store) saveSettingsLocked(v Settings) error {
 	return err
 }
 func (s *Store) Users() ([]User, error) {
-	rows, err := s.db.Query(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,COALESCE(a.style,?),COALESCE(a.seed,'') FROM users u LEFT JOIN user_avatars a ON a.user_id=u.id ORDER BY u.username`, DefaultAvatar().Style)
+	rows, err := s.db.Query(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,COALESCE(a.style,?),COALESCE(a.seed,''),COALESCE(rd.enabled,0) FROM users u LEFT JOIN user_avatars a ON a.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id ORDER BY u.username`, DefaultAvatar().Style)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +161,7 @@ func (s *Store) Users() ([]User, error) {
 	out := []User{}
 	for rows.Next() {
 		var v User
-		if err = rows.Scan(&v.ID, &v.Username, &v.Nickname, &v.Disabled, &v.CreatedAt, &v.Avatar.Style, &v.Avatar.Seed); err != nil {
+		if err = rows.Scan(&v.ID, &v.Username, &v.Nickname, &v.Disabled, &v.CreatedAt, &v.Avatar.Style, &v.Avatar.Seed, &v.RemoteDesktop); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -222,6 +225,9 @@ func (s *Store) saveUserWithPasswordCost(v UserInput, passwordCost int) (User, e
 	if err != nil {
 		return User{}, err
 	}
+	if _, err = tx.Exec(`INSERT INTO user_remote_desktop(user_id,enabled) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET enabled=excluded.enabled`, v.ID, v.RemoteDesktop); err != nil {
+		return User{}, err
+	}
 	avatar := DefaultAvatar()
 	if err = tx.QueryRow(`SELECT style,seed FROM user_avatars WHERE user_id=?`, v.ID).Scan(&avatar.Style, &avatar.Seed); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return User{}, err
@@ -231,7 +237,7 @@ func (s *Store) saveUserWithPasswordCost(v UserInput, passwordCost int) (User, e
 	}
 	err = tx.Commit()
 	s.notify(err, changeNavigation|changePresence|changeAuth|changeProfiles)
-	return User{ID: v.ID, Username: v.Username, Nickname: v.Nickname, Disabled: v.Disabled, CreatedAt: now, Avatar: avatar}, err
+	return User{ID: v.ID, Username: v.Username, Nickname: v.Nickname, Disabled: v.Disabled, CreatedAt: now, Avatar: avatar, RemoteDesktop: v.RemoteDesktop}, err
 }
 func (s *Store) DeleteUser(id string) error {
 	tx, err := s.db.Begin()

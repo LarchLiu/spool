@@ -267,6 +267,9 @@
   color: var(--muted);
   overflow-wrap: anywhere;
 }
+.settings-license-title {
+  color: var(--text);
+}
 .settings-row-control {
   display: flex;
   align-items: center;
@@ -521,6 +524,7 @@
   font-size: 11px;
 }
 .settings-items {
+  --settings-list-inset: 20px;
   list-style: none;
   margin: 0 0 22px;
   padding: 0;
@@ -532,11 +536,17 @@
 .settings-items > li + li {
   border-top: 1px solid var(--line);
 }
+.settings-items > li {
+  display: flex;
+  align-items: center;
+}
 .desktop-settings-shell .settings-list-item {
   display: flex;
+  flex: 1;
+  min-width: 0;
   width: 100%;
   min-height: 82px;
-  padding: 18px 20px;
+  padding: 18px var(--settings-list-inset);
   gap: 15px;
   border: 0;
   border-radius: 0;
@@ -574,6 +584,47 @@
   white-space: nowrap;
   font-size: 11px;
   color: var(--muted);
+}
+.settings-list-action {
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+.desktop-settings-shell .settings-list-chevron-button {
+  flex-shrink: 0;
+  width: 28px;
+  padding: 0;
+  margin-right: calc(var(--settings-list-inset) - 6px);
+  border: 0;
+  background: transparent;
+}
+.settings-list-chevron-button .settings-list-chevron {
+  margin: 0;
+}
+.settings-person-remote {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.settings-person-remote-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+.settings-remote-count {
+  display: grid;
+  place-items: center;
+  min-width: 25px;
+  height: 25px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.settings-remote-count.is-connected {
+  color: var(--color-primary);
+  border-color: currentColor;
 }
 .settings-list-status {
   flex-shrink: 0;
@@ -811,13 +862,26 @@
   }
 }
 @media (max-width: 700px) {
+  .settings-items {
+    --settings-list-inset: 14px;
+  }
+  .settings-list-action {
+    margin-right: 8px;
+  }
+  .desktop-settings-shell li:has(.settings-list-action) > .settings-list-item {
+    flex-wrap: nowrap;
+    padding-right: 8px;
+  }
+  li:has(.settings-list-action) .settings-list-copy {
+    flex-basis: auto;
+  }
   .settings-list-toolbar {
     align-items: flex-start;
     flex-direction: column;
     gap: 10px;
   }
   .desktop-settings-shell .settings-list-item {
-    padding: 14px;
+    padding: 14px var(--settings-list-inset);
     gap: 10px;
     flex-wrap: wrap;
   }

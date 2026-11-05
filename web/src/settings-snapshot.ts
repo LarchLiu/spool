@@ -47,6 +47,7 @@ export function settingsPageDataEqual(
         a.status.RestartRequired === b.status.RestartRequired &&
         a.status.Address === b.status.Address &&
         a.status.Error === b.status.Error &&
+        a.status.Voxl === b.status.Voxl &&
         a.status.TSNet === b.status.TSNet &&
         a.status.TSNetAuthKeySet === b.status.TSNetAuthKeySet
       );
@@ -59,7 +60,10 @@ export function settingsPageDataEqual(
         a.status.RestartRequired === b.status.RestartRequired
       );
     case "People":
-      return a.users === b.users;
+      return (
+        a.users === b.users &&
+        a.status.RemoteDesktopConnections === b.status.RemoteDesktopConnections
+      );
     case "Projects":
       return (
         a.projects === b.projects &&
@@ -107,8 +111,11 @@ export function settingsCommandScope(
     case "start-service":
     case "stop-service":
     case "restart-service":
+    case "install-voxl":
+    case "set-remote-desktop":
       return "Service";
     case "save-person":
+    case "disconnect-remote-desktop":
       return "People";
     case "save-project":
     case "save-github":

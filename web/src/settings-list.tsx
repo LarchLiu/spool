@@ -7,6 +7,7 @@ export type SettingsListItem = {
   description: string;
   status: string;
   icon: ReactNode;
+  action?: ReactNode;
 };
 
 export function SettingsList({
@@ -50,13 +51,34 @@ export function SettingsList({
                   <strong>{item.title}</strong>
                   <span title={item.description}>{item.description}</span>
                 </span>
-                <span className="settings-list-status">{item.status}</span>
-                <ChevronRight
-                  size={16}
-                  className="settings-list-chevron"
-                  aria-hidden="true"
-                />
+                {item.status && (
+                  <span className="settings-list-status">{item.status}</span>
+                )}
+                {!item.action && (
+                  <ChevronRight
+                    size={16}
+                    className="settings-list-chevron"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
+              {item.action && (
+                <>
+                  <div className="settings-list-action">{item.action}</div>
+                  <button
+                    type="button"
+                    className="settings-list-chevron-button"
+                    aria-label={item.title}
+                    onClick={() => onSelect(item.id)}
+                  >
+                    <ChevronRight
+                      size={16}
+                      className="settings-list-chevron"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </>
+              )}
             </li>
           ))}
         </ul>

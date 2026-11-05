@@ -66,6 +66,10 @@ test("changed status shares unrelated nested references without mutating either 
 test("page dependencies distinguish presence, membership, settings and appearance changes", () => {
   const cases = [
     [(next) => next.status.Online.push({ id: "person" }), ["Online"]],
+    [
+      (next) => (next.status.RemoteDesktopConnections = { person: 2 }),
+      ["People"],
+    ],
     [(next) => (next.users[0].nickname = "Updated"), ["People", "Projects"]],
     [(next) => (next.status.TSNet.State = "NeedsLogin"), ["Service"]],
     [(next) => (next.settings.use_system_proxy = true), ["Service", "Network"]],
@@ -134,6 +138,7 @@ test("clipboard, navigation and reveal actions bypass mutation scope while saves
     ["save-updates", undefined],
     ["restart-service", "Service"],
     ["save-person", "People"],
+    ["disconnect-remote-desktop", "People"],
     ["save-project", "Projects"],
     ["refresh-agents", "Agents"],
     ["test-notification", "Appearance"],

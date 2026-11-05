@@ -20,6 +20,7 @@ import (
 	"spool/internal/i18n"
 	"spool/internal/issues"
 	chatmodel "spool/internal/model"
+	"spool/internal/voxl"
 )
 
 type App struct {
@@ -42,22 +43,25 @@ type App struct {
 	// liveBase keeps the hydrated provider transcript that existed before the
 	// current turn. SQLite intentionally omits transcript bodies, so a running
 	// resumed chat needs this base while its provider is streaming new parts.
-	liveBase   map[string]chatmodel.Transcript
-	liveTurns  map[string][]chatmodel.Turn
-	completed  map[string]completedTurn
-	presence   *Presence
-	limiter    loginLimiter
-	assets     http.Handler
-	filesMu    sync.Mutex
-	filesRoot  string
-	uploads    map[string]temporaryAttachment
-	approvals  map[string]*pendingApproval
-	shutdown   chan struct{}
-	closeOnce  sync.Once
-	automation *issueScheduler
-	push       pushDispatcher
-	pushClient *http.Client
-	avatars    *avatar.Renderer
+	liveBase     map[string]chatmodel.Transcript
+	liveTurns    map[string][]chatmodel.Turn
+	completed    map[string]completedTurn
+	presence     *Presence
+	limiter      loginLimiter
+	assets       http.Handler
+	filesMu      sync.Mutex
+	filesRoot    string
+	uploads      map[string]temporaryAttachment
+	approvals    map[string]*pendingApproval
+	shutdown     chan struct{}
+	closeOnce    sync.Once
+	automation   *issueScheduler
+	push         pushDispatcher
+	pushClient   *http.Client
+	avatars      *avatar.Renderer
+	desktop      *voxl.Manager
+	desktopMu    sync.Mutex
+	desktopViews map[string]*remoteDesktopView
 }
 
 type completedTurn struct {
@@ -181,6 +185,15 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case path == "/api/desktop" && r.Method == http.MethodGet:
+		apiJSON(w, http.StatusOK, map[string]bool{"available": a.remoteDesktopViewAvailable(id, r.URL.Query().Get("token"))})
+	case path == "/api/desktop/connect" && r.Method == http.MethodPost:
+		a.createRemoteDesktopView(w, r, id)
+	case path == "/api/desktop/disconnect" && r.Method == http.MethodPost:
+		a.closeRemoteDesktopView(id, r.URL.Query().Get("token"))
+		apiJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	case strings.HasPrefix(path, "/api/desktop/"):
+		a.remoteDesktopRoute(w, r, id)
 	case path == "/api/avatars.svg" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 		a.avatarImage(w, r)
 	case strings.HasPrefix(path, "/api/push/"):
@@ -978,6 +991,7 @@ func (a *App) Close() error {
 		control.cancel()
 	}
 	a.turnMu.Unlock()
+	a.disconnectRemoteDesktopUser("")
 	var err error
 	if closer, ok := a.runner.(interface{ Close() error }); ok {
 		err = closer.Close()

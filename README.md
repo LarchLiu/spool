@@ -822,6 +822,133 @@ allow the client node to reach this server node's TCP port.
   not secret. Keep the state directory private and do not copy an enrolled
   node's state to a second running instance.
 
+### Remote Desktop (voxl)
+
+Remote desktop is an optional, separately authorized host capability. Installation
+and enablement are available only in the **local desktop Service settings** or
+through the local server CLI. Web users cannot install, enable or configure voxl.
+New and existing users have no remote desktop grant by default. In local **User**
+management, enable **Allow remote desktop connection** only for users who may
+control the host's entire desktop, including its native applications and Spool
+settings. Project membership does not grant desktop access.
+
+The component is installed on this host and started on demand by Spool.
+The helper is installed in `<data-dir>/voxl/bin/voxl` (`voxl.exe` on Windows):
+**`~/.spool/voxl/`** in production and **`~/.spool-dev/voxl/`** in development.
+An explicit `SPOOL_HOME` or `-data-dir` keeps the helper in that selected data
+root. The running service always uses its own installed copy, never a binary
+from another checkout, another data root, or directly from Cargo's bin directory.
+
+In local **Service > Remote desktop**, choose **Install voxl**, then enable
+**Enable remote desktop**. Installation first looks for an existing voxl
+in `~/.cargo/bin/` or `PATH`, copies it into Spool's own directory, and checks the
+copied executable can run `--version` without starting screen capture. Local
+imports do not require a particular voxl version. Installation preserves other
+files already in `voxl/bin/`, including renamed executables. A copied
+binary retains its native runtime-library dependencies; on macOS a Homebrew-built
+binary can still require Homebrew's x264 and Opus libraries on this same host.
+
+If no local binary exists, installation downloads and builds pinned crates.io
+package `voxl-server` **0.3.3** using `cargo install --locked`, with temporary
+build output inside this data root. **A voxl source checkout and Nix are not
+required.** The local installer shows dependency checking, package preparation
+and compilation progress. The build flow follows the
+[upstream platform instructions](https://github.com/tembo/voxl#usage):
+
+| Host platform | Local build preparation |
+| --- | --- |
+| macOS | Requires Xcode Command Line Tools (`xcode-select --install`). Detects Cargo/Rust, pkg-config, clang/libclang, x264, Opus and esbuild. If anything is missing, uses an existing Homebrew installation to install the corresponding `rust`, `pkgconf`, `llvm`, `x264`, `opus` or `esbuild` formula, then checks again. Reads `brew --prefix` for both Apple Silicon and Intel/custom installations. libyuv and PulseAudio are not needed on macOS. |
+| Linux | Checks Cargo/Rust, a C compiler, pkg-config, clang/libclang, x264, libyuv, Opus, PulseAudio and esbuild. Reports missing dependencies for installation through the host's package manager, then can be retried. Accepts libyuv without a `.pc` file, as upstream does. Does not invoke `sudo` or a distribution's package manager automatically. |
+| Windows | Requires native Rust MSVC, Visual Studio C++ Build Tools, LLVM, esbuild (`npm install -g esbuild`) and an existing vcpkg installation (`VCPKG_ROOT`, or `vcpkg.exe` on `PATH`). Runs `vcpkg install x264 libyuv opus --triplet x64-windows-static-md --classic` (uses the matching `arm64`/`x86` triplet for those Rust hosts) before Cargo. Sets `VCPKGRS_TRIPLET`, `VCPKG_ROOT`, `LIBCLANG_PATH` and `ESBUILD` for the build. LLVM's `bin` directory can be selected explicitly with `LIBCLANG_PATH`. |
+
+For example, on Debian/Ubuntu the native build prerequisites can be prepared
+locally with `sudo apt install build-essential pkg-config clang libclang-dev
+libx264-dev libyuv-dev libopus-dev libpulse-dev esbuild`, plus a working Rust
+toolchain. Package names/availability vary by distribution; on Fedora x264 may
+require an additional repository. On Arch the corresponding packages include
+`base-devel pkgconf clang x264 libyuv opus libpulse esbuild rust`.
+
+Linux streaming requires X11/Xvfb; Wayland alone is not supported. Windows
+streaming requires Windows 10+ and Spool running in the interactive user's
+session. On macOS, grant Screen Recording and Accessibility to voxl or the app
+that starts it when prompted. These runtime permissions are separate from
+building the helper. Homebrew, Xcode, Rust/MSVC, LLVM and vcpkg setup that needs
+interactive or administrator approval should be completed locally before retrying.
+
+For a headless deployment, run these commands **locally while the Spool instance
+using this data directory is stopped**:
+
+```sh
+# Copy an already-built helper into this server's own data directory.
+./build/spool-server -install-voxl -voxl-binary /absolute/path/to/voxl
+# Grant one existing account access; use false to revoke it.
+./build/spool-server -remote-desktop-user alice -remote-desktop=true
+# Start Spool and persist local enablement for later service starts.
+./build/spool-server -remote-desktop=true
+```
+
+Omit `-voxl-binary` to use local auto-detection and the source-build fallback.
+Use the matching production/development binary and data root for every command.
+Installation does not enable remote desktop or grant any user access.
+
+Only when Spool is running, voxl is installed and locally enabled,
+and the signed-in account has a remote desktop grant does the Web/PWA **Settings
+dialog** show **Remote connection > Connect to desktop**. Clicking it closes
+settings and opens a separate remote desktop dialog with an embedded iframe.
+**Disconnect desktop** or closing that dialog removes the iframe and closes the
+viewer's connection. The viewing device needs HTTPS or localhost and
+WebCodecs support. It connects through the existing Spool HTTPS/tsnet entrance;
+the helper listens only on loopback with a random password kept in the host
+process. The local switch allows connections without starting capture: opening
+the viewer starts voxl on demand and waits for its authenticated readiness check.
+The last viewer WebSocket closing stops and reaps voxl immediately, once any
+active file transfers have finished; other viewers keep their shared helper
+running. If the page never establishes a WebSocket, the
+helper stops after a 10-second connection window. Asset requests and status polls
+do not extend that window or restart capture. Service restarts remain idle until
+a user requests a connection.
+
+voxl's native keyboard, files and fullscreen shortcuts stay visible at the bottom
+right of the viewer. Fullscreen uses voxl's native control inside the iframe.
+The files panel supports uploads/downloads within `<data-dir>/voxl/shared/`;
+the local management UI displays this shared directory. Uploads retain Spool's
+session, remote desktop grant, same-origin and CSRF checks.
+
+Every viewer resource and WebSocket is checked against Spool's session and grant.
+Revoking the account/grant or signing out disconnects that user's viewers.
+Local **People** management lists each user's remote permission and active
+connection count. Connected users have a **Disconnect desktop** button in their
+list item to end all their current views
+without changing their permission or other users' connections. Revoked views
+cannot automatically reconnect; the user must click **Connect to desktop** again.
+Turning off **Enable remote desktop** in the local management UI or stopping
+Spool immediately disconnects all viewers and stops voxl. Installation and
+permission failures leave normal chat available.
+
+On macOS, allow **Screen Recording** and **Accessibility** for the installed
+helper/launching application in System Settings, then reconnect. Windows
+requires an interactive user session; lock screens and UAC prompts are restricted.
+Linux requires X11 (or a separately prepared Xvfb desktop); Wayland is unsupported.
+Clipboard synchronization, audio, microphone and automatic display resizing
+are disabled in this integration.
+
+[voxl](https://github.com/tembo/voxl)'s own source code is
+[MIT-licensed](https://github.com/tembo/voxl/blob/main/LICENSE).
+[x264](https://www.videolan.org/developers/x264.html) is licensed under
+[GPLv2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html) or later;
+builds linked with x264 are subject to applicable GPL terms. Other dependencies
+retain their respective licenses. The local installation settings explain this
+distinction. If you later provide the built binaries to others, separately
+assess the applicable distribution obligations, including license notices and
+corresponding source code requirements. Local compilation does not remove those
+obligations from a later distribution.
+
+macOS may attribute a helper's permission request to the application that launched
+it. Running `make dev` in Zed's integrated terminal can therefore show **Zed** in
+the system permission prompt. For Spool's app identity to own these permissions,
+launch the standalone Spool app from Finder instead of through the editor's
+terminal. The browser iframe does not change host permission attribution.
+
 ### Application Network Settings
 
 In Desktop, **Application > Network > Proxy** has three levels:

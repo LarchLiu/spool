@@ -10,6 +10,7 @@ const (
 	changePresence
 	changeAuth
 	changeProfiles
+	changeRemoteDesktop
 )
 
 // Notifications carry no user data. Each subscriber reads a fresh, authorized
