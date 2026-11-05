@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -39,16 +40,41 @@ func (t NativeTurn) HasUserInput() bool { return t.hasUserInput }
 type NativeRange struct{ Start, End int64 }
 
 type NativeSessionIndex struct {
-	Turns []NativeTurn
-	Title string
+	Turns     []NativeTurn
+	Title     string
+	Directory string
+}
+
+type nativeSessionMetadata struct {
+	title     nativeSessionTitle
+	directory string
+}
+
+func (m *nativeSessionMetadata) collect(backend chatmodel.Backend, record map[string]any) {
+	if m == nil {
+		return
+	}
+	m.title.collect(backend, record)
+	directory := ""
+	if backend == chatmodel.BackendCodex {
+		if record["type"] == "session_meta" || record["type"] == "turn_context" {
+			payload, _ := record["payload"].(map[string]any)
+			directory = stringValue(payload["cwd"])
+		}
+	} else if record["type"] == "user" || record["type"] == "assistant" || record["type"] == "system" {
+		directory = stringValue(record["cwd"])
+	}
+	if filepath.IsAbs(directory) && !strings.ContainsAny(directory, "\x00\r\n") {
+		m.directory = filepath.Clean(directory)
+	}
 }
 
 // IndexSessionTo collects titles in the existing turn-indexing pass, without
 // scanning large transcripts a second time just for metadata.
 func IndexSessionTo(backend chatmodel.Backend, path string, offset, end int64) (NativeSessionIndex, error) {
-	var title nativeSessionTitle
-	turns, err := indexSessionTurnsTo(backend, path, offset, end, &title)
-	return NativeSessionIndex{Turns: turns, Title: title.text}, err
+	var metadata nativeSessionMetadata
+	turns, err := indexSessionTurnsTo(backend, path, offset, end, &metadata)
+	return NativeSessionIndex{Turns: turns, Title: metadata.title.text, Directory: metadata.directory}, err
 }
 
 // IndexSessionTurns scans metadata independently of transcript display limits.
@@ -62,12 +88,12 @@ func IndexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 	return indexSessionTurnsTo(backend, path, offset, end, nil)
 }
 
-func indexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int64, title *nativeSessionTitle) ([]NativeTurn, error) {
+func indexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int64, metadata *nativeSessionMetadata) ([]NativeTurn, error) {
 	if !backend.Valid() || offset < 0 || (end > 0 && end < offset) {
 		return nil, fmt.Errorf("invalid native history request")
 	}
 	if backend == chatmodel.BackendClaude {
-		return indexClaudeTurns(path, offset, end, title)
+		return indexClaudeTurns(path, offset, end, metadata)
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -90,7 +116,7 @@ func indexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 		position += int64(len(line))
 		var record map[string]any
 		if json.Unmarshal(line, &record) == nil {
-			title.collect(backend, record)
+			metadata.collect(backend, record)
 			carryNotes = codexCarryNotes(record, carryNotes)
 			stamp := nativeTimestamp(record["timestamp"])
 			typ := stringValue(record["type"])
@@ -204,7 +230,7 @@ func ReadSessionTurn(backend chatmodel.Backend, path string, turn NativeTurn) (c
 	return parseTranscriptReader(backend, io.NewSectionReader(file, turn.Start, turn.End-turn.Start), turn.Model, turn.CarryNotes)
 }
 
-func indexClaudeTurns(path string, offset, end int64, title *nativeSessionTitle) ([]NativeTurn, error) {
+func indexClaudeTurns(path string, offset, end int64, metadata *nativeSessionMetadata) ([]NativeTurn, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -224,7 +250,7 @@ func indexClaudeTurns(path string, offset, end int64, title *nativeSessionTitle)
 		position += int64(len(line))
 		var record map[string]any
 		if json.Unmarshal(line, &record) == nil && record["isSidechain"] != true {
-			title.collect(chatmodel.BackendClaude, record)
+			metadata.collect(chatmodel.BackendClaude, record)
 			id, parent, prompt := stringValue(record["uuid"]), stringValue(record["parentUuid"]), stringValue(record["promptId"])
 			message, _ := record["message"].(map[string]any)
 			owner := current

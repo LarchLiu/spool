@@ -3,9 +3,9 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFile } from "node:fs/promises";
-import { createServer } from "vite";
+import { createTestViteServer } from "./vite-fixture.mjs";
 
-const server = await createServer({
+const server = await createTestViteServer(test, {
   root: new URL("..", import.meta.url).pathname,
   configFile: false,
   logLevel: "silent",
@@ -13,7 +13,6 @@ const server = await createServer({
   server: { middlewareMode: true, watch: null, hmr: false },
   esbuild: { jsx: "automatic" },
 });
-test.after(() => server.close());
 const { ServicePage, NetworkPage } = await server.ssrLoadModule(
   "/src/settings-pages.tsx",
 );

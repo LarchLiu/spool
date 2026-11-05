@@ -185,7 +185,7 @@ func runDesktop() (runErr error) {
 		return err
 	}
 	defer devFrontend.close()
-	p := &panel{service: service, devFrontend: devFrontend, tab: "Service", members: map[string]bool{}, agentPaths: map[chatmodel.Backend]string{}, agentEnabled: map[chatmodel.Backend]bool{}}
+	p := &panel{service: service, devFrontend: devFrontend, tab: "Service", project: workspace.Project{AllowExternalFiles: true}, members: map[string]bool{}, agentPaths: map[chatmodel.Backend]string{}, agentEnabled: map[chatmodel.Backend]bool{}}
 	if *smoke != "" {
 		// Release probes must not change the installed app's Notification Center.
 		p.notificationClear = func() {}
@@ -637,7 +637,7 @@ func (p *panel) peopleView(c *ui.Context) {
 func (p *panel) projectView(c *ui.Context) {
 	ui.Row(c).Gap(8).Children(func() {
 		if ui.Button(c, p.tr("New project")).Disabled(p.directoryPicker.pending).Clicked() {
-			p.project = workspace.Project{Issues: workspace.IssuesAutomation{IntervalMinutes: 60, Backend: chatmodel.BackendCodex}}
+			p.project = workspace.Project{AllowExternalFiles: true, Issues: workspace.IssuesAutomation{IntervalMinutes: 60, Backend: chatmodel.BackendCodex}}
 			p.issueInterval = "60"
 			p.issueLabel = ""
 			p.members = map[string]bool{}
@@ -716,6 +716,8 @@ func (p *panel) projectView(c *ui.Context) {
 	ui.Text(c, p.tr("In-app permissions: read-only allows viewing existing chats; Can create also allows creating and controlling personal chats. Shared session permissions separately control other people's shared chats and shared local sessions. Assigned task permissions are unchanged.")).Wrap().FontSize(12)
 	ui.Checkbox(c, &p.project.SharedChats, p.tr("Share in-app sessions"))
 	ui.Checkbox(c, &p.project.SharedLocalChats, p.tr("Share local sessions"))
+	ui.Checkbox(c, &p.project.AllowExternalFiles, p.tr("Allow viewing external files referenced in sessions"))
+	ui.Text(c, p.tr("Members can preview and download external files referenced by the agent in chats they can access. External directories are not browsable. Agent permissions are unchanged.")).Wrap().FontSize(12)
 	p.projectIssuesView(c)
 	if ui.PrimaryButton(c, p.tr("Save project")).Disabled(p.busy || p.directoryPicker.pending).Clicked() {
 		project := p.project

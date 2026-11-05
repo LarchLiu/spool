@@ -21,6 +21,8 @@ test("source previews use the existing single-file renderer in both themes", asy
       }),
     );
     assert.match(html, /<diffs-container[^>]*class="file-code-preview"/);
+    assert.match(html, /<pre class="file-source"/);
+    assert.match(html, /export const label = &lt;span&gt;Hello&lt;\/span&gt;;/);
     assert.doesNotMatch(html, /contenteditable|textarea/);
   }
   const source = await readFile(

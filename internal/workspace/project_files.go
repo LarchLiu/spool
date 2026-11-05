@@ -90,18 +90,34 @@ func (a *App) projectFileRoute(w http.ResponseWriter, r *http.Request, user, rou
 		apiError(w, 404, "Project files are unavailable")
 		return
 	}
-	path, err := projectFilePath(project.Path, r.URL.Query().Get("path"))
+	a.serveProjectFiles(w, r, project.Path, parts[1], nil)
+}
+
+type externalFileReference struct {
+	path string
+	info os.FileInfo
+}
+
+func (a *App) serveProjectFiles(w http.ResponseWriter, r *http.Request, directory, operation string, allowed func(string) bool, externalPath ...externalFileReference) {
+	path, err := projectFilePath(directory, r.URL.Query().Get("path"))
 	if err != nil {
 		projectFileError(w, err)
 		return
 	}
-	root, err := os.OpenRoot(project.Path)
+	if allowed != nil && !allowed(filepath.Join(directory, path)) {
+		projectFileError(w, os.ErrPermission)
+		return
+	}
+	root, err := os.OpenRoot(directory)
 	if err != nil {
 		apiError(w, 404, "Project files are unavailable")
 		return
 	}
 	defer root.Close()
 	initial, err := root.Stat(path)
+	if len(externalPath) > 0 {
+		initial, err = root.Lstat(path)
+	}
 	if err != nil {
 		projectFileError(w, err)
 		return
@@ -121,8 +137,12 @@ func (a *App) projectFileRoute(w http.ResponseWriter, r *http.Request, user, rou
 		projectFileError(w, err)
 		return
 	}
+	if len(externalPath) > 0 && (!os.SameFile(initial, info) || !os.SameFile(externalPath[0].info, info)) {
+		projectFileError(w, os.ErrPermission)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	if parts[1] == "files" {
+	if operation == "files" {
 		if !info.IsDir() {
 			apiError(w, 400, "Choose a directory")
 			return
@@ -140,6 +160,9 @@ func (a *App) projectFileRoute(w http.ResponseWriter, r *http.Request, user, rou
 		for _, entry := range entries {
 			relative := filepath.Join(path, entry.Name())
 			if protectedProjectPath(relative) || entry.Type()&os.ModeSymlink != 0 {
+				continue
+			}
+			if allowed != nil && !allowed(filepath.Join(directory, relative)) {
 				continue
 			}
 			stat, err := entry.Info()
@@ -215,7 +238,11 @@ func (a *App) projectFileRoute(w http.ResponseWriter, r *http.Request, user, rou
 		text := string(data)
 		content = &text
 	}
-	apiJSON(w, 200, map[string]any{"path": filepath.ToSlash(path), "name": info.Name(), "size": info.Size(), "kind": kind, "media_type": mediaType, "content": content, "truncated": truncated})
+	displayPath := filepath.ToSlash(path)
+	if len(externalPath) > 0 {
+		displayPath = filepath.ToSlash(externalPath[0].path)
+	}
+	apiJSON(w, 200, map[string]any{"path": displayPath, "name": info.Name(), "size": info.Size(), "kind": kind, "media_type": mediaType, "content": content, "truncated": truncated, "external": len(externalPath) > 0})
 }
 
 func safeProjectImage(mediaType string) bool {

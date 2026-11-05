@@ -116,10 +116,10 @@ test("following history observes viewport changes as well as message growth", as
   );
   assert.match(
     main,
-    /if \(follow\.current && history\.current\)\s*history\.current\.scrollTop = history\.current\.scrollHeight/,
+    /if \(follow\.current\)\s*scroller\.scrollTop = scroller\.scrollHeight/,
   );
   assert.match(
     main,
-    /resize\.observe\(element\);\s*if \(history\.current\) resize\.observe\(history\.current\)/,
+    /resize\.observe\(element\);\s*resize\.observe\(scroller\)/,
   );
 });

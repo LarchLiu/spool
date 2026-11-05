@@ -616,6 +616,31 @@ forms, nested frames and external or project-relative resources are disabled.
 Previews use the same bounded text content as source view, and show a notice when
 the file is truncated. Download the original to view files that need scripts or
 separate assets.
+The preview title bar contains the filename and size. Source keeps long lines
+intact, with horizontal scrolling at the bottom of the preview viewport. Readable
+source remains visible while syntax highlighting loads or if a module request
+fails. Frontend tests use isolated Vite caches so running them does not invalidate
+the active development server's lazy highlighter modules.
+
+The right file tree follows the current chat's native working directory,
+including linked Git worktrees and converted chats. An info icon after the
+project name in the right sidebar header shows the directory, checkout type,
+and current Git branch (or detached commit) on hover, focus, or tap.
+Switching chats resets the tree and file selection. Directory metadata refreshes
+on chat updates, focus, manual refresh, and about every 10 seconds while visible.
+Deleted workspaces stay unavailable rather than falling back to the main checkout.
+Linked checkouts are verified against Git's registered worktrees; separately
+configured project boundaries and protected files remain excluded.
+
+Project management includes **Allow viewing external files referenced in
+sessions**, enabled by default for new and existing projects. It allows preview
+and download of individual external regular files referenced in an accessible
+chat's agent messages or tool records, including temporary output files. It does
+not allow browsing their parent directories. Disabling it blocks subsequent
+external reads immediately. Files remain at their original locations; missing
+files are not recreated or archived, and agent execution/permissions are unchanged.
+Native history and Spool's data directory, protected configuration, symlink files,
+and other projects' files remain excluded.
 
 The composer's left toolbar contains a single **+** for both files and images,
 followed by the native agent's permission selector. Agent/model selection and

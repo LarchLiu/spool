@@ -102,6 +102,7 @@ import { Sidebar } from "./sidebar";
 import { FileSidebar, type FileSelection } from "./file-sidebar";
 import { LocalFileContext } from "./local-file-context";
 import type { LocalFileTarget } from "./local-file-links";
+import { useSessionWorkspace } from "./use-session-workspace";
 import { panelStorageKey, parsePanelLayout } from "./panel-layout";
 import { AgentModelMenu } from "./agent-model-menu";
 import { AgentIcon } from "./agent-icon";
@@ -274,12 +275,29 @@ function App() {
   const [fileSelection, setFileSelection] = useState<FileSelection | null>(
     null,
   );
-  const openLocalFile = useCallback((target: LocalFileTarget) => {
-    setFileSelection((old) => ({ target, request: (old?.request || 0) + 1 }));
-    setPanels((old) => ({ ...old, rightOpen: true }));
-    setFileSidebarMobile(matchMedia("(max-width: 900px)").matches);
-    setSidebar(false);
-  }, []);
+  const fileChatID = chatID || undefined;
+  const sessionWorkspace = useSessionWorkspace(
+    fileChatID,
+    chat?.id === chatID ? chat.updated_at : undefined,
+  );
+  const fileScope = JSON.stringify([
+    project,
+    fileChatID,
+    sessionWorkspace.workspace?.path,
+  ]);
+  const openLocalFile = useCallback(
+    (target: LocalFileTarget) => {
+      setFileSelection((old) => ({
+        target,
+        request: (old?.request || 0) + 1,
+        scope: fileScope,
+      }));
+      setPanels((old) => ({ ...old, rightOpen: true }));
+      setFileSidebarMobile(matchMedia("(max-width: 900px)").matches);
+      setSidebar(false);
+    },
+    [fileScope],
+  );
   const localFileContext = useMemo(
     () => ({ openFile: project ? openLocalFile : undefined }),
     [project, openLocalFile],
@@ -293,7 +311,7 @@ function App() {
   }, [panels]);
   useEffect(() => {
     setFileSelection(null);
-  }, [project]);
+  }, [fileScope]);
   useEffect(() => {
     const media = matchMedia("(max-width: 900px)");
     const changed = () => {
@@ -972,15 +990,19 @@ function App() {
   }, [canCreate, chat?.id, chat?.backend, backend]);
   useEffect(() => {
     const element = content.current;
-    if (!element) return;
+    const scroller = history.current;
+    if (!element || !scroller) return;
     const resize = new ResizeObserver(() => {
-      if (follow.current && history.current)
-        history.current.scrollTop = history.current.scrollHeight;
+      scroller.parentElement?.style.setProperty(
+        "--history-scrollbar-width",
+        `${scroller.offsetWidth - scroller.clientWidth}px`,
+      );
+      if (follow.current) scroller.scrollTop = scroller.scrollHeight;
     });
     resize.observe(element);
-    if (history.current) resize.observe(history.current);
+    resize.observe(scroller);
     return () => resize.disconnect();
-  }, [chat?.id]);
+  }, [chat?.id, user?.id]);
   useLayoutEffect(() => {
     if (!chat || !history.current) return;
     if (initialHistoryScroll.current === chat.id) {
@@ -2178,10 +2200,14 @@ function App() {
       )}
       <FileSidebar
         project={projects.find((item) => item.id === project)}
+        chatID={fileChatID}
+        workspace={sessionWorkspace.workspace}
+        workspaceError={sessionWorkspace.error}
+        onRefreshWorkspace={sessionWorkspace.reload}
         active={narrowLayout ? fileSidebarMobile : panels.rightOpen}
         mobileOpen={fileSidebarMobile}
         width={panels.rightWidth}
-        selection={fileSelection}
+        selection={fileSelection?.scope === fileScope ? fileSelection : null}
         t={t}
         theme={theme}
         onOpen={openLocalFile}

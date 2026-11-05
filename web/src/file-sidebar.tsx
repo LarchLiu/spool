@@ -10,9 +10,18 @@ import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
 import { Download, File, LoaderCircle, X } from "lucide-react";
 import { api } from "./api";
 import type { Translator } from "./i18n";
-import type { Project, ProjectDirectory, ProjectFile } from "./types";
+import type {
+  Project,
+  ProjectDirectory,
+  ProjectFile,
+  SessionWorkspace,
+} from "./types";
 import { LocalFileContext } from "./local-file-context";
-import { projectFileURL, type LocalFileTarget } from "./local-file-links";
+import {
+  fileAPIBase,
+  projectFileURL,
+  type LocalFileTarget,
+} from "./local-file-links";
 import { MarkdownMessage } from "./markdown-message";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { FilePreviewSplit } from "./file-preview-split";
@@ -20,9 +29,17 @@ import { FileSidebarHeader } from "./file-sidebar-header";
 import { FileSource } from "./file-source";
 import { filePreviewKind, HtmlFilePreview } from "./file-preview";
 
-export type FileSelection = { target: LocalFileTarget; request: number };
+export type FileSelection = {
+  target: LocalFileTarget;
+  request: number;
+  scope: string;
+};
 type Props = {
   project?: Project;
+  chatID?: string;
+  workspace?: SessionWorkspace;
+  workspaceError?: string;
+  onRefreshWorkspace: () => void;
   active: boolean;
   mobileOpen: boolean;
   width: number;
@@ -44,7 +61,7 @@ export function FileSidebar(props: Props) {
     >
       {props.project ? (
         <ProjectFiles
-          key={props.project.id}
+          key={`${props.project.id}:${props.chatID || ""}:${props.workspace?.path || ""}:${!!props.workspace?.available}`}
           {...props}
           project={props.project}
         />
@@ -68,6 +85,10 @@ export function FileSidebar(props: Props) {
 
 function ProjectFiles({
   project,
+  chatID,
+  workspace,
+  workspaceError,
+  onRefreshWorkspace,
   active,
   selection,
   t,
@@ -76,6 +97,7 @@ function ProjectFiles({
   onClear,
   onClose,
 }: Props & { project: Project }) {
+  const ready = !chatID || !!workspace?.available;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(0);
   const [count, setCount] = useState(0);
@@ -116,7 +138,7 @@ function ProjectFiles({
       controllers.current.add(controller);
       setBusy((value) => value + 1);
       const pending = api<ProjectDirectory>(
-        `/projects/${project.id}/files?${new URLSearchParams({ path: key })}`,
+        `${fileAPIBase(project.id, chatID).slice(4)}/files?${new URLSearchParams({ path: key })}`,
         undefined,
         controller.signal,
       )
@@ -142,7 +164,7 @@ function ProjectFiles({
       requests.current.set(key, pending);
       return pending;
     },
-    [model, project.id, t],
+    [model, project.id, chatID, t],
   );
 
   useEffect(() => {
@@ -153,7 +175,7 @@ function ProjectFiles({
     };
   }, []);
   useEffect(() => {
-    if (!active) return;
+    if (!active || !ready) return;
     void loadDirectory(".");
     return model.subscribe(() => {
       for (const row of model.getVisibleRows(0, model.getVisibleCount())) {
@@ -161,20 +183,26 @@ function ProjectFiles({
           void loadDirectory(row.path);
       }
     });
-  }, [active, loadDirectory, model, refresh]);
+  }, [active, ready, loadDirectory, model, refresh]);
 
   useEffect(() => {
     if (!active || !selection) return;
     const controller = new AbortController();
     setFileError("");
     api<ProjectFile>(
-      projectFileURL(project.id, selection.target.path).slice(4),
+      projectFileURL(
+        project.id,
+        selection.target.path,
+        undefined,
+        chatID,
+      ).slice(4),
       undefined,
       controller.signal,
     )
       .then(async (next) => {
         if (controller.signal.aborted) return;
         setLoaded({ file: next, selection });
+        if (next.external) return;
         await loadDirectory(".");
         const segments = next.path.split("/");
         for (let i = 1; i < segments.length; i++) {
@@ -204,9 +232,20 @@ function ProjectFiles({
         }
       });
     return () => controller.abort();
-  }, [active, selection, project.id, model, loadDirectory, refresh, t]);
+  }, [
+    active,
+    ready,
+    selection,
+    project.id,
+    chatID,
+    model,
+    loadDirectory,
+    refresh,
+    t,
+  ]);
 
   function reload() {
+    onRefreshWorkspace();
     for (const controller of controllers.current) controller.abort();
     controllers.current.clear();
     requests.current.clear();
@@ -232,6 +271,9 @@ function ProjectFiles({
     <>
       <FileSidebarHeader
         name={project.name}
+        workspace={workspace}
+        workspaceError={workspaceError}
+        showWorkspaceInfo={!!chatID}
         t={t}
         search={{
           isOpen: search.isOpen,
@@ -247,6 +289,22 @@ function ProjectFiles({
         tree={
           <>
             <div className="file-tree-section">
+              {!ready && (
+                <p
+                  className="file-panel-notice"
+                  role={workspaceError ? "alert" : "status"}
+                >
+                  {workspaceError ||
+                    t(
+                      workspace
+                        ? "Session directory is unavailable"
+                        : "Loading session directory…",
+                    )}
+                  {workspaceError && (
+                    <button onClick={reload}>{t("Retry")}</button>
+                  )}
+                </p>
+              )}
               <FileTree
                 model={model}
                 aria-label={t("Project file tree")}
@@ -269,7 +327,7 @@ function ProjectFiles({
                   <LoaderCircle size={14} className="stop-spinner" />
                 </span>
               )}
-              {!busy && !count && !error && (
+              {ready && !busy && !count && !error && (
                 <p className="file-panel-empty">
                   {t("This directory is empty.")}
                 </p>
@@ -295,12 +353,22 @@ function ProjectFiles({
                 <span title={file?.path || selection.target.path}>
                   <File size={14} />
                   {file?.name || selection.target.path.split("/").pop()}
+                  {loaded?.selection.target.line
+                    ? `:${loaded.selection.target.line}`
+                    : ""}
                 </span>
                 <div>
+                  {file?.external && <small>{t("External file")}</small>}
+                  {file && <small>{formatFileSize(file.size)}</small>}
                   {file && (
                     <a
                       className="icon"
-                      href={projectFileURL(project.id, file.path, "download")}
+                      href={projectFileURL(
+                        project.id,
+                        file.path,
+                        "download",
+                        chatID,
+                      )}
                       download={file.name}
                       aria-label={t("Download file")}
                       title={t("Download file")}
@@ -328,6 +396,7 @@ function ProjectFiles({
                   key={loaded.selection.request}
                   file={loaded.file}
                   project={project.id}
+                  chatID={chatID}
                   target={loaded.selection.target}
                   t={t}
                   theme={theme}
@@ -345,6 +414,7 @@ function ProjectFiles({
 function FileContent({
   file,
   project,
+  chatID,
   target,
   t,
   theme,
@@ -352,6 +422,7 @@ function FileContent({
 }: {
   file: ProjectFile;
   project: string;
+  chatID?: string;
   target: LocalFileTarget;
   t: Translator;
   theme: "light" | "dark";
@@ -365,13 +436,6 @@ function FileContent({
   );
   return (
     <LocalFileContext.Provider value={context}>
-      <div className="file-preview-meta">
-        <span title={file.path}>
-          {file.path}
-          {target.line ? `:${target.line}` : ""}
-        </span>
-        <small>{formatFileSize(file.size)}</small>
-      </div>
       {previewKind && (
         <div className="file-preview-mode">
           <button
@@ -408,7 +472,7 @@ function FileContent({
         {file.kind === "image" && (
           <img
             className="project-file-image"
-            src={projectFileURL(project, file.path, "image")}
+            src={projectFileURL(project, file.path, "image", chatID)}
             alt={file.name}
           />
         )}

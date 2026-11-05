@@ -64,8 +64,15 @@ export function projectFileURL(
   project: string,
   path: string,
   mode?: "download" | "image",
+  chatID?: string,
 ) {
   const query = new URLSearchParams({ path });
   if (mode) query.set(mode, "1");
-  return `/api/projects/${encodeURIComponent(project)}/file?${query}`;
+  return `${fileAPIBase(project, chatID)}/file?${query}`;
+}
+
+export function fileAPIBase(project: string, chatID?: string) {
+  return chatID
+    ? `/api/chats/${encodeURIComponent(chatID)}`
+    : `/api/projects/${encodeURIComponent(project)}`;
 }

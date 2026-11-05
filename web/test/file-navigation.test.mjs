@@ -6,9 +6,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { FileTree } from "@pierre/trees";
 import { FilePreviewSplit } from "../.test-build/components/web/src/file-preview-split.js";
 import { FileSidebarHeader } from "../.test-build/components/web/src/file-sidebar-header.js";
+import { SessionWorkspaceInfo } from "../.test-build/components/web/src/session-workspace.js";
 import {
   localFileTarget,
   projectFileURL,
+  fileAPIBase,
 } from "../.test-build/local-file-links.js";
 import {
   parsePanelLayout,
@@ -46,6 +48,53 @@ test("file links preserve native paths and parse Codex line/column suffixes", ()
   assert.deepEqual(localFileTarget("../README.md", "docs/plan.md"), {
     path: "docs/../README.md",
   });
+});
+
+test("session file URLs retain chat scope for previews, images and downloads", () => {
+  assert.equal(fileAPIBase("project", "chat"), "/api/chats/chat");
+  assert.equal(fileAPIBase("project"), "/api/projects/project");
+  for (const mode of [undefined, "image", "download"]) {
+    const url = new URL(
+      projectFileURL("project", "/worktree/a b.md", mode, "chat"),
+      "https://spool.invalid",
+    );
+    assert.equal(url.pathname, "/api/chats/chat/file");
+    assert.equal(url.searchParams.get("path"), "/worktree/a b.md");
+    if (mode) assert.equal(url.searchParams.get(mode), "1");
+  }
+});
+
+test("session workspace shows its full path, checkout type, branch and missing state", () => {
+  const workspace = {
+    path: "/work/trees/feature with spaces",
+    kind: "worktree",
+    branch: "feature/files",
+    available: true,
+  };
+  const render = (value) =>
+    renderToStaticMarkup(
+      createElement(SessionWorkspaceInfo, {
+        workspace: value,
+        t: (key, values) => key.replace("{commit}", values?.commit || ""),
+      }),
+    );
+  const html = render(workspace);
+  assert.match(html, /aria-label="Session directory"/);
+  assert.match(html, /Worktree/);
+  assert.ok(html.includes(workspace.path));
+  assert.ok(html.includes(workspace.branch));
+  assert.doesNotMatch(html, /unavailable/);
+  const detached = render({
+    ...workspace,
+    branch: undefined,
+    commit: "abc1234",
+  });
+  assert.match(detached, /Detached HEAD · abc1234/);
+  assert.doesNotMatch(detached, /feature\/files/);
+  const main = render({ ...workspace, kind: "main", branch: "dev" });
+  assert.match(main, /Main checkout/);
+  const missing = render({ ...workspace, available: false });
+  assert.match(missing, /role="status">Session directory is unavailable/);
 });
 
 test("web links and unsafe schemes cannot become local file actions", () => {
@@ -147,7 +196,7 @@ test("mobile navigation uses menu and close icons without changing desktop panel
   );
   assert.match(
     main,
-    /narrowLayout \? <Menu size=\{18\} \/> : <PanelLeftOpen size=\{18\} \/>/,
+    /narrowLayout \?\s*\(?\s*<Menu size=\{18\} \/>\s*\)?\s*:\s*\(?\s*<PanelLeftOpen size=\{18\} \/>/,
   );
   const sidebar = await readFile(
     new URL("../src/sidebar.tsx", import.meta.url),

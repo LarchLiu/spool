@@ -33,18 +33,19 @@ type nativeHistoryCache struct {
 }
 
 type nativeHistory struct {
-	mu      sync.Mutex
-	key     string
-	backend chatmodel.Backend
-	path    string
-	info    os.FileInfo
-	indexed bool
-	index   []agent.NativeTurn
-	title   string
-	parts   []chatmodel.Transcript
-	details map[string]string
-	bytes   int
-	lru     *list.Element
+	mu        sync.Mutex
+	key       string
+	backend   chatmodel.Backend
+	path      string
+	info      os.FileInfo
+	indexed   bool
+	index     []agent.NativeTurn
+	title     string
+	directory string
+	parts     []chatmodel.Transcript
+	details   map[string]string
+	bytes     int
+	lru       *list.Element
 }
 
 func sameHistoryFile(a, b os.FileInfo) bool {
@@ -103,6 +104,7 @@ func (c *nativeHistoryCache) read(backend chatmodel.Backend, path string, use fu
 			var snapshot agent.NativeSessionIndex
 			snapshot, err = index(backend, file.path, 0, file.info.Size())
 			file.index, file.title = snapshot.Turns, snapshot.Title
+			file.directory = snapshot.Directory
 			file.indexed = err == nil
 		}
 		if err == nil {

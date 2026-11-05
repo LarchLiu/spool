@@ -7,6 +7,8 @@ import {
   X,
 } from "lucide-react";
 import type { Translator } from "./i18n";
+import type { SessionWorkspace } from "./types";
+import { SessionWorkspacePopover } from "./session-workspace.js";
 
 type FileSearch = {
   isOpen: boolean;
@@ -17,12 +19,18 @@ type FileSearch = {
 
 export function FileSidebarHeader({
   name,
+  workspace,
+  workspaceError,
+  showWorkspaceInfo,
   t,
   search,
   onRefresh,
   onClose,
 }: {
   name?: string;
+  workspace?: SessionWorkspace;
+  workspaceError?: string;
+  showWorkspaceInfo?: boolean;
   t: Translator;
   search?: FileSearch;
   onRefresh?: () => void;
@@ -80,6 +88,13 @@ export function FileSidebarHeader({
         <div className="file-sidebar-title">
           <FolderOpen size={16} />
           <strong title={name}>{name || t("Files")}</strong>
+          {showWorkspaceInfo && (
+            <SessionWorkspacePopover
+              workspace={workspace}
+              error={workspaceError}
+              t={t}
+            />
+          )}
         </div>
       )}
       <div className="file-sidebar-actions">

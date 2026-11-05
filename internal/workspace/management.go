@@ -40,18 +40,19 @@ type UserInput struct {
 const productionBcryptCost = 12
 
 type Project struct {
-	ID               string            `json:"id"`
-	Name             string            `json:"name"`
-	Path             string            `json:"-"`
-	Archived         bool              `json:"archived"`
-	SharedChats      bool              `json:"shared_chats"`
-	SharedLocalChats bool              `json:"shared_local_chats"`
-	CreatedAt        int64             `json:"created_at"`
-	Members          []string          `json:"-"`
-	MemberAccess     map[string]string `json:"-"`
-	MemberOwnAccess  map[string]string `json:"-"`
-	CanCreate        *bool             `json:"can_create,omitempty"`
-	Issues           IssuesAutomation  `json:"-"`
+	ID                 string            `json:"id"`
+	Name               string            `json:"name"`
+	Path               string            `json:"-"`
+	Archived           bool              `json:"archived"`
+	SharedChats        bool              `json:"shared_chats"`
+	SharedLocalChats   bool              `json:"shared_local_chats"`
+	AllowExternalFiles bool              `json:"allow_external_files"`
+	CreatedAt          int64             `json:"created_at"`
+	Members            []string          `json:"-"`
+	MemberAccess       map[string]string `json:"-"`
+	MemberOwnAccess    map[string]string `json:"-"`
+	CanCreate          *bool             `json:"can_create,omitempty"`
+	Issues             IssuesAutomation  `json:"-"`
 }
 type Settings struct {
 	Host            string `json:"host"`
@@ -247,14 +248,14 @@ func (s *Store) DeleteUser(id string) error {
 	return s.notify(tx.Commit(), changeNavigation|changePresence|changeAuth)
 }
 func (s *Store) Projects() ([]Project, error) {
-	rows, err := s.db.Query(`SELECT id,name,path,archived,shared_chats,created_at,COALESCE((SELECT enabled FROM project_local_sharing WHERE project_id=projects.id),0) FROM projects ORDER BY name`)
+	rows, err := s.db.Query(`SELECT id,name,path,archived,shared_chats,created_at,COALESCE((SELECT enabled FROM project_local_sharing WHERE project_id=projects.id),0),COALESCE((SELECT allow_external_files FROM project_file_access WHERE project_id=projects.id),1) FROM projects ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
 	out := []Project{}
 	for rows.Next() {
 		var v Project
-		if err = rows.Scan(&v.ID, &v.Name, &v.Path, &v.Archived, &v.SharedChats, &v.CreatedAt, &v.SharedLocalChats); err != nil {
+		if err = rows.Scan(&v.ID, &v.Name, &v.Path, &v.Archived, &v.SharedChats, &v.CreatedAt, &v.SharedLocalChats, &v.AllowExternalFiles); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -295,7 +296,7 @@ func (s *Store) Projects() ([]Project, error) {
 }
 func (s *Store) Project(id string) (Project, error) {
 	var v Project
-	err := s.db.QueryRow(`SELECT id,name,path,archived,shared_chats,created_at,COALESCE((SELECT enabled FROM project_local_sharing WHERE project_id=projects.id),0) FROM projects WHERE id=?`, id).Scan(&v.ID, &v.Name, &v.Path, &v.Archived, &v.SharedChats, &v.CreatedAt, &v.SharedLocalChats)
+	err := s.db.QueryRow(`SELECT id,name,path,archived,shared_chats,created_at,COALESCE((SELECT enabled FROM project_local_sharing WHERE project_id=projects.id),0),COALESCE((SELECT allow_external_files FROM project_file_access WHERE project_id=projects.id),1) FROM projects WHERE id=?`, id).Scan(&v.ID, &v.Name, &v.Path, &v.Archived, &v.SharedChats, &v.CreatedAt, &v.SharedLocalChats, &v.AllowExternalFiles)
 	return v, err
 }
 func (s *Store) SaveProject(v Project) (Project, error) {
@@ -379,6 +380,9 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 		return v, err
 	}
 	if _, err = tx.Exec(`INSERT INTO project_local_sharing(project_id,enabled) VALUES(?,?) ON CONFLICT(project_id) DO UPDATE SET enabled=excluded.enabled`, v.ID, v.SharedLocalChats); err != nil {
+		return v, err
+	}
+	if _, err = tx.Exec(`INSERT INTO project_file_access(project_id,allow_external_files) VALUES(?,?) ON CONFLICT(project_id) DO UPDATE SET allow_external_files=excluded.allow_external_files`, v.ID, v.AllowExternalFiles); err != nil {
 		return v, err
 	}
 	if _, err = tx.Exec(`DELETE FROM project_members WHERE project_id=?`, v.ID); err != nil {

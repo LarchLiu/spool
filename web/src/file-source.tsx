@@ -1,4 +1,11 @@
-import { Component, useEffect, useMemo, useRef, type ReactNode } from "react";
+import {
+  Component,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { File, type FileOptions } from "@pierre/diffs/react";
 
 type Props = {
@@ -79,36 +86,55 @@ export function FileSource(props: Props) {
 
 function HighlightedFileSource({ path, contents, line, theme }: Props) {
   const file = useMemo(() => ({ name: path, contents }), [path, contents]);
+  const [rendered, setRendered] = useState<typeof file>();
+  const highlighted = rendered === file;
+  const container = useRef<HTMLDivElement>(null);
   const positioned = useRef<string | null>(null);
+  useEffect(() => {
+    if (!highlighted || !line) return;
+    const node = container.current?.querySelector("diffs-container");
+    const row = node?.shadowRoot?.querySelector(`[data-line="${line}"]`);
+    const scroller = node?.closest<HTMLElement>(".file-preview-scroll");
+    const target = `${path}:${line}`;
+    if (row && scroller && positioned.current !== target) {
+      centerSourceLine(scroller, row);
+      positioned.current = target;
+    }
+  }, [highlighted, path, line]);
   const options = useMemo<FileOptions<undefined, undefined>>(
     () => ({
       disableFileHeader: true,
       disableErrorHandling: true,
       themeType: theme,
       overflow: "scroll",
+      // Let the preview viewport own both axes so its horizontal scrollbar
+      // stays reachable even when the file is taller than the viewport.
+      unsafeCSS:
+        "[data-code] { width: max-content; min-width: 100%; overflow: visible; contain: none; }",
       onPostRender: (node, _instance, phase) => {
-        const target = `${path}:${line}`;
-        if (phase === "unmount" || !line || positioned.current === target)
-          return;
-        const row = node.shadowRoot?.querySelector(`[data-line="${line}"]`);
-        const scroller = node.closest<HTMLElement>(".file-preview-scroll");
-        if (row && scroller && scroller.clientHeight > 0) {
-          // Highlighting is asynchronous; navigate once the requested row exists.
-          centerSourceLine(scroller, row);
-          positioned.current = target;
-        }
+        if (phase === "unmount") return;
+        // The renderer mounts an empty container before its highlighter loads.
+        // Async import failures are only logged, outside the React boundary.
+        // Keep readable source until actual code has been rendered.
+        const code = node.shadowRoot?.querySelector("code");
+        if (code && (contents === "" || code.textContent)) setRendered(file);
       },
     }),
-    [path, line, theme],
+    [file, contents, theme],
   );
   return (
-    <File
-      className="file-code-preview"
-      file={file}
-      options={options}
-      selectedLines={line ? { start: line, end: line } : null}
-      edit={false}
-      disableWorkerPool
-    />
+    <>
+      {!highlighted && <PlainFileSource contents={contents} line={line} />}
+      <div ref={container} hidden={!highlighted}>
+        <File
+          className="file-code-preview"
+          file={file}
+          options={options}
+          selectedLines={line ? { start: line, end: line } : null}
+          edit={false}
+          disableWorkerPool
+        />
+      </div>
+    </>
   );
 }

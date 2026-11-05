@@ -485,6 +485,10 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		apiJSON(w, 200, transportWindow(r, a.snapshot(chat)))
 		return
 	}
+	if len(parts) == 2 && (parts[1] == "workspace" || parts[1] == "files" || parts[1] == "file") && (r.Method == "GET" || r.Method == "HEAD") {
+		a.sessionFilesResponse(w, r, chat, parts[1])
+		return
+	}
 	if len(parts) == 2 && parts[1] == "tool-detail" && r.Method == "GET" {
 		a.toolDetailResponse(w, r, a.snapshot(chat), started)
 		return

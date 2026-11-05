@@ -211,6 +211,7 @@ test("new entities do not share mutable state or passwords", () => {
   assert.deepEqual(second.member_access, {});
   assert.deepEqual(second.member_own_access, {});
   assert.equal(second.shared_local_chats, false);
+  assert.equal(second.allow_external_files, true);
 });
 
 test("project edit drafts are independent from polling snapshots and support legacy assignees", () => {
@@ -223,6 +224,15 @@ test("project edit drafts are independent from polling snapshots and support leg
   draft.name = "unsaved";
   assert.deepEqual(project.issues.labels, []);
   assert.equal(project.name, "");
+});
+
+test("external session files default on for legacy drafts and retain explicit opt-outs", () => {
+  const legacy = newProject();
+  delete legacy.allow_external_files;
+  assert.equal(projectDraft(legacy).allow_external_files, true);
+  const disabled = newProject();
+  disabled.allow_external_files = false;
+  assert.equal(projectDraft(disabled).allow_external_files, false);
 });
 
 test("removing members also removes automation controllers and chooses a valid owner", () => {

@@ -314,6 +314,20 @@ export function ProjectsPage({ data, run, t }: PageProps) {
             />
           </Row>
         </Card>
+        <Card>
+          <Row
+            title={t("Allow viewing external files referenced in sessions")}
+            help={t("Members can preview and download external files referenced by the agent in chats they can access. External directories are not browsable. Agent permissions are unchanged.")}
+          >
+            <Toggle
+              label={t("Allow viewing external files referenced in sessions")}
+              value={draft.allow_external_files ?? true}
+              onChange={(allow_external_files) =>
+                setDraft({ ...draft, allow_external_files })
+              }
+            />
+          </Row>
+        </Card>
         <Card title={t("Scheduled GitHub issues")}>
           <Row title={t("Enable issue automation")}>
             <Toggle

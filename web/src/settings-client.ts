@@ -54,6 +54,7 @@ export type ManagedProject = {
   archived: boolean;
   shared_chats: boolean;
   shared_local_chats?: boolean;
+  allow_external_files?: boolean;
   issues: Automation;
   next_run?: number;
   last_error?: string;
@@ -243,6 +244,7 @@ export function newProject(): ManagedProject {
     archived: false,
     shared_chats: false,
     shared_local_chats: false,
+    allow_external_files: true,
     issues: {
       enabled: false,
       interval_minutes: 60,
@@ -259,6 +261,7 @@ export function projectDraft(project: ManagedProject): ManagedProject {
   copy.members ??= [];
   copy.member_access ??= {};
   copy.member_own_access ??= {};
+  copy.allow_external_files ??= true;
   copy.issues.labels ??= [];
   copy.issues.assignee_ids ??= copy.issues.user_id ? [copy.issues.user_id] : [];
   return copy;

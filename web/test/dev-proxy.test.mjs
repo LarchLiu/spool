@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { createServer, loadConfigFromFile } from "vite";
+import { loadConfigFromFile } from "vite";
+import { createTestViteServer } from "./vite-fixture.mjs";
 
 test("desktop dev starts a pinned Vite origin without silently changing ports", async () => {
   const config = JSON.parse(
@@ -44,7 +45,7 @@ test("the Vite API proxy preserves the dev origin and CSRF credentials", async (
     true,
     "global workspace sockets must be proxied alongside HTTP/SSE",
   );
-  const vite = await createServer({
+  const vite = await createTestViteServer(t, {
     ...config,
     configFile: false,
     root: fileURLToPath(new URL("..", import.meta.url)),
@@ -61,7 +62,6 @@ test("the Vite API proxy preserves the dev origin and CSRF credentials", async (
       },
     },
   });
-  t.after(() => vite.close());
   const frontend = http.createServer(vite.middlewares);
   await new Promise((resolve) => frontend.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise((resolve) => frontend.close(resolve)));

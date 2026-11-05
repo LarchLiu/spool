@@ -13,6 +13,7 @@ export type Project = {
   archived: boolean;
   shared_chats: boolean;
   shared_local_chats?: boolean;
+  allow_external_files?: boolean;
   can_create?: boolean;
 };
 export type ProjectFileEntry = {
@@ -21,12 +22,20 @@ export type ProjectFileEntry = {
   kind: "file" | "directory";
   size?: number;
 };
+export type SessionWorkspace = {
+  path: string;
+  branch?: string;
+  commit?: string;
+  kind: "main" | "worktree" | "directory";
+  available: boolean;
+};
 export type ProjectDirectory = {
   path: string;
   entries: ProjectFileEntry[];
   truncated: boolean;
 };
 export type ProjectFile = {
+  external?: boolean;
   path: string;
   name: string;
   size: number;
