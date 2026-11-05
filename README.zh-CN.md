@@ -1,6 +1,7 @@
-<div>
-  <img src="assets/logo.png" alt="Spool logo" width="40" /><h1>Spool</h1>
-</div>
+<p align="center">
+  <img src="./assets/logo.png" alt="Logo" width="60">
+</p>
+<h1 align="center">Spool</h1>
 
 [English](README.md)
 
