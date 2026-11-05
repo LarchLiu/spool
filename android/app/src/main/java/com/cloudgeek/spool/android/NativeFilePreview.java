@@ -12,23 +12,28 @@ import org.json.JSONObject;
 
 /** Inline project file preview; no system AlertDialog, remote HTML document or browser image loader. */
 final class NativeFilePreview extends LinearLayout {
-    final LinearLayout header, meta, mode;
+    final LinearLayout header, mode;
     final ScrollView scroll;
     final NativeUi.IconButton download, close;
-    final TextView name, path, size;
+    final TextView name, size, externalFile;
     final LinearLayout notices;
     private final NativeUi ui;
     private final NativeImages images;
-    private final String project;
+    private final String project, chat;
     private final Consumer<NativeFileTarget> open;
     private final Consumer<String> external;
     private JSONObject file;
     private NativeFileTarget target;
     private boolean rendered;
+    private String imageScope = "";
 
     NativeFilePreview(NativeUi ui, String project, NativeImages images, Consumer<NativeFileTarget> open, Consumer<String> external, Consumer<JSONObject> save, Runnable clear) {
+        this(ui, project, "", images, open, external, save, clear);
+    }
+
+    NativeFilePreview(NativeUi ui, String project, String chat, NativeImages images, Consumer<NativeFileTarget> open, Consumer<String> external, Consumer<JSONObject> save, Runnable clear) {
         super(ui.context);
-        this.ui = ui; this.project = project; this.images = images; this.open = open; this.external = external;
+        this.ui = ui; this.project = project; this.chat = chat; this.images = images; this.open = open; this.external = external;
         setOrientation(VERTICAL);
         setContentDescription(ui.t("File preview"));
         header = ui.row();
@@ -40,27 +45,31 @@ final class NativeFilePreview extends LinearLayout {
         name = ui.text("", 12, ui.text); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         LayoutParams label = new LayoutParams(0, -2, 1); label.setMarginStart(ui.dp(6)); label.setMarginEnd(ui.dp(6));
         header.addView(name, label);
+        externalFile = ui.text(ui.t("External file"), 10, ui.muted); header.addView(externalFile);
+        size = ui.text("", 10, ui.muted);
+        LayoutParams sizeParams = new LayoutParams(-2, -2); sizeParams.setMarginStart(ui.dp(6)); sizeParams.setMarginEnd(ui.dp(6)); header.addView(size, sizeParams);
         download = ui.icon("download", 14, ui.t("Download file"), () -> { if (file != null) save.accept(file); });
         close = ui.icon("close", 15, ui.t("Close file preview"), clear);
         header.addView(download); header.addView(close); addView(header);
-        meta = ui.row(); meta.setPadding(ui.dp(14), ui.dp(9), ui.dp(14), ui.dp(9));
-        path = ui.text("", 10, ui.muted); path.setSingleLine(true); path.setEllipsize(android.text.TextUtils.TruncateAt.START);
-        LayoutParams location = new LayoutParams(0, -2, 1); location.setMarginEnd(ui.dp(10));
-        meta.addView(path, location); size = ui.text("", 10, ui.muted); meta.addView(size); addView(meta);
-        mode = ui.row(); mode.setPadding(ui.dp(12), 0, ui.dp(12), ui.dp(8)); addView(mode);
+        mode = ui.row(); mode.setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)); addView(mode);
         scroll = new ScrollView(ui.context); scroll.setFillViewport(false); scroll.setVerticalScrollBarEnabled(false);
         addView(scroll, new LayoutParams(-1, 0, 1));
         notices = ui.column(); addView(notices);
     }
 
     void bind(JSONObject file, NativeFileTarget target, String error) {
+        bind(file, target, error, "");
+    }
+
+    void bind(JSONObject file, NativeFileTarget target, String error, String imageScope) {
+        this.imageScope = imageScope;
         this.file = file; this.target = target; rendered = false;
         String title = file == null ? target == null ? "" : target.path.substring(target.path.lastIndexOf('/') + 1) : file.optString("name");
-        name.setText(title); download.setVisibility(file == null ? GONE : VISIBLE);
-        meta.setVisibility(file == null ? GONE : VISIBLE);
+        name.setText(title + (file != null && target != null && target.line > 0 ? ":" + target.line : "")); download.setVisibility(file == null ? GONE : VISIBLE);
+        size.setVisibility(file == null ? GONE : VISIBLE);
+        externalFile.setVisibility(file != null && file.optBoolean("external") ? VISIBLE : GONE);
+        name.setContentDescription(target == null ? title : (file == null ? target.path : file.optString("path")) + (target.line > 0 ? ":" + target.line : ""));
         if (file != null) {
-            String location = file.optString("path") + (target != null && target.line > 0 ? ":" + target.line : "");
-            path.setText(location); path.setContentDescription(location);
             size.setText(NativeFileModel.size(file.optLong("size")));
         }
         notices.removeAllViews();
@@ -114,7 +123,7 @@ final class NativeFilePreview extends LinearLayout {
             LinearLayout wrapper = ui.column(); wrapper.setGravity(Gravity.CENTER_HORIZONTAL); wrapper.setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14));
             NativeContainedImage image = new NativeContainedImage(ui, false); image.setContentDescription(file.optString("name"));
             wrapper.addView(image, new LayoutParams(-2, -2)); scroll.addView(wrapper, new ScrollView.LayoutParams(-1, -2));
-            if (images != null) images.remote(image, NativeFileData.projectPath(project, file.optString("path"), "image"), 2048, error -> {
+            if (images != null) images.remote(image, NativeFileData.filePath(project, chat, file.optString("path"), "image"), imageScope, 2048, error -> {
                 if (error != null && image.isAttachedToWindow()) { wrapper.removeAllViews(); wrapper.addView(empty(ui, ui.t("This file cannot be previewed as an image"))); }
             });
         } else scroll.addView(empty(ui, ui.t("This file has no text preview. Download it to open locally.")));

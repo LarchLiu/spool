@@ -84,7 +84,7 @@ final class NativeDrawer extends FrameLayout {
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
         int width = MeasureSpec.getSize(widthSpec);
         int available = Math.max(0, width - getPaddingLeft() - getPaddingRight());
-        sheet.getLayoutParams().width = Math.min(ui.dp(right ? 360 : 298), Math.round(available * (right ? .92f : .88f)));
+        sheet.getLayoutParams().width = available;
         super.onMeasure(widthSpec, heightSpec);
         positionSheet();
     }

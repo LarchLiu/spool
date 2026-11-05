@@ -133,7 +133,7 @@ public class NativeComponentsTest {
                     drawer.show();
                     org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(250));
                     draw(drawer, width, 800, "drawer-" + suffix);
-                    assertEquals(Math.min(298, Math.round(width * .88f)), drawer.sheet.getWidth());
+                    assertEquals(width, drawer.sheet.getWidth());
                 }
             }
         }

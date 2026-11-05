@@ -23,6 +23,20 @@ sampling is for hotspot attribution, not an uninstrumented frame-rate baseline.
   on returning. Failed writes are not automatically retried.
 - Native document picker and bounded multipart uploads (6 files, 4 MiB each,
   16 MiB total); native project-file browsing and text/image previews.
+- Both mobile sidebars fill the available screen width. The file sidebar follows
+  the selected session's actual directory, including registered worktrees; its
+  header's information button shows the selectable path, checkout type, branch
+  or detached commit. Metadata refreshes on chat updates, focus/foreground return,
+  manual refresh and every ten seconds while the file panel is open. Polling
+  pauses in the background. Switching chats or directory paths clears the old
+  tree, search and file selection; late responses cannot repopulate them.
+- Referenced external files use the authenticated session preview/image/download
+  APIs and show an external-file label. The server's project setting and chat
+  authorization still decide access on every request; external parent directories
+  are never expanded. New chats without a session use the project file APIs.
+  File image caches distinguish directory scopes, so switching worktrees cannot
+  reuse an image from the previous checkout. Source stays selectable while
+  native highlighting loads or fails, and horizontal gestures scroll long lines.
 - Appearance, language and **Tailscale (tsnet)** share the Web-style Settings
   modal. Theme tiles and the language listbox are reusable native components;
   saving disables them until the session-scoped request succeeds or fails. Normal

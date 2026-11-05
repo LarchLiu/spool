@@ -1071,7 +1071,7 @@ public final class MainActivity extends Activity {
         history = new NestedScrollView(this);
         history.setFillViewport(true);
         history.setVerticalScrollBarEnabled(false);
-        historyContent = padded(18, 25);
+        historyContent = padded(12, 25);
         transcriptViews = new NativeKeyedViews(historyContent);
         history.addView(historyContent);
         historyScrollState.select(authEpoch + "\n" + selectionEpoch + "\n" + chatID);
@@ -1275,6 +1275,7 @@ public final class MainActivity extends Activity {
                 if (at(incoming, i).optString("id").equals(chatID)) {
                     try {
                         JSONObject next = at(incoming, i);
+                        if (fileBrowser != null && next.optDouble("updated_at") > chat.optDouble("updated_at")) fileBrowser.refreshWorkspace();
                         if (next.optDouble("updated_at") >= chat.optDouble("updated_at")) {
                             chat.put("title", next.opt("title"));
                             chat.put("participants", next.opt("participants"));
@@ -2119,10 +2120,12 @@ public final class MainActivity extends Activity {
 
     private void receiveChatEvent(String kind, JSONObject data) throws Exception {
         JSONObject previous = chat;
+        double previousRevision = previous == null ? -1 : previous.optDouble("updated_at", 0);
         boolean initial = previous == null;
         NativeChatState.Merge merge = NativeChatState.eventTracked(chat, kind, data);
         // An unchanged frame keeps the current state object, like an unchanged poll.
         chat = merge.unchanged ? chat : merge.chat;
+        if (fileBrowser != null && chat != null && previousRevision != chat.optDouble("updated_at", 0)) fileBrowser.refreshWorkspace();
         chats = NativeChatState.eventList(chats, chatID, kind, data);
         if (chat == null) { renderNavigation(); return; }
         if (initial) {
@@ -2216,6 +2219,7 @@ public final class MainActivity extends Activity {
 
     private void resumeWorkspace() {
         if (!foreground || destroyed || user == null || client == null) return;
+        if (fileBrowser != null) fileBrowser.resume();
         boolean bound = startWorkspace();
         if (!bound) workspaceEvents.resume();
         if (!workspaceReady) refreshWorkspace();
@@ -2530,13 +2534,14 @@ public final class MainActivity extends Activity {
         panel = "files";
         NativeDrawer overlay = new NativeDrawer(ui, true, this::closeDrawer);
         drawer = overlay;
-        if (fileState == null || !fileState.project.equals(projectID)) {
-            fileState = new NativeFileModel(projectID);
+        if (fileState == null || !fileState.project.equals(projectID) || !fileState.chat.equals(chatID)) {
+            fileState = new NativeFileModel(projectID, chatID);
             fileState.split = getPreferences(MODE_PRIVATE).getFloat("fileTreeFraction", .32f);
         }
         String ownerProject = projectID;
+        String ownerChat = chatID;
         fileBrowser = new NativeFileBrowser(ui, projectID.isEmpty() ? "" : projectName(), fileState, fileImages,
-                this::readProjectFile, file -> downloadFile(NativeFileData.projectPath(ownerProject, file.optString("path"), "download"), file.optString("name")),
+                this::readProjectFile, file -> downloadFile(NativeFileData.filePath(ownerProject, ownerChat, file.optString("path"), "download"), file.optString("name")),
                 this::openExternalLink, this::closeDrawer,
                 value -> getPreferences(MODE_PRIVATE).edit().putFloat("fileTreeFraction", (float) value).apply());
         overlay.sheet.addView(fileBrowser, new LinearLayout.LayoutParams(-1, -1));
@@ -2737,6 +2742,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onStop() {
         foreground = false;
+        if (fileBrowser != null) fileBrowser.deactivate();
         if (historyScroll != null) historyScroll.suspend();
         if (ui != null) ui.dismissMenus();
         monitor.setActive(false);

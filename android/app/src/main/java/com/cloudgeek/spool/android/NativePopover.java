@@ -26,6 +26,12 @@ final class NativePopover {
         menu.window.setInputMethodMode(PopupWindow.INPUT_METHOD_NEEDED);
         return menu;
     }
+    static NativePopover workspace(NativeUi ui) {
+        NativePopover popup = new NativePopover(ui, 420, 10, 13, 16);
+        popup.workspaceMode = true;
+        popup.restyle(10, ui.line, 8, 30, 0x22000000);
+        return popup;
+    }
 
     final LinearLayout content;
     Runnable dismissed;
@@ -42,6 +48,7 @@ final class NativePopover {
     private boolean operatorMode;
     private boolean permissionMode;
     private boolean commandMode;
+    private boolean workspaceMode;
     private String search = "";
     private long searchAt;
     private android.view.ViewTreeObserver observer;
@@ -241,6 +248,14 @@ final class NativePopover {
         int width = Math.max(ui.dp(1), Math.min(requestedWidth, viewport.width() - viewportReserve));
         int[] position = new int[2];
         anchor.getLocationOnScreen(position);
+        if (workspaceMode) {
+            content.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            int height = Math.min(Math.max(1, viewport.height() - ui.dp(16)), content.getMeasuredHeight());
+            int x = Math.max(viewport.left + ui.dp(8), Math.min(position[0], viewport.right - width - ui.dp(8)));
+            int y = Math.max(viewport.top + ui.dp(8), Math.min(position[1] + anchor.getHeight() + ui.dp(8), viewport.bottom - height - ui.dp(8)));
+            place(anchor, viewport, x, y, width, height);
+            return;
+        }
         if (commandMode) {
             width = Math.max(ui.dp(1), Math.min(requestedWidth, anchor.getWidth() - ui.dp(2)));
             content.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));

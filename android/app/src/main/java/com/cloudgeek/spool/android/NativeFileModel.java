@@ -10,7 +10,7 @@ import java.util.Set;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/** Project-scoped lazy tree state; search only visits entries already authorized by the server. */
+/** Session-scoped lazy tree state; search only visits entries already authorized by the server. */
 final class NativeFileModel {
     static final class Entry {
         final String name, path;
@@ -31,7 +31,9 @@ final class NativeFileModel {
     final Map<String, List<Entry>> directories = new HashMap<>();
     final Set<String> expanded = new LinkedHashSet<>(), requested = new LinkedHashSet<>();
     private Set<String> beforeSearch;
-    final String project;
+    final String project, chat;
+    JSONObject workspace;
+    String workspaceError = "";
     String query = "", selected = "", focused = "", error = "", fileError = "";
     JSONObject file;
     NativeFileTarget target;
@@ -40,7 +42,18 @@ final class NativeFileModel {
     int epoch, fileRequest;
     double split = .32;
 
-    NativeFileModel(String project) { this.project = project; }
+    NativeFileModel(String project) { this(project, ""); }
+    NativeFileModel(String project, String chat) { this.project = project; this.chat = chat; }
+
+    String apiBase() { return NativeFileData.apiBase(project, chat); }
+    String filePath(String path, String mode) { return NativeFileData.filePath(project, chat, path, mode); }
+    boolean ready() { return chat.isEmpty() || workspace != null && workspace.optBoolean("available"); }
+
+    void clearScope() {
+        reset(); closeSearch();
+        selected = focused = fileError = "";
+        file = null; target = loadedTarget = null;
+    }
 
     static String key(String path) { return path.replaceFirst("/+$", "").isEmpty() ? "." : path.replaceFirst("/+$", ""); }
 

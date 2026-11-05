@@ -36,13 +36,21 @@ final class NativeFileData {
     }
 
     static String projectPath(String project, String path, String mode) {
+        return filePath(project, "", path, mode);
+    }
+
+    static String apiBase(String project, String chat) {
+        return chat.isEmpty() ? "/api/projects/" + Uri.encode(project) : "/api/chats/" + Uri.encode(chat);
+    }
+
+    static String filePath(String project, String chat, String path, String mode) {
         if (project.isEmpty() || path.isEmpty() || !(mode.isEmpty() || mode.equals("download") || mode.equals("image"))) throw new IllegalArgumentException("Invalid project file target");
-        return "/api/projects/" + Uri.encode(project) + "/file?path=" + Uri.encode(path) + (mode.isEmpty() ? "" : "&" + mode + "=1");
+        return apiBase(project, chat) + "/file?path=" + Uri.encode(path) + (mode.isEmpty() ? "" : "&" + mode + "=1");
     }
 
     static boolean allowedPath(String path) {
         return path != null && (path.matches("^/api/chats/[^/?#]+/attachments\\?id=[^&#]+$")
-                || path.matches("^/api/projects/[^/?#]+/file\\?path=[^&#]+(?:&(?:image|download)=1)?$"));
+                || path.matches("^/api/(?:projects|chats)/[^/?#]+/file\\?path=[^&#]+(?:&(?:image|download)=1)?$"));
     }
 
     static boolean image(String mediaType) { return mediaType != null && mediaType.startsWith("image/"); }

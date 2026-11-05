@@ -44,7 +44,9 @@ final class NativeFileBrowser extends LinearLayout {
     private final Paint borderPaint = new Paint();
     private final Set<String> pending = new LinkedHashSet<>();
     private List<NativeFileModel.Row> rows = new ArrayList<>();
-    private boolean active = true, syncingSearch;
+    private boolean active = true, syncingSearch, started, workspacePending;
+    private int workspaceRequest;
+    private final Runnable workspacePoll = this::refreshWorkspace;
     private String revealing = "";
     private final BaseAdapter adapter = new BaseAdapter() {
         @Override public int getCount() { return rows.size(); }
@@ -83,7 +85,8 @@ final class NativeFileBrowser extends LinearLayout {
         treePane.addView(treeSection, new LayoutParams(-1, 0, 1)); notices = ui.column(); treePane.addView(notices);
         split = new NativeFileSplit(ui, treePane, state.split, value -> { state.split = value; resize.accept(value); });
         addView(split, new LayoutParams(-1, 0, 1));
-        preview = new NativeFilePreview(ui, state.project, images, this::select, external, download, this::clearPreview);
+        preview = new NativeFilePreview(ui, state.project, state.chat, images, this::select,
+                address -> { if (active) external.accept(address); }, file -> { if (active) download.accept(file); }, this::clearPreview);
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence value, int start, int count, int after) {}
             public void onTextChanged(CharSequence value, int start, int before, int count) { if (!syncingSearch) { state.search(value.toString()); renderTree(); loadExpanded(); } }
@@ -101,9 +104,18 @@ final class NativeFileBrowser extends LinearLayout {
         }
     }
 
-    void start() { if (state.project.isEmpty()) return; loadDirectory("."); loadExpanded(); if (state.target != null) select(state.target); }
+    void start() {
+        if (state.project.isEmpty() || started) return;
+        active = true; started = true;
+        if (!state.chat.isEmpty()) refreshWorkspace();
+        else { loadDirectory("."); loadExpanded(); }
+        if (state.target != null) select(state.target);
+    }
+    void resume() { if (!active) { started = false; start(); } else refreshWorkspace(); }
     void deactivate() {
         active = false; state.epoch++; state.fileRequest++;
+        workspaceRequest++; workspacePending = false; removeCallbacks(workspacePoll);
+        header.workspaceInfo.popover.dismiss();
         state.requested.removeAll(pending); pending.clear();
         hideKeyboard();
     }
@@ -123,14 +135,50 @@ final class NativeFileBrowser extends LinearLayout {
         if (!search.getText().toString().equals(state.query)) { syncingSearch = true; search.setText(state.query); syncingSearch = false; }
     }
 
-    void reload() { state.reset(); pending.clear(); loadDirectory("."); if (state.target != null) select(state.target); renderTree(); }
+    void reload() {
+        if (!active) return;
+        state.reset(); pending.clear(); revealing = "";
+        refreshWorkspace(); loadDirectory(".");
+        if (state.target != null) select(state.target);
+        renderTree();
+    }
+
+    void refreshWorkspace() {
+        if (!active || state.chat.isEmpty() || workspacePending) return;
+        removeCallbacks(workspacePoll);
+        workspacePending = true;
+        int request = ++workspaceRequest;
+        read.read(state.apiBase() + "/workspace", (value, error) -> {
+            if (!active || request != workspaceRequest) return;
+            workspacePending = false;
+            if (error == null && (value == null || value.optString("path").isEmpty())) error = new java.io.IOException(ui.t("Session directory is unavailable"));
+            JSONObject previous = state.workspace;
+            boolean wasReady = state.ready();
+            String oldPath = previous == null ? "" : previous.optString("path");
+            String newPath = error == null ? value.optString("path") : "";
+            state.workspace = error == null ? value : null;
+            state.workspaceError = error == null ? "" : error.getMessage() == null ? ui.t("Request failed") : error.getMessage();
+            if (!oldPath.equals(newPath) || wasReady != state.ready()) {
+                NativeFileTarget target = previous == null || oldPath.equals(newPath) ? state.target : null;
+                state.clearScope(); pending.clear(); revealing = "";
+                bindSearch(); bindPreview();
+                if (target != null) select(target);
+            }
+            if (state.ready()) {
+                loadDirectory("."); loadExpanded();
+                if (state.file != null && !state.file.optBoolean("external")) reveal(state.file.optString("path"));
+            }
+            renderTree();
+            postDelayed(workspacePoll, 10_000);
+        });
+    }
     private void loadExpanded() { for (String path : new ArrayList<>(state.expanded)) loadDirectory(path); }
     void loadDirectory(String input) {
         String path = NativeFileModel.key(input);
-        if (!active || state.requested.contains(path)) return;
+        if (!active || !state.ready() || state.requested.contains(path)) return;
         state.requested.add(path); pending.add(path); renderTree();
         int epoch = state.epoch;
-        read.read("/api/projects/" + android.net.Uri.encode(state.project) + "/files?path=" + android.net.Uri.encode(path), (value, error) -> {
+        read.read(state.apiBase() + "/files?path=" + android.net.Uri.encode(path), (value, error) -> {
             if (!active || epoch != state.epoch) return;
             pending.remove(path);
             if (error != null) state.error = error.getMessage() == null ? ui.t("Request failed") : error.getMessage();
@@ -146,10 +194,13 @@ final class NativeFileBrowser extends LinearLayout {
         state.target = target; state.selected = target.path; state.fileError = ""; revealing = "";
         int request = ++state.fileRequest, epoch = state.epoch;
         bindPreview(); renderTree();
-        read.read(NativeFileData.projectPath(state.project, target.path, ""), (value, error) -> {
+        read.read(state.filePath(target.path, ""), (value, error) -> {
             if (!active || epoch != state.epoch || request != state.fileRequest) return;
             if (error != null) { state.file = null; state.fileError = error.getMessage() == null ? ui.t("Request failed") : error.getMessage(); }
-            else { state.file = value; state.loadedTarget = target; revealing = value.optString("path"); reveal(revealing); }
+            else {
+                state.file = value; state.loadedTarget = target;
+                if (!value.optBoolean("external") && state.ready()) { loadDirectory("."); revealing = value.optString("path"); reveal(revealing); }
+            }
             bindPreview(); renderTree();
         });
     }
@@ -167,7 +218,8 @@ final class NativeFileBrowser extends LinearLayout {
     private void clearPreview() { state.target = null; state.file = null; state.loadedTarget = null; state.selected = ""; state.fileError = ""; state.fileRequest++; revealing = ""; bindPreview(); renderTree(); }
     private void bindPreview() {
         if (state.target == null) { split.preview(null); return; }
-        preview.bind(state.file, state.file == null ? state.target : state.loadedTarget, state.fileError);
+        String imageScope = (state.workspace == null ? "" : state.workspace.optString("path")) + "\n" + state.epoch;
+        preview.bind(state.file, state.file == null ? state.target : state.loadedTarget, state.fileError, imageScope);
         if (split.preview != preview) split.preview(preview);
     }
 
@@ -198,6 +250,7 @@ final class NativeFileBrowser extends LinearLayout {
     }
 
     void renderTree() {
+        header.workspace(state);
         rows = state.rows();
         String candidate = state.focused;
         while (!candidate.isEmpty() && !containsRow(candidate)) {
@@ -206,8 +259,14 @@ final class NativeFileBrowser extends LinearLayout {
         }
         state.focused = candidate.isEmpty() && !rows.isEmpty() ? rows.get(0).entry.path : candidate;
         adapter.notifyDataSetChanged(); loading.setVisibility(pending.isEmpty() ? GONE : VISIBLE);
-        empty.setVisibility(pending.isEmpty() && state.directories.values().stream().allMatch(List::isEmpty) && state.error.isEmpty() ? VISIBLE : GONE);
+        empty.setVisibility(state.ready() && pending.isEmpty() && state.directories.values().stream().allMatch(List::isEmpty) && state.error.isEmpty() ? VISIBLE : GONE);
         notices.removeAllViews();
+        if (!state.ready()) {
+            String message = !state.workspaceError.isEmpty() ? state.workspaceError : state.workspace == null ? ui.t("Loading session directory…") : ui.t("Session directory is unavailable");
+            TextView notice = NativeFilePreview.notice(ui, message + (state.workspaceError.isEmpty() ? "" : "  " + ui.t("Retry")));
+            if (!state.workspaceError.isEmpty()) { notice.setFocusable(true); notice.setOnClickListener(view -> reload()); }
+            notices.addView(notice);
+        }
         if (!state.error.isEmpty()) {
             TextView notice = NativeFilePreview.notice(ui, state.error + "  " + ui.t("Retry")); notice.setFocusable(true); notice.setOnClickListener(view -> reload()); notices.addView(notice);
         }

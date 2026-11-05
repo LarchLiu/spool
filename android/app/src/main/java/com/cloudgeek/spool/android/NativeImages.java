@@ -51,9 +51,13 @@ final class NativeImages {
     NativeImages(Executor worker, Supplier<Source> source) { this.worker = worker; this.source = source; }
 
     void remote(ImageView image, String path, int edge, Consumer<Exception> completion) {
+        remote(image, path, "", edge, completion);
+    }
+
+    void remote(ImageView image, String path, String scope, int edge, Consumer<Exception> completion) {
         if (!NativeFileData.allowedPath(path)) throw new IllegalArgumentException("Only authorized workspace file APIs are supported");
         Source captured = source.get();
-        request(image, "remote:" + path, edge, () -> captured.load(path), completion);
+        request(image, "remote:" + path + (scope.isEmpty() ? "" : "\n" + scope), edge, () -> captured.load(path), completion);
     }
 
     void local(ImageView image, String id, NativeFileData data, int edge, Consumer<Exception> completion) {

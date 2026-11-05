@@ -198,12 +198,12 @@ public class NativeFilesTest {
             browser.select(new NativeFileTarget("README.md", 4, 0));
             requests.remove(0).result.done(fixture.getJSONObject("projectFiles").getJSONObject("README.md"), null);
             browser.select(new NativeFileTarget("missing.md", 20, 0));
-            assertEquals("README.md", browser.preview.name.getText().toString());
-            assertEquals("README.md:4", browser.preview.path.getText().toString());
+            assertEquals("README.md:4", browser.preview.name.getText().toString());
+            assertEquals("README.md:4", browser.preview.name.getContentDescription().toString());
             requests.remove(requests.size() - 1).result.done(null, new java.io.IOException("File unavailable"));
             layout(browser, 331, 800);
             assertEquals("missing.md", browser.preview.name.getText().toString());
-            assertEquals(View.GONE, browser.preview.scroll.getVisibility()); assertEquals(View.GONE, browser.preview.meta.getVisibility());
+            assertEquals(View.GONE, browser.preview.scroll.getVisibility()); assertEquals(View.GONE, browser.preview.size.getVisibility());
             assertEquals(View.GONE, browser.preview.download.getVisibility());
             assertEquals(browser.preview.header.getBottom(), browser.preview.notices.getTop());
             assertEquals("File unavailable", ((TextView) browser.preview.notices.getChildAt(0)).getText().toString());
@@ -317,7 +317,7 @@ public class NativeFilesTest {
                     JSONObject header = box(browser.header, browser); header.put("height", header.getInt("height") + ui.dp(1));
                     JSONObject geometry = new JSONObject().put("panel", box(browser, browser)).put("header", header).put("split", box(browser.split, browser))
                             .put("tree", box(browser.treePane, browser)).put("handle", box(browser.split.handle, browser)).put("preview", box(browser.preview, browser)).put("previewHeader", box(browser.preview.header, browser))
-                            .put("meta", box(browser.preview.meta, browser)).put("previewScroll", box(browser.preview.scroll, browser)).put("rows", rows);
+                            .put("previewScroll", box(browser.preview.scroll, browser)).put("rows", rows);
                     java.nio.file.Files.writeString(new File(System.getProperty("spool.ui.artifacts"), "native-files-" + suffix + ".json").toPath(), geometry.toString(2));
                     if (width == 360) {
                         NativeFileSource source = child(browser.preview.scroll, NativeFileSource.class);

@@ -28,7 +28,7 @@ function write(relative, contents) {
 }
 const icons = {
   menu:'Menu', close:'X', back:'ArrowLeft', send:'ArrowUp', stop:'Square', arrow_down:'ArrowDown',
-  files_close:'PanelRightClose', file:'File',
+  files_close:'PanelRightClose', file:'File', info:'Info', folder_git:'FolderGit2', git_branch:'GitBranch', git_commit:'GitCommitHorizontal',
   plus:'Plus', folder:'Folder', folder_open:'FolderOpen', files:'PanelRightOpen',
   project_folder:'Folder', project_folder_open:'FolderOpen',
   people:'Users', user_plus:'UserPlus', attach:'Paperclip', settings:'Settings2', file_text:'FileText',

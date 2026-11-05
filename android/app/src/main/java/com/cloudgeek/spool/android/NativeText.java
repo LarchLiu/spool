@@ -65,6 +65,8 @@ final class NativeText {
             case "Deny": value = "拒绝"; break;
             case "Deny operations that are not already permitted.": value = "不再询问，直接拒绝未获允许的操作。"; break;
             case "Describe your idea. Your agent takes it from here.": value = "描述你的想法，剩下的交给 agent。"; break;
+            case "Detached HEAD · {commit}": value = "游离 HEAD · {commit}"; break;
+            case "Directory": value = "目录"; break;
             case "Disabled": value = "已停用"; break;
             case "Dismiss": value = "关闭"; break;
             case "Don't ask": value = "不询问"; break;
@@ -76,6 +78,7 @@ final class NativeText {
             case "Enter a message of up to 2000 characters.": value = "请输入不超过 2000 字的消息。"; break;
             case "Enter workspace": value = "进入工作空间"; break;
             case "Everyone online can read this group chat.": value = "所有在线成员都能看到群聊消息。"; break;
+            case "External file": value = "外部文件"; break;
             case "Extra High": value = "极高"; break;
             case "File contents are not included in this patch.": value = "此补丁未包含文件正文。"; break;
             case "File preview": value = "文件预览"; break;
@@ -103,11 +106,13 @@ final class NativeText {
             case "Loading earlier messages…": value = "正在加载更早的消息…"; break;
             case "Loading files…": value = "正在加载文件…"; break;
             case "Loading file…": value = "正在加载文件…"; break;
+            case "Loading session directory…": value = "正在加载会话目录…"; break;
             case "Loading tool details…": value = "正在加载工具详情…"; break;
             case "Local agent workspace": value = "本地 agent 工作空间"; break;
             case "Local session": value = "本地会话"; break;
             case "Lorelei": value = "Lorelei"; break;
             case "Low": value = "低"; break;
+            case "Main checkout": value = "主工作区"; break;
             case "Manual": value = "手动审批"; break;
             case "Max": value = "最大"; break;
             case "Medium": value = "中"; break;
@@ -194,6 +199,8 @@ final class NativeText {
             case "Send message": value = "发送消息"; break;
             case "Send private message": value = "发送私聊消息"; break;
             case "Send status unknown. The message may have arrived; it will not be retried automatically.": value = "发送状态未知，消息可能已送达，系统不会自动重发。"; break;
+            case "Session directory": value = "会话目录"; break;
+            case "Session directory is unavailable": value = "会话目录已不可用"; break;
             case "Set a native agent goal": value = "设置 Agent 原生目标"; break;
             case "Settings": value = "设置"; break;
             case "Show less": value = "收起"; break;
@@ -245,6 +252,7 @@ final class NativeText {
             case "Working for {seconds}s": value = "工作中 {seconds} 秒"; break;
             case "Working…": value = "处理中…"; break;
             case "Workspace": value = "工作空间"; break;
+            case "Worktree": value = "Worktree"; break;
             case "You approve requests outside the sandbox.": value = "沙箱之外的操作由你审批。"; break;
             case "You are sending too quickly. Try again shortly.": value = "发送过于频繁，请稍后再试。"; break;
             case "{count} members": value = "{count} 位成员"; break;
@@ -314,6 +322,8 @@ final class NativeText {
             case "Deny": value = "拒否"; break;
             case "Deny operations that are not already permitted.": value = "許可されていない操作は確認せずに拒否します。"; break;
             case "Describe your idea. Your agent takes it from here.": value = "アイデアを伝えて、あとはエージェントに任せましょう。"; break;
+            case "Detached HEAD · {commit}": value = "分離 HEAD · {commit}"; break;
+            case "Directory": value = "ディレクトリ"; break;
             case "Disabled": value = "無効"; break;
             case "Dismiss": value = "閉じる"; break;
             case "Don't ask": value = "確認しない"; break;
@@ -325,6 +335,7 @@ final class NativeText {
             case "Enter a message of up to 2000 characters.": value = "2000 文字以内のメッセージを入力してください。"; break;
             case "Enter workspace": value = "ワークスペースを開く"; break;
             case "Everyone online can read this group chat.": value = "オンラインの全員がこのグループチャットを閲覧できます。"; break;
+            case "External file": value = "外部ファイル"; break;
             case "Extra High": value = "最高"; break;
             case "File contents are not included in this patch.": value = "このパッチにはファイルの内容が含まれていません。"; break;
             case "File preview": value = "ファイルプレビュー"; break;
@@ -352,11 +363,13 @@ final class NativeText {
             case "Loading earlier messages…": value = "以前のメッセージを読み込み中…"; break;
             case "Loading files…": value = "ファイル一覧を読み込み中…"; break;
             case "Loading file…": value = "ファイルを読み込み中…"; break;
+            case "Loading session directory…": value = "セッションディレクトリを読み込み中…"; break;
             case "Loading tool details…": value = "ツールの詳細を読み込み中…"; break;
             case "Local agent workspace": value = "ローカルエージェントのワークスペース"; break;
             case "Local session": value = "ローカルセッション"; break;
             case "Lorelei": value = "Lorelei"; break;
             case "Low": value = "低"; break;
+            case "Main checkout": value = "メイン作業ツリー"; break;
             case "Manual": value = "手動承認"; break;
             case "Max": value = "最大"; break;
             case "Medium": value = "中"; break;
@@ -443,6 +456,8 @@ final class NativeText {
             case "Send message": value = "メッセージを送信"; break;
             case "Send private message": value = "プライベートメッセージを送信"; break;
             case "Send status unknown. The message may have arrived; it will not be retried automatically.": value = "送信状態が不明です。届いている可能性があるため、自動再送はしません。"; break;
+            case "Session directory": value = "セッションディレクトリ"; break;
+            case "Session directory is unavailable": value = "セッションディレクトリを利用できません"; break;
             case "Set a native agent goal": value = "エージェントのネイティブ目標を設定"; break;
             case "Settings": value = "設定"; break;
             case "Show less": value = "折りたたむ"; break;
@@ -494,6 +509,7 @@ final class NativeText {
             case "Working for {seconds}s": value = "実行中 {seconds} 秒"; break;
             case "Working…": value = "処理中…"; break;
             case "Workspace": value = "ワークスペース"; break;
+            case "Worktree": value = "Worktree"; break;
             case "You approve requests outside the sandbox.": value = "サンドボックス外の操作を自分で承認します。"; break;
             case "You are sending too quickly. Try again shortly.": value = "送信が速すぎます。少し待ってからお試しください。"; break;
             case "{count} members": value = "{count} 人のメンバー"; break;

@@ -16,6 +16,10 @@ final class NativeIcons {
             case "arrow_down": resource = R.drawable.web_icon_arrow_down; break;
             case "files_close": resource = R.drawable.web_icon_files_close; break;
             case "file": resource = R.drawable.web_icon_file; break;
+            case "info": resource = R.drawable.web_icon_info; break;
+            case "folder_git": resource = R.drawable.web_icon_folder_git; break;
+            case "git_branch": resource = R.drawable.web_icon_git_branch; break;
+            case "git_commit": resource = R.drawable.web_icon_git_commit; break;
             case "plus": resource = R.drawable.web_icon_plus; break;
             case "folder": resource = R.drawable.web_icon_folder; break;
             case "folder_open": resource = R.drawable.web_icon_folder_open; break;
