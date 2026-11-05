@@ -1,5 +1,5 @@
 <div>
-  <img src="assets/logo.png" alt="Spool logo" width="40" /><h1 align="center">Spool</h1>
+  <img src="assets/logo.png" alt="Spool logo" width="40" /><h1>Spool</h1>
 </div>
 
 [简体中文](README.zh-CN.md)
