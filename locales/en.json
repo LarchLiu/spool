@@ -735,5 +735,11 @@
   "voxl source code is licensed under MIT. x264 is licensed under GPLv2 or later; builds linked with x264 are subject to applicable GPL terms. Other dependencies retain their respective licenses.": "voxl source code is licensed under MIT. x264 is licensed under GPLv2 or later; builds linked with x264 are subject to applicable GPL terms. Other dependencies retain their respective licenses.",
   "If you later provide the built binaries to others, assess the applicable distribution obligations separately, including license notices and corresponding source code requirements.": "If you later provide the built binaries to others, assess the applicable distribution obligations separately, including license notices and corresponding source code requirements.",
   "The component is installed on this computer and started on demand by Spool.": "The component is installed on this computer and started on demand by Spool.",
-  "View upstream projects and licenses:": "View upstream projects and licenses:"
+  "View upstream projects and licenses:": "View upstream projects and licenses:",
+  "Desktop zoom": "Desktop zoom",
+  "Zoom out": "Zoom out",
+  "Zoom in": "Zoom in",
+  "Fit desktop to window": "Fit desktop to window",
+  "Pan desktop": "Pan desktop",
+  "Enable pan mode to zoom and pan. Use Ctrl/Command + wheel or pinch to zoom, and drag to pan. Turn it off to keep the view and restore remote controls, including two-finger scrolling.": "Enable pan mode to zoom and pan. Use Ctrl/Command + wheel or pinch to zoom, and drag to pan. Turn it off to keep the view and restore remote controls, including two-finger scrolling."
 }

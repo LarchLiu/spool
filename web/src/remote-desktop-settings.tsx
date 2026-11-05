@@ -46,6 +46,8 @@ export function RemoteDesktopDialog({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const disposeViewer = useRef<(() => void) | undefined>(undefined);
+  useEffect(() => () => disposeViewer.current?.(), []);
   const [token, setToken] = useState<string>();
   const available = useRemoteDesktopAvailable(token);
   useEffect(() => {
@@ -105,7 +107,10 @@ export function RemoteDesktopDialog({
           referrerPolicy="no-referrer"
           allow="fullscreen"
           allowFullScreen
-          onLoad={(event) => configureVoxlFrame(event.currentTarget)}
+          onLoad={(event) => {
+            disposeViewer.current?.();
+            disposeViewer.current = configureVoxlFrame(event.currentTarget, t);
+          }}
         />
       ) : (
         <p role="status">{t("Connecting…")}</p>

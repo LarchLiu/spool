@@ -735,5 +735,11 @@
   "voxl source code is licensed under MIT. x264 is licensed under GPLv2 or later; builds linked with x264 are subject to applicable GPL terms. Other dependencies retain their respective licenses.": "voxl 自体のソースコードは MIT ライセンスです。x264 は GPLv2 以降のライセンスであり、x264 をリンクしたビルド成果物には該当する GPL の条件が適用されます。その他の依存関係には、それぞれのライセンスが適用されます。",
   "If you later provide the built binaries to others, assess the applicable distribution obligations separately, including license notices and corresponding source code requirements.": "後でビルド成果物を他者に提供する場合は、ライセンス表記や対応するソースコードの提供要件を含め、該当する配布義務を別途確認してください。",
   "The component is installed on this computer and started on demand by Spool.": "コンポーネントはこのコンピューターにインストールされ、必要に応じて Spool が起動します。",
-  "View upstream projects and licenses:": "上流プロジェクトとライセンスを確認："
+  "View upstream projects and licenses:": "上流プロジェクトとライセンスを確認：",
+  "Desktop zoom": "リモート画面のズーム",
+  "Zoom out": "縮小",
+  "Zoom in": "拡大",
+  "Fit desktop to window": "ウィンドウに合わせる",
+  "Pan desktop": "画面を移動",
+  "Enable pan mode to zoom and pan. Use Ctrl/Command + wheel or pinch to zoom, and drag to pan. Turn it off to keep the view and restore remote controls, including two-finger scrolling.": "移動モードを有効にすると、Ctrl/Command＋ホイールまたはピンチでズーム、ドラッグで画面を移動できます。無効にすると表示を保ったまま、2 本指スクロールなどのリモート操作に戻ります。"
 }

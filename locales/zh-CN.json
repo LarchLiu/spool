@@ -735,5 +735,11 @@
   "voxl source code is licensed under MIT. x264 is licensed under GPLv2 or later; builds linked with x264 are subject to applicable GPL terms. Other dependencies retain their respective licenses.": "voxl 自身源码采用 MIT 许可证。x264 采用 GPLv2 或后续版本；链接 x264 的构建产物涉及相应的 GPL 许可要求。其他依赖适用各自的许可证。",
   "If you later provide the built binaries to others, assess the applicable distribution obligations separately, including license notices and corresponding source code requirements.": "如果以后将构建产物提供给他人，请另行判断相应的分发义务，包括许可证声明和对应源码的提供要求。",
   "The component is installed on this computer and started on demand by Spool.": "组件安装在本机，由 Spool 按需启动。",
-  "View upstream projects and licenses:": "查看上游项目及许可证："
+  "View upstream projects and licenses:": "查看上游项目及许可证：",
+  "Desktop zoom": "远程画面缩放",
+  "Zoom out": "缩小",
+  "Zoom in": "放大",
+  "Fit desktop to window": "适应窗口",
+  "Pan desktop": "平移画面",
+  "Enable pan mode to zoom and pan. Use Ctrl/Command + wheel or pinch to zoom, and drag to pan. Turn it off to keep the view and restore remote controls, including two-finger scrolling.": "开启平移模式后可缩放和平移：Ctrl/Command＋滚轮或双指捏合缩放，拖动画面平移。关闭后保留当前画面，并恢复远程操作，包括双指滚动。"
 }

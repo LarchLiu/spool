@@ -235,6 +235,17 @@ helper listens only on loopback. Its file panel uses `<data-dir>/voxl/shared/`;
 uploads and downloads remain protected by Spool login, remote desktop grants,
 Origin, and CSRF checks. See the [voxl upstream instructions](https://github.com/tembo/voxl#usage) for platform dependencies.
 
+Enable the viewer toolbar's **pan button** to zoom and pan locally. With it
+selected, use **− / +** or **Ctrl/Command + wheel** to zoom from **100% to 500%**
+relative to the desktop fitted to the window. Drag with the left or middle mouse
+button to pan, or use two fingers to pinch and pan on a touchscreen. Click the
+percentage to fit the desktop to the window again. Turning the pan button off
+keeps the current zoom and position, disables local zoom and pan, and restores
+voxl's native remote controls, including two-finger scrolling. Ordinary wheel
+scrolling still scrolls the remote application in either mode. Zoom affects only
+your viewer; the host resolution and other viewers stay the same. The native
+keyboard, files, and fullscreen controls remain available.
+
 ## voxl copyright and licensing
 
 Spool integrates [voxl](https://github.com/tembo/voxl), whose source code is
