@@ -98,7 +98,7 @@ public final class MainActivity extends Activity {
     private volatile int authEpoch;
     private volatile int workspaceEpoch;
     private int selectionEpoch, draftVersion;
-    private boolean foreground, connected, connecting, settingsOpen, busy, workspaceReady;
+    private boolean foreground, connected, connecting, settingsOpen, busy, workspaceReady, restoringSession;
     private final NativePerformanceProbe performanceProbe = new NativePerformanceProbe();
     private volatile Client client;
     private EventStream workspaceStream;
@@ -222,6 +222,8 @@ public final class MainActivity extends Activity {
         theme = getPreferences(MODE_PRIVATE).getString("theme", "system");
         language = getPreferences(MODE_PRIVATE).getString("language", "system");
         origin = getPreferences(MODE_PRIVATE).getString("serverOrigin", "");
+        // Resolve the private, origin-scoped Go session before exposing the login form.
+        restoringSession = !origin.isEmpty();
         connectivity = getSystemService(ConnectivityManager.class);
         networkCallback =
                 new ConnectivityManager.NetworkCallback() {
@@ -436,7 +438,6 @@ public final class MainActivity extends Activity {
         boolean reopenFiles = panel.equals("files");
         captureDraft();
         if (ui != null) ui.dismissMenus();
-        dismissSettingsDialog();
         closeAvatarPicker();
         closeImagePreview();
         detachPeople();
@@ -482,7 +483,11 @@ public final class MainActivity extends Activity {
         serverInput = null;
         drawer = null;
         panel = "";
-        if (user == null) loginPage();
+        username = password = null;
+        loginError = null;
+        loginSubmit = null;
+        if (user == null && restoringSession) connectingPage();
+        else if (user == null) loginPage();
         else workspacePage();
         setContentView(root);
         root.requestApplyInsets();
@@ -544,6 +549,20 @@ public final class MainActivity extends Activity {
         loginError = login.error;
         loginSubmit = login.submit;
         root.addView(login, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private void connectingPage() {
+        root.addView(new NativeConnecting(ui, connectionMessage, this::retrySession, this::openSettings),
+                new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private void retrySession() {
+        if (connecting) return;
+        if (connected && client != null) {
+            connectionMessage = "";
+            render();
+            restoreSession(client, generation);
+        } else connect(origin);
     }
 
     private void showLoginError(String message) {
@@ -630,6 +649,7 @@ public final class MainActivity extends Activity {
             policy = new OriginPolicy(address);
         } catch (Exception e) {
             if (serverInput != null) serverInput.setError(e.getMessage());
+            if (restoringSession) connectionFailed(e);
             return;
         }
         origin = policy.origin;
@@ -643,7 +663,10 @@ public final class MainActivity extends Activity {
         connectionMessage = "";
         connectionInfo = null;
         monitor.stop();
-        updateConnectionSettings();
+        if (user == null) {
+            restoringSession = true;
+            render();
+        } else updateConnectionSettings();
         connectionWorker.execute(
                 () -> {
                     try {
@@ -753,12 +776,14 @@ public final class MainActivity extends Activity {
         final String loc = locale();
         io.execute(
                 () -> {
+                    if (token != generation || session != authEpoch || destroyed) return;
                     try {
                         JSONObject result = (JSONObject) request(captured, "/me", null, "", loc);
                         post(
                                 token,
                                 () -> {
                                     if (session != authEpoch) return;
+                                    restoringSession = false;
                                     user = result.optJSONObject("user");
                                     csrf = result.optString("csrf");
                                     JSONObject preferences = result.optJSONObject("preferences");
@@ -776,11 +801,11 @@ public final class MainActivity extends Activity {
                                 token,
                                 () -> {
                                     if (session != authEpoch) return;
-                                    if (!(e instanceof ApiFailure)
-                                            || ((ApiFailure) e).status != 401)
+                                    if (e instanceof ApiFailure && ((ApiFailure) e).status == 401)
+                                        restoringSession = false;
+                                    else
                                         connectionMessage = e.getMessage();
-                                    if (!settingsOpen) render();
-                                    else updateConnectionSettings();
+                                    render();
                                 });
                     }
                 });
@@ -790,7 +815,8 @@ public final class MainActivity extends Activity {
         connecting = false;
         connectionMessage = e.getMessage();
         if (httpsState.equals("Checking")) httpsState = "Failed";
-        updateConnectionSettings();
+        if (restoringSession) render();
+        else updateConnectionSettings();
     }
 
     private void disconnect() {
@@ -836,6 +862,7 @@ public final class MainActivity extends Activity {
         ++authEpoch;
         ++selectionEpoch;
         user = null;
+        restoringSession = false;
         chat = null;
         csrf = "";
         chatID = "";
@@ -893,10 +920,19 @@ public final class MainActivity extends Activity {
     }
 
     private void settingsPage() {
-        settingsDialog = new NativeSettings(ui, theme, language, "0.2.0-native",
+        boolean show = settingsDialog == null;
+        if (show) settingsDialog = new NativeSettings(ui, theme, language, "0.2.0-native",
                 this::updatePreferences, this::closeSettings);
+        else settingsDialog.bind(ui, theme, language, this::settingsAdditions);
         settingsDialog.content.appearance.saving(preferencesSaving);
-        LinearLayout body = settingsDialog.content.additions;
+        if (show) {
+            settingsAdditions(settingsDialog.content.additions);
+            settingsDialog.show();
+        }
+        updateConnectionSettings();
+    }
+
+    private void settingsAdditions(LinearLayout body) {
         if (user != null) {
             gap(body, 22);
             LinearLayout account = ui.row();
@@ -923,8 +959,6 @@ public final class MainActivity extends Activity {
             gap(body, 16);
             body.addView(ui.button(tr("Sign out of Spool", "退出 Spool 账号"), false, this::logout));
         }
-        settingsDialog.show();
-        updateConnectionSettings();
     }
 
     private void saveLocalPreferences() {
@@ -1042,7 +1076,11 @@ public final class MainActivity extends Activity {
         history.addView(historyContent);
         historyScrollState.select(authEpoch + "\n" + selectionEpoch + "\n" + chatID);
         historyScroll = new NativeHistoryScroll(history, historyContent, historyScrollState, 90 * getResources().getDisplayMetrics().density);
-        page.addView(history, new LinearLayout.LayoutParams(-1, 0, 1));
+        // Keep message/shadow overflow inside the scrolling viewport. The page
+        // itself permits overflow so the composer's shadow can reach the history.
+        FrameLayout historyViewport = new FrameLayout(this);
+        historyViewport.addView(history, new FrameLayout.LayoutParams(-1, -1));
+        page.addView(historyViewport, new LinearLayout.LayoutParams(-1, 0, 1));
         composerView = ui.new Composer(composerHint(), this::pickFiles, this::chooseModel,
                 this::choosePermission, this::sendOrStop);
         composer = composerView.input;

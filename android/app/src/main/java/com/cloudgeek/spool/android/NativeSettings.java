@@ -3,6 +3,7 @@ package com.cloudgeek.spool.android;
 import android.app.Dialog;
 import android.graphics.Color;
 import android.view.Window;
+import android.view.ViewTreeObserver;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -10,18 +11,39 @@ import java.util.function.BiConsumer;
 
 /** Web AppearanceDialog shell with an extension slot for Android-only tsnet settings. */
 final class NativeSettings extends Dialog {
-    final Content content;
-    private final NativeUi ui;
-    final NativeModalFrame modal;
+    Content content;
+    private NativeUi ui;
+    NativeModalFrame modal;
+    private ScrollView scroll;
+    private final String version;
+    private final BiConsumer<String, String> change;
+    private final Runnable close;
 
     NativeSettings(NativeUi ui, String theme, String language, String version,
             BiConsumer<String, String> change, Runnable close) {
         super(ui.context);
-        this.ui = ui;
+        this.version = version;
+        this.change = change;
+        this.close = close;
         requestWindowFeature(Window.FEATURE_NO_TITLE);
+        bind(ui, theme, language, body -> {});
+        setCanceledOnTouchOutside(true);
+        setOnCancelListener(dialog -> close.run());
+        setOnKeyListener((dialog, code, event) -> {
+            if (code != android.view.KeyEvent.KEYCODE_ESCAPE) return false;
+            if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) cancel();
+            return true;
+        });
+    }
+
+    /** Rebuild themed content without removing/re-adding the dialog's window. */
+    void bind(NativeUi ui, String theme, String language, java.util.function.Consumer<LinearLayout> additions) {
+        this.ui = ui;
+        int top = scroll == null ? 0 : scroll.getScrollY();
         content = new Content(ui, theme, language, version, change, close);
         content.setBackgroundColor(Color.TRANSPARENT);
-        ScrollView scroll = new ScrollView(ui.context) {
+        additions.accept(content.additions);
+        scroll = new ScrollView(ui.context) {
             @Override protected void onMeasure(int widthSpec, int heightSpec) {
                 int available = MeasureSpec.getSize(heightSpec);
                 int maximum = getResources().getDisplayMetrics().heightPixels - ui.dp(40);
@@ -32,13 +54,14 @@ final class NativeSettings extends Dialog {
         scroll.addView(content);
         modal = new NativeModalFrame(ui, NativeModalFrame.Profile.APPEARANCE, scroll, this::cancel);
         setContentView(modal);
-        setCanceledOnTouchOutside(true);
-        setOnCancelListener(dialog -> close.run());
         NativeModalFrame.prepare(this, ui, modal.profile);
-        setOnKeyListener((dialog, code, event) -> {
-            if (code != android.view.KeyEvent.KEYCODE_ESCAPE) return false;
-            if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) cancel();
-            return true;
+        ScrollView current = scroll;
+        if (top > 0) current.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+            @Override public boolean onPreDraw() {
+                current.getViewTreeObserver().removeOnPreDrawListener(this);
+                current.scrollTo(0, top);
+                return true;
+            }
         });
     }
 

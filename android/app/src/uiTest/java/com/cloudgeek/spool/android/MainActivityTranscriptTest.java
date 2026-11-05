@@ -95,6 +95,33 @@ public class MainActivityTranscriptTest {
         }
     }
 
+    @Test public void scrollingUserAndAgentMessagesNeverPaintOverTheWorkspaceHeader() throws Exception {
+        for (String theme : new String[] {"light", "dark"}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            h.set("theme", theme); h.call("render");
+            JSONObject value = chat();
+            value.getJSONObject("transcript").getJSONArray("parts").getJSONObject(1).put("text", "Agent response\n\n".repeat(80));
+            show(h, value);
+            views(h.get("historyContent"), NativeUserRow.class).get(0).message.toggle.performClick();
+            layout(h);
+            View root = h.get("root");
+            androidx.core.widget.NestedScrollView history = h.get("history");
+            NativeUi.Header header = h.get("workspaceHeader");
+            int[] expected = null;
+            for (int top : new int[] {0, 40, 100, 250, 500, 800, 1200}) {
+                history.scrollTo(0, top);
+                android.graphics.Bitmap image = android.graphics.Bitmap.createBitmap(root.getWidth(), root.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
+                try {
+                    root.draw(new android.graphics.Canvas(image));
+                    int[] pixels = new int[root.getWidth() * (header.getHeight() + 1)];
+                    image.getPixels(pixels, 0, root.getWidth(), 0, 0, root.getWidth(), header.getHeight() + 1);
+                    if (expected == null) expected = pixels;
+                    else assertArrayEquals(theme + " header changed at scroll " + top, expected, pixels);
+                } finally { image.recycle(); }
+            }
+            assertTrue("The fixture must actually scroll past both message types", history.getScrollY() >= 1200);
+        }
+    }
+
     @Test public void unchangedComposerAndPresenceUpdatesKeepTextHintsIconsAndAvatarTrees() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             show(h, chat()); NativeUi.Composer composer = h.composer(); NativeUi.Header header = h.get("workspaceHeader");

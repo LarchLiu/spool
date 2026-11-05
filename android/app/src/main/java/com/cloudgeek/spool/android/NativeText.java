@@ -49,6 +49,7 @@ final class NativeText {
             case "Compacting context…": value = "正在压缩上下文…"; break;
             case "Completed": value = "已完成"; break;
             case "Confirm operations that require permission.": value = "需要授权的操作由你确认。"; break;
+            case "Connecting to your workspace…": value = "连接你的工作空间…"; break;
             case "Copy message": value = "复制消息"; break;
             case "Could not copy message": value = "无法复制消息"; break;
             case "Could not save avatar": value = "无法保存头像"; break;
@@ -297,6 +298,7 @@ final class NativeText {
             case "Compacting context…": value = "コンテキストを圧縮中…"; break;
             case "Completed": value = "完了"; break;
             case "Confirm operations that require permission.": value = "権限が必要な操作を確認します。"; break;
+            case "Connecting to your workspace…": value = "ワークスペースに接続中…"; break;
             case "Copy message": value = "メッセージをコピー"; break;
             case "Could not copy message": value = "メッセージをコピーできませんでした"; break;
             case "Could not save avatar": value = "アバターを保存できませんでした"; break;
