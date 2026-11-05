@@ -23,6 +23,7 @@ var errTurnChanged = errors.New("turn changed while agent was running")
 type Store struct {
 	changes              changeHub
 	desktopNotifications desktopNotificationHub
+	updateEvents         chan struct{}
 	historyCache         nativeHistoryCache
 	settingsMu           sync.Mutex
 	mu                   sync.Mutex
@@ -124,7 +125,7 @@ func OpenStore(root string) (*Store, error) {
 	if _, err = db.Exec(`UPDATE user_avatars SET style=? WHERE style IN ('bottts-neutral','shapes','initials')`, DefaultAvatar().Style); err != nil {
 		return fail(err)
 	}
-	store := &Store{root: root, db: db, runtimeTurns: make(map[string]chatmodel.Turn)}
+	store := &Store{root: root, db: db, runtimeTurns: make(map[string]chatmodel.Turn), updateEvents: make(chan struct{}, 1)}
 	settings, err := store.Settings()
 	if err != nil {
 		return fail(err)

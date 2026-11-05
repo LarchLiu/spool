@@ -109,12 +109,10 @@ func (a *App) scheduleIssues(ctx context.Context, now time.Time) {
 			go func(p Project, label, key string) {
 				defer a.turns.Done()
 				defer func() {
-					a.turnMu.Lock()
-					a.runningTurns--
-					a.turnMu.Unlock()
 					a.automation.mu.Lock()
 					delete(a.automation.active, key)
 					a.automation.mu.Unlock()
+					a.finishWork()
 				}()
 				err := a.runIssueLabelRound(ctx, p, label, batch)
 				if errors.Is(err, issues.ErrLocked) || errors.Is(err, context.Canceled) {

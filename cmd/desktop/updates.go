@@ -28,6 +28,7 @@ func (p *panel) initUpdates() {
 			return &appupdate.Release{Version: up.Version, Notes: up.Notes, Install: up.Install}, nil
 		},
 		Acquire: p.service.AcquireUpdate,
+		Events:  p.service.UpdateEvents(),
 		Restart: func() { p.window.Update(p.autoRestartForUpdate) },
 		ReleaseNotes: func(ctx context.Context, current, target string) ([]appupdate.ReleaseNotes, error) {
 			return appupdate.FetchReleaseNotes(ctx, http.DefaultClient, appupdate.Repository(), current, target)

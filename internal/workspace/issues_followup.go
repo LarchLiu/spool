@@ -37,7 +37,7 @@ func (a *App) startIssueFollowup(chat chatmodel.Session, input messageInput, opt
 	a.turns.Add(1)
 	a.turnMu.Unlock()
 	var admission sync.Once
-	releaseAdmission := func() { admission.Do(func() { a.turnMu.Lock(); a.runningTurns--; a.turnMu.Unlock(); a.turns.Done() }) }
+	releaseAdmission := func() { admission.Do(func() { a.finishWork(); a.turns.Done() }) }
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		select {

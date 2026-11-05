@@ -32,10 +32,10 @@ func (a *App) releaseTurn(chatID string, control *turnControl) {
 	if a.activeTurns[chatID] == control {
 		delete(a.activeTurns, chatID)
 	}
-	a.runningTurns--
-	a.turnMu.Unlock()
 	control.cancel()
 	close(control.done)
+	a.finishWorkLocked()
+	a.turnMu.Unlock()
 }
 
 // stopTurn persists the terminal state before waiting for the provider

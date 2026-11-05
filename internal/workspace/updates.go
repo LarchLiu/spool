@@ -61,7 +61,37 @@ func (s *Store) SaveUpdatePreferences(p UpdatePreferences) error {
 		return err
 	}
 	_, err = s.db.Exec(`INSERT INTO settings(key,value) VALUES('updates:desktop',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, string(body))
+	if err == nil {
+		s.notifyUpdate()
+	}
 	return err
+}
+
+// UpdateEvents is consumed by the desktop updater. Notifications contain no
+// data and coalesce while it is busy; it always reads the current preferences
+// and reacquires the idle lease. Subscribe before the first update attempt.
+func (s *Service) UpdateEvents() <-chan struct{} { return s.Store.updateEvents }
+
+func (s *Store) notifyUpdate() {
+	select {
+	case s.updateEvents <- struct{}{}:
+	default:
+	}
+}
+
+// The caller holds turnMu. Count all work through its final cleanup, including
+// stopped/superseded turns, issue rounds and follow-up admission reservations.
+func (a *App) finishWorkLocked() {
+	a.runningTurns--
+	if a.runningTurns == 0 && a.store != nil {
+		a.store.notifyUpdate()
+	}
+}
+
+func (a *App) finishWork() {
+	a.turnMu.Lock()
+	defer a.turnMu.Unlock()
+	a.finishWorkLocked()
 }
 
 // AcquireUpdate serializes installation/relaunch with turn admission, not just

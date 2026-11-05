@@ -96,11 +96,11 @@ func TestControllerRetriesDownloadWithoutRepeatingSecurityFailures(t *testing.T)
 			},
 		})
 		c.retryDelays = []time.Duration{0, 0}
-		next := c.poll(time.Time{})
+		c.advance(time.Now())
 		if secure {
-			c.poll(next)
+			c.advance(time.Now())
 			c.Check() // Finding the same version does not clear its security hold.
-			c.poll(time.Now().Add(time.Hour))
+			c.advance(time.Now())
 			if installs != 1 || retries != 0 || restarts != 0 || c.State().Installed {
 				t.Fatalf("security failure was retried: %d", installs)
 			}

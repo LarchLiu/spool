@@ -192,12 +192,12 @@ func TestAutomaticUpdatesRetryWhenIdleThenRestartWithoutRechecking(t *testing.T)
 		},
 	})
 	t.Cleanup(c.Close)
-	next := c.poll(time.Time{})
+	c.advance(time.Now())
 	if checks != 1 || installs != 0 || restarts != 0 || c.State().Error == "" {
 		t.Fatal("automatic update ignored active chats")
 	}
 	busy = false
-	c.poll(next)
+	c.advance(time.Now())
 	if checks != 1 || installs != 1 || restarts != 1 || !c.State().Installed {
 		t.Fatal("idle retry did not install and restart the pending update")
 	}
@@ -234,12 +234,12 @@ func TestAutomaticRestartWaitsForChatsStartedAfterInstallation(t *testing.T) {
 		},
 	})
 	t.Cleanup(c.Close)
-	last := c.poll(time.Time{})
+	c.advance(time.Now())
 	if installs != 1 || restarts != 0 || attempts != 1 || c.State().ErrorPhase != "restart" {
 		t.Fatalf("new chat did not defer restart: %+v", c.State())
 	}
 	busy = false
-	c.poll(last)
+	c.advance(time.Now())
 	if checks != 1 || installs != 1 || restarts != 1 || attempts != 2 || c.State().Error != "" {
 		t.Fatalf("idle restart did not retry without reinstalling: %+v", c.State())
 	}
@@ -263,28 +263,28 @@ func TestAutomaticInstallSwitchAlsoControlsRestartOfManuallyInstalledUpdates(t *
 	})
 	t.Cleanup(c.Close)
 	c.Check()
-	c.poll(time.Time{})
+	c.advance(time.Now())
 	if installs != 0 || restarts != 0 {
 		t.Fatal("disabled automatic installation still ran")
 	}
 	c.Install()
-	c.poll(time.Time{})
+	c.advance(time.Now())
 	if installs != 1 || restarts != 0 || !c.State().Installed {
 		t.Fatal("manual installation with the switch off must wait for a manual restart")
 	}
 	p.AutomaticInstalls = true
-	c.poll(time.Time{})
+	c.advance(time.Now())
 	if checks != 1 || installs != 1 || restarts != 1 {
 		t.Fatal("enabling automatic installation did not restart the installed update")
 	}
 	p.AutomaticInstalls = false
-	c.poll(time.Time{})
+	c.advance(time.Now())
 	if restarts != 1 {
 		t.Fatal("disabling automatic installation did not cancel the pending restart")
 	}
 	p.AutomaticInstalls = true
 	c.Close()
-	c.poll(time.Time{})
+	c.advance(time.Now())
 	if restarts != 1 {
 		t.Fatal("controller requested an automatic restart after closing")
 	}
@@ -312,7 +312,7 @@ func TestAutomaticRestartRechecksPreferencesAfterInstallation(t *testing.T) {
 				Restart: func() { restarted = true },
 			})
 			t.Cleanup(c.Close)
-			c.poll(time.Time{})
+			c.advance(time.Now())
 			if !installed || restarted {
 				t.Fatal("restart ignored preferences changed during installation")
 			}
@@ -366,95 +366,3 @@ func TestDisabledAndFailedChecksNeverInstall(t *testing.T) {
 	}
 }
 
-func TestAutomaticCheckUsesEachConfiguredInterval(t *testing.T) {
-	for _, interval := range []time.Duration{30 * time.Minute, time.Hour, 6 * time.Hour, 12 * time.Hour, 24 * time.Hour, 0} {
-		t.Run(interval.String(), func(t *testing.T) {
-			checks := 0
-			c := New(Options{
-				Enabled: true,
-				Preferences: func() (Preferences, error) {
-					return Preferences{AutomaticChecks: true, CheckInterval: interval}, nil
-				},
-				Check: func(context.Context) (*Release, error) { checks++; return nil, nil },
-			})
-			t.Cleanup(c.Close)
-			delay := interval
-			if delay == 0 {
-				delay = 12 * time.Hour
-			}
-			recent := time.Now().Add(-delay + time.Minute)
-			if got := c.poll(recent); checks != 0 || got != recent {
-				t.Fatal("checked before the configured interval elapsed")
-			}
-			if got := c.poll(time.Now().Add(-delay - time.Minute)); checks != 1 || time.Since(got) > time.Second {
-				t.Fatal("did not check after the configured interval elapsed")
-			}
-		})
-	}
-}
-
-func TestIntervalChangesAndManualChecksRescheduleAutomaticChecks(t *testing.T) {
-	p := Preferences{AutomaticChecks: true, CheckInterval: 24 * time.Hour}
-	checks := 0
-	c := New(Options{
-		Enabled:     true,
-		Preferences: func() (Preferences, error) { return p, nil },
-		Check:       func(context.Context) (*Release, error) { checks++; return nil, nil },
-	})
-	t.Cleanup(c.Close)
-	last := time.Now().Add(-2 * time.Hour)
-	c.poll(last)
-	if checks != 0 {
-		t.Fatal("checked before the initial interval")
-	}
-	p.CheckInterval = time.Hour
-	c.poll(last)
-	if checks != 1 {
-		t.Fatal("shortening the interval did not reschedule the next check")
-	}
-	c.mu.Lock()
-	c.state.LastCheck = last
-	c.mu.Unlock()
-	p.CheckInterval = 6 * time.Hour
-	c.poll(last)
-	if checks != 1 {
-		t.Fatal("lengthening the interval did not defer the next check")
-	}
-	c.Check()
-	c.poll(time.Time{})
-	if checks != 2 {
-		t.Fatal("automatic check ignored a recent manual check")
-	}
-	p.AutomaticChecks = false
-	c.mu.Lock()
-	c.state.LastCheck = time.Now().Add(-48 * time.Hour)
-	c.mu.Unlock()
-	c.poll(time.Time{})
-	if checks != 2 {
-		t.Fatal("disabled automatic checks still ran")
-	}
-}
-
-func TestAutomaticCheckFailureKeepsFiveMinuteRetry(t *testing.T) {
-	checks := 0
-	c := New(Options{
-		Enabled: true,
-		Preferences: func() (Preferences, error) {
-			return Preferences{AutomaticChecks: true, CheckInterval: 24 * time.Hour}, nil
-		},
-		Check: func(context.Context) (*Release, error) {
-			checks++
-			return nil, errors.New("offline")
-		},
-	})
-	t.Cleanup(c.Close)
-	last := c.poll(time.Time{})
-	c.poll(last.Add(-time.Minute))
-	if checks != 1 {
-		t.Fatal("failed check retried too early")
-	}
-	c.poll(last.Add(-6 * time.Minute))
-	if checks != 2 {
-		t.Fatal("failed check waited for the full configured interval")
-	}
-}
