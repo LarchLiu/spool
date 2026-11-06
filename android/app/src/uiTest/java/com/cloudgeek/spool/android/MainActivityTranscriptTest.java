@@ -99,8 +99,11 @@ public class MainActivityTranscriptTest {
             assertEquals(1, jobs.size()); jobs.remove(0).run(); Shadows.shadowOf(Looper.getMainLooper()).idle(); assertNotNull(image.image.getDrawable());
             image.open.performClick(); NativeImagePreview preview = h.get("imagePreview"); assertNotNull(preview); assertEquals("Preview screen.png", preview.content.getContentDescription());
             jobs.remove(0).run(); Shadows.shadowOf(Looper.getMainLooper()).idle(); assertNotNull(preview.content.image.getDrawable()); h.call("closeImagePreview");
-            file.open.performClick(); h.io.run();
-            assertEquals("/api/chats/chat-one/file?path=%2Ffixture%2Fnotes.txt&download=1", MainActivityGoalTest.ShadowClient.calls.get(0).get(1));
+            file.open.performClick();
+            NativeFileBrowser browser = h.get("fileBrowser"); assertNotNull(browser);
+            assertEquals("/fixture/notes.txt", browser.state.target.path);
+            assertTrue("Opening the attachment must not request a download", MainActivityGoalTest.ShadowClient.calls.isEmpty());
+            assertFalse(h.io.jobs.isEmpty());
             h.set("chatID", "another-chat"); image.open.performClick(); assertNull(h.get("imagePreview"));
         }
     }

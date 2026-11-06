@@ -97,12 +97,7 @@ func (a *App) projectFileRoute(w http.ResponseWriter, r *http.Request, user, rou
 	a.serveProjectFiles(w, r, project.Path, parts[1], nil)
 }
 
-type externalFileReference struct {
-	path string
-	info os.FileInfo
-}
-
-func (a *App) serveProjectFiles(w http.ResponseWriter, r *http.Request, directory, operation string, allowed func(string) bool, externalPath ...externalFileReference) {
+func (a *App) serveProjectFiles(w http.ResponseWriter, r *http.Request, directory, operation string, allowed func(string) bool) {
 	path, err := projectFilePath(directory, r.URL.Query().Get("path"))
 	if err != nil {
 		projectFileError(w, err)
@@ -119,9 +114,6 @@ func (a *App) serveProjectFiles(w http.ResponseWriter, r *http.Request, director
 	}
 	defer root.Close()
 	initial, err := root.Stat(path)
-	if len(externalPath) > 0 {
-		initial, err = root.Lstat(path)
-	}
 	if err != nil {
 		projectFileError(w, err)
 		return
@@ -139,10 +131,6 @@ func (a *App) serveProjectFiles(w http.ResponseWriter, r *http.Request, director
 	info, err := f.Stat()
 	if err != nil {
 		projectFileError(w, err)
-		return
-	}
-	if len(externalPath) > 0 && (!os.SameFile(initial, info) || !os.SameFile(externalPath[0].info, info)) {
-		projectFileError(w, os.ErrPermission)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -188,6 +176,13 @@ func (a *App) serveProjectFiles(w http.ResponseWriter, r *http.Request, director
 		apiJSON(w, 200, map[string]any{"path": filepath.ToSlash(path), "entries": files, "truncated": truncated})
 		return
 	}
+	a.serveOpenFile(w, r, f, info, filepath.ToSlash(path), false)
+}
+
+// Both project files and individual session references use the same preview
+// and download formats after their own authorization and open checks.
+func (a *App) serveOpenFile(w http.ResponseWriter, r *http.Request, f *os.File, info os.FileInfo, path string, external bool) {
+	w.Header().Set("Cache-Control", "no-store")
 	if !info.Mode().IsRegular() {
 		apiError(w, 400, "Choose a regular file")
 		return
@@ -275,11 +270,7 @@ func (a *App) serveProjectFiles(w http.ResponseWriter, r *http.Request, director
 		text := string(data)
 		content = &text
 	}
-	displayPath := filepath.ToSlash(path)
-	if len(externalPath) > 0 {
-		displayPath = filepath.ToSlash(externalPath[0].path)
-	}
-	apiJSON(w, 200, map[string]any{"path": displayPath, "name": info.Name(), "size": info.Size(), "kind": kind, "media_type": mediaType, "content": content, "truncated": truncated, "external": len(externalPath) > 0})
+	apiJSON(w, 200, map[string]any{"path": path, "name": info.Name(), "size": info.Size(), "kind": kind, "media_type": mediaType, "content": content, "truncated": truncated, "external": external})
 }
 
 func safeProjectImage(mediaType string) bool {

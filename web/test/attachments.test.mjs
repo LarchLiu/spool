@@ -9,6 +9,7 @@ import {
 import { optimisticChat, adoptCreatedChat } from "../.test-build/chat-state.js";
 import { AttachmentCards } from "../.test-build/components/web/src/attachments.js";
 import { exchangeFiles } from "../.test-build/components/web/src/turn-exchanges.js";
+import { LocalFileContext } from "../.test-build/components/web/src/local-file-context.js";
 
 test("attachment limits match the server before reading file contents", () => {
   assert.equal(validateAttachments([{ size: 4 * 1024 * 1024 }]), null);
@@ -35,7 +36,7 @@ test("draft images use local previews; history uses authenticated chat-scoped UR
   );
 });
 
-test("native Word file references render as downloadable user attachment cards without upload metadata", () => {
+test("native Word file attachments open the file preview while standalone cards retain downloads", () => {
   const name = "合同_标红稿.docx";
   const path = "/work/shared documents/" + name;
   const files = exchangeFiles(
@@ -53,6 +54,7 @@ test("native Word file references render as downloadable user attachment cards w
     }),
   );
   assert.equal(files.length, 1);
+  assert.equal(files[0].file_path, path);
   assert.match(html, /class="attachment-card"/);
   assert.ok(html.includes(`download="${name}"`));
   assert.ok(html.includes(`<span>${name}</span>`));
@@ -61,6 +63,21 @@ test("native Word file references render as downloadable user attachment cards w
       `href="/api/chats/chat%2Fid/file?path=${encodeURIComponent(path)}&amp;download=1"`,
     ),
   );
+  const preview = renderToStaticMarkup(
+    createElement(
+      LocalFileContext.Provider,
+      { value: { openFile: () => {} } },
+      createElement(AttachmentCards, {
+        files,
+        chatID: "chat/id",
+        t: (key, values) => key.replace("{name}", values?.name || ""),
+        onPreview: () => {},
+      }),
+    ),
+  );
+  assert.ok(preview.includes(`aria-label="Preview ${name}"`));
+  assert.match(preview, /<button type="button" class="attachment-open"/);
+  assert.doesNotMatch(preview, /download=/);
 });
 
 test("first-send adoption keeps attachments and the chosen permission mode on screen", () => {

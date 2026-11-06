@@ -137,22 +137,34 @@ func sessionReferencesFile(chat chatmodel.Session, path string) bool {
 	return false
 }
 
+func sessionUserAttachment(chat chatmodel.Session, path string) bool {
+	for _, part := range chat.Transcript.Parts {
+		if part.Role == "user" && part.Kind == "context" && part.FilePath == path && part.Name == filepath.Base(path) {
+			return true
+		}
+	}
+	return false
+}
+
 // External access grants one referenced regular file, never its parent folder.
-// The project switch and chat membership are checked again on each request.
+// An explicit user attachment grants that file independently of the project's
+// agent-output switch. Chat membership is checked before reaching this route.
 func (a *App) externalSessionFile(w http.ResponseWriter, r *http.Request, chat chatmodel.Session, directory string) bool {
 	path := r.URL.Query().Get("path")
 	if !filepath.IsAbs(path) || strings.ContainsAny(path, "\x00\r\n") {
 		return false
 	}
+	snapshot := a.snapshot(chat)
+	attached := sessionUserAttachment(snapshot, path)
 	resolved := canonicalDirectory(path)
-	if root := canonicalDirectory(directory); root != "" && resolved != "" && directoryWithin(resolved, root) {
+	if root := canonicalDirectory(directory); !attached && root != "" && resolved != "" && directoryWithin(resolved, root) {
 		return false
 	}
 	project, err := a.store.Project(chat.ProjectID)
-	if err != nil || !project.AllowExternalFiles {
+	if err != nil || (!attached && !project.AllowExternalFiles) {
 		return false
 	}
-	if protectedProjectPath(path) || protectedProjectPath(resolved) || !sessionReferencesFile(a.snapshot(chat), path) {
+	if protectedProjectPath(path) || protectedProjectPath(resolved) || (!attached && !sessionReferencesFile(snapshot, path)) {
 		projectFileError(w, os.ErrPermission)
 		return true
 	}
@@ -179,32 +191,42 @@ func (a *App) externalSessionFile(w http.ResponseWriter, r *http.Request, chat c
 		projectFileError(w, os.ErrPermission)
 		return true
 	}
-	projects, err := a.store.Projects()
-	if err != nil {
-		projectFileError(w, os.ErrPermission)
-		return true
-	}
-	mappings := localSessionProjects(projects)
-	match := matchLocalSessionProject(filepath.Dir(resolved), mappings)
-	if match.ID != "" && match.ID != chat.ProjectID {
-		projectFileError(w, os.ErrPermission)
-		return true
-	}
-	_, common := gitWorkspace(filepath.Dir(resolved))
-	for _, mapping := range mappings {
-		// Explicit project boundaries and ambiguous repository mappings remain
-		// private even when another project's external-file switch is enabled.
-		if mapping.project.ID != chat.ProjectID && match.ID == "" && (directoryWithin(resolved, mapping.path) || (common != "" && common == mapping.common && mapping.path == mapping.root)) {
+	if !attached {
+		projects, err := a.store.Projects()
+		if err != nil {
 			projectFileError(w, os.ErrPermission)
 			return true
 		}
+		mappings := localSessionProjects(projects)
+		match := matchLocalSessionProject(filepath.Dir(resolved), mappings)
+		if match.ID != "" && match.ID != chat.ProjectID {
+			projectFileError(w, os.ErrPermission)
+			return true
+		}
+		_, common := gitWorkspace(filepath.Dir(resolved))
+		for _, mapping := range mappings {
+			// Agent references retain project boundaries; explicit attachments
+			// grant only the individual file deliberately shared by the user.
+			if mapping.project.ID != chat.ProjectID && match.ID == "" && (directoryWithin(resolved, mapping.path) || (common != "" && common == mapping.common && mapping.path == mapping.root)) {
+				projectFileError(w, os.ErrPermission)
+				return true
+			}
+		}
 	}
-	// Serve through a fresh directory handle and verify the opened file identity
-	// so replacing the leaf with a symlink cannot redirect this read.
-	query := r.URL.Query()
-	query.Set("path", filepath.Base(resolved))
-	request := r.Clone(r.Context())
-	request.URL.RawQuery = query.Encode()
-	a.serveProjectFiles(w, request, filepath.Dir(resolved), "file", nil, externalFileReference{path, info})
+	// A selected file can be readable while its parent directory cannot be
+	// opened (for example, a macOS app container). Open only the authorized file
+	// and verify its identity instead of requiring directory access.
+	f, err := os.Open(resolved)
+	if err != nil {
+		projectFileError(w, err)
+		return true
+	}
+	defer f.Close()
+	opened, err := f.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+		projectFileError(w, os.ErrPermission)
+		return true
+	}
+	a.serveOpenFile(w, r, f, opened, filepath.ToSlash(path), true)
 	return true
 }

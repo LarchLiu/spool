@@ -1541,10 +1541,8 @@ public final class MainActivity extends Activity {
                 String source = part.optString("image_url"), name = part.optString("name", "image");
                 if (part.optString("kind").equals("context") && !part.optString("name").isEmpty()) {
                     String filePath = part.optString("file_path");
-                    String download = filePath.isEmpty() || page.optString("project_id", projectID).isEmpty() ? ""
-                            : NativeFileData.filePath(page.optString("project_id", projectID), ownerChat, filePath, "download");
                     items.add(new NativeAttachmentCards.Item(ownerChat + ":" + turn.optString("id") + ":file:" + (i - turn.optInt("part_start")), name, "application/octet-stream", "", "",
-                            () -> { if (current.getAsBoolean()) { if (download.isEmpty()) toast(new IOException(tr("File unavailable", "文件不可用"))); else downloadFile(download, name); } }, null));
+                            () -> { if (current.getAsBoolean()) { if (filePath.isEmpty()) toast(new IOException(tr("File unavailable", "文件不可用"))); else openFile(new NativeFileTarget(filePath, 0, 0)); } }, null));
                     continue;
                 }
                 if (!part.optString("kind").equals("image") || !NativeFileData.inlineImage(source)) continue;

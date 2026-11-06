@@ -71,8 +71,8 @@ func TestHistoricalUserAttachmentsKeepCardsAndAuthorizedDownloads(t *testing.T) 
 				if _, err := s.SaveProject(p); err != nil {
 					t.Fatal(err)
 				}
-				if w = apiRequest(a, "GET", endpoint, "", cookie, ""); w.Code != 403 {
-					t.Fatal("attachment ignored external file setting", w.Code)
+				if w = apiRequest(a, "GET", endpoint, "", cookie, ""); w.Code != 200 || w.Body.String() != "historical attachment" {
+					t.Fatal("explicit user attachment was blocked by the external file setting", w.Code, w.Body.String())
 				}
 				reopened, err := OpenStore(s.Root())
 				if err != nil {
@@ -87,6 +87,113 @@ func TestHistoricalUserAttachmentsKeepCardsAndAuthorizedDownloads(t *testing.T) 
 					t.Fatalf("reopened history lost its file card: %+v", last)
 				}
 			})
+		}
+	}
+}
+
+func TestUserAttachmentsGrantOnlyTheAttachedFileAcrossProjectBoundaries(t *testing.T) {
+	s := testStore(t)
+	u, member := testUser(t, s, "owner"), testUser(t, s, "member")
+	p := testProject(t, s, u, member)
+	private := testProject(t, s, u)
+	chat, err := s.CreateChat(u.ID, p.ID, chatmodel.BackendCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := writeSessionFile(t, private.Path, "user notes.txt", "attached notes")
+	neighbor := writeSessionFile(t, private.Path, "neighbor.txt", "unattached notes")
+	native := filepath.Join(t.TempDir(), "native.jsonl")
+	prompt := fmt.Sprintf("# Files mentioned by the user:\n\n## %s: %s\n\n## My request:\nReview this attachment.", filepath.Base(file), file)
+	appendTitleRecord(t, native, map[string]any{"type": "response_item", "payload": map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": prompt}}}})
+	if err := s.SetNativeSessionPath(chat.ID, "attached-file-native", native); err != nil {
+		t.Fatal(err)
+	}
+	a := NewApp(s, &fakeRunner{}, "", "")
+	cookie, _ := loginRequest(t, a, u.Username)
+	other, _ := loginRequest(t, a, member.Username)
+	endpoint := func(path string) string { return "/api/chats/" + chat.ID + "/file?path=" + url.QueryEscape(path) }
+	for _, enabled := range []bool{false, true} {
+		p.AllowExternalFiles = enabled
+		if _, err := s.SaveProject(p); err != nil {
+			t.Fatal(err)
+		}
+		w := apiRequest(a, "GET", endpoint(file), "", cookie, "")
+		if w.Code != 200 || !strings.Contains(w.Body.String(), "attached notes") {
+			t.Fatalf("user attachment preview (external access %v): %d %s", enabled, w.Code, w.Body.String())
+		}
+		for _, path := range []string{neighbor, private.Path, file + ".secret"} {
+			if w := apiRequest(a, "GET", endpoint(path), "", cookie, ""); w.Code < 400 {
+				t.Fatalf("attachment granted access to another path: %s", path)
+			}
+		}
+		if w := apiRequest(a, "GET", endpoint(file), "", other, ""); w.Code != 404 {
+			t.Fatal("private attachment escaped chat authorization", w.Code)
+		}
+	}
+}
+
+func TestUserAttachmentDoesNotRequireOpeningItsParentDirectory(t *testing.T) {
+	s := testStore(t)
+	u := testUser(t, s, "owner")
+	p := testProject(t, s, u)
+	chat, err := s.CreateChat(u.ID, p.ID, chatmodel.BackendCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := t.TempDir()
+	file := writeSessionFile(t, directory, "attached.txt", "readable user attachment")
+	native := filepath.Join(t.TempDir(), "native.jsonl")
+	prompt := fmt.Sprintf("# Files mentioned by the user:\n\n## attached.txt: %s\n\n## My request:\nRead it.", file)
+	appendTitleRecord(t, native, map[string]any{"type": "response_item", "payload": map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": prompt}}}})
+	if err := s.SetNativeSessionPath(chat.ID, "file-only-access-native", native); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(directory, 0111); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(directory, 0700) })
+	if f, err := os.Open(directory); err == nil {
+		f.Close()
+		t.Skip("this user can open a directory without read permission")
+	}
+	a := NewApp(s, &fakeRunner{}, "", "")
+	cookie, _ := loginRequest(t, a, u.Username)
+	endpoint := "/api/chats/" + chat.ID + "/file?path=" + url.QueryEscape(file)
+	for _, mode := range []string{"", "&download=1"} {
+		w := apiRequest(a, "GET", endpoint+mode, "", cookie, "")
+		if w.Code != 200 || !strings.Contains(w.Body.String(), "readable user attachment") {
+			t.Fatalf("opening an individually readable attachment failed: %d %s", w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestUserAttachmentsStillRejectProtectedFilesAndSymlinks(t *testing.T) {
+	s := testStore(t)
+	u := testUser(t, s, "owner")
+	p := testProject(t, s, u)
+	chat, err := s.CreateChat(u.ID, p.ID, chatmodel.BackendCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	protected := writeSessionFile(t, root, ".env.local", "protected")
+	original := writeSessionFile(t, root, "original.txt", "unattached")
+	alias := filepath.Join(root, "alias.txt")
+	if err := os.Symlink(original, alias); err != nil {
+		t.Fatal(err)
+	}
+	native := filepath.Join(t.TempDir(), "native.jsonl")
+	prompt := fmt.Sprintf("# Files mentioned by the user:\n\n## .env.local: %s\n\n## alias.txt: %s\n\n## My request:\nRead these.", protected, alias)
+	appendTitleRecord(t, native, map[string]any{"type": "response_item", "payload": map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": prompt}}}})
+	if err := s.SetNativeSessionPath(chat.ID, "protected-attachment-native", native); err != nil {
+		t.Fatal(err)
+	}
+	a := NewApp(s, &fakeRunner{}, "", "")
+	cookie, _ := loginRequest(t, a, u.Username)
+	for _, path := range []string{protected, original, alias} {
+		w := apiRequest(a, "GET", "/api/chats/"+chat.ID+"/file?path="+url.QueryEscape(path), "", cookie, "")
+		if w.Code != 403 {
+			t.Fatalf("protected or unshared attachment target was accessible: %d", w.Code)
 		}
 	}
 }

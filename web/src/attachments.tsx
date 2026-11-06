@@ -1,8 +1,9 @@
-import { useEffect, useRef } from "react";
+import { useContext, useEffect, useRef } from "react";
 import { Download, FileCode2, FileText, X } from "lucide-react";
 import type { Attachment } from "./types";
 import type { Translator } from "./i18n";
 import { attachmentURL } from "./attachment-selection.js";
+import { LocalFileContext } from "./local-file-context.js";
 
 export function AttachmentCards({
   files,
@@ -17,6 +18,7 @@ export function AttachmentCards({
   onRemove?: (id: string) => void;
   onPreview: (file: Attachment, url: string) => void;
 }) {
+  const { openFile } = useContext(LocalFileContext);
   return (
     <div className="attachment-cards" aria-label={t("Attachments")}>
       {files.map((file) => {
@@ -66,6 +68,15 @@ export function AttachmentCards({
               <div className="attachment-open" title={file.name}>
                 {contents}
               </div>
+            ) : file.file_path && openFile ? (
+              <button
+                type="button"
+                className="attachment-open"
+                onClick={() => openFile({ path: file.file_path! })}
+                aria-label={t("Preview {name}", { name: file.name })}
+              >
+                {contents}
+              </button>
             ) : (
               <a
                 className="attachment-open"

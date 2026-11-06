@@ -36,6 +36,7 @@ export function exchangeFiles(parts: readonly TranscriptPart[], turnID: string, 
     if (part.kind === "context" && part.name && part.file_path) return [{
       id: `${turnID}-file-${start + index}`, name: part.name,
       media_type: "application/octet-stream", size: 0,
+      file_path: part.file_path,
       preview_url: `/api/chats/${encodeURIComponent(chatID)}/file?path=${encodeURIComponent(part.file_path)}&download=1`,
     }];
     return [];

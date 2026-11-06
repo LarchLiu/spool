@@ -72,6 +72,7 @@ export type Attachment = {
   size: number;
   preview_url?: string;
   excerpt?: string;
+  file_path?: string;
 };
 export type PermissionCatalog = {
   backend: Backend;
