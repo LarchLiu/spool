@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Evaluate the actual Web TypeScript in memory, without a second handwritten oracle.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -122,7 +122,10 @@ const draftInputs=[
 const draftCases=[];
 for(const input of draftInputs) {
  const bytes=Buffer.from(input.text,'utf8');
- const [draft]=await attachments.prepareAttachments([new File([bytes],input.name,{type:input.mediaType})]);
+ const file=new File([bytes],input.name,{type:input.mediaType});
+ // Keep the browser fixture's explicit MIME type; Bun adds a text/plain charset.
+ Object.defineProperty(file,'type',{value:input.mediaType});
+ const [draft]=await attachments.prepareAttachments([file]);
  draftCases.push({name:input.name,mediaType:input.mediaType,data:bytes.toString('base64'),expected:{mediaType:draft.media_type,excerpt:draft.excerpt||''}});
  attachments.releaseAttachments([draft]);
 }
@@ -170,7 +173,7 @@ const value={
 const target=path.join(root,'android/app/src/test/resources/web-behavior.json');
 const contents=JSON.stringify(value,null,2)+'\n';
 if(process.argv.includes('--check')) {
- if(!fs.existsSync(target)||fs.readFileSync(target,'utf8')!==contents)throw new Error('Web/native behavior drift. Run node android/tools/sync-web-behavior.mjs');
+ if(!fs.existsSync(target)||fs.readFileSync(target,'utf8')!==contents)throw new Error('Web/native behavior drift. Run bun android/tools/sync-web-behavior.mjs');
  console.log('Verified Web model/activity behavior vectors.');
 }else{
  fs.mkdirSync(path.dirname(target),{recursive:true});

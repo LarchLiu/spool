@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Pin original UA images, then optionally compare Chrome and APK decoded pixels.
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';

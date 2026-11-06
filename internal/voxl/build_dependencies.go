@@ -29,6 +29,11 @@ type buildEnvironment struct {
 func newBuildEnvironment(env []string, log io.Writer, step func(string)) *buildEnvironment {
 	home, _ := os.UserHomeDir()
 	b := &buildEnvironment{goos: runtime.GOOS, env: env, log: log, step: step, run: func(cmd *exec.Cmd) error { return cmd.Run() }}
+	bunRoot := b.get("BUN_INSTALL")
+	if bunRoot == "" {
+		bunRoot = filepath.Join(home, ".bun")
+	}
+	b.addPaths("PATH", filepath.Join(bunRoot, "bin"))
 	b.addPaths("PATH", filepath.Join(home, ".cargo", "bin"))
 	switch b.goos {
 	case "darwin":
@@ -119,17 +124,16 @@ func (b *buildEnvironment) esbuild(ctx context.Context) string {
 			return path
 		}
 	}
-	if path := b.usable(ctx, "esbuild"); path != "" {
-		return path
-	}
 	if b.goos == "windows" {
-		// npm exposes a .cmd shim. Prefer the underlying executable so probing
-		// and Cargo use the same tool without invoking a shell.
+		// Global package managers expose script shims. Prefer the native binary
+		// so probing and Cargo do not need a JavaScript runtime or a shell.
 		for _, dir := range filepath.SplitList(b.get("PATH")) {
 			if !filepath.IsAbs(dir) {
 				continue
 			}
 			for _, pattern := range []string{
+				"../install/global/node_modules/@esbuild/win32-*/esbuild.exe",
+				"../install/global/node_modules/esbuild/node_modules/@esbuild/win32-*/esbuild.exe",
 				"node_modules/@esbuild/win32-*/esbuild.exe",
 				"node_modules/esbuild/node_modules/@esbuild/win32-*/esbuild.exe",
 			} {
@@ -142,7 +146,7 @@ func (b *buildEnvironment) esbuild(ctx context.Context) string {
 			}
 		}
 	}
-	return ""
+	return b.usable(ctx, "esbuild")
 }
 
 func (b *buildEnvironment) prepare(ctx context.Context) (string, error) {

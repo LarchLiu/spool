@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Execute the installed Web controller; no native focus/order rules serve as the oracle.
 import fs from 'node:fs';
 import path from 'node:path';

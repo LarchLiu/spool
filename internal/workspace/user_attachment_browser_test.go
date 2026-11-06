@@ -75,7 +75,7 @@ func TestUserAttachmentBrowser(t *testing.T) {
 	server := httptest.NewServer(a)
 	t.Cleanup(server.CloseClientConnections)
 	t.Cleanup(server.Close)
-	probe := exec.Command("node", "web/test/attachment-preview-smoke.mjs")
+	probe := exec.Command("bun", "web/test/attachment-preview-smoke.mjs")
 	probe.Dir = filepath.Join("..", "..")
 	probe.Env = append(os.Environ(), "SPOOL_ATTACHMENT_ORIGIN="+server.URL, "SPOOL_ATTACHMENT_CHAT="+chat.ID, fmt.Sprintf("SPOOL_ATTACHMENT_BYTES=%d", info.Size()))
 	output, err := probe.CombinedOutput()

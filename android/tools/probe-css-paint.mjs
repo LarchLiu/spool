@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Inspect actual Blink paint operations for original CSS, not a Canvas recreation.
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -121,7 +121,7 @@ try {
   }
   await fs.writeFile(path.join(directory,'reference.json'),JSON.stringify({browser:report.browser,
    source:'web/src/style.css',sourceSha256:createHash('sha256').update(css).digest('hex'),
-   command:'sh android/tools/run.sh node android/tools/probe-css-paint.mjs --write-border-fixtures',
+   command:'sh android/tools/run.sh bun android/tools/probe-css-paint.mjs --write-border-fixtures',
    purpose:'Unmodified full-viewport actual CSS screenshots, without shadows, at three densities and both themes. No cropping, rescaling, or native-derived pixels.',fixtures},null,2)+'\n');
  }
  console.log(JSON.stringify({browser:report.browser,cases:cases.map(item=>({density:item.density,theme:item.theme,shadow:item.shadow,commands:item.snapshots.flatMap(snapshot=>snapshot.commands)}))},null,2));

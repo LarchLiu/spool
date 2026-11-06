@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Check subpixel text advances using the exact Robolectric fonts served to the browser.
 import fs from 'node:fs';
 import path from 'node:path';

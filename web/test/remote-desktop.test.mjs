@@ -5,6 +5,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { readFile } from "node:fs/promises";
 import { createTestViteServer } from "./vite-fixture.mjs";
 
+// The SSR fixture imports browser code; Bun's navigator has no languages list.
+const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+Object.defineProperty(globalThis, "navigator", {
+  configurable: true,
+  value: { languages: ["en"] },
+});
+test.after(() => {
+  if (navigatorDescriptor) Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+  else delete globalThis.navigator;
+});
+
 const server = await createTestViteServer(test, {
   root: new URL("..", import.meta.url).pathname,
   configFile: false,

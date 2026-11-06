@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Read actual modal CSS geometry and distinguish CSS-grid snapping from device-grid snapping.
 import fs from 'node:fs/promises';
 import path from 'node:path';

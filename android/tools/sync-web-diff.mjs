@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Execute Pierre/jsdiff itself: these fixtures are not another implementation of its rules.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -76,6 +76,6 @@ const value={diffLayoutContents,pierre:JSON.parse(fs.readFileSync(path.join(pier
  words:pairs.map(([old,next])=>({old,next,expected:ranges(old,next)})),layouts};
 const target=path.join(root,'android/app/src/test/resources/web-diff.json'),contents=JSON.stringify(value,null,2)+'\n';
 if(process.argv.includes('--check')) {
- if(!fs.existsSync(target)||fs.readFileSync(target,'utf8')!==contents)throw new Error('Web/native diff drift. Run node android/tools/sync-web-diff.mjs');
+ if(!fs.existsSync(target)||fs.readFileSync(target,'utf8')!==contents)throw new Error('Web/native diff drift. Run bun android/tools/sync-web-diff.mjs');
 }else fs.writeFileSync(target,contents);
 console.log(`${process.argv.includes('--check')?'Verified':'Synchronized'} ${value.words.length} word-alt pairs and ${layouts.length} actual Pierre split layouts.`);

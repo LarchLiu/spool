@@ -751,7 +751,7 @@
   "Install Rust with an MSVC toolchain and Visual Studio C++ Build Tools on this Windows host, then retry.": "この Windows ホストに MSVC 版 Rust ツールチェーンと Visual Studio C++ Build Tools をインストールして再試行してください。",
   "Set VCPKGRS_TRIPLET to the native MSVC architecture with windows-static-md, then retry.": "VCPKGRS_TRIPLET をネイティブ MSVC アーキテクチャの windows-static-md triplet に設定して再試行してください。",
   "Install LLVM on this Windows host and set LIBCLANG_PATH to its bin directory, then retry.": "この Windows ホストに LLVM をインストールし、LIBCLANG_PATH をその bin ディレクトリに設定して再試行してください。",
-  "Install esbuild on this Windows host with npm install -g esbuild, then retry.": "この Windows ホストで npm install -g esbuild を実行して esbuild をインストールし、再試行してください。",
+  "Install esbuild on this Windows host with bun add --global esbuild, then retry.": "この Windows ホストで bun add --global esbuild を実行して esbuild をインストールし、再試行してください。",
   "Install vcpkg on this Windows host and set VCPKG_ROOT to its directory, then retry.": "この Windows ホストに vcpkg をインストールし、VCPKG_ROOT をそのディレクトリに設定して再試行してください。",
   "Could not prepare voxl dependencies with vcpkg. Check Visual Studio C++ Build Tools, vcpkg and network access, then retry.": "vcpkg で voxl の依存関係を準備できません。Visual Studio C++ Build Tools、vcpkg、ネットワーク接続を確認して再試行してください。",
   "Component licenses": "コンポーネントのライセンス",

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Execute actual Web history fetch/merge/scroll functions, including canceled work.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

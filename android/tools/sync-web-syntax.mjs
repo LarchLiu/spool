@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Share the complete installed Shiki grammars and normalized Pierre themes, not keyword lists.
 import fs from 'node:fs';
 import path from 'node:path';

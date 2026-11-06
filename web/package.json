@@ -2,12 +2,17 @@
   "name": "spool-web",
   "private": true,
   "version": "0.1.12",
+  "packageManager": "bun@1.4.4",
+  "engines": {
+    "bun": ">=1.4.4"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
-    "test": "tsc --target ES2022 --module ESNext --moduleResolution Bundler --jsx react-jsx --skipLibCheck --resolveJsonModule --outDir .test-build src/settings-client.ts src/settings-autosave.ts src/settings-snapshot.ts src/release-history.ts src/runtime.ts src/chat-state.ts src/chat-stream.ts src/workspace-stream.ts src/user-profiles.ts src/history-loading.ts src/turn-control.ts src/types.ts src/preferences.ts src/model-selection.ts src/attachment-selection.ts src/markdown-message.tsx src/user-avatar.tsx src/slash-commands.ts src/panel-layout.ts src/autosize-textarea.tsx && tsc --target ES2022 --module ESNext --moduleResolution Bundler --jsx react-jsx --skipLibCheck --resolveJsonModule --outDir .test-build/components src/composer-send-button.tsx src/update-controls.tsx src/release-notes.tsx src/appearance-dialog.tsx src/settings-list.tsx src/settings-pages.tsx src/settings-projects.tsx src/desktop-settings.tsx src/desktop-window-chrome.tsx src/login-story.tsx src/theme-picker.tsx src/tool-activity.tsx src/file-preview-split.tsx src/file-sidebar-header.tsx src/session-workspace.tsx src/file-source.tsx src/file-preview.tsx src/office-preview.tsx src/user-message.tsx src/attachments.tsx src/turn-identity.tsx src/sidebar-chat-list.tsx src/direct-message-panel.tsx src/people-group-picker.tsx src/online-people-menu.tsx && node --test test/*.test.mjs"
+    "format": "prettier --write src",
+    "test": "tsc --target ES2022 --module ESNext --moduleResolution Bundler --jsx react-jsx --skipLibCheck --resolveJsonModule --outDir .test-build src/settings-client.ts src/settings-autosave.ts src/settings-snapshot.ts src/release-history.ts src/runtime.ts src/chat-state.ts src/chat-stream.ts src/workspace-stream.ts src/user-profiles.ts src/history-loading.ts src/turn-control.ts src/types.ts src/preferences.ts src/model-selection.ts src/attachment-selection.ts src/markdown-message.tsx src/user-avatar.tsx src/slash-commands.ts src/panel-layout.ts src/autosize-textarea.tsx && tsc --target ES2022 --module ESNext --moduleResolution Bundler --jsx react-jsx --skipLibCheck --resolveJsonModule --outDir .test-build/components src/composer-send-button.tsx src/update-controls.tsx src/release-notes.tsx src/appearance-dialog.tsx src/settings-list.tsx src/settings-pages.tsx src/settings-projects.tsx src/desktop-settings.tsx src/desktop-window-chrome.tsx src/login-story.tsx src/theme-picker.tsx src/tool-activity.tsx src/file-preview-split.tsx src/file-sidebar-header.tsx src/session-workspace.tsx src/file-source.tsx src/file-preview.tsx src/office-preview.tsx src/user-message.tsx src/attachments.tsx src/turn-identity.tsx src/sidebar-chat-list.tsx src/direct-message-panel.tsx src/people-group-picker.tsx src/online-people-menu.tsx && bun test --isolate test/*.test.mjs"
   },
   "dependencies": {
     "@dicebear/core": "10.7.0",
@@ -29,8 +34,5 @@
     "typescript": "^5.9.0",
     "vite": "^7.0.0"
   },
-  "allowScripts": {
-    "esbuild@0.28.2": true,
-    "fsevents@2.3.3": true
-  }
+  "trustedDependencies": ["esbuild", "fsevents"]
 }

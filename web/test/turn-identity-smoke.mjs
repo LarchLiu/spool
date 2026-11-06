@@ -1,4 +1,4 @@
-// Run after `npm --prefix web run build`, with TMPDIR inside an owned build/tmp run
+// Run after `bun run --bun --cwd web build`, with TMPDIR inside an owned build/tmp run
 // and CHROME_BIN pointing to a standalone headless Chromium executable.
 // Uses only synthetic API data and an isolated Chrome profile; never a real home.
 import assert from "node:assert/strict";

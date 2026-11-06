@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Actual main.tsx status JSX/CSS and history-loading.ts in local Chrome; no real workspace.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

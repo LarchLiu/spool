@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Full unscaled status frames; geometry success never waives text-raster differences.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

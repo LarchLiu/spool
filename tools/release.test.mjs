@@ -6,7 +6,13 @@ import { join } from "node:path";
 import test from "node:test";
 import { nextReleaseVersion, parseReleaseArgs, prepareLocalRelease } from "./release.mjs";
 
-const versionFiles = ["mygo.json", "web/package.json", "web/package-lock.json"];
+const versionFiles = ["mygo.json", "web/package.json"];
+const lockText = `{
+  "lockfileVersion": 2,
+  "workspaces": { "": { "name": "spool-web", "dependencies": { "example": "0.1.0" } } },
+  "packages": { "example": ["example@0.1.0", "", {}, "sha512-fixture"], },
+}
+`;
 
 async function fixture(t, { remote = true } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "spool-release-"));
@@ -28,13 +34,10 @@ async function fixture(t, { remote = true } = {}) {
   git("config", "tag.gpgsign", "false");
   const hooks = join(root, ".git", "test-hooks");
   git("config", "core.hooksPath", hooks);
-  await writeFile(join(root, "mygo.json"), '{"name":"Spool","version":"0.1.0","buildCommand":"npm --prefix web run build"}\n');
+  await writeFile(join(root, "mygo.json"), '{"name":"Spool","version":"0.1.0","buildCommand":"bun run --bun --cwd web build"}\n');
   await writeFile(join(root, "web/package.json"), `${JSON.stringify({ name: "spool-web", version: "0.1.0", dependencies: { example: "0.1.0" } }, null, 2)}\n`);
-  await writeFile(join(root, "web/package-lock.json"), `${JSON.stringify({
-    name: "spool-web", version: "0.1.0", lockfileVersion: 3,
-    packages: { "": { name: "spool-web", version: "0.1.0", dependencies: { example: "0.1.0" } }, "node_modules/example": { version: "0.1.0" } },
-  }, null, 2)}\n`);
-  git("add", "--", ...versionFiles);
+  await writeFile(join(root, "web/bun.lock"), lockText);
+  git("add", "--", ...versionFiles, "web/bun.lock");
   git("commit", "-m", "Initial version");
   if (remote) {
     const origin = join(directory, "origin.git");
@@ -109,18 +112,16 @@ test("release updates only version metadata, commits it and creates an annotated
   const repo = await fixture(t);
   const remoteBefore = repo.git("ls-remote", "origin");
   const result = await prepareLocalRelease("0.2.0", repo);
-  const [mygoText, packageText, lockText] = await repo.readVersions();
+  const [mygoText, packageText] = await repo.readVersions();
   const mygo = JSON.parse(mygoText);
   const pkg = JSON.parse(packageText);
-  const lock = JSON.parse(lockText);
   assert.equal(mygo.version, "0.2.0");
-  assert.equal(mygo.buildCommand, "npm --prefix web run build");
+  assert.equal(mygo.buildCommand, "bun run --bun --cwd web build");
   assert.equal(mygoText.split("\n").length, 2);
   assert.equal(pkg.version, "0.2.0");
   assert.equal(pkg.dependencies.example, "0.1.0");
-  assert.equal(lock.version, "0.2.0");
-  assert.equal(lock.packages[""].version, "0.2.0");
-  assert.equal(lock.packages["node_modules/example"].version, "0.1.0");
+  assert.equal(await readFile(join(repo.root, "web/bun.lock"), "utf8"), lockText);
+  assert.deepEqual(result.files, versionFiles);
   assert.equal(repo.git("log", "-1", "--format=%s"), "chore: release v0.2.0");
   assert.deepEqual(repo.git("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").split("\n").sort(), [...versionFiles].sort());
   assert.equal(repo.git("cat-file", "-t", "v0.2.0"), "tag");
@@ -202,18 +203,18 @@ test("missing or inaccessible origin fails closed, while offline mode is explici
   assert.equal(result.offline, true);
 });
 
-test("detached HEAD and malformed lockfiles are rejected before writing versions", async (t) => {
+test("detached HEAD and malformed package metadata are rejected before writing versions", async (t) => {
   const repo = await fixture(t);
   repo.git("checkout", "--detach");
   const before = await repo.readVersions();
   await assert.rejects(prepareLocalRelease("patch", repo), /named branch/);
   assert.deepEqual(await repo.readVersions(), before);
   repo.git("checkout", "main");
-  await writeFile(join(repo.root, "web/package-lock.json"), '{"version":"0.1.0","lockfileVersion":1}\n');
-  repo.git("add", "web/package-lock.json");
-  repo.git("commit", "-m", "Old lockfile");
+  await writeFile(join(repo.root, "web/package.json"), '{"name":"spool-web"}\n');
+  repo.git("add", "web/package.json");
+  repo.git("commit", "-m", "Missing package version");
   const malformed = await repo.readVersions();
-  await assert.rejects(prepareLocalRelease("patch", repo), /root entry/);
+  await assert.rejects(prepareLocalRelease("patch", repo), /has no version field/);
   assert.deepEqual(await repo.readVersions(), malformed);
   assert.equal(repo.git("status", "--porcelain"), "");
 });

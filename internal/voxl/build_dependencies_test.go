@@ -292,7 +292,7 @@ func TestBuildLinuxChecksPulseAudioAndAcceptsLibyuvWithoutPC(t *testing.T) {
 	}
 }
 
-func TestBuildWindowsPreparesNativeTripletAndNpmEsbuild(t *testing.T) {
+func TestBuildWindowsPreparesNativeTripletAndGlobalEsbuild(t *testing.T) {
 	for host, triplet := range map[string]string{"x86_64-pc-windows-msvc": "x64-windows-static-md", "aarch64-pc-windows-msvc": "arm64-windows-static-md"} {
 		t.Run(host, func(t *testing.T) {
 			f := newDependencyFixture(t, "windows")
@@ -317,6 +317,18 @@ func TestBuildWindowsPreparesNativeTripletAndNpmEsbuild(t *testing.T) {
 	}
 }
 
+func TestBuildWindowsUsesBunGlobalNativeEsbuildBeforeShim(t *testing.T) {
+	f := newDependencyFixture(t, "windows")
+	f.ready()
+	esbuild := f.file(filepath.Join(f.bin, "..", "install", "global", "node_modules", "@esbuild", "win32-arm64", "esbuild.exe"))
+	if _, err := f.b.prepare(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if f.b.get("ESBUILD") != esbuild {
+		t.Fatalf("expected native Bun global esbuild %s, got %s", esbuild, f.b.get("ESBUILD"))
+	}
+}
+
 func TestBuildWindowsRejectsMissingOrIncompatibleToolsBeforeVcpkg(t *testing.T) {
 	for _, scenario := range []string{"gnu", "llvm", "esbuild", "vcpkg", "triplet"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -333,7 +345,7 @@ func TestBuildWindowsRejectsMissingOrIncompatibleToolsBeforeVcpkg(t *testing.T) 
 				expected = "LLVM"
 			case "esbuild":
 				remove = "esbuild.exe"
-				expected = "npm install -g esbuild"
+				expected = "bun add --global esbuild"
 			case "vcpkg":
 				remove = "vcpkg.exe"
 				expected = "VCPKG_ROOT"

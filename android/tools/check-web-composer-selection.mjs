@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Execute the actual Web selection effect's synchronous reset block, not a rewritten predicate.
 import fs from 'node:fs';
 import path from 'node:path';

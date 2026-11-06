@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Isolate actual CSS borders/shadows from font/OEM rasterization and compare every pixel.
 import fs from 'node:fs';
 import path from 'node:path';

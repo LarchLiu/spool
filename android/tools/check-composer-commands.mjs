@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Actual SlashCommandMenu/CSS fixtures vs production native views, not whole-app raster parity.
 import fs from 'node:fs';
 import path from 'node:path';

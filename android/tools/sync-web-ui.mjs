@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Keep native assets reproducible from the same packages and CSS as the Web UI.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,7 +19,7 @@ function write(relative, contents) {
   generated.push(relative);
   if (check) {
     if (!fs.existsSync(target) || fs.readFileSync(target, 'utf8') !== contents)
-      throw new Error(`Web/native asset drift: ${relative}. Run node android/tools/sync-web-ui.mjs`);
+      throw new Error(`Web/native asset drift: ${relative}. Run bun android/tools/sync-web-ui.mjs`);
   } else {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     if (!fs.existsSync(target) || fs.readFileSync(target, 'utf8') !== contents)
@@ -140,7 +140,7 @@ function argb(value) {
   if(s.length===3||s.length===4)s=[...s].map(c=>c+c).join('');
   return `0x${s.length===8?s.slice(6)+s.slice(0,6):'ff'+s}`;
 }
-write('android/app/src/main/java/com/cloudgeek/spool/android/WebPalette.java',`package com.cloudgeek.spool.android;\n\n/** Generated from web/src/style.css. Regenerate with node android/tools/sync-web-ui.mjs. */\nclass WebPalette {\n${Object.keys(colors).map(key=>`    final int ${key};`).join('\n')}\n    WebPalette(boolean dark) {\n${Object.entries(colors).map(([key,v])=>`        ${key} = dark ? ${argb(dark[v])} : ${argb(light[v])};`).join('\n')}\n    }\n}\n`);
+write('android/app/src/main/java/com/cloudgeek/spool/android/WebPalette.java',`package com.cloudgeek.spool.android;\n\n/** Generated from web/src/style.css. Regenerate with bun android/tools/sync-web-ui.mjs. */\nclass WebPalette {\n${Object.keys(colors).map(key=>`    final int ${key};`).join('\n')}\n    WebPalette(boolean dark) {\n${Object.entries(colors).map(([key,v])=>`        ${key} = dark ? ${argb(dark[v])} : ${argb(light[v])};`).join('\n')}\n    }\n}\n`);
 const expandHex=color=>color.length===4?'#'+[...color.slice(1)].map(c=>c+c).join(''):color;
 const srgbMix=(first,second,weight)=>'#'+[0,1,2].map(i=>Math.round(parseInt(expandHex(first).slice(1+i*2,3+i*2),16)*weight+parseInt(expandHex(second).slice(1+i*2,3+i*2),16)*(1-weight)).toString(16).padStart(2,'0')).join('');
 const peoplePalette=palette=>({selection:srgbMix(palette['--color-primary'],palette['--elevated'],.09),own:srgbMix(palette['--color-primary'],palette['--elevated'],.11),border:palette['--color-primary']+'2e'});

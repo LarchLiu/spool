@@ -71,8 +71,8 @@ the canonical Go cache:
 ```sh
 sh android/tools/run.sh go test -race ./internal/workspace ./internal/model
 sh android/tools/run.sh go -C android/transport test -race ./...
-sh android/tools/run.sh npm --prefix web test
-sh android/tools/run.sh npm --prefix web run build
+sh android/tools/run.sh bun run --bun --cwd web test
+sh android/tools/run.sh bun run --bun --cwd web build
 sh android/gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 ```
 

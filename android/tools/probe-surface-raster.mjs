@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Distinguish CSS/compositing differences from native-only rendering differences.
 import fs from 'node:fs/promises';
 import path from 'node:path';

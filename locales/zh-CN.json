@@ -751,7 +751,7 @@
   "Install Rust with an MSVC toolchain and Visual Studio C++ Build Tools on this Windows host, then retry.": "请在这台 Windows 主机上安装 MSVC 版 Rust 工具链和 Visual Studio C++ 生成工具后重试。",
   "Set VCPKGRS_TRIPLET to the native MSVC architecture with windows-static-md, then retry.": "请将 VCPKGRS_TRIPLET 设置为本机 MSVC 架构对应的 windows-static-md triplet 后重试。",
   "Install LLVM on this Windows host and set LIBCLANG_PATH to its bin directory, then retry.": "请在这台 Windows 主机上安装 LLVM，并将 LIBCLANG_PATH 设置为其 bin 目录后重试。",
-  "Install esbuild on this Windows host with npm install -g esbuild, then retry.": "请在这台 Windows 主机上执行 npm install -g esbuild 安装 esbuild 后重试。",
+  "Install esbuild on this Windows host with bun add --global esbuild, then retry.": "请在这台 Windows 主机上执行 bun add --global esbuild 安装 esbuild 后重试。",
   "Install vcpkg on this Windows host and set VCPKG_ROOT to its directory, then retry.": "请在这台 Windows 主机上安装 vcpkg，并将 VCPKG_ROOT 设置为其目录后重试。",
   "Could not prepare voxl dependencies with vcpkg. Check Visual Studio C++ Build Tools, vcpkg and network access, then retry.": "无法通过 vcpkg 准备 voxl 依赖，请检查 Visual Studio C++ 生成工具、vcpkg 和网络连接后重试。",
   "Component licenses": "组件许可证",

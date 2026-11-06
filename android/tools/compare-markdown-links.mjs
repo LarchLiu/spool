@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Raw diagnostic crops only. Full geometry/raster gates never read this contact sheet.
 import fs from 'node:fs';
 import path from 'node:path';

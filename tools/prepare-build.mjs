@@ -19,7 +19,7 @@ export function buildConfig(config) {
 async function main() {
   const args = process.argv.slice(2);
   if (args.length > 1 || (args.length === 1 && args[0] !== "--check")) {
-    throw new Error("Usage: node tools/prepare-build.mjs [--check]");
+    throw new Error("Usage: bun tools/prepare-build.mjs [--check]");
   }
   const config = buildConfig(JSON.parse(await readFile("mygo.json", "utf8")));
   if (args[0] === "--check") {

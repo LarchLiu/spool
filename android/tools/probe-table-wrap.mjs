@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Diagnose borderline native/Web wraps from actual DOM styles and byte-matched fonts.
 import fs from 'node:fs/promises';
 import path from 'node:path';

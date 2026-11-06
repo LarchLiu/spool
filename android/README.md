@@ -323,8 +323,8 @@ logo is copied byte-for-byte. Regenerate shared assets after changing Web styles
 or icon dependencies:
 
 ```sh
-sh android/tools/run.sh node android/tools/sync-web-ui.mjs
-sh android/tools/run.sh node android/tools/sync-web-ui.mjs --check
+sh android/tools/run.sh bun android/tools/sync-web-ui.mjs
+sh android/tools/run.sh bun android/tools/sync-web-ui.mjs --check
 ```
 
 The agent/model menu keeps both catalogs available during a chat, resets effort
@@ -366,8 +366,8 @@ isEmpty calls and UTF-8/UTF-16 surrogate offsets. See `textmate/README.md` for t
 exact transform, pinned checksums, licenses and reproducible build recipe.
 
 ```sh
-sh android/tools/run.sh node android/tools/sync-web-syntax.mjs
-sh android/tools/run.sh node android/tools/sync-web-syntax.mjs --check
+sh android/tools/run.sh bun android/tools/sync-web-syntax.mjs
+sh android/tools/run.sh bun android/tools/sync-web-syntax.mjs --check
 sh android/tools/run.sh python3 android/tools/check-syntax-package.py --report build/artifacts/android-native/syntax-package.json
 ```
 
@@ -478,7 +478,7 @@ containing those packages, as for the other Web-reference probes. Regenerate/tes
 ```sh
 # Use a Python environment with Pillow only to regenerate the small synthetic fixtures.
 sh android/tools/run.sh python3 android/tools/image-animation-fixtures.py
-sh android/tools/run.sh node android/tools/check-image-animation.mjs
+sh android/tools/run.sh bun android/tools/check-image-animation.mjs
 # Add --write only when intentionally updating actual-browser golden frames.
 ```
 
@@ -502,11 +502,11 @@ second handwritten expected state machine.
 Regenerate after changing those Web modules:
 
 ```sh
-sh android/tools/run.sh node android/tools/sync-web-behavior.mjs
-sh android/tools/run.sh node android/tools/sync-web-behavior.mjs --check
-sh android/tools/run.sh node android/tools/sync-web-diff.mjs
-sh android/tools/run.sh node android/tools/sync-web-diff.mjs --check
-sh android/tools/run.sh node --test android/tools/css-lab.test.mjs
+sh android/tools/run.sh bun android/tools/sync-web-behavior.mjs
+sh android/tools/run.sh bun android/tools/sync-web-behavior.mjs --check
+sh android/tools/run.sh bun android/tools/sync-web-diff.mjs
+sh android/tools/run.sh bun android/tools/sync-web-diff.mjs --check
+sh android/tools/run.sh bun test android/tools/css-lab.test.mjs
 ```
 
 Diff fixtures execute the installed Pierre parser, iterator and actual internal
@@ -521,7 +521,7 @@ widths in both themes; geometry uses the same test-only mono font as native.
 `render-web-reference.mjs` renders original React/CSS
 fixtures in a local headless Chrome (requires Playwright; `SPOOL_NODE_MODULES`
 can point to its installed module directory). After that and the native layout
-tests, `sh android/tools/run.sh node android/tools/check-ui-geometry.mjs` checks
+tests, `sh android/tools/run.sh bun android/tools/check-ui-geometry.mjs` checks
 login, welcome, composer, model-menu, attachment, image-preview, appearance, file-sidebar, private/group
 chat, group-picker, online-menu, navigation-sidebar, transcript-row, Markdown-block,
 code-tab, diff-highlight and syntax-character values at all three widths in both
@@ -958,7 +958,7 @@ No APK is installed and the goal remains incomplete. The later history
 checkpoint supersedes these counts and package identities.
 
 ```sh
-sh android/tools/run.sh node android/tools/workspace-events-reference.mjs --check
+sh android/tools/run.sh bun android/tools/workspace-events-reference.mjs --check
 sh android/gradlew :app:testDebugUnitTest --tests '*NativeWorkspaceEventsTest' --tests '*MainActivityWorkspaceEventsTest' --tests '*MainActivityWorkspaceDataTest'
 ```
 
@@ -1028,8 +1028,8 @@ and `history-{full,focused,java,web,web-build,browser,package,geometry}-check.tx
 in the artifact directory. No installation or goal-completion claim is made.
 
 ```sh
-sh android/tools/run.sh node android/tools/history-reference.mjs --check
-sh android/tools/run.sh node android/tools/history-browser-reference.mjs
+sh android/tools/run.sh bun android/tools/history-reference.mjs --check
+sh android/tools/run.sh bun android/tools/history-browser-reference.mjs
 sh android/gradlew :app:testDebugUnitTest --tests '*History*Test'
 ```
 
@@ -1098,7 +1098,7 @@ strict raster/heading differences remain open. No APK is installed, no real
 account/session data is accessed, and this is not a whole-app1:1 claim.
 
 ```sh
-sh android/tools/run.sh node android/tools/activity-update-reference.mjs
+sh android/tools/run.sh bun android/tools/activity-update-reference.mjs
 sh android/gradlew :app:testDebugUnitTest --tests '*NativeActivityUpdateTest' --tests '*MainActivityTranscriptTest'
 ```
 
@@ -1169,7 +1169,7 @@ web,web-reference,sync,geometry}-check.txt` in `build/artifacts/android-native/`
 No APK is installed and transport/local-avatar policy is unchanged.
 
 ```sh
-sh android/tools/run.sh node android/tools/markdown-update-reference.mjs
+sh android/tools/run.sh bun android/tools/markdown-update-reference.mjs
 sh android/gradlew :app:testDebugUnitTest --tests '*NativeMarkdownUpdateTest' --tests '*MainActivityTranscriptTest'
 ```
 
@@ -1224,7 +1224,7 @@ original thresholds:101,513 search pixels/max211,20 composer pixels/max2,
 goal-completion claim is made.
 
 ```sh
-sh android/tools/run.sh node android/tools/table-wrap-reference.mjs
+sh android/tools/run.sh bun android/tools/table-wrap-reference.mjs
 sh android/gradlew :app:testDebugUnitTest --tests '*NativeTableWrapTest' --tests '*NativeTableOriginTest'
 ```
 
@@ -1301,7 +1301,7 @@ web-build,browser,package,geometry}-check.txt` in the artifact directory. No APK
 is installed; no real-server/tsnet/device or goal-completion claim is made.
 
 ```sh
-sh android/tools/run.sh node android/tools/transcript-browser-reference.mjs
+sh android/tools/run.sh bun android/tools/transcript-browser-reference.mjs
 sh android/gradlew :app:testDebugUnitTest --tests '*Transcript*Test' --tests '*NativeAvatarsTest'
 ```
 
@@ -1340,15 +1340,15 @@ for local generation. Profile loading and saving selected style/seed still use
 the authenticated API; this does not make profile metadata available offline.
 
 ```sh
-sh android/tools/run.sh node android/tools/workspace-data-reference.mjs --check
+sh android/tools/run.sh bun android/tools/workspace-data-reference.mjs --check
 sh android/gradlew :app:testDebugUnitTest --tests '*NativeWorkspaceDataTest' --tests '*MainActivityWorkspaceDataTest'
 ```
 
 ```sh
-sh android/tools/run.sh node android/tools/render-web-reference.mjs --screens=commands
+sh android/tools/run.sh bun android/tools/render-web-reference.mjs --screens=commands
 sh android/gradlew :app:testDebugUnitTest --tests '*NativeComposerCommandsTest' --tests '*MainActivityGoalTest'
-sh android/tools/run.sh node android/tools/check-composer-commands.mjs
-sh android/tools/run.sh node android/tools/check-composer-commands.mjs --native-prefix=native-api26
+sh android/tools/run.sh bun android/tools/check-composer-commands.mjs
+sh android/tools/run.sh bun android/tools/check-composer-commands.mjs --native-prefix=native-api26
 ```
 
 The command gate compares 2,898 geometry/semantic values per API (26 and 35),
@@ -1733,7 +1733,7 @@ glyph rasterization remain device-verification work. Native text and input
 locales follow the selected Chinese/English/Japanese UI language, as Web's
 `usePresentation` sets the document language; this also controls font/line-break
 fallback rather than inheriting an unrelated device locale.
-Run `sh android/tools/run.sh node android/tools/check-typography.mjs --quantized`
+Run `sh android/tools/run.sh bun android/tools/check-typography.mjs --quantized`
 after native tests and Web references. The 112 checked advances cover four sizes
 and seven CSS weights on API 26/35. This explicitly models Minikin's 1/256px
 glyph-advance quantization; the residual is <=0.003907px. The unmodified raw

@@ -1,6 +1,6 @@
 package com.cloudgeek.spool.android;
 
-/** Generated from web/src/style.css. Regenerate with node android/tools/sync-web-ui.mjs. */
+/** Generated from web/src/style.css. Regenerate with bun android/tools/sync-web-ui.mjs. */
 class WebPalette {
     final int text;
     final int muted;

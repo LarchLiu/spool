@@ -59,7 +59,7 @@ wall-clock deadline for every possible grammar.
 Run from the repository root, using the standard scratch/cache wrapper:
 
 ```sh
-sh android/tools/run.sh node android/tools/sync-web-syntax.mjs --check
+sh android/tools/run.sh bun android/tools/sync-web-syntax.mjs --check
 sh android/tools/run.sh python3 android/tools/build-syntax-native.py --host --android
 sh android/tools/check-java.sh
 sh android/tools/run.sh sh android/tools/gradle.sh :app:assembleDebug :app:testDebugUnitTest :app:lintDebug

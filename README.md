@@ -68,13 +68,16 @@ on the service host before use.
 ### Requirements
 
 - Go **1.27.3** or newer.
-- Node.js **22.12** or newer, plus npm.
+- Bun **1.4.4** (the pinned version in `.bun-version`).
 - Codex CLI or Claude Code installed and signed in on the service host. They are optional for frontend-only work and tests that do not use an agent.
 - Android development requirements are listed in the [Android documentation](android/README.md).
 
 MyGo is pinned to `v0.6.4`. Frontend dependencies are installed in
 `web/node_modules/`; production frontend assets are embedded in the Desktop and
 server binaries.
+
+Dependencies are locked in `web/bun.lock`. Build commands use `bun run --bun`
+so dependency installation scripts, TypeScript and Vite all run with Bun.
 
 ### Local development
 
@@ -103,7 +106,7 @@ For browser-only development, run the backend and Vite in separate terminals:
 GOCACHE="$PWD/build/cache/go-build" go run ./cmd/server
 
 # Terminal 2
-npm --prefix web run dev
+bun run --bun --cwd web dev
 ```
 
 Vite proxies `/api` to `127.0.0.1:8787`. Use the Go-served address when checking

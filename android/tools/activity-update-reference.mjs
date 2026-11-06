@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Original Web ToolActivityList conditional mounts, keys and source state through live updates.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';

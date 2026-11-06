@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Execute actual main.tsx keyed turn JSX, latest callback/scroll handler and original components.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';

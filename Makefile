@@ -2,8 +2,9 @@ version ?= patch
 
 .PHONY: dev web desktop server test package auto-format branding release
 web: branding
-	npm --prefix web ci
-	npm --prefix web run build
+	# Force dependency lifecycle scripts to use Bun as well.
+	bun run --bun --cwd web bun install --frozen-lockfile
+	bun run --bun --cwd web build
 
 dev: web
 	go run github.com/egoist/mygo/cmd/mygo@v0.6.4 dev
@@ -18,17 +19,17 @@ server: web
 	go build -ldflags "-X main.production=1" -o build/spool-server ./cmd/server
 
 test:
-	node --test tools/*.test.mjs
-	npm --prefix web test
+	bun test tools/*.test.mjs
+	bun run --bun --cwd web test
 	go test -race ./...
 	go vet ./...
 
 auto-format:
 	gofmt -w resources.go cmd internal tools
-	npm exec --prefix web -- prettier --write web/src
+	bun run --bun --cwd web format
 
 package: web
 	go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -skip-dmg
 
 release:
-	node tools/release.mjs "$(version)"
+	bun tools/release.mjs "$(version)"

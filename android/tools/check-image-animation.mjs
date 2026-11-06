@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Browser WebCodecs supplies complete composited frames, not a second handwritten expected renderer.
 import fs from 'node:fs/promises';
 import http from 'node:http';

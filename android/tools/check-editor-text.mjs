@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Actual textarea UA-shadow ranges vs production EditText layout; no mirror or glyph-raster claim.
 import fs from 'node:fs';
 import path from 'node:path';

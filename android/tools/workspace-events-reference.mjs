@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Actual Web socket policy and connected/unauthenticated callbacks, with browser timer coercion.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Keep decoration-relative geometry separate from absolute glyph baselines and full-image pixels.
 import fs from 'node:fs';
 import path from 'node:path';

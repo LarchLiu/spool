@@ -19,7 +19,7 @@ const env = {
 };
 
 test("release tag is the version and only the public key enters the config", () => {
-  const config = releaseConfig({ name: "Spool", version: "0.1.0", buildCommand: "npm --prefix web run build", linux: { webview: false } }, env);
+  const config = releaseConfig({ name: "Spool", version: "0.1.0", buildCommand: "bun run --bun --cwd web build", linux: { webview: false } }, env);
   assert.equal(config.version, "1.2.3");
   assert.equal(config.buildCommand, "");
   assert.equal(config.updates.github, env.GITHUB_REPOSITORY);
@@ -134,10 +134,10 @@ test("release workflow validates without mutations before frontend tests and onl
   const build = workflow.split("\n  build:\n")[1]?.split("\n  publish:\n")[0];
   assert.ok(prepare, "prepare job exists");
   assert.ok(build, "build job exists");
-  assert.match(prepare, /^        run: node tools\/prepare-release\.mjs --check$/m);
-  assert.doesNotMatch(prepare, /^        run: node tools\/prepare-release\.mjs$/m);
-  assert.match(prepare, /npm --prefix web test/);
-  assert.match(build, /^        run: node tools\/prepare-release\.mjs$/m);
+  assert.match(prepare, /^        run: bun tools\/prepare-release\.mjs --check$/m);
+  assert.doesNotMatch(prepare, /^        run: bun tools\/prepare-release\.mjs$/m);
+  assert.match(prepare, /bun run --bun --cwd web test/);
+  assert.match(build, /^        run: bun tools\/prepare-release\.mjs$/m);
 });
 
 test("CLI writes the same changelog into MyGo configuration without leaking the signing key", async (t) => {

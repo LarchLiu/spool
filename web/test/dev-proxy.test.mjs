@@ -13,7 +13,7 @@ test("desktop dev starts a pinned Vite origin without silently changing ports", 
   assert.equal(config.devUrl, "http://127.0.0.1:5173");
   assert.equal(
     config.devCommand,
-    "npm --prefix web run dev -- --port 5173 --strictPort",
+    "bun run --bun --cwd web dev --port 5173 --strictPort",
   );
   const makefile = await readFile(
     new URL("../../Makefile", import.meta.url),

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Complete production frames, independent of the search geometry/interaction checks.
 import fs from 'node:fs';
 import path from 'node:path';

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Full composed workspace geometry in physical pixels; not a glyph/full-image raster gate.
 import fs from 'node:fs';
 import path from 'node:path';

@@ -2,7 +2,7 @@
   "browser": "156.0.8078.74",
   "source": "web/src/style.css",
   "sourceSha256": "51b616103959642878c578860666e6c9c461e919692943a8423788b04b7199cc",
-  "command": "sh android/tools/run.sh node android/tools/probe-css-paint.mjs --write-border-fixtures",
+  "command": "sh android/tools/run.sh bun android/tools/probe-css-paint.mjs --write-border-fixtures",
   "purpose": "Unmodified full-viewport actual CSS screenshots, without shadows, at three densities and both themes. No cropping, rescaling, or native-derived pixels.",
   "fixtures": [
     {

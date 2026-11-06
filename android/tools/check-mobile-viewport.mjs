@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Whole composed shell geometry plus real CSS/native drawer transition samples, not raster parity.
 import fs from 'node:fs';
 import path from 'node:path';

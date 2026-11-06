@@ -7,14 +7,14 @@ import { releaseVersion } from "./prepare-release.mjs";
 import { compareTags } from "./release-metadata.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
-const versionFiles = ["mygo.json", "web/package.json", "web/package-lock.json"];
-const usage = `Usage: node tools/release.mjs [version|patch|minor|major] [--dry-run] [--offline]
+const versionFiles = ["mygo.json", "web/package.json"];
+const usage = `Usage: bun tools/release.mjs [version|patch|minor|major] [--dry-run] [--offline]
 
 Examples:
-  node tools/release.mjs
-  node tools/release.mjs 0.2.0
-  node tools/release.mjs 0.3.0-beta.1
-  node tools/release.mjs patch --dry-run
+  bun tools/release.mjs
+  bun tools/release.mjs 0.2.0
+  bun tools/release.mjs 0.3.0-beta.1
+  bun tools/release.mjs patch --dry-run
 
 Defaults to patch when the version argument is omitted or empty.
 Synchronizes version files, commits them, and creates an annotated local tag.
@@ -73,11 +73,8 @@ function versionFile(name, text, version) {
   const data = JSON.parse(text);
   if (typeof data.version !== "string") throw new Error(`${name} has no version field`);
   data.version = version;
-  if (name === "web/package-lock.json") {
-    if (!data.packages?.[""]) throw new Error(`${name} must have a packages[""] root entry (lockfile v2+)`);
-    data.packages[""].version = version;
-  }
-  // Keep the compact MyGo config and npm's existing indentation/newline style.
+  // Bun's lockfile contains dependency resolutions, with no app version to update.
+  // Keep each version file's existing indentation and newline style.
   const indent = text.match(/\n([\t ]+)"/)?.[1];
   const newline = text.includes("\r\n") ? "\r\n" : "\n";
   const content = JSON.stringify(data, null, indent).replaceAll("\n", newline);

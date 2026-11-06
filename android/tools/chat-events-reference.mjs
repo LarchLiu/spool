@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Execute the actual Web subscription with controlled asynchronous fallback races.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

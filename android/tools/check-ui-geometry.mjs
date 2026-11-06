@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Compare measured layout boxes, not raster-font pixels or whole-app visual parity.
 import fs from 'node:fs';
 import path from 'node:path';

@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Keep original-CSS screenshot and actual-command software replay comparisons separate.
 import fs from 'node:fs';
 import path from 'node:path';

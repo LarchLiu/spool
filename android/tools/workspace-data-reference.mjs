@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Exercise the actual Web effect and profile cache; do not invent a second loading oracle.
 import fs from 'node:fs';
 import path from 'node:path';

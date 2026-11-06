@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Actual Web MarkdownMessage/CSS table lines and unclipped intrinsic inline widths.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';

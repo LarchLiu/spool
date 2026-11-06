@@ -55,7 +55,7 @@ Run checks from the repository root using the repository's cache/scratch wrapper
 
 ```sh
 sh android/tools/run.sh go test ./internal/office ./internal/workspace
-sh android/tools/run.sh npm --prefix web test
+sh android/tools/run.sh bun run --bun --cwd web test
 sh android/gradlew :app:testDebugUnitTest \
   --tests com.cloudgeek.spool.android.NativeOfficePreviewTest
 ```

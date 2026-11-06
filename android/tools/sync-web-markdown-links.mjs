@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Execute the actual Web renderer; these are not handwritten expected link ranges.
 import fs from 'node:fs';
 import path from 'node:path';

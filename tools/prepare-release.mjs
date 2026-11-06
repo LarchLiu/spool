@@ -97,7 +97,7 @@ export function updaterReleaseNotes(notes) {
 async function main() {
   const args = process.argv.slice(2);
   if (args.length > 1 || (args.length === 1 && args[0] !== "--check")) {
-    throw new Error("Usage: node tools/prepare-release.mjs [--check]");
+    throw new Error("Usage: bun tools/prepare-release.mjs [--check]");
   }
   const config = releaseConfig(JSON.parse(await readFile("mygo.json", "utf8")), process.env);
   const notes = await releaseNotes(process.env);

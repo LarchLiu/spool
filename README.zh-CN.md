@@ -65,11 +65,13 @@ Spool 的任务和代码执行发生在服务所在的机器上，项目目录�
 ### 环境要求
 
 - Go **1.27.3** 或更高版本。
-- Node.js **22.12** 或更高版本，以及 npm。
+- Bun **1.4.4**（版本固定在 `.bun-version`）。
 - 本地安装并登录 Codex CLI 或 Claude Code；只开发前端或运行不涉及 Agent 的测试时可以暂不安装。
 - Android 开发环境和 native 客户端要求见 [Android 文档](android/README.md)。
 
 MyGo 固定使用 `v0.6.4`。前端依赖安装在 `web/node_modules/`，生产构建后的资源会嵌入 Desktop 和 server 二进制。
+
+依赖由 `web/bun.lock` 锁定。构建命令统一使用 `bun run --bun`，确保依赖安装脚本、TypeScript 和 Vite 都通过 Bun 运行。
 
 ### 本地开发
 
@@ -97,7 +99,7 @@ Go 代码会自动重新编译，修改前端代码会触发 HMR。默认服务�
 GOCACHE="$PWD/build/cache/go-build" go run ./cmd/server
 
 # 终端 2
-npm --prefix web run dev
+bun run --bun --cwd web dev
 ```
 
 Vite 会把 `/api` 请求代理到 `127.0.0.1:8787`。检查 PWA、Service Worker 或

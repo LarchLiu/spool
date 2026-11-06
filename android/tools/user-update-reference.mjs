@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Original main.tsx user JSX, UserMessage and AttachmentCards through mounted updates.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';

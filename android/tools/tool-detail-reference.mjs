@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Exercise the production React disclosure and live loader, without session data.
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";

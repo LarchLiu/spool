@@ -67,7 +67,7 @@ test("check mode exports the source version for packaging and smoke without chan
 
 test("manual build workflow resolves a branch or commit once and cannot publish or use signing keys", async () => {
   const workflow = await readFile(new URL("../.github/workflows/build.yml", import.meta.url), "utf8");
-  for (const use of workflow.matchAll(/uses: (\S+)/g)) assert.match(use[1], /^actions\/[\w-]+@[a-f0-9]{40}$/);
+  for (const use of workflow.matchAll(/uses: (\S+)/g)) assert.match(use[1], /^(?:actions\/[\w-]+|oven-sh\/setup-bun)@[a-f0-9]{40}$/);
   assert.match(workflow, /on:\n  workflow_dispatch:/);
   assert.doesNotMatch(workflow, /^  (push|pull_request|release|schedule):/m);
   assert.match(workflow, /permissions:\n  contents: read/);
@@ -76,21 +76,21 @@ test("manual build workflow resolves a branch or commit once and cannot publish 
   assert.match(workflow, /commit="\$\(git rev-parse HEAD\)"/);
   assert.match(workflow, /ref: \$\{\{ needs\.prepare\.outputs\.commit \}\}/);
   const [prepare, build] = workflow.split("\n  build:\n");
-  assert.doesNotMatch(prepare, /^        run: node tools\/prepare-build\.mjs$/m);
-  assert.match(prepare, /^        run: node tools\/prepare-build\.mjs --check$/m);
-  assert.match(prepare, /npm --prefix web test/);
+  assert.doesNotMatch(prepare, /^        run: bun tools\/prepare-build\.mjs$/m);
+  assert.match(prepare, /^        run: bun tools\/prepare-build\.mjs --check$/m);
+  assert.match(prepare, /bun run --bun --cwd web test/);
   assert.match(prepare, /go test -race -v -timeout=10m/);
   assert.match(prepare, /go vet \.\/\.\.\./);
-  assert.match(build, /run: node tools\/prepare-build\.mjs/);
+  assert.match(build, /run: bun tools\/prepare-build\.mjs/);
   assert.match(build, /-skip-build-command -sign - -skip-notarize/);
   assert.match(build, /name: test-packages-\$\{\{ matrix\.target \}\}/);
-  assert.match(build, /node tools\/release-assets\.mjs build-assets "\$\{\{ matrix\.target \}\}" --unsigned/);
+  assert.match(build, /bun tools\/release-assets\.mjs build-assets "\$\{\{ matrix\.target \}\}" --unsigned/);
   assert.match(build, /RELEASE_TAG: v\$\{\{ needs\.prepare\.outputs\.version \}\}/);
   for (const target of releaseTargets) assert.match(build, new RegExp(`target: ${target} \\}`));
   const smoke = workflow.split("\n  smoke:\n")[1];
   assert.ok(smoke);
   assert.match(smoke, /needs: \[prepare, build\]/);
-  assert.match(smoke, /node tools\/smoke-release\.mjs smoke-assets/);
+  assert.match(smoke, /bun tools\/smoke-release\.mjs smoke-assets/);
   assert.match(smoke, /ref: \$\{\{ needs\.prepare\.outputs\.commit \}\}/);
   assert.match(smoke, /RELEASE_TAG: v\$\{\{ needs\.prepare\.outputs\.version \}\}/);
   for (const runner of ["macos-15-intel", "windows-11-arm", "ubuntu-24.04-arm"]) assert.ok(smoke.includes(runner));

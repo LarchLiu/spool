@@ -50,12 +50,12 @@ function fixture() {
 test("native smoke observes clicks after the frontend consumes the one-shot target", () => {
   const { window, document, received, emit, check } = fixture();
   assert.equal(window.spoolSmokeNotification, null);
-  // Direct window dispatch does not put a later capture listener ahead of the
-  // already registered consumer on every WebView engine.
+  // An observer registered after the consumer sees an already consumed buffer.
+  // Keep both in the same phase so this ordering holds across event engines.
   let stale;
   window.addEventListener("spool:notification-changed", () => {
     stale = window.spoolNotificationTarget;
-  }, true);
+  });
   for (const target of [
     { url: "/?inbox=user-sender123&recipient=user-receiver123", user: "user-receiver123" },
     { url: "/?inbox=group-12345678&recipient=user-receiver123", user: "user-receiver123" },

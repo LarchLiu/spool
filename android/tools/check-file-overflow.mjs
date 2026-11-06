@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Full unscaled mobile frames stay independent from passing segment-layout/motion controls.
 import fs from 'node:fs';
 import path from 'node:path';

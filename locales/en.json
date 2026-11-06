@@ -751,7 +751,7 @@
   "Install Rust with an MSVC toolchain and Visual Studio C++ Build Tools on this Windows host, then retry.": "Install Rust with an MSVC toolchain and Visual Studio C++ Build Tools on this Windows host, then retry.",
   "Set VCPKGRS_TRIPLET to the native MSVC architecture with windows-static-md, then retry.": "Set VCPKGRS_TRIPLET to the native MSVC architecture with windows-static-md, then retry.",
   "Install LLVM on this Windows host and set LIBCLANG_PATH to its bin directory, then retry.": "Install LLVM on this Windows host and set LIBCLANG_PATH to its bin directory, then retry.",
-  "Install esbuild on this Windows host with npm install -g esbuild, then retry.": "Install esbuild on this Windows host with npm install -g esbuild, then retry.",
+  "Install esbuild on this Windows host with bun add --global esbuild, then retry.": "Install esbuild on this Windows host with bun add --global esbuild, then retry.",
   "Install vcpkg on this Windows host and set VCPKG_ROOT to its directory, then retry.": "Install vcpkg on this Windows host and set VCPKG_ROOT to its directory, then retry.",
   "Could not prepare voxl dependencies with vcpkg. Check Visual Studio C++ Build Tools, vcpkg and network access, then retry.": "Could not prepare voxl dependencies with vcpkg. Check Visual Studio C++ Build Tools, vcpkg and network access, then retry.",
   "Component licenses": "Component licenses",

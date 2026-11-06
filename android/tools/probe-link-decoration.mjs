@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Original CSS + actual MarkdownMessage: record Blink decoration operations, not a painted imitation.
 import fs from 'node:fs/promises';
 import path from 'node:path';

@@ -45,7 +45,7 @@ func (b *buildEnvironment) prepareWindows(ctx context.Context) (string, error) {
 		b.set("LIBCLANG_PATH", lib)
 	}
 	if esbuild := b.esbuild(ctx); esbuild == "" {
-		return "", errors.New("Install esbuild on this Windows host with npm install -g esbuild, then retry.")
+		return "", errors.New("Install esbuild on this Windows host with bun add --global esbuild, then retry.")
 	} else {
 		b.set("ESBUILD", esbuild)
 	}

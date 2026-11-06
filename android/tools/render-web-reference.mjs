@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Original Web CSS/components with synthetic fixtures; never connects to a server.
 import fs from 'node:fs/promises';
 import path from 'node:path';

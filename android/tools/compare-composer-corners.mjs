@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Juxtapose unchanged production-render pixels; never rescale or feed crops into raster gates.
 import fs from 'node:fs';
 import path from 'node:path';

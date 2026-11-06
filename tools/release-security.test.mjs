@@ -194,7 +194,7 @@ esac
 
 test("workflow pins actions, keeps private keys out of builds and uploads assets once", async () => {
   const workflow = await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
-  for (const use of workflow.matchAll(/uses: (\S+)/g)) assert.match(use[1], /^actions\/[\w-]+@[a-f0-9]{40}$/);
+  for (const use of workflow.matchAll(/uses: (\S+)/g)) assert.match(use[1], /^(?:actions\/[\w-]+|oven-sh\/setup-bun)@[a-f0-9]{40}$/);
   const [beforePublish, publish] = workflow.split("\n  publish:\n");
   assert.doesNotMatch(beforePublish, /secrets\.MYGO_UPDATER_PRIVATE_KEY/);
   assert.equal((publish.match(/secrets\.MYGO_UPDATER_PRIVATE_KEY/g) ?? []).length, 1);
@@ -204,6 +204,6 @@ test("workflow pins actions, keeps private keys out of builds and uploads assets
   assert.doesNotMatch(workflow, /RELEASE_BUILD_ONLY|inputs\.publish/);
   assert.doesNotMatch(publish, /^    if:/m);
   for (const runner of ["macos-15-intel", "windows-11-arm", "ubuntu-24.04-arm"]) assert.ok(beforePublish.includes(runner));
-  assert.match(beforePublish, /node tools\/smoke-release.mjs smoke-assets/);
+  assert.match(beforePublish, /bun tools\/smoke-release.mjs smoke-assets/);
   assert.doesNotMatch(publish, /sha256sum --check/);
 });

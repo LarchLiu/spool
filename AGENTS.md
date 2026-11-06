@@ -72,13 +72,13 @@ preparing frontend assets as described in `README.md`:
 
 Use a descriptive task prefix instead of `verify` when appropriate. The random
 suffix isolates concurrent runs; it is for scratch space, never for caches.
-The same environment wrapper applies to `make test`, `make dev`, Node tests,
+The same environment wrapper applies to `make test`, `make dev`, Bun tests,
 browser probes, and release smoke checks. For long-running development, keep
 the run directory until the app and its children have stopped.
 
 ### Isolation And Cleanup
 
-- Prefer `t.TempDir()` in Go tests. When `os.MkdirTemp`, Node `mkdtemp`, or a
+- Prefer `t.TempDir()` in Go tests. When `os.MkdirTemp`, JavaScript `mkdtemp`, or a
   browser profile is necessary, use the configured temporary root and register
   cleanup immediately (`t.Cleanup`, `t.after`, `finally`, or a shell trap).
 - A `TestMain` must explicitly clean up after `m.Run()` and before `os.Exit`;

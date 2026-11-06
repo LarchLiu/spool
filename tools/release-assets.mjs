@@ -83,7 +83,7 @@ async function main() {
   const unsigned = args.includes("--unsigned");
   const positional = args.filter((arg) => arg !== "--unsigned");
   if (positional.length > 2 || positional.some((arg) => arg.startsWith("-"))) {
-    throw new Error("Usage: node tools/release-assets.mjs [directory] [target] [--unsigned]");
+    throw new Error("Usage: bun tools/release-assets.mjs [directory] [target] [--unsigned]");
   }
   const [directory = "release-assets", target] = positional;
   const notes = unsigned ? undefined : await readFile(process.env.RELEASE_NOTES_FILE, "utf8");

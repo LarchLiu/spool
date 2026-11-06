@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Observe original ReactMarkdown/TurnResponse updates, not reconstructed HTML.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';

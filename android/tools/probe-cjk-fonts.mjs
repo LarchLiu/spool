@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Observe the actual Web renderer's available font faces with font-synthesis:none.
 import fs from 'node:fs/promises';
 import path from 'node:path';

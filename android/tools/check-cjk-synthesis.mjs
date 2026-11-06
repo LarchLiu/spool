@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Keep full Web/native raster failure visible, separate from real-face/native-paint controls.
 import fs from 'node:fs';
 import path from 'node:path';
