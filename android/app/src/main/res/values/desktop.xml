@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="desktop_title">Remote desktop</string>
+    <string name="desktop_section">Remote connection</string>
+    <string name="desktop_connect">Connect to desktop</string>
+    <string name="desktop_disconnect">Disconnect desktop</string>
+    <string name="desktop_connecting">Connecting…</string>
+    <string name="desktop_ended">Desktop connection ended. Close this window to connect again.</string>
+    <string name="desktop_unavailable">Could not connect to desktop. Check that desktop access is enabled and allowed for your account.</string>
+    <string name="desktop_video_error">This device could not decode the desktop video. Disconnect and try again.</string>
+    <string name="desktop_read_only">Read-only desktop</string>
+    <string name="desktop_keyboard">Keyboard</string>
+    <string name="desktop_pan">Pan and zoom</string>
+    <string name="desktop_fit">Fit desktop to window</string>
+    <string name="desktop_zoom_in">Zoom in</string>
+    <string name="desktop_zoom_out">Zoom out</string>
+    <string name="desktop_fullscreen">Enter fullscreen</string>
+    <string name="desktop_fullscreen_exit">Exit fullscreen</string>
+    <string name="desktop_toolbar_collapse">Collapse toolbar</string>
+    <string name="desktop_toolbar_expand">Expand toolbar</string>
+    <string name="desktop_control">Control key</string>
+    <string name="desktop_command">Command key</string>
+    <string name="desktop_left">Left arrow</string>
+    <string name="desktop_up">Up arrow</string>
+    <string name="desktop_down">Down arrow</string>
+    <string name="desktop_right">Right arrow</string>
+</resources>

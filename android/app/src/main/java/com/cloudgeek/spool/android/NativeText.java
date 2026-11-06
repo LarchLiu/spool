@@ -175,6 +175,7 @@ final class NativeText {
             case "Recents": value = "最近聊天"; break;
             case "Reconnecting…": value = "正在重连…"; break;
             case "Refresh files": value = "刷新文件"; break;
+            case "Remote desktop": value = "远程桌面"; break;
             case "Remove {name}": value = "移除 {name}"; break;
             case "Request failed": value = "请求失败"; break;
             case "Resize chat window (arrow keys)": value = "调整聊天窗口大小（也可使用方向键）"; break;
@@ -432,6 +433,7 @@ final class NativeText {
             case "Recents": value = "最近のチャット"; break;
             case "Reconnecting…": value = "再接続中…"; break;
             case "Refresh files": value = "ファイルを更新"; break;
+            case "Remote desktop": value = "リモートデスクトップ"; break;
             case "Remove {name}": value = "{name}を削除"; break;
             case "Request failed": value = "リクエストに失敗しました"; break;
             case "Resize chat window (arrow keys)": value = "チャットウィンドウのサイズを変更（矢印キーも使用可能）"; break;

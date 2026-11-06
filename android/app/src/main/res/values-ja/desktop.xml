@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="desktop_title">リモートデスクトップ</string>
+    <string name="desktop_section">リモート接続</string>
+    <string name="desktop_connect">デスクトップに接続</string>
+    <string name="desktop_disconnect">切断</string>
+    <string name="desktop_connecting">接続中…</string>
+    <string name="desktop_ended">接続が切れました。ウィンドウを閉じて再接続してください。</string>
+    <string name="desktop_unavailable">接続できません。サーバーの設定とアカウントのアクセス権を確認してください。</string>
+    <string name="desktop_video_error">この端末ではデスクトップ映像をデコードできません。切断して再試行してください。</string>
+    <string name="desktop_read_only">表示のみ</string>
+    <string name="desktop_keyboard">キーボード</string>
+    <string name="desktop_pan">移動と拡大</string>
+    <string name="desktop_fit">画面に合わせる</string>
+    <string name="desktop_zoom_in">拡大</string>
+    <string name="desktop_zoom_out">縮小</string>
+    <string name="desktop_fullscreen">全画面表示</string>
+    <string name="desktop_fullscreen_exit">全画面表示を終了</string>
+    <string name="desktop_toolbar_collapse">ツールバーを折りたたむ</string>
+    <string name="desktop_toolbar_expand">ツールバーを展開する</string>
+    <string name="desktop_control">Control キー</string>
+    <string name="desktop_command">Command キー</string>
+    <string name="desktop_left">左矢印</string>
+    <string name="desktop_up">上矢印</string>
+    <string name="desktop_down">下矢印</string>
+    <string name="desktop_right">右矢印</string>
+</resources>

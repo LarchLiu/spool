@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="desktop_title">远程桌面</string>
+    <string name="desktop_section">远程连接</string>
+    <string name="desktop_connect">连接桌面</string>
+    <string name="desktop_disconnect">断开桌面</string>
+    <string name="desktop_connecting">正在连接…</string>
+    <string name="desktop_ended">桌面连接已断开，关闭窗口后可重新连接。</string>
+    <string name="desktop_unavailable">无法连接桌面，请确认服务端已启用远程桌面并允许你的账号访问。</string>
+    <string name="desktop_video_error">此设备无法解码桌面视频，请断开后重试。</string>
+    <string name="desktop_read_only">桌面仅供查看</string>
+    <string name="desktop_keyboard">键盘</string>
+    <string name="desktop_pan">平移与缩放</string>
+    <string name="desktop_fit">适应窗口</string>
+    <string name="desktop_zoom_in">放大</string>
+    <string name="desktop_zoom_out">缩小</string>
+    <string name="desktop_fullscreen">进入全屏</string>
+    <string name="desktop_fullscreen_exit">退出全屏</string>
+    <string name="desktop_toolbar_collapse">收起工具栏</string>
+    <string name="desktop_toolbar_expand">展开工具栏</string>
+    <string name="desktop_control">Control 键</string>
+    <string name="desktop_command">Command 键</string>
+    <string name="desktop_left">向左</string>
+    <string name="desktop_up">向上</string>
+    <string name="desktop_down">向下</string>
+    <string name="desktop_right">向右</string>
+</resources>

@@ -126,6 +126,9 @@ public final class MainActivity extends Activity {
     private boolean permissionLoading, permissionFailed;
     private int permissionRequest;
     private NativeSettings settingsDialog;
+    private NativeDesktopDialog desktopDialog;
+    private LinearLayout desktopSettings;
+    private Runnable desktopAvailability;
     private NativeConnectionSettings connectionSettings;
     private NativeFileBrowser fileBrowser;
     private NativeFileModel fileState;
@@ -527,6 +530,7 @@ public final class MainActivity extends Activity {
 
     private void closeSettings() {
         settingsOpen = false;
+        stopDesktopAvailability();
         dismissSettingsDialog();
         connectionSettings = null;
         serverInput = null;
@@ -846,6 +850,8 @@ public final class MainActivity extends Activity {
     }
 
     private void clearWorkspace() {
+        closeDesktop();
+        stopDesktopAvailability();
         if (workspaceData != null) workspaceData.stop();
         agentsInitialized = false;
         if (chatRefresh != null) chatRefresh.stop();
@@ -946,6 +952,17 @@ public final class MainActivity extends Activity {
             params.setMarginStart(dp(14));
             account.addView(copy, params);
             body.addView(account);
+            desktopSettings = ui.column();
+            desktopSettings.setVisibility(View.GONE);
+            gap(desktopSettings, 22);
+            desktopSettings.addView(ui.bold(localizedString(R.string.desktop_section), 14));
+            gap(desktopSettings, 8);
+            desktopSettings.addView(ui.button(localizedString(R.string.desktop_connect), false, this::openDesktop));
+            body.addView(desktopSettings);
+            stopDesktopAvailability();
+            LinearLayout section = desktopSettings;
+            desktopAvailability = () -> refreshDesktopAvailability(section);
+            main.post(desktopAvailability);
         }
         gap(body, 22);
         connectionSettings = new NativeConnectionSettings(ui, origin, localizedString(R.string.connection_note),
@@ -967,6 +984,55 @@ public final class MainActivity extends Activity {
                 .putString("theme", theme)
                 .putString("language", language)
                 .apply();
+    }
+
+    private void stopDesktopAvailability() {
+        if (desktopAvailability != null) main.removeCallbacks(desktopAvailability);
+        desktopAvailability = null;
+    }
+
+    private void refreshDesktopAvailability(LinearLayout section) {
+        if (!foreground || !settingsOpen || destroyed || user == null || desktopSettings != section) return;
+        Runnable again = desktopAvailability;
+        api("/desktop", null, value -> {
+            if (desktopSettings != section || !settingsOpen || !foreground || desktopAvailability != again) return;
+            section.setVisibility(((JSONObject) value).optBoolean("available") ? View.VISIBLE : View.GONE);
+            main.postDelayed(again, 5000);
+        }, error -> {
+            if (desktopSettings != section || !settingsOpen || !foreground || desktopAvailability != again) return;
+            section.setVisibility(View.GONE);
+            main.postDelayed(again, 5000);
+        });
+    }
+
+    private void openDesktop() {
+        if (desktopDialog != null || !foreground || destroyed || user == null || client == null) return;
+        final Client captured = client;
+        final String auth = csrf, loc = locale();
+        captureDraft(); closeSettings(); closePeople(); closeImagePreview();
+        desktopDialog = new NativeDesktopDialog(ui, new NativeDesktopConnection.Transport() {
+            public JSONObject request(String path, boolean post) throws Exception {
+                return (JSONObject) MainActivity.this.request(captured, path, post ? object() : null, auth, loc);
+            }
+            public NativeDesktopConnection.Wire open(String token, NativeDesktopConnection.Listener listener) throws Exception {
+                spoolnet.DesktopStream stream = captured.openDesktop(token, new spoolnet.DesktopListener() {
+                    public void onOpen() { listener.opened(); }
+                    public void onMessage(byte[] data, boolean binary) { listener.message(data, binary); }
+                    public void onClosed(long status) { listener.ended(); }
+                });
+                return new NativeDesktopConnection.Wire() {
+                    public void send(String command) throws Exception { stream.send(command); }
+                    public void close() { stream.close(); }
+                };
+            }
+        }, io, () -> { if (desktopDialog != null && !desktopDialog.isShowing()) desktopDialog = null; });
+        desktopDialog.show();
+    }
+
+    private void closeDesktop() {
+        NativeDesktopDialog current = desktopDialog;
+        desktopDialog = null;
+        if (current != null) current.dismiss();
     }
 
     private void updatePreferences(String nextTheme, String nextLanguage) {
@@ -2685,6 +2751,10 @@ public final class MainActivity extends Activity {
     }
 
     private void back() {
+        if (desktopDialog != null) {
+            closeDesktop();
+            return;
+        }
         if (ui.activePopover != null) {
             ui.dismissMenus();
             return;
@@ -2726,6 +2796,10 @@ public final class MainActivity extends Activity {
         super.onStart();
         foreground = true;
         monitor.setActive(settingsOpen);
+        if (settingsOpen && desktopAvailability != null) {
+            main.removeCallbacks(desktopAvailability);
+            main.post(desktopAvailability);
+        }
         if (user != null) {
             resumeWorkspace();
             startChat();
@@ -2742,6 +2816,8 @@ public final class MainActivity extends Activity {
     @Override
     protected void onStop() {
         foreground = false;
+        closeDesktop();
+        if (desktopAvailability != null) main.removeCallbacks(desktopAvailability);
         if (fileBrowser != null) fileBrowser.deactivate();
         if (historyScroll != null) historyScroll.suspend();
         if (ui != null) ui.dismissMenus();
@@ -2754,6 +2830,8 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        closeDesktop();
+        stopDesktopAvailability();
         if (fileBrowser != null) fileBrowser.deactivate();
         fileBrowser = null;
         destroyed = true;

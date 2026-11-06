@@ -39,6 +39,8 @@ const icons = {
   message:'MessageCircle', search:'Search', refresh:'RefreshCw', spinner:'LoaderCircle',
   brain:'Brain', wrench:'Wrench', terminal:'Terminal', globe:'Globe2', list:'List',
   book_open:'BookOpen', file_pen:'FilePenLine', file_plus:'FilePlus2', file_x:'FileX2', crosshair:'Crosshair',
+  keyboard:'Keyboard', pan:'Move', minus:'Minus', fit:'Scan', fullscreen:'Maximize', fullscreen_exit:'Minimize',
+  escape:'CornerUpLeft', tab:'ArrowRightToLine', alt:'Option', shift:'ArrowBigUp', arrow_right:'ArrowRight',
 };
 function attrs(source) {
   return Object.fromEntries([...source.matchAll(/([\w:-]+)="([^"]*)"/g)].map(m => [m[1], m[2]]));

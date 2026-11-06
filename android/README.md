@@ -1913,6 +1913,59 @@ live under `build/cache/`; every command wrapper owns and cleans a separate
 
 ## Device Verification
 
+### Remote Desktop
+
+After the host has enabled voxl and granted the signed-in user remote desktop
+access, **Settings > Remote connection > Connect to desktop** opens a native
+viewer. It uses the same `/api/desktop` connect, availability, revocation and
+disconnect routes as Web, over the existing private-cookie HTTPS/Tailscale
+transport. No new host management endpoint or browser runtime is introduced.
+
+The viewer decodes voxl 0.3.3's independent H.264 Annex-B stripes with Android
+`MediaCodec`, groups their outputs by frame ID, then acknowledges complete frames.
+Tap clicks, drag holds the left button, long press right-clicks, and two fingers
+scroll. **Pan and zoom** switches to local panning and pinch/toolbar zoom from
+100% to 500%; it never changes the host's desktop resolution. The keyboard button
+opens Android's IME, including committed Chinese/Japanese text; external keyboards
+and Esc/Tab/modifier/arrow controls send voxl keysyms. Read-only views suppress
+remote input. The floating toolbar and its collapsed handle have transparent
+backgrounds, with outlined icons and translucent interaction feedback. Icons have
+accessible labels and long-press tooltips. While expanded, its fullscreen and disconnect controls stay visible while the other
+controls scroll horizontally. The collapse button reduces the toolbar to a single
+expand button at the bottom right, freeing the rest of the desktop for viewing
+and input. Expanding restores the controls and preserves fullscreen and zoom.
+The fullscreen button toggles entering and exiting
+fullscreen, which hides the heading and system bars; swiping from a screen edge
+temporarily reveals the system bars. The toolbar stays above the Android keyboard and clear of
+display cutouts. Closing the viewer, backgrounding, signing out or revocation closes
+the view and its media resources. Reconnection requires another explicit action.
+
+Desktop audio, microphone, clipboard synchronization and voxl's shared-folder
+panel are not implemented in this native viewer. Project-file browsing remains
+available through the existing workspace UI. Unsupported video dimensions or
+decoder failures end the view with an error rather than accumulating frames.
+
+Focused verification:
+
+```sh
+sh android/tools/run.sh go -C android/transport test -race ./...
+sh android/gradlew :app:testDebugUnitTest --tests '*NativeDesktop*' --tests '*NativeArchitectureTest'
+sh android/gradlew :app:assembleDebug :app:lintDebug
+
+# ffmpeg/libx264 creates only synthetic images. The separate test package has no
+# network permission, never starts tsnet, and is uninstalled by the smoke helper.
+sh android/tools/run.sh python3 android/tools/prepare-desktop-fixture.py
+sh android/gradlew :app:assembleNativeVerify
+sh android/tools/run.sh python3 android/tools/device-desktop-smoke.py --serial DEVICE_SERIAL
+```
+
+The device probe checks two real H.264 decoders, decoded red/blue fixture pixels,
+eight ordered frame acknowledgements, touch/IME commands, local zoom, read-only
+mode, toolbar collapse/expand and its reduced footprint, fullscreen system-bar hiding, the fullscreen button restoring the window without
+disconnecting, labelled icon controls, background cleanup and simulated revocation. It does not establish live
+host/Tailscale performance, hardware keyboard behavior or physical IME coverage.
+The phone must allow installation of the separate verification package.
+
 For synthetic visual checks on a phone with an existing developer installation,
 build `sh android/gradlew :app:assembleNativeVerify` and run:
 
