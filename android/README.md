@@ -22,7 +22,11 @@ sampling is for hotspot attribution, not an uninstrumented frame-rate baseline.
   messages over a native WebSocket. Streams pause in the background and reconnect
   on returning. Failed writes are not automatically retried.
 - Native document picker and bounded multipart uploads (6 files, 4 MiB each,
-  16 MiB total); native project-file browsing and text/image previews.
+  16 MiB total); native project-file browsing and text/image/PDF previews.
+- Native [Word/Excel previews](../docs/office-preview.md) for `.docx`/`.xlsx`,
+  parsed by the Go server. Word shows paragraphs, images and tables; Excel has
+  worksheet selection, 50-row pages and horizontal scrolling. Update the server
+  together with the APK. Legacy `.doc`/`.xls` files remain download-only.
 - Both mobile sidebars fill the available screen width. The file sidebar follows
   the selected session's actual directory, including registered worktrees; its
   header's information button shows the selectable path, checkout type, branch

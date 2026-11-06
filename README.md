@@ -45,7 +45,7 @@ on the service host before use.
 - Organizes working directories, sessions, members, and agent settings by project; data is stored in local SQLite.
 - Separates user, project-member, personal-session, and shared-project-session permissions.
 - Binds file access to the project directory so remote requests cannot choose an arbitrary working directory.
-- Provides authorized workspace file browsing, Markdown/HTML previews, source viewing, and limited external-file references.
+- Provides authorized workspace file browsing, Markdown/HTML and [Word/Excel previews](docs/office-preview.md) (`.docx`/`.xlsx`), source viewing, and limited external-file references.
 - Projects expose the service host's actual files and operating-system permissions, so access should be granted only to trusted users.
 
 ### Presence and notifications

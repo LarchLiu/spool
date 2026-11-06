@@ -92,6 +92,10 @@ final class NativeFileBrowser extends LinearLayout {
         addView(split, new LayoutParams(-1, 0, 1));
         preview = new NativeFilePreview(ui, state.project, state.chat, images, pdfFactory, this::select,
                 address -> { if (active) external.accept(address); }, file -> { if (active) download.accept(file); }, this::clearPreview);
+        preview.officeReader = (address, completion) -> {
+            int epoch = state.epoch;
+            if (active) read.read(address, (value, error) -> { if (active && epoch == state.epoch) completion.done(value,error); });
+        };
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence value, int start, int count, int after) {}
             public void onTextChanged(CharSequence value, int start, int before, int count) { if (!syncingSearch) { state.search(value.toString()); renderTree(); loadExpanded(); } }
@@ -119,7 +123,7 @@ final class NativeFileBrowser extends LinearLayout {
     void resume() { if (!active) { started = false; start(); } else refreshWorkspace(); }
     void deactivate() {
         active = false; state.epoch++; state.fileRequest++;
-        preview.releasePdf();
+        preview.releaseDocuments();
         workspaceRequest++; workspacePending = false; removeCallbacks(workspacePoll);
         header.workspaceInfo.popover.dismiss();
         state.requested.removeAll(pending); pending.clear();
@@ -223,7 +227,7 @@ final class NativeFileBrowser extends LinearLayout {
     }
     private void clearPreview() { state.target = null; state.file = null; state.loadedTarget = null; state.selected = ""; state.fileError = ""; state.fileRequest++; revealing = ""; bindPreview(); renderTree(); }
     private void bindPreview() {
-        if (state.target == null) { preview.releasePdf(); split.preview(null); return; }
+        if (state.target == null) { preview.releaseDocuments(); split.preview(null); return; }
         String imageScope = (state.workspace == null ? "" : state.workspace.optString("path")) + "\n" + state.epoch;
         preview.bind(state.file, state.file == null ? state.target : state.loadedTarget, state.fileError, imageScope);
         if (split.preview != preview) split.preview(preview);

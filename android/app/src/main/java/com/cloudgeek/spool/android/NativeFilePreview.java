@@ -21,6 +21,9 @@ final class NativeFilePreview extends LinearLayout {
     private final NativeImages images;
     private final NativePdfPreview.Factory pdfFactory;
     NativePdfPreview pdf;
+    NativeFileBrowser.Read officeReader;
+    NativeOfficePreview office;
+    private String officeKey = "";
     private String pdfKey = "";
     private final String project, chat;
     private final Consumer<NativeFileTarget> open;
@@ -90,8 +93,19 @@ final class NativeFilePreview extends LinearLayout {
     private void renderContent() {
         mode.removeAllViews(); scroll.removeAllViews();
         mode.setVisibility(GONE);
-        if (file == null) { releasePdf(); return; }
+        if (file == null) { releaseDocuments(); return; }
         String preview = NativeFileModel.previewKind(file);
+        if ((preview.equals("word") || preview.equals("spreadsheet")) && officeReader != null) {
+            releasePdf(); scroll.setVisibility(GONE);
+            String key = file.optString("path") + "\n" + imageScope;
+            if (office == null || office.closed() || !key.equals(officeKey)) {
+                releaseOffice(); officeKey = key;
+                office = new NativeOfficePreview(ui, officeReader, NativeFileData.filePath(project,chat,file.optString("path"),""));
+                addView(office,indexOfChild(scroll),new LayoutParams(-1,0,1));
+            }
+            return;
+        }
+        releaseOffice();
         if (preview.equals("pdf") && pdfFactory != null) {
             scroll.setVisibility(GONE);
             String key = file.optString("path") + "\n" + imageScope;
@@ -153,7 +167,9 @@ final class NativeFilePreview extends LinearLayout {
         pdfKey = "";
     }
 
-    @Override protected void onDetachedFromWindow() { releasePdf(); super.onDetachedFromWindow(); }
+    private void releaseOffice() { if (office != null) { office.close(); removeView(office); office=null; } officeKey=""; }
+    void releaseDocuments() { releasePdf(); releaseOffice(); }
+    @Override protected void onDetachedFromWindow() { releaseDocuments(); super.onDetachedFromWindow(); }
 
     static TextView empty(NativeUi ui, String value) {
         TextView text = ui.text(value, 12, ui.muted); ui.fixedLineHeight(text, 1.7f);

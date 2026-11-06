@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"mime"
@@ -8,10 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	chatmodel "spool/internal/model"
+	"spool/internal/office"
 )
 
 const maxFilePreviewBytes = 512 * 1024
@@ -186,6 +190,28 @@ func (a *App) serveProjectFiles(w http.ResponseWriter, r *http.Request, director
 	}
 	if !info.Mode().IsRegular() {
 		apiError(w, 400, "Choose a regular file")
+		return
+	}
+	if r.URL.Query().Get("office") == "1" {
+		index, row := 0, 0
+		for name, target := range map[string]*int{"sheet": &index, "row": &row} {
+			if value := r.URL.Query().Get(name); value != "" {
+				parsed, err := strconv.Atoi(value)
+				if err != nil || parsed < 0 {
+					apiError(w, 400, "Invalid worksheet or row")
+					return
+				}
+				*target = parsed
+			}
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		preview, err := office.Preview(ctx, f, info.Size(), info.Name(), index, row)
+		if err != nil {
+			apiError(w, 400, err.Error())
+			return
+		}
+		apiJSON(w, 200, preview)
 		return
 	}
 	if r.URL.Query().Get("download") == "1" || r.URL.Query().Get("image") == "1" || r.URL.Query().Get("preview") == "1" {

@@ -81,6 +81,7 @@ final class NativeText {
             case "Enter a message of up to 2000 characters.": value = "请输入不超过 2000 字的消息。"; break;
             case "Enter workspace": value = "进入工作空间"; break;
             case "Everyone online can read this group chat.": value = "所有在线成员都能看到群聊消息。"; break;
+            case "Excel preview": value = "Excel 预览"; break;
             case "External file": value = "外部文件"; break;
             case "Extra High": value = "极高"; break;
             case "File contents are not included in this patch.": value = "此补丁未包含文件正文。"; break;
@@ -134,6 +135,7 @@ final class NativeText {
             case "New chat in {project}": value = "在 {project} 新建聊天"; break;
             case "New group chat": value = "新建群聊"; break;
             case "Next page": value = "下一页"; break;
+            case "Next rows": value = "下一组行"; break;
             case "No authorized projects": value = "暂无授权项目"; break;
             case "No conversations yet.": value = "还没有聊天记录。"; break;
             case "No goal set.": value = "尚未设置目标。"; break;
@@ -167,6 +169,7 @@ final class NativeText {
             case "Preview truncated. Download the full file to see all content.": value = "预览内容已截断，下载文件可查看完整内容。"; break;
             case "Preview {name}": value = "预览 {name}"; break;
             case "Previous page": value = "上一页"; break;
+            case "Previous rows": value = "上一组行"; break;
             case "Private message": value = "私聊消息"; break;
             case "Private messages": value = "私聊"; break;
             case "Project chat visibility follows project settings": value = "聊天可见性遵循项目设置"; break;
@@ -193,6 +196,7 @@ final class NativeText {
             case "Result": value = "结果"; break;
             case "Retry": value = "重试"; break;
             case "Retry loading earlier messages": value = "重试加载更早的消息"; break;
+            case "Rows {start}–{end}": value = "第 {start}–{end} 行"; break;
             case "Run locally. Pick up anytime.": value = "本地执行，随时继续"; break;
             case "Running": value = "运行中"; break;
             case "Save avatar": value = "保存头像"; break;
@@ -232,6 +236,7 @@ final class NativeText {
             case "The server returned an invalid response": value = "服务返回了无效响应"; break;
             case "Theme": value = "主题"; break;
             case "Think": value = "思考"; break;
+            case "This Office file cannot be previewed. Download it to open locally.": value = "无法预览此 Office 文件，请下载后在本地打开。"; break;
             case "This PDF cannot be previewed. Download it to open locally.": value = "此 PDF 无法预览，请下载后在本地打开。"; break;
             case "This directory is empty.": value = "此目录为空。"; break;
             case "This file cannot be previewed as an image": value = "此文件不支持图片预览"; break;
@@ -239,6 +244,7 @@ final class NativeText {
             case "This group is no longer available to you.": value = "此群聊已关闭或你不在群内。"; break;
             case "This model has no adjustable reasoning level.": value = "此模型未提供可调整的推理级别。"; break;
             case "This person is offline. Messages are not queued.": value = "对方已离线，消息不会排队或离线补发。"; break;
+            case "This worksheet is empty.": value = "此工作表为空。"; break;
             case "Thought": value = "思考"; break;
             case "Thought through tasks": value = "分析任务"; break;
             case "Thumbs": value = "Thumbs"; break;
@@ -259,12 +265,14 @@ final class NativeText {
             case "Waiting for project access": value = "等待项目授权"; break;
             case "Welcome back": value = "欢迎回来"; break;
             case "What shall we build today?": value = "今天，我们做点什么？"; break;
+            case "Word preview": value = "Word 预览"; break;
             case "Worked for {minutes}m {seconds}s": value = "已工作 {minutes} 分 {seconds} 秒"; break;
             case "Worked for {seconds}s": value = "已工作 {seconds} 秒"; break;
             case "Working": value = "工作中"; break;
             case "Working for {minutes}m {seconds}s": value = "工作中 {minutes} 分 {seconds} 秒"; break;
             case "Working for {seconds}s": value = "工作中 {seconds} 秒"; break;
             case "Working…": value = "处理中…"; break;
+            case "Worksheet": value = "工作表"; break;
             case "Workspace": value = "工作空间"; break;
             case "Worktree": value = "Worktree"; break;
             case "You approve requests outside the sandbox.": value = "沙箱之外的操作由你审批。"; break;
@@ -354,6 +362,7 @@ final class NativeText {
             case "Enter a message of up to 2000 characters.": value = "2000 文字以内のメッセージを入力してください。"; break;
             case "Enter workspace": value = "ワークスペースを開く"; break;
             case "Everyone online can read this group chat.": value = "オンラインの全員がこのグループチャットを閲覧できます。"; break;
+            case "Excel preview": value = "Excel プレビュー"; break;
             case "External file": value = "外部ファイル"; break;
             case "Extra High": value = "最高"; break;
             case "File contents are not included in this patch.": value = "このパッチにはファイルの内容が含まれていません。"; break;
@@ -407,6 +416,7 @@ final class NativeText {
             case "New chat in {project}": value = "{project} に新しいチャット"; break;
             case "New group chat": value = "グループチャットを作成"; break;
             case "Next page": value = "次のページ"; break;
+            case "Next rows": value = "次の行"; break;
             case "No authorized projects": value = "アクセスできるプロジェクトがありません"; break;
             case "No conversations yet.": value = "チャットはまだありません。"; break;
             case "No goal set.": value = "目標は設定されていません。"; break;
@@ -440,6 +450,7 @@ final class NativeText {
             case "Preview truncated. Download the full file to see all content.": value = "プレビューは省略されています。全体はダウンロードして確認してください。"; break;
             case "Preview {name}": value = "{name}をプレビュー"; break;
             case "Previous page": value = "前のページ"; break;
+            case "Previous rows": value = "前の行"; break;
             case "Private message": value = "プライベートメッセージを入力"; break;
             case "Private messages": value = "プライベートメッセージ"; break;
             case "Project chat visibility follows project settings": value = "チャットの公開範囲はプロジェクト設定に従います"; break;
@@ -466,6 +477,7 @@ final class NativeText {
             case "Result": value = "結果"; break;
             case "Retry": value = "再試行"; break;
             case "Retry loading earlier messages": value = "以前のメッセージを再読み込み"; break;
+            case "Rows {start}–{end}": value = "{start}～{end} 行"; break;
             case "Run locally. Pick up anytime.": value = "ローカルで実行、いつでも再開"; break;
             case "Running": value = "実行中"; break;
             case "Save avatar": value = "アバターを保存"; break;
@@ -505,6 +517,7 @@ final class NativeText {
             case "The server returned an invalid response": value = "サーバーから無効な応答が返されました"; break;
             case "Theme": value = "テーマ"; break;
             case "Think": value = "思考"; break;
+            case "This Office file cannot be previewed. Download it to open locally.": value = "この Office ファイルはプレビューできません。ダウンロードしてローカルで開いてください。"; break;
             case "This PDF cannot be previewed. Download it to open locally.": value = "この PDF はプレビューできません。ダウンロードして開いてください。"; break;
             case "This directory is empty.": value = "このフォルダーは空です。"; break;
             case "This file cannot be previewed as an image": value = "このファイルは画像として表示できません"; break;
@@ -512,6 +525,7 @@ final class NativeText {
             case "This group is no longer available to you.": value = "このグループは閉じられたか、あなたはメンバーではありません。"; break;
             case "This model has no adjustable reasoning level.": value = "このモデルの推論レベルは変更できません。"; break;
             case "This person is offline. Messages are not queued.": value = "相手はオフラインです。メッセージは後で配信されません。"; break;
+            case "This worksheet is empty.": value = "このワークシートは空です。"; break;
             case "Thought": value = "思考"; break;
             case "Thought through tasks": value = "タスクを検討"; break;
             case "Thumbs": value = "Thumbs"; break;
@@ -532,12 +546,14 @@ final class NativeText {
             case "Waiting for project access": value = "プロジェクトへのアクセスを待機中"; break;
             case "Welcome back": value = "おかえりなさい"; break;
             case "What shall we build today?": value = "今日は何を作りましょう？"; break;
+            case "Word preview": value = "Word プレビュー"; break;
             case "Worked for {minutes}m {seconds}s": value = "実行時間 {minutes} 分 {seconds} 秒"; break;
             case "Worked for {seconds}s": value = "実行時間 {seconds} 秒"; break;
             case "Working": value = "実行中"; break;
             case "Working for {minutes}m {seconds}s": value = "実行中 {minutes} 分 {seconds} 秒"; break;
             case "Working for {seconds}s": value = "実行中 {seconds} 秒"; break;
             case "Working…": value = "処理中…"; break;
+            case "Worksheet": value = "ワークシート"; break;
             case "Workspace": value = "ワークスペース"; break;
             case "Worktree": value = "Worktree"; break;
             case "You approve requests outside the sandbox.": value = "サンドボックス外の操作を自分で承認します。"; break;

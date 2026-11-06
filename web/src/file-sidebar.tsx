@@ -28,6 +28,9 @@ import { FilePreviewSplit } from "./file-preview-split";
 import { FileSidebarHeader } from "./file-sidebar-header";
 import { FileSource } from "./file-source";
 import { filePreviewKind, HtmlFilePreview } from "./file-preview";
+import { OfficePreview, type OfficeDocument } from "./office-preview";
+
+const readOffice = (path: string, signal: AbortSignal) => api<OfficeDocument>(path.slice(4), undefined, signal);
 
 export type FileSelection = {
   target: LocalFileTarget;
@@ -430,6 +433,7 @@ function FileContent({
 }) {
   const [renderPreview, setRenderPreview] = useState(false);
   const previewKind = filePreviewKind(file);
+  const office = previewKind === "word" || previewKind === "spreadsheet";
   const context = useMemo(
     () => ({ openFile: onOpen, basePath: file.path }),
     [onOpen, file.path],
@@ -452,7 +456,8 @@ function FileContent({
           </button>
         </div>
       )}
-      <div className="file-preview-scroll">
+      <div className={`file-preview-scroll${office ? " office-preview-container" : ""}`}>
+        {office && <OfficePreview key={file.path} path={projectFileURL(project, file.path, undefined, chatID)} read={readOffice} t={t} />}
         {previewKind === "pdf" && (
           <iframe
             className="file-pdf-preview"
@@ -484,7 +489,7 @@ function FileContent({
             alt={file.name}
           />
         )}
-        {file.kind === "binary" && previewKind !== "pdf" && (
+        {file.kind === "binary" && previewKind !== "pdf" && !office && (
           <p className="file-panel-empty">
             {t("This file has no text preview. Download it to open locally.")}
           </p>

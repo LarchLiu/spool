@@ -81,6 +81,15 @@ test("PDF previews require the detected media type rather than the file extensio
   );
 });
 
+test("modern Office binary files use native previews while legacy formats keep downloads", () => {
+  for (const [name, kind] of [["报告.DOCX", "word"], ["book.xlsx", "spreadsheet"]]) {
+    assert.equal(filePreviewKind({ name, kind: "binary", media_type: "application/zip" }), kind);
+  }
+  for (const name of ["old.doc", "old.xls", "macro.docm", "macro.xlsm", "fake.docx.txt"]) {
+    assert.equal(filePreviewKind({ name, kind: "binary", media_type: "application/octet-stream" }), null);
+  }
+});
+
 test("HTML is contained in an opaque sandbox with a policy before all file content", () => {
   const contents = `<!doctype html><html><head><style>h1 { color: red; }</style></head><body><h1>Preview</h1><script>parent.document.body.remove()</script><img src="/api/private"><iframe src="https://example.com"></iframe></body></html>`;
   const frame = HtmlFilePreview({ contents, title: "Preview page.html" });

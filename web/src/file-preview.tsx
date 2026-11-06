@@ -2,9 +2,13 @@ import type { ProjectFile } from "./types.js";
 
 export function filePreviewKind(
   file: Pick<ProjectFile, "kind" | "name" | "media_type">,
-): "markdown" | "html" | "pdf" | null {
+): "markdown" | "html" | "pdf" | "word" | "spreadsheet" | null {
   if (file.media_type.split(";")[0].trim().toLowerCase() === "application/pdf")
     return "pdf";
+  if (file.kind === "binary") {
+    if (/\.docx$/i.test(file.name)) return "word";
+    if (/\.xlsx$/i.test(file.name)) return "spreadsheet";
+  }
   if (file.kind !== "text") return null;
   if (/\.md(?:own|x)?$/i.test(file.name)) return "markdown";
   if (

@@ -149,6 +149,10 @@ final class NativeFileModel {
 
     static String previewKind(JSONObject file) {
         if (file.optString("media_type").split(";", 2)[0].trim().equalsIgnoreCase("application/pdf")) return "pdf";
+        if (file.optString("kind").equals("binary")) {
+            if (file.optString("name").matches("(?i).*\\.docx$")) return "word";
+            if (file.optString("name").matches("(?i).*\\.xlsx$")) return "spreadsheet";
+        }
         if (!file.optString("kind").equals("text")) return "";
         String name = file.optString("name");
         if (name.matches("(?i).*\\.md(?:own|x)?$")) return "markdown";
