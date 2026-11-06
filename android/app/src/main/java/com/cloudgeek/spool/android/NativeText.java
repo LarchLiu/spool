@@ -283,6 +283,7 @@ final class NativeText {
             case "{count} online": value = "{count} 人在线"; break;
             case "{count} selected": value = "已选 {count} 人"; break;
             case "{count} unread messages": value = "{count} 条未读消息"; break;
+            case "{previous}, {next}": value = "{previous}、{next}"; break;
             default: break;
         }
         else if (locale.equals("ja")) switch (key) {
@@ -564,6 +565,7 @@ final class NativeText {
             case "{count} online": value = "{count} 人がオンライン"; break;
             case "{count} selected": value = "{count} 人を選択中"; break;
             case "{count} unread messages": value = "未読メッセージ {count} 件"; break;
+            case "{previous}, {next}": value = "{previous}、{next}"; break;
             default: break;
         }
         for (int i = 0; i + 1 < pairs.length; i += 2) value = value.replace("{" + pairs[i] + "}", String.valueOf(pairs[i + 1]));

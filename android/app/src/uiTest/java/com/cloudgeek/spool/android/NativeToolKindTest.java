@@ -57,6 +57,11 @@ public class NativeToolKindTest {
                 NativeActivityList view = new NativeActivityList(ui, activities, "Working", true, state, ignored -> {});
                 controller.get().setContentView(view);
                 List<NativeDisclosureRow> rows = new ArrayList<>(); collectRows(view, rows);
+                assertEquals(id, 2, rows.size());
+                assertFalse(id, rows.get(1).isSelected());
+                assertTrue(id, rows.get(1).isClickable());
+                rows.get(1).performClick();
+                rows.clear(); collectRows(view, rows);
                 int staticRows = 0;
                 for (NativeDisclosureRow row : rows) if (!row.isClickable()) {
                     staticRows++;
@@ -93,7 +98,34 @@ public class NativeToolKindTest {
             single.put("text", "cat a | head -20");
             list.bindParts(Arrays.asList(single, resultOne), "codex", "Working", true);
             assertFalse(containsDetail(list));
-            rows.clear(); collectRows(list, rows); assertFalse(rows.get(1).isClickable());
+            rows.clear(); collectRows(list, rows); assertTrue(rows.get(1).isClickable()); assertFalse(rows.get(1).isSelected());
+            rows.get(1).performClick(); rows.clear(); collectRows(list, rows); assertFalse(rows.get(2).isClickable());
+        }
+    }
+
+    @Test public void mixedCommandsFoldPerCallAndRetainExpansionAcrossLiveUpdates() throws Exception {
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false, "en");
+            JSONObject one = new JSONObject().put("id", "one").put("role", "assistant").put("kind", "tool_use").put("name", "Bash")
+                    .put("text", "git status --short; cat report.json; rg TODO src | head -20");
+            JSONObject two = new JSONObject(one.toString()).put("id", "two");
+            List<NativeActivityModel.Group> groups = NativeActivityModel.groups(ui, NativeActivityModel.fromParts(ui, Arrays.asList(one, two), "claude"));
+            assertEquals(2, groups.size());
+            assertTrue(groups.get(0).compound); assertTrue(groups.get(1).compound);
+            assertEquals("Ran command, read files", groups.get(0).label); assertEquals(3, groups.get(0).activities.size());
+            JSONObject progress = new JSONObject().put("role", "assistant").put("kind", "text").put("text", "Checking results");
+            NativeActivityList.State state = new NativeActivityList.State();
+            NativeActivityList list = new NativeActivityList(ui, Arrays.asList(one, progress, two), "claude", "Working", true, state, ignored -> {});
+            controller.get().setContentView(list);
+            List<NativeDisclosureRow> rows = new ArrayList<>(); collectRows(list, rows); assertEquals(3, rows.size());
+            rows.get(1).performClick(); rows.clear(); collectRows(list, rows); assertEquals(6, rows.size());
+            list.bindParts(Arrays.asList(one, progress, two, progress), "claude", "Working", true);
+            rows.clear(); collectRows(list, rows); assertEquals(6, rows.size()); assertTrue(rows.get(1).isSelected());
+            assertFalse(rows.get(rows.size()-1).isSelected()); assertFalse(containsDetail(list));
+            rows.get(1).performClick(); rows.clear(); collectRows(list, rows); assertEquals(3, rows.size());
+            NativeUi chinese = new NativeUi(controller.get(), false, "zh-CN");
+            groups = NativeActivityModel.groups(chinese, NativeActivityModel.fromParts(chinese, Arrays.asList(one), "claude"));
+            assertTrue(groups.get(0).label.contains("、"));
         }
     }
 

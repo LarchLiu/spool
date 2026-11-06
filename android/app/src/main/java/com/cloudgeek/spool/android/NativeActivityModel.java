@@ -19,6 +19,7 @@ final class NativeActivityModel {
     }
     static final class Group {
         String kind, label;
+        boolean compound;
         final List<Activity> activities = new ArrayList<>();
     }
     private static final Pattern PATCH_FILE = Pattern.compile("^\\*\\*\\* (Add|Update|Delete) File: (.+)\\r?$", Pattern.MULTILINE);
@@ -225,7 +226,16 @@ final class NativeActivityModel {
         List<Group> groups = new ArrayList<>();
         for (Activity activity : activities) {
             Group last = groups.isEmpty() ? null : groups.get(groups.size() - 1);
-            if (last != null && last.kind.equals(activity.kind) && !activity.kind.equals("message")) {
+            if (activity.noDetails) {
+                if (last != null && last.compound && last.activities.get(0).use == activity.use) {
+                    last.activities.add(activity); last.label = compoundLabel(ui, last.activities);
+                } else {
+                    Group group = new Group(); group.compound = true; group.kind = activity.kind;
+                    group.activities.add(activity); group.label = compoundLabel(ui, group.activities); groups.add(group);
+                }
+                continue;
+            }
+            if (last != null && !last.compound && last.kind.equals(activity.kind) && !activity.kind.equals("message")) {
                 last.activities.add(activity);
                 last.label = groupLabel(ui, last.kind);
             } else {
@@ -242,6 +252,17 @@ final class NativeActivityModel {
             group.label = imageLabel(ui, count);
         }
         return groups;
+    }
+
+    private static String compoundLabel(NativeUi ui, List<Activity> activities) {
+        Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+        for (Activity activity : activities) counts.put(activity.kind, counts.getOrDefault(activity.kind, 0) + 1);
+        String label = "";
+        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+            String next = entry.getKey().equals("shell") && entry.getValue() == 1 ? ui.t("Ran command") : groupLabel(ui, entry.getKey());
+            label = label.isEmpty() ? next : ui.t("{previous}, {next}", "previous", label, "next", next.substring(0, 1).toLowerCase(Locale.ROOT) + next.substring(1));
+        }
+        return label;
     }
 
     private static String groupLabel(NativeUi ui, String kind) {

@@ -51,6 +51,11 @@ try {
     const part = { id: "call", role: "assistant", kind: "tool_use", name: fixture.name, text: fixture.input ? JSON.stringify(fixture.input) : fixture.text };
     if (lazy) { part.text = ""; part.tool = { kind: "shell", operations: fixture.operations, href: "/chats/chat/tool-detail?ref=call" }; }
     await page.evaluate(part => window.bind([part, { id: "call", role: "tool", kind: "tool_result", text: "combined output" }]), part);
+    const group = page.locator(".tool-activity-compound");
+    assert.equal(await group.count(), 1, fixture.id);
+    assert.equal(await group.locator("button.tool-activity-summary").getAttribute("aria-expanded"), "false", fixture.id);
+    assert.equal(await page.locator(".tool-activity-static").count(), 0, fixture.id);
+    await group.locator("button.tool-activity-summary").click();
     await page.waitForFunction(count => document.querySelectorAll(".tool-activity-static").length === count, fixture.operations.length);
     const rows = page.locator(".tool-activity-static");
     assert.equal(await rows.count(), fixture.operations.length, fixture.id);
@@ -61,6 +66,8 @@ try {
       await row.click();
     }
     assert.equal(await page.locator(".tool-detail").count(), 0, fixture.id);
+    await group.locator("button.tool-activity-summary").click();
+    assert.equal(await page.locator(".tool-activity-static").count(), 0, fixture.id);
     count++;
   }
   // Same keyed row starts expanded, then becomes a pipeline. Its old state
@@ -71,8 +78,10 @@ try {
   assert.equal(await page.locator(".tool-detail").count(), 1);
   assert.match(await page.locator(".tool-detail").textContent(), /cat README.md/);
   await page.evaluate(part => window.bind([{ ...part, text: "", tool: { kind: "read", operations: [{ kind: "read", command: "cat README.md | head -20", path: "README.md" }], href: "/chats/chat/tool-detail?ref=live" } }]), single);
-  assert.equal(await page.locator(".tool-activity-static").count(), 1);
+  assert.equal(await page.locator(".tool-activity-static").count(), 0);
   assert.equal(await page.locator(".tool-detail").count(), 0);
+  await page.locator(".tool-activity-compound button.tool-activity-summary").click();
+  assert.equal(await page.locator(".tool-activity-static").count(), 1);
   await page.locator(".tool-activity-static").click();
   assert.equal(await page.locator(".tool-detail").count(), 0);
   await page.evaluate(part => window.bind([part]), single);
@@ -81,14 +90,33 @@ try {
   // Render the user's example at desktop/mobile widths for visual inspection.
   const example = fixtures[0];
   await page.evaluate(fixture => window.bind([{ role: "assistant", kind: "tool_use", name: fixture.name, text: JSON.stringify(fixture.input) }]), example);
+  assert.equal(await page.locator(".tool-activity-compound button.tool-activity-summary").textContent(), "Ran command, read files");
   for (const [mode, width] of [["desktop", 1100], ["mobile", 390]]) {
     await page.setViewportSize({ width, height: 700 });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await page.locator(".tool-activity-history").count(), 1);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.screenshot({ path: path.join(output, `operations-${mode}.png`) });
+    await page.locator(".tool-activity-compound button.tool-activity-summary").click();
+    assert.equal(await page.locator(".tool-activity-static").count(), 3);
+    await page.screenshot({ path: path.join(output, `operations-${mode}-expanded.png`) });
+    await page.locator(".tool-activity-compound button.tool-activity-summary").click();
   }
+  const call = id => ({ id, role: "assistant", kind: "tool_use", name: example.name, text: JSON.stringify(example.input) });
+  await page.evaluate(parts => window.bind(parts), [call("one"), call("two")]);
+  assert.equal(await page.locator(".tool-activity-compound").count(), 2);
+  await page.locator(".tool-activity-compound button.tool-activity-summary").first().click();
+  await page.evaluate(parts => window.bind(parts), [call("one"), call("two"), { role: "assistant", kind: "text", text: "Checking results" }, call("three")]);
+  assert.equal(await page.locator(".tool-activity-compound").count(), 3);
+  assert.equal(await page.locator(".tool-activity-static").count(), 3);
+  assert.equal(await page.locator(".tool-activity-compound button.tool-activity-summary").first().getAttribute("aria-expanded"), "true");
+  await page.locator(".work-label-toggle").click();
+  assert.equal(await page.locator(".tool-activity-compound").count(), 0);
+  await page.locator(".work-label-toggle").click();
+  assert.equal(await page.locator(".tool-activity-static").count(), 3);
   assert.equal(apiRequests, 0);
   assert.deepEqual(errors, []);
-  const report = { fixtureProjections: count, staticRowsHaveNoButtonCaretOrDetails: true, staleExpansionSuppressed: true, ordinaryToolDetailsPreserved: true, detailRequests: apiRequests, javascriptErrors: errors };
+  const report = { fixtureProjections: count, compoundCallsInitiallyFolded: true, uniqueKindSummaries: true, independentCallGroups: true, expansionSurvivesLiveUpdates: true, staticRowsHaveNoButtonCaretOrDetails: true, staleExpansionSuppressed: true, ordinaryToolDetailsPreserved: true, detailRequests: apiRequests, javascriptErrors: errors };
   await fs.writeFile(path.join(output, "operations-browser-report.json"), JSON.stringify(report, null, 2) + "\n");
   console.log(report);
 } finally {

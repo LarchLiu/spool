@@ -22,6 +22,7 @@ final class NativeActivityList extends LinearLayout {
         boolean open, live, initialized;
         int count = -1;
         final Set<Integer> groups = new HashSet<>();
+        final Set<String> compounds = new HashSet<>();
         final Set<String> items = new HashSet<>();
         final Set<Integer> foldedImages = new HashSet<>();
         void update(boolean nextLive, int nextCount) {
@@ -100,7 +101,10 @@ final class NativeActivityList extends LinearLayout {
             nested.setOrientation(VERTICAL); nested.setPadding(ui.dp(9), 0, 0, 0);
             heading = new NativeDisclosureRow(ui, "", NativeActivityModel.icon(group.kind), "", false, true, false, () -> {});
             heading.setOnClickListener(button -> {
-                if (!state.groups.add(index)) state.groups.remove(index);
+                if (current.compound) {
+                    String key = compoundKey(current, index);
+                    if (!state.compounds.add(key)) state.compounds.remove(key);
+                } else if (!state.groups.add(index)) state.groups.remove(index);
                 bind(current);
             });
             view.addView(heading, new LayoutParams(-1, -2)); bind(group);
@@ -108,7 +112,7 @@ final class NativeActivityList extends LinearLayout {
         void bind(NativeActivityModel.Group group) {
             current = group;
             heading.bind(group.label, NativeActivityModel.icon(group.kind), NativeActivityModel.changeStats(group.activities));
-            boolean expanded = state.groups.contains(index); heading.setExpanded(expanded);
+            boolean expanded = group.compound ? state.compounds.contains(compoundKey(group, index)) : state.groups.contains(index); heading.setExpanded(expanded);
             if (expanded) {
                 List<View> views = new ArrayList<>(); Map<String, Item> next = new HashMap<>();
                 for (int i = 0; i < group.activities.size(); i++) {
@@ -275,18 +279,26 @@ final class NativeActivityList extends LinearLayout {
                 key = "images:" + i; Images entry = (Images) entries.get(key);
                 if (entry == null) entry = new Images(group, i); else entry.bind(group, i);
                 next.put(key, entry); views.add(entry.view);
-            } else if (group.activities.size() == 1) {
+            } else if (group.activities.size() == 1 && !group.compound) {
                 key = i + ":0"; Item item = (Item) entries.get(key);
                 if (item == null) item = new Item(group.activities.get(0), key); else item.bind(group.activities.get(0));
                 next.put(key, item); views.add(item.view);
             } else {
-                key = Integer.toString(i); Group entry = (Group) entries.get(key);
+                key = group.compound ? "compound:" + compoundKey(group, i) : Integer.toString(i); Group entry = (Group) entries.get(key);
                 if (entry == null) entry = new Group(group, i); else entry.bind(group);
                 next.put(key, entry); views.add(entry.view);
             }
         }
         views.add(bottomGap); NativeKeyedViews.sync(list, views); entries = next;
         gaps.keySet().removeIf(index -> index >= groups.size());
+    }
+
+    private static String compoundKey(NativeActivityModel.Group group, int index) {
+        org.json.JSONObject use = group.activities.get(0).use;
+        String id = use == null ? "" : use.optString("id");
+        org.json.JSONObject tool = use == null ? null : use.optJSONObject("tool");
+        if (id.isEmpty() && tool != null) id = tool.optString("ref");
+        return index + ":" + id;
     }
 
     static ScrollView raw(NativeUi ui, String source) {

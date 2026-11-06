@@ -45,6 +45,15 @@ section. Complete small sections retain Markdown/diff styling; partial large
 sections use selectable raw text with navigation rather than interpreting
 incomplete Markdown/patch syntax.
 
+Compound shell calls, including Codex `exec_command` and Claude `Bash`, appear
+as one initially collapsed group per original call. Its summary lists each
+activity category once (for example, “Ran command, read files”). Expanding the
+group shows the parsed commands in order. These derived steps have no individual
+detail disclosure: the provider only supplies the call's combined output. Calls
+remain separate even when adjacent calls have the same categories; progress
+messages keep their place between calls. Raw inputs and compact server summaries
+use the same grouping on Web and native Android.
+
 ## Verification
 
 Run from the repository root; `run.sh` owns all disposable data and configures

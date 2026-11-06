@@ -46,6 +46,7 @@ type ActivityGroup = {
   kind: ActivityKind;
   label: string;
   activities: Activity[];
+  compound?: boolean;
 };
 
 const pathKeys = [
@@ -303,9 +304,12 @@ export function activitiesFromParts(
 
 function groupLabel(group: Activity[], t: Translator) {
   if (group.length === 1) return group[0].label;
-  switch (group[0].kind) {
-    case "image":
-      return t("Viewed {count} images", { count: group.reduce((count, item) => count + (item.imageURLs?.length || item.images?.length || 0), 0) });
+  if (group[0].kind === "image") return t("Viewed {count} images", { count: group.reduce((count, item) => count + (item.imageURLs?.length || item.images?.length || 0), 0) });
+  return categoryLabel(group[0].kind, t);
+}
+
+function categoryLabel(kind: ActivityKind, t: Translator) {
+  switch (kind) {
     case "read":
       return t("Read files");
     case "write":
@@ -329,11 +333,29 @@ function groupLabel(group: Activity[], t: Translator) {
   }
 }
 
+function compoundLabel(activities: Activity[], t: Translator) {
+  const kinds = [...new Set(activities.map(activity => activity.kind))];
+  return kinds.map(kind => {
+    const items = activities.filter(activity => activity.kind === kind);
+    if (kind === "shell" && items.length === 1) return t("Ran command");
+    return categoryLabel(kind, t);
+  }).reduce((previous, next) => t("{previous}, {next}", {
+    previous, next: next.charAt(0).toLowerCase() + next.slice(1),
+  }));
+}
+
 function groupActivities(activities: Activity[], t: Translator): ActivityGroup[] {
   const groups: ActivityGroup[] = [];
   for (const activity of activities) {
     const last = groups[groups.length - 1];
-    if (last && last.kind === activity.kind && activity.kind !== "message") {
+    if (activity.noDetails) {
+      if (last?.compound && last.activities[0].use === activity.use) {
+        last.activities.push(activity);
+        last.label = compoundLabel(last.activities, t);
+      } else groups.push({ kind: activity.kind, label: compoundLabel([activity], t), activities: [activity], compound: true });
+      continue;
+    }
+    if (last && !last.compound && last.kind === activity.kind && activity.kind !== "message") {
       last.activities.push(activity);
       last.label = groupLabel(last.activities, t);
       continue;
@@ -654,6 +676,19 @@ function ActivityItem({
   );
 }
 
+function CompoundActivities({ group, t, open, onToggle }: { group: ActivityGroup; t: Translator; open: boolean; onToggle: () => void }) {
+  const Icon = iconFor(group.kind);
+  return <div className={`tool-activity tool-activity-compound${open ? " expanded" : ""}`}>
+    <button type="button" className="tool-activity-summary" aria-expanded={open} onClick={onToggle}>
+      <Icon size={13} strokeWidth={1.6} />
+      <span>{group.label}</span>
+      <span className="tool-activity-caret">{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
+    </button>
+    {open && <div className="tool-activity-items">{group.activities.map((activity, index) =>
+      <ActivityItem key={index} activity={activity} open={false} onToggle={() => {}} t={t} />)}</div>}
+  </div>;
+}
+
 export function ToolActivityList({
   parts,
   backend,
@@ -676,6 +711,7 @@ export function ToolActivityList({
     live ? new Set(groups.map((_, index) => index)) : new Set(),
   );
   const [openItems, setOpenItems] = useState<Set<string>>(new Set());
+  const [openCompounds, setOpenCompounds] = useState<Set<string>>(new Set());
   const [activityOpen, setActivityOpen] = useState(live);
   const groupCount = groups.length;
   useEffect(() => {
@@ -709,6 +745,14 @@ export function ToolActivityList({
       {activityOpen && (
         <div className="tool-activity-list">
           {groups.map((group, groupIndex) => {
+            if (group.compound) {
+              const key = `compound:${groupIndex}:${group.activities[0].use?.id || group.activities[0].use?.tool?.ref || ""}`;
+              return <CompoundActivities key={key} group={group} t={t} open={openCompounds.has(key)} onToggle={() => setOpenCompounds(old => {
+                const next = new Set(old);
+                if (!next.delete(key)) next.add(key);
+                return next;
+              })} />;
+            }
             if (group.kind === "image") return <ViewedImages key={`images:${groupIndex}`} group={group} t={t} />;
             if (group.kind === "message") {
               return (

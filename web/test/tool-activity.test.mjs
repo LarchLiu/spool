@@ -24,7 +24,7 @@ const t = (message, values = {}) =>
 const tool = (name, text) => ({ role: "assistant", kind: "tool_use", name, text });
 const message = (text, phase, id) => ({ role: "assistant", kind: "text", text, phase, id });
 
-test("compound Codex and Claude commands share input summaries and have no expandable details", () => {
+test("compound Codex and Claude commands fold into one summary and have no per-step details", () => {
   const cases = JSON.parse(readFileSync(new URL("../../android/app/src/test/resources/tool-operations.json", import.meta.url), "utf8"));
   for (const fixture of cases) {
     const part = { ...tool(fixture.name, fixture.input ? JSON.stringify(fixture.input) : fixture.text), id: "call" };
@@ -45,7 +45,9 @@ test("compound Codex and Claude commands share input summaries and have no expan
       }
       for (const input of [[part, result], [projected, result]]) {
         const html = renderToStaticMarkup(createElement(ToolActivityList, { parts: input, backend: "claude", t, live: true }));
-        assert.equal((html.match(/class="tool-activity-item-summary tool-activity-static"/g) || []).length, activities.length, fixture.id);
+        assert.equal((html.match(/tool-activity-compound/g) || []).length, 1, fixture.id);
+        assert.match(html, /class="tool-activity-summary" aria-expanded="false"/);
+        assert.doesNotMatch(html, /tool-activity-static/);
         assert.doesNotMatch(html, /<button[^>]+class="tool-activity-item-summary|class="tool-detail"/);
       }
     } else {
@@ -54,6 +56,21 @@ test("compound Codex and Claude commands share input summaries and have no expan
     }
     assert.equal(JSON.stringify(part), original, "provider input must remain unchanged");
   }
+});
+
+test("compound summaries deduplicate kinds and keep original calls and progress boundaries", () => {
+  const command = tool("Bash", JSON.stringify({ command: "git status --short; cat browser-report.json; rg TODO src | head -20" }));
+  const parts = [tool("Read", '{"file_path":"before.txt"}'), { ...command, id: "one" },
+    { ...command, id: "two" }, message("Progress between calls", "commentary"), { ...command, id: "three" },
+    tool("Read", '{"file_path":"after.txt"}')];
+  const html = renderToStaticMarkup(createElement(ToolActivityList, { parts, backend: "claude", t, live: true }));
+  assert.equal((html.match(/tool-activity-compound/g) || []).length, 3);
+  assert.equal((html.match(/Ran command, read files/g) || []).length, 3);
+  assert.match(html, /Read before.txt/); assert.match(html, /Read after.txt/);
+  assert.doesNotMatch(html, /browser-report|rg TODO|tool-activity-static|read files, read files/);
+  assert.match(html, /Progress between calls/);
+  const sameKind = renderToStaticMarkup(createElement(ToolActivityList, { parts: [tool("shell", "cat a; cat b"), tool("shell", "cat c; cat d")], t, live: true }));
+  assert.equal((sameKind.match(/tool-activity-compound/g) || []).length, 2);
 });
 
 test("derived command rows retain original IDs through out-of-order results", () => {
