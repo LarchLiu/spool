@@ -2,10 +2,13 @@ package com.cloudgeek.spool.android;
 
 import static org.junit.Assert.*;
 
+import android.graphics.Rect;
 import android.net.ConnectivityManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.view.MotionEvent;
+import android.view.View;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -82,6 +85,52 @@ public class MainActivityWorkspaceEventsTest {
     private void presence() { event("presence", "[{id:'bob',nickname:'Bob',state:'online'}]"); }
     private void open(MainActivityGoalTest.Harness h) {
         ReflectionHelpers.callInstanceMethod(h.activity, "openPeople", ReflectionHelpers.ClassParameter.from(String.class, "bob"));
+    }
+
+    @Test public void onlineMenuOpensPrivateChatOnTheFirstTouch() throws Exception {
+        for (boolean dark : new boolean[] {false, true}) {
+            try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+                JSONObject bob = new JSONObject().put("id", "bob").put("nickname", "Bob").put("state", "online");
+                h.set("profiles", new JSONArray().put(new JSONObject().put("id", "alice").put("nickname", "Alice")).put(bob));
+                h.set("presence", new JSONArray().put(bob));
+                h.set("connected", true); h.set("workspaceReady", true); h.set("theme", dark ? "dark" : "light");
+                h.call("render");
+                View root = h.get("root");
+                for (int i = 0; i < 2; i++) {
+                    root.measure(View.MeasureSpec.makeMeasureSpec(360, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY));
+                    root.layout(0, 0, 360, 800); root.getViewTreeObserver().dispatchOnPreDraw();
+                    Shadows.shadowOf(Looper.getMainLooper()).idle();
+                }
+                NativeUi.Header header = h.get("workspaceHeader");
+                assertTrue(header.online.performClick());
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                NativePeopleMenu menu = h.get("peopleMenu");
+                assertNotNull(menu); assertTrue(menu.isShowing());
+                View row = menu.options.stream().filter(option -> "bob".equals(option.getTag())).findFirst().orElseThrow();
+                assertFalse("The first touch must activate an unfocused person", row.hasFocus());
+                Rect visible = new Rect(); assertTrue(row.getGlobalVisibleRect(visible));
+                assertEquals(row.getWidth(), visible.width()); assertEquals(row.getHeight(), visible.height());
+                View decor = menu.popover.panel().getRootView();
+                int[] origin = new int[2], position = new int[2];
+                decor.getLocationOnScreen(origin); row.getLocationOnScreen(position);
+                float x = position[0] - origin[0] + row.getWidth() / 2f;
+                float y = position[1] - origin[1] + row.getHeight() / 2f;
+                long now = SystemClock.uptimeMillis();
+                for (int action : new int[] {MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP}) {
+                    MotionEvent event = MotionEvent.obtain(now, now + action * 16, action, x, y, 0);
+                    try { assertTrue(decor.dispatchTouchEvent(event)); } finally { event.recycle(); }
+                }
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                assertFalse("A single tap dismisses the online menu", menu.isShowing());
+                NativePeoplePanel panel = h.get("peoplePanel");
+                assertNotNull("A single tap opens the actual private chat window", panel);
+                assertSame(root, panel.getParent());
+                assertEquals("bob", h.<NativePeopleModel>get("inbox").active);
+                assertEquals("Bob", panel.getContentDescription());
+                assertTrue(panel.editor.isFocused());
+                assertTrue("Opening a private chat does not send a message", MainActivityGoalTest.ShadowClient.calls.isEmpty());
+            }
+        }
     }
 
     @Test public void disconnectClearsPresenceAndPendingOperationsWithoutLosingOrReplayingTheDraft() throws Exception {

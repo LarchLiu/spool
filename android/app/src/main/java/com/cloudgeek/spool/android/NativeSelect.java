@@ -47,8 +47,7 @@ final class NativeSelect extends LinearLayout {
         android.widget.ImageView icon = ui.decorativeIcon("chevron-down", 14);
         icon.setImageTintList(android.content.res.ColorStateList.valueOf(ui.text));
         addView(icon, chevron);
-        setFocusable(true);
-        setFocusableInTouchMode(true);
+        ui.focusOnPress(this);
         setContentDescription(label);
         setAccessibilityDelegate(new View.AccessibilityDelegate() {
             @Override public void onInitializeAccessibilityNodeInfo(View view, android.view.accessibility.AccessibilityNodeInfo info) {

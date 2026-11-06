@@ -152,14 +152,7 @@ final class NativePopover {
             row.addView(check, params);
         }
         row.setSelected(selected);
-        row.setFocusable(true);
-        row.setFocusableInTouchMode(true);
-        // Focus on press so View.onTouchEvent does not spend the first tap
-        // only focusing an unselected option instead of clicking it.
-        row.setOnTouchListener((view, event) -> {
-            if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) view.requestFocus();
-            return false;
-        });
+        ui.focusOnPress(row);
         row.setContentDescription(title);
         row.setAccessibilityDelegate(new View.AccessibilityDelegate() {
             @Override public void onInitializeAccessibilityNodeInfo(View view, android.view.accessibility.AccessibilityNodeInfo info) {

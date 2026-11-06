@@ -58,7 +58,7 @@ final class NativePeopleMenu {
         action(button, tag, title, action); return button;
     }
     private void action(View view, String tag, String label, Runnable action) {
-        view.setTag(tag); view.setFocusable(true); view.setFocusableInTouchMode(true); view.setContentDescription(label);
+        view.setTag(tag); ui.focusOnPress(view); view.setContentDescription(label);
         view.setBackground(ui.states(0, 4, 0, ui.controlHover, 0));
         view.setOnClickListener(target -> { popover.dismiss(); action.run(); });
         view.setAccessibilityDelegate(new View.AccessibilityDelegate() {

@@ -58,6 +58,17 @@ final class NativeUi extends WebPalette {
         if (activePopover != null) activePopover.dismiss();
     }
 
+    void focusOnPress(View view) {
+        view.setFocusable(true);
+        view.setFocusableInTouchMode(true);
+        // Otherwise View.onTouchEvent can consume the first tap only to focus
+        // a custom action, leaving its click callback for a second tap.
+        view.setOnTouchListener((target, event) -> {
+            if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) target.requestFocus();
+            return false;
+        });
+    }
+
     void buttonKeys(View view) {
         view.setOnKeyListener((target, code, event) -> {
             if (code != android.view.KeyEvent.KEYCODE_SPACE || !target.isEnabled()) return false;

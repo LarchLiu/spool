@@ -153,7 +153,7 @@ final class NativePermissionMenu extends FrameLayout implements NativeMarkdownFl
         ui.preciseText(button);
         button.setPadding(ui.dp(6), ui.dp(1), ui.dp(6), ui.dp(1));
         button.setBackground(ui.shape(0, 0, 0));
-        button.setFocusable(true); button.setFocusableInTouchMode(true); button.setOnClickListener(view -> click.run());
+        ui.focusOnPress(button); button.setOnClickListener(view -> click.run());
         ui.buttonKeys(button);
         button.setAccessibilityDelegate(new AccessibilityDelegate() {
             @Override public void onInitializeAccessibilityNodeInfo(View view, AccessibilityNodeInfo info) {
@@ -253,7 +253,7 @@ final class NativePermissionMenu extends FrameLayout implements NativeMarkdownFl
             if (check != null) { check.setImageTintList(android.content.res.ColorStateList.valueOf(ui.text)); addView(check); }
             setSelected(selected.equals(id)); setEnabled(available); setAlpha(available ? 1 : .5f);
             setBackground(ui.states(isSelected() ? ui.soft : 0, 7, 0, ui.soft, isSelected() ? ui.soft : 0));
-            setFocusable(true); setFocusableInTouchMode(true); setContentDescription(title.getText() + ", " + detail.getText());
+            ui.focusOnPress(this); setContentDescription(title.getText() + ", " + detail.getText());
             ui.buttonKeys(this);
             setOnClickListener(view -> {
                 if (!isEnabled()) return;
