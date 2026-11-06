@@ -14,6 +14,7 @@ final class NativeActivityModel {
     static final class Activity {
         JSONObject use, result;
         String kind, label, detail, stats;
+        boolean noDetails;
         final List<String> images = new ArrayList<>(), imageURLs = new ArrayList<>();
     }
     static final class Group {
@@ -65,7 +66,30 @@ final class NativeActivityModel {
                 if (kind.equals("tool_use") && !part.optString("id").isEmpty()) calls.put(part.optString("id"), activity);
             }
         }
-        return activities;
+        List<Activity> expanded = new ArrayList<>();
+        for (Activity activity : activities) {
+            JSONObject part = activity.use;
+            JSONObject summary = part == null ? null : part.optJSONObject("tool");
+            org.json.JSONArray operations = null;
+            if (part != null && part.optString("kind").equals("tool_use") && !activity.kind.equals("image")) {
+                if (summary != null) operations = summary.optJSONArray("operations");
+                else if (NativeToolKind.nameKind(part.optString("name")).equals("shell"))
+                    operations = NativeToolKind.operations(NativeToolKind.command(part.optString("text"), payload(part.optString("text"))), 0);
+            }
+            if (operations == null || operations.length() == 0) { expanded.add(activity); continue; }
+            for (int i = 0; i < operations.length(); i++) {
+                JSONObject operation = operations.optJSONObject(i);
+                if (operation == null) continue;
+                try {
+                    JSONObject synthetic = new JSONObject().put("kind", "tool_use").put("name", part.optString("name")).put("tool", operation);
+                    Activity item = display(ui, synthetic, backend);
+                    if (operation.optString("path").isEmpty()) item.label += " \u00b7 " + oneLine(operation.optString("command"), 180);
+                    item.use = part; item.result = activity.result; item.detail = ""; item.stats = ""; item.noDetails = true;
+                    expanded.add(item);
+                } catch (org.json.JSONException impossible) { throw new IllegalStateException(impossible); }
+            }
+        }
+        return expanded;
     }
 
     static Activity display(NativeUi ui, JSONObject part, String backend) {
@@ -86,7 +110,7 @@ final class NativeActivityModel {
             case "write": item.label = path.isEmpty() ? ui.t("Edited files") : ui.t("Edited {path}", "path", shortPath(path)); break;
             case "create": item.label = path.isEmpty() ? ui.t("Created files") : ui.t("Created {path}", "path", shortPath(path)); break;
             case "delete": item.label = path.isEmpty() ? ui.t("Deleted files") : ui.t("Deleted {path}", "path", shortPath(path)); break;
-            case "search": item.label = query.isEmpty() ? ui.t("Searched files") : path.isEmpty()
+            case "search": item.label = query.isEmpty() ? path.isEmpty() ? ui.t("Searched files") : ui.t("Searched files") + " \u00b7 " + shortPath(path) : path.isEmpty()
                     ? ui.t("Searched for {query}", "query", oneLine(query, 80))
                     : ui.t("Searched for {query} in {path}", "query", oneLine(query, 80), "path", shortPath(path)); break;
             case "list": item.label = path.isEmpty() ? ui.t("Listed files") : ui.t("Listed files in {path}", "path", shortPath(path)); break;
@@ -104,8 +128,9 @@ final class NativeActivityModel {
     }
 
     private static String classify(JSONObject part) {
-        String tool = part.optString("name").trim().toLowerCase(Locale.ROOT);
-        if (part.optString("kind").equals("thinking") || tool.matches("reason|reasoning|think|thinking")) return "thinking";
+        String tool = part.optString("name").trim().toLowerCase(Locale.ROOT).replace("__", ".");
+        if (part.optString("kind").equals("thinking")) return "thinking";
+        String kind = NativeToolKind.nameKind(tool);
         tool = tool.substring(tool.lastIndexOf('.') + 1);
         if (tool.matches("apply_?patch|patch|file_?change")) {
             List<String[]> files = patchFiles(part);
@@ -113,19 +138,7 @@ final class NativeActivityModel {
             if (!files.isEmpty() && files.stream().allMatch(file -> file[0].equals("Delete"))) return "delete";
             return "write";
         }
-        if (tool.matches("write|write_?file|create_?file")) return "create";
-        if (tool.matches("edit|edit_?file|multi_?edit|replace")) return "write";
-        if (tool.matches("delete_?file|remove_?file|unlink")) return "delete";
-        String source = (part.optString("name") + " " + part.optString("text")).toLowerCase(Locale.ROOT);
-        if (has("websearch|web.?fetch|browser|internet|search the web|lookup url", source)) return "web";
-        if (has("glob|list.?files|list files|directory listing|readdir|ls\\b|find\\b", source)) return "list";
-        if (has("grep|ripgrep|rg\\b|search files|search code|find in files|regex", source)) return "search";
-        if (has("\\bread\\b|cat\\b|head\\b|tail\\b|get.?file|open.?file|view file", source)) return "read";
-        if (part.optString("name").trim().equalsIgnoreCase("write") || has("create|created|new file|add file|add_file", source)) return "create";
-        if (has("delete|deleted|remove|removed|unlink|delete_file", source)) return "delete";
-        if (has("write|edit|filechange|apply.?patch|patch|replace|create.?file|delete.?file", source)) return "write";
-        if (has("shell|bash|zsh|command|terminal|exec|run command", source)) return "shell";
-        return "other";
+        return kind.equals("shell") ? NativeToolKind.shellKind(NativeToolKind.command(part.optString("text"), payload(part.optString("text"))), 0) : kind;
     }
 
     private static boolean has(String pattern, String value) { return Pattern.compile(pattern).matcher(value).find(); }
@@ -163,7 +176,7 @@ final class NativeActivityModel {
 
     private static List<String[]> patchFiles(JSONObject part) {
         List<String[]> files = new ArrayList<>();
-        if (!has("(?:^|\\.)(?:apply_?patch|patch|file_?change)$", part.optString("name").trim().toLowerCase(Locale.ROOT))) return files;
+        if (!has("(?:^|\\.|__)(?:apply_?patch|patch|file_?change)$", part.optString("name").trim().toLowerCase(Locale.ROOT))) return files;
         Matcher matcher = PATCH_FILE.matcher(part.optString("text"));
         while (matcher.find()) files.add(new String[] {matcher.group(1), matcher.group(2).trim()});
         return files;
@@ -189,6 +202,10 @@ final class NativeActivityModel {
         List<String[]> files = patchFiles(part);
         if (files.size() == 1) return files.get(0)[1];
         if (files.size() > 1) return "";
+        if (NativeToolKind.nameKind(part.optString("name")).equals("shell")) {
+            String command = NativeToolKind.command(part.optString("text"), data);
+            return NativeToolKind.shellKind(command, 0).equals("search") ? NativeToolKind.searchPath(command, 0) : "";
+        }
         Matcher matcher = Pattern.compile("(?:^|\\s)([\\w./~-]+\\.[\\w-]+)(?:\\s|$)").matcher(part.optString("text"));
         return matcher.find() ? matcher.group(1) : "";
     }

@@ -126,6 +126,31 @@ func TestProviderEventsUseMagpieTranscriptParts(t *testing.T) {
 	}
 }
 
+func TestCodexCommandTextPreservesArgvBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []any
+		want string
+	}{
+		{"simple", []any{"go", "test", "./..."}, "go test ./..."},
+		{"shell script", []any{"/bin/zsh", "-lc", "rg TODO src | head -20"}, "/bin/zsh -lc 'rg TODO src | head -20'"},
+		{"quote and empty", []any{"rg", "it's ready", "", "file with spaces.txt"}, "rg 'it'\\''s ready' '' 'file with spaces.txt'"},
+		{"literal expansion", []any{"cat", "$filename", "*.txt"}, "cat '$filename' '*.txt'"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, item := range []map[string]any{{"command": tc.args}, {"action": map[string]any{"command": tc.args}}} {
+				if got := codexCommandText(item); got != tc.want {
+					t.Fatalf("got %q want %q", got, tc.want)
+				}
+			}
+		})
+	}
+	command := "/bin/zsh -lc 'rg TODO src | head -20'"
+	if got := codexCommandText(map[string]any{"command": command}); got != command {
+		t.Fatalf("string command changed: %q", got)
+	}
+}
+
 func TestCodexLiveFileChangesMatchNormalizedHistoryShape(t *testing.T) {
 	request := newAgentFixture(t, chatmodel.BackendCodex)
 	request.Prompt = "file-change"

@@ -46,6 +46,7 @@ final class NativeActivityList extends LinearLayout {
             row = new NativeDisclosureRow(ui, "", NativeActivityModel.icon(activity.kind), "", false, false, false, () -> {});
             view.addView(row, new LayoutParams(-1, -2));
             row.setOnClickListener(button -> {
+                if (current.noDetails) return;
                 if (!state.items.add(id)) state.items.remove(id);
                 bind(current);
             });
@@ -67,8 +68,9 @@ final class NativeActivityList extends LinearLayout {
                 title = previewTitle;
             } else { previewSource = previewLabel = null; previewTitle = null; }
             row.bind(title, NativeActivityModel.icon(activity.kind), NativeActivityModel.changeStats(java.util.Collections.singletonList(activity)));
-            row.setExpanded(state.items.contains(id));
-            if (state.items.contains(id)) {
+            row.setDisclosureEnabled(!activity.noDetails);
+            row.setExpanded(!activity.noDetails && state.items.contains(id));
+            if (!activity.noDetails && state.items.contains(id)) {
                 if (detail == null) {
                     detail = new NativeToolDetail(ui, activity, openLink);
                     LayoutParams params = new LayoutParams(-1, -2);
@@ -213,7 +215,7 @@ final class NativeActivityList extends LinearLayout {
     void bind(List<NativeActivityModel.Activity> activities, CharSequence summary, boolean live) {
         org.json.JSONArray input = new org.json.JSONArray().put(live);
         for (NativeActivityModel.Activity activity : activities) input.put(new org.json.JSONArray().put(activity.kind)
-                .put(activity.label).put(activity.detail).put(activity.stats).put(activity.use).put(activity.result));
+                .put(activity.label).put(activity.detail).put(activity.stats).put(activity.use).put(activity.result).put(activity.noDetails));
         if (!NativeChatState.equivalent(bound, input)) {
             bound = NativeChatState.snapshot(input); groups = NativeActivityModel.groups(ui, activities); state.update(live, groups.size());
             update();

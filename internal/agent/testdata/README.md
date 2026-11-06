@@ -14,8 +14,24 @@ another checkout being present.
   safe fallback for a result without its preceding tool call.
 - `claude-native-replay.jsonl`: Claude assistant text replay.
 
-The Web activity renderer derives display categories from the normalized
-`tool_use`, `tool_result`, and `thinking` parts. The fixtures currently cover
-shell, read, create, edit, think, and generic result rows. List-files and web
-search classifiers are also supported for live `Glob`, `ls`, `find`,
-`WebSearch`, and `WebFetch` events when those tools are used.
+Activity categories use the normalized tool name and structured arguments.
+Shell tools inspect the executable and literal shell wrappers, rather than
+matching keywords in paths, descriptions, search patterns, or source code.
+Scripts, redirections, expansions, and mixed command categories use the generic
+command label. Content searches through shell commands such as `rg` and `grep`
+use the same read category as `cat`, including combinations and pipelines of
+these commands. `rg --files` is a file listing.
+Print-only `sed` commands such as `sed -n '1,140p' file` use the search category;
+in-place edits, external scripts, and `e`/`w` commands keep the command category.
+
+Literal compound shell calls split into display-only operation summaries.
+Each pipeline stays together because providers return its combined output.
+Derived rows have no detail disclosure; ordinary single tool calls retain it.
+The provider's original call/result IDs and bodies are preserved. Bounded
+operation metadata also travels in lazy historical summaries.
+
+`android/app/src/test/resources/tool-classification.json` is shared by the Go,
+Web, and Android tests. It covers Codex raw shell/JSON calls and Claude's
+`Bash.command`, `Read`, `Grep`, `Glob`, `Edit`, `Write`, and other native tools.
+The adjacent `tool-operations.json` fixture covers decomposition, pipeline
+grouping, quoting, and the equivalence of raw and lazy summaries.

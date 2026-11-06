@@ -18,6 +18,7 @@ final class NativeDisclosureRow extends FrameLayout {
     private final boolean work, group;
     private final int horizontal, vertical, gap, iconSize;
     private boolean expanded;
+    private boolean disclosureEnabled = true;
     private boolean expandedInitialized;
     private CharSequence boundTitle;
 
@@ -61,17 +62,27 @@ final class NativeDisclosureRow extends FrameLayout {
         setAccessibilityDelegate(new AccessibilityDelegate() {
             @Override public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfo info) {
                 super.onInitializeAccessibilityNodeInfo(host, info);
-                info.setClassName(Button.class.getName());
+                info.setClassName(disclosureEnabled ? Button.class.getName() : TextView.class.getName());
+                if (!disclosureEnabled) return;
                 if (android.os.Build.VERSION.SDK_INT >= 30)
                     info.setStateDescription(NativeDisclosureRow.this.expanded ? ui.label("Expanded", "已展开") : ui.label("Collapsed", "已折叠"));
                 info.addAction(NativeDisclosureRow.this.expanded ? AccessibilityNodeInfo.AccessibilityAction.ACTION_COLLAPSE : AccessibilityNodeInfo.AccessibilityAction.ACTION_EXPAND);
             }
             @Override public boolean performAccessibilityAction(View host, int action, android.os.Bundle args) {
-                if (action == AccessibilityNodeInfo.ACTION_EXPAND || action == AccessibilityNodeInfo.ACTION_COLLAPSE) return performClick();
+                if (action == AccessibilityNodeInfo.ACTION_EXPAND || action == AccessibilityNodeInfo.ACTION_COLLAPSE) return disclosureEnabled && performClick();
                 return super.performAccessibilityAction(host, action, args);
             }
         });
         setExpanded(expanded);
+    }
+
+    void setDisclosureEnabled(boolean value) {
+        if (disclosureEnabled == value) return;
+        disclosureEnabled = value;
+        setClickable(value); setFocusable(value);
+        if (caret != null) caret.setVisibility(value ? VISIBLE : GONE);
+        setBackground(value ? ui.states(0, work || group ? 6 : 5, 0, ui.hover, 0) : null);
+        requestLayout();
     }
 
     void bind(CharSequence title, String symbol, String statistics) {
@@ -128,9 +139,9 @@ final class NativeDisclosureRow extends FrameLayout {
         int unlimited = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
         int fixed = MeasureSpec.makeMeasureSpec(iconSize, MeasureSpec.EXACTLY);
         icon.measure(fixed, fixed);
-        if (caret != null) caret.measure(fixed, fixed);
+        if (caret != null && disclosureEnabled) caret.measure(fixed, fixed);
         int reserve = 2 * horizontal + icon.getMeasuredWidth() + gap;
-        if (caret != null) reserve += caret.getMeasuredWidth() + gap;
+        if (caret != null && disclosureEnabled) reserve += caret.getMeasuredWidth() + gap;
         if (stats != null) {
             stats.measure(MeasureSpec.makeMeasureSpec(Math.max(0, width / 2), MeasureSpec.AT_MOST), unlimited);
             reserve += stats.getMeasuredWidth() + gap;
@@ -143,7 +154,7 @@ final class NativeDisclosureRow extends FrameLayout {
         int x = horizontal;
         x = position(icon, x) + gap;
         x = position(label, x) + gap;
-        if (caret != null) x = position(caret, x) + gap;
+        if (caret != null && disclosureEnabled) x = position(caret, x) + gap;
         if (stats != null) position(stats, x);
     }
 

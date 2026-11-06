@@ -2015,6 +2015,10 @@ a.attachment-open {
 .tool-activity-item-summary:hover {
   color: var(--text);
 }
+
+.tool-activity-static {
+  cursor: default;
+}
 .tool-activity-summary > svg,
 .tool-activity-item-summary > svg {
   flex-shrink: 0;

@@ -184,6 +184,9 @@ func (c *nativeHistoryCache) transcripts(file *nativeHistory) ([]chatmodel.Trans
 				for _, path := range part.Tool.ImagePaths {
 					bytes += 16 + len(path)
 				}
+				for _, operation := range part.Tool.Operations {
+					bytes += 64 + len(operation.Kind) + len(operation.Command) + len(operation.Path)
+				}
 			}
 		}
 	}

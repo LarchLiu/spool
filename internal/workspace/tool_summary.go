@@ -13,23 +13,10 @@ import (
 )
 
 var (
-	toolPatchName  = regexp.MustCompile(`(?:^|\.)(?:apply_?patch|patch|file_?change)$`)
+	toolPatchName  = regexp.MustCompile(`(?:^|\.|__)(?:apply_?patch|patch|file_?change)$`)
 	toolPatchFile  = regexp.MustCompile(`(?m)^\*\*\* (Add|Update|Delete) File: (.+)\r?$`)
 	toolPath       = regexp.MustCompile(`(?:^|\s)([\w./~-]+\.[\w-]+)(?:\s|$)`)
 	toolPatchStart = regexp.MustCompile(`(?:^|\n)(?:diff --git |--- [^\n]+\n\+\+\+ |\*\*\* Begin Patch)`)
-	toolKindRules  = []struct {
-		kind    string
-		pattern *regexp.Regexp
-	}{
-		{"web", regexp.MustCompile(`websearch|web.?fetch|browser|internet|search the web|lookup url`)},
-		{"list", regexp.MustCompile(`glob|list.?files|list files|directory listing|readdir|ls\b|find\b`)},
-		{"search", regexp.MustCompile(`grep|ripgrep|rg\b|search files|search code|find in files|regex`)},
-		{"read", regexp.MustCompile(`\bread\b|cat\b|head\b|tail\b|get.?file|open.?file|view file`)},
-		{"create", regexp.MustCompile(`create|created|new file|add file|add_file`)},
-		{"delete", regexp.MustCompile(`delete|deleted|remove|removed|unlink|delete_file`)},
-		{"write", regexp.MustCompile(`write|edit|filechange|apply.?patch|patch|replace|create.?file|delete.?file`)},
-		{"shell", regexp.MustCompile(`shell|bash|zsh|command|terminal|exec|run command`)},
-	}
 )
 
 func toolPart(part chatmodel.Part) bool {
@@ -65,19 +52,23 @@ func summarizeTool(part chatmodel.Part) *chatmodel.ToolSummary {
 		return summarizeToolChanges(part.Text, summary)
 	}
 	name := strings.ToLower(strings.TrimSpace(part.Name))
-	tool := name[strings.LastIndex(name, ".")+1:]
+	nameKind := toolNameKind(name)
+	var data map[string]json.RawMessage
+	if strings.HasPrefix(strings.TrimSpace(part.Text), "{") {
+		_ = json.Unmarshal([]byte(part.Text), &data)
+	}
 	images := viewedImagePaths(name, part.Text)
 	files := [][]string(nil)
 	if toolPatchName.MatchString(name) {
 		files = toolPatchFile.FindAllStringSubmatch(part.Text, -1)
 	}
 	switch {
-	case part.Kind == "thinking" || name == "reason" || name == "reasoning" || name == "think" || name == "thinking":
+	case part.Kind == "thinking" || nameKind == "thinking":
 		summary.Kind = "thinking"
 		summary.Preview = toolBounded(part.Text, 2048)
 	case len(images) > 0:
 		summary.Kind, summary.ImagePaths = "image", images
-	case toolPatchName.MatchString(tool):
+	case toolPatchName.MatchString(name):
 		summary.Kind = "write"
 		allAdd, allDelete := len(files) > 0, len(files) > 0
 		for _, file := range files {
@@ -89,24 +80,12 @@ func summarizeTool(part chatmodel.Part) *chatmodel.ToolSummary {
 		} else if allDelete {
 			summary.Kind = "delete"
 		}
-	case tool == "write" || tool == "write_file" || tool == "writefile" || tool == "create_file" || tool == "createfile":
-		summary.Kind = "create"
-	case tool == "edit" || tool == "edit_file" || tool == "editfile" || tool == "multi_edit" || tool == "multiedit" || tool == "replace":
-		summary.Kind = "write"
-	case tool == "delete_file" || tool == "deletefile" || tool == "remove_file" || tool == "removefile" || tool == "unlink":
-		summary.Kind = "delete"
+	case nameKind == "shell":
+		command := toolCommand(part.Text, data)
+		summary.Kind = shellCommandKind(command, 0)
+		summary.Operations = shellOperations(command, 0)
 	default:
-		source := name + " " + strings.ToLower(part.Text)
-		for _, rule := range toolKindRules {
-			if rule.pattern.MatchString(source) {
-				summary.Kind = rule.kind
-				break
-			}
-		}
-	}
-	var data map[string]json.RawMessage
-	if strings.HasPrefix(strings.TrimSpace(part.Text), "{") {
-		_ = json.Unmarshal([]byte(part.Text), &data)
+		summary.Kind = nameKind
 	}
 	field := func(keys ...string) string {
 		for _, key := range keys {
@@ -118,10 +97,13 @@ func summarizeTool(part chatmodel.Part) *chatmodel.ToolSummary {
 		return ""
 	}
 	summary.Path = field("file_path", "path", "file", "filename", "target_file", "notebook_path")
+	if summary.Path == "" && nameKind == "shell" && summary.Kind == "search" {
+		summary.Path = shellSearchPath(toolCommand(part.Text, data), 0)
+	}
 	if summary.Path == "" {
 		if len(files) == 1 {
 			summary.Path = strings.TrimSpace(files[0][2])
-		} else if len(files) == 0 {
+		} else if len(files) == 0 && nameKind != "shell" {
 			if match := toolPath.FindStringSubmatch(part.Text); match != nil {
 				summary.Path = match[1]
 			}

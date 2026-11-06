@@ -28,7 +28,7 @@ func toolDetailChat(text string) chatmodel.Session {
 func TestToolSummaryMatchesActivityLabelsAndStatistics(t *testing.T) {
 	for _, tc := range []struct{ name, text, kind, path, query string }{
 		{"Read", `{"file_path":"src/a.go"}`, "read", "src/a.go", ""},
-		{"functions.exec_command", `{"cmd":"rg TODO","path":"src","pattern":"TODO"}`, "search", "src", "TODO"},
+		{"functions.exec_command", `{"cmd":"rg TODO","path":"src","pattern":"TODO"}`, "read", "src", "TODO"},
 		{"apply_patch", "*** Begin Patch\n*** Add File: a/b/c/d.go\n+find cat\n*** End Patch", "create", "\u2026/b/c/d.go", ""},
 		{"apply_patch", "*** Begin Patch\n*** Delete File: gone.go\n*** End Patch", "delete", "gone.go", ""},
 		{"Edit", `{"file_path":"ui.tsx","new_string":"find cat"}`, "write", "ui.tsx", ""},

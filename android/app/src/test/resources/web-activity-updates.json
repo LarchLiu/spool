@@ -239,7 +239,7 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": false,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "false"
             },
             "item-toggle:0:1": {
@@ -640,7 +640,7 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
@@ -1043,7 +1043,7 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
@@ -1453,7 +1453,7 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
@@ -1865,7 +1865,7 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
@@ -2277,7 +2277,7 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
@@ -2691,7 +2691,7 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
@@ -6274,7 +6274,7 @@
             "group:0": {
               "present": true,
               "retained": false,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "true"
             },
             "item:0:0": {
@@ -6288,13 +6288,13 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": false,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "false"
             },
             "item-toggle:0:1": {
               "present": true,
               "retained": false,
-              "label": "Used Read file",
+              "label": "Read src/file2.ts",
               "expanded": "false"
             },
             "detail:0:0": {
@@ -6681,7 +6681,7 @@
             "group:0": {
               "present": true,
               "retained": true,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "true"
             },
             "item:0:0": {
@@ -6695,13 +6695,13 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file2.ts",
               "expanded": "false"
             },
             "detail:0:0": {
@@ -7092,7 +7092,7 @@
             "group:0": {
               "present": true,
               "retained": true,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "true"
             },
             "item:0:0": {
@@ -7106,13 +7106,13 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file2.ts",
               "expanded": "false"
             },
             "detail:0:0": {
@@ -7510,7 +7510,7 @@
             "group:0": {
               "present": true,
               "retained": true,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "true"
             },
             "item:0:0": {
@@ -7524,13 +7524,13 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file2.ts",
               "expanded": "false"
             },
             "detail:0:0": {
@@ -7928,7 +7928,7 @@
             "group:0": {
               "present": true,
               "retained": true,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "false"
             },
             "item:0:0": {
@@ -8338,7 +8338,7 @@
             "group:0": {
               "present": true,
               "retained": true,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "false"
             },
             "item:0:0": {
@@ -8748,7 +8748,7 @@
             "group:0": {
               "present": true,
               "retained": true,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "true"
             },
             "item:0:0": {
@@ -8762,13 +8762,13 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": false,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
               "present": true,
               "retained": false,
-              "label": "Used Read file",
+              "label": "Read src/file2.ts",
               "expanded": "false"
             },
             "detail:0:0": {
@@ -9166,7 +9166,7 @@
             "group:0": {
               "present": true,
               "retained": true,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "false"
             },
             "item:0:0": {
@@ -9576,7 +9576,7 @@
             "group:0": {
               "present": true,
               "retained": true,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "true"
             },
             "item:0:0": {
@@ -9590,13 +9590,13 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": false,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
               "present": true,
               "retained": false,
-              "label": "Used Read file",
+              "label": "Read src/file2.ts",
               "expanded": "false"
             },
             "detail:0:0": {
@@ -21818,7 +21818,7 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read files",
               "expanded": "true"
             },
             "item-toggle:0:1": {
@@ -28022,7 +28022,7 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": true,
-              "label": "Edited files",
+              "label": "Used Custom",
               "expanded": "true"
             },
             "item-toggle:0:1": {
@@ -31514,7 +31514,7 @@
             "group:0": {
               "present": true,
               "retained": false,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "true"
             },
             "item:0:0": {
@@ -31528,13 +31528,13 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": false,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "false"
             },
             "item-toggle:0:1": {
               "present": true,
               "retained": false,
-              "label": "Used Read file",
+              "label": "Read src/file2.ts",
               "expanded": "false"
             },
             "detail:0:0": {
@@ -31921,7 +31921,7 @@
             "group:0": {
               "present": true,
               "retained": true,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "true"
             },
             "item:0:0": {
@@ -31935,13 +31935,13 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file2.ts",
               "expanded": "false"
             },
             "detail:0:0": {
@@ -32332,7 +32332,7 @@
             "group:0": {
               "present": true,
               "retained": true,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "false"
             },
             "item:0:0": {
@@ -33134,7 +33134,7 @@
             "group:0": {
               "present": true,
               "retained": false,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "false"
             },
             "item:0:0": {
@@ -33537,7 +33537,7 @@
             "group:0": {
               "present": true,
               "retained": true,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "true"
             },
             "item:0:0": {
@@ -33551,13 +33551,13 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": false,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
               "present": true,
               "retained": false,
-              "label": "Used Read file",
+              "label": "Read src/file2.ts",
               "expanded": "false"
             },
             "detail:0:0": {
@@ -33948,7 +33948,7 @@
             "group:0": {
               "present": true,
               "retained": true,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "true"
             },
             "item:0:0": {
@@ -33962,431 +33962,13 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
               "present": true,
               "retained": true,
-              "label": "Used Read file",
-              "expanded": "false"
-            },
-            "detail:0:0": {
-              "present": true,
-              "retained": true
-            },
-            "detail:0:1": {
-              "present": false,
-              "retained": false
-            },
-            "input:0:0": {
-              "present": true,
-              "retained": true,
-              "type": "raw"
-            },
-            "input:0:1": {
-              "present": false,
-              "retained": false
-            },
-            "input-text:0:0": {
-              "present": true,
-              "retained": true,
-              "text": "{\"file_path\":\"src/file1.ts\"}"
-            },
-            "input-text:0:1": {
-              "present": false,
-              "retained": false
-            },
-            "output:0:0": {
-              "present": true,
-              "retained": true,
-              "type": "raw"
-            },
-            "output:0:1": {
-              "present": false,
-              "retained": false
-            },
-            "output-text:0:0": {
-              "present": true,
-              "retained": true,
-              "text": "Stable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\n"
-            },
-            "output-text:0:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-input:0:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-input:0:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-input:0:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-input:0:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-output:0:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-output:0:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-output:0:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-output:0:1": {
-              "present": false,
-              "retained": false
-            },
-            "entry:1": {
-              "present": true,
-              "retained": true
-            },
-            "group:1": {
-              "present": false,
-              "retained": false
-            },
-            "item:1:0": {
-              "present": true,
-              "retained": true
-            },
-            "item:1:1": {
-              "present": false,
-              "retained": false
-            },
-            "item-toggle:1:0": {
-              "present": true,
-              "retained": true,
-              "label": "Ran command",
-              "expanded": "false"
-            },
-            "item-toggle:1:1": {
-              "present": false,
-              "retained": false
-            },
-            "detail:1:0": {
-              "present": false,
-              "retained": false
-            },
-            "detail:1:1": {
-              "present": false,
-              "retained": false
-            },
-            "input:1:0": {
-              "present": false,
-              "retained": false
-            },
-            "input:1:1": {
-              "present": false,
-              "retained": false
-            },
-            "input-text:1:0": {
-              "present": false,
-              "retained": false
-            },
-            "input-text:1:1": {
-              "present": false,
-              "retained": false
-            },
-            "output:1:0": {
-              "present": false,
-              "retained": false
-            },
-            "output:1:1": {
-              "present": false,
-              "retained": false
-            },
-            "output-text:1:0": {
-              "present": false,
-              "retained": false
-            },
-            "output-text:1:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-input:1:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-input:1:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-input:1:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-input:1:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-output:1:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-output:1:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-output:1:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-output:1:1": {
-              "present": false,
-              "retained": false
-            },
-            "entry:2": {
-              "present": false,
-              "retained": false
-            },
-            "group:2": {
-              "present": false,
-              "retained": false
-            },
-            "item:2:0": {
-              "present": false,
-              "retained": false
-            },
-            "item:2:1": {
-              "present": false,
-              "retained": false
-            },
-            "item-toggle:2:0": {
-              "present": false,
-              "retained": false
-            },
-            "item-toggle:2:1": {
-              "present": false,
-              "retained": false
-            },
-            "detail:2:0": {
-              "present": false,
-              "retained": false
-            },
-            "detail:2:1": {
-              "present": false,
-              "retained": false
-            },
-            "input:2:0": {
-              "present": false,
-              "retained": false
-            },
-            "input:2:1": {
-              "present": false,
-              "retained": false
-            },
-            "input-text:2:0": {
-              "present": false,
-              "retained": false
-            },
-            "input-text:2:1": {
-              "present": false,
-              "retained": false
-            },
-            "output:2:0": {
-              "present": false,
-              "retained": false
-            },
-            "output:2:1": {
-              "present": false,
-              "retained": false
-            },
-            "output-text:2:0": {
-              "present": false,
-              "retained": false
-            },
-            "output-text:2:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-input:2:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-input:2:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-input:2:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-input:2:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-output:2:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-output:2:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-output:2:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-output:2:1": {
-              "present": false,
-              "retained": false
-            },
-            "entry:3": {
-              "present": false,
-              "retained": false
-            },
-            "group:3": {
-              "present": false,
-              "retained": false
-            },
-            "item:3:0": {
-              "present": false,
-              "retained": false
-            },
-            "item:3:1": {
-              "present": false,
-              "retained": false
-            },
-            "item-toggle:3:0": {
-              "present": false,
-              "retained": false
-            },
-            "item-toggle:3:1": {
-              "present": false,
-              "retained": false
-            },
-            "detail:3:0": {
-              "present": false,
-              "retained": false
-            },
-            "detail:3:1": {
-              "present": false,
-              "retained": false
-            },
-            "input:3:0": {
-              "present": false,
-              "retained": false
-            },
-            "input:3:1": {
-              "present": false,
-              "retained": false
-            },
-            "input-text:3:0": {
-              "present": false,
-              "retained": false
-            },
-            "input-text:3:1": {
-              "present": false,
-              "retained": false
-            },
-            "output:3:0": {
-              "present": false,
-              "retained": false
-            },
-            "output:3:1": {
-              "present": false,
-              "retained": false
-            },
-            "output-text:3:0": {
-              "present": false,
-              "retained": false
-            },
-            "output-text:3:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-input:3:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-input:3:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-input:3:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-input:3:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-output:3:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-toggle-output:3:1": {
-              "present": false,
-              "retained": false
-            },
-            "raw-output:3:0": {
-              "present": false,
-              "retained": false
-            },
-            "raw-output:3:1": {
-              "present": false,
-              "retained": false
-            }
-          },
-          "selection": {
-            "path": "input-text:0:0",
-            "present": true,
-            "inside": true,
-            "start": 1,
-            "end": 6,
-            "text": "\"file"
-          }
-        },
-        {
-          "nodes": {
-            "work": {
-              "present": true,
-              "retained": true,
-              "label": "Working for 5s",
-              "expanded": "true"
-            },
-            "list": {
-              "present": true,
-              "retained": true
-            },
-            "entry:0": {
-              "present": true,
-              "retained": true
-            },
-            "group:0": {
-              "present": true,
-              "retained": true,
-              "label": "Used tools",
-              "expanded": "true"
-            },
-            "item:0:0": {
-              "present": true,
-              "retained": true
-            },
-            "item:0:1": {
-              "present": true,
-              "retained": true
-            },
-            "item-toggle:0:0": {
-              "present": true,
-              "retained": true,
-              "label": "Used Read file",
-              "expanded": "true"
-            },
-            "item-toggle:0:1": {
-              "present": true,
-              "retained": true,
-              "label": "Used Read file",
+              "label": "Read src/file2.ts",
               "expanded": "false"
             },
             "detail:0:0": {
@@ -34784,7 +34366,425 @@
             "group:0": {
               "present": true,
               "retained": true,
-              "label": "Used tools",
+              "label": "Read files",
+              "expanded": "true"
+            },
+            "item:0:0": {
+              "present": true,
+              "retained": true
+            },
+            "item:0:1": {
+              "present": true,
+              "retained": true
+            },
+            "item-toggle:0:0": {
+              "present": true,
+              "retained": true,
+              "label": "Read src/file1.ts",
+              "expanded": "true"
+            },
+            "item-toggle:0:1": {
+              "present": true,
+              "retained": true,
+              "label": "Read src/file2.ts",
+              "expanded": "false"
+            },
+            "detail:0:0": {
+              "present": true,
+              "retained": true
+            },
+            "detail:0:1": {
+              "present": false,
+              "retained": false
+            },
+            "input:0:0": {
+              "present": true,
+              "retained": true,
+              "type": "raw"
+            },
+            "input:0:1": {
+              "present": false,
+              "retained": false
+            },
+            "input-text:0:0": {
+              "present": true,
+              "retained": true,
+              "text": "{\"file_path\":\"src/file1.ts\"}"
+            },
+            "input-text:0:1": {
+              "present": false,
+              "retained": false
+            },
+            "output:0:0": {
+              "present": true,
+              "retained": true,
+              "type": "raw"
+            },
+            "output:0:1": {
+              "present": false,
+              "retained": false
+            },
+            "output-text:0:0": {
+              "present": true,
+              "retained": true,
+              "text": "Stable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\nStable output line.\n"
+            },
+            "output-text:0:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-input:0:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-input:0:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-input:0:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-input:0:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-output:0:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-output:0:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-output:0:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-output:0:1": {
+              "present": false,
+              "retained": false
+            },
+            "entry:1": {
+              "present": true,
+              "retained": true
+            },
+            "group:1": {
+              "present": false,
+              "retained": false
+            },
+            "item:1:0": {
+              "present": true,
+              "retained": true
+            },
+            "item:1:1": {
+              "present": false,
+              "retained": false
+            },
+            "item-toggle:1:0": {
+              "present": true,
+              "retained": true,
+              "label": "Ran command",
+              "expanded": "false"
+            },
+            "item-toggle:1:1": {
+              "present": false,
+              "retained": false
+            },
+            "detail:1:0": {
+              "present": false,
+              "retained": false
+            },
+            "detail:1:1": {
+              "present": false,
+              "retained": false
+            },
+            "input:1:0": {
+              "present": false,
+              "retained": false
+            },
+            "input:1:1": {
+              "present": false,
+              "retained": false
+            },
+            "input-text:1:0": {
+              "present": false,
+              "retained": false
+            },
+            "input-text:1:1": {
+              "present": false,
+              "retained": false
+            },
+            "output:1:0": {
+              "present": false,
+              "retained": false
+            },
+            "output:1:1": {
+              "present": false,
+              "retained": false
+            },
+            "output-text:1:0": {
+              "present": false,
+              "retained": false
+            },
+            "output-text:1:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-input:1:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-input:1:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-input:1:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-input:1:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-output:1:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-output:1:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-output:1:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-output:1:1": {
+              "present": false,
+              "retained": false
+            },
+            "entry:2": {
+              "present": false,
+              "retained": false
+            },
+            "group:2": {
+              "present": false,
+              "retained": false
+            },
+            "item:2:0": {
+              "present": false,
+              "retained": false
+            },
+            "item:2:1": {
+              "present": false,
+              "retained": false
+            },
+            "item-toggle:2:0": {
+              "present": false,
+              "retained": false
+            },
+            "item-toggle:2:1": {
+              "present": false,
+              "retained": false
+            },
+            "detail:2:0": {
+              "present": false,
+              "retained": false
+            },
+            "detail:2:1": {
+              "present": false,
+              "retained": false
+            },
+            "input:2:0": {
+              "present": false,
+              "retained": false
+            },
+            "input:2:1": {
+              "present": false,
+              "retained": false
+            },
+            "input-text:2:0": {
+              "present": false,
+              "retained": false
+            },
+            "input-text:2:1": {
+              "present": false,
+              "retained": false
+            },
+            "output:2:0": {
+              "present": false,
+              "retained": false
+            },
+            "output:2:1": {
+              "present": false,
+              "retained": false
+            },
+            "output-text:2:0": {
+              "present": false,
+              "retained": false
+            },
+            "output-text:2:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-input:2:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-input:2:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-input:2:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-input:2:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-output:2:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-output:2:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-output:2:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-output:2:1": {
+              "present": false,
+              "retained": false
+            },
+            "entry:3": {
+              "present": false,
+              "retained": false
+            },
+            "group:3": {
+              "present": false,
+              "retained": false
+            },
+            "item:3:0": {
+              "present": false,
+              "retained": false
+            },
+            "item:3:1": {
+              "present": false,
+              "retained": false
+            },
+            "item-toggle:3:0": {
+              "present": false,
+              "retained": false
+            },
+            "item-toggle:3:1": {
+              "present": false,
+              "retained": false
+            },
+            "detail:3:0": {
+              "present": false,
+              "retained": false
+            },
+            "detail:3:1": {
+              "present": false,
+              "retained": false
+            },
+            "input:3:0": {
+              "present": false,
+              "retained": false
+            },
+            "input:3:1": {
+              "present": false,
+              "retained": false
+            },
+            "input-text:3:0": {
+              "present": false,
+              "retained": false
+            },
+            "input-text:3:1": {
+              "present": false,
+              "retained": false
+            },
+            "output:3:0": {
+              "present": false,
+              "retained": false
+            },
+            "output:3:1": {
+              "present": false,
+              "retained": false
+            },
+            "output-text:3:0": {
+              "present": false,
+              "retained": false
+            },
+            "output-text:3:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-input:3:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-input:3:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-input:3:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-input:3:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-output:3:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-toggle-output:3:1": {
+              "present": false,
+              "retained": false
+            },
+            "raw-output:3:0": {
+              "present": false,
+              "retained": false
+            },
+            "raw-output:3:1": {
+              "present": false,
+              "retained": false
+            }
+          },
+          "selection": {
+            "path": "input-text:0:0",
+            "present": true,
+            "inside": true,
+            "start": 1,
+            "end": 6,
+            "text": "\"file"
+          }
+        },
+        {
+          "nodes": {
+            "work": {
+              "present": true,
+              "retained": true,
+              "label": "Working for 5s",
+              "expanded": "true"
+            },
+            "list": {
+              "present": true,
+              "retained": true
+            },
+            "entry:0": {
+              "present": true,
+              "retained": true
+            },
+            "group:0": {
+              "present": true,
+              "retained": true,
+              "label": "Read files",
               "expanded": "false"
             },
             "item:0:0": {
@@ -35194,7 +35194,7 @@
             "group:0": {
               "present": true,
               "retained": true,
-              "label": "Used tools",
+              "label": "Read files",
               "expanded": "true"
             },
             "item:0:0": {
@@ -35208,13 +35208,13 @@
             "item-toggle:0:0": {
               "present": true,
               "retained": false,
-              "label": "Used Read file",
+              "label": "Read src/file1.ts",
               "expanded": "true"
             },
             "item-toggle:0:1": {
               "present": true,
               "retained": false,
-              "label": "Used Read file",
+              "label": "Read src/file2.ts",
               "expanded": "false"
             },
             "detail:0:0": {

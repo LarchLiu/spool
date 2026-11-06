@@ -115,6 +115,13 @@ export type ToolSummary = {
   preview?: string;
   stats?: string;
   changes?: { additions: number; deletions: number };
+  operations?: ToolOperation[];
+};
+// Display-only input summaries. Compound commands have no per-operation output.
+export type ToolOperation = {
+  kind: ToolSummary["kind"];
+  command: string;
+  path?: string;
 };
 export type Transcript = {
   parts: TranscriptPart[];

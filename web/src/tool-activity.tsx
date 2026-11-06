@@ -26,22 +26,9 @@ import type { Locale } from "./preferences.js";
 import { firstToolDetailCursor, mergeToolDetailPage, requestToolDetail, toolDetailCache, type ToolDetailCursor, type ToolDetailPage } from "./tool-detail.js";
 import { LocalFileContext } from "./local-file-context.js";
 import { localFileTarget } from "./local-file-links.js";
+import { toolNameKind, toolCommand, shellCommandKind, shellOperations, shellSearchPath, type ActivityKind } from "./tool-kind.js";
 
 export { toolResultDiffs } from "./tool-diff.js";
-
-type ActivityKind =
-  | "read"
-  | "write"
-  | "create"
-  | "delete"
-  | "search"
-  | "list"
-  | "web"
-  | "shell"
-  | "thinking"
-  | "message"
-  | "image"
-  | "other";
 
 type Activity = {
   use?: TranscriptPart;
@@ -52,6 +39,7 @@ type Activity = {
   stats?: string;
   images?: string[];
   imageURLs?: string[];
+  noDetails?: boolean;
 };
 
 type ActivityGroup = {
@@ -127,50 +115,23 @@ function imageCallPaths(name: string, data: Record<string, unknown> | undefined)
 
 function patchFiles(part: TranscriptPart) {
   const name = part.name?.trim().toLowerCase() || "";
-  if (!/(?:^|\.)(?:apply_?patch|patch|file_?change)$/.test(name)) return [];
+  if (!/(?:^|\.|__)(?:apply_?patch|patch|file_?change)$/.test(name)) return [];
   return Array.from(
     part.text.matchAll(/^\*\*\* (Add|Update|Delete) File: (.+)\r?$/gm),
     ([, action, path]) => ({ action, path: path.trim() }),
   );
 }
 
-function classify(part: TranscriptPart): ActivityKind {
+function classify(part: TranscriptPart, data: Record<string, unknown> | undefined): ActivityKind {
   if (part.kind === "thinking") return "thinking";
-  if (/^(reason|reasoning|think|thinking)$/i.test(part.name?.trim() || ""))
-    return "thinking";
-  // Tool input may be source code containing words like find/cat/controls.
-  // Identify editing tools before inferring shell activity from their input.
-  const tool = part.name?.trim().toLowerCase().split(".").pop() || "";
-  if (/^(apply_?patch|patch|file_?change)$/.test(tool)) {
+  const kind = toolNameKind(part.name || "");
+  if (/(?:^|\.|__)(apply_?patch|patch|file_?change)$/i.test(part.name?.trim() || "")) {
     const files = patchFiles(part);
     if (files.length && files.every(({ action }) => action === "Add")) return "create";
     if (files.length && files.every(({ action }) => action === "Delete")) return "delete";
     return "write";
   }
-  if (/^(write|write_?file|create_?file)$/.test(tool)) return "create";
-  if (/^(edit|edit_?file|multi_?edit|replace)$/.test(tool)) return "write";
-  if (/^(delete_?file|remove_?file|unlink)$/.test(tool)) return "delete";
-  const name = `${part.name || ""} ${part.text}`.toLowerCase();
-  if (/(websearch|web.?fetch|browser|internet|search the web|lookup url)/.test(name))
-    return "web";
-  if (/(glob|list.?files|list files|directory listing|readdir|ls\b|find\b)/.test(name))
-    return "list";
-  if (/(grep|ripgrep|rg\b|search files|search code|find in files|regex)/.test(name))
-    return "search";
-  if (/(\bread\b|cat\b|head\b|tail\b|get.?file|open.?file|view file)/.test(name))
-    return "read";
-  if (
-    part.name?.trim().toLowerCase() === "write" ||
-    /(create|created|new file|add file|add_file)/.test(name)
-  )
-    return "create";
-  if (/(delete|deleted|remove|removed|unlink|delete_file)/.test(name))
-    return "delete";
-  if (/(write|edit|filechange|apply.?patch|patch|replace|create.?file|delete.?file)/.test(name))
-    return "write";
-  if (/(shell|bash|zsh|command|terminal|exec|run command)/.test(name))
-    return "shell";
-  return "other";
+  return kind === "shell" ? shellCommandKind(toolCommand(part.text, data)) : kind;
 }
 
 function extractQuery(part: TranscriptPart, data: Record<string, unknown> | undefined) {
@@ -190,6 +151,10 @@ function extractPath(part: TranscriptPart, data: Record<string, unknown> | undef
   const files = patchFiles(part);
   if (files.length === 1) return files[0].path;
   if (files.length > 1) return "";
+  if (toolNameKind(part.name || "") === "shell") {
+    const command = toolCommand(part.text, data);
+    return shellCommandKind(command) === "search" ? shellSearchPath(command) : "";
+  }
   const match = part.text.match(/(?:^|\s)([\w./~-]+\.[\w-]+)(?:\s|$)/);
   return match?.[1] || "";
 }
@@ -216,7 +181,7 @@ export function displayActivity(
 ): Omit<Activity, "result"> {
   const data = part.tool ? undefined : payload(part.text);
   const images = viewedImagePaths(part);
-  const kind = images.length ? "image" : part.tool?.kind || classify(part);
+  const kind = images.length ? "image" : part.tool?.kind || classify(part, data);
   const name = part.name?.trim() || (backend === "claude" ? "Claude tool" : "Codex tool");
   const path = part.tool?.path || extractPath(part, data);
   const query = part.tool?.query || extractQuery(part, data);
@@ -251,7 +216,7 @@ export function displayActivity(
               path: shortPath(path),
             })
           : t("Searched for {query}", { query: oneLine(query, 80) })
-        : t("Searched files");
+        : path ? `${t("Searched files")} · ${shortPath(path)}` : t("Searched files");
       break;
     case "list":
       label = path
@@ -320,7 +285,20 @@ export function activitiesFromParts(
     out.push(activity);
     if (part.id && part.kind === "tool_use") calls.set(part.id, activity);
   }
-  return out;
+  // Pair provider call/result IDs first. Derived rows share that provenance,
+  // without implying that the combined output belongs to an individual step.
+  return out.flatMap((activity) => {
+    const part = activity.use;
+    if (part?.kind !== "tool_use" || activity.kind === "image") return [activity];
+    const operations = part.tool ? part.tool.operations
+      : toolNameKind(part.name || "") === "shell" ? shellOperations(toolCommand(part.text, payload(part.text))) : undefined;
+    if (!operations?.length) return [activity];
+    return operations.map((operation) => {
+      const display = displayActivity({ ...part, text: "", tool: { kind: operation.kind, path: operation.path, version: "", bytes: 0 } }, backend, t);
+      return { ...display, use: part, result: activity.result, detail: "", stats: "", noDetails: true,
+        label: operation.path ? display.label : `${display.label} · ${oneLine(operation.command)}` };
+    });
+  });
 }
 
 function groupLabel(group: Activity[], t: Translator) {
@@ -584,6 +562,7 @@ function LazyToolBody({ part, t, thinking, input }: { part: TranscriptPart; t: T
 }
 
 export function ActivityDetail({ activity, t }: { activity: Activity; t: Translator }) {
+  if (activity.noDetails) return null;
   const command = activity.use?.text || "";
   const result = activity.result?.text || "";
   return (
@@ -646,6 +625,14 @@ function ActivityItem({
 }) {
   const Icon = iconFor(activity.kind);
   const stats = changeStats([activity]);
+  if (activity.noDetails) return (
+    <div className="tool-activity-item">
+      <div className="tool-activity-item-summary tool-activity-static" title={activity.label}>
+        <Icon size={12} strokeWidth={1.6} />
+        <ActivityLabel activity={activity} />
+      </div>
+    </div>
+  );
   return (
     <div className={"tool-activity-item " + (open ? "expanded" : "")}>
       <button

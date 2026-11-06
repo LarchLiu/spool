@@ -19,21 +19,29 @@ type Part struct {
 // ToolSummary is enough to render a collapsed activity without its input/output.
 // Ref identifies the part within an authorized chat; Version identifies its body.
 type ToolSummary struct {
-	Ref        string       `json:"ref,omitempty"`
-	Href       string       `json:"href,omitempty"`
-	Version    string       `json:"version"`
-	Bytes      int          `json:"bytes"`
-	Kind       string       `json:"kind"`
-	Path       string       `json:"path,omitempty"`
-	ImagePaths []string     `json:"image_paths,omitempty"`
-	ImageCount int          `json:"image_count,omitempty"`
-	ImageURLs  []string     `json:"image_urls,omitempty"`
-	Query      string       `json:"query,omitempty"`
-	Preview    string       `json:"preview,omitempty"`
-	Stats      string       `json:"stats,omitempty"`
-	Changes    *ToolChanges `json:"changes,omitempty"`
+	Ref        string          `json:"ref,omitempty"`
+	Href       string          `json:"href,omitempty"`
+	Version    string          `json:"version"`
+	Bytes      int             `json:"bytes"`
+	Kind       string          `json:"kind"`
+	Path       string          `json:"path,omitempty"`
+	ImagePaths []string        `json:"image_paths,omitempty"`
+	ImageCount int             `json:"image_count,omitempty"`
+	ImageURLs  []string        `json:"image_urls,omitempty"`
+	Query      string          `json:"query,omitempty"`
+	Preview    string          `json:"preview,omitempty"`
+	Stats      string          `json:"stats,omitempty"`
+	Changes    *ToolChanges    `json:"changes,omitempty"`
+	Operations []ToolOperation `json:"operations,omitempty"`
 	// Shared immutable source used to detect edits to hydrated cache responses.
 	SourceText string `json:"-"`
+}
+
+// ToolOperation is a display-only input summary, without invented output slices.
+type ToolOperation struct {
+	Kind    string `json:"kind"`
+	Command string `json:"command"`
+	Path    string `json:"path,omitempty"`
 }
 
 type ToolChanges struct {

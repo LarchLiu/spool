@@ -194,17 +194,41 @@ func codexCommandText(item map[string]any) string {
 		return command
 	}
 	if values, ok := item["command"].([]any); ok {
-		return stringValues(values, " ")
+		return codexCommandArgs(values)
 	}
 	if action, ok := item["action"].(map[string]any); ok {
 		if command := stringValue(action["command"]); command != "" {
 			return command
 		}
 		if values, ok := action["command"].([]any); ok {
-			return stringValues(values, " ")
+			return codexCommandArgs(values)
 		}
 	}
 	return ""
+}
+
+// Keep argv boundaries when showing native command events as shell text, so
+// a shell's -c script can still be recognized by the activity classifier.
+func codexCommandArgs(values []any) string {
+	args := make([]string, 0, len(values))
+	for _, value := range values {
+		arg, ok := value.(string)
+		if !ok {
+			continue
+		}
+		quoted := arg == ""
+		for _, char := range arg {
+			if !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-", char) {
+				quoted = true
+				break
+			}
+		}
+		if quoted {
+			arg = "'" + strings.ReplaceAll(arg, "'", "'\\''") + "'"
+		}
+		args = append(args, arg)
+	}
+	return strings.Join(args, " ")
 }
 
 func codexTranscriptPart(item map[string]any, model string) chatmodel.Part {

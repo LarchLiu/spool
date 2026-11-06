@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -16,11 +17,65 @@ import {
 import { LocalFileContext } from "../.test-build/components/web/src/local-file-context.js";
 import { projectFileURL } from "../.test-build/components/web/src/local-file-links.js";
 import { turnPresentation, turnWorkLabel } from "../.test-build/components/web/src/turn-presentation.js";
+import { shellOperations, toolCommand } from "../.test-build/components/web/src/tool-kind.js";
 
 const t = (message, values = {}) =>
   message.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? key));
 const tool = (name, text) => ({ role: "assistant", kind: "tool_use", name, text });
 const message = (text, phase, id) => ({ role: "assistant", kind: "text", text, phase, id });
+
+test("compound Codex and Claude commands share input summaries and have no expandable details", () => {
+  const cases = JSON.parse(readFileSync(new URL("../../android/app/src/test/resources/tool-operations.json", import.meta.url), "utf8"));
+  for (const fixture of cases) {
+    const part = { ...tool(fixture.name, fixture.input ? JSON.stringify(fixture.input) : fixture.text), id: "call" };
+    const result = { role: "tool", kind: "tool_result", id: "call", text: "combined output" };
+    const original = JSON.stringify(part);
+    const activities = activitiesFromParts([part, result], "claude", t);
+    if (fixture.operations.length) {
+      assert.deepEqual(shellOperations(toolCommand(part.text, fixture.input)), fixture.operations, fixture.id);
+      assert.equal(activities.length, fixture.operations.length, fixture.id);
+      const projected = { ...part, text: "", tool: { kind: "shell", operations: fixture.operations, href: "/chats/chat/tool-detail?ref=call" } };
+      const lazy = activitiesFromParts([projected, result], "claude", t);
+      assert.deepEqual(lazy.map(a => [a.kind, a.label, a.noDetails]), activities.map(a => [a.kind, a.label, a.noDetails]), fixture.id + " lazy");
+      for (const activity of activities) {
+        assert.equal(activity.use, part);
+        assert.equal(activity.result, result);
+        assert.equal(activity.noDetails, true);
+        assert.equal(renderToStaticMarkup(createElement(ActivityDetail, { activity, t })), "");
+      }
+      for (const input of [[part, result], [projected, result]]) {
+        const html = renderToStaticMarkup(createElement(ToolActivityList, { parts: input, backend: "claude", t, live: true }));
+        assert.equal((html.match(/class="tool-activity-item-summary tool-activity-static"/g) || []).length, activities.length, fixture.id);
+        assert.doesNotMatch(html, /<button[^>]+class="tool-activity-item-summary|class="tool-detail"/);
+      }
+    } else {
+      assert.equal(activities.length, 1, fixture.id);
+      assert.ok(!activities[0].noDetails, fixture.id);
+    }
+    assert.equal(JSON.stringify(part), original, "provider input must remain unchanged");
+  }
+});
+
+test("derived command rows retain original IDs through out-of-order results", () => {
+  const one = { ...tool("Bash", '{"command":"git status; cat a.txt"}'), id: "one" };
+  const two = { ...tool("exec_command", '{"cmd":"rg TODO src | head -20"}'), id: "two" };
+  const result = id => ({ role: "tool", kind: "tool_result", id, text: id + " output" });
+  const activities = activitiesFromParts([one, two, result("two"), result("one")], "codex", t);
+  assert.deepEqual(activities.map(a => [a.use.id, a.result.id, a.noDetails]), [["one", "one", true], ["one", "one", true], ["two", "two", true]]);
+});
+
+test("Codex and Claude tool classification matches server and native shared regression cases", () => {
+  const cases = JSON.parse(readFileSync(new URL("../../android/app/src/test/resources/tool-classification.json", import.meta.url), "utf8"));
+  const labels = { shell: "Ran command", list: "Listed files", read: "Read files", search: "Searched files", web: "Searched the web" };
+  for (const fixture of cases) {
+    const part = tool(fixture.name, fixture.input ? JSON.stringify(fixture.input) : fixture.text);
+    const activity = displayActivity(part, "claude", t);
+    assert.equal(activity.kind, fixture.kind, fixture.id);
+    if (labels[fixture.kind] && !fixture.path && !fixture.query) assert.equal(activity.label, labels[fixture.kind], fixture.id);
+    const projected = displayActivity({ ...part, text: "", tool: { kind: fixture.kind, path: fixture.path, query: fixture.query } }, "claude", t);
+    if (fixture.kind !== "image") assert.equal(projected.label, activity.label, fixture.id + " lazy projection");
+  }
+});
 
 test("Codex view_image and Claude Read images render grouped thumbnails with complete chat-scoped paths", () => {
   const path = "/work/build/artifacts/page 1.png";
