@@ -182,7 +182,11 @@ public class NativeArchitectureTest {
     }
 
     @Test public void selectableSourceMarkdownAndDiffsReuseNativeTabLayoutInsteadOfReplacingContents() throws Exception {
-        for (String component : new String[] {"NativeFileSource", "NativeMarkdown", "NativePatchView"}) {
+        String markdown = Files.readString(root().resolve("android/app/src/main/java/com/cloudgeek/spool/android/NativeMarkdown.java"));
+        assertTrue("Markdown must delegate code rendering to NativeCodeBlock", markdown.contains("new NativeCodeBlock(ui, color, codeContainerSize)"));
+        assertTrue("Markdown must pass the original code literal to NativeCodeBlock", markdown.contains("code.bind(info, literal)"));
+        assertFalse("Markdown must preserve copied tab characters", markdown.contains("replace(\"\\t\""));
+        for (String component : new String[] {"NativeFileSource", "NativeCodeBlock", "NativePatchView"}) {
             String text = Files.readString(root().resolve("android/app/src/main/java/com/cloudgeek/spool/android/" + component + ".java"));
             assertTrue(component + " must share the CSS tab layout", text.contains("NativeCodeTabs."));
             assertFalse(component + " must preserve copied tab characters", text.contains("replace(\"\\t\""));
