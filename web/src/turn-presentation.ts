@@ -22,13 +22,15 @@ export function turnPresentation(parts: TranscriptPart[], running: boolean) {
   const isActivity = (part: TranscriptPart) =>
     part.role !== "user" &&
     ["tool_use", "tool_result", "thinking"].includes(part.kind);
-  let final = parts.filter((part) => isText(part) && part.phase === "final_answer");
+  let lastUser = -1;
+  parts.forEach((part, index) => { if (part.role === "user") lastUser = index; });
+  let final = parts.filter((part, index) => index > lastUser && isText(part) && part.phase === "final_answer");
   if (!final.length && !running) {
     // Older Claude/Codex sessions may lack phases: only text after the last
     // tool/thought can be the completed answer, never earlier progress messages.
-    let lastActivity = -1;
+    let lastActivity = lastUser;
     parts.forEach((part, index) => {
-      if (isActivity(part)) lastActivity = index;
+      if (isActivity(part)) lastActivity = Math.max(lastActivity, index);
     });
     final = parts.filter(
       (part, index) => index > lastActivity && isText(part) && !part.phase,
@@ -36,7 +38,7 @@ export function turnPresentation(parts: TranscriptPart[], running: boolean) {
   }
   const answers = new Set(final);
   const process = parts.filter(
-    (part) => isActivity(part) || (isText(part) && !answers.has(part)),
+    (part) => part.role === "user" || isActivity(part) || (isText(part) && !answers.has(part)),
   );
   let answer = "";
   let previous: TranscriptPart | undefined;

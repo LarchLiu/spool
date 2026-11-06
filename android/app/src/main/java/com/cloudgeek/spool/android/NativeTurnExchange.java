@@ -16,32 +16,23 @@ final class NativeTurnExchange {
         List<NativeTurnExchange> exchanges = new ArrayList<>();
         NativeTurnExchange current = new NativeTurnExchange(start);
         exchanges.add(current);
-        boolean response = false; String inputID = "";
+        boolean response = false; String inputID = ""; long inputTime = 0;
         for (int i = start; i < end; i++) {
             JSONObject part = parts.optJSONObject(i);
             if (part == null) continue;
             if (part.optString("role").equals("user")) {
                 String id = part.optString("id");
-                if (response || !inputID.isEmpty() && !id.isEmpty() && !inputID.equals(id)) {
+                if (response || !inputID.isEmpty() && !id.isEmpty() && !inputID.equals(id)
+                        || inputTime > 0 && part.optLong("timestamp") > 0 && inputTime != part.optLong("timestamp")) {
                     current = new NativeTurnExchange(i); exchanges.add(current);
-                    response = false; inputID = "";
+                    response = false; inputID = ""; inputTime = 0;
                 }
                 current.inputEnd = i + 1;
                 if (!id.isEmpty()) inputID = id;
+                if (part.optLong("timestamp") > 0) inputTime = part.optLong("timestamp");
             } else response = true;
             current.end = i + 1;
         }
         return exchanges;
-    }
-
-    static JSONObject completedSegment(JSONObject turn) {
-        JSONObject segment = new JSONObject();
-        try {
-            java.util.Iterator<String> keys = turn.keys();
-            while (keys.hasNext()) { String key = keys.next(); segment.put(key, turn.opt(key)); }
-            segment.put("status", "completed").put("compacting", false);
-            segment.remove("finished_at");
-        } catch (org.json.JSONException impossible) { throw new IllegalStateException(impossible); }
-        return segment;
     }
 }

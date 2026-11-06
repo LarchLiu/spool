@@ -103,6 +103,25 @@ public class NativeToolKindTest {
         }
     }
 
+    @Test public void steeringInputsKeepTheirAttachmentsAndDoNotMergeAcrossPairedResults() throws Exception {
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false, "en");
+            JSONObject call = new JSONObject("{role:'assistant',kind:'tool_use',name:'Read',id:'call',text:'{\"file_path\":\"a.txt\"}'}");
+            JSONObject first = new JSONObject("{role:'user',kind:'text',text:'Follow up',timestamp:4000}");
+            JSONObject file = new JSONObject("{role:'user',kind:'context',name:'notes.txt',file_path:'/work/notes.txt',text:'notes.txt',timestamp:4000}");
+            JSONObject result = new JSONObject("{role:'tool',kind:'tool_result',id:'call',text:'contents'}");
+            JSONObject next = new JSONObject("{role:'user',kind:'text',text:'Next input'}");
+            for (String backend : new String[] {"codex", "claude"}) {
+                List<NativeActivityModel.Activity> items = NativeActivityModel.fromParts(ui, Arrays.asList(call, first, file, result, next), backend);
+                assertEquals(3, items.size()); assertSame(result, items.get(0).result);
+                assertEquals(Arrays.asList(first, file), items.get(1).input); assertEquals(1, items.get(1).inputStart);
+                assertEquals(Arrays.asList(next), items.get(2).input); assertEquals(4, items.get(2).inputStart);
+                List<NativeActivityModel.Group> groups = NativeActivityModel.groups(ui, items);
+                assertEquals(3, groups.size()); assertEquals("user", groups.get(1).kind); assertEquals("user", groups.get(2).kind);
+            }
+        }
+    }
+
     @Test public void mixedCommandsFoldPerCallAndRetainExpansionAcrossLiveUpdates() throws Exception {
         try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
             NativeUi ui = new NativeUi(controller.get(), false, "en");

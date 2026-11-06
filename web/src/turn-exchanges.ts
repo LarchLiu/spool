@@ -7,18 +7,20 @@ export type TurnExchange = { start: number; inputEnd: number; end: number };
 export function turnExchanges(parts: readonly TranscriptPart[]): TurnExchange[] {
   const exchanges: TurnExchange[] = [];
   let current: TurnExchange = { start: 0, inputEnd: 0, end: 0 };
-  let response = false, inputID = "";
+  let response = false, inputID = "", inputTime = 0;
   exchanges.push(current);
   parts.forEach((part, index) => {
     if (part.role === "user") {
-      if (response || (inputID && part.id && inputID !== part.id)) {
+      if (response || (inputID && part.id && inputID !== part.id) || (inputTime && part.timestamp && inputTime !== part.timestamp)) {
         current = { start: index, inputEnd: index, end: index };
         exchanges.push(current);
         response = false;
         inputID = "";
+        inputTime = 0;
       }
       current.inputEnd = index + 1;
       if (part.id) inputID = part.id;
+      if (part.timestamp) inputTime = part.timestamp;
     } else response = true;
     current.end = index + 1;
   });

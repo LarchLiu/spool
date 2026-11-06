@@ -106,4 +106,12 @@ final class NativeUserRow extends ViewGroup {
         }
         return text.toString();
     }
+
+    static long timestamp(JSONArray parts, int start, int end, long fallback) {
+        for (int i = Math.max(0, start); i < Math.min(parts.length(), end); i++) {
+            JSONObject part = parts.optJSONObject(i);
+            if (part != null && part.optString("role").equals("user") && part.optLong("timestamp") > 0) return part.optLong("timestamp");
+        }
+        return fallback;
+    }
 }

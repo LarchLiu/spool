@@ -18,6 +18,7 @@ import java.util.function.Consumer;
 
 /** Native ToolActivityList with Web-keyed groups/items and conditional detail lifetimes. */
 final class NativeActivityList extends LinearLayout {
+    interface UserInput { void bind(NativeUserRow row, int start, int end); }
     static final class State {
         boolean open, live, initialized;
         int count = -1;
@@ -135,6 +136,18 @@ final class NativeActivityList extends LinearLayout {
         String source;
         Progress(LinearLayout view, String source) { this.view = view; this.source = source; }
     }
+    private final class User {
+        final NativeUserRow view = new NativeUserRow(ui, null, "", 0, null, openLink);
+        NativeActivityModel.Activity current;
+        void bind(NativeActivityModel.Activity activity) {
+            current = activity;
+            if (userInput != null) userInput.bind(view, activity.inputStart, activity.inputStart + activity.input.size());
+            else {
+                org.json.JSONArray input = new org.json.JSONArray(activity.input);
+                view.bind(null, NativeUserRow.text(input, 0, input.length()), 0, java.util.Collections.emptyList());
+            }
+        }
+    }
     private final class Images {
         final LinearLayout view = ui.column();
         final NativeDisclosureRow heading;
@@ -164,6 +177,7 @@ final class NativeActivityList extends LinearLayout {
     private final State state;
     private final Consumer<String> openLink;
     private final NativeTranscriptImages imageActions;
+    private UserInput userInput;
     private final LinearLayout list;
     private final View summaryGap, bottomGap;
     private final Map<Integer, View> gaps = new HashMap<>();
@@ -219,12 +233,17 @@ final class NativeActivityList extends LinearLayout {
     void bind(List<NativeActivityModel.Activity> activities, CharSequence summary, boolean live) {
         org.json.JSONArray input = new org.json.JSONArray().put(live);
         for (NativeActivityModel.Activity activity : activities) input.put(new org.json.JSONArray().put(activity.kind)
-                .put(activity.label).put(activity.detail).put(activity.stats).put(activity.use).put(activity.result).put(activity.noDetails));
+                .put(activity.label).put(activity.detail).put(activity.stats).put(activity.use).put(activity.result).put(activity.noDetails).put(activity.inputStart).put(new org.json.JSONArray(activity.input)));
         if (!NativeChatState.equivalent(bound, input)) {
             bound = NativeChatState.snapshot(input); groups = NativeActivityModel.groups(ui, activities); state.update(live, groups.size());
             update();
         }
         setSummary(summary);
+    }
+
+    void userInput(UserInput input) {
+        userInput = input;
+        for (Object entry : entries.values()) if (entry instanceof User) { User user = (User) entry; user.bind(user.current); }
     }
 
     void setSummary(CharSequence value) {
@@ -244,7 +263,8 @@ final class NativeActivityList extends LinearLayout {
                 toggle.setOnClickListener(button -> {
                     state.open = !state.open;
                     if (state.open && deferredParts != null) bindParts(deferredParts, deferredBackend, currentSummary, false);
-                    else update();
+                    // The body can be unchanged when reopening a just-completed turn.
+                    update();
                 });
                 summaryLabel = toggle.label;
                 toggle.setLayoutParams(new LayoutParams(-1, -2));
@@ -263,7 +283,16 @@ final class NativeActivityList extends LinearLayout {
             NativeActivityModel.Group group = groups.get(i);
             if (i > 0) views.add(gaps.computeIfAbsent(i, ignored -> ui.space(2)));
             String key;
-            if (group.kind.equals("message")) {
+            if (group.kind.equals("user")) {
+                NativeActivityModel.Activity activity = group.activities.get(0);
+                key = "user:" + (activity.use == null ? "" : activity.use.optString("id")) + ":" + i;
+                User entry = (User) entries.get(key);
+                if (entry == null) {
+                    entry = new User(); LayoutParams params = new LayoutParams(-1, -2);
+                    params.topMargin = ui.dp(10); params.bottomMargin = ui.dp(10); entry.view.setLayoutParams(params);
+                }
+                entry.bind(activity); next.put(key, entry); views.add(entry.view);
+            } else if (group.kind.equals("message")) {
                 NativeActivityModel.Activity activity = group.activities.get(0);
                 key = "message:" + (activity.use == null ? "" : activity.use.optString("id")) + ":" + i;
                 Progress progress = (Progress) entries.get(key);

@@ -57,7 +57,8 @@ func TestConvertedHistoryRestoresToolsInFullAndTurnReads(t *testing.T) {
 			if backend == chatmodel.BackendClaude {
 				write = writeClaudeCarry
 			}
-			converted, err := write(root, root, items, time.Now())
+			now := time.Date(2026, 11, 6, 12, 0, 0, 123_000_000, time.UTC)
+			converted, err := write(root, root, items, now)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -66,11 +67,11 @@ func TestConvertedHistoryRestoresToolsInFullAndTurnReads(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := []chatmodel.Part{
-				{Role: "user", Kind: "text", Text: items[0].Text},
+				{Role: "user", Kind: "text", Text: items[0].Text, Timestamp: now.UnixMilli()},
 				{Role: "assistant", Kind: "tool_use", Name: "apply_patch", Text: patch},
 				{Role: "tool", Kind: "tool_result", Text: output},
 				{Role: "assistant", Kind: "text", Text: items[2].Text},
-				{Role: "user", Kind: "text", Text: items[3].Text},
+				{Role: "user", Kind: "text", Text: items[3].Text, Timestamp: now.UnixMilli()},
 				{Role: "assistant", Kind: "tool_use", Name: "Read", Text: items[4].Input},
 				{Role: "tool", Kind: "tool_result", Text: "[error]\nfile not found"},
 				{Role: "assistant", Kind: "text", Text: items[5].Text},

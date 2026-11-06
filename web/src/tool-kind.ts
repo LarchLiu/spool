@@ -11,6 +11,7 @@ export type ActivityKind =
   | "shell"
   | "thinking"
   | "message"
+  | "user"
   | "image"
   | "other";
 

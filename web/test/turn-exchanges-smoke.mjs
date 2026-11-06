@@ -29,16 +29,32 @@ function Scene(){const [chat,setChat]=useState({turns:[]});window.bind=next=>flu
 return <div className="history-inner">{${turns}}</div>}
 createRoot(document.getElementById('root')).render(<Scene/>);`;
 const pixel = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jhP0AAAAASUVORK5CYII=";
-const user = text => ({ role: "user", kind: "text", text });
+const user = (text, timestamp) => ({ role: "user", kind: "text", text, timestamp });
 const answer = text => ({ role: "assistant", kind: "text", phase: "final_answer", text });
 const initial = backend => ({ id: "chat", user_id: "alice", project_id: "project", transcript: { parts: [
-  user("Initial request"), answer("First answer"), user("Follow up"),
+  user("Initial request", 1000), answer("First answer"), user("Follow up", 4000),
   { role: "user", kind: "image", name: "followup.png", image_url: pixel, text: "[image]" },
   { role: "user", kind: "context", name: "notes.txt", file_path: "/work/notes.txt", text: "notes.txt" }, answer("Second answer"),
 ] }, turns: [{ id: "turn", backend, started_at: 1000, status: "running", part_start: 0, input_end: 1, part_end: 6,
   attachments: [{ id: "uploaded", name: "first.txt", media_type: "text/plain", size: 4 }] }] });
 let server, browser;
 const errors = [];
+async function assertWorkflowAlignment(page) {
+  const edges = await page.locator(".turn").last().evaluate(turn => {
+    const edge = selector => turn.querySelector(selector).getBoundingClientRect().right;
+    return {
+      answer: edge(".assistant-text"),
+      workflow: edge(".tool-activity-list"),
+      initial: edge(".user-row .user-message"),
+      followup: edge(".tool-progress-user .user-message"),
+      initialFooter: edge(".user-row .message-footer"),
+      followupFooter: edge(".tool-progress-user .message-footer"),
+    };
+  });
+  assert.ok(Math.abs(edges.workflow - edges.answer) < 1, JSON.stringify(edges));
+  assert.ok(Math.abs(edges.followup - edges.initial) < 1, JSON.stringify(edges));
+  assert.ok(Math.abs(edges.followupFooter - edges.initialFooter) < 1, JSON.stringify(edges));
+}
 const plugin = { name: "turn-exchanges-smoke", resolveId: id => id === "/__turn-exchanges.tsx" ? id : undefined,
   load: id => id === "/__turn-exchanges.tsx" ? script : undefined, configureServer(instance) {
     instance.middlewares.use(async (req, res, next) => {
@@ -57,22 +73,39 @@ try {
   for (const backend of ["codex", "claude"]) {
     const chat = initial(backend);
     await page.evaluate(chat => window.bind(chat), chat);
+    assert.equal(await page.locator(".work-label-toggle").count(), 1);
+    assert.deepEqual(await page.locator(".user-bubble").allTextContents(), ["Initial request"]);
+    assert.deepEqual(await page.locator(".assistant-text").allTextContents(), ["Second answer"]);
+    assert.equal(await page.getByText("First answer", { exact: true }).count(), 0);
+    assert.equal(await page.getByText("Follow up", { exact: true }).count(), 0);
+    await page.locator(".work-label-toggle").click();
     assert.deepEqual(await page.locator(".user-bubble").allTextContents(), ["Initial request", "Follow up"]);
-    assert.deepEqual(await page.locator(".assistant-text").allTextContents(), ["First answer", "Second answer"]);
-    assert.deepEqual(await page.locator(".turn .user-row, .turn .assistant").allTextContents().then(items => items.map(text => ["Initial request", "First answer", "Follow up", "Second answer"].find(label => text.includes(label)))), ["Initial request", "First answer", "Follow up", "Second answer"]);
+    assert.deepEqual(await page.locator(".assistant-text").allTextContents(), ["Second answer"]);
+    assert.deepEqual(await page.locator(".turn .user-row, .turn .tool-progress-message, .turn .assistant").allTextContents().then(items => items.map(text => ["Initial request", "First answer", "Follow up", "Second answer"].find(label => text.includes(label)))), ["Initial request", "First answer", "Follow up", "Second answer"]);
     assert.equal(await page.locator(".user-row").nth(0).locator(".attachment-card").count(), 1);
     assert.equal(await page.locator(".user-row").nth(1).locator(".attachment-card").count(), 2);
-    assert.equal(await page.locator(".user-row").nth(1).locator("time").count(), 0);
+    assert.equal(await page.locator(".user-row").nth(1).locator("time").getAttribute("datetime"), new Date(4000).toISOString());
+    assert.equal(await page.locator(".user-row").nth(1).evaluate(row => getComputedStyle(row).justifyContent), "flex-end");
+    await assertWorkflowAlignment(page);
     assert.equal(await page.locator(".user-row").nth(1).locator("img[alt='followup.png']").count(), 1);
     // Append steering to the same live turn and preserve earlier message DOM.
-    await page.evaluate(() => { window.originalBubble = document.querySelector(".user-bubble"); window.originalAnswer = document.querySelector(".assistant-text"); });
-    chat.transcript.parts.push(user("Third request")); chat.turns[0].part_end++;
+    await page.evaluate(() => { window.originalBubble = document.querySelector(".user-bubble"); window.originalFollowup = document.querySelectorAll(".user-bubble")[1]; });
+    chat.transcript.parts.push(user("Third request", 5000)); chat.turns[0].part_end++;
     await page.evaluate(chat => window.bind(chat), chat);
     assert.deepEqual(await page.locator(".user-bubble").allTextContents(), ["Initial request", "Follow up", "Third request"]);
-    assert.ok(await page.evaluate(() => window.originalBubble === document.querySelector(".user-bubble") && window.originalAnswer === document.querySelector(".assistant-text")));
+    assert.ok(await page.evaluate(() => window.originalBubble === document.querySelector(".user-bubble") && window.originalFollowup === document.querySelectorAll(".user-bubble")[1]));
+    assert.equal(await page.locator(".assistant-text").count(), 0);
+    assert.match(await page.locator(".work-label-toggle").textContent(), /Working for/);
     chat.transcript.parts.push(answer("Third answer")); chat.turns[0].part_end++; chat.turns[0].status = "completed"; chat.turns[0].finished_at = 6000;
     await page.evaluate(chat => window.bind(chat), chat);
-    assert.deepEqual(await page.locator(".assistant-text").allTextContents(), ["First answer", "Second answer", "Third answer"]);
+    assert.deepEqual(await page.locator(".assistant-text").allTextContents(), ["Third answer"]);
+    assert.deepEqual(await page.locator(".user-bubble").allTextContents(), ["Initial request"]);
+    assert.equal(await page.locator(".tool-progress-user").count(), 0);
+    await page.locator(".work-label-toggle").click();
+    assert.deepEqual(await page.locator(".tool-progress-message").allTextContents(), ["First answer", "Second answer"]);
+    assert.deepEqual(await page.locator(".user-bubble").allTextContents(), ["Initial request", "Follow up", "Third request"]);
+    await page.locator(".work-label-toggle").click();
+    assert.deepEqual(await page.locator(".user-bubble").allTextContents(), ["Initial request"]);
     const older = { id: "older", backend, started_at: 1, finished_at: 2, status: "completed", part_start: 0, input_end: 1, part_end: 2 };
     chat.transcript.parts.unshift(user("Older request"), answer("Older answer"));
     for (const turn of chat.turns) { turn.part_start += 2; turn.input_end += 2; turn.part_end += 2; }
@@ -81,10 +114,15 @@ try {
   }
   for (const [name, width] of [["desktop", 1100], ["mobile", 390]]) {
     await page.setViewportSize({ width, height: 1000 });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.screenshot({ path: path.join(output, name + ".png"), fullPage: true });
+    await page.locator(".turn").last().locator(".work-label-toggle").click();
+    await assertWorkflowAlignment(page);
+    await page.screenshot({ path: path.join(output, name + "-expanded.png"), fullPage: true });
+    await page.locator(".turn").last().locator(".work-label-toggle").click();
   }
   assert.deepEqual(errors, []);
-  const report = { orderedInputsAndResponses: true, attachmentsStayWithInput: true, liveAppendPreservesExistingMessages: true, historyPrependPreservesExistingMessages: true, codexAndClaude: true, javascriptErrors: errors };
+  const report = { oneDisclosurePerTurn: true, collapsedShowsInitialInputAndFinalAnswer: true, orderedInputsAndResponses: true, attachmentsStayWithInput: true, workflowMatchesAnswerWidth: true, userMessagesShareRightEdge: true, liveAppendPreservesExistingMessages: true, historyPrependPreservesExistingMessages: true, codexAndClaude: true, javascriptErrors: errors };
   await fs.writeFile(path.join(output, "browser-report.json"), JSON.stringify(report, null, 2) + "\n"); console.log(report);
 } finally { if (browser) await browser.close(); if (server) await server.close(); }

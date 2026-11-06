@@ -2,18 +2,19 @@ package model
 
 // Part is one normalized piece of a session transcript.
 type Part struct {
-	ID       string       `json:"id,omitempty"`
-	Phase    string       `json:"phase,omitempty"`
-	Role     string       `json:"role"`
-	Kind     string       `json:"kind"`
-	Name     string       `json:"name,omitempty"`
-	Text     string       `json:"text"`
-	Cut      int          `json:"cut,omitempty"`
-	Model    string       `json:"model,omitempty"`
-	ImageURL string       `json:"image_url,omitempty"`
-	FilePath string       `json:"file_path,omitempty"`
-	Images   []string     `json:"images,omitempty"`
-	Tool     *ToolSummary `json:"tool,omitempty"`
+	ID        string       `json:"id,omitempty"`
+	Phase     string       `json:"phase,omitempty"`
+	Timestamp int64        `json:"timestamp,omitempty"`
+	Role      string       `json:"role"`
+	Kind      string       `json:"kind"`
+	Name      string       `json:"name,omitempty"`
+	Text      string       `json:"text"`
+	Cut       int          `json:"cut,omitempty"`
+	Model     string       `json:"model,omitempty"`
+	ImageURL  string       `json:"image_url,omitempty"`
+	FilePath  string       `json:"file_path,omitempty"`
+	Images    []string     `json:"images,omitempty"`
+	Tool      *ToolSummary `json:"tool,omitempty"`
 }
 
 // ToolSummary is enough to render a collapsed activity without its input/output.

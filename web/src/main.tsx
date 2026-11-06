@@ -1823,112 +1823,99 @@ function App() {
                   turn.part_start,
                   turn.part_end,
                 );
-                const exchanges = turnExchanges(parts);
+                const inputEnd = turnExchanges(parts)[0].inputEnd;
+                const response = parts.slice(inputEnd);
+                const renderInput = (
+                  input: TranscriptPart[],
+                  initial = false,
+                ) => {
+                  const start = parts.indexOf(input[0]);
+                  const first = initial || start === 0;
+                  const userText = input
+                    .filter(
+                      (part) => part.role === "user" && part.kind === "text",
+                    )
+                    .map((part) => part.text)
+                    .join("\n");
+
+                  const nativeFiles = exchangeFiles(
+                    input,
+                    turn.id,
+                    chat.id,
+                    start,
+                  );
+                  const turnFiles =
+                    first && turn.attachments?.length
+                      ? turn.attachments
+                      : nativeFiles;
+                  return hasUserMessage(userText, turnFiles) ? (
+                    <div className="user-row">
+                      <div className="user-message">
+                        {!!turnFiles.length && (
+                          <AttachmentCards
+                            files={turnFiles}
+                            chatID={chat.id}
+                            t={t}
+                            onPreview={(file, url) => setPreview({ file, url })}
+                          />
+                        )}
+                        {userText && <UserMessage text={userText} t={t} />}
+                        <MessageFooter
+                          role="user"
+                          text={userText}
+                          timestamp={
+                            input.find((part) => part.timestamp)?.timestamp ||
+                            turn.started_at
+                          }
+                          author={operator?.nickname}
+                          locale={locale}
+                          t={t}
+                        />
+                      </div>
+                      <TurnOperatorAvatar person={operator} />
+                    </div>
+                  ) : null;
+                };
                 return (
                   <article className="turn" key={turn.id}>
-                    {exchanges.map((exchange, index) => {
-                      const input = parts.slice(
-                        exchange.start,
-                        exchange.inputEnd,
-                      );
-                      const response = parts.slice(
-                        exchange.inputEnd,
-                        exchange.end,
-                      );
-                      const last = index === exchanges.length - 1;
-                      const segmentTurn = last
-                        ? turn
-                        : {
-                            ...turn,
-                            status: "completed",
-                            compacting: false,
-                            finished_at: undefined,
-                          };
-                      const userText = input
-                        .filter(
-                          (part) =>
-                            part.role === "user" && part.kind === "text",
-                        )
-                        .map((part) => part.text)
-                        .join("\n");
-
-                      const nativeFiles = exchangeFiles(
-                        input,
-                        turn.id,
-                        chat.id,
-                        exchange.start,
-                      );
-                      const turnFiles =
-                        index === 0 && turn.attachments?.length
-                          ? turn.attachments
-                          : nativeFiles;
-                      return (
-                        <div className="turn-exchange" key={exchange.start}>
-                          {hasUserMessage(userText, turnFiles) && (
-                            <div className="user-row">
-                              <div className="user-message">
-                                {!!turnFiles.length && (
-                                  <AttachmentCards
-                                    files={turnFiles}
-                                    chatID={chat.id}
-                                    t={t}
-                                    onPreview={(file, url) =>
-                                      setPreview({ file, url })
-                                    }
-                                  />
-                                )}
-                                {userText && (
-                                  <UserMessage text={userText} t={t} />
-                                )}
-                                <MessageFooter
-                                  role="user"
-                                  text={userText}
-                                  timestamp={
-                                    index === 0 ? turn.started_at : undefined
-                                  }
-                                  author={operator?.nickname}
-                                  locale={locale}
-                                  t={t}
-                                />
-                              </div>
-                              <TurnOperatorAvatar person={operator} />
-                            </div>
-                          )}
-                          <TurnResponse
-                            parts={response}
-                            backend={turn.backend}
-                            t={t}
-                            running={last && turn.status === "running"}
-                            timestamp={last ? turn.finished_at : undefined}
-                            locale={locale}
-                            actions={
-                              last && (
-                                <TurnActions
-                                  chat={chat}
-                                  turn={turn}
-                                  locale={locale}
-                                  t={t}
-                                  resolve={resolveProfile}
-                                />
-                              )
-                            }
-                            summary={workSummary(
-                              segmentTurn,
-                              t,
-                              clock,
-                              effortLabel,
-                              response.some(
-                                (part) =>
-                                  part.phase === "final_answer" &&
-                                  part.role === "assistant" &&
-                                  part.kind === "text" &&
-                                  !!part.text.trim(),
-                              ),
-                            )}
-                          />
-                        </div>
-                      );
-                    })}
+                    {renderInput(parts.slice(0, inputEnd), true)}
+                    <TurnResponse
+                      parts={response}
+                      backend={turn.backend}
+                      t={t}
+                      running={turn.status === "running"}
+                      timestamp={turn.finished_at}
+                      renderUser={renderInput}
+                      locale={locale}
+                      actions={
+                        <TurnActions
+                          chat={chat}
+                          turn={turn}
+                          locale={locale}
+                          t={t}
+                          resolve={resolveProfile}
+                        />
+                      }
+                      summary={workSummary(
+                        turn,
+                        t,
+                        clock,
+                        effortLabel,
+                        response
+                          .slice(
+                            response
+                              .map((part) => part.role)
+                              .lastIndexOf("user") + 1,
+                          )
+                          .some(
+                            (part) =>
+                              part.phase === "final_answer" &&
+                              part.role === "assistant" &&
+                              part.kind === "text" &&
+                              !!part.text.trim(),
+                          ),
+                      )}
+                    />
                     {turn.pending_approval && (
                       <ApprovalCard
                         key={turn.pending_approval.id}

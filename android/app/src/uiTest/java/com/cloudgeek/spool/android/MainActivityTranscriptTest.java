@@ -45,13 +45,13 @@ public class MainActivityTranscriptTest {
     }
     private void show(MainActivityGoalTest.Harness h, JSONObject value) { h.set("chat",value); h.call("renderChat"); layout(h); }
 
-    @Test public void steeringInputsAndFilesStayInOrderWithoutRemountingEarlierMessages() throws Exception {
+    @Test public void steeringInputsAndEarlierAnswersShareOneCollapsibleProcessWithTheirOwnFiles() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             JSONObject value = chat();
             JSONArray parts = new JSONArray()
-                    .put(new JSONObject("{role:'user',kind:'text',text:'Initial request'}"))
+                    .put(new JSONObject("{role:'user',kind:'text',text:'Initial request',timestamp:1000}"))
                     .put(new JSONObject("{role:'assistant',kind:'text',phase:'final_answer',text:'First answer'}"))
-                    .put(new JSONObject("{role:'user',kind:'text',text:'Follow up'}"))
+                    .put(new JSONObject("{role:'user',kind:'text',text:'Follow up',timestamp:4000}"))
                     .put(new JSONObject("{role:'user',kind:'context',name:'notes.txt',file_path:'/fixture/notes.txt',text:'notes.txt'}"))
                     .put(new JSONObject("{role:'assistant',kind:'text',phase:'final_answer',text:'Second answer'}"));
             JSONObject turn = value.getJSONArray("turns").getJSONObject(0);
@@ -62,22 +62,42 @@ public class MainActivityTranscriptTest {
             LinearLayout content = h.get("historyContent");
             List<NativeUserRow> users = views(content, NativeUserRow.class);
             List<NativeTurn> responses = views(content, NativeTurn.class);
-            assertEquals(2, users.size()); assertEquals(2, responses.size());
-            assertNotNull(text(users.get(0), "Initial request")); assertNotNull(text(users.get(1), "Follow up"));
-            assertNotNull(text(responses.get(0), "First answer")); assertNotNull(text(responses.get(1), "Second answer"));
+            assertEquals(1, users.size()); assertEquals(1, responses.size());
+            assertNotNull(text(users.get(0), "Initial request")); assertMissingText(content, "Follow up");
+            assertMissingText(content, "First answer"); assertNotNull(text(responses.get(0), "Second answer"));
             assertEquals(1, users.get(0).attachments.getChildCount()); assertNotNull(text(users.get(0).attachments, "first.txt"));
+            ((View) responses.get(0).activity.summaryLabel.getParent()).performClick(); layout(h);
+            users = views(content, NativeUserRow.class); assertEquals(2, users.size());
+            assertNotNull(text(users.get(1), "Follow up")); assertNotNull(text(responses.get(0).activity, "First answer"));
             assertEquals(1, users.get(1).attachments.getChildCount()); assertNotNull(text(users.get(1).attachments, "notes.txt"));
             assertTrue(content.indexOfChild(users.get(0)) < content.indexOfChild(responses.get(0)));
-            assertTrue(content.indexOfChild(responses.get(0)) < content.indexOfChild(users.get(1)));
-            assertTrue(content.indexOfChild(users.get(1)) < content.indexOfChild(responses.get(1)));
-            assertTrue(users.get(1).message.footer.time.getText().toString().isEmpty());
+            assertTrue(views(responses.get(0).activity, NativeUserRow.class).contains(users.get(1)));
+            assertFalse(users.get(1).message.footer.time.getText().toString().isEmpty());
+            assertEquals(4000L, (long) ReflectionHelpers.getField(users.get(1).message.footer, "timestamp"));
+            assertEquals(users.get(0).getWidth(), users.get(1).getWidth());
+            int[] firstPosition = new int[2], followPosition = new int[2];
+            users.get(0).content.getLocationOnScreen(firstPosition); users.get(1).content.getLocationOnScreen(followPosition);
+            assertEquals(firstPosition[0] + users.get(0).content.getWidth(), followPosition[0] + users.get(1).content.getWidth());
+            assertTrue(users.get(1).content.getRight() > users.get(1).getWidth()/2);
             parts.put(new JSONObject("{role:'user',kind:'text',text:'Third request'}")); turn.put("part_end", parts.length());
             show(h, value);
             List<NativeUserRow> next = views(content, NativeUserRow.class);
             assertEquals(3, next.size()); assertSame(users.get(0), next.get(0)); assertSame(users.get(1), next.get(1));
             assertSame(responses.get(0), views(content, NativeTurn.class).get(0));
             assertNotNull(text(next.get(2), "Third request"));
+            assertNotNull(text(responses.get(0).activity, "Second answer"));
+            assertTrue(responses.get(0).activity.summaryLabel.getText().toString().startsWith("Working for"));
             assertEquals("Original turn state stays running", "running", turn.optString("status"));
+            parts.put(new JSONObject("{role:'assistant',kind:'text',phase:'final_answer',text:'Third answer'}"));
+            turn.put("part_end", parts.length()).put("status", "completed").put("finished_at", 6000); show(h, value);
+            assertEquals(1, views(content, NativeUserRow.class).size()); assertEquals(1, views(content, NativeTurn.class).size());
+            assertMissingText(content, "Follow up"); assertMissingText(content, "Third request"); assertMissingText(content, "First answer");
+            assertNotNull(text(content, "Third answer"));
+            ((View) responses.get(0).activity.summaryLabel.getParent()).performClick(); layout(h);
+            assertEquals(3, views(content, NativeUserRow.class).size());
+            NativeUserRow followup = views(content, NativeUserRow.class).get(1);
+            ((NativeAttachmentCard) followup.attachments.getChildAt(0)).open.performClick();
+            assertEquals("/fixture/notes.txt", h.<NativeFileBrowser>get("fileBrowser").state.target.path);
         }
     }
 
@@ -160,6 +180,9 @@ public class MainActivityTranscriptTest {
     private TextView text(View parent, String value) {
         for (TextView text : views(parent,TextView.class)) if (text.getText().toString().startsWith(value)) return text;
         throw new AssertionError("Missing text " + value);
+    }
+    private void assertMissingText(View parent, String value) {
+        for (TextView text : views(parent,TextView.class)) assertFalse("Unexpected text " + value, text.getText().toString().startsWith(value));
     }
 
     @Test public void settingsOverlayKeepsTranscriptEditorSelectionAndScrollTree() throws Exception {

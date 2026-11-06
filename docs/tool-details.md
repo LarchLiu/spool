@@ -54,6 +54,15 @@ remain separate even when adjacent calls have the same categories; progress
 messages keep their place between calls. Raw inputs and compact server summaries
 use the same grouping on Web and native Android.
 
+Each provider turn has one workflow disclosure. The first user input and the
+answer after the last input stay outside it; intervening user inputs, earlier
+answers and tool/progress messages retain their chronological positions inside.
+Collapsing the workflow hides all intervening inputs and activity together.
+User inputs reuse the initial message's right alignment, attachments, avatar
+and footer. The workflow spans the same width as the final answer. Codex and
+Claude native user records retain their own timestamps; records without one use
+the turn's start time.
+
 ## Verification
 
 Run from the repository root; `run.sh` owns all disposable data and configures

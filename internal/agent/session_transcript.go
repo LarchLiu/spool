@@ -92,6 +92,9 @@ func parseTranscriptReader(backend chatmodel.Backend, reader io.Reader, model st
 			parts = restoreCarryNotes(parts)
 		}
 		for _, part := range parts {
+			if part.Role == "user" {
+				part.Timestamp = nativeTimestamp(record["timestamp"])
+			}
 			chatmodel.AppendPart(&transcript, part)
 		}
 		return nil

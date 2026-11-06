@@ -15,7 +15,7 @@ test("filtered provider-only input hides the whole row while attachment-only inp
   assert.equal(hasUserMessage("Real prompt", []), true);
   assert.equal(hasUserMessage("", [{ id: "attachment" }]), true);
   const source = await readFile(new URL("../src/main.tsx", import.meta.url), "utf8");
-  assert.match(source, /hasUserMessage\(userText, turnFiles\) && \(/);
+  assert.match(source, /hasUserMessage\(userText, turnFiles\) \? \(/);
 });
 
 function overflowFixture(t, height = 40) {

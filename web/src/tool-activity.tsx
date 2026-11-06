@@ -25,6 +25,7 @@ import { MessageFooter } from "./message-footer.js";
 import type { Locale } from "./preferences.js";
 import { firstToolDetailCursor, mergeToolDetailPage, requestToolDetail, toolDetailCache, type ToolDetailCursor, type ToolDetailPage } from "./tool-detail.js";
 import { LocalFileContext } from "./local-file-context.js";
+import { UserMessage } from "./user-message.js";
 import { localFileTarget } from "./local-file-links.js";
 import { toolNameKind, toolCommand, shellCommandKind, shellOperations, shellSearchPath, type ActivityKind } from "./tool-kind.js";
 
@@ -40,6 +41,7 @@ type Activity = {
   images?: string[];
   imageURLs?: string[];
   noDetails?: boolean;
+  input?: TranscriptPart[];
 };
 
 type ActivityGroup = {
@@ -253,8 +255,15 @@ export function activitiesFromParts(
 ): Activity[] {
   const out: Activity[] = [];
   const calls = new Map<string, Activity>();
-  for (const part of parts) {
-    if (part.role === "user") continue;
+  for (const [index, part] of parts.entries()) {
+    if (part.role === "user") {
+      const last = out[out.length - 1];
+      const inputID = last?.input?.reduce((id, input) => input.id || id, "");
+      const inputTime = last?.input?.find(input => input.timestamp)?.timestamp;
+      if (parts[index - 1]?.role === "user" && last?.kind === "user" && (!inputID || !part.id || inputID === part.id) && (!inputTime || !part.timestamp || inputTime === part.timestamp)) last.input!.push(part);
+      else out.push({ kind: "user", label: "", detail: "", use: part, input: [part] });
+      continue;
+    }
     if (part.role === "assistant" && part.kind === "text") {
       if (part.text.trim())
         out.push({ use: part, kind: "message", label: "", detail: part.text });
@@ -355,7 +364,7 @@ function groupActivities(activities: Activity[], t: Translator): ActivityGroup[]
       } else groups.push({ kind: activity.kind, label: compoundLabel([activity], t), activities: [activity], compound: true });
       continue;
     }
-    if (last && !last.compound && last.kind === activity.kind && activity.kind !== "message") {
+    if (last && !last.compound && last.kind === activity.kind && activity.kind !== "message" && activity.kind !== "user") {
       last.activities.push(activity);
       last.label = groupLabel(last.activities, t);
       continue;
@@ -695,12 +704,14 @@ export function ToolActivityList({
   t,
   live = false,
   summary,
+  renderUser,
 }: {
   parts: TranscriptPart[];
   backend?: Backend;
   t: Translator;
   live?: boolean;
   summary?: ReactNode;
+  renderUser?: (parts: TranscriptPart[]) => ReactNode;
 }) {
   const activities = useMemo(
     () => activitiesFromParts(parts, backend, t),
@@ -745,6 +756,12 @@ export function ToolActivityList({
       {activityOpen && (
         <div className="tool-activity-list">
           {groups.map((group, groupIndex) => {
+            if (group.kind === "user") {
+              const input = group.activities[0].input!;
+              return <div className="tool-progress-user" key={`user:${groupIndex}:${input[0].id || ""}`}>
+                {renderUser ? renderUser(input) : <UserMessage text={input.filter(part => part.kind === "text").map(part => part.text).join("\n")} t={t} />}
+              </div>;
+            }
             if (group.compound) {
               const key = `compound:${groupIndex}:${group.activities[0].use?.id || group.activities[0].use?.tool?.ref || ""}`;
               return <CompoundActivities key={key} group={group} t={t} open={openCompounds.has(key)} onToggle={() => setOpenCompounds(old => {
@@ -846,6 +863,7 @@ export function TurnResponse({
   timestamp,
   locale,
   actions,
+  renderUser,
 }: {
   parts: TranscriptPart[];
   backend?: Backend;
@@ -855,11 +873,12 @@ export function TurnResponse({
   timestamp?: number;
   locale?: Locale;
   actions?: ReactNode;
+  renderUser?: (parts: TranscriptPart[]) => ReactNode;
 }) {
   const { process, answer, expanded } = turnPresentation(parts, running);
   return (
     <>
-      <ToolActivityList parts={process} backend={backend} t={t} live={expanded} summary={summary} />
+      <ToolActivityList parts={process} backend={backend} t={t} live={expanded} summary={summary} renderUser={renderUser} />
       {answer && (
         <div className="assistant">
           <div className="assistant-text">

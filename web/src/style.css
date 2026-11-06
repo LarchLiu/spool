@@ -1297,9 +1297,6 @@ button:disabled {
   padding-bottom: 38px;
   animation: arrive 0.2s ease-out;
 }
-.turn-exchange + .turn-exchange {
-  margin-top: 22px;
-}
 .user-row {
   display: flex;
   justify-content: flex-end;
@@ -1935,7 +1932,6 @@ a.attachment-open {
   flex-direction: column;
   gap: 2px;
   margin: 0 0 10px;
-  max-width: min(100%, 760px);
 }
 .tool-activity {
   min-width: 0;
@@ -1947,6 +1943,12 @@ a.attachment-open {
 }
 .tool-progress-message .markdown {
   font-size: 14px;
+}
+.tool-progress-user {
+  min-width: 0;
+}
+.tool-progress-user > .user-row {
+  margin: 10px 0;
 }
 .tool-activity-summary {
   display: flex;

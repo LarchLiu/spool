@@ -15,6 +15,8 @@ final class NativeActivityModel {
         JSONObject use, result;
         String kind, label, detail, stats;
         boolean noDetails;
+        int inputStart;
+        final List<JSONObject> input = new ArrayList<>();
         final List<String> images = new ArrayList<>(), imageURLs = new ArrayList<>();
     }
     static final class Group {
@@ -29,8 +31,24 @@ final class NativeActivityModel {
     static List<Activity> fromParts(NativeUi ui, List<JSONObject> parts, String backend) {
         List<Activity> activities = new ArrayList<>();
         Map<String, Activity> calls = new HashMap<>();
+        int position = 0;
         for (JSONObject part : parts) {
-            if (part.optString("role").equals("user")) continue;
+            int index = position++;
+            if (part.optString("role").equals("user")) {
+                Activity last = activities.isEmpty() ? null : activities.get(activities.size() - 1);
+                String inputID = "";
+                long inputTime = 0;
+                if (last != null) for (JSONObject input : last.input) if (!input.optString("id").isEmpty()) inputID = input.optString("id");
+                if (last != null) for (JSONObject input : last.input) if (input.optLong("timestamp") > 0) inputTime = input.optLong("timestamp");
+                if (last != null && last.kind.equals("user") && last.inputStart + last.input.size() == index
+                        && (inputID.isEmpty() || part.optString("id").isEmpty() || inputID.equals(part.optString("id")))
+                        && (inputTime == 0 || part.optLong("timestamp") == 0 || inputTime == part.optLong("timestamp"))) last.input.add(part);
+                else {
+                    Activity item = new Activity(); item.kind = "user"; item.label = ""; item.detail = ""; item.use = part;
+                    item.inputStart = index; item.input.add(part); activities.add(item);
+                }
+                continue;
+            }
             String kind = part.optString("kind"), text = part.optString("text");
             if (part.optString("role").equals("assistant") && kind.equals("text")) {
                 if (!text.trim().isEmpty()) {
@@ -235,7 +253,7 @@ final class NativeActivityModel {
                 }
                 continue;
             }
-            if (last != null && !last.compound && last.kind.equals(activity.kind) && !activity.kind.equals("message")) {
+            if (last != null && !last.compound && last.kind.equals(activity.kind) && !activity.kind.equals("message") && !activity.kind.equals("user")) {
                 last.activities.add(activity);
                 last.label = groupLabel(ui, last.kind);
             } else {

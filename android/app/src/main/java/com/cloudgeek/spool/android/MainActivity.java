@@ -1477,28 +1477,26 @@ public final class MainActivity extends Activity {
         if (operatorID.isEmpty()) operatorID = page.optString("user_id");
         JSONObject operator = operatorID.isEmpty() ? null : person(operatorID);
         String activityKey = turn.optString("id", page.optString("id") + ":" + turn.optInt("part_start"));
-        List<NativeTurnExchange> exchanges = NativeTurnExchange.split(parts, start, end);
-        for (int i = 0; i < exchanges.size(); i++) {
-            NativeTurnExchange exchange = exchanges.get(i);
-            boolean first = i == 0, last = i == exchanges.size() - 1;
-            String exchangeKey = first ? key : key + "/exchange/" + (exchange.start - start);
-            String stateKey = first ? activityKey : activityKey + "/exchange/" + (exchange.start - start);
-            if (!first) transcriptViews.use(exchangeKey + "/gap", "", () -> ui.space(22));
-            String input = NativeUserRow.text(parts, exchange.start, exchange.inputEnd);
-            JSONArray files = first ? array(turn, "attachments") : new JSONArray();
-            long timestamp = first ? turn.optLong("started_at") : 0;
-            if (NativeUserRow.hasContent(input, files, parts, exchange.start, exchange.inputEnd)) {
-                NativeUserRow userRow = (NativeUserRow) transcriptViews.use(exchangeKey + "/user", "user",
-                        () -> new NativeUserRow(ui, operator, input, timestamp, null, this::openMessageLink));
-                userRow.bind(operator, input, timestamp, userFiles(page, turn, userRow, exchange.start, exchange.inputEnd, first));
-                transcriptViews.use(exchangeKey + "/user-gap", "", () -> ui.space(22));
-            }
-            JSONObject segmentTurn = last ? turn : NativeTurnExchange.completedSegment(turn);
-            NativeTurn response = (NativeTurn) transcriptViews.use(exchangeKey + "/response", "", () -> new NativeTurn(ui, parts, exchange.inputEnd, exchange.end, segmentTurn,
-                    locale().startsWith("zh"), activityStates.computeIfAbsent(stateKey, value -> new NativeActivityList.State()), this::openMessageLink,
-                    transcriptImages(page)));
-            response.bind(parts, exchange.inputEnd, exchange.end, segmentTurn);
+        int inputEnd = NativeTurnExchange.split(parts, start, end).get(0).inputEnd;
+        String input = NativeUserRow.text(parts, start, inputEnd);
+        JSONArray files = array(turn, "attachments");
+        long timestamp = NativeUserRow.timestamp(parts, start, inputEnd, turn.optLong("started_at"));
+        if (NativeUserRow.hasContent(input, files, parts, start, inputEnd)) {
+            NativeUserRow userRow = (NativeUserRow) transcriptViews.use(key + "/user", "user",
+                    () -> new NativeUserRow(ui, operator, input, timestamp, null, this::openMessageLink));
+            userRow.bind(operator, input, timestamp, userFiles(page, turn, userRow, start, inputEnd, true));
+            transcriptViews.use(key + "/user-gap", "", () -> ui.space(22));
         }
+        NativeTurn response = (NativeTurn) transcriptViews.use(key + "/response", "", () -> new NativeTurn(ui, parts, inputEnd, end, turn,
+                locale().startsWith("zh"), activityStates.computeIfAbsent(activityKey, value -> new NativeActivityList.State()), this::openMessageLink,
+                transcriptImages(page)));
+        response.userInput((row, from, to) -> {
+            int first = inputEnd + from, last = inputEnd + to;
+            String text = NativeUserRow.text(parts, first, last);
+            row.setVisibility(NativeUserRow.hasContent(text, new JSONArray(), parts, first, last) ? View.VISIBLE : View.GONE);
+            row.bind(operator, text, NativeUserRow.timestamp(parts, first, last, turn.optLong("started_at")), userFiles(page, turn, row, first, last, false));
+        });
+        response.bind(parts, inputEnd, end, turn);
         JSONObject approval = turn.optJSONObject("pending_approval");
         if (approval != null) transcriptViews.use(key + "/approval/" + approval.optString("id"),
                 new JSONArray().put(approval).put(writable()), () -> approvalCard(page.optString("id"), turn.optString("id"), approval));

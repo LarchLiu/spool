@@ -219,6 +219,30 @@ test("progress messages stay between tools and do not merge tool groups across t
   assert.doesNotMatch(html, /class="assistant"/);
 });
 
+test("steering user inputs stay among tools, retain their files and do not interrupt call-result pairing", () => {
+  const call = { ...tool("Read", '{"file_path":"a.txt"}'), id: "call" };
+  const input = { role: "user", kind: "text", id: "follow", text: "Follow up" };
+  const file = { role: "user", kind: "context", id: "follow", name: "notes.txt", file_path: "/work/notes.txt", text: "notes.txt" };
+  const next = { role: "user", kind: "text", id: "next", text: "Next input" };
+  const result = { role: "tool", kind: "tool_result", id: "call", text: "contents" };
+  const parts = [call, input, file, next, result, tool("Read", '{"file_path":"b.txt"}')];
+  const activities = activitiesFromParts(parts, "codex", t);
+  assert.deepEqual(activities.map(activity => activity.kind), ["read", "user", "user", "read"]);
+  assert.deepEqual(activities[1].input, [input, file]);
+  assert.equal(activities[0].result, result);
+  const legacy = activitiesFromParts([call, { ...input, id: undefined }, result, { ...next, id: undefined }], "codex", t);
+  assert.deepEqual(legacy.map(activity => activity.kind), ["read", "user", "user"]);
+  const html = renderToStaticMarkup(createElement(ToolActivityList, { parts, t, live: true,
+    renderUser: input => createElement("p", {}, input.map(part => part.text).join(" / ")) }));
+  const positions = ["Read a.txt", "Follow up / notes.txt", "Next input", "Read b.txt"].map(text => html.indexOf(text));
+  assert.ok(positions.every(position => position >= 0));
+  assert.deepEqual(positions, [...positions].sort((a,b) => a-b));
+  assert.equal((html.match(/tool-progress-user/g) || []).length, 2);
+  const closed = renderToStaticMarkup(createElement(TurnResponse, { parts: [...parts, message("Final", "final_answer")], t, running: false, summary: "Worked for 5s" }));
+  assert.match(closed, /Final/);
+  assert.doesNotMatch(closed, /Follow up|Next input|Read a.txt|tool-progress-user/);
+});
+
 test("final_answer collapses the process before turn completion and renders only the final outside it", () => {
   const progress = message("Hidden progress", "commentary", "progress");
   const final = message("**Final answer**", "final_answer", "final");

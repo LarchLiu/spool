@@ -56,7 +56,7 @@ final class NativeTurn extends LinearLayout {
         JSONArray inputs = new JSONArray(), content = new JSONArray();
         for (int i = start; i < end; i++) {
             JSONObject part = parts.optJSONObject(i);
-            if (part != null && !part.optString("role").equals("user")) content.put(part);
+            if (part != null) content.put(part);
         }
         inputs.put(content);
         for (String field : new String[] {"status", "compacting", "backend", "model", "reasoning_effort", "started_at", "finished_at"}) inputs.put(turn.opt(field));
@@ -64,21 +64,25 @@ final class NativeTurn extends LinearLayout {
         bound = NativeChatState.snapshot(inputs); current = turn;
         running = turn.optString("status").equals("running");
         List<JSONObject> finalParts = new ArrayList<>(), process = new ArrayList<>();
-        int lastActivity = -1;
+        int lastActivity = -1, lastUser = -1;
+        for (int i = start; i < end; i++) {
+            JSONObject part = parts.optJSONObject(i);
+            if (part != null && part.optString("role").equals("user")) lastUser = i;
+        }
         for (int i = start; i < end; i++) {
             JSONObject part = parts.optJSONObject(i);
             if (part == null) continue;
             if (activity(part)) lastActivity = i;
-            if (text(part) && part.optString("phase").equals("final_answer")) finalParts.add(part);
+            if (i > lastUser && text(part) && part.optString("phase").equals("final_answer")) finalParts.add(part);
         }
         if (finalParts.isEmpty() && !running)
-            for (int i = Math.max(start, lastActivity + 1); i < end; i++) {
+            for (int i = Math.max(start, Math.max(lastUser, lastActivity) + 1); i < end; i++) {
                 JSONObject part = parts.optJSONObject(i);
                 if (part != null && text(part) && part.optString("phase").isEmpty()) finalParts.add(part);
             }
         for (int i = start; i < end; i++) {
             JSONObject part = parts.optJSONObject(i);
-            if (part != null && (activity(part) || text(part) && !finalParts.contains(part))) process.add(part);
+            if (part != null && !finalParts.contains(part)) process.add(part);
         }
         answered = !finalParts.isEmpty();
         CharSequence summary = summary(ui, turn, answered, System.currentTimeMillis());
@@ -105,6 +109,8 @@ final class NativeTurn extends LinearLayout {
         main.removeCallbacks(tick);
         if (running && isAttachedToWindow() && getWindowVisibility() == VISIBLE) tick.run();
     }
+
+    void userInput(NativeActivityList.UserInput input) { activity.userInput(input); }
 
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();

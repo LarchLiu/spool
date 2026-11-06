@@ -302,9 +302,11 @@ test("message avatars sit to the right", async () => {
   );
   assert.match(
     main,
-    /<\/div>\s*<TurnOperatorAvatar person=\{operator\} \/>\s*<\/div>\s*\)\}\s*<TurnResponse/,
+    /<\/div>\s*<TurnOperatorAvatar person=\{operator\} \/>\s*<\/div>\s*\) : null;/,
   );
-  assert.match(main, /actions=\{\s*last && \(\s*<TurnActions[\s\S]*?\/>\s*\)\s*\}/);
+  assert.match(main, /renderUser=\{renderInput\}/);
+  assert.match(main, /actions=\{\s*<TurnActions[\s\S]*?\/>\s*\}/);
+  assert.equal((main.match(/<TurnActions/g) || []).length, 1);
   const css = await readFile(
     new URL("../src/style.css", import.meta.url),
     "utf8",

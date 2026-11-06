@@ -14,7 +14,7 @@ test("Web and Android split steering inputs at the same chronological boundaries
   }
 });
 
-test("final answers and attachments belong to their own input instead of moving across steering", () => {
+test("only the last input's answer stays outside the shared process while attachments stay with each input", () => {
   const parts = [
     { role: "user", kind: "text", text: "First" },
     { role: "user", kind: "image", name: "first.png", image_url: "data:image/png;base64,AA==", text: "[image]" },
@@ -24,10 +24,32 @@ test("final answers and attachments belong to their own input instead of moving 
     { role: "assistant", kind: "text", phase: "final_answer", text: "Second answer" },
   ];
   const ranges = turnExchanges(parts);
-  assert.deepEqual(ranges.map(range => turnPresentation(parts.slice(range.inputEnd, range.end), false).answer), ["First answer", "Second answer"]);
+  const presentation = turnPresentation(parts.slice(ranges[0].inputEnd), false);
+  assert.equal(presentation.answer, "Second answer");
+  assert.deepEqual(presentation.process, parts.slice(2, 5));
+  assert.equal(presentation.expanded, false);
   const files = ranges.map(range => exchangeFiles(parts.slice(range.start, range.inputEnd), "turn", "chat", range.start));
   assert.deepEqual(files.map(items => items.map(item => [item.id, item.name])), [[["turn-image-1", "first.png"]], [["turn-file-4", "notes.txt"]]]);
   assert.equal(files[1][0].preview_url, "/api/chats/chat/file?path=%2Fwork%2Fnotes.txt&download=1");
+});
+
+test("a new steering input returns earlier answers to the process and resumes working", () => {
+  const prior = { role: "assistant", kind: "text", phase: "final_answer", text: "Prior answer" };
+  const input = { role: "user", kind: "text", text: "Please continue" };
+  for (const running of [false, true]) {
+    const presentation = turnPresentation([prior, input], running);
+    assert.equal(presentation.answer, "");
+    assert.equal(presentation.expanded, running);
+    assert.deepEqual(presentation.process, [prior, input]);
+  }
+  const unphased = { role: "assistant", kind: "text", text: "Legacy answer" };
+  assert.equal(turnPresentation([unphased, input], false).answer, "");
+  const tool = { role: "assistant", kind: "tool_use", name: "exec_command", text: "{}" };
+  assert.equal(turnPresentation([tool, unphased, input], false).answer, "");
+  const last = { role: "assistant", kind: "text", text: "Final legacy answer" };
+  const presentation = turnPresentation([unphased, input, last], false);
+  assert.equal(presentation.answer, last.text);
+  assert.deepEqual(presentation.process, [unphased, input]);
 });
 
 test("appending a new user input keeps previous exchange boundaries and source references stable", () => {
