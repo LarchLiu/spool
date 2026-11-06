@@ -87,25 +87,31 @@ public class MainActivityWorkspaceEventsTest {
         ReflectionHelpers.callInstanceMethod(h.activity, "openPeople", ReflectionHelpers.ClassParameter.from(String.class, "bob"));
     }
 
+    private NativePeopleMenu onlineMenu(MainActivityGoalTest.Harness h, boolean dark) throws Exception {
+        JSONObject bob = new JSONObject().put("id", "bob").put("nickname", "Bob").put("state", "online");
+        h.set("profiles", new JSONArray().put(new JSONObject().put("id", "alice").put("nickname", "Alice")).put(bob));
+        h.set("presence", new JSONArray().put(bob));
+        h.set("connected", true); h.set("workspaceReady", true); h.set("theme", dark ? "dark" : "light");
+        h.call("render");
+        View root = h.get("root");
+        for (int i = 0; i < 2; i++) {
+            root.measure(View.MeasureSpec.makeMeasureSpec(360, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY));
+            root.layout(0, 0, 360, 800); root.getViewTreeObserver().dispatchOnPreDraw();
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+        }
+        NativeUi.Header header = h.get("workspaceHeader");
+        assertTrue(header.online.performClick());
+        Shadows.shadowOf(Looper.getMainLooper()).idle();
+        NativePeopleMenu menu = h.get("peopleMenu");
+        assertNotNull(menu); assertTrue(menu.isShowing());
+        return menu;
+    }
+
     @Test public void onlineMenuOpensPrivateChatOnTheFirstTouch() throws Exception {
         for (boolean dark : new boolean[] {false, true}) {
             try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
-                JSONObject bob = new JSONObject().put("id", "bob").put("nickname", "Bob").put("state", "online");
-                h.set("profiles", new JSONArray().put(new JSONObject().put("id", "alice").put("nickname", "Alice")).put(bob));
-                h.set("presence", new JSONArray().put(bob));
-                h.set("connected", true); h.set("workspaceReady", true); h.set("theme", dark ? "dark" : "light");
-                h.call("render");
+                NativePeopleMenu menu = onlineMenu(h, dark);
                 View root = h.get("root");
-                for (int i = 0; i < 2; i++) {
-                    root.measure(View.MeasureSpec.makeMeasureSpec(360, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY));
-                    root.layout(0, 0, 360, 800); root.getViewTreeObserver().dispatchOnPreDraw();
-                    Shadows.shadowOf(Looper.getMainLooper()).idle();
-                }
-                NativeUi.Header header = h.get("workspaceHeader");
-                assertTrue(header.online.performClick());
-                Shadows.shadowOf(Looper.getMainLooper()).idle();
-                NativePeopleMenu menu = h.get("peopleMenu");
-                assertNotNull(menu); assertTrue(menu.isShowing());
                 View row = menu.options.stream().filter(option -> "bob".equals(option.getTag())).findFirst().orElseThrow();
                 assertFalse("The first touch must activate an unfocused person", row.hasFocus());
                 Rect visible = new Rect(); assertTrue(row.getGlobalVisibleRect(visible));
@@ -129,6 +135,38 @@ public class MainActivityWorkspaceEventsTest {
                 assertEquals("Bob", panel.getContentDescription());
                 assertTrue(panel.editor.isFocused());
                 assertTrue("Opening a private chat does not send a message", MainActivityGoalTest.ShadowClient.calls.isEmpty());
+            }
+        }
+    }
+
+    @Test public void outsideTouchesDismissOnlyTheOnlineMenuAndAllowReopening() throws Exception {
+        for (boolean dark : new boolean[] {false, true}) {
+            try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+                NativePeopleMenu menu = onlineMenu(h, dark);
+                for (int mode = 0; mode < 3; mode++) {
+                    if (mode > 0) {
+                        NativeUi.Header header = h.get("workspaceHeader");
+                        assertTrue(header.online.performClick());
+                        Shadows.shadowOf(Looper.getMainLooper()).idle();
+                        menu = h.get("peopleMenu"); assertTrue(menu.isShowing());
+                    }
+                    NativePopupFrame frame = (NativePopupFrame) menu.popover.panel().getParent();
+                    View decor = frame.getRootView();
+                    int[] origin = new int[2], root = new int[2], content = new int[2];
+                    decor.getLocationOnScreen(origin); h.<View>get("root").getLocationOnScreen(root); frame.getLocationOnScreen(content);
+                    float x = mode == 1 ? content[0] - origin[0] + frame.panel.left : root[0] - origin[0] + 180;
+                    float y = mode == 1 ? content[1] - origin[1] + frame.panel.top : root[1] - origin[1] + 760;
+                    int action = mode == 2 ? MotionEvent.ACTION_OUTSIDE : MotionEvent.ACTION_DOWN;
+                    MotionEvent event = MotionEvent.obtain(0, 0, action, x, y, 0);
+                    try { assertTrue(decor.dispatchTouchEvent(event)); } finally { event.recycle(); }
+                    Shadows.shadowOf(Looper.getMainLooper()).idle();
+                    assertFalse("Outside-window, rounded-corner and system outside touches dismiss the list", menu.isShowing());
+                    assertNull(h.<NativeUi>get("ui").activePopover);
+                    assertNull(ReflectionHelpers.getField(menu.popover, "observer"));
+                    assertNull(h.get("peoplePanel"));
+                    assertEquals("", h.<NativePeopleModel>get("inbox").active);
+                    assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
+                }
             }
         }
     }

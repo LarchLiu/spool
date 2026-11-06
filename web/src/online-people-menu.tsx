@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { MessageCircle, Plus, Users } from "lucide-react";
 import type { AvatarIdentity } from "./avatar";
 import {
@@ -33,8 +34,31 @@ export function OnlinePeopleMenu({
   onPeer: (id: string) => void;
   onNewGroup: () => void;
 }) {
+  const menu = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const disclosure = menu.current?.closest("details");
+    if (!disclosure) return;
+    const outside = (event: PointerEvent) => {
+      if (disclosure.open && !disclosure.contains(event.target as Node))
+        disclosure.open = false;
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (!disclosure.open || event.key !== "Escape" || event.isComposing)
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      disclosure.open = false;
+      disclosure.querySelector("summary")?.focus({ preventScroll: true });
+    };
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("keydown", escape);
+    };
+  }, []);
   return (
-    <div className="online-list">
+    <div className="online-list" ref={menu}>
       <div className="online-inbox-row">
         <button
           className="online-chat-person online-inbox-button"
