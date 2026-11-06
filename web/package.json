@@ -1,7 +1,7 @@
 {
   "name": "spool-web",
   "private": true,
-  "version": "0.1.12",
+  "version": "0.1.13",
   "packageManager": "bun@1.4.4",
   "engines": {
     "bun": ">=1.4.4"
@@ -34,5 +34,8 @@
     "typescript": "^5.9.0",
     "vite": "^7.0.0"
   },
-  "trustedDependencies": ["esbuild", "fsevents"]
+  "trustedDependencies": [
+    "esbuild",
+    "fsevents"
+  ]
 }
