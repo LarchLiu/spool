@@ -346,7 +346,7 @@ try{
     await fs.writeFile(path.join(output,`web-${screen}-${width}-${theme}.json`),JSON.stringify(geometry,null,2));
    }
    else {
-    const geometry=await page.locator(selector).evaluate(panel=>{const origin=panel.getBoundingClientRect();const box=e=>{const r=e.getBoundingClientRect();return{x:r.x-origin.x,y:r.y-origin.y,width:r.width,height:r.height};};return{panel:box(panel),heading:box(panel.querySelector('.direct-message-heading')),name:box(panel.querySelector('.people-group-name input')),notice:box(panel.querySelector('.direct-message-notice')),members:box(panel.querySelector('.people-group-members')),rows:[...panel.querySelectorAll('.people-group-members label')].map(box),actions:box(panel.querySelector('.people-group-actions')),count:box(panel.querySelector('.people-group-actions small')),submit:box(panel.querySelector('.people-group-actions button'))};});
+    const geometry=await page.locator(selector).evaluate(panel=>{const origin=panel.getBoundingClientRect();const box=e=>{const r=e.getBoundingClientRect();return{x:r.x-origin.x,y:r.y-origin.y,width:r.width,height:r.height};};return{panel:box(panel),heading:box(panel.querySelector('.dialog-heading')),name:box(panel.querySelector('.people-group-name input')),notice:box(panel.querySelector('.people-group-notice')),members:box(panel.querySelector('.people-group-members')),rows:[...panel.querySelectorAll('.people-group-members label')].map(box),actions:box(panel.querySelector('.people-group-actions')),count:box(panel.querySelector('.people-group-actions small')),submit:box(panel.querySelector('.people-group-actions button'))};});
     await fs.writeFile(path.join(output,`web-${screen}-${width}-${theme}.json`),JSON.stringify(geometry,null,2));
    }
   }

@@ -90,7 +90,7 @@ public class NativeModalTest {
                     assertEquals(ui.dp(profiles[i].blur) / 2f, (float) ReflectionHelpers.getField(frame.surface, "sigma"), 0f);
                     Paint shadow = ReflectionHelpers.getField(frame.surface, "shadowPaint");
                     assertEquals(profiles[i].shadow, (int) ReflectionHelpers.getField(shadow.getColorFilter(), "mColor"));
-                    assertEquals(i == 3 ? Math.round(ui.dp(360) * .94f) : ui.dp(322), frame.surface.getWidth());
+                    assertEquals(i == 3 ? Math.round(ui.dp(360) * .94f) : ui.dp(360 - profiles[i].reserveX), frame.surface.getWidth());
                     assertEquals(frame.getWidth(), frame.panel.left + frame.panel.right, .001f);
                     assertEquals(frame.getHeight(), frame.panel.top + frame.panel.bottom, .001f);
                     if (i == 3) {

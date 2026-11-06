@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { Users, X } from "lucide-react";
 import type { AvatarIdentity } from "./avatar";
 import type { MessageKey, Translator } from "./i18n";
 import { DirectMessageError, type PeopleChatGroup } from "./direct-messages.js";
@@ -21,6 +21,7 @@ export function PeopleGroupPicker({
   onDone: (group: PeopleChatGroup) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const nameInput = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
@@ -30,6 +31,7 @@ export function PeopleGroupPicker({
   useEffect(() => {
     mounted.current = true;
     dialog.current?.showModal();
+    nameInput.current?.focus();
     return () => {
       mounted.current = false;
     };
@@ -72,12 +74,13 @@ export function PeopleGroupPicker({
       ref={dialog}
       className="people-group-picker"
       aria-labelledby="people-group-title"
+      aria-describedby="people-group-notice"
       onCancel={(event) => {
         event.preventDefault();
         onClose();
       }}
     >
-      <div className="direct-message-heading">
+      <div className="dialog-heading">
         <h2 id="people-group-title">
           {t(group ? "Invite people" : "New group chat")}
         </h2>
@@ -95,54 +98,62 @@ export function PeopleGroupPicker({
           void submit();
         }}
       >
-        {!group && (
-          <label className="people-group-name">
-            {t("Group name")}
-            <input
-              autoFocus
-              value={name}
-              maxLength={80}
-              disabled={busy}
-              placeholder={t("Group chat")}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </label>
-        )}
-        <p className="direct-message-notice">
-          {t(
-            "Only selected members can see this group. No history is saved; the group closes when everyone disconnects.",
-          )}
-        </p>
-        <fieldset className="people-group-members" disabled={busy}>
-          <legend>{t("Select online people")}</legend>
-          {!people.length && <p>{t("No other people online.")}</p>}
-          {people.map((person) => (
-            <label key={person.id}>
+        <div className="people-group-body">
+          {!group && (
+            <label className="people-group-name">
+              {t("Group name")}
               <input
-                type="checkbox"
-                value={person.id}
-                checked={selected.includes(person.id)}
-                disabled={
-                  !selected.includes(person.id) && selected.length >= limit
-                }
-                onChange={(event) =>
-                  setSelected((old) =>
-                    event.target.checked
-                      ? [...old, person.id]
-                      : old.filter((id) => id !== person.id),
-                  )
-                }
+                ref={nameInput}
+                autoFocus
+                value={name}
+                maxLength={80}
+                disabled={busy}
+                placeholder={t("Group chat")}
+                onChange={(event) => setName(event.target.value)}
               />
-              <UserAvatar person={person} size={26} />
-              <span>{person.nickname}</span>
             </label>
-          ))}
-        </fieldset>
-        {error && (
-          <p className="direct-message-status error" role="alert">
-            {t(error)}
+          )}
+          <p className="people-group-notice" id="people-group-notice">
+            {t(
+              "Only selected members can see this group. No history is saved; the group closes when everyone disconnects.",
+            )}
           </p>
-        )}
+          <fieldset className="people-group-members" disabled={busy}>
+            <legend>{t("Select online people")}</legend>
+            {!people.length && (
+              <p className="people-group-empty">
+                <Users size={24} strokeWidth={1.5} aria-hidden="true" />
+                {t("No other people online.")}
+              </p>
+            )}
+            {people.map((person) => (
+              <label key={person.id}>
+                <input
+                  type="checkbox"
+                  value={person.id}
+                  checked={selected.includes(person.id)}
+                  disabled={
+                    !selected.includes(person.id) && selected.length >= limit
+                  }
+                  onChange={(event) =>
+                    setSelected((old) =>
+                      event.target.checked
+                        ? [...old, person.id]
+                        : old.filter((id) => id !== person.id),
+                    )
+                  }
+                />
+                <UserAvatar person={person} size={26} />
+                <span>{person.nickname}</span>
+              </label>
+            ))}
+          </fieldset>
+          {error && (
+            <p className="people-group-error error" role="alert">
+              {t(error)}
+            </p>
+          )}
+        </div>
         <div className="people-group-actions">
           <small>{t("{count} selected", { count: selected.length })}</small>
           <button

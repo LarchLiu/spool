@@ -17,7 +17,7 @@ final class NativeModalFrame extends FrameLayout {
     enum Profile {
         APPEARANCE(430, 38, 40, 1, 1, 18, 20, 100, 0x44000000, 7f / 15),
         AVATAR(460, 38, 40, 1, 1, 18, 20, 100, 0x44000000, 7f / 15),
-        GROUP(430, 38, 32, 1, 1, 18, 20, 100, 0x44000000, 7f / 15),
+        GROUP(460, 32, 32, 1, 1, 18, 20, 100, 0x44000000, 7f / 15),
         IMAGE(1080, 0, 0, .94f, .92f, 14, 0, 0, 0, .72f);
         final int width, reserveX, reserveY, radius, offset, blur, shadow;
         final float widthRatio, heightRatio, dim;

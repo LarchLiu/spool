@@ -136,7 +136,7 @@ public class NativePeopleTest {
                     View pickerRoot = picker.modal.surface; snapshot(pickerRoot, "group-picker-" + suffix);
                     JSONArray members = new JSONArray(); for (int i = 0; i < picker.memberRows.getChildCount(); i++) members.put(box(picker.memberRows.getChildAt(i), pickerRoot));
                     JSONObject actionBox = box(picker.actions, pickerRoot); actionBox.put("y", actionBox.getInt("y") - 1).put("height", actionBox.getInt("height") + 1);
-                    JSONObject pickerGeometry = new JSONObject().put("panel", box(pickerRoot, pickerRoot)).put("heading", box(picker.heading, pickerRoot)).put("name", box(picker.name, pickerRoot)).put("notice", box(picker.content.getChildAt(2), pickerRoot)).put("members", box((View) picker.memberRows.getParent(), pickerRoot)).put("rows", members).put("actions", actionBox).put("count", box(picker.count, pickerRoot)).put("submit", box(picker.submit, pickerRoot));
+                    JSONObject pickerGeometry = new JSONObject().put("panel", box(pickerRoot, pickerRoot)).put("heading", box(picker.heading, pickerRoot)).put("name", box(picker.name, pickerRoot)).put("notice", box(picker.notice, pickerRoot)).put("members", box((View) picker.memberRows.getParent(), pickerRoot)).put("rows", members).put("actions", actionBox).put("count", box(picker.count, pickerRoot)).put("submit", box(picker.submit, pickerRoot));
                     java.nio.file.Files.writeString(new File(System.getProperty("spool.ui.artifacts"), "native-group-picker-" + suffix + ".json").toPath(), pickerGeometry.toString(2)); picker.dismiss();
                 }
                 ui.avatars.clear();
@@ -153,6 +153,50 @@ public class NativePeopleTest {
             picker.selected.add("bob"); picker.bind(new JSONArray().put(profiles.getJSONObject(1)).put(profiles.getJSONObject(2)), null); picker.submit.performClick(); assertFalse(picker.submit.isEnabled()); assertFalse(picker.name.isEnabled());
             pending.remove(0).done(null, "offline"); assertEquals(View.VISIBLE, picker.error.getVisibility()); assertTrue(picker.submit.isEnabled());
             picker.bind(new JSONArray().put(profiles.getJSONObject(2)), null); assertTrue(picker.selected.isEmpty()); assertFalse(picker.submit.isEnabled()); picker.selected.add("carol"); picker.bind(new JSONArray().put(profiles.getJSONObject(2)), null); picker.submit.performClick(); picker.dismiss(); pending.remove(0).done(fixture.getJSONArray("peopleGroups").getJSONObject(0), ""); assertEquals(0, completed.get());
+        }
+    }
+
+    @Test @Config(sdk = {26, 35}) public void groupPickerKeepsActionsVisibleAndCountsOnOneLineWhenSpaceIsLimited() throws Exception {
+        for (int width : new int[] {320, 412, 640}) {
+            RuntimeEnvironment.setQualifiers("w" + width + "dp-h800dp-mdpi");
+            for (boolean dark : new boolean[] {false, true}) for (String locale : new String[] {"en", "zh-CN", "ja"}) {
+                try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+                    NativeUi ui = new NativeUi(controller.get(), dark, locale);
+                    NativeGroupPicker picker = new NativeGroupPicker(ui, null, (name, members, completion) -> {}, group -> {});
+                    try {
+                        picker.bind(new JSONArray(), null); picker.show(); idle();
+                        picker.modal.measure(View.MeasureSpec.makeMeasureSpec(ui.dp(width), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(ui.dp(800), View.MeasureSpec.AT_MOST));
+                        picker.modal.layout(0, 0, ui.dp(width), picker.modal.getMeasuredHeight());
+                        assertFalse(picker.submit.isEnabled());
+                        assertEquals(1, picker.count.getLineCount());
+                        assertEquals(ui.muted, picker.notice.getCurrentTextColor());
+                        assertEquals(12, picker.notice.getTextSize() / ui.context.getResources().getDisplayMetrics().scaledDensity, .01f);
+                        assertTrue(picker.memberRows.getChildAt(0).getHeight() >= ui.dp(104));
+                        JSONArray people = new JSONArray();
+                        for (int i = 0; i < 40; i++) people.put(new JSONObject().put("id", "person-" + i).put("nickname", "Member " + i));
+                        picker.bind(people, null);
+                        for (int i = 0; i < 31; i++) picker.selected.add("person-" + i);
+                        picker.bind(people, null);
+                        assertFalse(((android.widget.LinearLayout) picker.memberRows.getChildAt(31)).getChildAt(0).isEnabled());
+                        for (int height : new int[] {800, 320, 800}) {
+                            picker.modal.measure(View.MeasureSpec.makeMeasureSpec(ui.dp(width), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(ui.dp(height), View.MeasureSpec.AT_MOST));
+                            picker.modal.layout(0, 0, ui.dp(width), picker.modal.getMeasuredHeight());
+                            assertTrue(picker.submit.isEnabled());
+                            assertEquals(1, picker.count.getLineCount());
+                            assertEquals(1, picker.submit.getLineCount());
+                            assertTrue(picker.submit.getWidth() >= ui.dp(112));
+                            assertTrue(picker.submit.getWidth() < picker.actions.getWidth() - picker.actions.getPaddingLeft() - picker.actions.getPaddingRight());
+                            assertTrue(picker.count.getLayout().getLineMax(0) <= picker.count.getWidth() + 1);
+                            assertTrue(picker.modal.panel.height() <= ui.dp(height - 32));
+                            assertTrue(picker.actions.getBottom() <= picker.content.getHeight() - ui.dp(1));
+                            assertTrue(picker.scroll.getHeight() > 0);
+                            int footerTop = picker.actions.getTop();
+                            picker.scroll.scrollTo(0, picker.body.getHeight());
+                            assertEquals(footerTop, picker.actions.getTop());
+                        }
+                    } finally { picker.dismiss(); }
+                }
+            }
         }
     }
 
