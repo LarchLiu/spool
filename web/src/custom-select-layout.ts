@@ -11,11 +11,12 @@ export function selectPopupLayout(
   anchor: Rectangle,
   viewport: Viewport,
   count: number,
+  minimumWidth = 180,
 ) {
   const margin = 8,
     gap = 4;
   const width = Math.min(
-    Math.max(180, anchor.width),
+    Math.max(minimumWidth, anchor.width),
     Math.max(0, viewport.width - margin * 2),
   );
   const below = Math.max(

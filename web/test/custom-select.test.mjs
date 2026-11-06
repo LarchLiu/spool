@@ -145,3 +145,25 @@ test("popup caps long menus and never overflows horizontally on narrow or offset
   assert.equal(layout.side, "top");
   assert.equal(layout.maxHeight, 108);
 });
+
+test("icon-only popup keeps inherited anchor coordinates while reserving room for labels", () => {
+  // DOMRect exposes its coordinates through prototype getters, not own keys.
+  const anchor = Object.create({
+    left: 350,
+    top: 620,
+    bottom: 654,
+    right: 384,
+    width: 34,
+  });
+  assert.deepEqual(selectPopupLayout(anchor, view, 3, 300), {
+    left: 82,
+    top: 616,
+    width: 300,
+    maxHeight: 118,
+    side: "top",
+  });
+  assert.equal(
+    selectPopupLayout(anchor, { ...view, width: 240 }, 3, 300).width,
+    224,
+  );
+});

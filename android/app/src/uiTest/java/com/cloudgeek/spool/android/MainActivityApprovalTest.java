@@ -4,7 +4,10 @@ import static org.junit.Assert.*;
 
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Rect;
 import android.os.Looper;
+import android.os.SystemClock;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -62,10 +65,23 @@ public class MainActivityApprovalTest {
     }
 
     private void screenshot(View root, String theme) throws Exception {
+        screenshot(root, theme, null);
+    }
+
+    private void screenshot(View root, String theme, NativePopover popup) throws Exception {
         File directory = new File(System.getProperty("spool.ui.artifacts"), "mcp-approval");
         assertTrue(directory.isDirectory() || directory.mkdirs());
         Bitmap image = Bitmap.createBitmap(root.getWidth(), root.getHeight(), Bitmap.Config.ARGB_8888);
-        root.draw(new Canvas(image));
+        Canvas canvas = new Canvas(image);
+        root.draw(canvas);
+        if (popup != null) {
+            NativePopupFrame frame = (NativePopupFrame) popup.panel().getParent();
+            int[] origin = new int[2]; root.getLocationOnScreen(origin);
+            canvas.save();
+            canvas.translate(frame.window.left - origin[0], frame.window.top - origin[1]);
+            frame.draw(canvas);
+            canvas.restore();
+        }
         try (FileOutputStream output = new FileOutputStream(new File(directory, "android-" + theme + ".png"))) {
             assertTrue(image.compress(Bitmap.CompressFormat.PNG, 100, output));
         } finally { image.recycle(); }
@@ -125,6 +141,9 @@ public class MainActivityApprovalTest {
                 assertTrue(dropdown.performClick());
                 Shadows.shadowOf(Looper.getMainLooper()).idle();
                 assertNotNull(ui.activePopover);
+                assertTrue(ui.activePopover.isShowing());
+                assertEquals("仅允许一次", ui.activePopover.content.getChildAt(0).getContentDescription());
+                assertEquals("本会话内允许", ui.activePopover.content.getChildAt(1).getContentDescription());
                 assertTrue(ui.activePopover.content.getChildAt(1).performClick());
                 Shadows.shadowOf(Looper.getMainLooper()).idle();
                 assertTrue("Choosing a menu option sends no API request", MainActivityGoalTest.ShadowClient.calls.isEmpty());
@@ -136,6 +155,56 @@ public class MainActivityApprovalTest {
                 assertTrue(confirm.performClick()); h.io.run();
                 JSONObject body = new JSONObject(MainActivityGoalTest.ShadowClient.calls.get(0).get(2));
                 assertEquals("session", body.getString("decision")); assertTrue(body.getBoolean("allow"));
+            }
+        }
+    }
+
+    @Test public void computerUseDropdownShowsClickableChoicesInsideTheViewport() throws Exception {
+        for (boolean dark : new boolean[] {false, true}) {
+            try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+                JSONObject approval = request().put("decisions", new JSONArray()
+                        .put(NativeApprovalActions.choice("deny", "Deny", "deny"))
+                        .put(NativeApprovalActions.choice("cancel", "Cancel request", "cancel"))
+                        .put(NativeApprovalActions.choice("allow", "Allow once", "approve")));
+                show(h, approval, dark);
+                View root = h.get("root");
+                assertTrue(description(root, "选择审批选项").performClick());
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                NativeUi ui = h.get("ui");
+                NativePopover popup = ui.activePopover;
+                assertNotNull(popup); assertTrue(popup.isShowing());
+                assertEquals(2, popup.content.getChildCount());
+                assertEquals("取消请求", popup.content.getChildAt(0).getContentDescription());
+                assertEquals("仅允许一次", popup.content.getChildAt(1).getContentDescription());
+                NativePopupFrame frame = (NativePopupFrame) popup.panel().getParent();
+                assertEquals("Approval menu uses the same readable width as Web", ui.dp(300), frame.panel.width());
+                Rect bounds = new Rect(frame.panel); bounds.offset(frame.window.left, frame.window.top);
+                assertTrue(new Rect(0, 0, 360, 800).contains(bounds));
+                View row = popup.content.getChildAt(0);
+                Rect visible = new Rect(); assertTrue(row.getGlobalVisibleRect(visible));
+                assertEquals(row.getWidth(), visible.width()); assertEquals(row.getHeight(), visible.height());
+                screenshot(root, dark ? "dropdown-dark" : "dropdown-light", popup);
+                assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
+
+                // Dispatch a touch through the PopupWindow rather than invoking
+                // an off-screen row's click callback directly.
+                View decor = frame.getRootView();
+                int[] origin = new int[2], position = new int[2];
+                decor.getLocationOnScreen(origin); row.getLocationOnScreen(position);
+                float x = position[0] - origin[0] + row.getWidth() / 2f;
+                float y = position[1] - origin[1] + row.getHeight() / 2f;
+                long now = SystemClock.uptimeMillis();
+                for (int action : new int[] {MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP}) {
+                    MotionEvent event = MotionEvent.obtain(now, now + action * 16, action, x, y, 0);
+                    try { assertTrue("Popup touch action " + action, decor.dispatchTouchEvent(event)); } finally { event.recycle(); }
+                }
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                assertFalse(popup.isShowing());
+                assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
+                assertNotNull(text(root, "拒绝"));
+                assertTrue(text(root, "取消请求").performClick()); h.io.run();
+                JSONObject body = new JSONObject(MainActivityGoalTest.ShadowClient.calls.get(0).get(2));
+                assertEquals("cancel", body.getString("decision")); assertFalse(body.getBoolean("allow"));
             }
         }
     }

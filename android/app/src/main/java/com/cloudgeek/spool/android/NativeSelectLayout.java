@@ -7,7 +7,12 @@ final class NativeSelectLayout {
 
     NativeSelectLayout(float left, float top, float right, float bottom, float anchorWidth,
             float viewX, float viewY, float viewWidth, float viewHeight, int count) {
-        width = Math.min(Math.max(180, anchorWidth), Math.max(0, viewWidth - 16));
+        this(left, top, right, bottom, anchorWidth, viewX, viewY, viewWidth, viewHeight, count, 180);
+    }
+
+    NativeSelectLayout(float left, float top, float right, float bottom, float anchorWidth,
+            float viewX, float viewY, float viewWidth, float viewHeight, int count, float minimumWidth) {
+        width = Math.min(Math.max(minimumWidth, anchorWidth), Math.max(0, viewWidth - 16));
         float below = Math.max(0, viewY + viewHeight - 8 - bottom - 4);
         float before = Math.max(0, top - 4 - viewY - 8);
         float desired = Math.min(280, count * 36 + 10);

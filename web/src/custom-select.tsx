@@ -85,9 +85,11 @@ export function CustomSelect({
       }
       setLayout(
         selectPopupLayout(
-          iconOnly ? { ...anchor, width: Math.max(300, anchor.width) } : anchor,
+          // DOMRect coordinates are prototype getters, so keep it intact.
+          anchor,
           view,
           options.length,
+          iconOnly ? 300 : undefined,
         ),
       );
     };

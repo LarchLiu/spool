@@ -104,7 +104,7 @@ final class NativeApprovalActions extends ViewGroup {
             row.setEnabled(!unavailable || !contentRequired(option));
             if (!row.isEnabled()) row.setAlpha(.45f);
         }
-        menu.showSelect(dropdown, initial);
+        menu.showSelect(dropdown, initial, 300);
     }
     @Override public void setEnabled(boolean enabled) {
         super.setEnabled(enabled); if (deny != null) deny.setEnabled(enabled); if (dropdown != null) dropdown.setEnabled(enabled);

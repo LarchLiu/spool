@@ -44,6 +44,7 @@ final class NativePopover {
     private java.lang.ref.WeakReference<View> anchor;
     private boolean above;
     private boolean selectMode;
+    private int selectMinimumWidth = 180;
     private boolean onlineMode;
     private boolean operatorMode;
     private boolean permissionMode;
@@ -153,6 +154,12 @@ final class NativePopover {
         row.setSelected(selected);
         row.setFocusable(true);
         row.setFocusableInTouchMode(true);
+        // Focus on press so View.onTouchEvent does not spend the first tap
+        // only focusing an unselected option instead of clicking it.
+        row.setOnTouchListener((view, event) -> {
+            if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) view.requestFocus();
+            return false;
+        });
         row.setContentDescription(title);
         row.setAccessibilityDelegate(new View.AccessibilityDelegate() {
             @Override public void onInitializeAccessibilityNodeInfo(View view, android.view.accessibility.AccessibilityNodeInfo info) {
@@ -197,7 +204,12 @@ final class NativePopover {
     }
 
     void showSelect(View anchor, int initial) {
+        showSelect(anchor, initial, 180);
+    }
+
+    void showSelect(View anchor, int initial, int minimumWidth) {
         selectMode = true;
+        selectMinimumWidth = minimumWidth;
         restyle(10, ui.borderStrong, 8, 28, 0x33000000);
         show(anchor, false);
         if (initial >= 0 && initial < content.getChildCount()) content.getChildAt(initial).requestFocus();
@@ -309,7 +321,7 @@ final class NativePopover {
             NativeSelectLayout layout = new NativeSelectLayout(position[0] / density, position[1] / density,
                     (position[0] + anchor.getWidth()) / density, (position[1] + anchor.getHeight()) / density,
                     anchor.getWidth() / density, viewport.left / density, viewport.top / density,
-                    viewport.width() / density, viewport.height() / density, content.getChildCount());
+                    viewport.width() / density, viewport.height() / density, content.getChildCount(), selectMinimumWidth);
             width = ui.dp(layout.width);
             content.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
