@@ -102,14 +102,16 @@ final class NativeMarkdown {
     }
 
     static LinearLayout filePreview(NativeUi ui, String source, Consumer<String> open) {
-        return render(new NativeMarkdown(ui, open, 13, 1.2f), source);
+        Root root = render(new NativeMarkdown(ui, open, 13, 1.2f), source);
+        root.inset(ui.dp(18), ui.dp(8), ui.dp(18), ui.dp(28));
+        return root;
     }
 
     static LinearLayout progress(NativeUi ui, String source, Consumer<String> open) {
         return render(new NativeMarkdown(ui, open, 14, 1.2f), source);
     }
 
-    private static LinearLayout render(NativeMarkdown renderer, String source) {
+    private static Root render(NativeMarkdown renderer, String source) {
         Root root = new Root(renderer);
         renderer.document = new Flow(root);
         renderer.update(source);

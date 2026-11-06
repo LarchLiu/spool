@@ -143,6 +143,19 @@ public class NativeFilesTest {
         return null;
     }
 
+    private void markdownInsets(NativeUi ui, NativeFilePreview preview) {
+        ViewGroup document = (ViewGroup) preview.scroll.getChildAt(0);
+        assertTrue(document.getChildCount() > 0);
+        for (int i = 0; i < document.getChildCount(); i++) {
+            View block = document.getChildAt(i);
+            assertEquals("Markdown blocks must be inset from the left edge", ui.dp(18), block.getLeft());
+            assertEquals("Markdown blocks must be inset from the right edge", document.getWidth() - ui.dp(18), block.getRight());
+        }
+        assertEquals(ui.dp(8), document.getChildAt(0).getTop());
+        View last = document.getChildAt(document.getChildCount() - 1);
+        assertEquals("Bottom padding must be included in the scrollable content", last.getBottom() + ui.dp(28), document.getHeight());
+    }
+
     private void clickLinks(View root) {
         if (root instanceof TextView && ((TextView) root).getText() instanceof Spanned) {
             Spanned text = (Spanned) ((TextView) root).getText();
@@ -233,6 +246,7 @@ public class NativeFilesTest {
             assertNotNull(child(preview.scroll, NativeFileSource.class));
             preview.mode.getChildAt(1).performClick(); layout(preview, 331, 505);
             assertNull(child(preview.scroll, NativeFileSource.class)); assertEquals(1, preview.notices.getChildCount());
+            markdownInsets(ui, preview);
             assertTrue(opened.isEmpty()); assertTrue(external.isEmpty());
             clickLinks(preview.scroll);
             assertEquals(1, opened.size()); assertEquals("docs/../src/NativeUi.java", opened.get(0).path); assertEquals(3, opened.get(0).line);
@@ -338,7 +352,7 @@ public class NativeFilesTest {
                     browser.split.update(.32);
                     model.expanded.clear();
                     browser.select(new NativeFileTarget("README.md", 0, 0)); layout(browser, side, 800);
-                    browser.preview.mode.getChildAt(1).performClick(); layout(browser, side, 800); snapshot(browser, "files-markdown-" + suffix);
+                    browser.preview.mode.getChildAt(1).performClick(); layout(browser, side, 800); markdownInsets(ui, browser.preview); snapshot(browser, "files-markdown-" + suffix);
                     browser.toggleSearch(true); browser.search.setText("nativeui"); layout(browser, side, 800); snapshot(browser, "files-search-" + suffix);
                     browser.toggleSearch(false);
                     browser.preview.close.performClick(); assertNull(browser.split.preview);

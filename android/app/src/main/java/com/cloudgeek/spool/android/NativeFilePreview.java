@@ -126,7 +126,6 @@ final class NativeFilePreview extends LinearLayout {
                     if (link != null) open.accept(link);
                     else if (NativeExternalLink.allowed(address)) external.accept(address);
                 });
-                markdown.setPadding(ui.dp(18), ui.dp(8), ui.dp(18), ui.dp(28));
                 scroll.addView(markdown, new ScrollView.LayoutParams(-1, -2));
             } else {
                 NativeFileSource source = new NativeFileSource(ui, file.optString("path"), file.optString("content"), target == null ? 0 : target.line);
