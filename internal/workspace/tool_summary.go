@@ -55,16 +55,18 @@ func toolBounded(text string, limit int) string {
 // Keep classification/paths/statistics identical to tool-activity.tsx. Only the
 // localized labels belong to the clients; neither client needs the full JSON.
 func summarizeTool(part chatmodel.Part) *chatmodel.ToolSummary {
-	if part.Tool != nil && part.Tool.SourceText == part.Text {
+	if part.Tool != nil && part.Tool.SourceText == part.Text && part.Tool.ImageCount == len(part.Images) {
 		copy := *part.Tool
 		return &copy
 	}
 	summary := &chatmodel.ToolSummary{Version: toolBodyVersion(part.Text), Bytes: len(part.Text), Kind: "other", SourceText: part.Text}
+	summary.ImageCount = len(part.Images)
 	if part.Kind == "tool_result" {
 		return summarizeToolChanges(part.Text, summary)
 	}
 	name := strings.ToLower(strings.TrimSpace(part.Name))
 	tool := name[strings.LastIndex(name, ".")+1:]
+	images := viewedImagePaths(name, part.Text)
 	files := [][]string(nil)
 	if toolPatchName.MatchString(name) {
 		files = toolPatchFile.FindAllStringSubmatch(part.Text, -1)
@@ -73,6 +75,8 @@ func summarizeTool(part chatmodel.Part) *chatmodel.ToolSummary {
 	case part.Kind == "thinking" || name == "reason" || name == "reasoning" || name == "think" || name == "thinking":
 		summary.Kind = "thinking"
 		summary.Preview = toolBounded(part.Text, 2048)
+	case len(images) > 0:
+		summary.Kind, summary.ImagePaths = "image", images
 	case toolPatchName.MatchString(tool):
 		summary.Kind = "write"
 		allAdd, allDelete := len(files) > 0, len(files) > 0
@@ -211,8 +215,13 @@ func slimToolDetails(chat chatmodel.Session) chatmodel.Session {
 			part.Tool = summarizeTool(*part)
 			part.Tool.Ref = toolPartRef(chat.ID, turn, i, *part)
 			part.Tool.Href = "/chats/" + chat.ID + "/tool-detail?ref=" + part.Tool.Ref
+			part.Tool.ImageURLs = nil
+			for index := range part.Images {
+				part.Tool.ImageURLs = append(part.Tool.ImageURLs, "/api/chats/"+chat.ID+"/tool-image?ref="+part.Tool.Ref+"&index="+strconv.Itoa(index))
+			}
 			part.Tool.SourceText = ""
 			part.Text = ""
+			part.Images = nil
 		}
 	}
 	return chat

@@ -11,13 +11,77 @@ import {
   TurnResponse,
   ToolDiffBoundary,
   toolResultDiffs,
+  viewedImagePaths,
 } from "../.test-build/components/web/src/tool-activity.js";
+import { LocalFileContext } from "../.test-build/components/web/src/local-file-context.js";
+import { projectFileURL } from "../.test-build/components/web/src/local-file-links.js";
 import { turnPresentation, turnWorkLabel } from "../.test-build/components/web/src/turn-presentation.js";
 
 const t = (message, values = {}) =>
   message.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? key));
 const tool = (name, text) => ({ role: "assistant", kind: "tool_use", name, text });
 const message = (text, phase, id) => ({ role: "assistant", kind: "text", text, phase, id });
+
+test("Codex view_image and Claude Read images render grouped thumbnails with complete chat-scoped paths", () => {
+  const path = "/work/build/artifacts/page 1.png";
+  for (const name of ["view_image", "functions.view_image", "mcp__tools__view_image", "Read"]) {
+    assert.deepEqual(viewedImagePaths(tool(name, JSON.stringify({ file_path: path }))), [path]);
+  }
+  assert.deepEqual(viewedImagePaths(tool("Read", '{"file_path":"main.go"}')), []);
+  const parts = [tool("functions.view_image", JSON.stringify({ path })), tool("view_image", '{"path":"page2.png"}'), message("Checked both pages", "commentary"), tool("Read", '{"file_path":"page3.png"}')];
+  const html = renderToStaticMarkup(createElement(LocalFileContext.Provider, { value: {
+    imageURL: (target) => projectFileURL("project", target.path, "image", "chat"),
+    previewImage() {},
+  } }, createElement(ToolActivityList, { parts, backend: "codex", t, live: true })));
+  assert.match(html, /Viewed 2 images/);
+  assert.match(html, /Viewed 1 image/);
+  assert.equal((html.match(/class="viewed-image"/g) || []).length, 3);
+  assert.match(html, /src="\/api\/chats\/chat\/file\?path=%2Fwork%2Fbuild%2Fartifacts%2Fpage\+1.png&amp;image=1"/);
+  assert.match(html, /object-fit|loading="lazy"/);
+  assert.ok(html.indexOf("Viewed 2 images") < html.indexOf("Checked both pages"));
+  assert.doesNotMatch(html, /<pre>|&quot;path&quot;|tool-detail/);
+});
+
+test("Claude parallel image results pair by tool_use_id and prefer persisted images over missing files", () => {
+  const first = { ...tool("Read", '{"file_path":"first.png"}'), id: "one" };
+  const second = { ...tool("Read", '{"file_path":"second.png"}'), id: "two" };
+  const result = (id) => ({ role: "tool", kind: "tool_result", id, text: "", tool: { kind: "other", image_urls: [`/api/chats/chat/tool-image?ref=${id}&index=0`] } });
+  const parts = [first, second, result("two"), result("one")];
+  const activities = activitiesFromParts(parts, "claude", t);
+  assert.equal(activities.length, 2);
+  assert.equal(activities[0].result.id, "one");
+  assert.equal(activities[1].result.id, "two");
+  const html = renderToStaticMarkup(createElement(ToolActivityList, { parts, backend: "claude", t, live: true }));
+  assert.match(html, /Viewed 2 images/);
+  assert.equal((html.match(/<img /g) || []).length, 2);
+  assert.match(html, /tool-image\?ref=one&amp;index=0/);
+  assert.doesNotMatch(html, /disabled|<pre>|attachments/);
+});
+
+test("lazy image summaries and parallel batches retain thumbnails without loading raw tool bodies", () => {
+  const batch = tool("multi_tool_use.parallel", JSON.stringify({ tool_uses: ["a.png", "b.png"].map((path) => ({ recipient_name: "functions.view_image", parameters: { path } })) }));
+  assert.deepEqual(viewedImagePaths(batch), ["a.png", "b.png"]);
+  const lazy = { ...batch, text: "", tool: { kind: "image", image_paths: ["a.png", "b.png"], href: "/chats/chat/tool-detail?ref=batch" } };
+  const html = renderToStaticMarkup(createElement(ToolActivityList, { parts: [lazy], t, live: true }));
+  assert.match(html, /Viewed 2 images/);
+  assert.equal((html.match(/class="viewed-image"/g) || []).length, 2);
+  assert.doesNotMatch(html, /Loading tool details|tool-detail-block|<pre>/);
+  assert.deepEqual(viewedImagePaths(tool("Bash", '{"path":"a.png"}')), []);
+});
+
+test("unmatched image result IDs remain separate and remote or active image sources are never fetched", () => {
+  const parts = [
+    { ...tool("Read", '{"file_path":"notes.txt"}'), id: "text-call" },
+    { role: "tool", kind: "tool_result", id: "other-call", text: "[image]", images: ["https://example.com/track.png", "data:image/svg+xml;base64,PHN2Zz4="] },
+  ];
+  const activities = activitiesFromParts(parts, "claude", t);
+  assert.equal(activities.length, 2);
+  assert.equal(activities[0].kind, "read");
+  assert.equal(activities[0].result, undefined);
+  const html = renderToStaticMarkup(createElement(ToolActivityList, { parts, backend: "claude", t, live: true }));
+  assert.match(html, /Viewed 2 images/);
+  assert.doesNotMatch(html, /<img|src=|https:\/\/example.com|data:image/);
+});
 
 test("compaction is only a live work label, never a historical status", () => {
   const turn = { status: "running", compacting: true, started_at: 1000 };

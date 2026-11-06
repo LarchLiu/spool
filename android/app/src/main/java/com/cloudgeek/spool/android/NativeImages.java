@@ -64,6 +64,16 @@ final class NativeImages {
         request(image, "local:" + id, edge, () -> data, completion);
     }
 
+    void inline(ImageView image, String source, int edge, Consumer<Exception> completion) {
+        // Cache keys retain only a digest, never another copy of a multi-megabyte data URL.
+        String key;
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(source.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            key = android.util.Base64.encodeToString(digest, android.util.Base64.NO_WRAP);
+        } catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
+        request(image, "inline:" + key, edge, () -> NativeFileData.inline(source), completion);
+    }
+
     private void request(ImageView image, String identity, int requestedEdge, Load load, Consumer<Exception> completion) {
         int edge = Math.min(2048, Math.max(1, requestedEdge));
         String key = identity + "\n" + edge;

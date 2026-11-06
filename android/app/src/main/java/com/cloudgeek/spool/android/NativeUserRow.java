@@ -87,8 +87,9 @@ final class NativeUserRow extends ViewGroup {
         if (!text.trim().isEmpty() || files.length() > 0) return true;
         for (int i = Math.max(0, start); i < Math.min(parts.length(), end); i++) {
             JSONObject part = parts.optJSONObject(i);
-            if (part != null && part.optString("role").equals("user") && part.optString("kind").equals("image")
-                    && !part.optString("image_url").isEmpty()) return true;
+            if (part != null && part.optString("role").equals("user")
+                    && (part.optString("kind").equals("image") && !part.optString("image_url").isEmpty()
+                    || part.optString("kind").equals("context") && !part.optString("name").isEmpty())) return true;
         }
         return false;
     }

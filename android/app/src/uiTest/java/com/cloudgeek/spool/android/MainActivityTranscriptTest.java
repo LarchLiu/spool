@@ -45,6 +45,53 @@ public class MainActivityTranscriptTest {
     }
     private void show(MainActivityGoalTest.Harness h, JSONObject value) { h.set("chat",value); h.call("renderChat"); layout(h); }
 
+    @Test public void nativeHistoricalImageAndFileAttachmentsRenderWithoutUploadMetadataAndKeepClickOwnership() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(16, 8, android.graphics.Bitmap.Config.ARGB_8888);
+            bitmap.eraseColor(0xff52704a); java.io.ByteArrayOutputStream encoded = new java.io.ByteArrayOutputStream(); bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, encoded); bitmap.recycle();
+            String source = "data:image/png;base64," + android.util.Base64.encodeToString(encoded.toByteArray(), android.util.Base64.NO_WRAP);
+            List<Runnable> jobs = new ArrayList<>(); h.set("fileImages", new NativeImages(jobs::add, path -> { throw new AssertionError("Historical image must use persisted pixels"); }));
+            JSONObject page = chat(), turn = page.getJSONArray("turns").getJSONObject(0);
+            JSONArray parts = page.getJSONObject("transcript").getJSONArray("parts");
+            parts.put(0, new JSONObject().put("role", "user").put("kind", "image").put("name", "screen.png").put("image_url", source).put("text", "[image]"));
+            parts.put(1, new JSONObject().put("role", "user").put("kind", "context").put("name", "notes.txt").put("file_path", "/fixture/notes.txt").put("text", "notes.txt"));
+            show(h, page);
+            NativeUserRow row = views(h.get("historyContent"), NativeUserRow.class).get(0);
+            assertNotNull(row.attachments); assertEquals(2, row.attachments.getChildCount()); assertTrue(row.attachments.getHeight() > 0);
+            NativeAttachmentCard image = (NativeAttachmentCard) row.attachments.getChildAt(0), file = (NativeAttachmentCard) row.attachments.getChildAt(1);
+            assertTrue(image.getWidth() > 0); assertTrue(image.image.getHeight() > 0); assertNotNull(text(file, "notes.txt"));
+            assertEquals(1, jobs.size()); jobs.remove(0).run(); Shadows.shadowOf(Looper.getMainLooper()).idle(); assertNotNull(image.image.getDrawable());
+            image.open.performClick(); NativeImagePreview preview = h.get("imagePreview"); assertNotNull(preview); assertEquals("Preview screen.png", preview.content.getContentDescription());
+            jobs.remove(0).run(); Shadows.shadowOf(Looper.getMainLooper()).idle(); assertNotNull(preview.content.image.getDrawable()); h.call("closeImagePreview");
+            file.open.performClick(); h.io.run();
+            assertEquals("/api/chats/chat-one/file?path=%2Ffixture%2Fnotes.txt&download=1", MainActivityGoalTest.ShadowClient.calls.get(0).get(1));
+            h.set("chatID", "another-chat"); image.open.performClick(); assertNull(h.get("imagePreview"));
+        }
+    }
+
+    @Test public void toolImagePixelsUseCapturedChatAPIAndPreviewIgnoresRetiredOrForeignReferences() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            List<Runnable> jobs = new ArrayList<>(); List<String> requests = new ArrayList<>();
+            h.set("fileImages", new NativeImages(jobs::add, path -> { requests.add(path); throw new java.io.IOException("Missing fixture image"); }));
+            JSONObject page = chat(); JSONArray parts = page.getJSONObject("transcript").getJSONArray("parts");
+            String source = "/api/chats/chat-one/tool-image?ref=" + "a".repeat(64) + "&index=0";
+            parts.put(3, new JSONObject().put("role","assistant").put("kind","tool_use").put("id","image-call").put("name","view_image").put("text","")
+                    .put("tool",new JSONObject().put("kind","image").put("image_paths",new JSONArray().put("/removed/picture.png"))));
+            parts.put(new JSONObject().put("role","tool").put("kind","tool_result").put("id","image-call").put("text","")
+                    .put("tool",new JSONObject().put("image_urls",new JSONArray().put(source))));
+            page.getJSONArray("turns").getJSONObject(1).put("part_end",5);
+            show(h,page); NativeViewedImages grid = views(h.get("historyContent"), NativeViewedImages.class).get(0); View open = grid.getChildAt(0);
+            assertEquals(1,jobs.size()); jobs.remove(0).run(); Shadows.shadowOf(Looper.getMainLooper()).idle(); assertEquals(List.of(source),requests);
+            open.performClick(); NativeImagePreview preview = h.get("imagePreview"); assertNotNull(preview); assertEquals("Preview picture.png",preview.content.getContentDescription());
+            jobs.remove(0).run(); Shadows.shadowOf(Looper.getMainLooper()).idle(); assertEquals(List.of(source,source),requests); h.call("closeImagePreview");
+            h.set("chatID","another-chat"); open.performClick(); assertNull(h.get("imagePreview")); assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
+            h.set("chatID","chat-one"); parts.getJSONObject(3).getJSONObject("tool").put("image_paths",new JSONArray());
+            parts.getJSONObject(4).getJSONObject("tool").put("image_urls",new JSONArray().put(source.replace("chat-one","foreign-chat")));
+            show(h,page); assertTrue(jobs.isEmpty()); assertEquals(2,requests.size());
+            views(h.get("historyContent"), NativeViewedImages.class).get(0).getChildAt(0).performClick(); assertNull(h.get("imagePreview"));
+        }
+    }
+
     @Test public void providerOnlyInputHasNoEmptyUserRowAndCompactionRebindsWithoutTextChanges() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             JSONObject value = chat();

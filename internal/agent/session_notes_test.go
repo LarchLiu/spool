@@ -206,7 +206,7 @@ func TestResumedCodexDoesNotTreatNewAnswersAsImportedTools(t *testing.T) {
 	}
 	want := chatmodel.Part{Role: "assistant", Kind: "text", Text: note, Model: "real-model"}
 	full, err := ParseSessionTranscript(chatmodel.BackendCodex, converted.Path)
-	if err != nil || len(full.Parts) != 4 || full.Parts[3] != want {
+	if err != nil || len(full.Parts) != 4 || !reflect.DeepEqual(full.Parts[3], want) {
 		t.Fatalf("new assistant answer became an imported tool: %+v, %v", full.Parts, err)
 	}
 	turns, err := IndexSessionTurns(chatmodel.BackendCodex, converted.Path, 0)
@@ -214,7 +214,7 @@ func TestResumedCodexDoesNotTreatNewAnswersAsImportedTools(t *testing.T) {
 		t.Fatalf("resumed turn kept imported provenance: %+v, %v", turns, err)
 	}
 	last, err := ReadSessionTurn(chatmodel.BackendCodex, converted.Path, turns[1])
-	if err != nil || len(last.Parts) != 2 || last.Parts[1] != want {
+	if err != nil || len(last.Parts) != 2 || !reflect.DeepEqual(last.Parts[1], want) {
 		t.Fatalf("resumed turn answer became an imported tool: %+v, %v", last.Parts, err)
 	}
 }

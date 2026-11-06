@@ -55,6 +55,7 @@ final class NativeIcons {
             case "terminal": resource = R.drawable.web_icon_terminal; break;
             case "globe": resource = R.drawable.web_icon_globe; break;
             case "list": resource = R.drawable.web_icon_list; break;
+            case "image": resource = R.drawable.web_icon_image; break;
             case "book_open": resource = R.drawable.web_icon_book_open; break;
             case "file_pen": resource = R.drawable.web_icon_file_pen; break;
             case "file_plus": resource = R.drawable.web_icon_file_plus; break;

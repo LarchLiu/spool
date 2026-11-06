@@ -23,6 +23,7 @@ final class NativeActivityList extends LinearLayout {
         int count = -1;
         final Set<Integer> groups = new HashSet<>();
         final Set<String> items = new HashSet<>();
+        final Set<Integer> foldedImages = new HashSet<>();
         void update(boolean nextLive, int nextCount) {
             if (!initialized || nextLive != live) open = nextLive;
             if (nextCount != count || nextLive != live) {
@@ -128,9 +129,35 @@ final class NativeActivityList extends LinearLayout {
         String source;
         Progress(LinearLayout view, String source) { this.view = view; this.source = source; }
     }
+    private final class Images {
+        final LinearLayout view = ui.column();
+        final NativeDisclosureRow heading;
+        final NativeViewedImages thumbnails = new NativeViewedImages(ui, imageActions);
+        NativeActivityModel.Group current;
+        Images(NativeActivityModel.Group group, int index) {
+            heading = new NativeDisclosureRow(ui, "", "image", "", false, true, true, () -> {});
+            heading.setOnClickListener(v -> {
+                if (!state.foldedImages.add(index)) state.foldedImages.remove(index);
+                bind(current, index);
+            });
+            view.addView(heading, new LayoutParams(-1, -2)); bind(group, index);
+        }
+        void bind(NativeActivityModel.Group group, int index) {
+            current = group; heading.bind(group.label, "image", "");
+            boolean open = !state.foldedImages.contains(index); heading.setExpanded(open);
+            if (open) {
+                thumbnails.bind(group);
+                if (thumbnails.getParent() == null) {
+                    LayoutParams params = new LayoutParams(-1, -2); params.setMarginStart(ui.dp(20));
+                    params.topMargin = ui.dp(4); params.bottomMargin = ui.dp(8); view.addView(thumbnails, params);
+                }
+            } else { view.removeView(thumbnails); }
+        }
+    }
     private final NativeUi ui;
     private final State state;
     private final Consumer<String> openLink;
+    private final NativeTranscriptImages imageActions;
     private final LinearLayout list;
     private final View summaryGap, bottomGap;
     private final Map<Integer, View> gaps = new HashMap<>();
@@ -151,12 +178,22 @@ final class NativeActivityList extends LinearLayout {
 
     NativeActivityList(NativeUi ui, List<org.json.JSONObject> parts, String backend, CharSequence summary,
             boolean live, State state, Consumer<String> openLink) {
-        this(ui, state, openLink);
+        this(ui, parts, backend, summary, live, state, openLink, null);
+    }
+
+    NativeActivityList(NativeUi ui, List<org.json.JSONObject> parts, String backend, CharSequence summary,
+            boolean live, State state, Consumer<String> openLink, NativeTranscriptImages images) {
+        this(ui, state, openLink, images);
         bindParts(parts, backend, summary, live);
     }
 
     private NativeActivityList(NativeUi ui, State state, Consumer<String> openLink) {
+        this(ui, state, openLink, null);
+    }
+
+    private NativeActivityList(NativeUi ui, State state, Consumer<String> openLink, NativeTranscriptImages images) {
         super(ui.context); this.ui = ui; this.state = state; this.openLink = openLink;
+        imageActions = images;
         setOrientation(VERTICAL); list = ui.column(); summaryGap = ui.space(12); bottomGap = ui.space(10);
     }
 
@@ -232,6 +269,10 @@ final class NativeActivityList extends LinearLayout {
                     NativeMarkdown.bind(progress.view, activity.detail); progress.source = activity.detail;
                 }
                 next.put(key, progress); views.add(progress.view);
+            } else if (group.kind.equals("image")) {
+                key = "images:" + i; Images entry = (Images) entries.get(key);
+                if (entry == null) entry = new Images(group, i); else entry.bind(group, i);
+                next.put(key, entry); views.add(entry.view);
             } else if (group.activities.size() == 1) {
                 key = i + ":0"; Item item = (Item) entries.get(key);
                 if (item == null) item = new Item(group.activities.get(0), key); else item.bind(group.activities.get(0));

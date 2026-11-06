@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -106,7 +107,7 @@ func TestCompletedSnapshotKeepsInputBeforeNativeWritesAnything(t *testing.T) {
 			populateTurnContent(&turn)
 			app := &App{completed: map[string]completedTurn{"chat-1": {turn: turn}}}
 			got := app.snapshot(chatmodel.Session{ID: "chat-1", Status: turn.Status, Turns: []chatmodel.Turn{{ID: turn.ID, Status: turn.Status}}})
-			if _, exists := app.completed[got.ID]; !exists || len(got.Transcript.Parts) != 1 || got.Transcript.Parts[0] != input {
+			if _, exists := app.completed[got.ID]; !exists || len(got.Transcript.Parts) != 1 || !reflect.DeepEqual(got.Transcript.Parts[0], input) {
 				t.Fatal("empty native metadata discarded the failed input")
 			}
 		})

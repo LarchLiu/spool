@@ -3,15 +3,18 @@ package com.cloudgeek.spool.android;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.json.JSONObject;
 
-/** Web tool-activity.tsx's classification, adjacent result pairing, grouping and change statistics. */
+/** Web tool-activity.tsx's classification, call-ID result pairing, grouping and change statistics. */
 final class NativeActivityModel {
     static final class Activity {
         JSONObject use, result;
         String kind, label, detail, stats;
+        final List<String> images = new ArrayList<>(), imageURLs = new ArrayList<>();
     }
     static final class Group {
         String kind, label;
@@ -23,6 +26,7 @@ final class NativeActivityModel {
 
     static List<Activity> fromParts(NativeUi ui, List<JSONObject> parts, String backend) {
         List<Activity> activities = new ArrayList<>();
+        Map<String, Activity> calls = new HashMap<>();
         for (JSONObject part : parts) {
             if (part.optString("role").equals("user")) continue;
             String kind = part.optString("kind"), text = part.optString("text");
@@ -36,18 +40,30 @@ final class NativeActivityModel {
                     activities.add(item);
                 }
             } else if (kind.equals("tool_result")) {
-                Activity last = activities.isEmpty() ? null : activities.get(activities.size() - 1);
-                if (last != null && last.use != null && last.use.optString("kind").equals("tool_use") && last.result == null)
+                String id = part.optString("id");
+                Activity last = id.isEmpty() ? null : calls.get(id);
+                if (id.isEmpty() && !activities.isEmpty()) {
+                    Activity candidate = activities.get(activities.size() - 1);
+                    if (candidate.use != null && candidate.use.optString("kind").equals("tool_use") && candidate.result == null) last = candidate;
+                }
+                JSONObject summary = part.optJSONObject("tool");
+                List<String> urls = strings(summary == null ? part.optJSONArray("images") : summary.optJSONArray("image_urls"));
+                if (last != null && last.result == null) {
                     last.result = part;
-                else {
+                    if (!urls.isEmpty()) { last.kind = "image"; last.imageURLs.addAll(urls); last.label = imageLabel(ui, urls.size()); }
+                } else {
                     Activity item = new Activity();
-                    item.kind = "other";
-                    item.label = ui.t("Tool result");
+                    item.kind = urls.isEmpty() ? "other" : "image";
+                    item.imageURLs.addAll(urls);
+                    item.label = urls.isEmpty() ? ui.t("Tool result") : imageLabel(ui, urls.size());
                     item.detail = "";
                     item.result = part;
                     activities.add(item);
                 }
-            } else if (kind.equals("tool_use") || kind.equals("thinking")) activities.add(display(ui, part, backend));
+            } else if (kind.equals("tool_use") || kind.equals("thinking")) {
+                Activity activity = display(ui, part, backend); activities.add(activity);
+                if (kind.equals("tool_use") && !part.optString("id").isEmpty()) calls.put(part.optString("id"), activity);
+            }
         }
         return activities;
     }
@@ -56,7 +72,8 @@ final class NativeActivityModel {
         Activity item = new Activity();
         item.use = part;
         JSONObject summary = part.optJSONObject("tool");
-        item.kind = summary == null ? classify(part) : summary.optString("kind", "other");
+        item.images.addAll(summary == null ? imagePaths(part.optString("name"), payload(part.optString("text"))) : strings(summary.optJSONArray("image_paths")));
+        item.kind = !item.images.isEmpty() ? "image" : summary == null ? classify(part) : summary.optString("kind", "other");
         item.detail = part.optString("text");
         JSONObject data = summary == null ? payload(item.detail) : null;
         String path = summary == null ? path(part, data) : summary.optString("path"),
@@ -64,6 +81,7 @@ final class NativeActivityModel {
         String name = part.optString("name").trim();
         if (name.isEmpty()) name = backend.equals("claude") ? "Claude tool" : "Codex tool";
         switch (item.kind) {
+            case "image": item.label = imageLabel(ui, item.images.size()); break;
             case "read": item.label = path.isEmpty() ? ui.t("Read files") : ui.t("Read {path}", "path", shortPath(path)); break;
             case "write": item.label = path.isEmpty() ? ui.t("Edited files") : ui.t("Edited {path}", "path", shortPath(path)); break;
             case "create": item.label = path.isEmpty() ? ui.t("Created files") : ui.t("Created {path}", "path", shortPath(path)); break;
@@ -111,6 +129,37 @@ final class NativeActivityModel {
     }
 
     private static boolean has(String pattern, String value) { return Pattern.compile(pattern).matcher(value).find(); }
+
+    private static List<String> strings(org.json.JSONArray values) {
+        List<String> out = new ArrayList<>();
+        if (values != null) for (int i = 0; i < values.length(); i++) if (values.opt(i) instanceof String) out.add(values.optString(i));
+        return out;
+    }
+
+    private static List<String> imagePaths(String name, JSONObject data) {
+        List<String> paths = new ArrayList<>();
+        if (data == null) return paths;
+        name = name.trim().toLowerCase(Locale.ROOT);
+        boolean imageTool = name.matches("(?:.*(?:\\.|__))?(?:view_?image|image_?view)");
+        if (imageTool || name.equals("read")) {
+            String path = field(data, "path", "file_path", "image_path");
+            if (!path.isEmpty() && path.length() <= 4096 && !has("[\\x00\\r\\n]", path)
+                    && (!name.equals("read") || path.toLowerCase(Locale.ROOT).matches(".*\\.(png|jpe?g|gif|webp)$"))) paths.add(path);
+        } else if (name.equals("multi_tool_use.parallel")) {
+            org.json.JSONArray calls = data.optJSONArray("tool_uses");
+            if (calls == null || calls.length() > 64) return paths;
+            for (int i = 0; i < calls.length(); i++) {
+                JSONObject call = calls.optJSONObject(i);
+                if (call == null || !call.optString("recipient_name").toLowerCase(Locale.ROOT).matches("(?:.*(?:\\.|__))?(?:view_?image|image_?view)")) return new ArrayList<>();
+                List<String> child = imagePaths(call.optString("recipient_name"), call.optJSONObject("parameters"));
+                if (child.isEmpty()) return new ArrayList<>();
+                paths.addAll(child);
+            }
+        }
+        return paths;
+    }
+
+    static String imageLabel(NativeUi ui, int count) { return count == 1 ? ui.t("Viewed 1 image") : ui.t("Viewed {count} images", "count", count); }
 
     private static List<String[]> patchFiles(JSONObject part) {
         List<String[]> files = new ArrayList<>();
@@ -170,6 +219,11 @@ final class NativeActivityModel {
                 groups.add(group);
             }
         }
+        for (Group group : groups) if (group.kind.equals("image")) {
+            int count = 0;
+            for (Activity activity : group.activities) count += activity.imageURLs.isEmpty() ? activity.images.size() : activity.imageURLs.size();
+            group.label = imageLabel(ui, count);
+        }
         return groups;
     }
 
@@ -190,6 +244,7 @@ final class NativeActivityModel {
 
     static String icon(String kind) {
         switch (kind) {
+            case "image": return "image";
             case "read": return "book-open";
             case "write": return "file-pen";
             case "create": return "file-plus";

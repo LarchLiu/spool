@@ -506,6 +506,10 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		a.toolDetailResponse(w, r, a.snapshot(chat), started)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "tool-image" && (r.Method == "GET" || r.Method == "HEAD") {
+		a.toolImageResponse(w, r, a.snapshot(chat))
+		return
+	}
 	if len(parts) == 2 && parts[1] == "history" && r.Method == "GET" {
 		chat = a.snapshot(chat)
 		if chat.History != nil && chat.History.Error != "" {

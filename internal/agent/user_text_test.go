@@ -182,7 +182,7 @@ func TestUserProjectionUsesWholeMessageAndOnlyUserText(t *testing.T) {
 			} else {
 				parts = claudeTranscriptParts("user", blocks, "")
 			}
-			if !genuineUserContent(blocks) || len(parts) != 2 || strings.TrimSpace(parts[0].Text) != "Check these images." || parts[0].Kind != "text" || parts[1].ImageURL != image {
+			if !genuineUserContent(blocks) || len(parts) != 3 || strings.TrimSpace(parts[0].Text) != "Check these images." || parts[0].Kind != "text" || parts[1].ImageURL != image || parts[2].FilePath != "/tmp/notes.txt" || parts[2].Name != "notes.txt" {
 				t.Fatalf("whole-message projection lost or duplicated input: %#v", parts)
 			}
 			if again := projectUserParts(parts); !reflect.DeepEqual(again, parts) {
@@ -315,7 +315,7 @@ func TestNativeUserProjectionAndTurnBoundaries(t *testing.T) {
 			}
 			for i, turn := range turns {
 				transcript, err := ReadSessionTurn(backend, path, turn)
-				if err != nil || (i == 0 && (len(transcript.Parts) != 1 || transcript.Parts[0].Text != "fix it")) || (i == 1 && len(transcript.Parts) != 0) {
+				if err != nil || (i == 0 && (len(transcript.Parts) != 1 || transcript.Parts[0].Text != "fix it")) || (i == 1 && (len(transcript.Parts) != 1 || transcript.Parts[0].Kind != "context" || transcript.Parts[0].Name != "notes.txt")) {
 					t.Fatalf("turn %d has wrong display parts: %#v, %v", i, transcript.Parts, err)
 				}
 			}

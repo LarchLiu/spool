@@ -21,6 +21,7 @@ final class NativeTurn extends LinearLayout {
     private final NativeUi ui;
     private final NativeActivityList.State state;
     private final Consumer<String> open;
+    private final NativeTranscriptImages images;
     private final NativeKeyedViews children;
     private JSONObject current;
     private Object bound;
@@ -32,8 +33,13 @@ final class NativeTurn extends LinearLayout {
 
     NativeTurn(NativeUi ui, JSONArray parts, int start, int end, JSONObject turn,
             boolean chinese, NativeActivityList.State state, Consumer<String> open) {
+        this(ui, parts, start, end, turn, chinese, state, open, null);
+    }
+
+    NativeTurn(NativeUi ui, JSONArray parts, int start, int end, JSONObject turn,
+            boolean chinese, NativeActivityList.State state, Consumer<String> open, NativeTranscriptImages images) {
         super(ui.context);
-        this.ui = ui; this.state = state; this.open = open;
+        this.ui = ui; this.state = state; this.open = open; this.images = images;
         setOrientation(VERTICAL);
         children = new NativeKeyedViews(this);
         tick = new Runnable() {
@@ -78,7 +84,7 @@ final class NativeTurn extends LinearLayout {
         CharSequence summary = summary(ui, turn, answered, System.currentTimeMillis());
         children.begin();
         activity = (NativeActivityList) children.use("activity", "activity",
-                () -> new NativeActivityList(ui, process, turn.optString("backend"), summary, running && !answered, state, open));
+                () -> new NativeActivityList(ui, process, turn.optString("backend"), summary, running && !answered, state, open, images));
         activity.bindParts(process, turn.optString("backend"), summary, running && !answered);
         StringBuilder answer = new StringBuilder();
         String previous = "";

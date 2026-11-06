@@ -1547,6 +1547,55 @@ a.attachment-open {
 .attachment-open:hover img {
   filter: brightness(0.92);
 }
+.viewed-image-thumbnails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 0 10px;
+}
+.viewed-images > .tool-activity-summary {
+  width: fit-content;
+  max-width: 100%;
+}
+.viewed-images .tool-activity-caret {
+  opacity: 1;
+}
+.viewed-image {
+  display: grid;
+  place-items: center;
+  width: 80px;
+  height: 80px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--elevated);
+  color: var(--muted);
+  cursor: pointer;
+}
+.viewed-image:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+.viewed-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.viewed-image-unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 5px;
+  font-size: 10px;
+}
+.viewed-image-unavailable span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .attachment-remove {
   position: absolute;
   top: 5px;

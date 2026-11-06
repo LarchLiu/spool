@@ -292,13 +292,19 @@ func codexTranscriptParts(item map[string]any, model string) []chatmodel.Part {
 		}
 		return []chatmodel.Part{transcriptModelPart(chatmodel.Part{Role: "assistant", Kind: "thinking", Text: strings.Join(text, "\n\n")}, model)}
 	case "functioncall":
-		return []chatmodel.Part{{Role: "assistant", Kind: "tool_use", Name: stringValue(item["name"]), Text: prettyJSONText(stringValue(item["arguments"])), Model: model}}
+		return []chatmodel.Part{{ID: stringValue(item["call_id"]), Role: "assistant", Kind: "tool_use", Name: stringValue(item["name"]), Text: prettyJSONText(stringValue(item["arguments"])), Model: model}}
 	case "customtoolcall":
-		return []chatmodel.Part{{Role: "assistant", Kind: "tool_use", Name: stringValue(item["name"]), Text: stringValue(item["input"]), Model: model}}
+		return []chatmodel.Part{{ID: stringValue(item["call_id"]), Role: "assistant", Kind: "tool_use", Name: stringValue(item["name"]), Text: stringValue(item["input"]), Model: model}}
 	case "localshellcall":
 		return []chatmodel.Part{{Role: "assistant", Kind: "tool_use", Name: "shell", Text: codexCommandText(item), Model: model}}
+	case "imageview":
+		if path := stringValue(item["path"]); path != "" {
+			input, _ := json.Marshal(map[string]string{"path": path})
+			return []chatmodel.Part{{ID: stringValue(item["id"]), Role: "assistant", Kind: "tool_use", Name: "view_image", Text: string(input), Model: model}}
+		}
+		return nil
 	case "functioncalloutput", "customtoolcalloutput":
-		return []chatmodel.Part{{Role: "tool", Kind: "tool_result", Text: codexTranscriptOutput(item["output"])}}
+		return []chatmodel.Part{{ID: stringValue(item["call_id"]), Role: "tool", Kind: "tool_result", Text: codexTranscriptOutput(item["output"]), Images: codexToolImages(item["output"])}}
 	case "commandexecution":
 		command := codexCommandText(item)
 		if command == "" {
@@ -519,6 +525,10 @@ func codexTranscriptOutput(value any) string {
 		return strings.Join(output, "\n")
 	}
 	if object, ok := value.(map[string]any); ok {
+		switch stringValue(object["type"]) {
+		case "input_image", "output_image", "image":
+			return "[image]"
+		}
 		for _, key := range []string{"content", "output", "text", "aggregated_output", "aggregatedOutput", "stdout", "stderr"} {
 			if text := codexTranscriptOutput(object[key]); text != "" {
 				return text
@@ -532,9 +542,31 @@ func codexTranscriptOutput(value any) string {
 	return string(encoded)
 }
 
+func codexToolImages(value any) []string {
+	var images []string
+	switch value := value.(type) {
+	case []any:
+		for _, block := range value {
+			images = append(images, codexToolImages(block)...)
+		}
+	case map[string]any:
+		switch stringValue(value["type"]) {
+		case "input_image", "output_image", "image":
+			if url := nativeImageURL(stringValue(value["image_url"])); url != "" {
+				images = append(images, url)
+			}
+		default:
+			for _, key := range []string{"content", "output"} {
+				images = append(images, codexToolImages(value[key])...)
+			}
+		}
+	}
+	return images
+}
+
 func claudeToolResultPart(item map[string]any) chatmodel.Part {
 	parts := claudeTranscriptParts("user", []any{map[string]any{
-		"type": "tool_result", "content": item["content"],
+		"type": "tool_result", "content": item["content"], "tool_use_id": item["tool_use_id"],
 	}}, "")
 	if len(parts) > 0 {
 		return parts[0]
@@ -580,10 +612,11 @@ func claudeTranscriptParts(role string, content any, model string) []chatmodel.P
 						text = string(encoded)
 					}
 				}
-				parts = append(parts, chatmodel.Part{Role: role, Kind: "tool_use", Name: name, Model: model, Text: text})
+				parts = append(parts, chatmodel.Part{ID: stringValue(block["id"]), Role: role, Kind: "tool_use", Name: name, Model: model, Text: text})
 			}
 		case "tool_result":
 			var text string
+			var images []string
 			switch result := block["content"].(type) {
 			case string:
 				text = result
@@ -598,12 +631,18 @@ func claudeTranscriptParts(role string, content any, model string) []chatmodel.P
 						}
 					case "image":
 						content = append(content, "[image]")
+						source, _ := entry["source"].(map[string]any)
+						if source["type"] == "base64" {
+							if url := nativeImageURL("data:" + stringValue(source["media_type"]) + ";base64," + stringValue(source["data"])); url != "" {
+								images = append(images, url)
+							}
+						}
 					}
 				}
 				text = strings.Join(content, "\n")
 			}
 			if text != "" {
-				parts = append(parts, chatmodel.Part{Role: "tool", Kind: "tool_result", Text: text})
+				parts = append(parts, chatmodel.Part{ID: stringValue(block["tool_use_id"]), Role: "tool", Kind: "tool_result", Text: text, Images: images})
 			}
 		case "image":
 			source, _ := block["source"].(map[string]any)

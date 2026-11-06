@@ -93,7 +93,7 @@ func (s *Store) readHistorySnapshot(chat chatmodel.Session, file *nativeHistory)
 			parts = []chatmodel.Part{}
 		}
 		for _, part := range transcript.Parts {
-			if part.Role == "user" && part.Kind == "context" {
+			if part.Role == "user" && part.Kind == "context" && part.FilePath == "" {
 				continue
 			}
 			parts = append(parts, part)

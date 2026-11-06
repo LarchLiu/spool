@@ -268,6 +268,10 @@ func (h *codexHistory) addEvent(payload map[string]any, model string, transcript
 		return h.addCommandExecution(item, model, transcript)
 	case "filechange":
 		return h.addFileChange(item, model, transcript)
+	case "imageview":
+		if h.byCallID[stringValue(item["id"])] == nil {
+			return codexTranscriptParts(item, model)
+		}
 	case "agentmessage":
 		// Some native Codex rollouts only persist the human-readable final
 		// answer in event_msg.item_completed.AgentMessage. Newer rollouts also

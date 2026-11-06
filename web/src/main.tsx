@@ -105,7 +105,7 @@ import {
 import { Sidebar } from "./sidebar";
 import { FileSidebar, type FileSelection } from "./file-sidebar";
 import { LocalFileContext } from "./local-file-context";
-import type { LocalFileTarget } from "./local-file-links";
+import { projectFileURL, type LocalFileTarget } from "./local-file-links";
 import { useSessionWorkspace } from "./use-session-workspace";
 import { panelStorageKey, parsePanelLayout } from "./panel-layout";
 import { AgentModelMenu } from "./agent-model-menu";
@@ -303,10 +303,6 @@ function App() {
     },
     [fileScope],
   );
-  const localFileContext = useMemo(
-    () => ({ openFile: project ? openLocalFile : undefined }),
-    [project, openLocalFile],
-  );
   useEffect(() => {
     try {
       localStorage.setItem(panelStorageKey, JSON.stringify(panels));
@@ -369,6 +365,19 @@ function App() {
     file: Attachment;
     url: string;
   } | null>(null);
+  const localFileContext = useMemo(
+    () => ({
+      openFile: project ? openLocalFile : undefined,
+      imageURL: project
+        ? (target: LocalFileTarget) => projectFileURL(project, target.path, "image", fileChatID)
+        : undefined,
+      previewImage: (name: string, url: string) => setPreview({
+        file: { id: url, name, media_type: "image/unknown", size: 0 },
+        url,
+      }),
+    }),
+    [project, fileChatID, openLocalFile],
+  );
   const fileInput = useRef<HTMLInputElement>(null);
   const filesRef = useRef(files);
   filesRef.current = files;
@@ -1820,7 +1829,7 @@ function App() {
                   .map((part) => part.text)
                   .join("\n");
 
-                const nativeImages: Attachment[] = parts.flatMap(
+                const nativeFiles: Attachment[] = parts.flatMap(
                   (part, index) =>
                     part.role === "user" &&
                     part.kind === "image" &&
@@ -1837,11 +1846,14 @@ function App() {
                             preview_url: part.image_url,
                           },
                         ]
-                      : [],
+                      : part.role === "user" && part.kind === "context" && part.name && part.file_path
+                        ? [{ id: turn.id + "-file-" + index, name: part.name, media_type: "application/octet-stream", size: 0,
+                          preview_url: `/api/chats/${encodeURIComponent(chat.id)}/file?path=${encodeURIComponent(part.file_path)}&download=1` }]
+                        : [],
                 );
                 const turnFiles = turn.attachments?.length
                   ? turn.attachments
-                  : nativeImages;
+                  : nativeFiles;
                 return (
                   <article className="turn" key={turn.id}>
                     {hasUserMessage(userText, turnFiles) && (

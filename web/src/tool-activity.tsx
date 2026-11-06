@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Component, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -12,6 +12,8 @@ import {
   Wrench,
   Brain,
   BookOpen,
+  Images,
+  ImageOff,
 } from "lucide-react";
 import { FileDiff } from "@pierre/diffs/react";
 import type { Backend, TranscriptPart } from "./types";
@@ -22,6 +24,8 @@ import { turnPresentation } from "./turn-presentation.js";
 import { MessageFooter } from "./message-footer.js";
 import type { Locale } from "./preferences.js";
 import { firstToolDetailCursor, mergeToolDetailPage, requestToolDetail, toolDetailCache, type ToolDetailCursor, type ToolDetailPage } from "./tool-detail.js";
+import { LocalFileContext } from "./local-file-context.js";
+import { localFileTarget } from "./local-file-links.js";
 
 export { toolResultDiffs } from "./tool-diff.js";
 
@@ -36,6 +40,7 @@ type ActivityKind =
   | "shell"
   | "thinking"
   | "message"
+  | "image"
   | "other";
 
 type Activity = {
@@ -45,6 +50,8 @@ type Activity = {
   label: string;
   detail: string;
   stats?: string;
+  images?: string[];
+  imageURLs?: string[];
 };
 
 type ActivityGroup = {
@@ -82,6 +89,40 @@ function stringField(input: Record<string, unknown> | undefined, keys: string[])
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return "";
+}
+
+const imageToolName = /(?:^|\.|__)(?:view_?image|image_?view)$/i;
+
+export function viewedImagePaths(part: TranscriptPart): string[] {
+  if (part.tool) return part.tool.image_paths || [];
+  const name = part.name?.trim().toLowerCase() || "";
+  if (!imageToolName.test(name) && name !== "multi_tool_use.parallel" && name !== "read") return [];
+  return imageCallPaths(name, payload(part.text));
+}
+
+function imageCallPaths(name: string, data: Record<string, unknown> | undefined): string[] {
+  if (!data) return [];
+  if (imageToolName.test(name) || name === "read") {
+    for (const key of ["path", "file_path", "image_path"]) {
+      const path = data[key];
+      if (typeof path === "string" && path.trim() && path.length <= 4096 && !/[\0\r\n]/.test(path)) {
+        if (name === "read" && !/\.(?:png|jpe?g|gif|webp)$/i.test(path)) return [];
+        return [path];
+      }
+    }
+    return [];
+  }
+  const calls = data.tool_uses;
+  if (name !== "multi_tool_use.parallel" || !Array.isArray(calls) || !calls.length || calls.length > 64) return [];
+  const paths: string[] = [];
+  for (const call of calls) {
+    const tool = typeof call?.recipient_name === "string" ? call.recipient_name.trim().toLowerCase() : "";
+    if (!imageToolName.test(tool)) return [];
+    const images = imageCallPaths(tool, call.parameters);
+    if (!images.length) return [];
+    paths.push(...images);
+  }
+  return paths;
 }
 
 function patchFiles(part: TranscriptPart) {
@@ -174,12 +215,16 @@ export function displayActivity(
   t: Translator,
 ): Omit<Activity, "result"> {
   const data = part.tool ? undefined : payload(part.text);
-  const kind = part.tool?.kind || classify(part);
+  const images = viewedImagePaths(part);
+  const kind = images.length ? "image" : part.tool?.kind || classify(part);
   const name = part.name?.trim() || (backend === "claude" ? "Claude tool" : "Codex tool");
   const path = part.tool?.path || extractPath(part, data);
   const query = part.tool?.query || extractQuery(part, data);
   let label = "";
   switch (kind) {
+    case "image":
+      label = images.length === 1 ? t("Viewed 1 image") : t("Viewed {count} images", { count: images.length });
+      break;
     case "read":
       label = path ? t("Read {path}", { path: shortPath(path) }) : t("Read files");
       break;
@@ -232,7 +277,7 @@ export function displayActivity(
       label = name ? t("Used {tool}", { tool: titleName(name) }) : t("Used tool");
       break;
   }
-  return { use: part, kind, label, detail: part.text, stats: part.tool?.stats || inlineChangeStats(part.text) };
+  return { use: part, kind, label, detail: part.text, images, stats: part.tool?.stats || inlineChangeStats(part.text) };
 }
 
 export function activitiesFromParts(
@@ -241,6 +286,7 @@ export function activitiesFromParts(
   t: Translator,
 ): Activity[] {
   const out: Activity[] = [];
+  const calls = new Map<string, Activity>();
   for (const part of parts) {
     if (part.role === "user") continue;
     if (part.role === "assistant" && part.kind === "text") {
@@ -250,8 +296,19 @@ export function activitiesFromParts(
     }
     if (part.kind === "tool_result") {
       const last = out[out.length - 1];
-      if (last?.use?.kind === "tool_use" && !last.result) last.result = part;
-      else out.push({ kind: "other", label: t("Tool result"), detail: "", result: part });
+      const call = part.id ? calls.get(part.id) : undefined;
+      const activity = call || (!part.id && last?.use?.kind === "tool_use" && !last.result ? last : undefined);
+      const imageURLs = part.tool?.image_urls || part.images || [];
+      if (activity) {
+        activity.result = part;
+        if (imageURLs.length) {
+          activity.kind = "image";
+          activity.imageURLs = imageURLs;
+          activity.label = imageURLs.length === 1 ? t("Viewed 1 image") : t("Viewed {count} images", { count: imageURLs.length });
+        }
+      } else if (imageURLs.length) {
+        out.push({ kind: "image", label: imageURLs.length === 1 ? t("Viewed 1 image") : t("Viewed {count} images", { count: imageURLs.length }), detail: "", result: part, imageURLs });
+      } else out.push({ kind: "other", label: t("Tool result"), detail: "", result: part });
       continue;
     }
     if (
@@ -259,7 +316,9 @@ export function activitiesFromParts(
       part.kind !== "thinking"
     )
       continue;
-    out.push(displayActivity(part, backend, t));
+    const activity = displayActivity(part, backend, t);
+    out.push(activity);
+    if (part.id && part.kind === "tool_use") calls.set(part.id, activity);
   }
   return out;
 }
@@ -267,6 +326,8 @@ export function activitiesFromParts(
 function groupLabel(group: Activity[], t: Translator) {
   if (group.length === 1) return group[0].label;
   switch (group[0].kind) {
+    case "image":
+      return t("Viewed {count} images", { count: group.reduce((count, item) => count + (item.imageURLs?.length || item.images?.length || 0), 0) });
     case "read":
       return t("Read files");
     case "write":
@@ -310,6 +371,8 @@ function groupActivities(activities: Activity[], t: Translator): ActivityGroup[]
 
 function iconFor(kind: ActivityKind) {
   switch (kind) {
+    case "image":
+      return Images;
     case "read":
       return BookOpen;
     case "write":
@@ -331,6 +394,52 @@ function iconFor(kind: ActivityKind) {
     default:
       return Wrench;
   }
+}
+
+function ViewedImage({ path = "", source, t }: { path?: string; source?: string; t: Translator }) {
+  const { imageURL, previewImage, openFile } = useContext(LocalFileContext);
+  const target = localFileTarget(path);
+  const safeSource = source && (/^data:image\/(?:png|jpeg|gif|webp);base64,/.test(source) || /^\/api\/chats\/[^/?#]+\/tool-image\?ref=[a-zA-Z0-9_-]+&index=\d+$/.test(source)) ? source : undefined;
+  const url = safeSource || (target && imageURL?.(target)) || undefined;
+  const name = path.replaceAll("\\", "/").split("/").pop() || "image";
+  const [failedURL, setFailedURL] = useState<string>();
+  const available = url && failedURL !== url;
+  return (
+    <button
+      type="button"
+      className="viewed-image"
+      title={path}
+      aria-label={available ? t("Preview {name}", { name }) : t("Image unavailable: {name}", { name })}
+      disabled={!available && (!target || !openFile)}
+      onClick={() => {
+        if (available && previewImage) previewImage(name, url);
+        else if (target) openFile?.(target);
+      }}
+    >
+      {available ? (
+        <img src={url} alt={name} loading="lazy" decoding="async" onError={() => setFailedURL(url)} />
+      ) : (
+        <span className="viewed-image-unavailable"><ImageOff size={20} /><span>{name}</span></span>
+      )}
+    </button>
+  );
+}
+
+function ViewedImages({ group, t }: { group: ActivityGroup; t: Translator }) {
+  const [open, setOpen] = useState(true);
+  const images = group.activities.flatMap<{ source?: string; path?: string }>((item) => item.imageURLs?.length
+    ? item.imageURLs.map((source, index) => ({ source, path: item.images?.[index] }))
+    : (item.images || []).map((path) => ({ path, source: undefined })));
+  return (
+    <div className="viewed-images">
+      <button type="button" className="tool-activity-summary" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        <Images size={13} strokeWidth={1.6} />
+        <span>{group.label}</span>
+        <span className="tool-activity-caret">{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
+      </button>
+      {open && <div className="viewed-image-thumbnails">{images.map(({ path, source }, index) => <ViewedImage key={`${index}:${path || source}`} path={path} source={source} t={t} />)}</div>}
+    </div>
+  );
 }
 
 export class ToolDiffBoundary extends Component<
@@ -613,6 +722,7 @@ export function ToolActivityList({
       {activityOpen && (
         <div className="tool-activity-list">
           {groups.map((group, groupIndex) => {
+            if (group.kind === "image") return <ViewedImages key={`images:${groupIndex}`} group={group} t={t} />;
             if (group.kind === "message") {
               return (
                 <div className="tool-progress-message" key={`message:${group.activities[0].use?.id || ""}:${groupIndex}`}>

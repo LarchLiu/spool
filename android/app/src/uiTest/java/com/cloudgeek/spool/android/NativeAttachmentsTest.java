@@ -78,6 +78,14 @@ public class NativeAttachmentsTest {
         }
         assertTrue(NativeFileData.code("NativeUi.TSX"));
         assertFalse(NativeFileData.code("notes.md"));
+        assertTrue(NativeFileData.allowedPath("/api/chats/chat/tool-image?ref=" + "a".repeat(64) + "&index=0"));
+        assertFalse(NativeFileData.allowedPath("/api/chats/chat/tool-image?ref=invalid&index=0"));
+        assertFalse(NativeFileData.allowedPath("/api/chats/chat/tool-image?ref=" + "a".repeat(64) + "&index=0&redirect=1"));
+        assertArrayEquals(new byte[] {1,2,3}, NativeFileData.inline("data:image/png;base64,AQID").bytes);
+        assertEquals("image/png", NativeFileData.inline("data:image/png;base64,AQID").mediaType);
+        assertFalse(NativeFileData.inlineImage("data:image/svg+xml;base64,AQID"));
+        assertFalse(NativeFileData.inlineImage("https://example.com/image.png"));
+        assertThrows(java.io.IOException.class, () -> NativeFileData.inline("data:image/png;base64,%%%"));
     }
 
     @Test public void imageLoadingCoalescesCachesScopesAndNeverRequestsAnArbitraryUrl() throws Exception {

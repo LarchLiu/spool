@@ -94,6 +94,7 @@ final class NativeText {
             case "Group operation status unknown. Check your conversation list before trying again.": value = "群聊操作结果未知，请先检查聊天列表，避免重复操作。"; break;
             case "High": value = "高"; break;
             case "Ideas, brought to life.": value = "想法，在这里落地。"; break;
+            case "Image unavailable: {name}": value = "图片不可用：{name}"; break;
             case "Invalid history cursor": value = "历史分页位置无效"; break;
             case "Invite people": value = "邀请成员"; break;
             case "Language": value = "语言"; break;
@@ -242,6 +243,8 @@ final class NativeText {
             case "Used tools": value = "使用工具"; break;
             case "Used {tool}": value = "使用 {tool}"; break;
             case "Username": value = "用户名"; break;
+            case "Viewed 1 image": value = "已查看 1 张图片"; break;
+            case "Viewed {count} images": value = "已查看 {count} 张图片"; break;
             case "Voxel Art": value = "Voxel Art"; break;
             case "Waiting for project access": value = "等待项目授权"; break;
             case "Welcome back": value = "欢迎回来"; break;
@@ -352,6 +355,7 @@ final class NativeText {
             case "Group operation status unknown. Check your conversation list before trying again.": value = "グループ操作の結果が不明です。再試行する前にチャット一覧を確認してください。"; break;
             case "High": value = "高"; break;
             case "Ideas, brought to life.": value = "アイデアを、かたちに。"; break;
+            case "Image unavailable: {name}": value = "画像を表示できません: {name}"; break;
             case "Invalid history cursor": value = "履歴のページ位置が無効です"; break;
             case "Invite people": value = "メンバーを招待"; break;
             case "Language": value = "言語"; break;
@@ -500,6 +504,8 @@ final class NativeText {
             case "Used tools": value = "ツールを使用"; break;
             case "Used {tool}": value = "{tool} を使用"; break;
             case "Username": value = "ユーザー名"; break;
+            case "Viewed 1 image": value = "1枚の画像を表示"; break;
+            case "Viewed {count} images": value = "{count}枚の画像を表示"; break;
             case "Voxel Art": value = "Voxel Art"; break;
             case "Waiting for project access": value = "プロジェクトへのアクセスを待機中"; break;
             case "Welcome back": value = "おかえりなさい"; break;

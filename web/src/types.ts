@@ -93,6 +93,8 @@ export type TranscriptPart = {
   role: "user" | "assistant" | "tool";
   kind: "text" | "thinking" | "tool_use" | "tool_result" | "context" | "image";
   image_url?: string;
+  file_path?: string;
+  images?: string[];
   name?: string;
   text: string;
   cut?: number;
@@ -104,8 +106,11 @@ export type ToolSummary = {
   href?: string;
   version: string;
   bytes: number;
-  kind: "read" | "write" | "create" | "delete" | "search" | "list" | "web" | "shell" | "thinking" | "other";
+  kind: "read" | "write" | "create" | "delete" | "search" | "list" | "web" | "shell" | "thinking" | "image" | "other";
   path?: string;
+  image_paths?: string[];
+  image_count?: number;
+  image_urls?: string[];
   query?: string;
   preview?: string;
   stats?: string;

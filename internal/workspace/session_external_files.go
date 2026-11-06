@@ -83,6 +83,9 @@ func sessionReferencesFile(chat chatmodel.Session, path string) bool {
 		return false
 	}
 	for _, part := range chat.Transcript.Parts {
+		if part.Role == "user" && part.Kind == "context" && part.FilePath == path && part.Name == filepath.Base(path) {
+			return true
+		}
 		if part.Role != "assistant" && part.Role != "tool" {
 			continue
 		}

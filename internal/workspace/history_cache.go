@@ -156,7 +156,7 @@ func (c *nativeHistoryCache) transcripts(file *nativeHistory) ([]chatmodel.Trans
 		for j := range transcript.Parts {
 			part := &transcript.Parts[j]
 			if toolPart(*part) {
-				if part.Kind == "tool_result" {
+				if part.Kind == "tool_result" && len(part.Images) == 0 {
 					version := toolBodyVersion(part.Text)
 					if summary := outputs[version]; summary != nil {
 						copy := *summary
@@ -175,9 +175,15 @@ func (c *nativeHistoryCache) transcripts(file *nativeHistory) ([]chatmodel.Trans
 		transcripts[i] = transcript
 		bytes += 128
 		for _, part := range transcript.Parts {
-			bytes += 128 + len(part.Role) + len(part.Kind) + len(part.Name) + len(part.Model) + len(part.Text) + len(part.ImageURL)
+			bytes += 128 + len(part.Role) + len(part.Kind) + len(part.Name) + len(part.Model) + len(part.Text) + len(part.ImageURL) + len(part.FilePath)
+			for _, image := range part.Images {
+				bytes += 16 + len(image)
+			}
 			if part.Tool != nil {
 				bytes += 256 + len(part.Tool.Path) + len(part.Tool.Query) + len(part.Tool.Preview) + len(part.Tool.Stats)
+				for _, path := range part.Tool.ImagePaths {
+					bytes += 16 + len(path)
+				}
 			}
 		}
 	}

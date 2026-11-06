@@ -50,7 +50,21 @@ final class NativeFileData {
 
     static boolean allowedPath(String path) {
         return path != null && (path.matches("^/api/chats/[^/?#]+/attachments\\?id=[^&#]+$")
+                || path.matches("^/api/chats/[^/?#]+/tool-image\\?ref=[a-f0-9]{64}&index=\\d+$")
                 || path.matches("^/api/(?:projects|chats)/[^/?#]+/file\\?path=[^&#]+(?:&(?:image|download)=1)?$"));
+    }
+
+    static boolean inlineImage(String source) {
+        if (source == null || source.length() > ((MAX_BYTES + 2L) / 3) * 4 + 64) return false;
+        int comma = source.indexOf(',');
+        return comma > 0 && source.substring(0, comma).matches("data:image/(?:png|jpeg|gif|webp);base64");
+    }
+
+    static NativeFileData inline(String source) throws IOException {
+        if (!inlineImage(source)) throw new IOException("Invalid inline image");
+        int comma = source.indexOf(',');
+        try { return new NativeFileData(source.substring(5, comma - 7), java.util.Base64.getDecoder().decode(source.substring(comma + 1))); }
+        catch (IllegalArgumentException error) { throw new IOException("Invalid image encoding", error); }
     }
 
     static boolean image(String mediaType) { return mediaType != null && mediaType.startsWith("image/"); }

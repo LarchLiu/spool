@@ -1485,7 +1485,8 @@ public final class MainActivity extends Activity {
         }
         String activityKey = turn.optString("id", page.optString("id") + ":" + turn.optInt("part_start"));
         NativeTurn response = (NativeTurn) transcriptViews.use(key + "/response", "", () -> new NativeTurn(ui, parts, start, end, turn,
-                locale().startsWith("zh"), activityStates.computeIfAbsent(activityKey, value -> new NativeActivityList.State()), this::openMessageLink));
+                locale().startsWith("zh"), activityStates.computeIfAbsent(activityKey, value -> new NativeActivityList.State()), this::openMessageLink,
+                transcriptImages(page)));
         response.bind(parts, start, end, turn);
         JSONObject approval = turn.optJSONObject("pending_approval");
         if (approval != null) transcriptViews.use(key + "/approval/" + approval.optString("id"),
@@ -1521,8 +1522,59 @@ public final class MainActivity extends Activity {
                             if (NativeFileData.image(media)) previewBinary(path, name); else downloadFile(path, name);
                         } }, image -> fileImages.remote(image, path, Math.min(512, dp(120)), null)));
             }
+        } else {
+            JSONArray parts = array(page.optJSONObject("transcript"), "parts");
+            int start = Math.max(0, turn.optInt("part_start")), end = Math.min(parts.length(), turn.optInt("part_end", parts.length()));
+            for (int i = start; i < end; i++) {
+                JSONObject part = at(parts, i);
+                if (!part.optString("role").equals("user")) continue;
+                String source = part.optString("image_url"), name = part.optString("name", "image");
+                if (part.optString("kind").equals("context") && !part.optString("name").isEmpty()) {
+                    String filePath = part.optString("file_path");
+                    String download = filePath.isEmpty() || page.optString("project_id", projectID).isEmpty() ? ""
+                            : NativeFileData.filePath(page.optString("project_id", projectID), ownerChat, filePath, "download");
+                    items.add(new NativeAttachmentCards.Item(ownerChat + ":" + turn.optString("id") + ":file:" + (i - start), name, "application/octet-stream", "", "",
+                            () -> { if (current.getAsBoolean()) { if (download.isEmpty()) toast(new IOException(tr("File unavailable", "文件不可用"))); else downloadFile(download, name); } }, null));
+                    continue;
+                }
+                if (!part.optString("kind").equals("image") || !NativeFileData.inlineImage(source)) continue;
+                String id = ownerChat + ":" + turn.optString("id") + ":image:" + (i - start);
+                items.add(new NativeAttachmentCards.Item(id, name, "image/png", "", source,
+                        () -> { if (current.getAsBoolean()) previewInlineImage(source, name); },
+                        image -> fileImages.inline(image, source, Math.min(512, dp(120)), null)));
+            }
         }
         return items;
+    }
+
+    private NativeTranscriptImages transcriptImages(JSONObject page) {
+        final int session = authEpoch, selected = selectionEpoch;
+        final String ownerChat = page.optString("id", chatID), ownerProject = page.optString("project_id", projectID);
+        return new NativeTranscriptImages() {
+            private String apiPath(String path, String source) {
+                if (source.matches("^/api/chats/" + java.util.regex.Pattern.quote(android.net.Uri.encode(ownerChat)) + "/tool-image\\?ref=[a-f0-9]{64}&index=\\d+$")) return source;
+                if (!path.isEmpty() && !ownerProject.isEmpty() && !ownerChat.isEmpty()) return NativeFileData.filePath(ownerProject, ownerChat, path, "image");
+                return "";
+            }
+            private boolean ownsChat() { return !destroyed && user != null && session == authEpoch && selected == selectionEpoch && ownerChat.equals(chatID); }
+            @Override public void load(android.widget.ImageView image, String path, String source, int edge, java.util.function.Consumer<Exception> completion) {
+                if (!ownsChat()) { completion.accept(new IOException("Session changed")); return; }
+                if (NativeFileData.inlineImage(source)) fileImages.inline(image, source, edge, completion);
+                else {
+                    String api = apiPath(path, source);
+                    if (api.isEmpty()) completion.accept(new IOException("Image unavailable"));
+                    else fileImages.remote(image, api, edge, completion);
+                }
+            }
+            @Override public void preview(String path, String source, String name) {
+                if (!foreground || !ownsChat()) return;
+                if (NativeFileData.inlineImage(source)) previewInlineImage(source, name);
+                else {
+                    String api = apiPath(path, source);
+                    if (!api.isEmpty()) previewBinary(api, name);
+                }
+            }
+        };
     }
 
     private View approvalCard(String ownerChat, String turnID, JSONObject approval) {
@@ -2671,6 +2723,28 @@ public final class MainActivity extends Activity {
     private void previewLocalImage(Attachment file) {
         NativeImagePreview preview = showImagePreview(file.name, () -> chooseDownload(file.file, file.name, authEpoch));
         fileImages.local(preview.content.image, file.id, file.file, previewEdge(), preview.completion());
+    }
+
+    private void previewInlineImage(String source, String name) {
+        final int session = authEpoch;
+        NativeImagePreview preview = showImagePreview(name, () -> {
+            if (downloading) return;
+            downloading = true;
+            int token = generation, request = ++downloadRequest;
+            io.execute(() -> {
+                try {
+                    NativeFileData data = NativeFileData.inline(source);
+                    post(token, () -> {
+                        if (session != authEpoch || request != downloadRequest) return;
+                        downloading = false; chooseDownload(data, name, session);
+                    });
+                } catch (Exception error) { post(token, () -> {
+                    if (session != authEpoch || request != downloadRequest) return;
+                    downloading = false; toast(error);
+                }); }
+            });
+        });
+        fileImages.inline(preview.content.image, source, previewEdge(), preview.completion());
     }
 
     private void closeImagePreview() {

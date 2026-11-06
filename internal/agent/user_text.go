@@ -15,6 +15,7 @@ import (
 type userTextProjection struct {
 	Text           string
 	HasAttachments bool
+	Files          []chatmodel.Part
 }
 
 func (p userTextProjection) genuine() bool {
@@ -27,8 +28,9 @@ func cleanUserText(text string, hasImages bool) userTextProjection {
 		before := result.Text
 		result.Text = stripAgentNotifications(result.Text)
 		lines := userMarkdownLines(result.Text)
-		if prefix, ok := attachedFilesPrefix(result.Text, lines); ok {
+		if prefix, files := attachedFilesPrefix(result.Text, lines); len(files) > 0 {
 			result.Text, result.HasAttachments = prefix, true
+			result.Files = append(result.Files, files...)
 		}
 		result.Text = stripUserContext(result.Text)
 		if hasImages {
@@ -68,7 +70,7 @@ func cleanUserTextBlocks(texts []string, hasImages bool) userTextProjection {
 	return cleanUserText(text, hasImages)
 }
 
-func attachedFilesPrefix(text string, lines []userMarkdownLine) (string, bool) {
+func attachedFilesPrefix(text string, lines []userMarkdownLine) (string, []chatmodel.Part) {
 	for _, line := range lines {
 		if !line.plain || line.inline != 0 || text[line.start:line.end] != attachedFilesMarker {
 			continue
@@ -82,6 +84,7 @@ func attachedFilesPrefix(text string, lines []userMarkdownLine) (string, bool) {
 			continue
 		}
 		valid := true
+		var files []chatmodel.Part
 		// Native image labels can follow the list in separate text blocks.
 		// Removing those labels leaves only their separating blank lines.
 		for _, entry := range strings.Split(strings.TrimRight(entries, "\n"), "\n") {
@@ -89,15 +92,19 @@ func attachedFilesPrefix(text string, lines []userMarkdownLine) (string, bool) {
 				valid = false
 				break
 			}
+			quotedName, _ := strconv.QuotedPrefix(entry[2:])
+			name, _ := strconv.Unquote(quotedName)
+			filePath, _ := strconv.Unquote(entry[2+len(quotedName)+2:])
+			files = append(files, chatmodel.Part{Role: "user", Kind: "context", Name: name, Text: name, FilePath: filePath})
 		}
 		if valid {
 			if start > 0 {
 				start -= 2 // Only remove the separator added by agentTextInput.
 			}
-			return text[:start], true
+			return text[:start], files
 		}
 	}
-	return text, false
+	return text, nil
 }
 
 func validAttachedFileEntry(line string) bool {
@@ -526,6 +533,24 @@ func projectUserParts(parts []chatmodel.Part) []chatmodel.Part {
 			emitted = true
 		} else {
 			out = append(out, part)
+		}
+	}
+	// Keep native attachment identities out of the user prose, while retaining
+	// file cards after the process-local upload list has gone away.
+	for _, file := range clean.Files {
+		ext := strings.ToLower(path.Ext(file.Name))
+		paired := false
+		if images && (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp") {
+			for i := range out {
+				if out[i].Role == "user" && out[i].Kind == "image" && out[i].Name == "" && out[i].ImageURL != "" {
+					out[i].Name = file.Name
+					paired = true
+					break
+				}
+			}
+		}
+		if !paired {
+			out = append(out, file)
 		}
 	}
 	return out

@@ -581,7 +581,7 @@ func appendTurnPart(turn *chatmodel.Turn, part chatmodel.Part) {
 	transcript := chatmodel.Transcript{Parts: turn.Parts}
 	// Command output may arrive as multiple deltas. Merge adjacent result
 	// chunks so the live transcript keeps the same shape as native history.
-	if part.Kind == "tool_result" {
+	if part.Kind == "tool_result" && len(part.Images) == 0 {
 		chatmodel.AppendStreamText(&transcript, part)
 	} else {
 		chatmodel.AppendPart(&transcript, part)

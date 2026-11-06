@@ -37,7 +37,7 @@ const icons = {
   monitor:'Monitor', sun:'Sun', moon:'Moon', check:'Check', command:'Command',
   copy:'Copy', circle_alert:'CircleAlert', shield_check:'ShieldCheck', shield_question:'ShieldQuestion',
   message:'MessageCircle', search:'Search', refresh:'RefreshCw', spinner:'LoaderCircle',
-  brain:'Brain', wrench:'Wrench', terminal:'Terminal', globe:'Globe2', list:'List',
+  brain:'Brain', wrench:'Wrench', terminal:'Terminal', globe:'Globe2', list:'List', image:'Image',
   book_open:'BookOpen', file_pen:'FilePenLine', file_plus:'FilePlus2', file_x:'FileX2', crosshair:'Crosshair',
   keyboard:'Keyboard', pan:'Move', minus:'Minus', fit:'Scan', fullscreen:'Maximize', fullscreen_exit:'Minimize',
   escape:'CornerUpLeft', tab:'ArrowRightToLine', alt:'Option', shift:'ArrowBigUp', arrow_right:'ArrowRight',
