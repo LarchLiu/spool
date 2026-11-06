@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -53,7 +54,8 @@ func (p *agentProcess) codexRPC(ctx context.Context, method string, params map[s
 func (p *agentProcess) handleCodexApproval(ctx context.Context, value map[string]any, turnID string) error {
 	params, _ := value["params"].(map[string]any)
 	method := stringValue(value["method"])
-	if stringValue(params["threadId"]) != p.sessionID || stringValue(params["turnId"]) != turnID {
+	requestTurn := stringValue(params["turnId"])
+	if stringValue(params["threadId"]) != p.sessionID || (requestTurn != turnID && !(method == "mcpServer/elicitation/request" && requestTurn == "")) {
 		return p.denyCodexRequest(value)
 	}
 	request := chatmodel.ApprovalRequest{Title: "Command execution", Reason: chatmodel.Clip(stringValue(params["reason"]), 8192)}
@@ -80,26 +82,47 @@ func (p *agentProcess) handleCodexApproval(ctx context.Context, value map[string
 		request.Title, request.Detail = "Workspace file changes", stringValue(params["grantRoot"])
 	case "item/permissions/requestApproval":
 		request.Title, request.Detail = "Additional permissions", approvalDetail(params["permissions"])
+	case "mcpServer/elicitation/request":
+		request = codexElicitation(params)
 	default:
 		return p.denyCodexRequest(value)
 	}
-	allowed, err := p.awaitApproval(ctx, p.approve, request, func(event map[string]any) bool {
+	decision, err := p.awaitApproval(ctx, p.approve, request, func(event map[string]any) bool {
 		params, _ := event["params"].(map[string]any)
-		return event["method"] == "serverRequest/resolved" && fmt.Sprint(params["requestId"]) == fmt.Sprint(value["id"])
+		return event["method"] == "serverRequest/resolved" && stringValue(params["threadId"]) == p.sessionID && fmt.Sprint(params["requestId"]) == fmt.Sprint(value["id"])
 	})
+	if errors.Is(err, errApprovalResolved) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
+	if err := request.ValidateResponse(decision); err != nil {
+		return err
+	}
 	result := map[string]any{"decision": "decline"}
-	if allowed {
+	if decision.Allow {
 		result["decision"] = "accept"
 	}
 	if method == "item/permissions/requestApproval" {
 		permissions := any(map[string]any{})
-		if allowed {
+		if decision.Allow {
 			permissions = params["permissions"]
 		}
 		result = map[string]any{"permissions": permissions, "scope": "turn"}
+	}
+	if method == "mcpServer/elicitation/request" {
+		result = map[string]any{"action": "decline", "content": nil}
+		if decision.Allow {
+			result["action"] = "accept"
+			if stringValue(params["mode"]) != "url" {
+				content := decision.Content
+				if content == nil {
+					content = map[string]any{}
+				}
+				result["content"] = content
+			}
+		}
 	}
 	return p.write(map[string]any{"id": value["id"], "result": result})
 }
@@ -112,7 +135,7 @@ func (p *agentProcess) denyCodexRequest(value map[string]any) error {
 	case "item/permissions/requestApproval":
 		response["result"] = map[string]any{"permissions": map[string]any{}, "scope": "turn"}
 	case "mcpServer/elicitation/request":
-		response["result"] = map[string]any{"action": "decline"}
+		response["result"] = map[string]any{"action": "decline", "content": nil}
 	default:
 		response["error"] = map[string]any{"code": -32601, "message": "This web chat does not grant interactive permissions or provide client tools."}
 	}

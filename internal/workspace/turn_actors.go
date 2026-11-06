@@ -14,32 +14,37 @@ func migrateTurnActorSchema(db *sql.DB) error {
 		return err
 	}
 	defer tx.Rollback()
-	rows, err := tx.Query(`PRAGMA table_info(turn_actors)`)
-	if err != nil {
-		return err
-	}
-	hasKind := false
-	for rows.Next() {
-		var index, notNull, primaryKey int
-		var name, kind string
-		var defaultValue any
-		if err = rows.Scan(&index, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
-			break
-		}
-		hasKind = hasKind || name == "actor_kind"
-	}
-	if err == nil {
-		err = rows.Err()
-	}
-	rows.Close()
-	if err != nil {
-		return err
-	}
-	if !hasKind {
-		// CREATE TABLE IF NOT EXISTS cannot upgrade an existing sidecar table.
-		// Older rows are human actors; retain their IDs, bindings and audit data.
-		if _, err = tx.Exec(`ALTER TABLE turn_actors ADD COLUMN actor_kind TEXT NOT NULL DEFAULT 'user'`); err != nil {
+	for _, column := range []struct{ table, name, definition string }{
+		{"turn_actors", "actor_kind", "TEXT NOT NULL DEFAULT 'user'"},
+		{"turn_actions", "summary", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		rows, err := tx.Query(`PRAGMA table_info(` + column.table + `)`)
+		if err != nil {
 			return err
+		}
+		exists := false
+		for rows.Next() {
+			var index, notNull, primaryKey int
+			var name, kind string
+			var defaultValue any
+			if err = rows.Scan(&index, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
+				break
+			}
+			exists = exists || name == column.name
+		}
+		if err == nil {
+			err = rows.Err()
+		}
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		// Existing identities and decisions retain their bindings. Old actions
+		// have no request summary; do not invent one during migration.
+		if !exists {
+			if _, err = tx.Exec(`ALTER TABLE ` + column.table + ` ADD COLUMN ` + column.name + ` ` + column.definition); err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Commit()
@@ -93,7 +98,7 @@ func (s *Store) attributeTurns(chat *chatmodel.Session) error {
 			}
 		}
 	}
-	actions, err := s.db.Query(`SELECT turn_id,id,user_id,kind,approval_id,created_at FROM turn_actions WHERE session_id=? ORDER BY created_at,id`, chat.ID)
+	actions, err := s.db.Query(`SELECT turn_id,id,user_id,kind,approval_id,summary,created_at FROM turn_actions WHERE session_id=? ORDER BY created_at,id`, chat.ID)
 	if err != nil {
 		return err
 	}
@@ -102,7 +107,7 @@ func (s *Store) attributeTurns(chat *chatmodel.Session) error {
 	for actions.Next() {
 		var id string
 		var v chatmodel.TurnAction
-		if err := actions.Scan(&id, &v.ID, &v.UserID, &v.Kind, &v.ApprovalID, &v.CreatedAt); err != nil {
+		if err := actions.Scan(&id, &v.ID, &v.UserID, &v.Kind, &v.ApprovalID, &v.Summary, &v.CreatedAt); err != nil {
 			return err
 		}
 		byTurn[id] = append(byTurn[id], v)
@@ -125,19 +130,19 @@ func (s *Store) attributeTurns(chat *chatmodel.Session) error {
 	return nil
 }
 
-func insertTurnAction(tx *sql.Tx, chat, turn, user, kind, approval string) (chatmodel.TurnAction, error) {
-	v := chatmodel.TurnAction{ID: chatmodel.NewID(), UserID: user, Kind: kind, ApprovalID: approval, CreatedAt: time.Now().UnixMilli()}
-	_, err := tx.Exec(`INSERT INTO turn_actions(session_id,turn_id,id,kind,user_id,approval_id,created_at) VALUES(?,?,?,?,?,?,?)`, chat, turn, v.ID, kind, user, approval, v.CreatedAt)
+func insertTurnAction(tx *sql.Tx, chat, turn, user, kind, approval, summary string) (chatmodel.TurnAction, error) {
+	v := chatmodel.TurnAction{ID: chatmodel.NewID(), UserID: user, Kind: kind, ApprovalID: approval, Summary: summary, CreatedAt: time.Now().UnixMilli()}
+	_, err := tx.Exec(`INSERT INTO turn_actions(session_id,turn_id,id,kind,user_id,approval_id,summary,created_at) VALUES(?,?,?,?,?,?,?,?)`, chat, turn, v.ID, kind, user, approval, summary, v.CreatedAt)
 	return v, err
 }
 
-func (s *Store) recordTurnAction(chat, turn, user, kind, approval string) (chatmodel.TurnAction, error) {
+func (s *Store) recordTurnAction(chat, turn, user, kind, approval, summary string) (chatmodel.TurnAction, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return chatmodel.TurnAction{}, err
 	}
 	defer tx.Rollback()
-	v, err := insertTurnAction(tx, chat, turn, user, kind, approval)
+	v, err := insertTurnAction(tx, chat, turn, user, kind, approval, summary)
 	if err != nil {
 		return v, err
 	}

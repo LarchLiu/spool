@@ -87,6 +87,25 @@ export type ApprovalRequest = {
   title: string;
   detail?: string;
   reason?: string;
+  url?: string;
+  fields?: ApprovalField[];
+  unavailable?: string;
+};
+export type ApprovalField = {
+  name: string;
+  label: string;
+  description?: string;
+  type: "string" | "boolean" | "integer" | "number" | "array";
+  format?: string;
+  required?: boolean;
+  options?: { value: string; label: string }[];
+  default?: unknown;
+  minimum?: number;
+  maximum?: number;
+  min_length?: number;
+  max_length?: number;
+  min_items?: number;
+  max_items?: number;
 };
 export type TranscriptPart = {
   id?: string;
@@ -158,6 +177,7 @@ export type TurnAction = {
   user_id: string;
   kind: "stop" | "approve" | "deny";
   approval_id?: string;
+  summary?: string;
   created_at: number;
 };
 export type Chat = {

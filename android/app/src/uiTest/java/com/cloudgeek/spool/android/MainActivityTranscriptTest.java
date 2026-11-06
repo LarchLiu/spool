@@ -383,8 +383,8 @@ public class MainActivityTranscriptTest {
         try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             JSONObject value=chat(); JSONObject turn=value.getJSONArray("turns").getJSONObject(1);
             turn.put("pending_approval",new JSONObject().put("id","approval-one").put("title","Review action").put("detail","Detail")); show(h,value);
-            Button old=textButton(h.get("historyContent"),"Allow"); show(h,new JSONObject(value.toString())); assertSame(old,textButton(h.get("historyContent"),"Allow"));
-            turn.put("pending_approval",new JSONObject().put("id","approval-two").put("title","New review")); show(h,value); Button current=textButton(h.get("historyContent"),"Allow");
+            Button old=textButton(h.get("historyContent"),"Allow once"); show(h,new JSONObject(value.toString())); assertSame(old,textButton(h.get("historyContent"),"Allow once"));
+            turn.put("pending_approval",new JSONObject().put("id","approval-two").put("title","New review")); show(h,value); Button current=textButton(h.get("historyContent"),"Allow once");
             old.performClick(); assertTrue(h.io.jobs.isEmpty()); current.performClick(); assertEquals(1,h.io.jobs.size()); h.io.run();
             List<String> call=MainActivityGoalTest.ShadowClient.calls.get(0); assertEquals("/api/chats/chat-one/approvals",call.get(1)); assertEquals("approval-two",new JSONObject(call.get(2)).getString("id"));
             ReflectionHelpers.callInstanceMethod(h.activity,"openChat",ReflectionHelpers.ClassParameter.from(String.class,"other-chat")); current.performClick(); assertTrue(h.io.jobs.isEmpty());

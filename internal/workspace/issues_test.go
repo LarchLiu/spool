@@ -530,7 +530,7 @@ func TestTaskAssigneesCanSeeSendStopAndApproveWithoutProjectWideSharing(t *testi
 		if err != nil {
 			return agent.AgentResult{}, err
 		}
-		if !allowed {
+		if !allowed.Allow {
 			return agent.AgentResult{}, errors.New("denied")
 		}
 		return agent.AgentResult{Text: "approved"}, nil

@@ -171,6 +171,12 @@ const chinese=JSON.parse(fs.readFileSync(path.join(root,'locales/zh-CN.json'),'u
 const japanese=JSON.parse(fs.readFileSync(path.join(root,'locales/ja.json'),'utf8'));
 const nativeSource=path.join(root,'android/app/src/main/java/com/cloudgeek/spool/android');
 const textKeys=new Set(['Default','Less','More','The next message creates a new chat with the selected agent and converted context.','Only sending with another agent creates a new chat. The original chat stays unchanged.']);
+// MCP approval status text comes from the server rather than native source literals.
+for (const key of [
+ 'This request uses a form that Spool cannot display yet.',
+ 'This request contains an unsupported authorization link.',
+ 'This request requires device verification in the Codex app.',
+]) textKeys.add(key);
 for(const file of fs.readdirSync(nativeSource).filter(file=>file.endsWith('.java')&&file!=='NativeText.java')) {
  const source=fs.readFileSync(path.join(nativeSource,file),'utf8');
  for(const match of source.matchAll(/\bui\.t\("((?:[^"\\]|\\.)*)"/g))textKeys.add(JSON.parse('"'+match[1]+'"'));

@@ -34,7 +34,7 @@ func (p *agentProcess) initializeCodex(ctx context.Context) error {
 	}
 	if _, err := p.codexRPC(ctx, "initialize", map[string]any{
 		"clientInfo":   map[string]any{"name": "spool", "title": "Spool", "version": "0.1.0"},
-		"capabilities": map[string]any{"experimentalApi": true},
+		"capabilities": map[string]any{"experimentalApi": true, "mcpServerOpenaiFormElicitation": true},
 	}); err != nil {
 		return err
 	}

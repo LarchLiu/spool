@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, ShieldCheck, ShieldQuestion } from "lucide-react";
 import { api } from "./api";
-import type { Backend, PermissionCatalog, ApprovalRequest } from "./types";
+import type { Backend, PermissionCatalog } from "./types";
 import type { MessageKey, Translator } from "./i18n";
+
+export { ApprovalCard } from "./approval-card";
 
 function normalizeCatalog(
   catalog: PermissionCatalog | null | undefined,
@@ -16,7 +18,6 @@ function normalizeCatalog(
     modes: Array.isArray(catalog?.modes) ? catalog.modes : [],
   };
 }
-
 const labels: Record<string, MessageKey> = {
   ask: "Ask for approval",
   manual: "Manual",
@@ -240,72 +241,5 @@ export function PermissionPicker({
         </div>
       )}
     </div>
-  );
-}
-
-export function ApprovalCard({
-  request,
-  chatID,
-  turnID,
-  t,
-  onError,
-}: {
-  request: ApprovalRequest;
-  chatID: string;
-  turnID: string;
-  t: Translator;
-  onError: (error: unknown) => void;
-}) {
-  const [sending, setSending] = useState(false);
-  const [resolved, setResolved] = useState(false);
-  async function decide(allow: boolean) {
-    if (sending || resolved) return;
-    setSending(true);
-    try {
-      await api(`/chats/${chatID}/approvals`, {
-        id: request.id,
-        turn_id: turnID,
-        allow,
-      });
-      setResolved(true);
-    } catch (error) {
-      onError(error);
-    } finally {
-      setSending(false);
-    }
-  }
-  return (
-    <section className="approval-card" aria-label={t("Approval required")}>
-      <div className="approval-heading">
-        <ShieldQuestion size={18} />
-        <strong>{t("Approval required")}</strong>
-      </div>
-      <p>{request.title}</p>
-      {request.reason && <p>{request.reason}</p>}
-      {request.detail && <pre>{request.detail}</pre>}
-      <small>
-        {t(
-          "Approval applies only to this request. No permanent rules are saved.",
-        )}
-      </small>
-      <div>
-        <button
-          type="button"
-          className="quiet"
-          disabled={sending || resolved}
-          onClick={() => void decide(false)}
-        >
-          {t("Deny")}
-        </button>
-        <button
-          type="button"
-          className="primary"
-          disabled={sending || resolved}
-          onClick={() => void decide(true)}
-        >
-          {resolved ? t("Decision sent") : t("Allow once")}
-        </button>
-      </div>
-    </section>
   );
 }

@@ -456,6 +456,7 @@ public final class MainActivity extends Activity {
                                         == Configuration.UI_MODE_NIGHT_YES);
         ui = new NativeUi(this, dark, locale());
         ui.avatars = avatarImages;
+        ui.people = this::person;
         ui.codeWorker = codeWorker;
         ui.syntax = syntax;
         final Client detailClient = client;
@@ -1586,20 +1587,70 @@ public final class MainActivity extends Activity {
     private View approvalCard(String ownerChat, String turnID, JSONObject approval) {
         final int session = authEpoch, selection = selectionEpoch;
         final String approvalID = approval.optString("id");
-        LinearLayout card = card(approval.optString("title", tr("Approval required", "需要审批")));
-        card.addView(ui.text(approval.optString("detail"), 12, ui.text));
+        LinearLayout card = ui.padded(18, 18);
+        card.setBackground(ui.shape(ui.soft, 13, ui.borderStrong));
+        LinearLayout heading = new LinearLayout(this); heading.setGravity(Gravity.CENTER_VERTICAL);
+        android.widget.ImageView icon = ui.decorativeIcon("shield-question", 18);
+        icon.setImageTintList(android.content.res.ColorStateList.valueOf(ui.primary));
+        heading.addView(icon, new LinearLayout.LayoutParams(dp(18), dp(18)));
+        TextView caption = ui.text(ui.t("Approval required"), 12, ui.primary);
+        ui.typography(caption, 12, ui.primary, 600);
+        LinearLayout.LayoutParams captionParams = new LinearLayout.LayoutParams(-2, -2); captionParams.setMarginStart(dp(8));
+        heading.addView(caption, captionParams); card.addView(heading); gap(card, 12);
+        card.addView(ui.text(approval.optString("title"), 12, ui.text)); gap(card, 12);
+        if (!approval.optString("reason").isEmpty()) { card.addView(ui.text(approval.optString("reason"), 12, ui.text)); gap(card, 12); }
+        if (!approval.optString("detail").isEmpty()) {
+            TextView detail = ui.text(approval.optString("detail"), 11, ui.text);
+            detail.setTypeface(android.graphics.Typeface.MONOSPACE); detail.setTextIsSelectable(true);
+            detail.setPadding(dp(12), dp(12), dp(12), dp(12));
+            detail.setBackground(ui.shape(ui.elevated, 7, 0));
+            card.addView(detail, new LinearLayout.LayoutParams(-1, -2)); gap(card, 12);
+        }
+        String url = approval.optString("url");
+        if (!url.isEmpty()) {
+            card.addView(ui.button(ui.t("Open authorization page"), false, () -> openBrowser(url)));
+            card.addView(ui.text(ui.t("Complete authorization on the linked page, then confirm here."), 11, ui.muted));
+        }
+        String unavailable = approval.optString("unavailable");
+        if (!unavailable.isEmpty()) card.addView(ui.text(ui.t(unavailable), 12, ui.muted));
+        NativeApprovalForm form = new NativeApprovalForm(ui, array(approval, "fields"));
+        form.setEnabled(writable()); card.addView(form);
+        card.addView(ui.text(ui.t("Approval applies only to this request. No permanent rules are saved."), 10, ui.muted));
+        LinearLayout actions = new LinearLayout(this); actions.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(-1, -2); actionParams.topMargin = dp(16);
+        card.addView(actions, actionParams);
+        boolean[] sending = {false}, resolved = {false};
+        List<Button> decisions = new ArrayList<>();
         for (boolean allow : new boolean[] {false, true}) {
-            Button decision = ui.button(allow ? tr("Allow", "允许") : tr("Deny", "拒绝"), allow, () -> {
-                if (destroyed || !foreground || session != authEpoch || selection != selectionEpoch || !ownerChat.equals(chatID) || !writable()) return;
+            Button decision = ui.button(allow ? ui.t(url.isEmpty() ? "Allow once" : "Confirm authorization") : tr("Deny", "拒绝"), allow, () -> {
+                if (sending[0] || resolved[0] || destroyed || !foreground || session != authEpoch || selection != selectionEpoch || !ownerChat.equals(chatID) || !writable()) return;
                 JSONObject pending = null;
                 for (int i = 0; i < array(chat, "turns").length(); i++) {
                     JSONObject candidate = at(array(chat, "turns"), i);
                     if (turnID.equals(candidate.optString("id"))) pending = candidate.optJSONObject("pending_approval");
                 }
                 if (pending == null || !approvalID.equals(pending.optString("id"))) return;
-                api("/chats/" + ownerChat + "/approvals", object("id", approvalID, "turn_id", turnID, "allow", allow), result -> {});
+                JSONObject body;
+                try { body = object("id", approvalID, "turn_id", turnID, "allow", allow, "content", allow ? form.content() : null); }
+                catch (IllegalArgumentException invalid) { toast(invalid); return; }
+                sending[0] = true; form.setEnabled(false);
+                for (Button button : decisions) button.setEnabled(false);
+                api("/chats/" + ownerChat + "/approvals", body, result -> { resolved[0] = true; }, error -> {
+                    sending[0] = false; form.setEnabled(writable());
+                    for (int i = 0; i < decisions.size(); i++) decisions.get(i).setEnabled(writable() && (i == 0 || unavailable.isEmpty()));
+                    toast(error);
+                });
             });
-            decision.setEnabled(writable()); card.addView(decision);
+            decision.setPadding(dp(17), dp(9), dp(17), dp(9)); decision.setMinimumHeight(dp(34));
+            if (!allow) {
+                int fill = androidx.core.graphics.ColorUtils.blendARGB(ui.soft, ui.text, .20f);
+                int pressed = androidx.core.graphics.ColorUtils.blendARGB(ui.soft, ui.text, .24f);
+                decision.setBackground(ui.states(fill, 9, ui.borderStrong, pressed, fill));
+            }
+            decision.setEnabled(writable() && (!allow || unavailable.isEmpty())); decisions.add(decision);
+            LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(-2, -2);
+            if (allow) buttonParams.setMarginStart(dp(12));
+            actions.addView(decision, buttonParams);
         }
         return card;
     }

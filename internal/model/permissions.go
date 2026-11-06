@@ -3,6 +3,8 @@ package model
 import (
 	"context"
 	"fmt"
+	"strings"
+	"unicode"
 )
 
 type PermissionMode struct {
@@ -53,10 +55,45 @@ func (c PermissionCatalog) Validate(mode string) error {
 }
 
 type ApprovalRequest struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Detail string `json:"detail,omitempty"`
-	Reason string `json:"reason,omitempty"`
+	ID          string          `json:"id"`
+	Title       string          `json:"title"`
+	Detail      string          `json:"detail,omitempty"`
+	Reason      string          `json:"reason,omitempty"`
+	URL         string          `json:"url,omitempty"`
+	Fields      []ApprovalField `json:"fields,omitempty"`
+	Unavailable string          `json:"unavailable,omitempty"`
 }
 
-type ApprovalHandler func(context.Context, ApprovalRequest) (bool, error)
+type ApprovalResponse struct {
+	Allow   bool           `json:"allow"`
+	Content map[string]any `json:"content,omitempty"`
+}
+
+// AuditSummary describes the request, without persisting submitted form values
+// or an authorization URL. Command previews identify the exact approved command.
+func (r ApprovalRequest) AuditSummary() string {
+	detail := r.Reason
+	if detail == "" {
+		detail = r.Detail
+	}
+	if r.Title == "Command execution" {
+		detail = strings.SplitN(r.Detail, "\n", 2)[0]
+	}
+	clean := func(value string) string {
+		return strings.Join(strings.FieldsFunc(value, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }), " ")
+	}
+	title, detail := clean(r.Title), clean(detail)
+	text := title
+	if detail != "" && detail != title {
+		if text != "" {
+			text += " · "
+		}
+		text += detail
+	}
+	if chars := []rune(text); len(chars) > 200 {
+		return string(chars[:199]) + "…"
+	}
+	return text
+}
+
+type ApprovalHandler func(context.Context, ApprovalRequest) (ApprovalResponse, error)

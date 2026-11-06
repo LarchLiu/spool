@@ -62,6 +62,7 @@ type TurnAction struct {
 	UserID     string `json:"user_id"`
 	Kind       string `json:"kind"`
 	ApprovalID string `json:"approval_id,omitempty"`
+	Summary    string `json:"summary,omitempty"`
 	CreatedAt  int64  `json:"created_at"`
 }
 

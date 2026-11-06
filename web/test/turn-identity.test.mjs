@@ -84,7 +84,9 @@ test("Spool Bot renders the logo, while human operators use their selected avata
   assert.doesNotMatch(logo, /data:image\/svg/);
   const human = render(TurnOperatorAvatar, { person: bob });
   assert.match(human, /aria-label="Bob"/);
-  assert.ok(human.includes(`src="${avatarDataURI(bob).replaceAll("&", "&amp;")}"`));
+  assert.ok(
+    human.includes(`src="${avatarDataURI(bob).replaceAll("&", "&amp;")}"`),
+  );
   assert.equal(render(TurnOperatorAvatar, {}), "");
 });
 
@@ -200,6 +202,36 @@ test("turn actions appear after the reply and before its copy icon and time", ()
       assert.match(noAnswer, /class="turn-actions"/);
       assert.doesNotMatch(noAnswer, /message-footer|Copy message/);
     }
+  }
+});
+
+test("approval and denial actions retain an escaped request summary with their actor and time", () => {
+  for (const kind of ["approve", "deny"]) {
+    const html = render(TurnActions, {
+      chat,
+      turn: {
+        ...turn,
+        actions: [
+          {
+            id: kind,
+            user_id: alice.id,
+            kind,
+            summary: 'Computer Use · Magpie <app> & "window"',
+            created_at: 1000,
+          },
+        ],
+      },
+      locale: "en",
+      t,
+    });
+    assert.match(html, /(?:Approved|Denied) by Alice/);
+    assert.match(
+      html,
+      /Computer Use · Magpie &lt;app&gt; &amp; &quot;window&quot;/,
+    );
+    assert.match(html, /class="turn-action-description"/);
+    assert.match(html, /&quot;window&quot;<time[^>]*>[^<]+<\/time><\/span>/);
+    assert.match(html, /<time/);
   }
 });
 

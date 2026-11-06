@@ -143,21 +143,22 @@ func (a *App) permissionResponse(w http.ResponseWriter, r *http.Request, user st
 type pendingApproval struct {
 	chatID   string
 	turnID   string
-	decision chan bool
+	request  chatmodel.ApprovalRequest
+	decision chan chatmodel.ApprovalResponse
 	decided  bool
 }
 
-func (a *App) requestApproval(ctx context.Context, chatID, turnID string, request chatmodel.ApprovalRequest) (bool, error) {
+func (a *App) requestApproval(ctx context.Context, chatID, turnID string, request chatmodel.ApprovalRequest) (chatmodel.ApprovalResponse, error) {
 	if err := ctx.Err(); err != nil {
-		return false, err
+		return chatmodel.ApprovalResponse{}, err
 	}
 	request.ID = chatmodel.NewID()
-	pending := &pendingApproval{chatID: chatID, turnID: turnID, decision: make(chan bool, 1)}
+	pending := &pendingApproval{chatID: chatID, turnID: turnID, request: request, decision: make(chan chatmodel.ApprovalResponse, 1)}
 	a.liveMu.Lock()
 	current, exists := a.live[chatID]
 	if !exists || current.ID != turnID || current.Status != chatmodel.StatusRunning || ctx.Err() != nil {
 		a.liveMu.Unlock()
-		return false, context.Canceled
+		return chatmodel.ApprovalResponse{}, context.Canceled
 	}
 	a.approvals[request.ID] = pending
 	turn := a.live[chatID]
@@ -176,20 +177,21 @@ func (a *App) requestApproval(ctx context.Context, chatID, turnID string, reques
 		a.liveMu.Unlock()
 	}()
 	select {
-	case allowed := <-pending.decision:
-		return allowed, nil
+	case response := <-pending.decision:
+		return response, nil
 	case <-ctx.Done():
-		return false, ctx.Err()
+		return chatmodel.ApprovalResponse{}, ctx.Err()
 	case <-a.shutdown:
-		return false, context.Canceled
+		return chatmodel.ApprovalResponse{}, context.Canceled
 	}
 }
 
 func (a *App) approvalResponse(w http.ResponseWriter, r *http.Request, chat chatmodel.Session, user string) {
 	var input struct {
-		ID     string `json:"id"`
-		TurnID string `json:"turn_id"`
-		Allow  bool   `json:"allow"`
+		ID      string         `json:"id"`
+		TurnID  string         `json:"turn_id"`
+		Allow   bool           `json:"allow"`
+		Content map[string]any `json:"content"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
@@ -202,11 +204,20 @@ func (a *App) approvalResponse(w http.ResponseWriter, r *http.Request, chat chat
 		apiError(w, 409, "This approval request is no longer pending")
 		return
 	}
+	response := chatmodel.ApprovalResponse{Allow: input.Allow}
+	if input.Allow {
+		response.Content = input.Content
+	}
+	if err := pending.request.ValidateResponse(response); err != nil {
+		a.liveMu.Unlock()
+		apiError(w, 400, err.Error())
+		return
+	}
 	kind := "deny"
 	if input.Allow {
 		kind = "approve"
 	}
-	action, err := a.store.recordTurnAction(chat.ID, input.TurnID, user, kind, input.ID)
+	action, err := a.store.recordTurnAction(chat.ID, input.TurnID, user, kind, input.ID, pending.request.AuditSummary())
 	if err != nil {
 		a.liveMu.Unlock()
 		apiError(w, 500, "Could not record this operation")
@@ -216,7 +227,7 @@ func (a *App) approvalResponse(w http.ResponseWriter, r *http.Request, chat chat
 	turn.Actions = append(append([]chatmodel.TurnAction(nil), turn.Actions...), action)
 	a.live[chat.ID] = turn
 	pending.decided = true
-	pending.decision <- input.Allow
+	pending.decision <- response
 	a.liveMu.Unlock()
 	apiJSON(w, 200, map[string]bool{"ok": true})
 }

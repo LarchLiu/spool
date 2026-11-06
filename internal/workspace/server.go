@@ -907,7 +907,7 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 			}
 		}
 	}
-	request.Approve = func(ctx context.Context, request chatmodel.ApprovalRequest) (bool, error) {
+	request.Approve = func(ctx context.Context, request chatmodel.ApprovalRequest) (chatmodel.ApprovalResponse, error) {
 		return a.requestApproval(ctx, id, turn.ID, request)
 	}
 	result, runErr := a.runner.Run(ctx, request, func(event agent.AgentEvent) error {

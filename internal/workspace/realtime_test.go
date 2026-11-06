@@ -385,7 +385,7 @@ func TestRealtimeFinishingAndApprovalPublishNavigation(t *testing.T) {
 	}
 	conn := realtimeConnect(t, server, cookie, csrf, true)
 	realtimeReady(t, conn)
-	if _, err = a.store.recordTurnAction(chat.ID, turn.ID, alice.ID, "approve", "approval-1"); err != nil {
+	if _, err = a.store.recordTurnAction(chat.ID, turn.ID, alice.ID, "approve", "approval-1", ""); err != nil {
 		t.Fatal(err)
 	}
 	realtimeUntil(t, conn, func(m realtimeMessage) bool { return m.Type == "navigation" })

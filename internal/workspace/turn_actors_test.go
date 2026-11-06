@@ -112,7 +112,7 @@ func TestTurnActorsRecoverUnannouncedNativeTurnAndAuditActions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = store.recordTurnAction(chat.ID, human.ID, alice.ID, "deny", "approval-id"); err != nil {
+	if _, err = store.recordTurnAction(chat.ID, human.ID, alice.ID, "deny", "approval-id", "Computer Use · Use Magpie"); err != nil {
 		t.Fatal(err)
 	}
 	appendNativeTurns(t, path, 1, 1, 0)
@@ -132,6 +132,9 @@ func TestTurnActorsRecoverUnannouncedNativeTurnAndAuditActions(t *testing.T) {
 	}
 	if len(loaded.Turns[1].Actions) != 1 || loaded.Turns[1].Actions[0].UserID != alice.ID || loaded.Turns[1].Actions[0].Kind != "deny" || len(loaded.Participants) != 3 {
 		t.Fatalf("audit operator missing after restart: %+v", loaded)
+	}
+	if loaded.Turns[1].Actions[0].Summary != "Computer Use · Use Magpie" {
+		t.Fatal("approval summary did not survive restart")
 	}
 	// A different chat using the same native file must not inherit identities.
 	other, _ := reopened.CreateChat(alice.ID, project.ID, chat.Backend)
@@ -179,7 +182,7 @@ func TestTurnActorSchemaUpgradePreservesExistingMetadata(t *testing.T) {
 	if err = store.SetNativeSessionPath(chat.ID, "existing-actor-native", path); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = store.recordTurnAction(chat.ID, turn.ID, bob.ID, "approve", "existing-approval"); err != nil {
+	if _, err = store.recordTurnAction(chat.ID, turn.ID, bob.ID, "approve", "existing-approval", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err = store.FinishTurn(chat.ID, turn.ID, agent.AgentResult{}, nil, chatmodel.StatusCompleted); err != nil {
@@ -187,6 +190,9 @@ func TestTurnActorSchemaUpgradePreservesExistingMetadata(t *testing.T) {
 	}
 	// Reproduce a database created by the earlier actor table definition.
 	if _, err = store.db.Exec(`ALTER TABLE turn_actors DROP COLUMN actor_kind`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.db.Exec(`ALTER TABLE turn_actions DROP COLUMN summary`); err != nil {
 		t.Fatal(err)
 	}
 	if err = store.Close(); err != nil {

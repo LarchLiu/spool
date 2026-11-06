@@ -19,6 +19,7 @@ final class NativeMessage extends LinearLayout {
     Button toggle;
     LinearLayout bubble;
     final NativeMessageFooter footer;
+    private NativeTurnActions actions;
     private boolean mountedToggle;
     float maximumFraction = .9f;
 
@@ -126,6 +127,19 @@ final class NativeMessage extends LinearLayout {
         bubble.setVisibility(mine && value.isEmpty() ? GONE : VISIBLE);
         ((LinearLayout.LayoutParams) footer.getLayoutParams()).topMargin = mine && value.isEmpty() ? 0 : Math.round(9 * getResources().getDisplayMetrics().density);
         requestLayout();
+    }
+
+    void bindActions(org.json.JSONArray values) {
+        if (values == null || values.length() == 0) {
+            if (actions != null) removeView(actions);
+            return;
+        }
+        if (actions == null) actions = new NativeTurnActions(ui);
+        actions.bind(values);
+        if (actions.getParent() == null) {
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.topMargin = ui.dp(10);
+            addView(actions, indexOfChild(footer), params);
+        }
     }
 
     @Override protected void onMeasure(int widthSpec, int heightSpec) {

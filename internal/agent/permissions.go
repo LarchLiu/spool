@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -170,41 +171,43 @@ func allowsValue(required map[string]any, key, value string) bool {
 	return false
 }
 
+var errApprovalResolved = errors.New("approval already resolved")
+
 // Keep draining stdout while the owner decides, so cancellation and process
 // exit cannot leave an unanswerable prompt or block the CLI's pipe.
-func (p *agentProcess) awaitApproval(ctx context.Context, handler chatmodel.ApprovalHandler, request chatmodel.ApprovalRequest, cancelled func(map[string]any) bool) (bool, error) {
+func (p *agentProcess) awaitApproval(ctx context.Context, handler chatmodel.ApprovalHandler, request chatmodel.ApprovalRequest, cancelled func(map[string]any) bool) (chatmodel.ApprovalResponse, error) {
 	if handler == nil {
-		return false, nil
+		return chatmodel.ApprovalResponse{}, nil
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stop := context.AfterFunc(p.ctx, cancel)
 	defer stop()
 	type answer struct {
-		allowed bool
-		err     error
+		response chatmodel.ApprovalResponse
+		err      error
 	}
 	answerC := make(chan answer, 1)
-	go func() { allowed, err := handler(ctx, request); answerC <- answer{allowed, err} }()
+	go func() { response, err := handler(ctx, request); answerC <- answer{response, err} }()
 	for {
 		select {
 		case value := <-answerC:
-			return value.allowed, value.err
+			return value.response, value.err
 		case <-ctx.Done():
-			return false, contextError(ctx)
+			return chatmodel.ApprovalResponse{}, contextError(ctx)
 		case value, ok := <-p.messages:
 			if !ok {
-				return false, fmt.Errorf("agent exited while waiting for approval")
+				return chatmodel.ApprovalResponse{}, fmt.Errorf("agent exited while waiting for approval")
 			}
 			if cancelled(value) {
-				return false, nil
+				return chatmodel.ApprovalResponse{}, errApprovalResolved
 			}
 			if len(p.queued) >= 1024 {
-				return false, fmt.Errorf("too many events while waiting for approval")
+				return chatmodel.ApprovalResponse{}, fmt.Errorf("too many events while waiting for approval")
 			}
 			p.queued = append(p.queued, value)
 			if value["type"] == "result" || value["method"] == "turn/completed" {
-				return false, nil
+				return chatmodel.ApprovalResponse{}, errApprovalResolved
 			}
 		}
 	}

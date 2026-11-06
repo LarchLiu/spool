@@ -32,6 +32,7 @@ final class NativeUi extends WebPalette {
     NativeSyntax syntax;
     NativeCjkFallback cjkFonts;
     NativeToolDetails toolDetails;
+    java.util.function.Function<String, org.json.JSONObject> people;
 
     NativeUi(Context context, boolean dark) {
         this(context, dark, false);

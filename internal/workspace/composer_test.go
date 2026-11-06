@@ -202,12 +202,12 @@ func TestNativePermissionSelectionAndApprovalsReuseCLI(t *testing.T) {
 			request := newAgentFixture(t, backend)
 			request.Prompt = "permission-test"
 			calls := 0
-			request.Approve = func(_ context.Context, approval chatmodel.ApprovalRequest) (bool, error) {
+			request.Approve = func(_ context.Context, approval chatmodel.ApprovalRequest) (chatmodel.ApprovalResponse, error) {
 				calls++
 				if approval.Title == "" {
 					t.Error("missing native approval title")
 				}
-				return true, nil
+				return chatmodel.ApprovalResponse{Allow: true}, nil
 			}
 			runner := newTestRunner(t)
 			for _, mode := range map[chatmodel.Backend][]string{chatmodel.BackendCodex: {"ask", "auto"}, chatmodel.BackendClaude: {"manual", "auto", "plan", "acceptEdits", "dontAsk", "bypassPermissions"}}[backend] {
@@ -284,7 +284,7 @@ func (f *interactiveRunner) Run(ctx context.Context, request agent.AgentRequest,
 		return agent.AgentResult{}, err
 	}
 	text := "denied"
-	if allowed {
+	if allowed.Allow {
 		text = "approved"
 	}
 	_ = emit(agent.AgentEvent{Type: "delta", Text: text})

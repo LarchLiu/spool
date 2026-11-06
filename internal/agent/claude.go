@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -55,14 +56,17 @@ func (p *agentProcess) handleClaudeApproval(ctx context.Context, value map[strin
 	}
 	body, _ := value["request"].(map[string]any)
 	request := chatmodel.ApprovalRequest{Title: chatmodel.Clip(stringValue(body["tool_name"]), 240), Detail: approvalDetail(body["input"]), Reason: chatmodel.Clip(stringValue(body["decision_reason"]), 8192)}
-	allowed, err := p.awaitApproval(ctx, p.approve, request, func(event map[string]any) bool {
+	decision, err := p.awaitApproval(ctx, p.approve, request, func(event map[string]any) bool {
 		return event["type"] == "control_cancel_request" && event["request_id"] == value["request_id"]
 	})
+	if errors.Is(err, errApprovalResolved) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
 	response := map[string]any{"behavior": "deny", "message": "The user declined this operation."}
-	if allowed {
+	if decision.Allow {
 		// Approve only this exact input. Never create persistent allow rules.
 		response = map[string]any{"behavior": "allow", "updatedInput": body["input"]}
 		if response["updatedInput"] == nil {

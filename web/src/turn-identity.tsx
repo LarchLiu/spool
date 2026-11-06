@@ -222,12 +222,15 @@ export function TurnActions({
         return (
           <li key={action.id}>
             {person && <UserAvatar person={person} size={18} />}
-            <span>{label}</span>
-            {time && (
-              <time dateTime={time.dateTime} title={time.title}>
-                {time.label}
-              </time>
-            )}
+            <span className="turn-action-description">
+              {label}
+              {action.summary && <> · {action.summary}</>}
+              {time && (
+                <time dateTime={time.dateTime} title={time.title}>
+                  {time.label}
+                </time>
+              )}
+            </span>
           </li>
         );
       })}

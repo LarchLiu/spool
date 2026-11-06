@@ -10,10 +10,13 @@ final class NativeText {
             case "Accept edits": value = "允许编辑"; break;
             case "Add files or images": value = "添加文件或图片"; break;
             case "Allow file edits; ask for other protected operations.": value = "自动允许文件编辑，其他受保护操作仍需确认。"; break;
+            case "Allow once": value = "仅允许一次"; break;
             case "Appearance and language": value = "外观与语言"; break;
             case "Applies to the next message. Context is preserved.": value = "下条消息生效，聊天上下文保持不变。"; break;
+            case "Approval applies only to this request. No permanent rules are saved.": value = "仅批准当前请求，不会保存永久授权规则。"; break;
             case "Approval required": value = "等待你的审批"; break;
             case "Approve for me": value = "代我审批"; break;
+            case "Approved by {name}": value = "{name} 批准了操作"; break;
             case "Ask for approval": value = "询问审批"; break;
             case "Ask your desktop administrator to create a project and grant you access.": value = "请在桌面控制台创建项目，并将你的账号加入项目成员。"; break;
             case "Attachments": value = "附件"; break;
@@ -48,7 +51,9 @@ final class NativeText {
             case "Collapse file sidebar": value = "收起文件侧栏"; break;
             case "Command": value = "命令"; break;
             case "Compacting context…": value = "正在压缩上下文…"; break;
+            case "Complete authorization on the linked page, then confirm here.": value = "请在链接页面完成授权，然后在这里确认。"; break;
             case "Completed": value = "已完成"; break;
+            case "Confirm authorization": value = "确认已授权"; break;
             case "Confirm operations that require permission.": value = "需要授权的操作由你确认。"; break;
             case "Connecting to your workspace…": value = "连接你的工作空间…"; break;
             case "Copy code": value = "复制代码"; break;
@@ -65,6 +70,7 @@ final class NativeText {
             case "Default": value = "默认"; break;
             case "Deleted files": value = "删除文件"; break;
             case "Deleted {path}": value = "删除 {path}"; break;
+            case "Denied by {name}": value = "{name} 拒绝了操作"; break;
             case "Deny": value = "拒绝"; break;
             case "Deny operations that are not already permitted.": value = "不再询问，直接拒绝未获允许的操作。"; break;
             case "Describe your idea. Your agent takes it from here.": value = "描述你的想法，剩下的交给 agent。"; break;
@@ -149,6 +155,7 @@ final class NativeText {
             case "Only group members can read these messages. New members do not receive earlier messages.": value = "仅群成员可见，新加入的成员不会收到之前的消息。"; break;
             case "Only selected members can see this group. No history is saved; the group closes when everyone disconnects.": value = "仅所选成员可见。不保存聊天记录，所有成员断开连接后群聊自动关闭。"; break;
             case "Only sending with another agent creates a new chat. The original chat stays unchanged.": value = "仅选择不会创建聊天；使用另一个 Agent 发送消息时才创建新聊天，原聊天保持不变。"; break;
+            case "Open authorization page": value = "打开授权页面"; break;
             case "Open file sidebar": value = "展开文件侧栏"; break;
             case "Open sidebar": value = "打开侧边栏"; break;
             case "Or pick one you like": value = "也可以选一个喜欢的"; break;
@@ -230,6 +237,7 @@ final class NativeText {
             case "Source": value = "源码"; break;
             case "Stop response": value = "停止回复"; break;
             case "Stopped": value = "已停止"; break;
+            case "Stopped by {name}": value = "{name} 停止了响应"; break;
             case "Stopping…": value = "正在停止…"; break;
             case "The agent reviews approval requests automatically.": value = "由 agent 的原生自动审批机制评估请求。"; break;
             case "The next message creates a new chat with the selected agent and converted context.": value = "下一条消息将在新聊天中由所选 Agent 继续，并携带转换后的上下文。"; break;
@@ -244,6 +252,9 @@ final class NativeText {
             case "This group is no longer available to you.": value = "此群聊已关闭或你不在群内。"; break;
             case "This model has no adjustable reasoning level.": value = "此模型未提供可调整的推理级别。"; break;
             case "This person is offline. Messages are not queued.": value = "对方已离线，消息不会排队或离线补发。"; break;
+            case "This request contains an unsupported authorization link.": value = "此请求包含不支持的授权链接。"; break;
+            case "This request requires device verification in the Codex app.": value = "此请求需要在 Codex 应用中完成设备验证。"; break;
+            case "This request uses a form that Spool cannot display yet.": value = "Spool 暂不支持显示此请求的表单。"; break;
             case "This worksheet is empty.": value = "此工作表为空。"; break;
             case "Thought": value = "思考"; break;
             case "Thought through tasks": value = "分析任务"; break;
@@ -292,10 +303,13 @@ final class NativeText {
             case "Accept edits": value = "編集を許可"; break;
             case "Add files or images": value = "ファイル・画像を追加"; break;
             case "Allow file edits; ask for other protected operations.": value = "ファイル編集を許可し、その他の保護された操作は確認します。"; break;
+            case "Allow once": value = "今回のみ許可"; break;
             case "Appearance and language": value = "外観と言語"; break;
             case "Applies to the next message. Context is preserved.": value = "次のメッセージから適用されます。会話の文脈は保持されます。"; break;
+            case "Approval applies only to this request. No permanent rules are saved.": value = "このリクエストにのみ適用され、恒久的な許可ルールは保存しません。"; break;
             case "Approval required": value = "承認が必要です"; break;
             case "Approve for me": value = "承認を任せる"; break;
+            case "Approved by {name}": value = "{name} が操作を承認しました"; break;
             case "Ask for approval": value = "承認を求める"; break;
             case "Ask your desktop administrator to create a project and grant you access.": value = "デスクトップ管理者にプロジェクトの作成とアクセス許可を依頼してください。"; break;
             case "Attachments": value = "添付ファイル"; break;
@@ -330,7 +344,9 @@ final class NativeText {
             case "Collapse file sidebar": value = "ファイルサイドバーを閉じる"; break;
             case "Command": value = "コマンド"; break;
             case "Compacting context…": value = "コンテキストを圧縮中…"; break;
+            case "Complete authorization on the linked page, then confirm here.": value = "リンク先で認証を完了してから、ここで確認してください。"; break;
             case "Completed": value = "完了"; break;
+            case "Confirm authorization": value = "認証を確認"; break;
             case "Confirm operations that require permission.": value = "権限が必要な操作を確認します。"; break;
             case "Connecting to your workspace…": value = "ワークスペースに接続中…"; break;
             case "Copy code": value = "コードをコピー"; break;
@@ -347,6 +363,7 @@ final class NativeText {
             case "Default": value = "既定"; break;
             case "Deleted files": value = "ファイルを削除"; break;
             case "Deleted {path}": value = "{path} を削除"; break;
+            case "Denied by {name}": value = "{name} が操作を拒否しました"; break;
             case "Deny": value = "拒否"; break;
             case "Deny operations that are not already permitted.": value = "許可されていない操作は確認せずに拒否します。"; break;
             case "Describe your idea. Your agent takes it from here.": value = "アイデアを伝えて、あとはエージェントに任せましょう。"; break;
@@ -431,6 +448,7 @@ final class NativeText {
             case "Only group members can read these messages. New members do not receive earlier messages.": value = "グループのメンバーのみ閲覧できます。新しいメンバーに以前のメッセージは届きません。"; break;
             case "Only selected members can see this group. No history is saved; the group closes when everyone disconnects.": value = "選択したメンバーにのみ表示されます。履歴は保存せず、全員が切断するとグループは閉じられます。"; break;
             case "Only sending with another agent creates a new chat. The original chat stays unchanged.": value = "選択だけでは作成せず、別のエージェントで送信したときに新しいチャットを作成します。元のチャットは変更されません。"; break;
+            case "Open authorization page": value = "認証ページを開く"; break;
             case "Open file sidebar": value = "ファイルサイドバーを開く"; break;
             case "Open sidebar": value = "サイドバーを開く"; break;
             case "Or pick one you like": value = "好きなアバターを選ぶ"; break;
@@ -512,6 +530,7 @@ final class NativeText {
             case "Source": value = "ソース"; break;
             case "Stop response": value = "応答を停止"; break;
             case "Stopped": value = "停止中"; break;
+            case "Stopped by {name}": value = "{name} が応答を停止しました"; break;
             case "Stopping…": value = "停止しています…"; break;
             case "The agent reviews approval requests automatically.": value = "エージェントの自動承認機能でリクエストを審査します。"; break;
             case "The next message creates a new chat with the selected agent and converted context.": value = "次のメッセージで、変換したコンテキストを引き継ぐ新しいチャットを作成します。"; break;
@@ -526,6 +545,9 @@ final class NativeText {
             case "This group is no longer available to you.": value = "このグループは閉じられたか、あなたはメンバーではありません。"; break;
             case "This model has no adjustable reasoning level.": value = "このモデルの推論レベルは変更できません。"; break;
             case "This person is offline. Messages are not queued.": value = "相手はオフラインです。メッセージは後で配信されません。"; break;
+            case "This request contains an unsupported authorization link.": value = "このリクエストには未対応の認証リンクが含まれています。"; break;
+            case "This request requires device verification in the Codex app.": value = "このリクエストは Codex アプリでのデバイス認証が必要です。"; break;
+            case "This request uses a form that Spool cannot display yet.": value = "このリクエストのフォームは、Spool ではまだ表示できません。"; break;
             case "This worksheet is empty.": value = "このワークシートは空です。"; break;
             case "Thought": value = "思考"; break;
             case "Thought through tasks": value = "タスクを検討"; break;

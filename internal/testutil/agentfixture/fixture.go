@@ -431,6 +431,23 @@ func Run(t *testing.T) {
 			_ = json.Unmarshal(scanner.Bytes(), &reply)
 			log(map[string]any{"method": "permission-reply", "value": reply})
 		}
+		if codex && strings.Contains(prompt, "mcp-elicitation") {
+			requestParams := map[string]any{
+				"threadId": thread, "serverName": "computer-use", "mode": "form",
+				"message":         "Allow Computer Use to use Calculator?",
+				"requestedSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+			}
+			if data, err := os.ReadFile("fixture-elicitation.json"); err == nil {
+				_ = json.Unmarshal(data, &requestParams)
+			}
+			send(map[string]any{"id": "elicitation-1", "method": "mcpServer/elicitation/request", "params": requestParams})
+			if !scanner.Scan() {
+				os.Exit(8)
+			}
+			var reply map[string]any
+			_ = json.Unmarshal(scanner.Bytes(), &reply)
+			log(map[string]any{"method": "elicitation-reply", "value": reply})
+		}
 		if codex {
 			status := "completed"
 			if strings.Contains(prompt, "failed-turn") {

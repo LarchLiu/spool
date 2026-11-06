@@ -59,7 +59,12 @@ final class NativeTurn extends LinearLayout {
             if (part != null) content.put(part);
         }
         inputs.put(content);
-        for (String field : new String[] {"status", "compacting", "backend", "model", "reasoning_effort", "started_at", "finished_at"}) inputs.put(turn.opt(field));
+        for (String field : new String[] {"status", "compacting", "backend", "model", "reasoning_effort", "started_at", "finished_at", "actions"}) inputs.put(turn.opt(field));
+        JSONArray actions = turn.optJSONArray("actions");
+        if (actions != null && ui.people != null) for (int i = 0; i < actions.length(); i++) {
+            JSONObject action = actions.optJSONObject(i);
+            if (action != null) inputs.put(ui.people.apply(action.optString("user_id")));
+        }
         if (NativeChatState.equivalent(bound, inputs)) return;
         bound = NativeChatState.snapshot(inputs); current = turn;
         running = turn.optString("status").equals("running");
@@ -103,7 +108,11 @@ final class NativeTurn extends LinearLayout {
             NativeMessage message = (NativeMessage) children.use("answer", "answer",
                     () -> new NativeMessage(ui, source, false, null, turn.optLong("finished_at"), ui.chinese, open));
             message.bindSource(source);
+            message.bindActions(actions);
             message.footer.bindTimestamp(turn.optLong("finished_at"));
+        } else if (actions != null && actions.length() > 0) {
+            NativeTurnActions audit = (NativeTurnActions) children.use("actions", "actions", () -> new NativeTurnActions(ui));
+            audit.bind(actions);
         }
         children.end();
         main.removeCallbacks(tick);
