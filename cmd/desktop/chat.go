@@ -83,6 +83,13 @@ func (p *panel) loadChatView(address string) error {
 		// Register guards before the first navigation. Never trust additional
 		// origins or load external content into a privileged desktop window.
 		page.OnWillNavigate(func(e *mygo.NavigateEvent) {
+			if target, ok := attachmentAccessNavigation(p.chatURL, e.URL); ok {
+				e.PreventDefault()
+				if e.UserInitiated {
+					p.window.Update(func() { p.chooseAttachmentAccess(target) })
+				}
+				return
+			}
 			if chatSettingsNavigation(p.chatURL, e.URL) {
 				e.PreventDefault()
 				p.window.Update(p.showControlCenter)

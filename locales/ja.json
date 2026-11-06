@@ -1,4 +1,9 @@
 {
+  "The operating system denied Spool access to this file.": "OS により Spool のファイルへのアクセスが拒否されました。",
+  "Allow access to attached file": "添付ファイルへのアクセスを許可",
+  "Select this attached file to allow Spool to read it.": "この添付ファイルを選択して、Spool による読み取りを許可してください。",
+  "Allow access": "アクセスを許可",
+  "Could not access the selected attachment. Check this app's file permissions on the service computer.": "選択した添付ファイルにアクセスできませんでした。Spool サービスを実行しているパソコンで、このアプリのファイルアクセス権限を確認してください。",
   "Projects": "プロジェクト",
   "Recents": "最近のチャット",
   "Show more": "さらに表示",

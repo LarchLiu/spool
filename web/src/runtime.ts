@@ -30,6 +30,43 @@ export function isMacDesktop(surface: unknown = globalThis): boolean {
   );
 }
 
+export function desktopFileAccessURL(
+  chatID: string | undefined,
+  path: string,
+  surface: unknown = globalThis,
+): string | undefined {
+  if (!isMacDesktop(surface) || !chatID || !path.startsWith("/")) return;
+  return `/__desktop/file-access?${new URLSearchParams({ chat: chatID, path })}`;
+}
+
+export type DesktopFileAccessResult = {
+  chat_id: string;
+  path: string;
+  error?: string;
+};
+
+export function subscribeDesktopFileAccess(
+  listener: (result: DesktopFileAccessResult) => void,
+  surface: unknown = globalThis,
+): () => void {
+  return subscribeDesktopEvent(
+    "spool:file-access-result",
+    (event) => {
+      const result: unknown = (event as CustomEvent).detail;
+      if (
+        typeof result === "object" &&
+        result !== null &&
+        "chat_id" in result &&
+        typeof result.chat_id === "string" &&
+        "path" in result &&
+        typeof result.path === "string" &&
+        (!("error" in result) || typeof result.error === "string")
+      ) listener(result as DesktopFileAccessResult);
+    },
+    surface,
+  );
+}
+
 type DesktopRuntime = {
   readonly locale: string;
   on: (event: string, listener: () => void) => () => void;
@@ -121,7 +158,7 @@ export function subscribeDesktopNotifications(
 
 function subscribeDesktopEvent(
   event: string,
-  listener: () => void,
+  listener: (event: Event) => void,
   surface: unknown,
 ): () => void {
   if (

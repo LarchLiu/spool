@@ -12,6 +12,9 @@ var desktopAppearance = mygo.NewEvent[string]("spool:appearance")
 var desktopUpdateAvailable = mygo.NewEvent[bool]("spool:update-available")
 
 const desktopWindowPreload = `Object.defineProperty(window, "spoolDesktop", {value: true});
+window.mygo?.on("spool:file-access-result", result => {
+  window.dispatchEvent(new CustomEvent("spool:file-access-result", {detail: result}));
+});
 window.mygo?.on("spool:notification-open", target => {
   window.spoolNotificationTarget = target;
   window.dispatchEvent(new Event("spool:notification-changed"));

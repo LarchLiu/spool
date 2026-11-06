@@ -16,6 +16,18 @@ export function setCSRF(value: string) {
 export function getCSRF() {
   return csrf;
 }
+
+export class APIError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code = "",
+  ) {
+    super(message);
+    this.name = "APIError";
+  }
+}
+
 export async function api<T>(
   path: string,
   body?: unknown,
@@ -47,9 +59,11 @@ export async function api<T>(
   if (!response.ok) {
     if (response.status === 401 && path !== "/login")
       window.dispatchEvent(new Event("auth-expired"));
-    throw new Error(
-      data.error ||
+    throw new APIError(
+      data?.error ||
         `${translator(language)("Request failed")} (${response.status})`,
+      response.status,
+      typeof data?.code === "string" ? data.code : "",
     );
   }
   return data as T;

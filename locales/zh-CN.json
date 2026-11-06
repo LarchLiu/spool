@@ -1,4 +1,9 @@
 {
+  "The operating system denied Spool access to this file.": "操作系统阻止了 Spool 读取此文件。",
+  "Allow access to attached file": "选择文件允许访问",
+  "Select this attached file to allow Spool to read it.": "请选择这份附件，允许 Spool 读取它。",
+  "Allow access": "允许访问",
+  "Could not access the selected attachment. Check this app's file permissions on the service computer.": "仍无法读取所选附件。请在运行 Spool 服务的电脑上检查此应用的文件访问权限。",
   "Projects": "项目",
   "Recents": "最近聊天",
   "Show more": "显示更多",

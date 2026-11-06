@@ -1,4 +1,9 @@
 {
+  "The operating system denied Spool access to this file.": "The operating system denied Spool access to this file.",
+  "Allow access to attached file": "Allow access to attached file",
+  "Select this attached file to allow Spool to read it.": "Select this attached file to allow Spool to read it.",
+  "Allow access": "Allow access",
+  "Could not access the selected attachment. Check this app's file permissions on the service computer.": "Could not access the selected attachment. Check this app's file permissions on the service computer.",
   "Projects": "Projects",
   "Recents": "Recents",
   "Show more": "Show more",

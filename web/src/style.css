@@ -3965,6 +3965,11 @@ option {
   text-decoration: underline;
   margin-left: 8px;
 }
+.file-panel-notice a {
+  color: inherit;
+  text-decoration: underline;
+  margin-left: 8px;
+}
 .file-preview {
   display: flex;
   flex: 1;

@@ -8,7 +8,7 @@ import {
 } from "react";
 import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
 import { Download, File, LoaderCircle, X } from "lucide-react";
-import { api } from "./api";
+import { api, APIError } from "./api";
 import type { Translator } from "./i18n";
 import type {
   Project,
@@ -29,6 +29,7 @@ import { FileSidebarHeader } from "./file-sidebar-header";
 import { FileSource } from "./file-source";
 import { filePreviewKind, HtmlFilePreview } from "./file-preview";
 import { OfficePreview, type OfficeDocument } from "./office-preview";
+import { desktopFileAccessURL, subscribeDesktopFileAccess } from "./runtime";
 
 const readOffice = (path: string, signal: AbortSignal) => api<OfficeDocument>(path.slice(4), undefined, signal);
 
@@ -110,8 +111,15 @@ function ProjectFiles({
     selection: FileSelection;
   } | null>(null);
   const file = loaded?.file;
-  const [fileError, setFileError] = useState("");
+  const [fileError, setFileError] = useState<{
+    message: string;
+    code?: string;
+  } | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const accessURL =
+    fileError?.code === "file_read_denied" && selection
+      ? desktopFileAccessURL(chatID, selection.target.path)
+      : undefined;
   const requests = useRef(new Map<string, Promise<void>>());
   const controllers = useRef(new Set<AbortController>());
   const suppressSelection = useRef(false);
@@ -191,7 +199,7 @@ function ProjectFiles({
   useEffect(() => {
     if (!active || !selection) return;
     const controller = new AbortController();
-    setFileError("");
+    setFileError(null);
     api<ProjectFile>(
       projectFileURL(
         project.id,
@@ -229,9 +237,10 @@ function ProjectFiles({
       .catch((err: unknown) => {
         if (!controller.signal.aborted) {
           setLoaded(null);
-          setFileError(
-            err instanceof Error ? err.message : t("Request failed"),
-          );
+          setFileError({
+            message: err instanceof Error ? err.message : t("Request failed"),
+            code: err instanceof APIError ? err.code : undefined,
+          });
         }
       });
     return () => controller.abort();
@@ -247,6 +256,15 @@ function ProjectFiles({
     t,
   ]);
 
+  useEffect(
+    () => subscribeDesktopFileAccess((result) => {
+      if (!active || result.chat_id !== chatID || result.path !== selection?.target.path) return;
+      if (result.error) setFileError({ message: result.error, code: "file_read_denied" });
+      else setRefresh((value) => value + 1);
+    }),
+    [active, chatID, selection],
+  );
+
   function reload() {
     onRefreshWorkspace();
     for (const controller of controllers.current) controller.abort();
@@ -260,7 +278,7 @@ function ProjectFiles({
   }
   function clearPreview() {
     setLoaded(null);
-    setFileError("");
+    setFileError(null);
     suppressSelection.current = true;
     try {
       for (const path of model.getSelectedPaths())
@@ -391,7 +409,10 @@ function ProjectFiles({
               </div>
               {fileError && (
                 <p className="file-panel-notice" role="alert">
-                  {fileError}
+                  {fileError.message}
+                  {accessURL && (
+                    <a href={accessURL}>{t("Allow access to attached file")}</a>
+                  )}
                 </p>
               )}
               {loaded && (

@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"spool/internal/i18n"
 	chatmodel "spool/internal/model"
 )
 
@@ -184,7 +185,7 @@ func (a *App) externalSessionFile(w http.ResponseWriter, r *http.Request, chat c
 	}
 	info, err := os.Lstat(path)
 	if err != nil {
-		projectFileError(w, err)
+		sessionFileReadError(w, err)
 		return true
 	}
 	if !info.Mode().IsRegular() || resolved == "" {
@@ -218,7 +219,7 @@ func (a *App) externalSessionFile(w http.ResponseWriter, r *http.Request, chat c
 	// and verify its identity instead of requiring directory access.
 	f, err := os.Open(resolved)
 	if err != nil {
-		projectFileError(w, err)
+		sessionFileReadError(w, err)
 		return true
 	}
 	defer f.Close()
@@ -229,4 +230,18 @@ func (a *App) externalSessionFile(w http.ResponseWriter, r *http.Request, chat c
 	}
 	a.serveOpenFile(w, r, f, opened, filepath.ToSlash(path), true)
 	return true
+}
+
+// Filesystem permission failures need a different recovery from project-policy
+// denials. In particular, macOS may allow metadata reads but deny file contents
+// from another app's container until the user selects that file in a native dialog.
+func sessionFileReadError(w http.ResponseWriter, err error) {
+	if os.IsPermission(err) {
+		apiJSON(w, http.StatusForbidden, map[string]string{
+			"code":  "file_read_denied",
+			"error": i18n.Translate(w.Header().Get("Content-Language"), "The operating system denied Spool access to this file."),
+		})
+		return
+	}
+	projectFileError(w, err)
 }

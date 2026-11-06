@@ -15,6 +15,8 @@ import {
   chatPreferences,
   takeDesktopNotification,
   subscribeDesktopNotifications,
+  desktopFileAccessURL,
+  subscribeDesktopFileAccess,
 } from "../.test-build/runtime.js";
 import { resolveLanguage, resolveTheme } from "../.test-build/preferences.js";
 import { DesktopSettingsLink, ChatSettingsControl } from "../.test-build/components/web/src/desktop-settings.js";
@@ -24,6 +26,41 @@ test("desktop presentation requires the explicit preload flag, not a query or ge
   for (const surface of [null, {}, { spoolDesktop: "true" }, { spoolDesktop: false }, { mygo: {} }, { location: { search: "?desktop=true" } }]) {
     assert.equal(isDesktopChat(surface), false);
   }
+});
+
+test("attachment access links preserve the exact file and only appear on macOS desktop", () => {
+  const chat = "chat-12345678", path = "/Users/example/合同 & notes.docx";
+  const native = { spoolDesktop: true, mygo: { platform: "darwin" } };
+  const link = new URL(desktopFileAccessURL(chat, path, native), "http://127.0.0.1:8787/");
+  assert.equal(link.pathname, "/__desktop/file-access");
+  assert.equal(link.searchParams.get("chat"), chat);
+  assert.equal(link.searchParams.get("path"), path);
+  for (const surface of [{}, { mygo: native.mygo }, { spoolDesktop: true }, { spoolDesktop: true, mygo: { platform: "windows" } }]) {
+    assert.equal(desktopFileAccessURL(chat, path, surface), undefined);
+  }
+  assert.equal(desktopFileAccessURL(undefined, path, native), undefined);
+  assert.equal(desktopFileAccessURL(chat, "relative.docx", native), undefined);
+});
+
+test("attachment access results validate native event payloads and unsubscribe", () => {
+  const events = new Map();
+  const surface = {
+    spoolDesktop: true,
+    addEventListener: (name, listener) => events.set(name, listener),
+    removeEventListener: (name) => events.delete(name),
+  };
+  const received = [];
+  const off = subscribeDesktopFileAccess((result) => received.push(result), surface);
+  const send = (detail) => events.get("spool:file-access-result")({ detail });
+  for (const invalid of [null, {}, { chat_id: 7, path: "/file" }, { chat_id: "chat", path: "/file", error: {} }]) send(invalid);
+  assert.equal(received.length, 0);
+  const success = { chat_id: "chat-12345678", path: "/合同.docx" };
+  send(success);
+  send({ ...success, error: "Access denied" });
+  assert.deepEqual(received, [success, { ...success, error: "Access denied" }]);
+  off();
+  assert.equal(events.size, 0);
+  subscribeDesktopFileAccess(() => assert.fail("browser subscribed"), {})();
 });
 
 test("desktop notification navigation buffers cold clicks and consumes only native account-scoped targets", () => {

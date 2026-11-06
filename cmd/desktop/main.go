@@ -33,6 +33,7 @@ type panel struct {
 	chatFailed             bool
 	chatLoaded             bool
 	chatStarting           bool
+	fileAccessPending      bool
 	settingsView           *mygo.WebView
 	settingsFailed         bool
 	devFrontend            *desktopDevFrontend
