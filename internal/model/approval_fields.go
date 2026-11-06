@@ -11,8 +11,9 @@ import (
 )
 
 type ApprovalOption struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
 }
 
 // ApprovalField is the primitive form subset defined by MCP elicitation.
@@ -31,16 +32,41 @@ type ApprovalField struct {
 	MaxLength   *int             `json:"max_length,omitempty"`
 	MinItems    *int             `json:"min_items,omitempty"`
 	MaxItems    *int             `json:"max_items,omitempty"`
+	AllowOther  bool             `json:"allow_other,omitempty"`
+	Secret      bool             `json:"secret,omitempty"`
+	Multiline   bool             `json:"multiline,omitempty"`
+	Step        *float64         `json:"step,omitempty"`
 }
 
 // ValidateResponse uses the server's pending request, never a client-supplied
 // schema. Invalid submissions leave the approval pending so the user can retry.
 func (r ApprovalRequest) ValidateResponse(response ApprovalResponse) error {
-	if !response.Allow {
+	decision, err := r.Decision(response)
+	if err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(response.Feedback) > 4096 || (response.Feedback != "" && !r.Feedback) {
+		return fmt.Errorf("Invalid decision feedback")
+	}
+	if decision.Kind != "approve" && decision.Kind != "submit" {
 		return nil
 	}
 	if r.Unavailable != "" {
 		return fmt.Errorf("This request requires input that this client cannot provide")
+	}
+	if r.Schema != nil {
+		schema, err := CompileApprovalSchema(r.Schema)
+		if err != nil {
+			return fmt.Errorf("This request contains an invalid form schema")
+		}
+		content := response.Content
+		if content == nil {
+			content = map[string]any{}
+		}
+		if err := schema.Validate(content); err != nil {
+			return fmt.Errorf("Form values do not match the requested schema: %s", Clip(err.Error(), 2000))
+		}
+		return nil
 	}
 	for key := range response.Content {
 		if !slices.ContainsFunc(r.Fields, func(f ApprovalField) bool { return f.Name == key }) {
@@ -61,7 +87,7 @@ func (r ApprovalRequest) ValidateResponse(response ApprovalResponse) error {
 
 func (f ApprovalField) valid(value any) bool {
 	option := func(value string) bool {
-		return len(f.Options) == 0 || slices.ContainsFunc(f.Options, func(o ApprovalOption) bool { return o.Value == value })
+		return len(f.Options) == 0 || f.AllowOther || slices.ContainsFunc(f.Options, func(o ApprovalOption) bool { return o.Value == value })
 	}
 	switch f.Type {
 	case "string":
@@ -73,11 +99,22 @@ func (f ApprovalField) valid(value any) bool {
 		return ok
 	case "number", "integer":
 		v, ok := value.(float64)
+		base := 0.0
+		if f.Minimum != nil {
+			base = *f.Minimum
+		}
 		return ok && !math.IsNaN(v) && !math.IsInf(v, 0) && (f.Type != "integer" || math.Trunc(v) == v) &&
-			(f.Minimum == nil || v >= *f.Minimum) && (f.Maximum == nil || v <= *f.Maximum)
+			(f.Minimum == nil || v >= *f.Minimum) && (f.Maximum == nil || v <= *f.Maximum) &&
+			(f.Step == nil || (*f.Step > 0 && math.Abs((v-base) / *f.Step - math.Round((v-base) / *f.Step)) < 1e-8))
+	case "json":
+		_, ok := value.(map[string]any)
+		return ok
 	case "array":
 		values, ok := value.([]any)
 		if !ok || (f.MinItems != nil && len(values) < *f.MinItems) || (f.MaxItems != nil && len(values) > *f.MaxItems) {
+			return false
+		}
+		if len(f.Options) == 0 && !f.AllowOther && len(values) > 0 {
 			return false
 		}
 		seen := map[string]bool{}

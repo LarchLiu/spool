@@ -10,6 +10,7 @@ require (
 	github.com/egoist/mygo v0.6.4
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/xuri/excelize/v2 v2.11.1
 	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.46.0
@@ -50,7 +51,6 @@ require (
 	github.com/richardlehane/mscfb v1.0.9 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/safchain/ethtool v0.7.0 // indirect
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/tailscale/certstore v0.1.1-0.20260409135935-3638fb84b77d // indirect
 	github.com/tailscale/go-winio v0.0.0-20231025203758-c4f33415bf55 // indirect
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f // indirect

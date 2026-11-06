@@ -37,14 +37,10 @@ func codexElicitation(params map[string]any) chatmodel.ApprovalRequest {
 		}
 	}
 	request.Detail = strings.TrimSpace(request.Detail)
+	request.Decisions = elicitationDecisions(params)
 	switch stringValue(params["mode"]) {
 	case "form", "openai/form", "openaiForm":
-		fields, err := codexElicitationFields(params["requestedSchema"])
-		if err != nil {
-			request.Unavailable = "This request uses a form that Spool cannot display yet."
-		} else {
-			request.Fields = fields
-		}
+		applyElicitationSchema(&request, params["requestedSchema"])
 	case "url":
 		address := stringValue(params["url"])
 		parsed, err := url.Parse(address)
@@ -61,6 +57,48 @@ func codexElicitation(params map[string]any) chatmodel.ApprovalRequest {
 		request.Unavailable = "This request uses a form that Spool cannot display yet."
 	}
 	return request
+}
+
+func elicitationDecisions(params map[string]any) []chatmodel.ApprovalDecision {
+	label := "Allow once"
+	if stringValue(params["mode"]) == "url" {
+		label = "Confirm authorization"
+	}
+	decisions := []chatmodel.ApprovalDecision{
+		{ID: "deny", Label: "Deny", Kind: "deny"},
+		{ID: "cancel", Label: "Cancel request", Kind: "cancel"},
+		{ID: "allow", Label: label, Kind: "approve"},
+	}
+	meta, _ := params["_meta"].(map[string]any)
+	values, _ := meta["persist"].([]any)
+	for _, value := range values {
+		switch value {
+		case "session":
+			decisions = append(decisions, chatmodel.ApprovalDecision{ID: "persist-session", Label: "Allow for this session", Kind: "approve"})
+		case "always":
+			decisions = append(decisions, chatmodel.ApprovalDecision{ID: "persist-always", Label: "Always allow", Description: "Save this authorization for future requests.", Kind: "approve"})
+		}
+	}
+	return decisions
+}
+
+func applyElicitationSchema(request *chatmodel.ApprovalRequest, value any) {
+	schema, ok := value.(map[string]any)
+	if !ok {
+		request.Unavailable = "This request contains an invalid form schema."
+		return
+	}
+	if _, err := chatmodel.CompileApprovalSchema(schema); err != nil {
+		request.Unavailable = "This request contains an invalid form schema."
+		return
+	}
+	request.Schema = schema
+	fields, err := codexElicitationFields(schema)
+	if err != nil {
+		request.JSONForm = true
+	} else {
+		request.Fields = fields
+	}
 }
 
 func codexElicitationFields(value any) ([]chatmodel.ApprovalField, error) {

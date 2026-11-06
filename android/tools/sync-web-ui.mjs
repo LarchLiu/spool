@@ -186,6 +186,14 @@ for(const file of fs.readdirSync(nativeSource).filter(file=>file.endsWith('.java
   if(key in english&&key in chinese&&key in japanese)textKeys.add(key);
  }
 }
+// Approval labels arrive dynamically from the native provider adapters.
+for (const file of ['approval_protocol.go','codex_permissions.go','claude_approval.go','claude_dialog.go','codex_elicitation.go']) {
+ const source=fs.readFileSync(path.join(root,'internal/agent',file),'utf8');
+ for(const match of source.matchAll(/"((?:[^"\\]|\\.)*)"/g)) {
+  let key;try{key=JSON.parse('"'+match[1]+'"');}catch{continue;}
+  if(key in english&&key in chinese&&key in japanese)textKeys.add(key);
+ }
+}
 for(const key of textKeys)if(!(key in english)||!(key in chinese)||!(key in japanese))throw new Error(`Missing shared UI translation: ${key}`);
 const translations=locale=>[...textKeys].sort().map(key=>`            case ${JSON.stringify(key)}: value = ${JSON.stringify(locale[key])}; break;`).join('\n');
 write('android/app/src/main/java/com/cloudgeek/spool/android/NativeText.java',`package com.cloudgeek.spool.android;\n\n/** Generated from the Web locale catalogs for native components. */\nfinal class NativeText {\n    static String translate(String key, String locale, Object... pairs) {\n        String value = key;\n        if (locale.equals("zh-CN")) switch (key) {\n${translations(chinese)}\n            default: break;\n        }\n        else if (locale.equals("ja")) switch (key) {\n${translations(japanese)}\n            default: break;\n        }\n        for (int i = 0; i + 1 < pairs.length; i += 2) value = value.replace("{" + pairs[i] + "}", String.valueOf(pairs[i + 1]));\n        return value;\n    }\n}\n`);

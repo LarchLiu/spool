@@ -35,7 +35,7 @@ final class NativeTurnActions extends LinearLayout {
             String id = action.optString("user_id"), kind = action.optString("kind");
             JSONObject person = ui.people == null ? null : ui.people.apply(id);
             String name = person == null ? id : person.optString("nickname", id);
-            String key = kind.equals("stop") ? "Stopped by {name}" : kind.equals("approve") ? "Approved by {name}" : "Denied by {name}";
+            String key = kind.equals("stop") ? "Stopped by {name}" : kind.equals("approve") ? "Approved by {name}" : kind.equals("respond") ? "Answered by {name}" : kind.equals("cancel") ? "Cancelled by {name}" : "Denied by {name}";
             String label = ui.t(key, "name", name), summary = action.optString("summary");
             LinearLayout row = new LinearLayout(ui.context); row.setGravity(Gravity.CENTER_VERTICAL);
             View avatar = ui.avatar(person, 18); row.addView(avatar, new LinearLayout.LayoutParams(ui.dp(18), ui.dp(18)));

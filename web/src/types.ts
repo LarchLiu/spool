@@ -89,16 +89,27 @@ export type ApprovalRequest = {
   reason?: string;
   url?: string;
   fields?: ApprovalField[];
+  kind?: "input";
+  decisions?: ApprovalDecision[];
+  schema?: Record<string, unknown>;
+  json_form?: boolean;
+  feedback?: boolean;
   unavailable?: string;
+};
+export type ApprovalDecision = {
+  id: string;
+  label: string;
+  description?: string;
+  kind: "approve" | "deny" | "cancel" | "submit";
 };
 export type ApprovalField = {
   name: string;
   label: string;
   description?: string;
-  type: "string" | "boolean" | "integer" | "number" | "array";
+  type: "string" | "boolean" | "integer" | "number" | "array" | "json";
   format?: string;
   required?: boolean;
-  options?: { value: string; label: string }[];
+  options?: { value: string; label: string; description?: string }[];
   default?: unknown;
   minimum?: number;
   maximum?: number;
@@ -106,6 +117,10 @@ export type ApprovalField = {
   max_length?: number;
   min_items?: number;
   max_items?: number;
+  allow_other?: boolean;
+  secret?: boolean;
+  multiline?: boolean;
+  step?: number;
 };
 export type TranscriptPart = {
   id?: string;
@@ -127,7 +142,18 @@ export type ToolSummary = {
   href?: string;
   version: string;
   bytes: number;
-  kind: "read" | "write" | "create" | "delete" | "search" | "list" | "web" | "shell" | "thinking" | "image" | "other";
+  kind:
+    | "read"
+    | "write"
+    | "create"
+    | "delete"
+    | "search"
+    | "list"
+    | "web"
+    | "shell"
+    | "thinking"
+    | "image"
+    | "other";
   path?: string;
   image_paths?: string[];
   image_count?: number;
@@ -175,7 +201,7 @@ export type Turn = {
 export type TurnAction = {
   id: string;
   user_id: string;
-  kind: "stop" | "approve" | "deny";
+  kind: "stop" | "approve" | "deny" | "cancel" | "respond";
   approval_id?: string;
   summary?: string;
   created_at: number;

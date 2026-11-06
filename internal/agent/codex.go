@@ -55,38 +55,19 @@ func (p *agentProcess) handleCodexApproval(ctx context.Context, value map[string
 	params, _ := value["params"].(map[string]any)
 	method := stringValue(value["method"])
 	requestTurn := stringValue(params["turnId"])
-	if stringValue(params["threadId"]) != p.sessionID || (requestTurn != turnID && !(method == "mcpServer/elicitation/request" && requestTurn == "")) {
+	requestThread := stringValue(params["threadId"])
+	legacy := method == "execCommandApproval" || method == "applyPatchApproval"
+	if legacy {
+		requestThread = stringValue(params["conversationId"])
+	}
+	if requestThread != p.sessionID || (requestTurn != turnID && !((method == "mcpServer/elicitation/request" || legacy) && requestTurn == "")) {
 		return p.denyCodexRequest(value)
 	}
-	request := chatmodel.ApprovalRequest{Title: "Command execution", Reason: chatmodel.Clip(stringValue(params["reason"]), 8192)}
-	switch method {
-	case "item/commandExecution/requestApproval":
-		request.Detail = chatmodel.Clip(stringValue(params["command"]), 16*1024)
-		for _, key := range []string{"cwd", "additionalPermissions", "networkApprovalContext"} {
-			if params[key] != nil {
-				request.Detail = chatmodel.AppendBounded(request.Detail, "\n"+key+": "+approvalDetail(params[key]), 24*1024)
-			}
-		}
-		if options, ok := params["availableDecisions"].([]any); ok {
-			canAccept := false
-			for _, option := range options {
-				if option == "accept" {
-					canAccept = true
-				}
-			}
-			if !canAccept {
-				return p.denyCodexRequest(value)
-			}
-		}
-	case "item/fileChange/requestApproval":
-		request.Title, request.Detail = "Workspace file changes", stringValue(params["grantRoot"])
-	case "item/permissions/requestApproval":
-		request.Title, request.Detail = "Additional permissions", approvalDetail(params["permissions"])
-	case "mcpServer/elicitation/request":
-		request = codexElicitation(params)
-	default:
+	protocol, ok := codexApproval(method, params)
+	if !ok {
 		return p.denyCodexRequest(value)
 	}
+	request := protocol.request
 	decision, err := p.awaitApproval(ctx, p.approve, request, func(event map[string]any) bool {
 		params, _ := event["params"].(map[string]any)
 		return event["method"] == "serverRequest/resolved" && stringValue(params["threadId"]) == p.sessionID && fmt.Sprint(params["requestId"]) == fmt.Sprint(value["id"])
@@ -97,43 +78,24 @@ func (p *agentProcess) handleCodexApproval(ctx context.Context, value map[string
 	if err != nil {
 		return err
 	}
-	if err := request.ValidateResponse(decision); err != nil {
+	decision, err = request.NormalizeResponse(decision)
+	if err != nil {
 		return err
 	}
-	result := map[string]any{"decision": "decline"}
-	if decision.Allow {
-		result["decision"] = "accept"
-	}
-	if method == "item/permissions/requestApproval" {
-		permissions := any(map[string]any{})
-		if decision.Allow {
-			permissions = params["permissions"]
-		}
-		result = map[string]any{"permissions": permissions, "scope": "turn"}
-	}
-	if method == "mcpServer/elicitation/request" {
-		result = map[string]any{"action": "decline", "content": nil}
-		if decision.Allow {
-			result["action"] = "accept"
-			if stringValue(params["mode"]) != "url" {
-				content := decision.Content
-				if content == nil {
-					content = map[string]any{}
-				}
-				result["content"] = content
-			}
-		}
-	}
-	return p.write(map[string]any{"id": value["id"], "result": result})
+	return p.write(map[string]any{"id": value["id"], "result": protocol.result(decision)})
 }
 
 func (p *agentProcess) denyCodexRequest(value map[string]any) error {
 	response := map[string]any{"id": value["id"]}
 	switch stringValue(value["method"]) {
+	case "execCommandApproval", "applyPatchApproval":
+		response["result"] = map[string]any{"decision": "abort"}
 	case "item/commandExecution/requestApproval", "item/fileChange/requestApproval":
 		response["result"] = map[string]any{"decision": "decline"}
 	case "item/permissions/requestApproval":
 		response["result"] = map[string]any{"permissions": map[string]any{}, "scope": "turn"}
+	case "item/tool/requestUserInput":
+		response["result"] = map[string]any{"answers": map[string]any{}}
 	case "mcpServer/elicitation/request":
 		response["result"] = map[string]any{"action": "decline", "content": nil}
 	default:

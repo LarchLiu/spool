@@ -212,13 +212,21 @@ export function TurnActions({
             ? t("Stopped by {name}", {
                 name: person?.nickname || action.user_id,
               })
-            : action.kind === "approve"
-              ? t("Approved by {name}", {
+            : action.kind === "respond"
+              ? t("Answered by {name}", {
                   name: person?.nickname || action.user_id,
                 })
-              : t("Denied by {name}", {
-                  name: person?.nickname || action.user_id,
-                });
+              : action.kind === "cancel"
+                ? t("Cancelled by {name}", {
+                    name: person?.nickname || action.user_id,
+                  })
+                : action.kind === "approve"
+                  ? t("Approved by {name}", {
+                      name: person?.nickname || action.user_id,
+                    })
+                  : t("Denied by {name}", {
+                      name: person?.nickname || action.user_id,
+                    });
         return (
           <li key={action.id}>
             {person && <UserAvatar person={person} size={18} />}

@@ -57,6 +57,14 @@ const approvals = [
   approval("verify", {
     unavailable: "This request requires device verification in the Codex app.",
   }),
+  approval("dynamic", {
+    decisions: [
+      {id: "deny", label: "Deny", kind: "deny"},
+      {id: "allow", label: "Allow once", kind: "approve"},
+      {id: "session", label: "Allow for this session", description: "Applies to this session only.", kind: "approve"},
+      {id: "cancel", label: "Cancel request", kind: "cancel"},
+    ],
+  }),
   approval("revoked"),
 ];
 const now = Date.now();
@@ -113,6 +121,7 @@ window.addEventListener('unhandledrejection', event => errors.push(String(event.
     await until(card);
     report.appApprovalVisible = card().textContent.includes('Calculator') && !card().querySelector('.primary').disabled;
     report.denyRemainsVisible = parseFloat(getComputedStyle(card().querySelector('.quiet')).fontSize) > 0;
+    report.singleOptionHasNoDropdown = !card().querySelector('.custom-select-icon-only');
     const deny = card().querySelector('.quiet'), allow = card().querySelector('.primary');
     const denyRect = deny.getBoundingClientRect(), allowRect = allow.getBoundingClientRect();
     const range = document.createRange(); range.selectNodeContents(deny);
@@ -136,7 +145,17 @@ window.addEventListener('unhandledrejection', event => errors.push(String(event.
     await until(() => card()?.textContent.includes('requires device verification'));
     report.unsupportedRequestVisible = card().querySelector('.primary').disabled && !card().querySelector('.quiet').disabled;
     card().querySelector('.quiet').click();
-    await until(() => card() && !card().querySelector('.primary').disabled);
+    await until(() => card()?.querySelector('.custom-select-icon-only'));
+    const beforeSelection = await (await fetch('/smoke/count')).json();
+    card().querySelector('.custom-select-icon-only button').click();
+    (await until(() => document.querySelector('[role="option"][data-value="session"]'))).click();
+    await until(() => card()?.querySelector('.primary').textContent === 'Allow for this session');
+    const afterSelection = await (await fetch('/smoke/count')).json();
+    report.selectingDoesNotSubmit = beforeSelection.count === afterSelection.count;
+    report.selectedOptionUpdatesMainButton = card().querySelector('.primary').textContent === 'Allow for this session';
+    report.denialStaysSeparate = card().querySelector('.quiet').textContent === 'Deny';
+    card().querySelector('.primary').click();
+    await until(() => card() && !card().querySelector('.custom-select-icon-only') && !card().querySelector('.primary').disabled);
     await fetch('/smoke/revoke', { method: 'POST' });
     await until(() => !card());
     report.cancelledRequestCleared = true;
@@ -149,7 +168,8 @@ window.addEventListener('unhandledrejection', event => errors.push(String(event.
         ? `await fetch('/smoke/audit', { method: 'POST' });
     await until(() => !card() && document.querySelector('.assistant-text'));
     report.auditSummaryFits = document.documentElement.scrollWidth <= innerWidth;`
-        : ""
+        : `await fetch('/smoke/restore', { method: 'POST' });
+    await until(() => card()?.querySelector('.custom-select-icon-only'));`
     }
     await pause(250);
   } catch (error) { report.error = String(error); report.errors = errors; }
@@ -173,12 +193,13 @@ const server = createServer(async (req, res) => {
     reports.set(url.searchParams.get("mode"), JSON.parse(body));
     return json({ ok: true });
   }
+  if (path === "/smoke/count") return json({count: requests.length});
   if (path === "/smoke/revoke") {
     update(-1);
     return json({ ok: true });
   }
   if (path === "/smoke/restore") {
-    update(0);
+    update(4);
     return json({ ok: true });
   }
   if (path === "/smoke/audit") {
@@ -355,11 +376,12 @@ try {
     for (const [key, value] of Object.entries(report))
       assert.equal(value, true, `${mode}: ${key}`);
     assert.deepEqual(requests.slice(start), [
-      { id: "app-access", turn_id: "turn", allow: true, content: {} },
+      { id: "app-access", turn_id: "turn", allow: true, decision: "allow", content: {} },
       {
         id: "form",
         turn_id: "turn",
         allow: true,
+        decision: "allow",
         content: {
           confirm: false,
           name: "Alex",
@@ -368,8 +390,9 @@ try {
           apps: ["notes"],
         },
       },
-      { id: "url", turn_id: "turn", allow: true, content: {} },
-      { id: "verify", turn_id: "turn", allow: false },
+      { id: "url", turn_id: "turn", allow: true, decision: "allow", content: {} },
+      { id: "verify", turn_id: "turn", allow: false, decision: "deny" },
+      { id: "dynamic", turn_id: "turn", allow: true, decision: "session", content: {} },
     ]);
   }
   console.log(JSON.stringify(Object.fromEntries(reports), null, 2));

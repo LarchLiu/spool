@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 final class NativeSelect extends LinearLayout {
     private final NativeUi ui;
     private final String[] values, labels;
+    private final String[] descriptions;
     private final Consumer<String> change;
     private final TextView selected;
     private String value;
@@ -18,11 +19,17 @@ final class NativeSelect extends LinearLayout {
 
     NativeSelect(NativeUi ui, String label, String value, String[] values, String[] labels,
             boolean languageChoice, Consumer<String> change) {
+        this(ui, label, value, values, labels, null, languageChoice, change);
+    }
+
+    NativeSelect(NativeUi ui, String label, String value, String[] values, String[] labels,
+            String[] descriptions, boolean languageChoice, Consumer<String> change) {
         super(ui.context);
         if (values.length != labels.length) throw new IllegalArgumentException("Mismatched options");
         this.ui = ui;
         this.values = values.clone();
         this.labels = labels.clone();
+        this.descriptions = descriptions == null ? new String[values.length] : descriptions.clone();
         this.change = change;
         setGravity(Gravity.CENTER_VERTICAL);
         int vertical = languageChoice ? 11 : 9;
@@ -78,7 +85,7 @@ final class NativeSelect extends LinearLayout {
             String option = values[i];
             boolean current = option.equals(value);
             if (current) initial = i;
-            menu.selectOption(labels[i], current, () -> {
+            menu.selectOption(labels[i], descriptions[i] == null ? "" : descriptions[i], current, () -> {
                 menu.dismiss();
                 requestFocus();
                 if (!option.equals(value)) change.accept(option);

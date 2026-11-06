@@ -12,7 +12,7 @@ const catalogs = { en, "zh-CN": zh, ja };
 
 export function translator(locale: Locale): Translator {
   return (key, values = {}) => {
-    const message: string = catalogs[locale][key] || en[key];
+    const message: string = catalogs[locale][key] || en[key] || key;
     return message.replace(/\{([^}]+)\}/g, (match, name: string) =>
       values[name] === undefined ? match : String(values[name]),
     );

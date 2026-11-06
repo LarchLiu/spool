@@ -44,36 +44,59 @@ func (p *agentProcess) claudeControl(ctx context.Context, request map[string]any
 }
 
 func (p *agentProcess) denyClaudeRequest(value map[string]any) error {
+	if nestedString(value, "request", "subtype") == "request_user_dialog" {
+		// Unknown/undeclared dialogs may belong to another attached client.
+		// A cancelled response would falsely record a human dismissal.
+		return nil
+	}
+	if nestedString(value, "request", "subtype") == "elicitation" {
+		return p.write(map[string]any{"type": "control_response", "response": map[string]any{
+			"subtype": "success", "request_id": value["request_id"], "response": map[string]any{"action": "decline", "content": nil},
+		}})
+	}
 	return p.write(map[string]any{"type": "control_response", "response": map[string]any{
 		"subtype": "success", "request_id": value["request_id"],
 		"response": map[string]any{"behavior": "deny", "message": "This web chat does not grant tool permissions."},
 	}})
 }
 
-func (p *agentProcess) handleClaudeApproval(ctx context.Context, value map[string]any) error {
-	if nestedString(value, "request", "subtype") != "can_use_tool" {
+func (p *agentProcess) handleClaudeApproval(ctx context.Context, value map[string]any, onSettled ...func(map[string]any) error) error {
+	body, _ := value["request"].(map[string]any)
+	protocol, ok := claudeApproval(body)
+	if !ok {
 		return p.denyClaudeRequest(value)
 	}
-	body, _ := value["request"].(map[string]any)
-	request := chatmodel.ApprovalRequest{Title: chatmodel.Clip(stringValue(body["tool_name"]), 240), Detail: approvalDetail(body["input"]), Reason: chatmodel.Clip(stringValue(body["decision_reason"]), 8192)}
+	request := protocol.request
+	settle := func() error {
+		for _, notify := range onSettled {
+			if err := notify(body); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	withdrawn := false
 	decision, err := p.awaitApproval(ctx, p.approve, request, func(event map[string]any) bool {
-		return event["type"] == "control_cancel_request" && event["request_id"] == value["request_id"]
+		withdrawn = event["type"] == "control_cancel_request" && event["request_id"] == value["request_id"]
+		return withdrawn
 	})
 	if errors.Is(err, errApprovalResolved) {
+		if withdrawn {
+			return settle()
+		}
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	response := map[string]any{"behavior": "deny", "message": "The user declined this operation."}
-	if decision.Allow {
-		// Approve only this exact input. Never create persistent allow rules.
-		response = map[string]any{"behavior": "allow", "updatedInput": body["input"]}
-		if response["updatedInput"] == nil {
-			response["updatedInput"] = map[string]any{}
-		}
+	decision, err = request.NormalizeResponse(decision)
+	if err != nil {
+		return err
 	}
-	return p.write(map[string]any{"type": "control_response", "response": map[string]any{"subtype": "success", "request_id": value["request_id"], "response": response}})
+	if err := p.write(map[string]any{"type": "control_response", "response": map[string]any{"subtype": "success", "request_id": value["request_id"], "response": protocol.result(decision)}}); err != nil {
+		return err
+	}
+	return settle()
 }
 
 func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit func(AgentEvent) error) (AgentResult, error, bool) {
@@ -82,7 +105,7 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 	defer func() { p.approve = nil }()
 	result := AgentResult{SessionID: p.sessionID, Model: p.model}
 	if !p.initialized {
-		response, err := p.claudeControl(ctx, map[string]any{"subtype": "initialize", "hooks": nil})
+		response, err := p.claudeControl(ctx, claudeInitializeRequest())
 		if err != nil {
 			return result, err, false
 		}
@@ -176,6 +199,8 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 		}
 	}
 	messageTexts := make(map[string]string)
+	messageOrder := []string{}
+	wireMessages, retiredWireMessages := map[string]string{}, map[string]bool{}
 	messagePhases := make(map[string]string)
 	currentMessage, lastTextMessage := "", ""
 	messageStarted := false
@@ -187,6 +212,9 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 	emitText := func(id, text string) error {
 		if text == "" {
 			return nil
+		}
+		if _, exists := messageTexts[id]; !exists {
+			messageOrder = append(messageOrder, id)
 		}
 		messageTexts[id] += text
 		lastTextMessage = id
@@ -203,6 +231,45 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 		return emit(AgentEvent{Type: "message", Part: &part})
 	}
 	seenActivity := make(map[string]string)
+	settleDialog := func(body map[string]any) error {
+		if body["subtype"] != "request_user_dialog" || body["dialog_kind"] != "refusal_fallback_prompt" {
+			return nil
+		}
+		payload, _ := body["payload"].(map[string]any)
+		uuids, _ := payload["retractedMessageUuids"].([]any)
+		ids := []string{}
+		for _, value := range uuids {
+			uuid := stringValue(value)
+			if uuid == "" {
+				continue
+			}
+			retiredWireMessages[uuid] = true
+			id := wireMessages[uuid]
+			if id == "" {
+				for _, queued := range p.queued {
+					if queued["type"] == "assistant" && queued["uuid"] == uuid {
+						id = nestedString(queued, "message", "id")
+						break
+					}
+				}
+			}
+			if id != "" {
+				ids = append(ids, id)
+				delete(messageTexts, id)
+			}
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		result.Text, lastTextMessage = "", ""
+		for _, id := range messageOrder {
+			if text, exists := messageTexts[id]; exists {
+				result.Text += text
+				lastTextMessage = id
+			}
+		}
+		return emit(AgentEvent{Type: "retract", RetractedIDs: ids})
+	}
 	var streamedThinking string
 	for {
 		var value map[string]any
@@ -221,7 +288,7 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 		}
 		switch stringValue(value["type"]) {
 		case "control_request":
-			if err := p.handleClaudeApproval(ctx, value); err != nil {
+			if err := p.handleClaudeApproval(ctx, value, settleDialog); err != nil {
 				return result, err, false
 			}
 		case "system":
@@ -288,6 +355,9 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				}
 			}
 		case "assistant":
+			if retiredWireMessages[stringValue(value["uuid"])] {
+				continue
+			}
 			if claudeCompactionRecord(value) {
 				continue
 			}
@@ -298,6 +368,9 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 			}
 			if id == "" {
 				id = newMessage()
+			}
+			if uuid := stringValue(value["uuid"]); uuid != "" {
+				wireMessages[uuid] = id
 			}
 			if err := setPhase(id, claudeMessagePhase(message)); err != nil {
 				return result, err, false

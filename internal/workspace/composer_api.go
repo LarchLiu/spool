@@ -188,10 +188,12 @@ func (a *App) requestApproval(ctx context.Context, chatID, turnID string, reques
 
 func (a *App) approvalResponse(w http.ResponseWriter, r *http.Request, chat chatmodel.Session, user string) {
 	var input struct {
-		ID      string         `json:"id"`
-		TurnID  string         `json:"turn_id"`
-		Allow   bool           `json:"allow"`
-		Content map[string]any `json:"content"`
+		ID       string         `json:"id"`
+		TurnID   string         `json:"turn_id"`
+		Allow    bool           `json:"allow"`
+		Content  map[string]any `json:"content"`
+		Decision string         `json:"decision"`
+		Feedback string         `json:"feedback"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
@@ -204,20 +206,14 @@ func (a *App) approvalResponse(w http.ResponseWriter, r *http.Request, chat chat
 		apiError(w, 409, "This approval request is no longer pending")
 		return
 	}
-	response := chatmodel.ApprovalResponse{Allow: input.Allow}
-	if input.Allow {
-		response.Content = input.Content
-	}
-	if err := pending.request.ValidateResponse(response); err != nil {
+	response, err := pending.request.NormalizeResponse(chatmodel.ApprovalResponse{Allow: input.Allow, Decision: input.Decision, Content: input.Content, Feedback: input.Feedback})
+	if err != nil {
 		a.liveMu.Unlock()
 		apiError(w, 400, err.Error())
 		return
 	}
-	kind := "deny"
-	if input.Allow {
-		kind = "approve"
-	}
-	action, err := a.store.recordTurnAction(chat.ID, input.TurnID, user, kind, input.ID, pending.request.AuditSummary())
+	kind, summary := pending.request.ResponseAudit(response)
+	action, err := a.store.recordTurnAction(chat.ID, input.TurnID, user, kind, input.ID, summary)
 	if err != nil {
 		a.liveMu.Unlock()
 		apiError(w, 500, "Could not record this operation")

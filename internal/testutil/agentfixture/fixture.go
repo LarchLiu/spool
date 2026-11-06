@@ -316,6 +316,19 @@ func Run(t *testing.T) {
 			}
 		}
 		text := "Hello world"
+		if !codex && strings.Contains(prompt, "refusal-dialog") {
+			send(map[string]any{"type": "stream_event", "event": map[string]any{"type": "message_start", "message": map[string]any{"id": "refused-message"}}})
+			send(map[string]any{"type": "stream_event", "event": map[string]any{"type": "content_block_delta", "delta": map[string]any{"type": "text_delta", "text": "Retracted refusal."}}})
+			send(map[string]any{"type": "assistant", "uuid": "refused-wire-uuid", "message": map[string]any{"id": "refused-message", "content": []any{map[string]any{"type": "text", "text": "Retracted refusal."}}}})
+			send(map[string]any{"type": "control_request", "request_id": "dialog-1", "request": map[string]any{"subtype": "request_user_dialog", "dialog_kind": "refusal_fallback_prompt", "payload": map[string]any{"originalModel": "original", "fallbackModel": "fallback", "retractedMessageUuids": []string{"refused-wire-uuid"}}}})
+			if !scanner.Scan() {
+				os.Exit(8)
+			}
+			var reply map[string]any
+			_ = json.Unmarshal(scanner.Bytes(), &reply)
+			log(map[string]any{"method": "dialog-reply", "value": reply})
+			send(map[string]any{"type": "stream_event", "event": map[string]any{"type": "message_stop"}})
+		}
 		if strings.Contains(prompt, "large-reply") {
 			text = strings.Repeat("x", 900_000)
 		}

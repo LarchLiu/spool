@@ -124,7 +124,7 @@ func TestCodexMCPElicitationResolutionClearsPromptWithoutReply(t *testing.T) {
 func TestCodexMCPElicitationUnsupportedInputRemainsVisible(t *testing.T) {
 	for _, params := range []string{
 		`{"mode":"openai/userVerification","title":"Verify device","description":"Use your device","challenge":"secret"}`,
-		`{"mode":"form","requestedSchema":{"type":"object","properties":{"nested":{"type":"object"}}}}`,
+		`{"mode":"form","requestedSchema":{"type":"object","properties":{"nested":{"type":"nonsense"}}}}`,
 		`{"mode":"url","url":"javascript:alert(1)"}`,
 	} {
 		request := codexElicitation(elicitationParams(t, params))

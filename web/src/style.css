@@ -2460,6 +2460,30 @@ a.attachment-open {
   display: grid;
   gap: 6px;
 }
+.approval-multiple label { display: flex; align-items: flex-start; gap: 6px; }
+.approval-multiple small { display: block; white-space: pre-wrap; }
+.approval-field textarea {
+  width: 100%; box-sizing: border-box; resize: vertical; padding: 8px;
+  color: var(--text); background: var(--elevated);
+  border: 1px solid var(--border-strong); border-radius: 7px;
+  font: inherit;
+}
+.approval-field textarea[spellcheck="false"] { font-family: monospace; font-size: 11px; }
+.approval-field details { width: 100%; }
+.approval-choice > input:not([type="hidden"]) { margin-top: 6px; }
+.custom-select-description { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.approval-split { display: inline-flex; min-width: 0; max-width: 100%; align-items: stretch; }
+.approval-split > .primary:not(:last-child) { border-start-end-radius: 0; border-end-end-radius: 0; }
+.approval-split .custom-select { display: flex; flex: 0 0 auto; }
+.approval-split .custom-select-trigger {
+  height: 100%; min-height: 34px; width: 34px; padding: 0; justify-content: center;
+  border: 0; border-inline-start: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 0 9px 9px 0; background: var(--color-primary); color: var(--color-on-primary);
+}
+.approval-split .custom-select-trigger svg { margin: 0; }
+.approval-split .custom-select-trigger:hover:not(:disabled) { background: var(--color-primary-hover); }
+.approval-split > .primary { overflow-wrap: anywhere; }
+.approval-card > .approval-actions { flex-wrap: wrap; }
 .approval-field input:not([type="checkbox"]):not([type="hidden"]) {
   width: 100%;
   box-sizing: border-box;
@@ -4223,3 +4247,5 @@ option {
   color: var(--muted);
   font-size: 11px;
 }
+
+.custom-select-menu[data-descriptions="true"] button > span { white-space: normal; overflow-wrap: anywhere; }

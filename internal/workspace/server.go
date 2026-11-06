@@ -947,6 +947,23 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 					}
 				}
 			}
+		case "retract":
+			removed := map[string]bool{}
+			for _, id := range event.RetractedIDs {
+				removed[id] = true
+			}
+			parts := make([]chatmodel.Part, 0, len(current.Parts))
+			current.Reply = ""
+			for _, part := range current.Parts {
+				if part.Role == "assistant" && removed[part.ID] {
+					continue
+				}
+				parts = append(parts, part)
+				if part.Role == "assistant" && part.Kind == "text" {
+					current.Reply += part.Text
+				}
+			}
+			current.Parts = parts
 		case "part":
 			if event.Part != nil {
 				if event.Part.Kind == "thinking" {

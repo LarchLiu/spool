@@ -45,6 +45,7 @@ type AgentEvent struct {
 	Model           string          `json:"model,omitempty"`
 	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
 	Part            *chatmodel.Part `json:"part,omitempty"`
+	RetractedIDs    []string        `json:"retracted_ids,omitempty"`
 }
 
 type AgentResult struct {

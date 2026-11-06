@@ -4,7 +4,12 @@ import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
 import { selectPopupLayout } from "./custom-select-layout.js";
 
-export type SelectOption = { value: string; label: string; disabled?: boolean };
+export type SelectOption = {
+  value: string;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+};
 
 export function CustomSelect({
   value,
@@ -12,12 +17,14 @@ export function CustomSelect({
   label,
   disabled = false,
   onChange,
+  iconOnly = false,
 }: {
   value: string;
   options: readonly SelectOption[];
   label: string;
   disabled?: boolean;
   onChange: (value: string) => void;
+  iconOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [layout, setLayout] = useState<ReturnType<typeof selectPopupLayout>>();
@@ -76,7 +83,13 @@ export function CustomSelect({
         setOpen(false);
         return;
       }
-      setLayout(selectPopupLayout(anchor, view, options.length));
+      setLayout(
+        selectPopupLayout(
+          iconOnly ? { ...anchor, width: Math.max(300, anchor.width) } : anchor,
+          view,
+          options.length,
+        ),
+      );
     };
     update();
     const available = enabledOptions();
@@ -194,7 +207,9 @@ export function CustomSelect({
   };
 
   return (
-    <div className="custom-select">
+    <div
+      className={`custom-select${iconOnly ? " custom-select-icon-only" : ""}`}
+    >
       <button
         type="button"
         ref={trigger}
@@ -221,7 +236,9 @@ export function CustomSelect({
           } else if (open) navigate(event);
         }}
       >
-        <span id={`${id}-value`}>{selected?.label ?? value}</span>
+        <span id={`${id}-value`} hidden={iconOnly}>
+          {selected?.label ?? value}
+        </span>
         <ChevronDown size={14} aria-hidden="true" />
       </button>
       {open &&
@@ -233,6 +250,11 @@ export function CustomSelect({
             role="listbox"
             aria-label={label}
             className="custom-select-menu"
+            data-descriptions={
+              iconOnly || options.some((option) => option.description)
+                ? "true"
+                : undefined
+            }
             popover="manual"
             data-side={layout?.side}
             style={
@@ -269,7 +291,14 @@ export function CustomSelect({
                     if (option.value !== value) onChange(option.value);
                   }}
                 >
-                  <span>{option.label}</span>
+                  <span>
+                    {option.label}
+                    {option.description && (
+                      <small className="custom-select-description">
+                        {option.description}
+                      </small>
+                    )}
+                  </span>
                   {option.value === value && (
                     <Check size={14} aria-hidden="true" />
                   )}

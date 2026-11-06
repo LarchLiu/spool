@@ -110,6 +110,61 @@ public class MainActivityApprovalTest {
         }
     }
 
+    @Test public void dynamicSelectionOnlySubmitsWhenConfirmIsPressed() throws Exception {
+        for (boolean dark : new boolean[] {false, true}) {
+            try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+                JSONObject approval = request().put("decisions", new JSONArray()
+                        .put(NativeApprovalActions.choice("deny", "Deny", "deny"))
+                        .put(NativeApprovalActions.choice("allow", "Allow once", "approve"))
+                        .put(NativeApprovalActions.choice("session", "Allow for this session", "approve")));
+                show(h, approval, dark);
+                View root = h.get("root");
+                NativeUi ui = h.get("ui");
+                View dropdown = description(root, "选择审批选项");
+                assertNotNull(dropdown); assertNotNull(text(root, "拒绝"));
+                assertTrue(dropdown.performClick());
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                assertNotNull(ui.activePopover);
+                assertTrue(ui.activePopover.content.getChildAt(1).performClick());
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                assertTrue("Choosing a menu option sends no API request", MainActivityGoalTest.ShadowClient.calls.isEmpty());
+                View confirm = text(root, "本会话内允许"); assertNotNull(confirm);
+                assertNotNull(text(root, "拒绝"));
+                root.measure(View.MeasureSpec.makeMeasureSpec(360, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY));
+                root.layout(0, 0, 360, 800); root.getViewTreeObserver().dispatchOnPreDraw();
+                screenshot(root, dark ? "split-dark" : "split-light");
+                assertTrue(confirm.performClick()); h.io.run();
+                JSONObject body = new JSONObject(MainActivityGoalTest.ShadowClient.calls.get(0).get(2));
+                assertEquals("session", body.getString("decision")); assertTrue(body.getBoolean("allow"));
+            }
+        }
+    }
+
+    @Test public void oneConfirmOptionDoesNotRenderDropdownAndQuestionsPreserveTypes() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            JSONObject approval = request().put("kind", "input").put("decisions", new JSONArray()
+                    .put(NativeApprovalActions.choice("deny", "Cancel request", "cancel"))
+                    .put(NativeApprovalActions.choice("allow", "Send answers", "submit")))
+                    .put("fields", new JSONArray().put(new JSONObject().put("name", "token").put("label", "Token").put("type", "string").put("secret", true).put("default", "secret"))
+                    .put(new JSONObject().put("name", "features").put("label", "Features").put("type", "array").put("options", new JSONArray().put(new JSONObject().put("value", "A").put("label", "A"))).put("default", new JSONArray().put("A"))));
+            show(h, approval, false);
+            View root = h.get("root");
+            assertNull(description(root, "选择审批选项"));
+            assertTrue(text(root, "提交回答").performClick()); h.io.run();
+            JSONObject body = new JSONObject(MainActivityGoalTest.ShadowClient.calls.get(0).get(2));
+            assertEquals("secret", body.getJSONObject("content").getString("token"));
+            assertEquals("A", body.getJSONObject("content").getJSONArray("features").getString(0));
+        }
+    }
+
+    private View description(View view, String value) {
+        if (value.equals(view.getContentDescription() == null ? null : view.getContentDescription().toString())) return view;
+        if (view instanceof ViewGroup) for (int i=0; i<((ViewGroup)view).getChildCount(); i++) {
+            View found=description(((ViewGroup)view).getChildAt(i), value); if (found!=null) return found;
+        }
+        return null;
+    }
+
     @Test public void approvalAuditRecordsRenderBelowTheReplyAndUpdateWithTheSameTurn() throws Exception {
         for (boolean dark : new boolean[] {false, true}) {
             try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {

@@ -124,15 +124,25 @@ final class NativePopover {
     }
 
     void selectOption(String title, boolean selected, Runnable click) {
+        selectOption(title, "", selected, click);
+    }
+
+    void selectOption(String title, String description, boolean selected, Runnable click) {
         LinearLayout row = ui.row();
         row.setMinimumHeight(ui.dp(36));
         row.setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8));
         row.setBackground(ui.states(selected ? ui.controlHover : 0x00000000, 6, 0, ui.controlHover, 0x00000000));
         TextView label = ui.text(title, 12, ui.text);
         ui.fixedLineHeight(label, 1.2f);
-        label.setSingleLine(true);
-        label.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+        if (description.isEmpty()) {
+            label.setSingleLine(true);
+            label.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+        } else {
+            LinearLayout copy = ui.column(); copy.addView(label);
+            copy.addView(ui.text(description, 11, ui.muted));
+            row.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
+        }
         if (selected) {
             android.widget.ImageView check = ui.decorativeIcon("check", 14);
             check.setImageTintList(android.content.res.ColorStateList.valueOf(ui.text));

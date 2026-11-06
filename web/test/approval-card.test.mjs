@@ -108,3 +108,42 @@ test("unsupported verification remains visible with a working deny action", () =
   assert.match(html, /type="submit"[^>]*disabled/);
   assert.match(html, /type="button" class="quiet">Deny/);
 });
+
+test("a lone confirm option has no dropdown, with denial kept separate", () => {
+  const html = render({decisions: [
+    {id: "deny", label: "Deny", kind: "deny"},
+    {id: "allow", label: "Allow once", kind: "approve"},
+  ]});
+  assert.match(html, /type="button" class="quiet">Deny/);
+  assert.match(html, /type="submit" class="primary">Allow once/);
+  assert.doesNotMatch(html, /aria-haspopup="listbox"/);
+});
+
+test("multiple confirm options use one main action and an adjacent dropdown", () => {
+  const html = render({decisions: [
+    {id: "deny", label: "Deny", kind: "deny"},
+    {id: "session", label: "Allow for this session", kind: "approve", description: "Session scope"},
+    {id: "allow", label: "Allow once", kind: "approve"},
+    {id: "cancel", label: "Cancel turn", kind: "cancel"},
+  ]});
+  assert.equal((html.match(/class="primary"/g) ?? []).length, 1);
+  assert.match(html, /class="approval-split"/);
+  assert.match(html, /custom-select-icon-only/);
+  assert.match(html, /aria-label="Choose an approval option"/);
+  assert.match(html, /type="button" class="quiet">Deny/);
+  assert.doesNotMatch(html, /No permanent rules are saved/);
+});
+
+test("interactive forms expose secret input, other answers and schema fallback", () => {
+  const html = render({kind: "input", json_form: true, schema: {type:"object", properties:{nested:{type:"object"}}}, fields: [
+    {name:"token",label:"Token",type:"string",secret:true},
+    {name:"region",label:"Region",type:"string",allow_other:true,options:[{value:"EU",label:"Europe",description:"European region"}]},
+  ]});
+  assert.match(html, /Your input is needed/);
+  assert.match(html, /type="password"/);
+  assert.match(html, /Other answer/);
+  assert.match(html, /Requested form schema/);
+  assert.match(html, /name="spool-json-form"/);
+  const data = new FormData(); data.set("input", '{"command":"echo edited"}');
+  assert.deepEqual(approvalContent([{name:"input",type:"json"}], data), {input: {command:"echo edited"}});
+});

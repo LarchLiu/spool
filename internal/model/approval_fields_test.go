@@ -86,3 +86,11 @@ func TestApprovalArrayChoicesAndFormats(t *testing.T) {
 		}
 	}
 }
+
+func TestDecisionAuditPreservesScopeAndNeverSubmittedAnswers(t *testing.T) {
+	request := ApprovalRequest{Title: "Command execution", Detail: strings.Repeat("command ", 100), Decisions: []ApprovalDecision{{ID: "session", Label: "Allow for this session", Kind: "approve"}}}
+	kind, summary := request.ResponseAudit(ApprovalResponse{Decision: "session", Content: map[string]any{"secret": "sensitive-value"}})
+	if kind != "approve" || !strings.HasSuffix(summary, " · Allow for this session") || len([]rune(summary)) > 200 || strings.Contains(summary, "sensitive-value") {
+		t.Fatal(kind, summary)
+	}
+}
