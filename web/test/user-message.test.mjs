@@ -112,7 +112,7 @@ test("only user text is collapsible; attachments and copy retain the complete me
     new URL("../src/style.css", import.meta.url),
     "utf8",
   );
-  assert.match(main, /userText && <UserMessage text=\{userText\} t=\{t\}/);
+  assert.match(main, /userText && (?:\(\s*)?<UserMessage text=\{userText\} t=\{t\}/);
   assert.match(main, /<MessageFooter\s+role="user"\s+text=\{userText\}/);
   assert.match(source, /aria-controls=\{id\}/);
   assert.match(source, /aria-expanded=\{expanded\}/);

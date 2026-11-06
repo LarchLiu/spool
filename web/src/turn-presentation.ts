@@ -1,5 +1,6 @@
 import type { TranscriptPart, Turn } from "./types";
 import type { Translator } from "./i18n";
+export { turnExchanges, exchangeFiles } from "./turn-exchanges.js";
 
 export function turnWorkLabel(turn: Turn, t: Translator, now: number, answered = false) {
   const running = turn.status === "running";

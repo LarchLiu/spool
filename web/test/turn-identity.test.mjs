@@ -304,7 +304,7 @@ test("message avatars sit to the right", async () => {
     main,
     /<\/div>\s*<TurnOperatorAvatar person=\{operator\} \/>\s*<\/div>\s*\)\}\s*<TurnResponse/,
   );
-  assert.match(main, /actions=\{\s*<TurnActions[\s\S]*?\/>\s*\}/);
+  assert.match(main, /actions=\{\s*last && \(\s*<TurnActions[\s\S]*?\/>\s*\)\s*\}/);
   const css = await readFile(
     new URL("../src/style.css", import.meta.url),
     "utf8",

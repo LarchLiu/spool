@@ -265,18 +265,18 @@ test("failed copies propagate failure and still clean up the fallback", async ()
   assert.ok(f.events.some((event) => event[0] === "restore selection"));
 });
 
-test("chat wiring uses send/completion timestamps and role-specific footer alignment", async () => {
+test("chat wiring applies turn timestamps only to the initial input and last response", async () => {
   const source = await readFile(
     new URL("../src/main.tsx", import.meta.url),
     "utf8",
   );
   assert.match(
     source,
-    /<MessageFooter\s+role="user"\s+text=\{userText\}\s+timestamp=\{turn.started_at\}/,
+    /<MessageFooter\s+role="user"\s+text=\{userText\}\s+timestamp=\{\s*index === 0 \? turn.started_at : undefined\s*\}/,
   );
   assert.match(
     source,
-    /<TurnResponse[\s\S]*?timestamp=\{turn.finished_at\}\s+locale=\{locale\}/,
+    /<TurnResponse[\s\S]*?timestamp=\{last \? turn.finished_at : undefined\}\s+locale=\{locale\}/,
   );
   const css = await readFile(
     new URL("../src/style.css", import.meta.url),

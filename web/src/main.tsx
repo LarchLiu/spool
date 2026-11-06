@@ -117,6 +117,7 @@ import { hasUserMessage, UserMessage } from "./user-message";
 import { MessageFooter } from "./message-footer";
 import { TurnActions, TurnOperatorAvatar } from "./turn-identity";
 import { TurnResponse } from "./tool-activity";
+import { exchangeFiles, turnExchanges } from "./turn-exchanges";
 import { turnWorkLabel } from "./turn-presentation";
 import { chatSelection, chooseModel } from "./model-selection";
 import { effortLabel as formatEffort } from "./i18n";
@@ -1822,94 +1823,112 @@ function App() {
                   turn.part_start,
                   turn.part_end,
                 );
-                const userText = parts
-                  .filter(
-                    (part) => part.role === "user" && part.kind === "text",
-                  )
-                  .map((part) => part.text)
-                  .join("\n");
-
-                const nativeFiles: Attachment[] = parts.flatMap(
-                  (part, index) =>
-                    part.role === "user" &&
-                    part.kind === "image" &&
-                    part.image_url
-                      ? [
-                          {
-                            id: turn.id + "-image-" + index,
-                            name: part.name || "image",
-                            media_type: part.image_url.slice(
-                              5,
-                              part.image_url.indexOf(";"),
-                            ),
-                            size: 0,
-                            preview_url: part.image_url,
-                          },
-                        ]
-                      : part.role === "user" && part.kind === "context" && part.name && part.file_path
-                        ? [{ id: turn.id + "-file-" + index, name: part.name, media_type: "application/octet-stream", size: 0,
-                          preview_url: `/api/chats/${encodeURIComponent(chat.id)}/file?path=${encodeURIComponent(part.file_path)}&download=1` }]
-                        : [],
-                );
-                const turnFiles = turn.attachments?.length
-                  ? turn.attachments
-                  : nativeFiles;
+                const exchanges = turnExchanges(parts);
                 return (
                   <article className="turn" key={turn.id}>
-                    {hasUserMessage(userText, turnFiles) && (
-                      <div className="user-row">
-                        <div className="user-message">
-                          {!!turnFiles.length && (
-                            <AttachmentCards
-                              files={turnFiles}
-                              chatID={chat.id}
-                              t={t}
-                              onPreview={(file, url) => setPreview({ file, url })}
-                            />
-                        )}
-                        {userText && <UserMessage text={userText} t={t} />}
-                        <MessageFooter
-                          role="user"
-                          text={userText}
-                          timestamp={turn.started_at}
-                          author={operator?.nickname}
-                          locale={locale}
-                          t={t}
-                        />
-                      </div>
-                      <TurnOperatorAvatar person={operator} />
-                    </div>
-                    )}
-                    <TurnResponse
-                      parts={parts}
-                      backend={turn.backend}
-                      t={t}
-                      running={turn.status === "running"}
-                      timestamp={turn.finished_at}
-                      locale={locale}
-                      actions={
-                        <TurnActions
-                          chat={chat}
-                          turn={turn}
-                          locale={locale}
-                          t={t}
-                          resolve={resolveProfile}
-                        />
-                      }
-                      summary={workSummary(
-                        turn,
-                        t,
-                        clock,
-                        effortLabel,
-                        parts.some(
+                    {exchanges.map((exchange, index) => {
+                      const input = parts.slice(
+                        exchange.start,
+                        exchange.inputEnd,
+                      );
+                      const response = parts.slice(
+                        exchange.inputEnd,
+                        exchange.end,
+                      );
+                      const last = index === exchanges.length - 1;
+                      const segmentTurn = last
+                        ? turn
+                        : {
+                            ...turn,
+                            status: "completed",
+                            compacting: false,
+                            finished_at: undefined,
+                          };
+                      const userText = input
+                        .filter(
                           (part) =>
-                            part.phase === "final_answer" &&
-                            part.role === "assistant" &&
-                            part.kind === "text" &&
-                            !!part.text.trim(),
-                        ),
-                      )}
-                    />
+                            part.role === "user" && part.kind === "text",
+                        )
+                        .map((part) => part.text)
+                        .join("\n");
+
+                      const nativeFiles = exchangeFiles(
+                        input,
+                        turn.id,
+                        chat.id,
+                        exchange.start,
+                      );
+                      const turnFiles =
+                        index === 0 && turn.attachments?.length
+                          ? turn.attachments
+                          : nativeFiles;
+                      return (
+                        <div className="turn-exchange" key={exchange.start}>
+                          {hasUserMessage(userText, turnFiles) && (
+                            <div className="user-row">
+                              <div className="user-message">
+                                {!!turnFiles.length && (
+                                  <AttachmentCards
+                                    files={turnFiles}
+                                    chatID={chat.id}
+                                    t={t}
+                                    onPreview={(file, url) =>
+                                      setPreview({ file, url })
+                                    }
+                                  />
+                                )}
+                                {userText && (
+                                  <UserMessage text={userText} t={t} />
+                                )}
+                                <MessageFooter
+                                  role="user"
+                                  text={userText}
+                                  timestamp={
+                                    index === 0 ? turn.started_at : undefined
+                                  }
+                                  author={operator?.nickname}
+                                  locale={locale}
+                                  t={t}
+                                />
+                              </div>
+                              <TurnOperatorAvatar person={operator} />
+                            </div>
+                          )}
+                          <TurnResponse
+                            parts={response}
+                            backend={turn.backend}
+                            t={t}
+                            running={last && turn.status === "running"}
+                            timestamp={last ? turn.finished_at : undefined}
+                            locale={locale}
+                            actions={
+                              last && (
+                                <TurnActions
+                                  chat={chat}
+                                  turn={turn}
+                                  locale={locale}
+                                  t={t}
+                                  resolve={resolveProfile}
+                                />
+                              )
+                            }
+                            summary={workSummary(
+                              segmentTurn,
+                              t,
+                              clock,
+                              effortLabel,
+                              response.some(
+                                (part) =>
+                                  part.phase === "final_answer" &&
+                                  part.role === "assistant" &&
+                                  part.kind === "text" &&
+                                  !!part.text.trim(),
+                              ),
+                            )}
+                          />
+                        </div>
+                      );
+                    })}
                     {turn.pending_approval && (
                       <ApprovalCard
                         key={turn.pending_approval.id}

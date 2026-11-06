@@ -45,6 +45,42 @@ public class MainActivityTranscriptTest {
     }
     private void show(MainActivityGoalTest.Harness h, JSONObject value) { h.set("chat",value); h.call("renderChat"); layout(h); }
 
+    @Test public void steeringInputsAndFilesStayInOrderWithoutRemountingEarlierMessages() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            JSONObject value = chat();
+            JSONArray parts = new JSONArray()
+                    .put(new JSONObject("{role:'user',kind:'text',text:'Initial request'}"))
+                    .put(new JSONObject("{role:'assistant',kind:'text',phase:'final_answer',text:'First answer'}"))
+                    .put(new JSONObject("{role:'user',kind:'text',text:'Follow up'}"))
+                    .put(new JSONObject("{role:'user',kind:'context',name:'notes.txt',file_path:'/fixture/notes.txt',text:'notes.txt'}"))
+                    .put(new JSONObject("{role:'assistant',kind:'text',phase:'final_answer',text:'Second answer'}"));
+            JSONObject turn = value.getJSONArray("turns").getJSONObject(0);
+            turn.put("part_end", parts.length()).put("status", "running").remove("finished_at");
+            turn.put("attachments", new JSONArray("[{id:'upload',name:'first.txt',media_type:'text/plain'}]"));
+            value.put("turns", new JSONArray().put(turn)).getJSONObject("transcript").put("parts", parts);
+            show(h, value);
+            LinearLayout content = h.get("historyContent");
+            List<NativeUserRow> users = views(content, NativeUserRow.class);
+            List<NativeTurn> responses = views(content, NativeTurn.class);
+            assertEquals(2, users.size()); assertEquals(2, responses.size());
+            assertNotNull(text(users.get(0), "Initial request")); assertNotNull(text(users.get(1), "Follow up"));
+            assertNotNull(text(responses.get(0), "First answer")); assertNotNull(text(responses.get(1), "Second answer"));
+            assertEquals(1, users.get(0).attachments.getChildCount()); assertNotNull(text(users.get(0).attachments, "first.txt"));
+            assertEquals(1, users.get(1).attachments.getChildCount()); assertNotNull(text(users.get(1).attachments, "notes.txt"));
+            assertTrue(content.indexOfChild(users.get(0)) < content.indexOfChild(responses.get(0)));
+            assertTrue(content.indexOfChild(responses.get(0)) < content.indexOfChild(users.get(1)));
+            assertTrue(content.indexOfChild(users.get(1)) < content.indexOfChild(responses.get(1)));
+            assertTrue(users.get(1).message.footer.time.getText().toString().isEmpty());
+            parts.put(new JSONObject("{role:'user',kind:'text',text:'Third request'}")); turn.put("part_end", parts.length());
+            show(h, value);
+            List<NativeUserRow> next = views(content, NativeUserRow.class);
+            assertEquals(3, next.size()); assertSame(users.get(0), next.get(0)); assertSame(users.get(1), next.get(1));
+            assertSame(responses.get(0), views(content, NativeTurn.class).get(0));
+            assertNotNull(text(next.get(2), "Third request"));
+            assertEquals("Original turn state stays running", "running", turn.optString("status"));
+        }
+    }
+
     @Test public void nativeHistoricalImageAndFileAttachmentsRenderWithoutUploadMetadataAndKeepClickOwnership() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(16, 8, android.graphics.Bitmap.Config.ARGB_8888);
@@ -280,7 +316,7 @@ public class MainActivityTranscriptTest {
             JSONObject value=chat();JSONArray parts=value.getJSONObject("transcript").getJSONArray("parts");JSONObject turn=value.getJSONArray("turns").getJSONObject(1);
             parts.put(3,new JSONObject().put("role","assistant").put("kind","tool_use").put("id","read-one").put("name","read_file").put("text","{\"file_path\":\"src/example.ts\"}"));show(h,value);
             NativeTurn response=views(h.get("historyContent"),NativeTurn.class).get(1);NativeActivityList activity=response.activity;
-            TextView title=text(activity,"Used Read file");((View)title.getParent()).performClick();layout(h);NativeToolDetail detail=views(activity,NativeToolDetail.class).get(0);TextView input=text(detail,"{\"file_path\"");Object document=input.getText();Selection.setSelection((Spannable)document,1,6);
+            TextView title=text(activity,"Read src/example.ts");((View)title.getParent()).performClick();layout(h);NativeToolDetail detail=views(activity,NativeToolDetail.class).get(0);TextView input=text(detail,"{\"file_path\"");Object document=input.getText();Selection.setSelection((Spannable)document,1,6);
             parts.put(new JSONObject().put("role","tool").put("kind","tool_result").put("text","First result"));turn.put("part_end",5);show(h,value);assertSame(activity,response.activity);assertSame(detail,views(activity,NativeToolDetail.class).get(0));assertSame(document,input.getText());assertEquals(6,input.getSelectionEnd());TextView output=text(detail,"First result");
             parts.getJSONObject(4).put("text","First result with live tail");turn.put("model","updated-model");show(h,value);assertSame(activity,response.activity);assertSame(output,text(detail,"First result with live tail"));assertSame(document,input.getText());assertEquals(6,input.getSelectionEnd());
             parts.put(new JSONObject().put("role","assistant").put("kind","text").put("phase","final_answer").put("text","Final answer"));turn.put("part_end",6);show(h,value);assertSame(activity,response.activity);assertTrue(views(activity,NativeToolDetail.class).isEmpty());assertFalse(detail.isAttachedToWindow());assertNotNull(text(response,"Final answer"));assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());

@@ -1473,21 +1473,32 @@ public final class MainActivity extends Activity {
         JSONArray parts = array(page.optJSONObject("transcript"), "parts");
         int start = Math.max(0, turn.optInt("part_start")),
                 end = Math.min(parts.length(), turn.optInt("part_end", parts.length()));
-        String input = NativeUserRow.text(parts, start, end);
         String operatorID = turn.optString("user_id");
         if (operatorID.isEmpty()) operatorID = page.optString("user_id");
         JSONObject operator = operatorID.isEmpty() ? null : person(operatorID);
-        if (NativeUserRow.hasContent(input, array(turn, "attachments"), parts, start, end)) {
-            NativeUserRow userRow = (NativeUserRow) transcriptViews.use(key + "/user", "user",
-                    () -> new NativeUserRow(ui, operator, input, turn.optLong("started_at"), null, this::openMessageLink));
-            userRow.bind(operator, input, turn.optLong("started_at"), userFiles(page, turn, userRow));
-            transcriptViews.use(key + "/user-gap", "", () -> ui.space(22));
-        }
         String activityKey = turn.optString("id", page.optString("id") + ":" + turn.optInt("part_start"));
-        NativeTurn response = (NativeTurn) transcriptViews.use(key + "/response", "", () -> new NativeTurn(ui, parts, start, end, turn,
-                locale().startsWith("zh"), activityStates.computeIfAbsent(activityKey, value -> new NativeActivityList.State()), this::openMessageLink,
-                transcriptImages(page)));
-        response.bind(parts, start, end, turn);
+        List<NativeTurnExchange> exchanges = NativeTurnExchange.split(parts, start, end);
+        for (int i = 0; i < exchanges.size(); i++) {
+            NativeTurnExchange exchange = exchanges.get(i);
+            boolean first = i == 0, last = i == exchanges.size() - 1;
+            String exchangeKey = first ? key : key + "/exchange/" + (exchange.start - start);
+            String stateKey = first ? activityKey : activityKey + "/exchange/" + (exchange.start - start);
+            if (!first) transcriptViews.use(exchangeKey + "/gap", "", () -> ui.space(22));
+            String input = NativeUserRow.text(parts, exchange.start, exchange.inputEnd);
+            JSONArray files = first ? array(turn, "attachments") : new JSONArray();
+            long timestamp = first ? turn.optLong("started_at") : 0;
+            if (NativeUserRow.hasContent(input, files, parts, exchange.start, exchange.inputEnd)) {
+                NativeUserRow userRow = (NativeUserRow) transcriptViews.use(exchangeKey + "/user", "user",
+                        () -> new NativeUserRow(ui, operator, input, timestamp, null, this::openMessageLink));
+                userRow.bind(operator, input, timestamp, userFiles(page, turn, userRow, exchange.start, exchange.inputEnd, first));
+                transcriptViews.use(exchangeKey + "/user-gap", "", () -> ui.space(22));
+            }
+            JSONObject segmentTurn = last ? turn : NativeTurnExchange.completedSegment(turn);
+            NativeTurn response = (NativeTurn) transcriptViews.use(exchangeKey + "/response", "", () -> new NativeTurn(ui, parts, exchange.inputEnd, exchange.end, segmentTurn,
+                    locale().startsWith("zh"), activityStates.computeIfAbsent(stateKey, value -> new NativeActivityList.State()), this::openMessageLink,
+                    transcriptImages(page)));
+            response.bind(parts, exchange.inputEnd, exchange.end, segmentTurn);
+        }
         JSONObject approval = turn.optJSONObject("pending_approval");
         if (approval != null) transcriptViews.use(key + "/approval/" + approval.optString("id"),
                 new JSONArray().put(approval).put(writable()), () -> approvalCard(page.optString("id"), turn.optString("id"), approval));
@@ -1496,14 +1507,14 @@ public final class MainActivity extends Activity {
         transcriptViews.use(key + "/turn-gap", "", () -> ui.space(38));
     }
 
-    private List<NativeAttachmentCards.Item> userFiles(JSONObject page, JSONObject turn, NativeUserRow row) {
-        JSONArray files = array(turn, "attachments");
+    private List<NativeAttachmentCards.Item> userFiles(JSONObject page, JSONObject turn, NativeUserRow row, int start, int end, boolean first) {
+        JSONArray files = first ? array(turn, "attachments") : new JSONArray();
         List<NativeAttachmentCards.Item> items = new ArrayList<>();
         final int session = authEpoch, selected = selectionEpoch;
         final String ownerChat = page.optString("id", chatID);
         java.util.function.BooleanSupplier current = () -> !destroyed && foreground && user != null && session == authEpoch
                 && selected == selectionEpoch && ownerChat.equals(chatID) && row.isAttachedToWindow();
-        if (optimisticSend != null && optimisticSend.turnID.equals(turn.optString("id")) && !optimisticSend.files.isEmpty()) {
+        if (first && optimisticSend != null && optimisticSend.turnID.equals(turn.optString("id")) && !optimisticSend.files.isEmpty()) {
             for (Attachment file : optimisticSend.files) {
                 items.add(new NativeAttachmentCards.Item(file.id, file.name, file.file.mediaType, file.excerpt, "local:" + file.id,
                         () -> { if (current.getAsBoolean()) {
@@ -1524,7 +1535,6 @@ public final class MainActivity extends Activity {
             }
         } else {
             JSONArray parts = array(page.optJSONObject("transcript"), "parts");
-            int start = Math.max(0, turn.optInt("part_start")), end = Math.min(parts.length(), turn.optInt("part_end", parts.length()));
             for (int i = start; i < end; i++) {
                 JSONObject part = at(parts, i);
                 if (!part.optString("role").equals("user")) continue;
@@ -1533,12 +1543,12 @@ public final class MainActivity extends Activity {
                     String filePath = part.optString("file_path");
                     String download = filePath.isEmpty() || page.optString("project_id", projectID).isEmpty() ? ""
                             : NativeFileData.filePath(page.optString("project_id", projectID), ownerChat, filePath, "download");
-                    items.add(new NativeAttachmentCards.Item(ownerChat + ":" + turn.optString("id") + ":file:" + (i - start), name, "application/octet-stream", "", "",
+                    items.add(new NativeAttachmentCards.Item(ownerChat + ":" + turn.optString("id") + ":file:" + (i - turn.optInt("part_start")), name, "application/octet-stream", "", "",
                             () -> { if (current.getAsBoolean()) { if (download.isEmpty()) toast(new IOException(tr("File unavailable", "文件不可用"))); else downloadFile(download, name); } }, null));
                     continue;
                 }
                 if (!part.optString("kind").equals("image") || !NativeFileData.inlineImage(source)) continue;
-                String id = ownerChat + ":" + turn.optString("id") + ":image:" + (i - start);
+                String id = ownerChat + ":" + turn.optString("id") + ":image:" + (i - turn.optInt("part_start"));
                 items.add(new NativeAttachmentCards.Item(id, name, "image/png", "", source,
                         () -> { if (current.getAsBoolean()) previewInlineImage(source, name); },
                         image -> fileImages.inline(image, source, Math.min(512, dp(120)), null)));

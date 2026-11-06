@@ -20,7 +20,7 @@ final class NativeTranscriptViewport implements ViewTreeObserver.OnPreDrawListen
         private Consumer<NativeKeyedViews> render;
         private int retainedHeight, measuredWidth;
         int partCount;
-        private boolean expanded;
+        private final Map<Integer, Boolean> expanded = new java.util.HashMap<>();
         // A prepared row keeps a built, measured, detached document in its warm-cache slot.
         private boolean prepared, stale, unpreparable;
         private int preparedHeight;
@@ -51,7 +51,7 @@ final class NativeTranscriptViewport implements ViewTreeObserver.OnPreDrawListen
             prepared = false; stale = false;
             for (int i = 0; i < getChildCount(); i++) if (getChildAt(i) instanceof NativeUserRow) {
                 NativeMessage message = ((NativeUserRow) getChildAt(i)).message;
-                message.restoreExpanded(expanded);
+                if (expanded.containsKey(i)) message.restoreExpanded(expanded.get(i));
             }
             requestLayout();
         }
@@ -74,7 +74,7 @@ final class NativeTranscriptViewport implements ViewTreeObserver.OnPreDrawListen
             if (!mounted()) return;
             retainedHeight = Math.max(1, getMeasuredHeight());
             for (int i = 0; i < getChildCount(); i++) if (getChildAt(i) instanceof NativeUserRow)
-                expanded = ((NativeUserRow) getChildAt(i)).message.content.expanded;
+                expanded.put(i, ((NativeUserRow) getChildAt(i)).message.content.expanded);
             removeAllViews(); cached = retain ? children : null; children = null;
         }
 

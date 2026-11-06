@@ -1297,6 +1297,9 @@ button:disabled {
   padding-bottom: 38px;
   animation: arrive 0.2s ease-out;
 }
+.turn-exchange + .turn-exchange {
+  margin-top: 22px;
+}
 .user-row {
   display: flex;
   justify-content: flex-end;

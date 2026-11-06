@@ -40,6 +40,7 @@ const fontFiles=new Set([...manifest.faces,...manifest.cjk].map(face=>face.file)
 const fontCSS=manifest.faces.map(face=>`@font-face{font-family:AndroidRoboto;src:url(/__fonts/${face.file});font-weight:${face.weight};font-style:${face.italic?'italic':'normal'}}`).join('')+manifest.cjk.map(face=>`@font-face{font-family:${face.family};src:url(/__fonts/${face.file});font-weight:400}`).join('')+':root{font-family:AndroidRoboto,AndroidCjkSC,sans-serif}';
 const script=`import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';
 import {TurnResponse} from '/src/tool-activity.tsx';import {UserMessage} from '/src/user-message.tsx';import {MessageFooter} from '/src/message-footer.tsx';
+import {turnExchanges,exchangeFiles} from '/src/turn-exchanges.ts';
 import {TurnOperatorAvatar,TurnActions} from '/src/turn-identity.tsx';import {turnOperator} from '/src/chat-state.ts';import {AttachmentCards} from '/src/attachments.tsx';import {ApprovalCard} from '/src/permission-picker.tsx';import {translator} from '/src/i18n.ts';import '/src/style.css';
 ${summary}
 const t=translator('en'),locale='en',clock=21000,effortLabel=v=>v,fail=()=>{},setPreview=()=>{};
