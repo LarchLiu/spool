@@ -1473,7 +1473,8 @@ button:disabled {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.message-copy {
+.message-copy,
+.markdown-code-copy {
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -1485,7 +1486,8 @@ button:disabled {
   background: transparent;
   color: inherit;
 }
-.message-copy:hover:not(:disabled) {
+.message-copy:hover:not(:disabled),
+.markdown-code-copy:hover:not(:disabled) {
   background: var(--soft);
   color: var(--text);
 }
@@ -1781,6 +1783,45 @@ a.attachment-open {
 .markdown pre code {
   font-size: 12px;
 }
+.markdown-code-block {
+  max-width: 100%;
+  overflow: hidden;
+  margin: .9em 0 1.1em;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--input);
+}
+.markdown-code-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 12px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.markdown-code-header > svg {
+  flex-shrink: 0;
+}
+.markdown-code-language {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.markdown .markdown-code-block pre {
+  margin: 0;
+  padding: 8px 16px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  line-height: 1.65;
+  white-space: pre;
+  overflow-wrap: normal;
+}
 .markdown-table {
   max-width: 100%;
   overflow-x: auto;
@@ -2014,7 +2055,8 @@ a.attachment-open {
 .tool-thinking-label-preview .markdown-preview code {
   white-space: inherit;
 }
-.tool-activity-item .tool-detail {
+.tool-activity-item .tool-detail,
+.viewed-image-thumbnails {
   margin-left: 20px;
 }
 .tool-detail {

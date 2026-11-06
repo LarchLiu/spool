@@ -42,7 +42,7 @@ export function UserMessage({ text, t }: { text: string; t: Translator }) {
         ref={content}
         data-expanded={expanded}
       >
-        <MarkdownMessage>{text}</MarkdownMessage>
+        <MarkdownMessage t={t}>{text}</MarkdownMessage>
       </div>
       {overflow && (
         <button

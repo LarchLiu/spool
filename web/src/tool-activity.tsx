@@ -571,7 +571,7 @@ function LazyToolBody({ part, t, thinking, input }: { part: TranscriptPart; t: T
   const move = (next: ToolDetailCursor) => { current.current = undefined; setPage(undefined); setCursor(next); };
   return <>
     {page && (page.offset === 0 && page.next === page.total
-      ? thinking ? <MarkdownMessage>{page.text}</MarkdownMessage> : <ToolPatch text={page.text} t={t} input={input} />
+      ? thinking ? <MarkdownMessage t={t}>{page.text}</MarkdownMessage> : <ToolPatch text={page.text} t={t} input={input} />
       : <pre>{page.text}</pre>)}
     {loading && !page && <p role="status">{t("Loading tool details…")}</p>}
     {error && <p role="alert">{error} <button type="button" onClick={() => setRetry((value) => value + 1)}>{t("Retry")}</button></p>}
@@ -595,7 +595,7 @@ export function ActivityDetail({ activity, t }: { activity: Activity; t: Transla
             {activity.kind !== "thinking" && activity.use?.name && ` · ${activity.use.name}`}
           </span>
           {activity.use?.tool?.href ? <LazyToolBody key={activity.use.tool.ref} part={activity.use} t={t} thinking={activity.kind === "thinking"} input /> : activity.kind === "thinking" ? (
-            <MarkdownMessage>{command}</MarkdownMessage>
+            <MarkdownMessage t={t}>{command}</MarkdownMessage>
           ) : (
             <ToolPatch text={command} t={t} input />
           )}
@@ -726,7 +726,7 @@ export function ToolActivityList({
             if (group.kind === "message") {
               return (
                 <div className="tool-progress-message" key={`message:${group.activities[0].use?.id || ""}:${groupIndex}`}>
-                  <MarkdownMessage>{group.activities[0].detail}</MarkdownMessage>
+                  <MarkdownMessage t={t}>{group.activities[0].detail}</MarkdownMessage>
                 </div>
               );
             }
@@ -832,7 +832,7 @@ export function TurnResponse({
       {answer && (
         <div className="assistant">
           <div className="assistant-text">
-            <MarkdownMessage>{answer}</MarkdownMessage>
+            <MarkdownMessage t={t}>{answer}</MarkdownMessage>
           </div>
           {actions}
           <MessageFooter

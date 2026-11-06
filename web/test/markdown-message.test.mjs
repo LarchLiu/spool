@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -53,6 +54,66 @@ test("fenced code preserves whitespace and escapes HTML, including partial strea
   );
   assert.match(complete, /&lt;\/div&gt;/);
   assert.match(complete, /<strong>Finished<\/strong>/);
+});
+
+test("code blocks have a language and an accessible copy action outside the code", () => {
+  for (const [source, language] of [
+    ["```python title=test.py\nprint(1)\n```", "python"],
+    ["```c++\nint x;\n```", "c++"],
+    ["```\nplain\n```", "Plain text"],
+    ["```text\nplain\n```", "Plain text"],
+    ["    indented", "Plain text"],
+  ]) {
+    const html = render(source);
+    assert.ok(
+      html.includes(
+        `class="markdown-code-language" title="${language}">${language}</span>`,
+      ),
+    );
+    assert.match(
+      html,
+      /class="markdown-code-copy" aria-label="Copy code" title="Copy code"/,
+    );
+    assert.match(
+      html,
+      /<\/button><span class="message-copy-status" role="status"><\/span><\/div><pre><code/,
+    );
+    assert.doesNotMatch(
+      html.match(/<pre>[\s\S]*?<\/pre>/)[0],
+      /<button|markdown-code-language/,
+    );
+  }
+  assert.doesNotMatch(
+    render("Just `inline code`."),
+    /markdown-code-header|<button/,
+  );
+  assert.match(
+    render("```js\n```"),
+    /aria-label="Copy code" title="Copy code" disabled=""/,
+  );
+});
+
+test("code block headers follow the selected language", () => {
+  for (const [locale, plain, copy] of [
+    ["zh-CN", "纯文本", "复制代码"],
+    ["ja", "プレーンテキスト", "コードをコピー"],
+  ]) {
+    const catalog = JSON.parse(
+      readFileSync(
+        new URL(`../../locales/${locale}.json`, import.meta.url),
+        "utf8",
+      ),
+    );
+    const html = renderToStaticMarkup(
+      createElement(
+        MarkdownMessage,
+        { t: (key) => catalog[key] },
+        "```txt\nhello\n```",
+      ),
+    );
+    assert.ok(html.includes(`>${plain}</span>`));
+    assert.ok(html.includes(`aria-label="${copy}"`));
+  }
 });
 
 test("raw HTML and unsafe link protocols cannot create executable content", () => {

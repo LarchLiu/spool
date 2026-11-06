@@ -275,21 +275,10 @@ final class NativeMarkdown {
         if (node instanceof FencedCodeBlock || node instanceof IndentedCodeBlock) {
             String literal = node instanceof FencedCodeBlock ? ((FencedCodeBlock) node).getLiteral()
                     : ((IndentedCodeBlock) node).getLiteral();
-            if (literal.endsWith("\n")) literal = literal.substring(0, literal.length() - 1);
-            boolean fresh = bound.view == null;
-            TextView code = fresh ? ui.text("", 12, color) : (TextView) ((HorizontalScrollView) bound.view).getChildAt(0);
-            if (fresh) { code.setTypeface(Typeface.MONOSPACE); ui.preciseText(code); }
-            // CSS pre owns the tab grid, even though its nested code uses a smaller 12px font.
-            NativeCodeTabs.setText(code, literal, code.getTextSize() * codeContainerSize / 12);
-            if (!fresh) return bound.view;
-            code.setTextIsSelectable(true);
-            code.setHorizontallyScrolling(true);
-            // The pre's larger-font strut, not its nested 12px code, determines each CSS line box.
-            ui.fixedLineHeight(code, codeContainerSize * 1.65f / 12);
-            code.setPadding(ui.dp(17), ui.dp(15), ui.dp(17), ui.dp(15));
-            HorizontalScrollView scroll = horizontal(code);
-            scroll.setBackground(ui.shape(ui.input, 10, ui.borderStrong));
-            return element(scroll, "pre");
+            String info = node instanceof FencedCodeBlock ? ((FencedCodeBlock) node).getInfo() : "";
+            NativeCodeBlock code = bound.view == null ? new NativeCodeBlock(ui, color, codeContainerSize) : (NativeCodeBlock) bound.view;
+            code.bind(info, literal);
+            return code;
         }
         if (node instanceof BlockQuote) {
             bound.flow = blocks(node, ui.muted, false, bound.flow);

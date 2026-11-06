@@ -1,11 +1,116 @@
-import { memo, useContext, type ReactNode } from "react";
+import {
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+} from "react";
+import { Check, CircleAlert, CodeXml, Copy } from "lucide-react";
 import ReactMarkdown, {
   defaultUrlTransform,
   type Components,
+  type ExtraProps,
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { LocalFileContext } from "./local-file-context.js";
 import { localFileTarget } from "./local-file-links.js";
+import { copyMessageText } from "./copy-text.js";
+
+type CodeTranslator = (
+  key: "Plain text" | "Copy code" | "Code copied" | "Could not copy code",
+) => string;
+const defaultTranslator: CodeTranslator = (key) => key;
+const MarkdownTranslator = createContext(defaultTranslator);
+
+function MarkdownCodeBlock({
+  children,
+  node,
+}: ComponentPropsWithoutRef<"pre"> & ExtraProps) {
+  const t = useContext(MarkdownTranslator);
+  const code = node?.children.find(
+    (child) => child.type === "element" && child.tagName === "code",
+  );
+  const classes = code?.type === "element" ? code.properties.className : [];
+  const languageClass = (Array.isArray(classes) ? classes : []).find((value) =>
+    String(value).startsWith("language-"),
+  );
+  const language = languageClass ? String(languageClass).slice(9) : "";
+  const label =
+    !language || /^(?:text|txt|plaintext)$/i.test(language)
+      ? t("Plain text")
+      : language;
+  // CommonMark appends one terminal newline, including to a partial streamed fence.
+  const text = (
+    code?.type === "element"
+      ? code.children
+          .map((child) => (child.type === "text" ? child.value : ""))
+          .join("")
+      : ""
+  ).replace(/\n$/, "");
+  const [feedback, setFeedback] = useState<{
+    text: string;
+    state: "copied" | "failed";
+  } | null>(null);
+  const request = useRef(0);
+  useEffect(() => {
+    setFeedback(null);
+    return () => {
+      request.current++;
+    };
+  }, [text]);
+  useEffect(() => {
+    if (!feedback) return;
+    const timeout = setTimeout(() => setFeedback(null), 2000);
+    return () => clearTimeout(timeout);
+  }, [feedback]);
+  const state = feedback?.text === text ? feedback.state : "idle";
+  const copyLabel = t(
+    state === "copied"
+      ? "Code copied"
+      : state === "failed"
+        ? "Could not copy code"
+        : "Copy code",
+  );
+  const Icon =
+    state === "copied" ? Check : state === "failed" ? CircleAlert : Copy;
+  return (
+    <div className="markdown-code-block">
+      <div className="markdown-code-header">
+        <CodeXml size={14} aria-hidden="true" />
+        <span className="markdown-code-language" title={label}>
+          {label}
+        </span>
+        <button
+          type="button"
+          className="markdown-code-copy"
+          aria-label={copyLabel}
+          title={copyLabel}
+          disabled={!text}
+          onClick={async () => {
+            const current = ++request.current;
+            try {
+              await copyMessageText(text);
+              if (request.current === current)
+                setFeedback({ text, state: "copied" });
+            } catch {
+              if (request.current === current)
+                setFeedback({ text, state: "failed" });
+            }
+          }}
+        >
+          <Icon size={13} aria-hidden="true" />
+        </button>
+        <span className="message-copy-status" role="status">
+          {state !== "idle" ? copyLabel : ""}
+        </span>
+      </div>
+      <pre>{children}</pre>
+    </div>
+  );
+}
 
 function MarkdownLink({
   href,
@@ -58,6 +163,7 @@ function messageURL(url: string) {
 const plugins = [remarkGfm];
 const components: Components = {
   a: MarkdownLink,
+  pre: MarkdownCodeBlock,
   // Agent output must not silently load remote images or tracking pixels.
   img: ({ src, alt }) =>
     src ? (
@@ -128,19 +234,23 @@ export const MarkdownPreview = memo(function MarkdownPreview({
 
 export const MarkdownMessage = memo(function MarkdownMessage({
   children,
+  t = defaultTranslator,
 }: {
   children: string;
+  t?: CodeTranslator;
 }) {
   return (
     <div className="markdown">
-      <ReactMarkdown
-        remarkPlugins={plugins}
-        components={components}
-        urlTransform={messageURL}
-        skipHtml
-      >
-        {children}
-      </ReactMarkdown>
+      <MarkdownTranslator.Provider value={t}>
+        <ReactMarkdown
+          remarkPlugins={plugins}
+          components={components}
+          urlTransform={messageURL}
+          skipHtml
+        >
+          {children}
+        </ReactMarkdown>
+      </MarkdownTranslator.Provider>
     </div>
   );
 });

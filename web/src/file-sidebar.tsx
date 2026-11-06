@@ -460,7 +460,7 @@ function FileContent({
               title={t("Preview {name}", { name: file.name })}
             />
           ) : renderPreview && previewKind === "markdown" ? (
-            <MarkdownMessage>{file.content || ""}</MarkdownMessage>
+            <MarkdownMessage t={t}>{file.content || ""}</MarkdownMessage>
           ) : (
             <FileSource
               path={file.path}
