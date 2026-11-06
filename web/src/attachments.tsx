@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Download, FileCode2, FileText, X } from "lucide-react";
 import type { Attachment } from "./types";
 import type { Translator } from "./i18n";
-import { attachmentURL } from "./attachment-selection";
+import { attachmentURL } from "./attachment-selection.js";
 
 export function AttachmentCards({
   files,

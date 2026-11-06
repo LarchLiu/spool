@@ -32,7 +32,10 @@ func cleanUserText(text string, hasImages bool) userTextProjection {
 			result.Text, result.HasAttachments = prefix, true
 			result.Files = append(result.Files, files...)
 		}
-		result.Text = stripUserContext(result.Text)
+		context := stripUserContext(result.Text)
+		result.Text = context.Text
+		result.Files = append(result.Files, context.Files...)
+		result.HasAttachments = result.HasAttachments || context.HasAttachments
 		if hasImages {
 			result.Text = stripImageLabels(result.Text)
 		}
@@ -51,23 +54,33 @@ func cleanUserTextBlocks(texts []string, hasImages bool) userTextProjection {
 	// state so a literal example spanning several text blocks remains opaque.
 	lines := userMarkdownLines(text)
 	kept := make([]string, 0, len(texts))
+	var files []chatmodel.Part
 	leadingContext, hasBody := false, false
 	at := 0
 	for _, block := range texts {
 		start := at + len(block) - len(strings.TrimLeft(block, " \t\r\n"))
 		at += len(block) + 1
-		if userMarkdownOutside(text, lines, start) && block != "" && stripUserContext(block) == "" {
-			leadingContext = leadingContext || !hasBody
-			continue
+		if userMarkdownOutside(text, lines, start) && block != "" {
+			context := stripUserContext(block)
+			if context.Text == "" {
+				files = append(files, context.Files...)
+				leadingContext = leadingContext || !hasBody
+				continue
+			}
 		}
 		kept = append(kept, block)
 		hasBody = hasBody || strings.TrimSpace(block) != ""
 	}
 	text = strings.Join(kept, "\n")
 	if leadingContext {
-		text = stripUserContextAfter(text, true)
+		context := stripUserContextAfter(text, true)
+		text = context.Text
+		files = append(files, context.Files...)
 	}
-	return cleanUserText(text, hasImages)
+	result := cleanUserText(text, hasImages)
+	result.Files = append(files, result.Files...)
+	result.HasAttachments = result.HasAttachments || len(files) > 0
+	return result
 }
 
 func attachedFilesPrefix(text string, lines []userMarkdownLine) (string, []chatmodel.Part) {
@@ -120,12 +133,36 @@ func validAttachedFileEntry(line string) bool {
 	value, pathErr := strconv.Unquote(quotedPath)
 	// Require exactly the generator's Go-quoted strings, not arbitrary bullets,
 	// Markdown links, JSON objects or a truncated list followed by a request.
-	normalPath := strings.ReplaceAll(value, "\\", "/")
+	return nameErr == nil && pathErr == nil && validUserFile(filename, value) &&
+		strconv.Quote(filename) == name && strconv.Quote(value) == quotedPath
+}
+
+func validUserFile(name, filePath string) bool {
+	normalPath := strings.ReplaceAll(filePath, "\\", "/")
 	absolute := strings.HasPrefix(normalPath, "/") || (len(normalPath) > 3 &&
 		((normalPath[0] >= 'a' && normalPath[0] <= 'z') || (normalPath[0] >= 'A' && normalPath[0] <= 'Z')) && normalPath[1:3] == ":/")
-	return nameErr == nil && pathErr == nil && filename != "" && absolute &&
-		!strings.ContainsAny(filename, "/\\\r\n") && path.Base(normalPath) == filename &&
-		strconv.Quote(filename) == name && strconv.Quote(value) == quotedPath
+	return name != "" && name != "." && name != ".." && absolute &&
+		!strings.ContainsAny(name, "/\\\x00\r\n") && !strings.ContainsAny(filePath, "\x00\r\n") && path.Base(normalPath) == name
+}
+
+// Native Codex file mentions precede the request as Markdown headings. Read
+// only that preamble; ordinary paths in the request are not attachments.
+func mentionedUserFiles(text string) []chatmodel.Part {
+	var files []chatmodel.Part
+	for _, line := range userMarkdownLines(text) {
+		if !line.plain || line.inline != 0 {
+			continue
+		}
+		entry, ok := strings.CutPrefix(text[line.start:line.end], "## ")
+		if !ok {
+			continue
+		}
+		name, filePath, ok := strings.Cut(entry, ": ")
+		if ok && validUserFile(name, filePath) {
+			files = append(files, chatmodel.Part{Role: "user", Kind: "context", Name: name, Text: name, FilePath: filePath})
+		}
+	}
+	return files
 }
 
 var nativeUserTags = map[string]bool{
@@ -181,11 +218,12 @@ func stripAgentNotifications(text string) string {
 	return out.String()
 }
 
-func stripUserContext(text string) string {
+func stripUserContext(text string) userTextProjection {
 	return stripUserContextAfter(text, false)
 }
 
-func stripUserContextAfter(text string, recognized bool) string {
+func stripUserContextAfter(text string, recognized bool) userTextProjection {
+	result := userTextProjection{Text: text}
 	remaining := text
 	for {
 		start := len(remaining) - len(strings.TrimLeft(remaining, " \t\r\n"))
@@ -210,17 +248,23 @@ func stripUserContextAfter(text string, recognized bool) string {
 	if ideContext || (recognized && requestHeading(firstLine)) {
 		for _, line := range lines {
 			if line.plain && line.inline == 0 && requestHeading(remaining[line.start:line.end]) {
-				return strings.TrimLeft(remaining[line.next:], "\r\n")
+				if firstLine == "# Files mentioned by the user:" {
+					result.Files = mentionedUserFiles(remaining[:line.start])
+					result.HasAttachments = len(result.Files) > 0
+				}
+				result.Text = strings.TrimLeft(remaining[line.next:], "\r\n")
+				return result
 			}
 		}
 	}
 	if recognized {
 		if strings.TrimSpace(remaining) == "" {
-			return ""
+			result.Text = ""
+		} else {
+			result.Text = strings.TrimLeft(remaining, "\r\n")
 		}
-		return strings.TrimLeft(remaining, "\r\n")
 	}
-	return text
+	return result
 }
 
 func requestHeading(line string) bool {
