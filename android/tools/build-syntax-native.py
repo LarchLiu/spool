@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the same pinned Oniguruma/JNI sources for host tests and the app's two Android ABIs."""
+"""Build the pinned Oniguruma/JNI sources for host tests and Android (ARM64 by default)."""
 import argparse
 import fcntl
 import hashlib
@@ -29,6 +29,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--host', action='store_true')
     parser.add_argument('--android', action='store_true')
+    parser.add_argument('--abis', nargs='+', choices=('arm64-v8a', 'x86_64'), default=['arm64-v8a'])
     args = parser.parse_args()
     if not args.host and not args.android:
         parser.error('Specify --host and/or --android')
@@ -63,7 +64,7 @@ def main():
             options.append('-DJNI_NDK_INCLUDE=' + str(prebuilt / 'sysroot/usr/include'))
         build('host', options)
     if args.android:
-        for abi in ['arm64-v8a', 'x86_64']:
+        for abi in args.abis:
             build('jni/' + abi, ['-DCMAKE_TOOLCHAIN_FILE=' + str(ndk / 'build/cmake/android.toolchain.cmake'), '-DANDROID_ABI=' + abi, '-DANDROID_PLATFORM=android-26'])
 
 

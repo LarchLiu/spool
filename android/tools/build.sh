@@ -22,7 +22,7 @@ export GOBIN="$ROOT/build/android/tools"
 export PATH="$GOBIN:${JAVA_HOME:+$JAVA_HOME/bin:}$PATH"
 echo 'Building gomobile tools...'
 go -C android/transport install golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/cmd/gobind
-TARGET=${SPOOL_ANDROID_TARGET:-android/arm64,android/amd64}
+TARGET=${SPOOL_ANDROID_TARGET:-android/arm64}
 echo "Building Go networking AAR for $TARGET..."
 (
     cd android/transport

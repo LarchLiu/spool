@@ -60,6 +60,7 @@ def check_elf(data, machine):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--apk', type=pathlib.Path, default=ROOT / 'build/android/gradle/app/outputs/apk/debug/app-debug.apk')
+    parser.add_argument('--abis', nargs='+', choices=('arm64-v8a', 'x86_64'), default=['arm64-v8a'])
     parser.add_argument('--report', type=pathlib.Path)
     args = parser.parse_args()
     assets = ROOT / 'android/app/src/main/assets/syntax'
@@ -72,12 +73,21 @@ def main():
             if apk.read(name) != source.read_bytes():
                 raise ValueError('Packaged asset drift: ' + name)
         abis = {}
-        for abi, machine in [('arm64-v8a', 183), ('x86_64', 62)]:
+        packaged_abis = {name.split('/')[1] for name in names if name.startswith('lib/') and name.endswith('.so')}
+        if packaged_abis != set(args.abis):
+            raise ValueError('Unexpected packaged ABIs: ' + repr(sorted(packaged_abis)))
+        machines = {'arm64-v8a': 183, 'x86_64': 62}
+        for abi in args.abis:
+            machine = machines[abi]
             abis[abi] = check_elf(apk.read(f'lib/{abi}/libspool-textmate.so'), machine)
         methods = set()
         dexes = [name for name in names if name.endswith('.dex')]
         for name in dexes:
             methods.update(dex_methods(apk.read(name)))
+        syntax_jni = {('Lcom/cloudgeek/spool/textmate/NativeOniguruma;', name)
+                      for name in ('nCompile', 'nSearch', 'nClose')}
+        if not syntax_jni <= methods:
+            raise ValueError('Syntax JNI names were removed or renamed: ' + repr(sorted(syntax_jni - methods)))
         unresolved = sorted(methods & FORBIDDEN_METHODS)
         if unresolved:
             raise ValueError('Methods unavailable on API 26 remain in DEX: ' + repr(unresolved))
@@ -90,6 +100,7 @@ def main():
             'syntaxBytes': sum(apk.getinfo(name).file_size for name in expected),
             'syntaxCompressedBytes': sum(apk.getinfo(name).compress_size for name in expected),
             'nativeLoadAlignments': abis,
+            'syntaxJniMethodsPreserved': True,
             'dexFiles': len(dexes),
             'unresolvedCheckedAPI26Methods': unresolved,
             'joniOrJcodingsRuntime': False,

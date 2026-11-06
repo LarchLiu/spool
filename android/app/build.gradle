@@ -5,6 +5,7 @@ plugins {
 android {
     namespace 'com.cloudgeek.spool.android'
     buildToolsVersion '36.1.0'
+    ndkVersion '29.0.14206865'
     compileSdk {
         version = release(36) { minorApiLevel = 1 }
     }
@@ -16,7 +17,7 @@ android {
         versionCode 1
         versionName '0.2.0-native'
         testInstrumentationRunner 'com.cloudgeek.spool.android.NativePerformanceInstrumentation'
-        ndk { abiFilters 'arm64-v8a', 'x86_64' }
+        ndk { abiFilters 'arm64-v8a' }
     }
 
     signingConfigs {
@@ -26,14 +27,20 @@ android {
     }
 
     buildTypes {
-        debug { applicationIdSuffix '.dev' }
+        debug {
+            applicationIdSuffix '.dev'
+        }
         nativeVerify {
             initWith debug
             applicationIdSuffix '.nativeverify'
             versionNameSuffix '-verify'
             matchingFallbacks = ['debug']
         }
-        release { minifyEnabled false }
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
     }
 
     compileOptions {
@@ -57,6 +64,16 @@ android {
             systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
             systemProperty 'spool.ui.artifacts', rootProject.file('../build/artifacts/android-native').absolutePath
         }
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType('release')) { variant ->
+        // Direct APK downloads benefit from compressing the large Go library.
+        // The installer extracts it before loading; App Bundle delivery can
+        // keep using uncompressed native libraries for direct loading.
+        variant.packaging.jniLibs.useLegacyPackaging.set(true)
+        variant.packaging.jniLibs.useLegacyPackagingFromBundle.set(false)
     }
 }
 

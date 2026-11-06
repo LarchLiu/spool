@@ -1874,7 +1874,7 @@ the installer checks this before downloading.
 Run from the repository root:
 
 ```sh
-# Go AAR (arm64 phone + x86_64 emulator), debug APK, Java tests, and Android lint.
+# ARM64 Go AAR, debug APK, Java tests, and Android lint.
 sh android/tools/build.sh
 
 # Go proxy and configuration tests. They bind disposable loopback ports.
@@ -1903,11 +1903,28 @@ The debug application ID is `com.cloudgeek.spool.android.dev`. Its debug key is
 created in `build/android/debug.keystore`, not the developer's Android home.
 This debug build is not a signed production release.
 
-For an arm64-only iteration:
+For an optimized phone release APK:
 
 ```sh
-SPOOL_ANDROID_TARGET=android/arm64 sh android/tools/build.sh :app:assembleDebug
+sh android/tools/build.sh :app:assembleRelease :app:lintRelease
+python3 android/tools/check-syntax-package.py \
+  --apk build/android/gradle/app/outputs/apk/release/app-release-unsigned.apk \
+  --abis arm64-v8a
 ```
+
+Release packages ARM64 only, enables R8 code optimization and resource shrinking,
+and strips native debug symbols using the pinned NDK. JNI entry points retain
+their names through the app's rules and the gomobile AAR's consumer rules. Direct
+release APKs compress native libraries to reduce download size; Android extracts
+them during installation, which adds installation work and disk usage. App Bundle
+delivery keeps native libraries uncompressed for direct loading. Debug and
+nativeVerify also package ARM64 only, matching the current phone and Apple
+Silicon development machine.
+
+The release APK is unsigned until a production signing configuration is supplied.
+R8 mappings are written to `build/android/gradle/app/outputs/mapping/release/`.
+
+The Go transport and Android syntax libraries also default to ARM64 builds.
 
 After generating the AAR, open `android/` in Android Studio, or use
 `sh android/gradlew :app:assembleDebug`. Do not run a bare Gradle command if it
