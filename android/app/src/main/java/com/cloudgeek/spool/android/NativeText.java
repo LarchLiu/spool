@@ -86,6 +86,7 @@ final class NativeText {
             case "File contents are not included in this patch.": value = "此补丁未包含文件正文。"; break;
             case "File preview": value = "文件预览"; break;
             case "Files": value = "文件"; break;
+            case "Fit width": value = "适合宽度"; break;
             case "Follow system": value = "跟随系统"; break;
             case "Generated from your name": value = "根据你的名字自动生成"; break;
             case "Generated on your device. Your name is never sent to DiceBear.": value = "在你的设备上生成，不会向 DiceBear 发送你的名字。"; break;
@@ -132,6 +133,7 @@ final class NativeText {
             case "New chat": value = "新建聊天"; break;
             case "New chat in {project}": value = "在 {project} 新建聊天"; break;
             case "New group chat": value = "新建群聊"; break;
+            case "Next page": value = "下一页"; break;
             case "No authorized projects": value = "暂无授权项目"; break;
             case "No conversations yet.": value = "还没有聊天记录。"; break;
             case "No goal set.": value = "尚未设置目标。"; break;
@@ -148,6 +150,8 @@ final class NativeText {
             case "Open file sidebar": value = "展开文件侧栏"; break;
             case "Open sidebar": value = "打开侧边栏"; break;
             case "Or pick one you like": value = "也可以选一个喜欢的"; break;
+            case "PDF page {page} of {count}": value = "PDF 第 {page} 页，共 {count} 页"; break;
+            case "PDF preview": value = "PDF 预览"; break;
             case "Password": value = "密码"; break;
             case "People & groups": value = "成员与群聊"; break;
             case "People chat": value = "成员聊天"; break;
@@ -162,6 +166,7 @@ final class NativeText {
             case "Preview": value = "预览"; break;
             case "Preview truncated. Download the full file to see all content.": value = "预览内容已截断，下载文件可查看完整内容。"; break;
             case "Preview {name}": value = "预览 {name}"; break;
+            case "Previous page": value = "上一页"; break;
             case "Private message": value = "私聊消息"; break;
             case "Private messages": value = "私聊"; break;
             case "Project chat visibility follows project settings": value = "聊天可见性遵循项目设置"; break;
@@ -227,6 +232,7 @@ final class NativeText {
             case "The server returned an invalid response": value = "服务返回了无效响应"; break;
             case "Theme": value = "主题"; break;
             case "Think": value = "思考"; break;
+            case "This PDF cannot be previewed. Download it to open locally.": value = "此 PDF 无法预览，请下载后在本地打开。"; break;
             case "This directory is empty.": value = "此目录为空。"; break;
             case "This file cannot be previewed as an image": value = "此文件不支持图片预览"; break;
             case "This file has no text preview. Download it to open locally.": value = "此文件不支持文本预览，请下载后在本地打开。"; break;
@@ -263,6 +269,8 @@ final class NativeText {
             case "Worktree": value = "Worktree"; break;
             case "You approve requests outside the sandbox.": value = "沙箱之外的操作由你审批。"; break;
             case "You are sending too quickly. Try again shortly.": value = "发送过于频繁，请稍后再试。"; break;
+            case "Zoom in": value = "放大"; break;
+            case "Zoom out": value = "缩小"; break;
             case "{count} members": value = "{count} 位成员"; break;
             case "{count} online": value = "{count} 人在线"; break;
             case "{count} selected": value = "已选 {count} 人"; break;
@@ -351,6 +359,7 @@ final class NativeText {
             case "File contents are not included in this patch.": value = "このパッチにはファイルの内容が含まれていません。"; break;
             case "File preview": value = "ファイルプレビュー"; break;
             case "Files": value = "ファイル"; break;
+            case "Fit width": value = "幅に合わせる"; break;
             case "Follow system": value = "システムに従う"; break;
             case "Generated from your name": value = "名前から自動生成"; break;
             case "Generated on your device. Your name is never sent to DiceBear.": value = "お使いのデバイス上で生成され、名前は DiceBear に送信されません。"; break;
@@ -397,6 +406,7 @@ final class NativeText {
             case "New chat": value = "新しいチャット"; break;
             case "New chat in {project}": value = "{project} に新しいチャット"; break;
             case "New group chat": value = "グループチャットを作成"; break;
+            case "Next page": value = "次のページ"; break;
             case "No authorized projects": value = "アクセスできるプロジェクトがありません"; break;
             case "No conversations yet.": value = "チャットはまだありません。"; break;
             case "No goal set.": value = "目標は設定されていません。"; break;
@@ -413,6 +423,8 @@ final class NativeText {
             case "Open file sidebar": value = "ファイルサイドバーを開く"; break;
             case "Open sidebar": value = "サイドバーを開く"; break;
             case "Or pick one you like": value = "好きなアバターを選ぶ"; break;
+            case "PDF page {page} of {count}": value = "PDF {count} ページ中 {page} ページ"; break;
+            case "PDF preview": value = "PDF プレビュー"; break;
             case "Password": value = "パスワード"; break;
             case "People & groups": value = "メンバーとグループ"; break;
             case "People chat": value = "ユーザーチャット"; break;
@@ -427,6 +439,7 @@ final class NativeText {
             case "Preview": value = "プレビュー"; break;
             case "Preview truncated. Download the full file to see all content.": value = "プレビューは省略されています。全体はダウンロードして確認してください。"; break;
             case "Preview {name}": value = "{name}をプレビュー"; break;
+            case "Previous page": value = "前のページ"; break;
             case "Private message": value = "プライベートメッセージを入力"; break;
             case "Private messages": value = "プライベートメッセージ"; break;
             case "Project chat visibility follows project settings": value = "チャットの公開範囲はプロジェクト設定に従います"; break;
@@ -492,6 +505,7 @@ final class NativeText {
             case "The server returned an invalid response": value = "サーバーから無効な応答が返されました"; break;
             case "Theme": value = "テーマ"; break;
             case "Think": value = "思考"; break;
+            case "This PDF cannot be previewed. Download it to open locally.": value = "この PDF はプレビューできません。ダウンロードして開いてください。"; break;
             case "This directory is empty.": value = "このフォルダーは空です。"; break;
             case "This file cannot be previewed as an image": value = "このファイルは画像として表示できません"; break;
             case "This file has no text preview. Download it to open locally.": value = "テキストプレビューはありません。ダウンロードして開いてください。"; break;
@@ -528,6 +542,8 @@ final class NativeText {
             case "Worktree": value = "Worktree"; break;
             case "You approve requests outside the sandbox.": value = "サンドボックス外の操作を自分で承認します。"; break;
             case "You are sending too quickly. Try again shortly.": value = "送信が速すぎます。少し待ってからお試しください。"; break;
+            case "Zoom in": value = "拡大"; break;
+            case "Zoom out": value = "縮小"; break;
             case "{count} members": value = "{count} 人のメンバー"; break;
             case "{count} online": value = "{count} 人がオンライン"; break;
             case "{count} selected": value = "{count} 人を選択中"; break;

@@ -53,7 +53,7 @@ test("file links preserve native paths and parse Codex line/column suffixes", ()
 test("session file URLs retain chat scope for previews, images and downloads", () => {
   assert.equal(fileAPIBase("project", "chat"), "/api/chats/chat");
   assert.equal(fileAPIBase("project"), "/api/projects/project");
-  for (const mode of [undefined, "image", "download"]) {
+  for (const mode of [undefined, "image", "download", "preview"]) {
     const url = new URL(
       projectFileURL("project", "/worktree/a b.md", mode, "chat"),
       "https://spool.invalid",

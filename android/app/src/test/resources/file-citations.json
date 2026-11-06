@@ -1,0 +1,110 @@
+[
+  {
+    "id": "chinese-pdf",
+    "source": ":codex-file-citation{path=\"/private/tmp/muye-contract-data-table-qa/output/pdf/附件二_入场验收清单_表格版样例.pdf\" purpose=\"output\"}",
+    "links": [
+      {
+        "name": "附件二_入场验收清单_表格版样例.pdf",
+        "path": "/private/tmp/muye-contract-data-table-qa/output/pdf/附件二_入场验收清单_表格版样例.pdf"
+      }
+    ]
+  },
+  {
+    "id": "multiple-inline",
+    "source": "文件：:codex-file-citation{path=\"/work/报告 1.pdf\" purpose=\"output\"} 和 :codex-file-citation{purpose=\"output\" path=\"/work/报告 2.pdf\"}。",
+    "links": [
+      { "name": "报告 1.pdf", "path": "/work/报告 1.pdf" },
+      { "name": "报告 2.pdf", "path": "/work/报告 2.pdf" }
+    ]
+  },
+  {
+    "id": "markdown-special-characters",
+    "source": "**:codex-file-citation{path=\"/work/[a]*_b_ (draft){2}.pdf\" purpose=\"output\"}**",
+    "links": [
+      {
+        "name": "[a]*_b_ (draft){2}.pdf",
+        "path": "/work/[a]*_b_ (draft){2}.pdf"
+      }
+    ]
+  },
+  {
+    "id": "json-escapes",
+    "source": ":codex-file-citation{path=\"/work/\\u62a5\\u544a \\\"final\\\".pdf\" purpose=\"output\"}",
+    "links": [
+      { "name": "报告 \"final\".pdf", "path": "/work/报告 \"final\".pdf" }
+    ]
+  },
+  {
+    "id": "windows",
+    "source": ":codex-file-citation{path=\"C:\\\\work\\\\report.pdf\" purpose=\"output\"}",
+    "links": [{ "name": "report.pdf", "path": "C:\\work\\report.pdf" }]
+  },
+  {
+    "id": "relative-image-and-file",
+    "source": "- :codex-file-citation{path=\"images/plot.png\"}\n- :codex-file-citation{path=\"docs/report.docx\" purpose=\"output\" extra=\"future\"}",
+    "links": [
+      { "name": "plot.png", "path": "images/plot.png" },
+      { "name": "report.docx", "path": "docs/report.docx" }
+    ]
+  },
+  {
+    "id": "tabs",
+    "source": ":codex-file-citation{\tpath=\"/work/report.pdf\"\tpurpose=\"output\"\t}",
+    "links": [{ "name": "report.pdf", "path": "/work/report.pdf" }]
+  },
+  {
+    "id": "missing-path",
+    "source": ":codex-file-citation{purpose=\"output\"}",
+    "links": []
+  },
+  {
+    "id": "incomplete-stream",
+    "source": ":codex-file-citation{path=\"/work/report.pdf\" purpose=\"out",
+    "links": []
+  },
+  {
+    "id": "duplicate-path",
+    "source": ":codex-file-citation{path=\"/work/a.pdf\" path=\"/work/b.pdf\"}",
+    "links": []
+  },
+  {
+    "id": "missing-space",
+    "source": ":codex-file-citation{path=\"/work/a.pdf\"purpose=\"output\"}",
+    "links": []
+  },
+  {
+    "id": "invalid-escape",
+    "source": ":codex-file-citation{path=\"/work/bad\\q.pdf\"}",
+    "links": []
+  },
+  {
+    "id": "unsafe-target",
+    "source": ":codex-file-citation{path=\"javascript:alert(1)\" purpose=\"output\"}",
+    "links": []
+  },
+  {
+    "id": "control-target",
+    "source": ":codex-file-citation{path=\"/work/bad\\n.pdf\" purpose=\"output\"}",
+    "links": []
+  },
+  {
+    "id": "inline-code",
+    "source": "`:codex-file-citation{path=\"/work/report.pdf\" purpose=\"output\"}`",
+    "links": []
+  },
+  {
+    "id": "fenced-code",
+    "source": "```text\n:codex-file-citation{path=\"/work/report.pdf\" purpose=\"output\"}\n```",
+    "links": []
+  },
+  {
+    "id": "escaped-marker",
+    "source": "\\:codex-file-citation{path=\"/work/report.pdf\" purpose=\"output\"}",
+    "links": []
+  },
+  {
+    "id": "existing-link-label",
+    "source": "[:codex-file-citation{path=\"/work/report.pdf\"}](#section)",
+    "links": []
+  }
+]

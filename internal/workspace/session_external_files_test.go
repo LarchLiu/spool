@@ -82,6 +82,8 @@ func TestExternalSessionFilesRequireReferencesAndLiveProjectSwitch(t *testing.T)
 	}
 	root := t.TempDir()
 	external := writeSessionFile(t, root, "report with spaces.md", "external report")
+	pdf := writeSessionFile(t, root, `报告 "sample".pdf`, "%PDF-1.4\n%%EOF")
+	pdfPath, _ := json.Marshal(pdf)
 	unreferenced := writeSessionFile(t, root, "unreferenced.md", "unreferenced secret")
 	userOnly := writeSessionFile(t, root, "user-only.md", "user supplied path")
 	missing := filepath.Join(root, "removed.md")
@@ -95,7 +97,7 @@ func TestExternalSessionFilesRequireReferencesAndLiveProjectSwitch(t *testing.T)
 	native := filepath.Join(t.TempDir(), "native.jsonl")
 	appendTitleRecord(t, native, map[string]any{"type": "session_meta", "payload": map[string]any{"id": "external-files-native", "cwd": p.Path}})
 	appendTitleRecord(t, native, map[string]any{"type": "response_item", "payload": map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": userOnly}}}})
-	appendTitleRecord(t, native, map[string]any{"type": "response_item", "payload": map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "[Report](<" + external + ":2>)\n" + strings.Join([]string{missing, protected, private, alias, root}, "\n")}}}})
+	appendTitleRecord(t, native, map[string]any{"type": "response_item", "payload": map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": "[Report](<" + external + ":2>)\n:codex-file-citation{path=" + string(pdfPath) + " purpose=\"output\"}\n" + strings.Join([]string{missing, protected, private, alias, root}, "\n")}}}})
 	if err := s.SetNativeSessionPath(chat.ID, "external-files-native", native); err != nil {
 		t.Fatal(err)
 	}
@@ -116,6 +118,10 @@ func TestExternalSessionFilesRequireReferencesAndLiveProjectSwitch(t *testing.T)
 	w = apiRequest(a, "GET", endpoint("file", external)+"&download=1", "", cookie, "")
 	if w.Code != 200 || w.Body.String() != "external report" || !strings.HasPrefix(w.Header().Get("Content-Disposition"), "attachment;") {
 		t.Fatalf("external download: %d %s", w.Code, w.Body.String())
+	}
+	w = apiRequest(a, "GET", endpoint("file", pdf)+"&preview=1", "", cookie, "")
+	if w.Code != 200 || w.Header().Get("Content-Type") != "application/pdf" || !strings.HasPrefix(w.Header().Get("Content-Disposition"), "inline;") {
+		t.Fatalf("external citation PDF: %d %s", w.Code, w.Body.String())
 	}
 	for _, test := range []struct {
 		kind, path string
@@ -146,6 +152,10 @@ func TestExternalSessionFilesRequireReferencesAndLiveProjectSwitch(t *testing.T)
 	w = apiRequest(a, "GET", endpoint("file", external)+"&download=1", "", cookie, "")
 	if w.Code != 403 {
 		t.Fatalf("disabled access retained: %d %s", w.Code, w.Body.String())
+	}
+	w = apiRequest(a, "GET", endpoint("file", pdf)+"&preview=1", "", cookie, "")
+	if w.Code != 403 {
+		t.Fatalf("disabled citation preview retained: %d %s", w.Code, w.Body.String())
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -180,6 +190,28 @@ func TestExternalFileReferenceMatchingUsesWholePaths(t *testing.T) {
 	data, _ := json.Marshal(map[string]any{"file_path": path})
 	if !sessionReferencesFile(chatmodel.Session{Transcript: chatmodel.Transcript{Parts: []chatmodel.Part{{Role: "assistant", Kind: "tool_use", Text: string(data)}}}}, path) {
 		t.Fatal("structured tool file reference missed")
+	}
+}
+
+func TestCodexCitationReferencesEscapedFile(t *testing.T) {
+	path := "/output/报告 \"final\".pdf"
+	for _, text := range []string{
+		`:codex-file-citation{path="/output/\u62a5\u544a \"final\".pdf" purpose="output"}`,
+		`:codex-file-citation{purpose="output" path="/output/报告 \"final\".pdf"}`,
+	} {
+		if !codexCitationReferencesFile(text, path) {
+			t.Errorf("missed citation %q", text)
+		}
+	}
+	for _, text := range []string{
+		`:codex-file-citation{path="/output/报告 \"final\".pdf.secret"}`,
+		`:codex-file-citation{path="/output/报告 \"final\".pdf" path="/other.pdf"}`,
+		`:codex-file-citation{path="/output/报告 \"final\".pdf"purpose="output"}`,
+		`:codex-file-citation{path="/output/报告 \"final\".pdf"`,
+	} {
+		if codexCitationReferencesFile(text, path) {
+			t.Errorf("accepted malformed or partial citation %q", text)
+		}
 	}
 }
 

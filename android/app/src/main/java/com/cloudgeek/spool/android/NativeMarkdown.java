@@ -39,7 +39,9 @@ import java.util.function.Consumer;
 final class NativeMarkdown {
     private static final List<Extension> EXTENSIONS = Arrays.asList(TablesExtension.create(),
             StrikethroughExtension.create(), TaskListItemsExtension.create());
-    private static final Parser PARSER = Parser.builder().extensions(EXTENSIONS).includeSourceSpans(IncludeSourceSpans.BLOCKS_AND_INLINES).build();
+    private static final Parser PARSER = Parser.builder().extensions(EXTENSIONS)
+            .customInlineContentParserFactory(new NativeCodexFileCitation.Factory())
+            .includeSourceSpans(IncludeSourceSpans.BLOCKS_AND_INLINES).build();
     private final NativeUi ui;
     private final Consumer<String> open;
     private final float lineHeight;
@@ -456,7 +458,14 @@ final class NativeMarkdown {
 
     private void append(Node node, SpannableStringBuilder out, boolean autolinks) {
         int start = out.length();
-        if (node instanceof Text) {
+        if (node instanceof NativeCodexFileCitation) {
+            NativeCodexFileCitation file = (NativeCodexFileCitation) node;
+            boolean nested = false;
+            for (Node parent = node.getParent(); parent != null; parent = parent.getParent())
+                if (parent instanceof Link || parent instanceof Image) { nested = true; break; }
+            out.append(nested ? file.source : file.name);
+            if (!preview && !nested) link(out, file.path.replace('\\', '/'), start, out.length());
+        } else if (node instanceof Text) {
             String literal = ((Text) node).getLiteral();
             if (autolinks && !preview && appendLiteralLinks(node, out)) return;
             if (normalWhitespace) literal = literal.replaceAll("[ \\t\\r\\n\\f]+", " ");

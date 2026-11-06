@@ -31,6 +31,8 @@ public final class NativeVisualProbeActivity extends Activity {
     private NativeSyntax syntax;
     private NativeFileSource source;
     private volatile String syntaxError;
+    private NativeFileBrowser pdfBrowser;
+    private java.util.concurrent.ExecutorService pdfWorker;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -45,6 +47,7 @@ public final class NativeVisualProbeActivity extends Activity {
             else if (screen.equals("messages")) messages();
             else if (screen.equals("workspace")) workspace();
             else if (screen.equals("source")) source();
+            else if (screen.equals("pdf")) pdf();
             else login();
         } catch (Exception error) { root.addView(ui.text(error.getClass().getSimpleName() + ": " + error.getMessage(), 14, ui.error)); }
         setContentView(root); root.requestApplyInsets();
@@ -154,6 +157,23 @@ public final class NativeVisualProbeActivity extends Activity {
         scroll.addView(source); page.addView(scroll, new LinearLayout.LayoutParams(-1, -2)); measured.put("source", source);
     }
 
+    private void pdf() throws Exception {
+        pdfWorker = java.util.concurrent.Executors.newSingleThreadExecutor();
+        byte[] bytes;
+        try (java.io.InputStream input = getAssets().open("pdf-preview.pdf")) { bytes = input.readAllBytes(); }
+        NativeFileData data = new NativeFileData("application/octet-stream", getIntent().getBooleanExtra("invalidPdf", false) ? "%PDF-1.4\ninvalid".getBytes(StandardCharsets.UTF_8) : bytes);
+        JSONObject metadata = new JSONObject().put("name", "PDF 预览测试.pdf").put("path", "/work/PDF 预览测试.pdf").put("kind", "binary")
+                .put("media_type", "application/pdf").put("size", bytes.length).put("external", true);
+        pdfBrowser = new NativeFileBrowser(ui, "PDF preview test", new NativeFileModel("pdf-test"), null,
+                (owner, path) -> new NativePdfPreview(owner, pdfWorker, target -> data, path),
+                (path, done) -> {
+                    try { done.done(path.contains("/files?") ? new JSONObject("{\"path\":\".\",\"entries\":[]}") : metadata, null); }
+                    catch (Exception error) { done.done(null, error); }
+                }, file -> {}, address -> {}, () -> {}, value -> {});
+        root.addView(pdfBrowser, new FrameLayout.LayoutParams(-1, -1));
+        pdfBrowser.start(); pdfBrowser.select(new NativeFileTarget(metadata.getString("path"), 0, 0));
+    }
+
     private JSONObject bounds(View view) throws Exception {
         int[] position = new int[2]; view.getLocationOnScreen(position);
         return new JSONObject().put("x", position[0]).put("y", position[1]).put("width", view.getWidth()).put("height", view.getHeight());
@@ -171,6 +191,18 @@ public final class NativeVisualProbeActivity extends Activity {
                 int colors = text.getSpans(0, text.length(), android.text.style.ForegroundColorSpan.class).length;
                 data.put("syntaxColorSpans", colors).put("syntaxCharacters", text.length());
                 if (syntaxError != null) data.put("syntaxError", syntaxError);
+            }
+            if (pdfBrowser != null) {
+                NativePdfPreview pdf = pdfBrowser.preview.pdf;
+                data.put("pdfOpen", pdf != null);
+                if (pdf != null) {
+                    data.put("pdfPosition", pdf.position.getText()).put("pdfZoom", pdf.page.zoom()).put("pdfReady", pdf.status.getVisibility() == View.GONE)
+                            .put("pdfStatus", pdf.status.getText()).put("pdfPage", pdf.page.getContentDescription())
+                            .put("pdfPageWidth", pdf.page.pageWidth()).put("pdfPageHeight", pdf.page.pageHeight()).put("pdfBitmapPixels", pdf.page.bitmapPixels())
+                            .put("pdfScroll", pdf.page.scrollOffset()).put("pdfCachedPages", pdf.page.cachedPages());
+                    boxes.put("pdfNext", bounds(pdf.next)).put("pdfPrevious", bounds(pdf.previous)).put("pdfZoomIn", bounds(pdf.zoomIn))
+                            .put("pdfFit", bounds(pdf.fit)).put("pdfClose", bounds(pdfBrowser.preview.close)).put("pdfViewport", bounds(pdf.page));
+                }
             }
             data.put("settingsShowing", settings != null && settings.isShowing()).put("languageMenuShowing", ui.activePopover != null && ui.activePopover.isShowing());
             if (screen.equals("language") && ui.activePopover != null) {
@@ -194,6 +226,7 @@ public final class NativeVisualProbeActivity extends Activity {
             }
             if (!destroyed && source != null && syntaxError == null && ((android.text.Spanned) source.getText()).getSpans(0, source.length(), android.text.style.ForegroundColorSpan.class).length == 0)
                 root.postDelayed(this::report, 150);
+            if (!destroyed && pdfBrowser != null) root.postDelayed(this::report, 150);
         } catch (Exception error) { android.util.Log.e("SpoolNativeVerify", "Cannot save synthetic layout report", error); }
     }
 
@@ -239,6 +272,7 @@ public final class NativeVisualProbeActivity extends Activity {
         destroyed = true;
         if (settings != null) settings.dismiss(); if (avatars != null) avatars.clear();
         if (syntax != null) syntax.close(); if (codeWorker != null) codeWorker.shutdown();
+        if (pdfBrowser != null) pdfBrowser.deactivate(); if (pdfWorker != null) pdfWorker.shutdown();
         if (ui != null) ui.dismissMenus(); super.onDestroy();
     }
 }

@@ -3,6 +3,7 @@ package workspace
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -120,6 +121,40 @@ func TestProjectFilesRequireMembershipAndStayInsideProject(t *testing.T) {
 	w = apiRequest(a, "POST", endpoint("file", "docs/development-plan.md"), `{}`, cookie, csrf)
 	if w.Code != 404 {
 		t.Fatalf("file API unexpectedly permits mutations: %d", w.Code)
+	}
+	const pdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF"
+	write("report.pdf", pdf)
+	w = apiRequest(a, "GET", endpoint("file", "report.pdf"), "", cookie, "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"kind":"binary"`) || !strings.Contains(w.Body.String(), `"media_type":"application/pdf"`) {
+		t.Fatalf("PDF metadata: %d %s", w.Code, w.Body.String())
+	}
+	w = apiRequest(a, "GET", endpoint("file", "report.pdf")+"&preview=1", "", cookie, "")
+	if w.Code != 200 || w.Body.String() != pdf || w.Header().Get("Content-Type") != "application/pdf" || !strings.HasPrefix(w.Header().Get("Content-Disposition"), "inline;") || w.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("PDF inline preview: %d %v", w.Code, w.Header())
+	}
+	if policy := w.Header().Get("Content-Security-Policy"); strings.Contains(policy, "sandbox") || !strings.Contains(policy, "object-src 'self'") || !strings.Contains(policy, "default-src 'none'") || !strings.Contains(policy, "frame-ancestors 'self'") {
+		t.Fatalf("PDF viewer policy: %s", policy)
+	}
+	if w.Header().Get("X-Frame-Options") != "SAMEORIGIN" {
+		t.Fatal("PDF cannot be embedded by its own file sidebar")
+	}
+	rangeRequest := httptest.NewRequest("GET", endpoint("file", "report.pdf")+"&preview=1", nil)
+	rangeRequest.AddCookie(cookie)
+	rangeRequest.Header.Set("Range", "bytes=0-7")
+	rangeResponse := httptest.NewRecorder()
+	a.ServeHTTP(rangeResponse, rangeRequest)
+	if rangeResponse.Code != http.StatusPartialContent || rangeResponse.Body.String() != "%PDF-1.4" {
+		t.Fatalf("PDF range request: %d %s", rangeResponse.Code, rangeResponse.Body.String())
+	}
+	w = apiRequest(a, "GET", endpoint("file", "report.pdf")+"&preview=1", "", other, "")
+	if w.Code != 404 {
+		t.Fatalf("PDF preview bypassed membership: %d", w.Code)
+	}
+	for _, path := range []string{"page.html", "docs/development-plan.md", ".env.local", "escape.txt"} {
+		w = apiRequest(a, "GET", endpoint("file", path)+"&preview=1", "", cookie, "")
+		if w.Code < 400 {
+			t.Errorf("non-PDF preview allowed for %s: %d", path, w.Code)
+		}
 	}
 	p.Archived = true
 	if _, err := s.SaveProject(p); err != nil {

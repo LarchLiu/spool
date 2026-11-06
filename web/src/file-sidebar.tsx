@@ -436,7 +436,7 @@ function FileContent({
   );
   return (
     <LocalFileContext.Provider value={context}>
-      {previewKind && (
+      {(previewKind === "markdown" || previewKind === "html") && (
         <div className="file-preview-mode">
           <button
             aria-pressed={!renderPreview}
@@ -453,7 +453,15 @@ function FileContent({
         </div>
       )}
       <div className="file-preview-scroll">
-        {file.kind === "text" &&
+        {previewKind === "pdf" && (
+          <iframe
+            className="file-pdf-preview"
+            src={projectFileURL(project, file.path, "preview", chatID)}
+            title={t("Preview {name}", { name: file.name })}
+            referrerPolicy="no-referrer"
+          />
+        )}
+        {file.kind === "text" && previewKind !== "pdf" &&
           (renderPreview && previewKind === "html" ? (
             <HtmlFilePreview
               contents={file.content || ""}
@@ -476,7 +484,7 @@ function FileContent({
             alt={file.name}
           />
         )}
-        {file.kind === "binary" && (
+        {file.kind === "binary" && previewKind !== "pdf" && (
           <p className="file-panel-empty">
             {t("This file has no text preview. Download it to open locally.")}
           </p>

@@ -188,13 +188,17 @@ func (a *App) serveProjectFiles(w http.ResponseWriter, r *http.Request, director
 		apiError(w, 400, "Choose a regular file")
 		return
 	}
-	if r.URL.Query().Get("download") == "1" || r.URL.Query().Get("image") == "1" {
+	if r.URL.Query().Get("download") == "1" || r.URL.Query().Get("image") == "1" || r.URL.Query().Get("preview") == "1" {
 		disposition, mediaType := "attachment", "application/octet-stream"
-		if r.URL.Query().Get("image") == "1" && r.URL.Query().Get("download") != "1" {
+		if r.URL.Query().Get("download") != "1" {
 			header := make([]byte, 512)
 			n, _ := f.Read(header)
 			mediaType = http.DetectContentType(header[:n])
-			if !safeProjectImage(mediaType) {
+			if r.URL.Query().Get("preview") == "1" && mediaType != "application/pdf" {
+				apiError(w, 400, "This file cannot be previewed as a PDF")
+				return
+			}
+			if r.URL.Query().Get("preview") != "1" && !safeProjectImage(mediaType) {
 				apiError(w, 400, "This file cannot be previewed as an image")
 				return
 			}
@@ -207,7 +211,14 @@ func (a *App) serveProjectFiles(w http.ResponseWriter, r *http.Request, director
 		w.Header().Set("Content-Type", mediaType)
 		w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": info.Name()}))
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
+		policy := "sandbox; default-src 'none'"
+		if disposition == "inline" && mediaType == "application/pdf" {
+			// Browser PDF viewers use an embedded native document. CSP sandbox
+			// disables that viewer; retain a strict policy with same-origin embeds.
+			policy = "default-src 'none'; object-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
+			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		}
+		w.Header().Set("Content-Security-Policy", policy)
 		http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 		return
 	}
@@ -233,7 +244,7 @@ func (a *App) serveProjectFiles(w http.ResponseWriter, r *http.Request, director
 	var content *string
 	if safeProjectImage(mediaType) {
 		kind = "image"
-	} else if utf8.Valid(data) && !strings.ContainsRune(string(data), 0) {
+	} else if mediaType != "application/pdf" && utf8.Valid(data) && !strings.ContainsRune(string(data), 0) {
 		kind = "text"
 		text := string(data)
 		content = &text

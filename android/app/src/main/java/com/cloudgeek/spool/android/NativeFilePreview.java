@@ -19,6 +19,9 @@ final class NativeFilePreview extends LinearLayout {
     final LinearLayout notices;
     private final NativeUi ui;
     private final NativeImages images;
+    private final NativePdfPreview.Factory pdfFactory;
+    NativePdfPreview pdf;
+    private String pdfKey = "";
     private final String project, chat;
     private final Consumer<NativeFileTarget> open;
     private final Consumer<String> external;
@@ -32,8 +35,12 @@ final class NativeFilePreview extends LinearLayout {
     }
 
     NativeFilePreview(NativeUi ui, String project, String chat, NativeImages images, Consumer<NativeFileTarget> open, Consumer<String> external, Consumer<JSONObject> save, Runnable clear) {
+        this(ui, project, chat, images, null, open, external, save, clear);
+    }
+
+    NativeFilePreview(NativeUi ui, String project, String chat, NativeImages images, NativePdfPreview.Factory pdfFactory, Consumer<NativeFileTarget> open, Consumer<String> external, Consumer<JSONObject> save, Runnable clear) {
         super(ui.context);
-        this.ui = ui; this.project = project; this.chat = chat; this.images = images; this.open = open; this.external = external;
+        this.ui = ui; this.project = project; this.chat = chat; this.images = images; this.pdfFactory = pdfFactory; this.open = open; this.external = external;
         setOrientation(VERTICAL);
         setContentDescription(ui.t("File preview"));
         header = ui.row();
@@ -83,8 +90,20 @@ final class NativeFilePreview extends LinearLayout {
     private void renderContent() {
         mode.removeAllViews(); scroll.removeAllViews();
         mode.setVisibility(GONE);
-        if (file == null) return;
+        if (file == null) { releasePdf(); return; }
         String preview = NativeFileModel.previewKind(file);
+        if (preview.equals("pdf") && pdfFactory != null) {
+            scroll.setVisibility(GONE);
+            String key = file.optString("path") + "\n" + imageScope;
+            if (pdf == null || pdf.closed() || !key.equals(pdfKey)) {
+                releasePdf(); pdfKey = key;
+                // Use the existing bounded binary transport, including on older service hosts.
+                pdf = pdfFactory.create(ui, NativeFileData.filePath(project, chat, file.optString("path"), "download"));
+                addView(pdf, indexOfChild(scroll), new LayoutParams(-1, 0, 1));
+            }
+            return;
+        }
+        releasePdf(); scroll.setVisibility(VISIBLE);
         // HTML source remains native/selectable; arbitrary CSS/HTML is never put in a WebView.
         if (preview.equals("markdown")) {
             mode.setVisibility(VISIBLE);
@@ -129,6 +148,13 @@ final class NativeFilePreview extends LinearLayout {
         } else scroll.addView(empty(ui, ui.t("This file has no text preview. Download it to open locally.")));
         scroll.scrollTo(0, 0);
     }
+
+    void releasePdf() {
+        if (pdf != null) { pdf.close(); removeView(pdf); pdf = null; }
+        pdfKey = "";
+    }
+
+    @Override protected void onDetachedFromWindow() { releasePdf(); super.onDetachedFromWindow(); }
 
     static TextView empty(NativeUi ui, String value) {
         TextView text = ui.text(value, 12, ui.muted); ui.fixedLineHeight(text, 1.7f);

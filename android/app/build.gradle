@@ -62,6 +62,7 @@ android {
 
 def nativeVerifyFixtures = tasks.register('prepareNativeVerifyFixtures', Copy) {
     from('src/test/resources') { include 'web-behavior.json' }
+    from('src/test/resources') { include 'pdf-preview.pdf' }
     from('../../internal/avatar/testdata') { include 'web-fixtures.json' }
     into '../../build/android/native-verify/assets'
 }

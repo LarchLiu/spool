@@ -3968,7 +3968,8 @@ option {
   padding: 8px 18px 28px;
   font-size: 13px;
 }
-.file-html-preview {
+.file-html-preview,
+.file-pdf-preview {
   display: block;
   width: 100%;
   height: 100%;

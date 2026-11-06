@@ -63,7 +63,7 @@ export function localFileTarget(
 export function projectFileURL(
   project: string,
   path: string,
-  mode?: "download" | "image",
+  mode?: "download" | "image" | "preview",
   chatID?: string,
 ) {
   const query = new URLSearchParams({ path });

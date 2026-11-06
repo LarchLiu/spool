@@ -60,6 +60,11 @@ final class NativeFileBrowser extends LinearLayout {
 
     NativeFileBrowser(NativeUi ui, String name, NativeFileModel state, NativeImages images, Read read,
             Consumer<JSONObject> download, Consumer<String> external, Runnable close, java.util.function.DoubleConsumer resize) {
+        this(ui, name, state, images, null, read, download, external, close, resize);
+    }
+
+    NativeFileBrowser(NativeUi ui, String name, NativeFileModel state, NativeImages images, NativePdfPreview.Factory pdfFactory, Read read,
+            Consumer<JSONObject> download, Consumer<String> external, Runnable close, java.util.function.DoubleConsumer resize) {
         super(ui.context);
         this.ui = ui; this.state = state; this.read = read;
         setOrientation(VERTICAL); setBackgroundColor(ui.elevated); setWillNotDraw(false);
@@ -85,7 +90,7 @@ final class NativeFileBrowser extends LinearLayout {
         treePane.addView(treeSection, new LayoutParams(-1, 0, 1)); notices = ui.column(); treePane.addView(notices);
         split = new NativeFileSplit(ui, treePane, state.split, value -> { state.split = value; resize.accept(value); });
         addView(split, new LayoutParams(-1, 0, 1));
-        preview = new NativeFilePreview(ui, state.project, state.chat, images, this::select,
+        preview = new NativeFilePreview(ui, state.project, state.chat, images, pdfFactory, this::select,
                 address -> { if (active) external.accept(address); }, file -> { if (active) download.accept(file); }, this::clearPreview);
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence value, int start, int count, int after) {}
@@ -114,6 +119,7 @@ final class NativeFileBrowser extends LinearLayout {
     void resume() { if (!active) { started = false; start(); } else refreshWorkspace(); }
     void deactivate() {
         active = false; state.epoch++; state.fileRequest++;
+        preview.releasePdf();
         workspaceRequest++; workspacePending = false; removeCallbacks(workspacePoll);
         header.workspaceInfo.popover.dismiss();
         state.requested.removeAll(pending); pending.clear();
@@ -217,7 +223,7 @@ final class NativeFileBrowser extends LinearLayout {
     }
     private void clearPreview() { state.target = null; state.file = null; state.loadedTarget = null; state.selected = ""; state.fileError = ""; state.fileRequest++; revealing = ""; bindPreview(); renderTree(); }
     private void bindPreview() {
-        if (state.target == null) { split.preview(null); return; }
+        if (state.target == null) { preview.releasePdf(); split.preview(null); return; }
         String imageScope = (state.workspace == null ? "" : state.workspace.optString("path")) + "\n" + state.epoch;
         preview.bind(state.file, state.file == null ? state.target : state.loadedTarget, state.fileError, imageScope);
         if (split.preview != preview) split.preview(preview);

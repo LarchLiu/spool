@@ -33,7 +33,7 @@ const icons = {
   project_folder:'Folder', project_folder_open:'FolderOpen',
   people:'Users', user_plus:'UserPlus', attach:'Paperclip', settings:'Settings2', file_text:'FileText',
   file_code:'FileCode2', chevron_down:'ChevronDown', chevron_up:'ChevronUp',
-  chevron_right:'ChevronRight', download:'Download', log_out:'LogOut',
+  chevron_left:'ChevronLeft', chevron_right:'ChevronRight', download:'Download', log_out:'LogOut',
   monitor:'Monitor', sun:'Sun', moon:'Moon', check:'Check', command:'Command',
   copy:'Copy', code_xml:'CodeXml', circle_alert:'CircleAlert', shield_check:'ShieldCheck', shield_question:'ShieldQuestion',
   message:'MessageCircle', search:'Search', refresh:'RefreshCw', spinner:'LoaderCircle',

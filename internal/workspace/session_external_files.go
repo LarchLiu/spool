@@ -6,12 +6,49 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	chatmodel "spool/internal/model"
 )
+
+var codexFileCitation = regexp.MustCompile(`:codex-file-citation\{((?:[^"{}\r\n]|"(?:[^"\\\r\n]|\\.)*")*)\}`)
+var codexCitationAttribute = regexp.MustCompile(`^[ \t]*([A-Za-z_][\w-]*)=("(?:[^"\\\r\n]|\\.)*")`)
+
+// Citation paths are JSON strings, so escaped quotes and Unicode must resolve
+// to the same individual file reference as ordinary Markdown links.
+func codexCitationReferencesFile(text, path string) bool {
+	for _, match := range codexFileCitation.FindAllStringSubmatch(text, -1) {
+		attributes := match[1]
+		values := map[string]string{}
+		valid := true
+		for strings.Trim(attributes, " \t") != "" {
+			attribute := codexCitationAttribute.FindStringSubmatch(attributes)
+			if attribute == nil {
+				valid = false
+				break
+			}
+			var value string
+			_, duplicate := values[attribute[1]]
+			if duplicate || json.Unmarshal([]byte(attribute[2]), &value) != nil {
+				valid = false
+				break
+			}
+			values[attribute[1]] = value
+			attributes = attributes[len(attribute[0]):]
+			if attributes != "" && attributes[0] != ' ' && attributes[0] != '\t' {
+				valid = false
+				break
+			}
+		}
+		if valid && values["path"] == path {
+			return true
+		}
+	}
+	return false
+}
 
 func fileReferenceBoundary(r rune) bool {
 	return unicode.IsSpace(r) || strings.ContainsRune("\"'`<>[](){},;", r)
@@ -89,7 +126,7 @@ func sessionReferencesFile(chat chatmodel.Session, path string) bool {
 		if part.Role != "assistant" && part.Role != "tool" {
 			continue
 		}
-		if textReferencesFile(part.Text, path) {
+		if textReferencesFile(part.Text, path) || codexCitationReferencesFile(part.Text, path) {
 			return true
 		}
 		var structured any

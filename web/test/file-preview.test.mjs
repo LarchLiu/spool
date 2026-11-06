@@ -46,6 +46,41 @@ test("Markdown keeps its renderer and other text remains source-only", () => {
   }
 });
 
+test("PDF previews require the detected media type rather than the file extension", () => {
+  assert.equal(
+    filePreviewKind({
+      name: "report.pdf",
+      kind: "binary",
+      media_type: "application/pdf",
+    }),
+    "pdf",
+  );
+  assert.equal(
+    filePreviewKind({
+      name: "report",
+      kind: "binary",
+      media_type: "application/pdf; charset=binary",
+    }),
+    "pdf",
+  );
+  assert.equal(
+    filePreviewKind({
+      name: "fake.pdf",
+      kind: "text",
+      media_type: "text/html",
+    }),
+    "html",
+  );
+  assert.equal(
+    filePreviewKind({
+      name: "fake.pdf",
+      kind: "binary",
+      media_type: "application/octet-stream",
+    }),
+    null,
+  );
+});
+
 test("HTML is contained in an opaque sandbox with a policy before all file content", () => {
   const contents = `<!doctype html><html><head><style>h1 { color: red; }</style></head><body><h1>Preview</h1><script>parent.document.body.remove()</script><img src="/api/private"><iframe src="https://example.com"></iframe></body></html>`;
   const frame = HtmlFilePreview({ contents, title: "Preview page.html" });

@@ -18,6 +18,7 @@ import remarkGfm from "remark-gfm";
 import { LocalFileContext } from "./local-file-context.js";
 import { localFileTarget } from "./local-file-links.js";
 import { copyMessageText } from "./copy-text.js";
+import { remarkCodexFileCitations } from "./codex-file-citations.js";
 
 type CodeTranslator = (
   key: "Plain text" | "Copy code" | "Code copied" | "Could not copy code",
@@ -160,7 +161,7 @@ function messageURL(url: string) {
   }
 }
 
-const plugins = [remarkGfm];
+const plugins = [remarkGfm, remarkCodexFileCitations];
 const components: Components = {
   a: MarkdownLink,
   pre: MarkdownCodeBlock,
