@@ -33,6 +33,9 @@ final class NativeFileModel {
     private Set<String> beforeSearch;
     final String project, chat;
     JSONObject workspace;
+    JSONObject latestWorkspace;
+    JSONArray workspaces = new JSONArray();
+    String manualWorkspace = "";
     String workspaceError = "";
     String query = "", selected = "", focused = "", error = "", fileError = "";
     JSONObject file;
@@ -46,8 +49,40 @@ final class NativeFileModel {
     NativeFileModel(String project, String chat) { this.project = project; this.chat = chat; }
 
     String apiBase() { return NativeFileData.apiBase(project, chat); }
-    String filePath(String path, String mode) { return NativeFileData.filePath(project, chat, path, mode); }
+    String workspacePath() { return workspaces.length() > 0 && workspace != null ? workspace.optString("path") : ""; }
+    String filePath(String path, String mode) { return NativeFileData.filePath(project, chat, path, mode, workspacePath()); }
+    String directoryPath(String path) { return apiBase() + "/files?path=" + android.net.Uri.encode(path)
+            + (workspacePath().isEmpty() ? "" : "&workspace=" + android.net.Uri.encode(workspacePath())); }
     boolean ready() { return chat.isEmpty() || workspace != null && workspace.optBoolean("available"); }
+
+    void receiveWorkspace(JSONObject latest) {
+        if (latestWorkspace != null && (!latestWorkspace.optString("path").equals(latest.optString("path"))
+                || !latest.optString("turn_id").isEmpty() && !latestWorkspace.optString("turn_id").equals(latest.optString("turn_id")))) manualWorkspace = "";
+        latestWorkspace = latest;
+        workspaces = latest.optJSONArray("workspaces");
+        if (workspaces == null) workspaces = new JSONArray();
+        workspace = latest;
+        for (int i = 0; i < workspaces.length(); i++) {
+            JSONObject option = workspaces.optJSONObject(i);
+            if (option != null && option.optString("path").equals(manualWorkspace)) { workspace = option; return; }
+        }
+        manualWorkspace = "";
+    }
+
+    boolean selectWorkspace(String path) {
+        for (int i = 0; i < workspaces.length(); i++) {
+            JSONObject option = workspaces.optJSONObject(i);
+            if (option != null && option.optBoolean("available") && option.optString("path").equals(path)) {
+                manualWorkspace = path; workspace = option; return true;
+            }
+        }
+        return false;
+    }
+
+    static String directoryName(String path) {
+        String value = path.replace('\\', '/').replaceFirst("/+$", "");
+        return value.isEmpty() ? path : value.substring(value.lastIndexOf('/') + 1);
+    }
 
     void clearScope() {
         reset(); closeSearch();

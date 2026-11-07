@@ -31,6 +31,53 @@ import org.robolectric.annotation.LooperMode;
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class NativeSessionFilesTest {
+    @Test public void chooserHidesForOneDirectoryAndManualChoiceFollowsTheNextTurn() throws Exception {
+        List<NativeFilesTest.Pending> requests = new ArrayList<>();
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeFileModel model = new NativeFileModel("p", "c");
+            NativeFileBrowser browser = browser(controller.get(), model, requests); browser.start();
+            JSONObject main = workspace("/repo/main", true).put("kind", "main");
+            JSONObject tree = workspace("/repo/worktree", true);
+            JSONObject latest = new JSONObject(main.toString()).put("turn_id", "turn-1").put("workspaces", new JSONArray().put(main));
+            take(requests, "/workspace").result.done(latest, null);
+            assertEquals(View.GONE, browser.header.workspaceToggle.getVisibility());
+            assertEquals("/repo/main", android.net.Uri.parse(requests.remove(0).path).getQueryParameter("workspace"));
+            latest.put("workspaces", new JSONArray().put(main).put(tree));
+            browser.refreshWorkspace(); take(requests, "/workspace").result.done(latest, null);
+            assertEquals(View.VISIBLE, browser.header.workspaceToggle.getVisibility());
+            assertTrue(text(browser.header).contains("main"));
+            layout(browser, 360, 800);
+            browser.header.workspaceToggle.performClick();
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertTrue(browser.header.workspaceMenu.isShowing());
+            assertTrue(text(browser.header.workspaceMenu.content).contains("Main checkout"));
+            assertTrue(text(browser.header.workspaceMenu.content).contains("/repo/worktree"));
+            browser.header.workspaceMenu.content.getChildAt(1).performClick();
+            assertFalse(browser.header.workspaceMenu.isShowing());
+            assertEquals("/repo/worktree", model.workspace.getString("path"));
+            assertNull(model.target);
+            assertEquals("/repo/worktree", android.net.Uri.parse(requests.remove(0).path).getQueryParameter("workspace"));
+            browser.select(new NativeFileTarget("same.txt", 0, 0));
+            String fileRequest = requests.remove(0).path;
+            assertEquals("/repo/worktree", android.net.Uri.parse(fileRequest).getQueryParameter("workspace"));
+            assertTrue(NativeFileData.allowedPath(fileRequest));
+            browser.refreshWorkspace(); take(requests, "/workspace").result.done(latest, null);
+            assertEquals("/repo/worktree", model.workspace.getString("path"));
+            browser.refreshWorkspace();
+            take(requests, "/workspace").result.done(new JSONObject(latest.toString()).put("turn_id", "turn-2"), null);
+            assertEquals("/repo/main", model.workspace.getString("path")); assertNull(model.target);
+            assertEquals("/repo/main", android.net.Uri.parse(requests.remove(0).path).getQueryParameter("workspace"));
+            browser.selectWorkspace(tree.getString("path")); requests.clear();
+            browser.refreshWorkspace();
+            take(requests, "/workspace").result.done(new JSONObject(tree.toString()).put("turn_id", "turn-2").put("workspaces", new JSONArray().put(main).put(tree)), null);
+            assertEquals("/repo/worktree", model.workspace.getString("path"));
+            assertEquals("", model.manualWorkspace);
+            assertTrue(NativeFileData.allowedPath(model.filePath("picture.png", "image")));
+            assertEquals("/repo/worktree", android.net.Uri.parse(model.filePath("same.txt", "download")).getQueryParameter("workspace"));
+            browser.deactivate();
+        }
+    }
+
     private JSONObject workspace(String path, boolean available) throws Exception {
         return new JSONObject().put("path", path).put("available", available).put("kind", "worktree").put("branch", "feature/session-files");
     }

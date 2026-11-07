@@ -250,7 +250,6 @@ func indexClaudeTurns(path string, offset, end int64, metadata *nativeSessionMet
 		position += int64(len(line))
 		var record map[string]any
 		if json.Unmarshal(line, &record) == nil && record["isSidechain"] != true {
-			metadata.collect(chatmodel.BackendClaude, record)
 			id, parent, prompt := stringValue(record["uuid"]), stringValue(record["parentUuid"]), stringValue(record["promptId"])
 			message, _ := record["message"].(map[string]any)
 			owner := current
@@ -276,6 +275,13 @@ func indexClaudeTurns(path string, offset, end int64, metadata *nativeSessionMet
 				if prompt != "" {
 					byPrompt[prompt] = owner
 				}
+			}
+			if owner == current {
+				metadata.collect(chatmodel.BackendClaude, record)
+			} else if metadata != nil {
+				// A delayed reply still belongs to its earlier turn. It may
+				// update titles, but must not restore that turn's old cwd.
+				metadata.title.collect(chatmodel.BackendClaude, record)
 			}
 			if owner >= 0 {
 				if id != "" {

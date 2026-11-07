@@ -71,6 +71,7 @@ final class NativeFileBrowser extends LinearLayout {
         setPadding(ui.dp(1), 0, 0, 0);
         setContentDescription(ui.t("Project files"));
         header = new NativeFileHeader(ui, name, () -> toggleSearch(!state.searchOpen), this::reload, close);
+        header.selectWorkspace = this::selectWorkspace;
         title = header.title; searchField = header.searchField; search = header.search; searchToggle = header.searchToggle;
         addView(header, new LayoutParams(-1, ui.dp(49)));
         addView(ui.divider(), new LayoutParams(-1, ui.dp(50) - ui.dp(49)));
@@ -125,7 +126,7 @@ final class NativeFileBrowser extends LinearLayout {
         active = false; state.epoch++; state.fileRequest++;
         preview.releaseDocuments();
         workspaceRequest++; workspacePending = false; removeCallbacks(workspacePoll);
-        header.workspaceInfo.popover.dismiss();
+        header.dismiss();
         state.requested.removeAll(pending); pending.clear();
         hideKeyboard();
     }
@@ -165,10 +166,11 @@ final class NativeFileBrowser extends LinearLayout {
             JSONObject previous = state.workspace;
             boolean wasReady = state.ready();
             String oldPath = previous == null ? "" : previous.optString("path");
-            String newPath = error == null ? value.optString("path") : "";
-            state.workspace = error == null ? value : null;
+            if (error == null) state.receiveWorkspace(value); else state.workspace = null;
+            String newPath = state.workspace == null ? "" : state.workspace.optString("path");
             state.workspaceError = error == null ? "" : error.getMessage() == null ? ui.t("Request failed") : error.getMessage();
             if (!oldPath.equals(newPath) || wasReady != state.ready()) {
+                header.dismiss();
                 NativeFileTarget target = previous == null || oldPath.equals(newPath) ? state.target : null;
                 state.clearScope(); pending.clear(); revealing = "";
                 bindSearch(); bindPreview();
@@ -182,13 +184,19 @@ final class NativeFileBrowser extends LinearLayout {
             postDelayed(workspacePoll, 10_000);
         });
     }
+    void selectWorkspace(String path) {
+        if (!active || state.workspace != null && path.equals(state.workspace.optString("path")) || !state.selectWorkspace(path)) return;
+        state.clearScope(); pending.clear(); revealing = "";
+        header.dismiss(); bindSearch(); bindPreview(); renderTree();
+        loadDirectory(".");
+    }
     private void loadExpanded() { for (String path : new ArrayList<>(state.expanded)) loadDirectory(path); }
     void loadDirectory(String input) {
         String path = NativeFileModel.key(input);
         if (!active || !state.ready() || state.requested.contains(path)) return;
         state.requested.add(path); pending.add(path); renderTree();
         int epoch = state.epoch;
-        read.read(state.apiBase() + "/files?path=" + android.net.Uri.encode(path), (value, error) -> {
+        read.read(state.directoryPath(path), (value, error) -> {
             if (!active || epoch != state.epoch) return;
             pending.remove(path);
             if (error != null) state.error = error.getMessage() == null ? ui.t("Request failed") : error.getMessage();
@@ -229,6 +237,7 @@ final class NativeFileBrowser extends LinearLayout {
     private void bindPreview() {
         if (state.target == null) { preview.releaseDocuments(); split.preview(null); return; }
         String imageScope = (state.workspace == null ? "" : state.workspace.optString("path")) + "\n" + state.epoch;
+        preview.workspacePath = state.workspacePath();
         preview.bind(state.file, state.file == null ? state.target : state.loadedTarget, state.fileError, imageScope);
         if (split.preview != preview) split.preview(preview);
     }

@@ -7,6 +7,7 @@ import { FileTree } from "@pierre/trees";
 import { FilePreviewSplit } from "../.test-build/components/web/src/file-preview-split.js";
 import { FileSidebarHeader } from "../.test-build/components/web/src/file-sidebar-header.js";
 import { SessionWorkspaceInfo } from "../.test-build/components/web/src/session-workspace.js";
+import { receiveSessionWorkspace, selectSessionWorkspace } from "../.test-build/components/web/src/session-workspace-state.js";
 import {
   localFileTarget,
   projectFileURL,
@@ -61,7 +62,45 @@ test("session file URLs retain chat scope for previews, images and downloads", (
     assert.equal(url.pathname, "/api/chats/chat/file");
     assert.equal(url.searchParams.get("path"), "/worktree/a b.md");
     if (mode) assert.equal(url.searchParams.get(mode), "1");
+    const selected = new URL(projectFileURL("project", "same.txt", mode, "chat", "/work/other tree"), "https://spool.invalid");
+    assert.equal(selected.searchParams.get("workspace"), "/work/other tree");
+    assert.equal(selected.searchParams.get("path"), "same.txt");
+    if (mode) assert.equal(selected.searchParams.get(mode), "1");
   }
+});
+
+test("workspace selection survives refresh and follows the next native turn or directory change", () => {
+  const main = { path: "/repo", available: true, kind: "main" };
+  const first = { path: "/trees/first", available: true, kind: "worktree" };
+  const second = { path: "/trees/second", available: true, kind: "worktree" };
+  const latest = { ...first, turn_id: "turn-1", workspaces: [main, first, second] };
+  let state = receiveSessionWorkspace(undefined, latest);
+  assert.equal(state.workspace.path, first.path);
+  state = selectSessionWorkspace(state, main.path);
+  assert.equal(state.workspace.path, main.path);
+  state = receiveSessionWorkspace(state, { ...latest, branch: "new-branch" });
+  assert.equal(state.workspace.path, main.path);
+  assert.equal(selectSessionWorkspace(state, "/private").workspace.path, main.path);
+  state = receiveSessionWorkspace(state, { ...latest, turn_id: "turn-2" });
+  assert.equal(state.workspace.path, first.path);
+  state = selectSessionWorkspace(state, main.path);
+  state = receiveSessionWorkspace(state, { ...latest, ...second, turn_id: "turn-2" });
+  assert.equal(state.workspace.path, second.path);
+  state = selectSessionWorkspace(state, main.path);
+  state = receiveSessionWorkspace(state, { ...latest, workspaces: [first, second] });
+  assert.equal(state.workspace.path, first.path);
+});
+
+test("directory title shows a chooser only when multiple workspaces are available", () => {
+  const main = { path: "/repo/main", available: true, kind: "main" };
+  const tree = { path: "/repo/feature", available: true, kind: "worktree" };
+  const render = (workspaces) => renderToStaticMarkup(createElement(FileSidebarHeader, {
+    name: "Project", workspace: main, workspaces, onSelectWorkspace: () => {}, t: key => key, onClose: () => {},
+  }));
+  assert.match(render([main]), /<strong title="\/repo\/main">main<\/strong>/);
+  assert.doesNotMatch(render([main]), /Switch directory|custom-select/);
+  assert.match(render([main, tree]), /aria-label="Switch directory"/);
+  assert.match(render([main, tree]), /aria-haspopup="listbox"/);
 });
 
 test("session workspace shows its full path, checkout type, branch and missing state", () => {

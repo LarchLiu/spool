@@ -42,6 +42,8 @@ type Props = {
   project?: Project;
   chatID?: string;
   workspace?: SessionWorkspace;
+  workspaces?: SessionWorkspace[];
+  onSelectWorkspace: (path: string) => void;
   workspaceError?: string;
   onRefreshWorkspace: () => void;
   active: boolean;
@@ -91,6 +93,8 @@ function ProjectFiles({
   project,
   chatID,
   workspace,
+  workspaces,
+  onSelectWorkspace,
   workspaceError,
   onRefreshWorkspace,
   active,
@@ -102,6 +106,7 @@ function ProjectFiles({
   onClose,
 }: Props & { project: Project }) {
   const ready = !chatID || !!workspace?.available;
+  const workspacePath = workspace?.path;
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(0);
   const [count, setCount] = useState(0);
@@ -149,7 +154,7 @@ function ProjectFiles({
       controllers.current.add(controller);
       setBusy((value) => value + 1);
       const pending = api<ProjectDirectory>(
-        `${fileAPIBase(project.id, chatID).slice(4)}/files?${new URLSearchParams({ path: key })}`,
+        `${fileAPIBase(project.id, chatID).slice(4)}/files?${new URLSearchParams({ path: key, ...(chatID && workspacePath ? { workspace: workspacePath } : {}) })}`,
         undefined,
         controller.signal,
       )
@@ -175,7 +180,7 @@ function ProjectFiles({
       requests.current.set(key, pending);
       return pending;
     },
-    [model, project.id, chatID, t],
+    [model, project.id, chatID, workspacePath, t],
   );
 
   useEffect(() => {
@@ -206,6 +211,7 @@ function ProjectFiles({
         selection.target.path,
         undefined,
         chatID,
+        workspacePath,
       ).slice(4),
       undefined,
       controller.signal,
@@ -250,6 +256,7 @@ function ProjectFiles({
     selection,
     project.id,
     chatID,
+    workspacePath,
     model,
     loadDirectory,
     refresh,
@@ -293,6 +300,8 @@ function ProjectFiles({
       <FileSidebarHeader
         name={project.name}
         workspace={workspace}
+        workspaces={workspaces}
+        onSelectWorkspace={onSelectWorkspace}
         workspaceError={workspaceError}
         showWorkspaceInfo={!!chatID}
         t={t}
@@ -389,6 +398,7 @@ function ProjectFiles({
                         file.path,
                         "download",
                         chatID,
+                        workspacePath,
                       )}
                       download={file.name}
                       aria-label={t("Download file")}
@@ -421,6 +431,7 @@ function ProjectFiles({
                   file={loaded.file}
                   project={project.id}
                   chatID={chatID}
+                  workspacePath={workspacePath}
                   target={loaded.selection.target}
                   t={t}
                   theme={theme}
@@ -439,6 +450,7 @@ function FileContent({
   file,
   project,
   chatID,
+  workspacePath,
   target,
   t,
   theme,
@@ -447,6 +459,7 @@ function FileContent({
   file: ProjectFile;
   project: string;
   chatID?: string;
+  workspacePath?: string;
   target: LocalFileTarget;
   t: Translator;
   theme: "light" | "dark";
@@ -478,11 +491,11 @@ function FileContent({
         </div>
       )}
       <div className={`file-preview-scroll${office ? " office-preview-container" : ""}`}>
-        {office && <OfficePreview key={file.path} path={projectFileURL(project, file.path, undefined, chatID)} read={readOffice} t={t} />}
+        {office && <OfficePreview key={file.path} path={projectFileURL(project, file.path, undefined, chatID, workspacePath)} read={readOffice} t={t} />}
         {previewKind === "pdf" && (
           <iframe
             className="file-pdf-preview"
-            src={projectFileURL(project, file.path, "preview", chatID)}
+            src={projectFileURL(project, file.path, "preview", chatID, workspacePath)}
             title={t("Preview {name}", { name: file.name })}
             referrerPolicy="no-referrer"
           />
@@ -506,7 +519,7 @@ function FileContent({
         {file.kind === "image" && (
           <img
             className="project-file-image"
-            src={projectFileURL(project, file.path, "image", chatID)}
+            src={projectFileURL(project, file.path, "image", chatID, workspacePath)}
             alt={file.name}
           />
         )}

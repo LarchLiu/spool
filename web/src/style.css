@@ -3451,9 +3451,11 @@ option {
   text-align: left;
 }
 .custom-select-menu button[aria-selected="true"],
-.custom-select-menu button:hover:not(:disabled),
 .custom-select-menu button:focus-visible {
   background: var(--control-hover);
+}
+.custom-select-menu button:hover:not(:disabled):not([aria-selected="true"]) {
+  background: color-mix(in srgb, var(--control-hover) 50%, transparent);
 }
 .custom-select-menu button:focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -3874,6 +3876,19 @@ option {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.file-workspace-select {
+  flex-shrink: 0;
+}
+.file-workspace-select .custom-select-trigger {
+  width: 22px;
+  min-height: 24px;
+  height: 24px;
+  padding: 0;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .file-sidebar-search {
   display: flex;

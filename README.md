@@ -37,6 +37,7 @@ on the service host before use.
 - Supports Codex and Claude Code, including each CLI's available models, reasoning levels, and permission modes.
 - Uses an independent native CLI session for every chat, with streaming output, stop, resume, and idle release.
 - Renders Markdown, code, diffs, tool activity, images, and file attachments; browse project files and Git worktrees directly.
+- The file sidebar follows the latest session turn's directory, with a directory chooser when multiple checkouts are available.
 - Supports the native `/goal` command, scoped command/file approvals, permission subsets, interactive questions, and MCP authorization forms on Web and Android.
 - Saves agent, model, and permission selections per chat while keeping history in the native Codex or Claude session.
 

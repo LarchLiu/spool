@@ -132,7 +132,8 @@ final class NativePopover {
         LinearLayout row = ui.row();
         row.setMinimumHeight(ui.dp(36));
         row.setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8));
-        row.setBackground(ui.states(selected ? ui.controlHover : 0x00000000, 6, 0, ui.controlHover, 0x00000000));
+        row.setBackground(ui.states(selected ? ui.controlHover : 0x00000000, 6, 0, ui.controlHover, 0x00000000,
+                selected ? ui.controlHover : (ui.controlHover & 0x00ffffff) | 0x80000000));
         TextView label = ui.text(title, 12, ui.text);
         ui.fixedLineHeight(label, 1.2f);
         if (description.isEmpty()) {

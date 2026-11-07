@@ -198,6 +198,7 @@
   "Choose directory…": "ディレクトリを選択…",
   "Project directory": "プロジェクトディレクトリ",
   "Session directory": "セッションディレクトリ",
+  "Switch directory": "ディレクトリを切り替え",
   "Allow viewing external files referenced in sessions": "セッションで参照された外部ファイルの閲覧を許可",
   "Members can preview and download external files referenced by the agent in chats they can access. External directories are not browsable. Agent permissions are unchanged.": "メンバーは閲覧可能なチャットでエージェントが参照した外部ファイルをプレビュー・ダウンロードできます。外部ディレクトリは閲覧できません。エージェントの権限は変わりません。",
   "External file": "外部ファイル",

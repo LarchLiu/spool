@@ -21,27 +21,33 @@ type sessionWorkspace struct {
 	Available bool   `json:"available"`
 }
 
-// File viewing follows provider metadata without changing the directory used
-// to start/resume an agent or granting the agent additional permissions.
+type sessionWorkspaceView struct {
+	sessionWorkspace
+	Workspaces []sessionWorkspace `json:"workspaces"`
+	TurnID     string             `json:"turn_id,omitempty"`
+}
+
+// File viewing follows the latest directory recorded in the native session,
+// without changing the directory used to start/resume an agent or its permissions.
 func (s *Store) sessionFileDirectory(chat chatmodel.Session) (string, error) {
-	directory, err := s.sessionDirectory(chat)
-	if err != nil {
-		return "", err
-	}
 	if chat.NativeSessionPath != "" {
-		_ = s.historyCache.read(chat.Backend, chat.NativeSessionPath, func(file *nativeHistory) error {
-			if file.directory != "" {
-				directory = file.directory
-			}
+		var directory string
+		err := s.historyCache.read(chat.Backend, chat.NativeSessionPath, func(file *nativeHistory) error {
+			directory = file.directory
 			return nil
 		})
-	}
-	if chat.AutomationChat {
-		if worktree := s.issueFileDirectory(chat); worktree != "" {
-			directory = worktree
+		if err == nil && directory != "" {
+			return directory, nil
 		}
 	}
-	return directory, nil
+	// Older sessions may not contain cwd metadata. Only then use the issue
+	// task's checkout or the session's configured execution directory.
+	if chat.AutomationChat {
+		if worktree := s.issueFileDirectory(chat); worktree != "" {
+			return worktree, nil
+		}
+	}
+	return s.sessionDirectory(chat)
 }
 
 // Issue agents already record their actual checkout in the task ledger. Read
@@ -81,7 +87,7 @@ func (s *Store) issueFileDirectory(chat chatmodel.Session) string {
 	return ""
 }
 
-func registeredWorktree(ctx context.Context, project, root string) bool {
+func registeredWorktrees(ctx context.Context, project string) []string {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "worktree", "list", "--porcelain", "-z")
@@ -96,14 +102,28 @@ func registeredWorktree(ctx context.Context, project, root string) bool {
 	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
 	output, err := cmd.Output()
 	if err != nil {
-		return false
+		return nil
 	}
+	var roots []string
 	for _, field := range strings.Split(string(output), "\x00") {
-		if path, ok := strings.CutPrefix(field, "worktree "); ok && canonicalDirectory(path) == root {
-			return true
+		if path, ok := strings.CutPrefix(field, "worktree "); ok {
+			if root := canonicalDirectory(path); root != "" {
+				roots = append(roots, root)
+			}
 		}
 	}
-	return false
+	return roots
+}
+
+func describeSessionWorkspace(directory string) sessionWorkspace {
+	workspace := sessionWorkspace{Path: filepath.Clean(directory), Kind: "directory"}
+	if path := canonicalDirectory(directory); path != "" {
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			workspace.Path, workspace.Available = path, true
+			workspace.Kind, workspace.Branch, workspace.Commit = workspaceGitState(path)
+		}
+	}
+	return workspace
 }
 
 func workspaceGitState(directory string) (kind, branch, commit string) {
@@ -135,21 +155,8 @@ func workspaceGitState(directory string) (kind, branch, commit string) {
 
 func (a *App) sessionFilesResponse(w http.ResponseWriter, r *http.Request, chat chatmodel.Session, kind string) {
 	directory, err := a.store.sessionFileDirectory(chat)
-	if err == nil && kind == "file" && a.externalSessionFile(w, r, chat, directory) {
-		return
-	}
 	if err != nil || !filepath.IsAbs(directory) {
 		apiError(w, 404, "Session directory is unavailable")
-		return
-	}
-	workspace := sessionWorkspace{Path: filepath.Clean(directory), Kind: "directory"}
-	directory = canonicalDirectory(directory)
-	if directory == "" {
-		if kind == "workspace" {
-			apiJSON(w, 200, workspace)
-		} else {
-			apiError(w, 404, "Session directory is unavailable")
-		}
 		return
 	}
 	projects, err := a.store.Projects()
@@ -158,26 +165,96 @@ func (a *App) sessionFilesResponse(w http.ResponseWriter, r *http.Request, chat 
 		return
 	}
 	mappings := localSessionProjects(projects)
-	if matchLocalSessionProject(directory, mappings).ID != chat.ProjectID {
-		projectFileError(w, os.ErrPermission)
-		return
-	}
 	project, err := a.store.Project(chat.ProjectID)
 	if err != nil {
 		apiError(w, 404, "Session directory is unavailable")
 		return
 	}
-	if !directoryWithin(directory, canonicalDirectory(project.Path)) {
-		root, _ := gitWorkspace(directory)
-		if !registeredWorktree(r.Context(), project.Path, root) {
+	roots := registeredWorktrees(r.Context(), project.Path)
+	projectPath := canonicalDirectory(project.Path)
+	allowed := func(path string) bool {
+		if matchLocalSessionProject(path, mappings).ID != chat.ProjectID {
+			return false
+		}
+		if directoryWithin(path, projectPath) {
+			return true
+		}
+		root, _ := gitWorkspace(path)
+		for _, registered := range roots {
+			if root == registered {
+				return true
+			}
+		}
+		return false
+	}
+	workspace := describeSessionWorkspace(directory)
+	if workspace.Available && !allowed(workspace.Path) && kind != "file" {
+		projectFileError(w, os.ErrPermission)
+		return
+	}
+	options := []sessionWorkspace{workspace}
+	seen := map[string]bool{workspace.Path: true}
+	projectRoot, _ := gitWorkspace(project.Path)
+	currentRoot, _ := gitWorkspace(workspace.Path)
+	relative, _ := filepath.Rel(projectRoot, projectPath)
+	for _, path := range append([]string{project.Path}, roots...) {
+		if path != project.Path && relative != "" && relative != "." {
+			path = filepath.Join(path, relative)
+		}
+		option := describeSessionWorkspace(path)
+		root, _ := gitWorkspace(option.Path)
+		// A cwd inside one checkout is not another worktree choice.
+		if workspace.Available && (currentRoot != "" && root == currentRoot || len(roots) == 0) {
+			continue
+		}
+		if !seen[option.Path] && option.Available && allowed(option.Path) {
+			seen[option.Path] = true
+			options = append(options, option)
+		}
+	}
+	if selected := r.URL.Query().Get("workspace"); selected != "" {
+		if !filepath.IsAbs(selected) || strings.ContainsAny(selected, "\x00\r\n") {
 			projectFileError(w, os.ErrPermission)
 			return
 		}
+		path := filepath.Clean(selected)
+		if canonical := canonicalDirectory(path); canonical != "" {
+			path = canonical
+		}
+		if !seen[path] {
+			projectFileError(w, os.ErrPermission)
+			return
+		}
+		for _, option := range options {
+			if option.Path == path {
+				workspace = option
+				break
+			}
+		}
 	}
-	workspace.Path, workspace.Available = directory, true
-	workspace.Kind, workspace.Branch, workspace.Commit = workspaceGitState(directory)
+	directory = workspace.Path
+	if kind == "file" && a.externalSessionFile(w, r, chat, directory) {
+		return
+	}
+	if workspace.Available && !allowed(directory) {
+		projectFileError(w, os.ErrPermission)
+		return
+	}
 	if kind == "workspace" {
-		apiJSON(w, 200, workspace)
+		view := sessionWorkspaceView{sessionWorkspace: workspace, Workspaces: options}
+		if chat.NativeSessionPath != "" {
+			_ = a.store.historyCache.read(chat.Backend, chat.NativeSessionPath, func(file *nativeHistory) error {
+				if len(file.index) > 0 {
+					view.TurnID = nativeIdentity(chat.NativeSessionID, file.index[len(file.index)-1])
+				}
+				return nil
+			})
+		}
+		apiJSON(w, 200, view)
+		return
+	}
+	if !workspace.Available {
+		apiError(w, 404, "Session directory is unavailable")
 		return
 	}
 	a.serveProjectFiles(w, r, directory, kind, func(path string) bool {

@@ -28,8 +28,11 @@ sampling is for hotspot attribution, not an uninstrumented frame-rate baseline.
   worksheet selection, 50-row pages and horizontal scrolling. Update the server
   together with the APK. Legacy `.doc`/`.xls` files remain download-only.
 - Both mobile sidebars fill the available screen width. The file sidebar follows
-  the selected session's actual directory, including registered worktrees; its
-  header's information button shows the selectable path, checkout type, branch
+  the latest session turn's directory, including registered worktrees. When
+  multiple checkouts are available, a dropdown after the directory name switches
+  the file tree, previews and downloads; a new native turn resumes following its
+  directory. A single checkout has no dropdown. The header's information button
+  shows the selectable path, checkout type, branch
   or detached commit. Metadata refreshes on chat updates, focus/foreground return,
   manual refresh and every ten seconds while the file panel is open. Polling
   pauses in the background. Switching chats or directory paths clears the old

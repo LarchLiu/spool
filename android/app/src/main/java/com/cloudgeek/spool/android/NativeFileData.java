@@ -44,14 +44,19 @@ final class NativeFileData {
     }
 
     static String filePath(String project, String chat, String path, String mode) {
+        return filePath(project, chat, path, mode, "");
+    }
+
+    static String filePath(String project, String chat, String path, String mode, String workspace) {
         if (project.isEmpty() || path.isEmpty() || !(mode.isEmpty() || mode.equals("download") || mode.equals("image"))) throw new IllegalArgumentException("Invalid project file target");
-        return apiBase(project, chat) + "/file?path=" + Uri.encode(path) + (mode.isEmpty() ? "" : "&" + mode + "=1");
+        return apiBase(project, chat) + "/file?path=" + Uri.encode(path) + (mode.isEmpty() ? "" : "&" + mode + "=1")
+                + (chat.isEmpty() || workspace.isEmpty() ? "" : "&workspace=" + Uri.encode(workspace));
     }
 
     static boolean allowedPath(String path) {
         return path != null && (path.matches("^/api/chats/[^/?#]+/attachments\\?id=[^&#]+$")
                 || path.matches("^/api/chats/[^/?#]+/tool-image\\?ref=[a-f0-9]{64}&index=\\d+$")
-                || path.matches("^/api/(?:projects|chats)/[^/?#]+/file\\?path=[^&#]+(?:&(?:image|download)=1)?$"));
+                || path.matches("^/api/(?:projects|chats)/[^/?#]+/file\\?path=[^&#]+(?:&(?:image|download)=1)?(?:&workspace=[^&#]+)?$"));
     }
 
     static boolean inlineImage(String source) {

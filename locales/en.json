@@ -198,6 +198,7 @@
   "Choose directory…": "Choose directory…",
   "Project directory": "Project directory",
   "Session directory": "Session directory",
+  "Switch directory": "Switch directory",
   "Allow viewing external files referenced in sessions": "Allow viewing external files referenced in sessions",
   "Members can preview and download external files referenced by the agent in chats they can access. External directories are not browsable. Agent permissions are unchanged.": "Members can preview and download external files referenced by the agent in chats they can access. External directories are not browsable. Agent permissions are unchanged.",
   "External file": "External file",

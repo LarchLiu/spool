@@ -9,6 +9,8 @@ import {
 import type { Translator } from "./i18n";
 import type { SessionWorkspace } from "./types";
 import { SessionWorkspacePopover } from "./session-workspace.js";
+import { CustomSelect } from "./custom-select";
+import { workspaceDirectoryName } from "./session-workspace-state";
 
 type FileSearch = {
   isOpen: boolean;
@@ -20,6 +22,8 @@ type FileSearch = {
 export function FileSidebarHeader({
   name,
   workspace,
+  workspaces,
+  onSelectWorkspace,
   workspaceError,
   showWorkspaceInfo,
   t,
@@ -29,6 +33,8 @@ export function FileSidebarHeader({
 }: {
   name?: string;
   workspace?: SessionWorkspace;
+  workspaces?: SessionWorkspace[];
+  onSelectWorkspace?: (path: string) => void;
   workspaceError?: string;
   showWorkspaceInfo?: boolean;
   t: Translator;
@@ -87,7 +93,30 @@ export function FileSidebarHeader({
       ) : (
         <div className="file-sidebar-title">
           <FolderOpen size={16} />
-          <strong title={name}>{name || t("Files")}</strong>
+          <strong title={workspace?.path || name}>
+            {workspace
+              ? workspaceDirectoryName(workspace.path)
+              : name || t("Files")}
+          </strong>
+          {workspace &&
+            workspaces &&
+            workspaces.length > 1 &&
+            onSelectWorkspace && (
+              <div className="file-workspace-select">
+                <CustomSelect
+                  iconOnly
+                  label={t("Switch directory")}
+                  value={workspace.path}
+                  options={workspaces.map((item) => ({
+                    value: item.path,
+                    label: `${workspaceDirectoryName(item.path)} · ${t(item.kind === "main" ? "Main checkout" : item.kind === "worktree" ? "Worktree" : "Directory")}${item.branch || item.commit ? ` · ${item.branch || item.commit}` : ""}`,
+                    description: item.path,
+                    disabled: !item.available,
+                  }))}
+                  onChange={onSelectWorkspace}
+                />
+              </div>
+            )}
           {showWorkspaceInfo && (
             <SessionWorkspacePopover
               workspace={workspace}

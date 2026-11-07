@@ -65,8 +65,10 @@ export function projectFileURL(
   path: string,
   mode?: "download" | "image" | "preview",
   chatID?: string,
+  workspace?: string,
 ) {
   const query = new URLSearchParams({ path });
+  if (chatID && workspace) query.set("workspace", workspace);
   if (mode) query.set(mode, "1");
   return `${fileAPIBase(project, chatID)}/file?${query}`;
 }

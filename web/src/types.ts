@@ -29,6 +29,10 @@ export type SessionWorkspace = {
   kind: "main" | "worktree" | "directory";
   available: boolean;
 };
+export type SessionWorkspaceView = SessionWorkspace & {
+  workspaces?: SessionWorkspace[];
+  turn_id?: string;
+};
 export type ProjectDirectory = {
   path: string;
   entries: ProjectFileEntry[];

@@ -2728,12 +2728,11 @@ public final class MainActivity extends Activity {
             fileState = new NativeFileModel(projectID, chatID);
             fileState.split = getPreferences(MODE_PRIVATE).getFloat("fileTreeFraction", .32f);
         }
-        String ownerProject = projectID;
-        String ownerChat = chatID;
+        NativeFileModel ownerFiles = fileState;
         Client fileClient = client;
         fileBrowser = new NativeFileBrowser(ui, projectID.isEmpty() ? "" : projectName(), fileState, fileImages,
                 (viewUi, apiPath) -> new NativePdfPreview(viewUi, imageWorker, address -> loadBinary(fileClient, address), apiPath),
-                this::readProjectFile, file -> downloadFile(NativeFileData.filePath(ownerProject, ownerChat, file.optString("path"), "download"), file.optString("name")),
+                this::readProjectFile, file -> downloadFile(ownerFiles.filePath(file.optString("path"), "download"), file.optString("name")),
                 this::openExternalLink, this::closeDrawer,
                 value -> getPreferences(MODE_PRIVATE).edit().putFloat("fileTreeFraction", (float) value).apply());
         overlay.sheet.addView(fileBrowser, new LinearLayout.LayoutParams(-1, -1));

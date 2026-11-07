@@ -68,6 +68,10 @@ const workspaces = {
     available: true,
   },
 };
+const workspaceChoices = Object.values(workspaces).map(workspace => ({ ...workspace }));
+workspaces["worktree-chat"].workspaces = workspaceChoices;
+workspaces["worktree-chat"].turn_id = "turn-1";
+workspaces["main-chat"].workspaces = [workspaceChoices[1]];
 const probe = `
 const mode = new URL(location.href).searchParams.get('mode');
 const dev = new URL(location.href).searchParams.get('dev') === '1';
@@ -145,7 +149,7 @@ async function switchChat(id) {
       await fetch('/smoke/report?mode=' + mode, { method: 'POST', body: JSON.stringify(report) });
       return;
     }
-    report.iconAfterName = trigger().previousElementSibling?.tagName === 'STRONG';
+    report.iconAfterName = trigger().parentElement.firstElementChild.nextElementSibling.tagName === 'STRONG';
     report.detailsHiddenInitially = !popup() && !document.querySelector('.session-workspace');
     await until(() => {
       trigger()?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' }));
@@ -198,8 +202,26 @@ async function switchChat(id) {
     scroller.scrollLeft = 180;
     report.highlightedSourceScrollsHorizontally = scroller.scrollLeft === 180;
     report.scrollbarAtViewportBottom = scroller.getBoundingClientRect().bottom <= innerHeight + 1 && scroller.offsetHeight - scroller.clientHeight >= 10 && getComputedStyle(scroller, '::-webkit-scrollbar').height === '10px' && getComputedStyle(scroller, '::-webkit-scrollbar-thumb').backgroundColor !== 'rgba(0, 0, 0, 0)';
+    report.defaultDirectoryTitle = document.querySelector('.file-sidebar-title strong')?.textContent === 'feature with spaces';
+    button('Switch directory').click();
+    const choices = await until(() => document.querySelector('[role="listbox"][aria-label="Switch directory"]'));
+    report.directoryMenuShowsMainAndWorktree = choices.textContent.includes('Main checkout') && choices.textContent.includes('Worktree');
+    choices.querySelector('[data-value="/work/spool"]').click();
+    await until(() => document.querySelector('.file-sidebar-title strong')?.textContent === 'spool');
+    report.manualSwitchClearsPreview = !document.querySelector('.file-preview');
+    if (mode === 'mobile') button('Collapse file sidebar')?.click();
+    fileLink('Open file').click();
+    await until(() => sourceText().includes('main file contents'));
+    button('Refresh files').click();
+    await until(() => sourceText().includes('main file contents'));
+    report.manualChoiceSurvivesRefresh = document.querySelector('.file-sidebar-title strong')?.textContent === 'spool';
+    await fetch('/smoke/next-turn?mode=' + mode);
+    button('Refresh files').click();
+    await until(() => document.querySelector('.file-sidebar-title strong')?.textContent === 'feature with spaces');
+    report.newTurnFollowsDirectory = !document.querySelector('.file-preview');
     await switchChat('main-chat');
     report.oldPreviewCleared = !document.querySelector('.file-preview');
+    report.singleDirectoryHidesChooser = !button('Switch directory');
     await until(() => {
       trigger()?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' }));
       return popup()?.textContent.includes('/work/spool') && popup()?.textContent.includes('dev');
@@ -265,6 +287,10 @@ const server = createServer(async (req, res) => {
   if (path === "/smoke/probe.js") {
     res.setHeader("Content-Type", "text/javascript");
     return res.end(probe);
+  }
+  if (path === "/smoke/next-turn") {
+    workspaces["worktree-chat"].turn_id = "turn-" + url.searchParams.get("mode");
+    return json({ ok: true });
   }
   if (path === "/smoke/cache-isolation" && vite) {
     const close = [];
@@ -370,7 +396,7 @@ const server = createServer(async (req, res) => {
                   (_, i) =>
                     `export const line${i} = "long source contents ${"wide content ".repeat(35)}";`,
                 ).join("\n")
-              : chat.id === "worktree-chat"
+              : (url.searchParams.get("workspace") || workspaces[chat.id].path) !== "/work/spool"
                 ? "worktree file contents"
                 : "main file contents",
         external,

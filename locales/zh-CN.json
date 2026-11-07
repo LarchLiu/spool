@@ -198,6 +198,7 @@
   "Choose directory…": "选择目录…",
   "Project directory": "项目目录",
   "Session directory": "会话目录",
+  "Switch directory": "切换目录",
   "Allow viewing external files referenced in sessions": "允许查看会话引用的外部文件",
   "Members can preview and download external files referenced by the agent in chats they can access. External directories are not browsable. Agent permissions are unchanged.": "允许成员预览和下载 Agent 在其可访问会话中引用的外部文件；外部目录不可浏览。此设置不改变 Agent 的权限。",
   "External file": "外部文件",

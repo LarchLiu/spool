@@ -32,6 +32,7 @@ final class NativeFilePreview extends LinearLayout {
     private NativeFileTarget target;
     private boolean rendered;
     private String imageScope = "";
+    String workspacePath = "";
 
     NativeFilePreview(NativeUi ui, String project, NativeImages images, Consumer<NativeFileTarget> open, Consumer<String> external, Consumer<JSONObject> save, Runnable clear) {
         this(ui, project, "", images, open, external, save, clear);
@@ -100,7 +101,7 @@ final class NativeFilePreview extends LinearLayout {
             String key = file.optString("path") + "\n" + imageScope;
             if (office == null || office.closed() || !key.equals(officeKey)) {
                 releaseOffice(); officeKey = key;
-                office = new NativeOfficePreview(ui, officeReader, NativeFileData.filePath(project,chat,file.optString("path"),""));
+                office = new NativeOfficePreview(ui, officeReader, NativeFileData.filePath(project,chat,file.optString("path"),"",workspacePath));
                 addView(office,indexOfChild(scroll),new LayoutParams(-1,0,1));
             }
             return;
@@ -112,7 +113,7 @@ final class NativeFilePreview extends LinearLayout {
             if (pdf == null || pdf.closed() || !key.equals(pdfKey)) {
                 releasePdf(); pdfKey = key;
                 // Use the existing bounded binary transport, including on older service hosts.
-                pdf = pdfFactory.create(ui, NativeFileData.filePath(project, chat, file.optString("path"), "download"));
+                pdf = pdfFactory.create(ui, NativeFileData.filePath(project, chat, file.optString("path"), "download", workspacePath));
                 addView(pdf, indexOfChild(scroll), new LayoutParams(-1, 0, 1));
             }
             return;
@@ -155,7 +156,7 @@ final class NativeFilePreview extends LinearLayout {
             LinearLayout wrapper = ui.column(); wrapper.setGravity(Gravity.CENTER_HORIZONTAL); wrapper.setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14));
             NativeContainedImage image = new NativeContainedImage(ui, false); image.setContentDescription(file.optString("name"));
             wrapper.addView(image, new LayoutParams(-2, -2)); scroll.addView(wrapper, new ScrollView.LayoutParams(-1, -2));
-            if (images != null) images.remote(image, NativeFileData.filePath(project, chat, file.optString("path"), "image"), imageScope, 2048, error -> {
+            if (images != null) images.remote(image, NativeFileData.filePath(project, chat, file.optString("path"), "image", workspacePath), imageScope, 2048, error -> {
                 if (error != null && image.isAttachedToWindow()) { wrapper.removeAllViews(); wrapper.addView(empty(ui, ui.t("This file cannot be previewed as an image"))); }
             });
         } else scroll.addView(empty(ui, ui.t("This file has no text preview. Download it to open locally.")));

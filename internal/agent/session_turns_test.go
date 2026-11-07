@@ -65,6 +65,21 @@ func TestClaudeNativeTurnsUsePromptAndParentChains(t *testing.T) {
 	}
 }
 
+func TestClaudeSessionDirectoryIgnoresDelayedEarlierTurnReplies(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "claude.jsonl")
+	first, latest := filepath.Join(t.TempDir(), "first"), filepath.Join(t.TempDir(), "latest")
+	writeTitleRecords(t, path,
+		map[string]any{"type": "user", "uuid": "first-input", "cwd": first, "message": map[string]any{"content": "First request"}},
+		map[string]any{"type": "assistant", "uuid": "first-answer", "parentUuid": "first-input", "cwd": first, "message": map[string]any{"content": "First answer"}},
+		map[string]any{"type": "user", "uuid": "latest-input", "parentUuid": "first-answer", "cwd": latest, "message": map[string]any{"content": "Latest request"}},
+		map[string]any{"type": "assistant", "uuid": "delayed", "parentUuid": "first-input", "cwd": first, "message": map[string]any{"content": "Delayed earlier answer"}},
+	)
+	index, err := IndexSessionTo(chatmodel.BackendClaude, path, 0, 0)
+	if err != nil || len(index.Turns) != 2 || index.Directory != latest {
+		t.Fatalf("delayed earlier reply restored the old directory: %+v, %v", index, err)
+	}
+}
+
 func TestClaudeInterruptionStatusUsesStructuredNotice(t *testing.T) {
 	for _, test := range []struct {
 		name    string

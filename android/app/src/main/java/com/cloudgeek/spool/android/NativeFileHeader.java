@@ -11,14 +11,19 @@ final class NativeFileHeader extends LinearLayout {
     final LinearLayout title;
     final NativeSearchField searchField;
     final EditText search;
-    final NativeUi.IconButton searchToggle, refresh, info;
+    final NativeUi.IconButton searchToggle, refresh, info, workspaceToggle;
     final NativeSessionWorkspace workspaceInfo;
     private final NativeUi ui;
     private final TextView project;
+    private final String name;
+    NativePopover workspaceMenu;
+    private NativeFileModel state;
+    java.util.function.Consumer<String> selectWorkspace;
 
     NativeFileHeader(NativeUi ui, String name, Runnable toggle, Runnable reload, Runnable close) {
         super(ui.context);
         this.ui = ui;
+        this.name = name;
         setOrientation(HORIZONTAL); setGravity(Gravity.CENTER_VERTICAL);
         // The browser owns the 1px left border; accumulate it with the 14px inset.
         setPadding(ui.dp(1 + 14) - ui.dp(1), 0, ui.dp(14), 0);
@@ -34,6 +39,9 @@ final class NativeFileHeader extends LinearLayout {
         project = ui.bold(name.isEmpty() ? ui.t("Files") : name, 12);
         ui.typography(project, 12, ui.text, 700); project.setSingleLine(true); project.setEllipsize(TextUtils.TruncateAt.END);
         LayoutParams projectParams = new LayoutParams(-2, -2); projectParams.setMarginStart(ui.dp(8)); title.addView(project, projectParams);
+        workspaceToggle = ui.icon("chevron-down", 14, ui.t("Switch directory"), this::showWorkspaces);
+        workspaceToggle.setVisibility(GONE); workspaceToggle.setMinimumWidth(0); workspaceToggle.setMinimumHeight(0);
+        LayoutParams workspaceParams = new LayoutParams(ui.dp(22), ui.dp(24)); workspaceParams.setMarginStart(ui.dp(8)); title.addView(workspaceToggle, workspaceParams);
         workspaceInfo = new NativeSessionWorkspace(ui);
         info = ui.icon("info", 14, ui.t("Session directory"), this::showWorkspace);
         info.setMinimumWidth(0); info.setMinimumHeight(0); info.setVisibility(GONE);
@@ -51,11 +59,44 @@ final class NativeFileHeader extends LinearLayout {
 
     private void showWorkspace() { workspaceInfo.popover.show(info, false); }
 
+    private void showWorkspaces() {
+        if (state == null || state.workspaces.length() < 2) return;
+        if (workspaceMenu != null && workspaceMenu.isShowing()) { workspaceMenu.dismiss(); return; }
+        workspaceMenu = new NativePopover(ui, 300, 10, 5);
+        int selected = 0;
+        for (int i = 0; i < state.workspaces.length(); i++) {
+            org.json.JSONObject option = state.workspaces.optJSONObject(i);
+            if (option == null) continue;
+            String path = option.optString("path"), kind = option.optString("kind");
+            boolean current = state.workspace != null && state.workspace.optString("path").equals(path);
+            if (current) selected = i;
+            String label = NativeFileModel.directoryName(path) + " · " + (kind.equals("main") ? ui.t("Main checkout") : kind.equals("worktree") ? ui.t("Worktree") : ui.t("Directory"));
+            String branch = option.optString("branch", option.optString("commit"));
+            if (!branch.isEmpty()) label += " · " + branch;
+            workspaceMenu.selectOption(label, path, current, () -> {
+                workspaceMenu.dismiss();
+                if (option.optBoolean("available") && selectWorkspace != null) selectWorkspace.accept(path);
+            });
+            if (!option.optBoolean("available")) {
+                android.view.View row = workspaceMenu.content.getChildAt(workspaceMenu.content.getChildCount() - 1);
+                row.setEnabled(false); row.setAlpha(.45f);
+            }
+        }
+        workspaceMenu.showSelect(workspaceToggle, selected, 300);
+    }
+
+    void dismiss() { workspaceInfo.popover.dismiss(); if (workspaceMenu != null) workspaceMenu.dismiss(); }
+
     private void measureTitle(int widthSpec) {
-        project.setMaxWidth(Math.max(0, MeasureSpec.getSize(widthSpec) - ui.dp(16 + 8 + (info.getVisibility() == GONE ? 0 : 8 + 22))));
+        project.setMaxWidth(Math.max(0, MeasureSpec.getSize(widthSpec) - ui.dp(16 + 8 + (info.getVisibility() == GONE ? 0 : 8 + 22) + (workspaceToggle.getVisibility() == GONE ? 0 : 8 + 22))));
     }
 
     void workspace(NativeFileModel state) {
+        this.state = state;
+        String path = state.workspace == null ? "" : state.workspace.optString("path");
+        project.setText(path.isEmpty() ? name.isEmpty() ? ui.t("Files") : name : NativeFileModel.directoryName(path));
+        project.setContentDescription(path.isEmpty() ? project.getText() : path);
+        workspaceToggle.setVisibility(state.workspace != null && state.workspaces.length() > 1 ? VISIBLE : GONE);
         info.setVisibility(state.chat.isEmpty() ? GONE : VISIBLE);
         workspaceInfo.bind(state.workspace, state.workspaceError);
     }

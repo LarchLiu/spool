@@ -2252,6 +2252,8 @@ function App() {
         project={projects.find((item) => item.id === project)}
         chatID={fileChatID}
         workspace={sessionWorkspace.workspace}
+        workspaces={sessionWorkspace.workspaces}
+        onSelectWorkspace={sessionWorkspace.select}
         workspaceError={sessionWorkspace.error}
         onRefreshWorkspace={sessionWorkspace.reload}
         active={narrowLayout ? fileSidebarMobile : panels.rightOpen}

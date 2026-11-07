@@ -305,6 +305,7 @@ final class NativeText {
             case "Stopped": value = "已停止"; break;
             case "Stopped by {name}": value = "{name} 停止了响应"; break;
             case "Stopping…": value = "正在停止…"; break;
+            case "Switch directory": value = "切换目录"; break;
             case "Switch to default model": value = "切换为默认模型"; break;
             case "The agent reviews approval requests automatically.": value = "由 agent 的原生自动审批机制评估请求。"; break;
             case "The next message creates a new chat with the selected agent and converted context.": value = "下一条消息将在新聊天中由所选 Agent 继续，并携带转换后的上下文。"; break;
@@ -675,6 +676,7 @@ final class NativeText {
             case "Stopped": value = "停止中"; break;
             case "Stopped by {name}": value = "{name} が応答を停止しました"; break;
             case "Stopping…": value = "停止しています…"; break;
+            case "Switch directory": value = "ディレクトリを切り替え"; break;
             case "Switch to default model": value = "既定のモデルに切り替え"; break;
             case "The agent reviews approval requests automatically.": value = "エージェントの自動承認機能でリクエストを審査します。"; break;
             case "The next message creates a new chat with the selected agent and converted context.": value = "次のメッセージで、変換したコンテキストを引き継ぐ新しいチャットを作成します。"; break;

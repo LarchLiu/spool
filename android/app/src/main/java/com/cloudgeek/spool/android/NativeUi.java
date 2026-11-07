@@ -132,10 +132,14 @@ final class NativeUi extends WebPalette {
     }
 
     Drawable states(int color, float radius, int border, int pressed, int disabled) {
+        return states(color, radius, border, pressed, disabled, controlHover);
+    }
+
+    Drawable states(int color, float radius, int border, int pressed, int disabled, int hovered) {
         StateListDrawable drawable = new StateListDrawable();
         drawable.addState(new int[] {-android.R.attr.state_enabled}, shape(disabled, radius, border));
         drawable.addState(new int[] {android.R.attr.state_pressed}, shape(pressed, radius, border));
-        drawable.addState(new int[] {android.R.attr.state_hovered}, shape(controlHover, radius, border));
+        drawable.addState(new int[] {android.R.attr.state_hovered}, shape(hovered, radius, border));
         drawable.addState(new int[] {android.R.attr.state_focused}, shape(pressed, radius, primary));
         drawable.addState(new int[0], shape(color, radius, border));
         return drawable;
