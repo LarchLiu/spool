@@ -3,9 +3,11 @@ package com.cloudgeek.spool.android;
 import static org.junit.Assert.*;
 
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
+import java.time.Duration;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Shadows;
@@ -81,6 +83,49 @@ public class MainActivityAppearanceTest {
             assertSame(root, h.get("root")); assertNull(h.get("client"));
             assertEquals("zh-CN", h.activity.getPreferences(android.app.Activity.MODE_PRIVATE).getString("language", ""));
             assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty()); assertTrue(h.io.jobs.isEmpty());
+        }
+    }
+
+    @Test public void appearanceChangesKeepRemoteAvailabilityVisibleAndPreserveThePollingDeadline() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            MainActivityGoalTest.ShadowClient.response = "{status:200,body:'{\"available\":true}'}";
+            h.call("openSettings"); idle(); h.io.run();
+            long due = SystemClock.uptimeMillis() + 5000;
+            Object poll = h.get("desktopAvailability");
+            assertEquals(View.VISIBLE, h.<View>get("desktopSettings").getVisibility());
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(2000));
+            change(h, "dark", "ja");
+            assertEquals("The known remote connection entry must stay visible after rebinding", View.VISIBLE, h.<View>get("desktopSettings").getVisibility());
+            assertSame("Appearance must keep the active availability monitor", poll, h.get("desktopAvailability"));
+            change(h, "light", "zh-CN");
+            assertEquals(View.VISIBLE, h.<View>get("desktopSettings").getVisibility());
+            assertEquals(1, MainActivityGoalTest.ShadowClient.calls.size()); assertTrue(h.io.jobs.isEmpty());
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(due - SystemClock.uptimeMillis()));
+            assertEquals("The original five-second deadline must survive repeated appearance changes", 1, h.io.jobs.size());
+            h.io.run(); assertEquals(View.VISIBLE, h.<View>get("desktopSettings").getVisibility());
+            MainActivityGoalTest.ShadowClient.response = "{status:200,body:'{\"available\":false}'}";
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(5000)); h.io.run();
+            assertEquals("Actual server unavailability still hides the entry", View.GONE, h.<View>get("desktopSettings").getVisibility());
+            h.call("closeSettings");
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(5000)); assertTrue(h.io.jobs.isEmpty());
+        }
+    }
+
+    @Test public void inFlightAvailabilityUpdatesTheReboundSectionAndCannotLeakIntoReopenedSettings() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            MainActivityGoalTest.ShadowClient.response = "{status:200,body:'{\"available\":true}'}";
+            h.call("openSettings"); idle(); assertEquals(1, h.io.jobs.size());
+            View first = h.get("desktopSettings"); change(h, "dark", "ja");
+            View current = h.get("desktopSettings"); assertNotSame(first, current);
+            h.io.run();
+            assertEquals("A request started before the appearance change must update the current section", View.VISIBLE, current.getVisibility());
+            assertEquals(1, MainActivityGoalTest.ShadowClient.calls.size());
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(5000));
+            Runnable previousRequest = h.io.jobs.remove(0); previousRequest.run();
+            h.call("closeSettings"); h.call("openSettings"); idle();
+            assertEquals("A result posted by the closed settings session cannot authorize a new section", View.GONE, h.<View>get("desktopSettings").getVisibility());
+            MainActivityGoalTest.ShadowClient.response = "{status:200,body:'{\"available\":false}'}"; h.io.run();
+            assertEquals(View.GONE, h.<View>get("desktopSettings").getVisibility());
         }
     }
 }

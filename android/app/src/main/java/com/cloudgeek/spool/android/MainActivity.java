@@ -140,6 +140,8 @@ public final class MainActivity extends Activity {
     private NativeDesktopDialog desktopDialog;
     private LinearLayout desktopSettings;
     private Runnable desktopAvailability;
+    private String desktopAvailabilityKey = "";
+    private boolean desktopAvailable, desktopAvailabilityLoading;
     private NativeConnectionSettings connectionSettings;
     private NativeFileBrowser fileBrowser;
     private NativeFileModel fileState;
@@ -961,18 +963,13 @@ public final class MainActivity extends Activity {
     private void settingsAdditions(NativeUi settingsUi, LinearLayout body) {
         if (user != null) {
             desktopSettings = settingsUi.column();
-            desktopSettings.setVisibility(View.GONE);
             gap(desktopSettings, 22);
             desktopSettings.addView(settingsUi.bold(localizedString(R.string.desktop_section), 14));
             gap(desktopSettings, 8);
             desktopSettings.addView(settingsUi.button(localizedString(R.string.desktop_connect), false, this::openDesktop));
             body.addView(desktopSettings);
-            boolean refreshing = desktopAvailability != null;
-            stopDesktopAvailability();
-            LinearLayout section = desktopSettings;
-            desktopAvailability = () -> refreshDesktopAvailability(section);
-            if (refreshing) main.postDelayed(desktopAvailability, 5000);
-            else main.post(desktopAvailability);
+            startDesktopAvailability();
+            desktopSettings.setVisibility(desktopAvailable ? View.VISIBLE : View.GONE);
         }
         gap(body, 22);
         connectionSettings = new NativeConnectionSettings(settingsUi, origin, localizedString(R.string.connection_note),
@@ -996,22 +993,39 @@ public final class MainActivity extends Activity {
                 .apply();
     }
 
+    private void startDesktopAvailability() {
+        String key = generation + "\n" + authEpoch + "\n" + user.optString("id");
+        if (desktopAvailability != null && desktopAvailabilityKey.equals(key)) return;
+        stopDesktopAvailability();
+        desktopAvailabilityKey = key;
+        desktopAvailability = this::refreshDesktopAvailability;
+        main.post(desktopAvailability);
+    }
+
     private void stopDesktopAvailability() {
         if (desktopAvailability != null) main.removeCallbacks(desktopAvailability);
         desktopAvailability = null;
+        desktopAvailabilityKey = "";
+        desktopAvailable = desktopAvailabilityLoading = false;
     }
 
-    private void refreshDesktopAvailability(LinearLayout section) {
-        if (!foreground || !settingsOpen || destroyed || user == null || desktopSettings != section) return;
+    private void refreshDesktopAvailability() {
+        if (!foreground || !settingsOpen || destroyed || user == null || desktopSettings == null
+                || desktopAvailability == null || desktopAvailabilityLoading) return;
         Runnable again = desktopAvailability;
+        desktopAvailabilityLoading = true;
         api("/desktop", null, value -> {
-            if (desktopSettings != section || !settingsOpen || !foreground || desktopAvailability != again) return;
-            section.setVisibility(((JSONObject) value).optBoolean("available") ? View.VISIBLE : View.GONE);
-            main.postDelayed(again, 5000);
+            if (!settingsOpen || desktopAvailability != again) return;
+            desktopAvailabilityLoading = false;
+            desktopAvailable = ((JSONObject) value).optBoolean("available");
+            desktopSettings.setVisibility(desktopAvailable ? View.VISIBLE : View.GONE);
+            if (foreground) main.postDelayed(again, 5000);
         }, error -> {
-            if (desktopSettings != section || !settingsOpen || !foreground || desktopAvailability != again) return;
-            section.setVisibility(View.GONE);
-            main.postDelayed(again, 5000);
+            if (!settingsOpen || desktopAvailability != again) return;
+            desktopAvailabilityLoading = false;
+            desktopAvailable = false;
+            desktopSettings.setVisibility(View.GONE);
+            if (foreground) main.postDelayed(again, 5000);
         });
     }
 
