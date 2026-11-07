@@ -38,6 +38,7 @@ final class NativeSettings extends Dialog {
 
     /** Rebuild themed content without removing/re-adding the dialog's window. */
     void bind(NativeUi ui, String theme, String language, java.util.function.Consumer<LinearLayout> additions) {
+        if (this.ui != null) this.ui.dismissMenus();
         this.ui = ui;
         int top = scroll == null ? 0 : scroll.getScrollY();
         content = new Content(ui, theme, language, version, change, close);
@@ -69,6 +70,11 @@ final class NativeSettings extends Dialog {
         ui.dismissMenus();
         super.show();
         NativeModalFrame.shown(this, content.close);
+    }
+
+    @Override public void dismiss() {
+        ui.dismissMenus();
+        super.dismiss();
     }
 
     static final class Content extends LinearLayout {

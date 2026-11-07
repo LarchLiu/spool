@@ -25,7 +25,7 @@ final class NativeActivityList extends LinearLayout {
         final Set<Integer> groups = new HashSet<>();
         final Set<String> compounds = new HashSet<>();
         final Set<String> items = new HashSet<>();
-        final Set<Integer> foldedImages = new HashSet<>();
+        final Map<Integer, Boolean> imageGroups = new HashMap<>();
         void update(boolean nextLive, int nextCount) {
             if (!initialized || nextLive != live) open = nextLive;
             if (nextCount != count || nextLive != live) {
@@ -154,16 +154,16 @@ final class NativeActivityList extends LinearLayout {
         final NativeViewedImages thumbnails = new NativeViewedImages(ui, imageActions);
         NativeActivityModel.Group current;
         Images(NativeActivityModel.Group group, int index) {
-            heading = new NativeDisclosureRow(ui, "", "image", "", false, true, true, () -> {});
+            heading = new NativeDisclosureRow(ui, "", "image", "", false, true, false, () -> {});
             heading.setOnClickListener(v -> {
-                if (!state.foldedImages.add(index)) state.foldedImages.remove(index);
+                state.imageGroups.put(index, !state.imageGroups.getOrDefault(index, state.live));
                 bind(current, index);
             });
             view.addView(heading, new LayoutParams(-1, -2)); bind(group, index);
         }
         void bind(NativeActivityModel.Group group, int index) {
             current = group; heading.bind(group.label, "image", "");
-            boolean open = !state.foldedImages.contains(index); heading.setExpanded(open);
+            boolean open = state.imageGroups.getOrDefault(index, state.live); heading.setExpanded(open);
             if (open) {
                 thumbnails.bind(group);
                 if (thumbnails.getParent() == null) {

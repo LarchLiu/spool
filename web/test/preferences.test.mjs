@@ -1,7 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { languages, resolveLanguage, resolveTheme } from "../.test-build/preferences.js";
+import { languages, parsePreferences, resolveLanguage, resolveTheme } from "../.test-build/preferences.js";
+
+test("device preferences restore valid choices and ignore corrupt or unsupported stored values", () => {
+  assert.deepEqual(parsePreferences('{"theme":"dark","language":"ja"}'), { theme: "dark", language: "ja" });
+  for (const raw of [null, "broken", "null", "[]", '{"theme":"missing","language":"fr"}']) {
+    assert.deepEqual(parsePreferences(raw), { theme: "system", language: "system" });
+  }
+  assert.deepEqual(parsePreferences('{"theme":"light","language":1}'), { theme: "light", language: "system" });
+});
 
 test("interface languages are limited to Chinese, English and Japanese", () => {
   assert.deepEqual(languages, [

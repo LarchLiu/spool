@@ -6,6 +6,19 @@ export const defaultPreferences: UIPreferences = {
   theme: "system",
   language: "system",
 };
+export const preferencesStorageKey = "spool.ui-preferences.v1";
+
+export function parsePreferences(raw: string | null): UIPreferences {
+  try {
+    const value = JSON.parse(raw || "null");
+    return {
+      theme: ["system", "light", "dark"].includes(value?.theme) ? value.theme : "system",
+      language: ["system", "zh-CN", "en", "ja"].includes(value?.language) ? value.language : "system",
+    };
+  } catch {
+    return { ...defaultPreferences };
+  }
+}
 export const languages = [
   ["zh-CN", "简体中文"],
   ["en", "English"],

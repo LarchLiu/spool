@@ -46,7 +46,12 @@ sampling is for hotspot attribution, not an uninstrumented frame-rate baseline.
   native highlighting loads or fails, and horizontal gestures scroll long lines.
 - Appearance, language and **Tailscale (tsnet)** share the Web-style Settings
   modal. Theme tiles and the language listbox are reusable native components;
-  saving disables them until the session-scoped request succeeds or fails. Normal
+  theme and language choices save immediately on the device without an API call
+  or restarting chat/workspace subscriptions. The modal updates immediately;
+  the underlying workspace applies the accumulated presentation change once
+  when Settings closes. Login does not overwrite device choices. Avatar editing
+  stays in the sidebar, matching Web. Mobile sidebars slide without a backdrop.
+  Normal
   workspace headers contain only chat/project information and workspace actions:
   no server origin, connection bar, latency, or node state.
 

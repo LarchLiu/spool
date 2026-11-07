@@ -143,7 +143,7 @@ public final class MainActivity extends Activity {
     private NativeConnectionSettings connectionSettings;
     private NativeFileBrowser fileBrowser;
     private NativeFileModel fileState;
-    private boolean preferencesSaving;
+    private boolean appearanceDirty;
     private Button loginSubmit;
     private TextView heading, subheading, connectionText, loginError, connectionHint;
     private JSONObject user, chat, connectionInfo, permissionCatalog;
@@ -458,6 +458,7 @@ public final class MainActivity extends Activity {
     }
 
     private void render() {
+        appearanceDirty = false;
         boolean reopenFiles = panel.equals("files");
         captureDraft();
         if (ui != null) ui.dismissMenus();
@@ -558,6 +559,7 @@ public final class MainActivity extends Activity {
         connectionText = null;
         connectionHint = null;
         monitor.setActive(false);
+        if (appearanceDirty) render();
     }
 
     private void dismissSettingsDialog() {
@@ -628,12 +630,6 @@ public final class MainActivity extends Activity {
                                     user = value.optJSONObject("user");
                                     csrf = value.optString("csrf");
                                     loginErrorText = "";
-                                    JSONObject preferences = value.optJSONObject("preferences");
-                                    if (preferences != null) {
-                                        theme = preferences.optString("theme", theme);
-                                        language = preferences.optString("language", language);
-                                        saveLocalPreferences();
-                                    }
                                     render();
                                     refreshWorkspace();
                                     startWorkspace();
@@ -814,12 +810,6 @@ public final class MainActivity extends Activity {
                                     restoringSession = false;
                                     user = result.optJSONObject("user");
                                     csrf = result.optString("csrf");
-                                    JSONObject preferences = result.optJSONObject("preferences");
-                                    if (preferences != null) {
-                                        theme = preferences.optString("theme", theme);
-                                        language = preferences.optString("language", language);
-                                        saveLocalPreferences();
-                                    }
                                     render();
                                     refreshWorkspace();
                                     startWorkspace();
@@ -906,7 +896,6 @@ public final class MainActivity extends Activity {
         pendingSend = null;
         optimisticSend = null;
         stoppingTurns.clear();
-        preferencesSaving = false;
         goalNotice = goalError = "";
         discardComposerDrafts();
         activityStates.clear();
@@ -955,46 +944,38 @@ public final class MainActivity extends Activity {
     }
 
     private void settingsPage() {
+        boolean dark = theme.equals("dark") || theme.equals("system")
+                && (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        NativeUi settingsUi = new NativeUi(this, dark, locale());
         boolean show = settingsDialog == null;
-        if (show) settingsDialog = new NativeSettings(ui, theme, language, "0.2.0-native",
+        if (show) settingsDialog = new NativeSettings(settingsUi, theme, language, "0.2.0-native",
                 this::updatePreferences, this::closeSettings);
-        else settingsDialog.bind(ui, theme, language, this::settingsAdditions);
-        settingsDialog.content.appearance.saving(preferencesSaving);
+        else settingsDialog.bind(settingsUi, theme, language, body -> settingsAdditions(settingsUi, body));
         if (show) {
-            settingsAdditions(settingsDialog.content.additions);
+            settingsAdditions(settingsUi, settingsDialog.content.additions);
             settingsDialog.show();
         }
         updateConnectionSettings();
     }
 
-    private void settingsAdditions(LinearLayout body) {
+    private void settingsAdditions(NativeUi settingsUi, LinearLayout body) {
         if (user != null) {
-            gap(body, 22);
-            LinearLayout account = ui.row();
-            account.addView(ui.avatar(person(user.optString("id")), 48));
-            LinearLayout copy = ui.column();
-            copy.addView(ui.bold(NativeAvatars.name(user), 14));
-            Button choose = ui.quietButton(tr("Choose your avatar", "选择你的头像"), this::openAvatarPicker);
-            choose.setPadding(0, dp(6), 0, 0);
-            copy.addView(choose);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1);
-            params.setMarginStart(dp(14));
-            account.addView(copy, params);
-            body.addView(account);
-            desktopSettings = ui.column();
+            desktopSettings = settingsUi.column();
             desktopSettings.setVisibility(View.GONE);
             gap(desktopSettings, 22);
-            desktopSettings.addView(ui.bold(localizedString(R.string.desktop_section), 14));
+            desktopSettings.addView(settingsUi.bold(localizedString(R.string.desktop_section), 14));
             gap(desktopSettings, 8);
-            desktopSettings.addView(ui.button(localizedString(R.string.desktop_connect), false, this::openDesktop));
+            desktopSettings.addView(settingsUi.button(localizedString(R.string.desktop_connect), false, this::openDesktop));
             body.addView(desktopSettings);
+            boolean refreshing = desktopAvailability != null;
             stopDesktopAvailability();
             LinearLayout section = desktopSettings;
             desktopAvailability = () -> refreshDesktopAvailability(section);
-            main.post(desktopAvailability);
+            if (refreshing) main.postDelayed(desktopAvailability, 5000);
+            else main.post(desktopAvailability);
         }
         gap(body, 22);
-        connectionSettings = new NativeConnectionSettings(ui, origin, localizedString(R.string.connection_note),
+        connectionSettings = new NativeConnectionSettings(settingsUi, origin, localizedString(R.string.connection_note),
                 this::connect, this::disconnect,
                 () -> { if (OriginPolicy.isLoginURL(authURL)) openBrowser(authURL); });
         serverInput = connectionSettings.server;
@@ -1003,7 +984,7 @@ public final class MainActivity extends Activity {
         body.addView(connectionSettings);
         if (user != null) {
             gap(body, 16);
-            body.addView(ui.button(tr("Sign out of Spool", "退出 Spool 账号"), false, this::logout));
+            body.addView(settingsUi.button(tr("Sign out of Spool", "退出 Spool 账号"), false, this::logout));
         }
     }
 
@@ -1065,40 +1046,11 @@ public final class MainActivity extends Activity {
     }
 
     private void updatePreferences(String nextTheme, String nextLanguage) {
-        if (preferencesSaving || (theme.equals(nextTheme) && language.equals(nextLanguage))) return;
-        if (user == null) {
-            theme = nextTheme;
-            language = nextLanguage;
-            saveLocalPreferences();
-            render();
-            return;
-        }
-        preferencesSaving = true;
-        if (settingsDialog != null) settingsDialog.content.appearance.saving(true);
-        final Client captured = client;
-        final int token = generation, session = authEpoch;
-        final String auth = csrf, loc = locale();
-        io.execute(() -> {
-            try {
-                request(captured, "/preferences", object("theme", nextTheme, "language", nextLanguage), auth, loc);
-                post(token, () -> {
-                    if (session != authEpoch) return;
-                    preferencesSaving = false;
-                    theme = nextTheme;
-                    language = nextLanguage;
-                    saveLocalPreferences();
-                    render();
-                });
-            } catch (Exception error) {
-                post(token, () -> {
-                    if (session != authEpoch) return;
-                    preferencesSaving = false;
-                    if (settingsDialog != null) settingsDialog.content.appearance.saving(false);
-                    if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
-                    else toast(error);
-                });
-            }
-        });
+        if (theme.equals(nextTheme) && language.equals(nextLanguage)) return;
+        theme = nextTheme; language = nextLanguage;
+        saveLocalPreferences();
+        if (settingsOpen) { appearanceDirty = true; settingsPage(); }
+        else render();
     }
 
     private void updateConnectionSettings() {
@@ -1171,6 +1123,7 @@ public final class MainActivity extends Activity {
         history.addView(historyContent);
         historyScrollState.select(authEpoch + "\n" + selectionEpoch + "\n" + chatID);
         historyScroll = new NativeHistoryScroll(history, historyContent, historyScrollState, 90 * getResources().getDisplayMetrics().density);
+        ui.beforeDisclosure = historyScroll::preservePosition;
         // Keep message/shadow overflow inside the scrolling viewport. The page
         // itself permits overflow so the composer's shadow can reach the history.
         FrameLayout historyViewport = new FrameLayout(this);
@@ -1271,7 +1224,7 @@ public final class MainActivity extends Activity {
     private void openSidebar() {
         closeDrawer();
         panel = "sidebar";
-        NativeDrawer overlay = new NativeDrawer(ui, false, this::closeDrawer);
+        NativeDrawer overlay = new NativeDrawer(ui, false);
         drawer = overlay;
         sidebar = new NativeSidebar(ui, sidebarState, this::person, this::closeDrawer, this::openChat, this::newChat,
                 () -> { closeDrawer(); openAvatarPicker(); }, this::openSettings, this::logout);
@@ -1313,9 +1266,9 @@ public final class MainActivity extends Activity {
         }, profileCache);
         final Client captured = client;
         final int token = generation, session = authEpoch;
-        final String auth = csrf, loc = locale();
-        String key = token + "\n" + session + "\n" + user.optString("id") + "\n" + loc;
-        boolean bound = workspaceData.bind(key, path -> request(captured, path, null, auth, loc), new NativeWorkspaceData.Listener() {
+        final String auth = csrf;
+        String key = token + "\n" + session + "\n" + user.optString("id");
+        boolean bound = workspaceData.bind(key, path -> request(captured, path, null, auth, locale()), new NativeWorkspaceData.Listener() {
             public void navigation(JSONObject value) { acceptNavigation(value); }
             public void agents(JSONArray value) { acceptAgents(value); }
             public void profiles(JSONObject value) throws Exception { acceptProfiles(value); refreshProfileViews(); }
@@ -1588,7 +1541,8 @@ public final class MainActivity extends Activity {
         return new NativeTranscriptImages() {
             private String apiPath(String path, String source) {
                 if (source.matches("^/api/chats/" + java.util.regex.Pattern.quote(android.net.Uri.encode(ownerChat)) + "/tool-image\\?ref=[a-f0-9]{64}&index=\\d+$")) return source;
-                if (!path.isEmpty() && !ownerProject.isEmpty() && !ownerChat.isEmpty()) return NativeFileData.filePath(ownerProject, ownerChat, path, "image");
+                NativeFileTarget target = NativeFileTarget.parse(path);
+                if (target != null && !ownerProject.isEmpty() && !ownerChat.isEmpty()) return NativeFileData.filePath(ownerProject, ownerChat, target.path, "image");
                 return "";
             }
             private boolean ownsChat() { return !destroyed && user != null && session == authEpoch && selected == selectionEpoch && ownerChat.equals(chatID); }
@@ -1685,12 +1639,12 @@ public final class MainActivity extends Activity {
         }
         if (historyLoader == null) historyLoader = new NativeHistoryLoader<>(workspaceWorker, main::post);
         final Client captured = client;
-        final String auth = csrf, loc = locale();
-        String key = generation + "\n" + authEpoch + "\n" + selectionEpoch + "\n" + user.optString("id") + "\n" + chatID + "\n" + loc;
+        final String auth = csrf;
+        String key = generation + "\n" + authEpoch + "\n" + selectionEpoch + "\n" + user.optString("id") + "\n" + chatID;
         final View surface = history;
         historyLoader.bind(key, historyCursor(chat), surface, task -> NativeAfterPaint.schedule(surface, task), new NativeHistoryLoader.Source<JSONObject>() {
             public JSONObject read(NativeHistoryLoader.Cursor from) throws Exception {
-                return (JSONObject) request(captured, "/chats/" + Uri.encode(from.id) + "/history?before=" + Uri.encode(from.before), null, auth, loc);
+                return (JSONObject) request(captured, "/chats/" + Uri.encode(from.id) + "/history?before=" + Uri.encode(from.before), null, auth, locale());
             }
             public NativeHistoryLoader.Cursor cursor(JSONObject page) { return historyCursor(page); }
         }, new NativeHistoryLoader.Listener<JSONObject>() {
@@ -2269,12 +2223,12 @@ public final class MainActivity extends Activity {
             public void postDelayed(Runnable task, long millis) { main.postDelayed(task, millis); }
             public void remove(Runnable task) { main.removeCallbacks(task); }
         });
-        final String id = chatID, auth = csrf, loc = locale();
+        final String id = chatID, auth = csrf;
         final Client captured = client;
-        String key = generation + "\n" + authEpoch + "\n" + user.optString("id") + "\n" + id + "\n" + loc;
+        String key = generation + "\n" + authEpoch + "\n" + user.optString("id") + "\n" + id;
         chatEvents.bind(key, new NativeChatEvents.Source<JSONObject>() {
             public Runnable open(NativeChatEvents.Events<JSONObject> events) throws Exception {
-                EventStream stream = captured.subscribeChat(id, loc, (kind, raw) -> {
+                EventStream stream = captured.subscribeChat(id, locale(), (kind, raw) -> {
                     if (kind.equals("transport_error")) { events.error(); return; }
                     if (!kind.equals("snapshot") && !kind.equals("metadata") && !kind.equals("turn")) return;
                     try {
@@ -2286,11 +2240,11 @@ public final class MainActivity extends Activity {
                 return () -> { if (stream != null) stream.close(); };
             }
             public JSONObject snapshot() throws Exception {
-                JSONObject value = (JSONObject) request(captured, "/chats/" + Uri.encode(id), null, auth, loc);
+                JSONObject value = (JSONObject) request(captured, "/chats/" + Uri.encode(id), null, auth, locale());
                 if (!id.equals(value.optString("id"))) throw new IOException("Unexpected chat in initialization response");
                 return value;
             }
-            public void checkAuth() throws Exception { request(captured, "/me", null, auth, loc); }
+            public void checkAuth() throws Exception { request(captured, "/me", null, auth, locale()); }
         }, new NativeChatEvents.Listener<JSONObject>() {
             public void event(String kind, JSONObject value) {
                 try { receiveChatEvent(kind, value); }
@@ -2341,11 +2295,11 @@ public final class MainActivity extends Activity {
             public void postDelayed(Runnable task, long millis) { main.postDelayed(task, millis); }
             public void remove(Runnable task) { main.removeCallbacks(task); }
         });
-        final String id = chatID, auth = csrf, loc = locale();
+        final String id = chatID, auth = csrf;
         final Client captured = client;
-        String key = generation + "\n" + authEpoch + "\n" + user.optString("id") + "\n" + id + "\n" + loc;
+        String key = generation + "\n" + authEpoch + "\n" + user.optString("id") + "\n" + id;
         chatRefresh.bind(key, () -> {
-            JSONObject value = (JSONObject) request(captured, "/chats/" + Uri.encode(id), null, auth, loc);
+            JSONObject value = (JSONObject) request(captured, "/chats/" + Uri.encode(id), null, auth, locale());
             if (!id.equals(value.optString("id"))) throw new IOException("Unexpected chat in refresh response");
             return value;
         }, new NativeChatRefresh.Listener<JSONObject>() {
@@ -2374,15 +2328,15 @@ public final class MainActivity extends Activity {
             public double random() { return Math.random(); }
         });
         final Client captured = client;
-        final String auth = csrf, loc = locale();
-        String key = generation + "\n" + authEpoch + "\n" + user.optString("id") + "\n" + loc;
+        final String auth = csrf;
+        String key = generation + "\n" + authEpoch + "\n" + user.optString("id");
         boolean bound = workspaceEvents.bind(key, new NativeWorkspaceEvents.Source<EventStream>() {
             public EventStream open(NativeWorkspaceEvents.Events events) throws Exception {
-                return captured.subscribeWorkspace(auth, loc, events::event);
+                return captured.subscribeWorkspace(auth, locale(), events::event);
             }
             public void close(EventStream stream) { if (stream != null) stream.close(); }
             public void send(EventStream stream, String type) throws Exception { stream.send(object("type", type, "visible", foreground).toString()); }
-            public void checkAuth() throws Exception { request(captured, "/me", null, auth, loc); }
+            public void checkAuth() throws Exception { request(captured, "/me", null, auth, locale()); }
         }, new NativeWorkspaceEvents.Listener<EventStream>() {
             public void connection(EventStream stream) { workspaceStream = stream; ++workspaceEpoch; }
             public void event(String kind, String value) {
@@ -2722,7 +2676,7 @@ public final class MainActivity extends Activity {
     private void openFiles(String path) {
         closeDrawer();
         panel = "files";
-        NativeDrawer overlay = new NativeDrawer(ui, true, this::closeDrawer);
+        NativeDrawer overlay = new NativeDrawer(ui, true);
         drawer = overlay;
         if (fileState == null || !fileState.project.equals(projectID) || !fileState.chat.equals(chatID)) {
             fileState = new NativeFileModel(projectID, chatID);

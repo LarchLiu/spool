@@ -263,7 +263,7 @@ public class NativeSessionFilesTest {
             try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
                 NativeUi ui = new NativeUi(controller.get(), dark, "zh-CN");
                 for (boolean right : new boolean[] {false, true}) {
-                    NativeDrawer drawer = new NativeDrawer(ui, right, () -> {}); controller.get().setContentView(drawer);
+                    NativeDrawer drawer = new NativeDrawer(ui, right); controller.get().setContentView(drawer);
                     layout(drawer, width, 800); assertEquals(width, drawer.sheet.getWidth()); assertEquals(0, drawer.sheet.getLeft());
                 }
                 NativeFileModel model = new NativeFileModel("p", "c"); model.workspace = workspace("/repo/worktrees/feature-session-files", true);

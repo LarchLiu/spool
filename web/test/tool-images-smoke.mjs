@@ -50,6 +50,9 @@ window.addEventListener('unhandledrejection', event => errors.push(String(event.
   try {
     await until(() => document.querySelectorAll('.work-label-toggle').length === 2);
     document.querySelectorAll('.work-label-toggle').forEach(button => button.click());
+    await until(() => document.querySelectorAll('.viewed-images').length === 2);
+    report.historicalGroupsStartCollapsed = [...document.querySelectorAll('.viewed-images > button')].every(button => button.getAttribute('aria-expanded') === 'false') && !document.querySelector('.viewed-image');
+    document.querySelectorAll('.viewed-images > button').forEach(button => button.click());
     await until(() => document.querySelectorAll('.viewed-image').length === 8);
     await until(() => [...document.querySelectorAll('.viewed-image img')].filter(image => image.complete && image.naturalWidth > 0).length === 7);
     await until(() => document.querySelector('.viewed-image-unavailable'));

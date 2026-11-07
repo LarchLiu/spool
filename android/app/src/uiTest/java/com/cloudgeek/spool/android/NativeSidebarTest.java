@@ -58,7 +58,7 @@ public class NativeSidebarTest {
             try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
                 NativeUi ui = new NativeUi(controller.get(), dark); ui.avatars = avatars(); NativeSidebarState state = new NativeSidebarState();
                 NativeSidebar sidebar = new NativeSidebar(ui, state, id -> person(profiles, id), () -> {}, id -> {}, id -> {}, () -> {}, () -> {}, () -> {});
-                NativeDrawer overlay = new NativeDrawer(ui, false, () -> {}); overlay.sheet.addView(sidebar, new LinearLayout.LayoutParams(-1, -1)); controller.get().setContentView(overlay); overlay.show(); Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(250));
+                NativeDrawer overlay = new NativeDrawer(ui, false); overlay.sheet.addView(sidebar, new LinearLayout.LayoutParams(-1, -1)); controller.get().setContentView(overlay); overlay.show(); Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(250));
                 sidebar.bind(profiles.getJSONObject(0), empty ? new JSONArray() : projects, empty ? new JSONArray() : chats, empty ? "" : "project-0", empty ? "" : "chat-0", "codex", false);
                 layout(overlay, width, 800); idle(); layout(overlay, width, 800);
                 String name = (empty ? "sidebar-empty-" : "sidebar-") + width + (dark ? "-dark" : "-light"); snapshot(sidebar, name);

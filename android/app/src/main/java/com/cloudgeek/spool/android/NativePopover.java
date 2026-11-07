@@ -249,10 +249,13 @@ final class NativePopover {
     private void place(View anchor, Rect viewport, int x, int y, int width, int height) {
         if (viewport.isEmpty() || width <= 0 || height <= 0) { dismiss(); return; }
         Rect bounds = frame.place(viewport, x, y, width, height);
-        if (window.isShowing()) window.update(bounds.left, bounds.top, bounds.width(), bounds.height());
+        int[] screen = new int[2], inWindow = new int[2];
+        anchor.getLocationOnScreen(screen); anchor.getLocationInWindow(inWindow);
+        int windowX = bounds.left - screen[0] + inWindow[0], windowY = bounds.top - screen[1] + inWindow[1];
+        if (window.isShowing()) window.update(windowX, windowY, bounds.width(), bounds.height());
         else {
             window.setWidth(bounds.width()); window.setHeight(bounds.height());
-            window.showAtLocation(anchor, Gravity.TOP | Gravity.LEFT, bounds.left, bounds.top);
+            window.showAtLocation(anchor, Gravity.TOP | Gravity.LEFT, windowX, windowY);
         }
     }
 

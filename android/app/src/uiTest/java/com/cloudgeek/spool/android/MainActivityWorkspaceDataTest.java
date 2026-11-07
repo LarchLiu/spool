@@ -144,14 +144,14 @@ public class MainActivityWorkspaceDataTest {
         }
     }
 
-    @Test public void languageRebindingRevokesOldQueuedReadsWithoutReloadingForUnchangedRenders() throws Exception {
+    @Test public void sessionRebindingRevokesOldQueuedReadsWithoutReloadingForUnchangedRenders() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             source(nav("REST"), new JSONObject("{revision:1,people:[{id:'alice',nickname:'Alice'}]}"));
             h.call("refreshWorkspace"); h.call("render"); h.call("render"); assertEquals(3, h.io.jobs.size());
-            h.set("language", "ja"); h.call("render"); assertEquals(6, h.io.jobs.size());
+            h.set("authEpoch", h.<Integer>get("authEpoch") + 1); h.set("csrf", "new-csrf"); h.call("render"); assertEquals(6, h.io.jobs.size());
             run(h, 0); run(h, 0); run(h, 0); assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
             run(h, 0); run(h, 0); run(h, 0); assertEquals(3, MainActivityGoalTest.ShadowClient.calls.size());
-            for (List<String> call : MainActivityGoalTest.ShadowClient.calls) assertEquals("ja", call.get(4));
+            for (List<String> call : MainActivityGoalTest.ShadowClient.calls) assertEquals("new-csrf", call.get(3));
         }
     }
 

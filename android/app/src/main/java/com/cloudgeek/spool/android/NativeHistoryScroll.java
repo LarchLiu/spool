@@ -38,7 +38,7 @@ final class NativeHistoryScroll implements ViewTreeObserver.OnPreDrawListener {
         this.view = view; this.content = content; this.state = state; this.threshold = threshold;
         resized = (v, l, t, r, b, ol, ot, or, ob) -> {
             if (pending || disposed) return;
-            if (state.following) bottom(); else updatePosition();
+            if (state.following) bottom(); else rememberPosition();
         };
         view.setOnScrollChangeListener((v, x, y, oldX, oldY) -> {
             if (pending || restoring || disposed) return;
@@ -54,6 +54,34 @@ final class NativeHistoryScroll implements ViewTreeObserver.OnPreDrawListener {
         state.top = view.getScrollY();
         state.following = content.getHeight() - state.top - view.getHeight() < threshold;
         following.accept(state.following);
+    }
+
+    private void rememberPosition() {
+        state.top = view.getScrollY();
+        following.accept(state.following);
+    }
+
+    /** A manual disclosure anchors its heading and pauses following, including delayed tool bodies. */
+    void preservePosition(View heading) {
+        Integer top = contentTop(heading);
+        if (disposed || top == null) return;
+        state.following = false;
+        state.top = view.getScrollY();
+        state.anchor = new Anchor(content.getHeight(), state.top, heading, state.top - top);
+        following.accept(false);
+        changing(null); changed();
+    }
+
+    private Integer contentTop(View descendant) {
+        if (descendant == null) return null;
+        int top = 0;
+        for (View child = descendant; child != content;) {
+            if (!(child.getParent() instanceof View)) return null;
+            View parent = (View) child.getParent();
+            top += child.getTop() - parent.getScrollY();
+            child = parent;
+        }
+        return top;
     }
 
     void latest() {
@@ -109,7 +137,7 @@ final class NativeHistoryScroll implements ViewTreeObserver.OnPreDrawListener {
     }
 
     private void scroll(int top) {
-        restoring = true; view.scrollTo(0, top); restoring = false; updatePosition();
+        restoring = true; view.scrollTo(0, top); restoring = false; rememberPosition();
     }
     private void bottom() { scroll(Math.max(0, content.getHeight() - view.getHeight())); }
 
@@ -117,8 +145,9 @@ final class NativeHistoryScroll implements ViewTreeObserver.OnPreDrawListener {
         remove();
         if (!disposed) {
             Anchor anchor = state.anchor;
-            int top = !state.following && anchor != null && anchor.row != null && anchor.row.getParent() == content
-                    ? anchor.row.getTop() + anchor.relative : restore(content.getHeight(), state.top, state.following, anchor);
+            Integer anchoredTop = anchor == null ? null : contentTop(anchor.row);
+            int top = !state.following && anchoredTop != null
+                    ? anchoredTop + anchor.relative : restore(content.getHeight(), state.top, state.following, anchor);
             if (!state.following && anchor != null) {
                 anchorRestores++;
                 int correction = Math.abs(top - view.getScrollY());

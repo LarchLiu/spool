@@ -76,6 +76,11 @@ final class NativeDisclosureRow extends FrameLayout {
         setExpanded(expanded);
     }
 
+    @Override public boolean performClick() {
+        if (disclosureEnabled) ui.beforeDisclosure.accept(this);
+        return super.performClick();
+    }
+
     void setDisclosureEnabled(boolean value) {
         if (disclosureEnabled == value) return;
         disclosureEnabled = value;

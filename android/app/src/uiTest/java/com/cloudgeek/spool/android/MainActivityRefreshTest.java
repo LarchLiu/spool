@@ -147,13 +147,13 @@ public class MainActivityRefreshTest {
         }
     }
 
-    @Test public void localeRebindingSkipsQueuedOldLanguageReadsAndAnyRunningTurnEnablesRefresh() throws Exception {
+    @Test public void sessionRebindingSkipsQueuedOldReadsAndAnyRunningTurnEnablesRefresh() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
-            start(h); h.set("language", "ja"); h.call("render");
+            start(h); h.set("authEpoch", h.<Integer>get("authEpoch") + 1); h.set("csrf", "new-csrf"); h.call("render");
             assertEquals(2, h.refreshIO.jobs.size()); h.refreshIO.jobs.remove(0).run();
             assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
             MainActivityGoalTest.ShadowClient.response = envelope(200, chat("completed", 30)); h.refreshIO.run();
-            assertEquals("ja", MainActivityGoalTest.ShadowClient.calls.get(0).get(4));
+            assertEquals("new-csrf", MainActivityGoalTest.ShadowClient.calls.get(0).get(3));
             JSONObject earlier = chat("completed", 40); earlier.getJSONArray("turns").put(0,
                     chat("running", 20).getJSONArray("turns").getJSONObject(0));
             earlier.getJSONArray("turns").put(new JSONObject().put("id", "last-completed").put("status", "completed").put("part_start", 2).put("input_end", 2).put("part_end", 2));

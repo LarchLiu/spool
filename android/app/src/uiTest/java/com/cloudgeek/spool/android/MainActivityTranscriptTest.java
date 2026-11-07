@@ -128,6 +128,59 @@ public class MainActivityTranscriptTest {
         }
     }
 
+    @Test public void toolImageFileURLsUseDecodedLocalPathsForThumbnailsAndPreview() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(16, 8, android.graphics.Bitmap.Config.ARGB_8888);
+            bitmap.eraseColor(0xff52704a); java.io.ByteArrayOutputStream encoded = new java.io.ByteArrayOutputStream();
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, encoded); bitmap.recycle();
+            List<Runnable> jobs = new ArrayList<>(); List<String> requests = new ArrayList<>();
+            h.set("fileImages", new NativeImages(jobs::add, path -> { requests.add(path); return new NativeFileData("image/png", encoded.toByteArray()); }));
+            String[] paths = {"file:///fixture/company-sale.png", "file://localhost/fixture/company%20receipt.png",
+                    "file:///fixture/%E8%B5%94%E4%BB%98%2B50%25.png", "/fixture/settlement-bank-payment.png", "build/artifacts/relative.png"};
+            JSONObject page = chat(); JSONArray parts = page.getJSONObject("transcript").getJSONArray("parts");
+            for (int i = 0; i < paths.length; i++) parts.put(3 + i, new JSONObject().put("role", "assistant").put("kind", "tool_use")
+                    .put("id", "image-" + i).put("name", "view_image").put("text", "")
+                    .put("tool", new JSONObject().put("kind", "image").put("image_paths", new JSONArray().put(paths[i]))));
+            page.getJSONArray("turns").getJSONObject(1).put("part_end", parts.length());
+            show(h, page); NativeViewedImages grid = views(h.get("historyContent"), NativeViewedImages.class).get(0);
+            assertEquals(paths.length, grid.getChildCount()); assertEquals(paths.length, jobs.size());
+            while (!jobs.isEmpty()) jobs.remove(0).run(); Shadows.shadowOf(Looper.getMainLooper()).idle();
+            List<String> requestedPaths = new ArrayList<>();
+            for (String request : requests) {
+                assertEquals("/api/chats/chat-one/file", android.net.Uri.parse(request).getPath());
+                assertEquals("1", android.net.Uri.parse(request).getQueryParameter("image"));
+                requestedPaths.add(android.net.Uri.parse(request).getQueryParameter("path"));
+            }
+            assertEquals(List.of("/fixture/company-sale.png", "/fixture/company receipt.png", "/fixture/赔付+50%.png",
+                    "/fixture/settlement-bank-payment.png", "build/artifacts/relative.png"), requestedPaths);
+            for (android.widget.ImageView image : views(grid, android.widget.ImageView.class)) assertNotNull(image.getDrawable());
+            grid.getChildAt(0).performClick(); NativeImagePreview preview = h.get("imagePreview"); assertNotNull(preview);
+            assertEquals(1, jobs.size()); jobs.remove(0).run(); Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertEquals(requests.get(0), requests.get(requests.size() - 1)); assertNotNull(preview.content.image.getDrawable());
+        }
+    }
+
+    @Test public void toolImagePathsRejectRemoteAndMalformedFileURLs() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            List<Runnable> jobs = new ArrayList<>();
+            h.set("fileImages", new NativeImages(jobs::add, path -> { throw new AssertionError("Invalid image path reached transport: " + path); }));
+            String[] paths = {"https://example.com/image.png", "file://remote-host/fixture/image.png",
+                    "file:///fixture/bad%00.png", "file:///fixture/bad%.png", "//remote-host/image.png"};
+            JSONObject page = chat(); JSONArray parts = page.getJSONObject("transcript").getJSONArray("parts");
+            for (int i = 0; i < paths.length; i++) parts.put(3 + i, new JSONObject().put("role", "assistant").put("kind", "tool_use")
+                    .put("id", "image-" + i).put("name", "view_image").put("text", "")
+                    .put("tool", new JSONObject().put("kind", "image").put("image_paths", new JSONArray().put(paths[i]))));
+            page.getJSONArray("turns").getJSONObject(1).put("part_end", parts.length());
+            show(h, page); NativeViewedImages grid = views(h.get("historyContent"), NativeViewedImages.class).get(0);
+            assertEquals(paths.length, grid.getChildCount()); assertTrue(jobs.isEmpty());
+            for (int i = 0; i < grid.getChildCount(); i++) {
+                assertEquals(View.VISIBLE, ((ViewGroup) grid.getChildAt(i)).getChildAt(1).getVisibility());
+                grid.getChildAt(i).performClick(); assertNull(h.get("imagePreview"));
+            }
+            assertTrue(jobs.isEmpty());
+        }
+    }
+
     @Test public void toolImagePixelsUseCapturedChatAPIAndPreviewIgnoresRetiredOrForeignReferences() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             List<Runnable> jobs = new ArrayList<>(); List<String> requests = new ArrayList<>();
@@ -391,6 +444,117 @@ public class MainActivityTranscriptTest {
         }
     }
     private Button textButton(View parent,String value) { for(Button button:views(parent,Button.class))if(button.getText().toString().equals(value))return button; throw new AssertionError(value); }
+
+    @Test public void lastTurnToolDisclosuresPreserveReadingPositionUntilTheReaderReturnsToLatest() throws Exception {
+        for (boolean virtual : new boolean[] {false, true}) for (boolean running : new boolean[] {false, true})
+                try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            JSONObject value = chat(), turn = value.getJSONArray("turns").getJSONObject(1);
+            JSONArray parts = value.getJSONObject("transcript").getJSONArray("parts");
+            parts.getJSONObject(1).put("text", "Earlier response paragraph.\n\n".repeat(60));
+            parts.put(3, new JSONObject().put("role", "assistant").put("kind", "thinking").put("text", "Reasoning detail paragraph.\n\n".repeat(40)));
+            if (virtual) {
+                JSONArray padded = new JSONArray().put(parts.getJSONObject(0));
+                for (int i = 0; i < 260; i++) padded.put(new JSONObject().put("role", "assistant").put("kind", "thinking").put("text", "Earlier reasoning " + i));
+                padded.put(parts.getJSONObject(1)).put(parts.getJSONObject(2)).put(parts.getJSONObject(3));
+                parts = padded; value.getJSONObject("transcript").put("parts", parts);
+                value.getJSONArray("turns").getJSONObject(0).put("part_end", 262);
+                turn.put("part_start", 262).put("input_end", 263);
+                turn.put("part_end", parts.length());
+            }
+            turn.put("status", running ? "running" : "completed");
+            show(h, value); for (int i = 0; i < 5; i++) layout(h);
+            androidx.core.widget.NestedScrollView scroll = h.get("history"); View content = h.get("historyContent");
+            NativeHistoryScroll.State state = h.get("historyScrollState");
+            List<NativeTurn> mounted = views(content, NativeTurn.class);
+            NativeActivityList activity = mounted.get(mounted.size() - 1).activity;
+            if (!running) {
+                int top = scroll.getScrollY(); ((View) activity.summaryLabel.getParent()).performClick();
+                for (int i = 0; i < 5; i++) layout(h);
+                assertEquals("Opening the last completed process must keep its heading in place", top, scroll.getScrollY());
+            }
+            h.<NativeComposerDock>get("composerDock").latest.performClick();
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400));
+            assertTrue(state.following);
+            NativeDisclosureRow tool = views(activity, NativeDisclosureRow.class).get(1);
+            int top = scroll.getScrollY(), headingY = screenY(tool);
+            tool.performClick(); for (int i = 0; i < 5; i++) layout(h);
+            assertEquals("Opening a tool must not follow its newly expanded bottom", top, scroll.getScrollY());
+            assertEquals(headingY, screenY(tool)); assertFalse(state.following);
+            tool.performClick(); for (int i = 0; i < 5; i++) layout(h);
+            assertEquals(Math.min(top, content.getHeight() - scroll.getHeight()), scroll.getScrollY());
+            assertFalse("Clamping a collapsed document must not restart following", state.following);
+            tool.performClick(); for (int i = 0; i < 5; i++) layout(h);
+            assertEquals(top, scroll.getScrollY());
+            parts.put(new JSONObject().put("role", "assistant").put("kind", "text").put("phase", "commentary").put("text", "New streamed output.\n\n".repeat(20)));
+            turn.put("part_end", parts.length()); show(h, value); for (int i = 0; i < 5; i++) layout(h);
+            assertEquals("Live updates must leave an inspected tool in place", top, scroll.getScrollY());
+            h.<NativeComposerDock>get("composerDock").latest.performClick();
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400));
+            assertEquals(content.getHeight() - scroll.getHeight(), scroll.getScrollY()); assertTrue(state.following);
+            parts.put(new JSONObject().put("role", "assistant").put("kind", "text").put("phase", "commentary").put("text", "More streamed output.\n\n".repeat(10)));
+            turn.put("part_end", parts.length()); show(h, value); for (int i = 0; i < 5; i++) layout(h);
+            assertEquals("Returning to latest must resume normal following", content.getHeight() - scroll.getHeight(), scroll.getScrollY());
+        }
+    }
+
+    private int screenY(View view) { int[] position = new int[2]; view.getLocationOnScreen(position); return position[1]; }
+
+    @Test public void lastTurnLazyToolResponseDoesNotResumeFollowingAfterTheLoadingPlaceholder() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            List<Runnable> jobs = new ArrayList<>(); String body = "Delayed command output\n".repeat(50);
+            h.<NativeUi>get("ui").toolDetails = new NativeToolDetails(jobs::add, Runnable::run, path -> new JSONObject()
+                    .put("text", body).put("offset", 0).put("next", body.length()).put("total", body.length()).put("version", "v1"));
+            JSONObject value = chat(); JSONArray parts = value.getJSONObject("transcript").getJSONArray("parts");
+            parts.getJSONObject(1).put("text", "Earlier response paragraph.\n\n".repeat(60));
+            parts.put(3, new JSONObject().put("role", "assistant").put("kind", "tool_use").put("name", "exec_command").put("text", "")
+                    .put("tool", new JSONObject().put("kind", "shell").put("version", "v1").put("ref", "a".repeat(64))
+                            .put("href", "/chats/chat-one/tool-detail?ref=" + "a".repeat(64))));
+            show(h, value); for (int i = 0; i < 5; i++) layout(h);
+            androidx.core.widget.NestedScrollView scroll = h.get("history"); NativeHistoryScroll.State state = h.get("historyScrollState");
+            NativeActivityList activity = views(h.get("historyContent"), NativeTurn.class).get(1).activity;
+            NativeDisclosureRow tool = views(activity, NativeDisclosureRow.class).get(1);
+            int top = scroll.getScrollY(), headingY = screenY(tool);
+            assertTrue(state.following); tool.performClick(); for (int i = 0; i < 5; i++) layout(h);
+            assertEquals(top, scroll.getScrollY()); assertFalse("The small loading placeholder must not restart following", state.following);
+            Shadows.shadowOf(Looper.getMainLooper()).idle(); assertEquals(1, jobs.size()); jobs.remove(0).run();
+            for (int i = 0; i < 5; i++) layout(h);
+            assertEquals("A delayed body must expand below the same heading", top, scroll.getScrollY());
+            assertEquals(headingY, screenY(tool)); assertFalse(state.following);
+            tool.performClick(); for (int i = 0; i < 5; i++) layout(h);
+            assertEquals(top, scroll.getScrollY()); assertFalse(state.following);
+        }
+    }
+
+    @Test public void lastTurnImageAndToolGroupTogglesKeepTheirHeadingsInPlace() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            h.set("fileImages", new NativeImages(task -> {}, path -> { throw new AssertionError("No image reads in scroll test"); }));
+            JSONObject value = chat(); JSONArray parts = value.getJSONObject("transcript").getJSONArray("parts");
+            parts.getJSONObject(1).put("text", "Earlier response paragraph.\n\n".repeat(60));
+            parts.put(3, new JSONObject().put("role", "assistant").put("kind", "tool_use").put("name", "Read").put("text", "{\"file_path\":\"first.txt\"}"));
+            parts.put(new JSONObject().put("role", "assistant").put("kind", "tool_use").put("name", "Read").put("text", "{\"file_path\":\"second.txt\"}"));
+            parts.put(new JSONObject().put("role", "assistant").put("kind", "tool_use").put("name", "view_image").put("text", "{\"path\":\"/fixture/image.png\"}"));
+            value.getJSONArray("turns").getJSONObject(1).put("part_end", parts.length());
+            show(h, value); for (int i = 0; i < 5; i++) layout(h);
+            NativeActivityList activity = views(h.get("historyContent"), NativeTurn.class).get(1).activity;
+            androidx.core.widget.NestedScrollView scroll = h.get("history"); View content = h.get("historyContent");
+            NativeHistoryScroll.State state = h.get("historyScrollState");
+            for (String label : new String[] {"Read files", "Viewed 1 image"}) {
+                NativeDisclosureRow heading = null;
+                for (NativeDisclosureRow row : views(activity, NativeDisclosureRow.class)) if (row.label.getText().toString().equals(label)) heading = row;
+                assertNotNull(heading);
+                h.<NativeHistoryScroll>get("historyScroll").latest(); Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(400));
+                assertTrue(state.following);
+                for (int i = 0; i < 4; i++) {
+                    int top = scroll.getScrollY(), headingY = screenY(heading); heading.performClick();
+                    for (int frame = 0; frame < 5; frame++) layout(h);
+                    int expected = Math.min(top, content.getHeight() - scroll.getHeight());
+                    assertEquals(label + " toggle " + i, expected, scroll.getScrollY());
+                    if (expected == top) assertEquals(headingY, screenY(heading));
+                    assertFalse(state.following);
+                }
+            }
+        }
+    }
 
     @Test public void latestIsWiredToTheCurrentActivitySurfaceAndOldOrBackgroundButtonsAreInert() throws Exception {
         try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {

@@ -270,12 +270,12 @@ public class MainActivityWorkspaceEventsTest {
         }
     }
 
-    @Test public void languageAndForegroundRebindingRevokeOldCallbacksAndQueuedSends() throws Exception {
+    @Test public void sessionAndForegroundRebindingRevokeOldCallbacksAndQueuedSends() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             ShadowStream first = start(h); presence(); EventListener english = MainActivityGoalTest.ShadowClient.workspaceListener;
             h.activity.onWindowFocusChanged(true); assertEquals(1, h.io.jobs.size());
-            h.set("language", "ja"); h.call("render"); assertTrue(first.closed); run(h); assertTrue(first.sent.isEmpty()); h.io.run();
-            assertEquals(List.of("test-csrf", "ja"), MainActivityGoalTest.ShadowClient.workspaceSubscriptions.get(1));
+            h.set("authEpoch", h.<Integer>get("authEpoch") + 1); h.set("csrf", "new-csrf"); h.call("render"); assertTrue(first.closed); run(h); assertTrue(first.sent.isEmpty()); h.io.run();
+            assertEquals(List.of("new-csrf", "en"), MainActivityGoalTest.ShadowClient.workspaceSubscriptions.get(1));
             english.onEvent("auth_expired", "{}"); english.onEvent("presence", "[{id:'old',state:'online'}]"); Shadows.shadowOf(Looper.getMainLooper()).idle();
             assertNotNull(h.get("user")); assertEquals(0, h.<JSONArray>get("presence").length());
             event("ready", "{}"); presence(); EventListener japanese = MainActivityGoalTest.ShadowClient.workspaceListener;
@@ -306,14 +306,14 @@ public class MainActivityWorkspaceEventsTest {
         }
     }
 
-    @Test public void aPostedOldSendFailureCannotCloseTheNewLocaleConnectionOrAcknowledgeItsDraft() throws Exception {
+    @Test public void aPostedOldSendFailureCannotCloseTheNewSessionConnectionOrAcknowledgeItsDraft() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             ShadowStream old = start(h); presence(); open(h);
             EventListener english = MainActivityGoalTest.ShadowClient.workspaceListener;
             NativePeoplePanel panel = h.get("peoplePanel"); panel.editor.setText("Do not lose this"); h.call("sendPeople");
             NativePeopleModel inbox = h.get("inbox"); String request = inbox.sending.get("bob").id;
             old.fail = true; h.io.jobs.remove(0).run(); // Failure is posted but not yet applied.
-            h.set("language", "ja"); h.call("render"); h.io.run(); event("ready", "{}");
+            h.set("authEpoch", h.<Integer>get("authEpoch") + 1); h.call("render"); h.io.run(); event("ready", "{}");
             ShadowStream current = ShadowStream.streams.get(h.<EventStream>get("workspaceStream"));
             english.onEvent("direct_message", new JSONObject().put("id", "late-ack").put("request_id", request)
                     .put("from", "alice").put("to", "bob").put("text", "Do not lose this").toString());

@@ -30,7 +30,7 @@ public class NativeArchitectureTest {
         assertFalse(source.contains("new WebView"));
         assertFalse(source.contains(".loadUrl("));
         assertTrue(source.contains("new NestedScrollView(this)"));
-        assertTrue(source.contains("captured.subscribeChat(id, loc,"));
+        assertTrue(source.contains("captured.subscribeChat(id, locale(),"));
         assertTrue(source.contains("new NativeChatEvents<>"));
         String navigation = source.substring(source.indexOf("private void openChat("), source.indexOf("private void renderChat()"));
         assertTrue(navigation.contains("startChat();"));
@@ -91,17 +91,17 @@ public class NativeArchitectureTest {
         assertTrue(activity.contains("httpsWorker.shutdown()"));
     }
 
-    @Test public void settingsReuseTheWebModalAndKeepAutosavesSessionScoped() throws Exception {
+    @Test public void settingsReuseTheWebModalAndKeepAppearancePreferencesLocal() throws Exception {
         String activity = source();
         int start = activity.indexOf("private void settingsPage()");
         String settings = activity.substring(start, activity.indexOf("private void saveLocalPreferences()", start));
         assertTrue(settings.contains("new NativeSettings("));
-        assertTrue(settings.contains("settingsDialog.content.appearance.saving(preferencesSaving)"));
+        assertFalse(settings.contains("Choose your avatar"));
         assertFalse(settings.contains("new AlertDialog"));
         String preferences = activity.substring(activity.indexOf("private void updatePreferences("), activity.indexOf("private void updateConnectionSettings()"));
-        assertTrue(preferences.contains("if (preferencesSaving"));
-        assertTrue(preferences.contains("session != authEpoch"));
-        assertTrue(preferences.contains("appearance.saving(false)"));
+        assertTrue(preferences.contains("saveLocalPreferences()"));
+        assertFalse(preferences.contains("request("));
+        assertFalse(preferences.contains("io.execute("));
     }
 
     @Test

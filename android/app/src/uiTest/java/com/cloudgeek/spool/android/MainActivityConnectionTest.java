@@ -145,8 +145,9 @@ public class MainActivityConnectionTest {
         }
     }
 
-    @Test public void restoredSessionChangesThePageAndPreferencesWithoutClosingTheSettingsWindow() throws Exception {
+    @Test public void restoredSessionKeepsLocalPreferencesAndTheSettingsWindow() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(false)) {
+            h.set("theme", "light"); h.set("language", "en");
             waiting(h);
             h.call("openSettings");
             idle();
@@ -180,8 +181,8 @@ public class MainActivityConnectionTest {
             assertNull(h.get("username"));
             assertEquals("alice", h.<JSONObject>get("user").getString("id"));
             assertEquals("restored-csrf", h.<String>get("csrf"));
-            assertTrue(h.<NativeUi>get("ui").dark);
-            assertEquals("ja", h.<NativeUi>get("ui").locale);
+            assertFalse(h.<NativeUi>get("ui").dark);
+            assertEquals("en", h.<NativeUi>get("ui").locale);
             dialog.content.close.performClick();
             idle();
             assertFalse(dialog.isShowing());

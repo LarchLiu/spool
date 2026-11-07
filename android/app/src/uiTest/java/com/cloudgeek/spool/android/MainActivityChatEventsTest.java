@@ -155,11 +155,11 @@ public class MainActivityChatEventsTest {
         }
     }
 
-    @Test public void localeAndForegroundRebindingRejectOldFramesAndCancelTheirQueuedFallback() throws Exception {
+    @Test public void sessionAndForegroundRebindingRejectOldFramesAndCancelTheirQueuedFallback() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             open(h, "chat-two"); spoolnet.EventListener old = MainActivityGoalTest.ShadowClient.chatListener; error(0);
-            h.set("language", "ja"); h.call("render");
-            assertEquals(List.of("chat-two", "ja"), MainActivityGoalTest.ShadowClient.chatSubscriptions.get(1));
+            h.set("authEpoch", h.<Integer>get("authEpoch") + 1); h.call("render");
+            assertEquals(List.of("chat-two", "en"), MainActivityGoalTest.ShadowClient.chatSubscriptions.get(1));
             old.onEvent("snapshot", chat("chat-two", 40).toString()); run(h, 0);
             assertNull(h.get("chat")); assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
             error(0); spoolnet.EventListener japanese = MainActivityGoalTest.ShadowClient.chatListener;

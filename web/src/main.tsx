@@ -122,7 +122,7 @@ import { turnWorkLabel } from "./turn-presentation";
 import { chatSelection, chooseModel } from "./model-selection";
 import { effortLabel as formatEffort } from "./i18n";
 import type { Translator } from "./i18n";
-import { defaultPreferences, type UIPreferences } from "./preferences";
+import { parsePreferences, preferencesStorageKey, type UIPreferences } from "./preferences";
 import { usePresentation } from "./use-presentation";
 import { AttachmentCards, ImagePreview } from "./attachments";
 import {
@@ -141,12 +141,18 @@ import {
 import type { MessageKey } from "./i18n";
 import "./style.css";
 function App() {
-  const [preferences, setPreferences] =
-    useState<UIPreferences>(defaultPreferences);
+  const [preferences, setPreferences] = useState<UIPreferences>(() => {
+    try { return parsePreferences(localStorage.getItem(preferencesStorageKey)); }
+    catch { return parsePreferences(null); }
+  });
+  useEffect(() => {
+    if (isDesktopChat()) return;
+    try { localStorage.setItem(preferencesStorageKey, JSON.stringify(preferences)); }
+    catch { /* Storage can be disabled. */ }
+  }, [preferences]);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [remoteDesktopOpen, setRemoteDesktopOpen] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
-  const [savingPreferences, setSavingPreferences] = useState(false);
   const [version, setVersion] = useState("");
   const { t, theme, locale } = usePresentation(preferences);
   const effortLabel = (value: string) => formatEffort(value, t);
@@ -419,9 +425,8 @@ function App() {
     void api<{ version: string }>("/version")
       .then((value) => setVersion(value.version))
       .catch(() => {});
-    api<{ user: User; csrf: string; preferences: UIPreferences }>("/me")
+    api<{ user: User; csrf: string }>("/me")
       .then((v) => {
-        setPreferences(v.preferences);
         setUser(v.user);
         setCSRF(v.csrf);
       })
@@ -440,7 +445,6 @@ function App() {
       setAppearanceOpen(false);
       setRemoteDesktopOpen(false);
       setAvatarOpen(false);
-      setPreferences(defaultPreferences);
       setDraft("");
       setFiles((old) => {
         releaseAttachments(old);
@@ -1091,13 +1095,11 @@ function App() {
       const v = await api<{
         user: User;
         csrf: string;
-        preferences: UIPreferences;
       }>("/login", {
         username: form.get("username"),
         password: form.get("password"),
       });
       setCSRF(v.csrf);
-      setPreferences(v.preferences);
       setUser(v.user);
     } catch (e) {
       fail(e);
@@ -1419,24 +1421,9 @@ function App() {
       fail(e);
     }
   }
-  async function updatePreferences(next: UIPreferences) {
-    if (isDesktopChat() || savingPreferences) return;
-    const previous = preferences;
-    const owner = user?.id;
+  function updatePreferences(next: UIPreferences) {
+    if (isDesktopChat()) return;
     setPreferences(next);
-    setError("");
-    if (!owner) return;
-    setSavingPreferences(true);
-    try {
-      await api<UIPreferences>("/preferences", next);
-    } catch (error) {
-      if (activeUser.current === owner) {
-        setPreferences(previous);
-        fail(error);
-      }
-    } finally {
-      setSavingPreferences(false);
-    }
   }
   function openChat(chat: Chat) {
     activeID.current = chat.id;
@@ -1483,7 +1470,7 @@ function App() {
   const appearance = !isDesktopChat() && appearanceOpen && (
     <AppearanceDialog
       preferences={preferences}
-      saving={savingPreferences}
+      saving={false}
       version={version}
       t={t}
       onChange={updatePreferences}
@@ -1603,16 +1590,6 @@ function App() {
         onAvatar={() => setAvatarOpen(true)}
         onLogout={logout}
       />
-      {(sidebar || fileSidebarMobile) && (
-        <button
-          className="scrim"
-          aria-label={t("Close sidebar")}
-          onClick={() => {
-            setSidebar(false);
-            setFileSidebarMobile(false);
-          }}
-        />
-      )}
       <main className="workspace">
         <header>
           <div className="heading">

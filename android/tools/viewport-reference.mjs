@@ -9,7 +9,6 @@ export async function renderViewportReferences({browser,url,output,fontCSS}) {
   await page.evaluate(side=>{
    document.querySelector('.app > .sidebar').classList.toggle('open',side==='left');
    document.querySelector('.app > .file-sidebar').classList.toggle('open',side==='right');
-   document.querySelector('.scrim').style.display=side==='workspace'?'none':'block';
    for(const pane of document.querySelectorAll('.app > .sidebar,.app > .file-sidebar'))for(const animation of pane.getAnimations())animation.finish();
   },side);
   await settle(page);
@@ -34,9 +33,8 @@ export async function renderViewportReferences({browser,url,output,fontCSS}) {
      await select(page,side);
      const geometry=await page.evaluate(side=>{
       const box=element=>{const r=element.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height};};
-      const color=value=>{const [r,g,b,a=1]=value.match(/[\d.]+/g).map(Number);return(Math.round(a*255)<<24|r<<16|g<<8|b)|0;};
       const result={page:box(document.querySelector('.workspace')),header:box(document.querySelector('.workspace > header')),history:box(document.querySelector('.history')),composer:box(document.querySelector('.composer-wrap')),surface:box(document.querySelector('.composer')),input:box(document.querySelector('.composer textarea')),model:box(document.querySelector('.picker-summary')),send:box(document.querySelector('.composer .send')),permissionLabelVisible:getComputedStyle(document.querySelector('.permission-summary > span')).display!=='none'};
-      if(side!=='workspace')Object.assign(result,{sheet:box(document.querySelector(side==='left'?'.app > .sidebar':'.app > .file-sidebar')),scrim:box(document.querySelector('.scrim')),scrimColor:color(getComputedStyle(document.querySelector('.scrim')).backgroundColor)});
+      if(side!=='workspace')Object.assign(result,{sheet:box(document.querySelector(side==='left'?'.app > .sidebar':'.app > .file-sidebar')),noBackdrop:!document.querySelector('.scrim')});
       return result;
      },side);
      const name=`viewport-${viewport.id}-${side}-${theme}`;

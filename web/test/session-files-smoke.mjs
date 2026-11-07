@@ -21,6 +21,7 @@ const dev = process.env.SPOOL_SMOKE_DEV === "1";
 const artifactPrefix = dev ? "dev-" : "";
 const viteCleanup = [];
 const failedRequests = [];
+let preferencesRequests = 0;
 let vite;
 let blockHighlighter = false;
 let blockedHighlighterRequests = 0;
@@ -73,6 +74,7 @@ workspaces["worktree-chat"].workspaces = workspaceChoices;
 workspaces["worktree-chat"].turn_id = "turn-1";
 workspaces["main-chat"].workspaces = [workspaceChoices[1]];
 const probe = `
+localStorage.setItem('spool.ui-preferences.v1', JSON.stringify({theme:'light',language:'en'}));
 const mode = new URL(location.href).searchParams.get('mode');
 const dev = new URL(location.href).searchParams.get('dev') === '1';
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -123,13 +125,32 @@ async function switchChat(id) {
     await until(() => document.querySelector('.chat-heading')?.textContent.includes('worktree-chat'));
     await openFiles();
     if (mode === 'mobile') {
+      report.mobileFileSidebarHasNoBackdrop = !document.querySelector('.scrim');
       const files = document.querySelector('.file-sidebar').getBoundingClientRect();
       report.mobileFileSidebarFillsScreen = Math.abs(files.width - innerWidth) < 1 && Math.abs(files.height - innerHeight) < 1;
       button('Collapse file sidebar').click();
       button('Open sidebar').click();
       await settleDrawer('.sidebar.open');
+      report.mobileNavSidebarHasNoBackdrop = !document.querySelector('.scrim');
       const navigation = document.querySelector('.sidebar').getBoundingClientRect();
       report.mobileNavSidebarFillsScreen = Math.abs(navigation.width - innerWidth) < 1 && Math.abs(navigation.height - innerHeight) < 1;
+      report.localPreferencesOverrideServerPreferences = document.documentElement.lang === 'en' && document.documentElement.dataset.theme === 'light';
+      button('Appearance and language').click();
+      await until(() => document.querySelector('.appearance-dialog[open]'));
+      document.querySelectorAll('.theme-options button')[1].click();
+      await until(() => document.documentElement.dataset.theme === 'dark');
+      document.querySelector('.language-choice .custom-select-trigger').click();
+      await until(() => document.querySelector('[role="option"][data-value="ja"]'));
+      document.querySelector('[role="option"][data-value="ja"]').click();
+      await until(() => document.documentElement.lang === 'ja');
+      report.appearanceSavedLocally = localStorage.getItem('spool.ui-preferences.v1') === JSON.stringify({theme:'dark',language:'ja'});
+      document.querySelector('.language-choice .custom-select-trigger').click();
+      await until(() => document.querySelector('[role="option"][data-value="en"]'));
+      document.querySelector('[role="option"][data-value="en"]').click();
+      await until(() => document.documentElement.lang === 'en');
+      document.querySelectorAll('.theme-options button')[0].click();
+      await until(() => document.documentElement.lang === 'en' && document.documentElement.dataset.theme === 'light');
+      button('Close settings').click();
       button('Close sidebar').click();
       await openFiles();
     }
@@ -269,6 +290,7 @@ const server = createServer(async (req, res) => {
   });
   const url = new URL(req.url, "http://localhost");
   const path = url.pathname;
+  if (path === '/api/preferences') preferencesRequests++;
   if (!dev)
     res.setHeader(
       "Content-Security-Policy",
@@ -324,7 +346,7 @@ const server = createServer(async (req, res) => {
     return json({
       user: { id: "owner", username: "owner", nickname: "Owner" },
       csrf: "fixture",
-      preferences: { theme: "light", language: "en" },
+      preferences: { theme: "dark", language: "ja" },
     });
   if (path === "/api/version") return json({ version: "fixture" });
   if (path === "/api/profiles")
@@ -527,6 +549,7 @@ try {
     if (mode === "fallback") assert.ok(blockedHighlighterRequests > 0);
   }
   console.log(JSON.stringify(Object.fromEntries(reports), null, 2));
+  assert.equal(preferencesRequests, 0, 'Theme and language must not use the server preference API');
 } finally {
   server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));

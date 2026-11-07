@@ -72,6 +72,9 @@ public class NativeViewedImagesTest {
             NativeActivityList list = new NativeActivityList(ui, parts, "codex", "Completed", false, state, s -> {}, images);
             list.setBackgroundColor(ui.elevated);
             controller.get().setContentView(list);
+            NativeDisclosureRow heading = views(list, NativeDisclosureRow.class).get(1); assertEquals("Viewed 4 images", heading.label.getText().toString());
+            assertTrue(views(list, NativeViewedImages.class).isEmpty()); assertTrue(loads.isEmpty());
+            heading.performClick();
             list.measure(View.MeasureSpec.makeMeasureSpec(284, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(700, View.MeasureSpec.AT_MOST)); list.layout(0,0,284,list.getMeasuredHeight());
             NativeViewedImages grid = views(list, NativeViewedImages.class).get(0);
             assertEquals(4, grid.getChildCount()); assertEquals(4, loads.size()); assertTrue(grid.getChildAt(3).getTop() > grid.getChildAt(0).getTop());
@@ -80,7 +83,6 @@ public class NativeViewedImagesTest {
             Bitmap screenshot = Bitmap.createBitmap(list.getWidth(), list.getHeight(), Bitmap.Config.ARGB_8888); list.draw(new Canvas(screenshot));
             Path output = Path.of(System.getProperty("spool.ui.artifacts"), "viewed-images-api" + android.os.Build.VERSION.SDK_INT + ".png"); Files.createDirectories(output.getParent());
             try (java.io.OutputStream stream = Files.newOutputStream(output)) { screenshot.compress(Bitmap.CompressFormat.PNG, 100, stream); } screenshot.recycle();
-            NativeDisclosureRow heading = views(list, NativeDisclosureRow.class).get(1); assertEquals("Viewed 4 images", heading.label.getText().toString());
             heading.performClick(); assertTrue(views(list, NativeViewedImages.class).isEmpty()); heading.performClick(); assertEquals(4, loads.size());
             picture.recycle();
         }

@@ -9,7 +9,6 @@ import android.graphics.Rect;
 import android.os.Build;
 import android.os.Looper;
 import android.view.DisplayCutout;
-import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowInsets;
@@ -164,7 +163,7 @@ public class NativeViewportTest {
             NativeUi ui = new NativeUi(controller.get(), false);
             FrameLayout root = NativeWindow.content(controller.get(), ui); controller.get().setContentView(root);
             for (boolean right : new boolean[] {false, true}) {
-                NativeDrawer drawer = new NativeDrawer(ui, right, () -> {});
+                NativeDrawer drawer = new NativeDrawer(ui, right);
                 ScrollView scroll = new ScrollView(ui.context); View content = new View(ui.context);
                 content.setMinimumHeight(3000);
                 scroll.addView(content, new ScrollView.LayoutParams(-1, 3000)); drawer.sheet.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
@@ -173,7 +172,7 @@ public class NativeViewportTest {
                     Rect cutout = Build.VERSION.SDK_INT >= 28 ? new Rect(56, 30, 18, 0) : null;
                     root.dispatchApplyWindowInsets(insets(2, 24, 3, 20, viewport[2], cutout)); layout(root, viewport[0], viewport[1]);
                     int available = viewport[0] - root.getPaddingLeft() - root.getPaddingRight();
-                    assertEquals(Math.min(right ? 360 : 298, Math.round(available * (right ? .92f : .88f))), drawer.sheet.getWidth());
+                    assertEquals(available, drawer.sheet.getWidth());
                     assertEquals(right ? drawer.getWidth() : drawer.sheet.getWidth(), drawer.sheet.getRight());
                     assertEquals(right ? drawer.getWidth() - drawer.sheet.getWidth() : 0, drawer.sheet.getLeft());
                     assertEquals(drawer.getHeight(), drawer.sheet.getHeight());
@@ -194,9 +193,9 @@ public class NativeViewportTest {
             controller.get().setContentView(root);
             JSONObject samples = new JSONObject();
             for (boolean right : new boolean[] {false, true}) {
-                NativeDrawer drawer = new NativeDrawer(ui, right, () -> {}); root.addView(drawer, new FrameLayout.LayoutParams(-1, -1));
+                NativeDrawer drawer = new NativeDrawer(ui, right); root.addView(drawer, new FrameLayout.LayoutParams(-1, -1));
                 layout(root, 360, 800); drawer.show();
-                View scrim = drawer.getChildAt(0); assertEquals(1f, scrim.getAlpha(), 0f); assertEquals(View.VISIBLE, scrim.getVisibility());
+                assertEquals(1, drawer.getChildCount()); assertSame(drawer.sheet, drawer.getChildAt(0)); assertNull(drawer.getBackground());
                 ValueAnimator motion = ReflectionHelpers.getField(drawer, "animation"); assertNotNull(motion);
                 motion.setCurrentPlayTime(80); float hidden = ReflectionHelpers.getField(drawer, "hidden");
                 JSONObject before = motion(drawer);
@@ -206,7 +205,7 @@ public class NativeViewportTest {
                 assertEquals((right ? 1 : -1) * drawer.sheet.getWidth() * 1.05f * hidden, drawer.sheet.getTranslationX(), .0001f);
                 motion.end(); assertEquals(0f, drawer.sheet.getTranslationX(), 0f);
                 drawer.dismiss(); ValueAnimator closing = ReflectionHelpers.getField(drawer, "animation"); assertNotNull(closing);
-                assertEquals(View.INVISIBLE, scrim.getVisibility()); drawer.dismiss();
+                assertEquals(1, drawer.getChildCount()); assertNull(drawer.getBackground()); drawer.dismiss();
                 assertSame(closing, ReflectionHelpers.getField(drawer, "animation"));
                 closing.setCurrentPlayTime(80); hidden = ReflectionHelpers.getField(drawer, "hidden"); JSONObject closingBefore = motion(drawer); layout(root, 412, 800);
                 samples.put(right ? "right" : "left", new JSONObject().put("opening", new JSONObject().put("before", before).put("resized", resized))
@@ -219,21 +218,20 @@ public class NativeViewportTest {
         } finally { durationScale(saved); }
     }
 
-    @Test public void scrimLabelsUseAllThreeLocalesAndBlankSheetTapsNeverFallThroughToClose() {
+    @Test public void bothDrawersHaveNoBackdropAndCloseThroughTheirOwnLocalizedButton() {
         RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
         float saved = durationScale(); durationScale(0);
         try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
             for (String locale : new String[] {"zh-CN", "en", "ja"}) for (boolean right : new boolean[] {false, true}) {
                 NativeUi ui = new NativeUi(controller.get(), false, locale); AtomicInteger close = new AtomicInteger();
-                NativeDrawer drawer = new NativeDrawer(ui, right, close::incrementAndGet);
+                NativeDrawer drawer = new NativeDrawer(ui, right);
+                View closeButton = ui.icon("close", 18, ui.t("Close sidebar"), () -> { close.incrementAndGet(); drawer.dismiss(); });
+                drawer.sheet.addView(closeButton);
                 controller.get().setContentView(drawer); drawer.show(); layout(drawer, 360, 800);
-                View scrim = drawer.getChildAt(0); assertEquals(ui.t("Close sidebar"), scrim.getContentDescription());
+                assertEquals(1, drawer.getChildCount()); assertSame(drawer.sheet, drawer.getChildAt(0)); assertNull(drawer.getBackground());
                 tap(drawer, drawer.sheet.getLeft() + drawer.sheet.getWidth() / 2f, 600); assertEquals(0, close.get());
-                tap(drawer, right ? 0 : 359, 600); assertEquals(1, close.get());
-                assertTrue(scrim.isFocusable());
-                scrim.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_SPACE));
-                scrim.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_SPACE));
-                assertEquals(2, close.get());
+                assertEquals(ui.t("Close sidebar"), closeButton.getContentDescription());
+                closeButton.performClick(); assertEquals(1, close.get());
                 drawer.dismiss(); assertNull(drawer.getParent());
             }
         } finally { durationScale(saved); }
@@ -257,15 +255,14 @@ public class NativeViewportTest {
                     String[] names = {"full","keyboard","split","narrow","wide"};
                     for (int i = 0; i < cases.length; i++) {
                         for (int side = 0; side < 3; side++) {
-                            NativeDrawer drawer = side == 0 ? null : new NativeDrawer(ui, side == 2, () -> {});
+                            NativeDrawer drawer = side == 0 ? null : new NativeDrawer(ui, side == 2);
                             if (drawer != null) { root.addView(drawer, new FrameLayout.LayoutParams(-1, -1)); drawer.show(); }
                             layout(root, cases[i][0], cases[i][1]);
                             JSONObject headerBox = box(header, root); headerBox.put("height", header.getHeight() + 1);
                             JSONObject geometry = new JSONObject().put("page", box(page, root)).put("header", headerBox).put("history", box(history, root))
                                     .put("composer", box(composer, root)).put("surface", box(composer.getChildAt(0), root)).put("input", box(composer.input, root))
                                     .put("model", box(composer.model, root)).put("send", box(composer.send, root)).put("permissionLabelVisible", composer.permission.label.getVisibility() == View.VISIBLE);
-                            if (drawer != null) geometry.put("sheet", box(drawer.sheet, root)).put("scrim", box(drawer.getChildAt(0), root))
-                                    .put("scrimColor", ((android.graphics.drawable.ColorDrawable) drawer.getChildAt(0).getBackground()).getColor());
+                            if (drawer != null) geometry.put("sheet", box(drawer.sheet, root)).put("noBackdrop", drawer.getChildCount() == 1 && drawer.getBackground() == null);
                             String name = "viewport-" + names[i] + "-" + new String[] {"workspace","left","right"}[side] + (dark ? "-dark" : "-light");
                             save("native-" + name, geometry);
                             android.graphics.Bitmap image = android.graphics.Bitmap.createBitmap(root.getWidth(), root.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);

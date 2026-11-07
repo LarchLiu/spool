@@ -434,14 +434,13 @@ function ViewedImage({ path = "", source, t }: { path?: string; source?: string;
   );
 }
 
-function ViewedImages({ group, t }: { group: ActivityGroup; t: Translator }) {
-  const [open, setOpen] = useState(true);
+function ViewedImages({ group, t, open, onToggle }: { group: ActivityGroup; t: Translator; open: boolean; onToggle: () => void }) {
   const images = group.activities.flatMap<{ source?: string; path?: string }>((item) => item.imageURLs?.length
     ? item.imageURLs.map((source, index) => ({ source, path: item.images?.[index] }))
     : (item.images || []).map((path) => ({ path, source: undefined })));
   return (
     <div className="viewed-images">
-      <button type="button" className="tool-activity-summary" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+      <button type="button" className="tool-activity-summary" aria-expanded={open} onClick={onToggle}>
         <Images size={13} strokeWidth={1.6} />
         <span>{group.label}</span>
         <span className="tool-activity-caret">{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
@@ -723,6 +722,7 @@ export function ToolActivityList({
   );
   const [openItems, setOpenItems] = useState<Set<string>>(new Set());
   const [openCompounds, setOpenCompounds] = useState<Set<string>>(new Set());
+  const [openImages, setOpenImages] = useState<Map<number, boolean>>(new Map());
   const [activityOpen, setActivityOpen] = useState(live);
   const groupCount = groups.length;
   useEffect(() => {
@@ -770,7 +770,12 @@ export function ToolActivityList({
                 return next;
               })} />;
             }
-            if (group.kind === "image") return <ViewedImages key={`images:${groupIndex}`} group={group} t={t} />;
+            if (group.kind === "image") return <ViewedImages key={`images:${groupIndex}`} group={group} t={t}
+              open={openImages.get(groupIndex) ?? live} onToggle={() => setOpenImages(old => {
+                const next = new Map(old);
+                next.set(groupIndex, !(old.get(groupIndex) ?? live));
+                return next;
+              })} />;
             if (group.kind === "message") {
               return (
                 <div className="tool-progress-message" key={`message:${group.activities[0].use?.id || ""}:${groupIndex}`}>

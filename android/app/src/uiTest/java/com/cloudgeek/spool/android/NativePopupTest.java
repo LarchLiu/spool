@@ -59,6 +59,29 @@ public class NativePopupTest {
         return menu;
     }
 
+    @Test public void selectUsesTheParentWindowOriginWhenItsTriggerIsInsideAnOffsetDialog() {
+        RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false);
+            for (int[] offset : new int[][] {{0, 0}, {38, 160}}) {
+                View anchor = new View(controller.get()) {
+                    @Override public void getLocationOnScreen(int[] out) { out[0] = 70 + offset[0]; out[1] = 180 + offset[1]; }
+                    @Override public void getLocationInWindow(int[] out) { out[0] = 70; out[1] = 180; }
+                    @Override public void getWindowVisibleDisplayFrame(Rect out) { out.set(0, 0, 360, 800); }
+                };
+                page(controller.get(), ui, anchor);
+                NativePopover menu = select(ui, anchor);
+                PopupWindow window = ReflectionHelpers.getField(menu, "window");
+                NativePopupFrame frame = (NativePopupFrame) window.getContentView();
+                android.view.WindowManager.LayoutParams attributes = (android.view.WindowManager.LayoutParams) frame.getRootView().getLayoutParams();
+                assertEquals(frame.window.left, attributes.x + offset[0]);
+                assertEquals(frame.window.top, attributes.y + offset[1]);
+                assertEquals(180 + offset[1] + anchor.getHeight() + ui.dp(4), frame.window.top + frame.panel.top);
+                menu.dismiss();
+            }
+        }
+    }
+
     @Test public void shadowRoomDoesNotMoveTheMenuAndClipsOnlyAtTheViewport() {
         for (String density : new String[] {"mdpi", "xxhdpi"}) {
             RuntimeEnvironment.setQualifiers("w360dp-h800dp-" + density);

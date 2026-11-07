@@ -95,7 +95,7 @@ final class NativeToolBody extends LinearLayout {
     }
     private View button(String label, Runnable run) {
         TextView button = ui.text(label, 12, ui.muted); button.setPadding(0, ui.dp(8), 0, ui.dp(8));
-        button.setOnClickListener(view -> run.run()); return button;
+        button.setOnClickListener(view -> { ui.beforeDisclosure.accept(this); run.run(); }); return button;
     }
     @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); removeCallbacks(refresh); post(refresh); }
     @Override protected void onDetachedFromWindow() { epoch++; loading = false; refreshQueued = false; removeCallbacks(refresh); super.onDetachedFromWindow(); }

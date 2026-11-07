@@ -4,32 +4,22 @@ import android.animation.ValueAnimator;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.view.Gravity;
-import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.PathInterpolator;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 
-/** The same fixed overlay, scrim and 200ms ease transition for either mobile sidebar. */
+/** Full-screen mobile sidebars slide over the workspace without a dimming layer. */
 final class NativeDrawer extends FrameLayout {
     final LinearLayout sheet;
-    private final View scrim;
     private final boolean right;
-    private final NativeUi ui;
     private ValueAnimator animation;
     private float hidden = 1;
     private boolean dismissing;
 
-    NativeDrawer(NativeUi ui, boolean right, Runnable close) {
+    NativeDrawer(NativeUi ui, boolean right) {
         super(ui.context);
-        this.ui = ui; this.right = right;
-        scrim = new View(ui.context);
-        scrim.setBackgroundColor(0x661f2b1d);
-        scrim.setContentDescription(ui.t("Close sidebar"));
-        scrim.setOnClickListener(v -> close.run());
-        scrim.setFocusable(true);
-        ui.buttonKeys(scrim);
-        addView(scrim, new FrameLayout.LayoutParams(-1, -1));
+        this.right = right;
         sheet = ui.column();
         sheet.setBackgroundColor(right ? ui.elevated : ui.sidebar);
         sheet.setClickable(true);
@@ -39,7 +29,6 @@ final class NativeDrawer extends FrameLayout {
 
     void show() {
         if (dismissing) return;
-        scrim.setVisibility(VISIBLE);
         animateTo(0, null);
     }
 
@@ -47,8 +36,6 @@ final class NativeDrawer extends FrameLayout {
         if (dismissing) return;
         dismissing = true;
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-        // Web unmounts the scrim immediately; only the sidebar transform transitions.
-        scrim.setVisibility(INVISIBLE);
         Runnable remove = () -> {
             if (getParent() instanceof ViewGroup) ((ViewGroup) getParent()).removeView(this);
         };

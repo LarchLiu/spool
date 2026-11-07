@@ -124,7 +124,7 @@ public class NativeComponentsTest {
                     draw(transcript, width, 400, "messages-standalone-" + suffix);
                     assertChildrenFit(transcript);
 
-                    NativeDrawer drawer = new NativeDrawer(ui, false, () -> {});
+                    NativeDrawer drawer = new NativeDrawer(ui, false);
                     drawer.sheet.addView(ui.toolbar("Spool", () -> {}));
                     drawer.sheet.addView(ui.divider());
                     NativeProjectRow project = new NativeProjectRow(ui, () -> {}, () -> {}); project.bind(new JSONObject().put("name", "Mobile project"), true, false);

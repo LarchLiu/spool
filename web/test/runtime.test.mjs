@@ -122,7 +122,8 @@ test("settings remains reachable from loading, sign-in and authenticated chat", 
   assert.match(sidebar, /<ChatSettingsControl t=\{t\} onAppearance=\{props\.onSettings\} \/>\s*<button[\s\S]*?onClick=\{props\.onLogout\}/);
   assert.doesNotMatch(sidebar, /sidebar-settings|Palette|DesktopSettingsLink/);
   assert.match(main, /const appearance = !isDesktopChat\(\) && appearanceOpen/);
-  assert.match(main, /if \(isDesktopChat\(\) \|\| savingPreferences\) return/);
+  assert.match(main, /function updatePreferences[\s\S]*?if \(isDesktopChat\(\)\) return/);
+  assert.doesNotMatch(main, /api<UIPreferences>\("\/preferences"|setPreferences\(v\.preferences\)/);
   assert.match(main, /!isDesktopChat\(\) && \(\s*<button\s*className="icon login-preferences"/);
 });
 

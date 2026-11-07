@@ -3070,9 +3070,6 @@ a.attachment-open {
   font-size: 10px;
   color: var(--subtle);
 }
-.scrim {
-  display: none;
-}
 @keyframes arrive {
   from {
     opacity: 0;
@@ -3144,14 +3141,6 @@ a.attachment-open {
   }
   .sidebar > .brand .mobile {
     margin-left: auto;
-  }
-  .scrim {
-    display: block;
-    position: fixed;
-    inset: 0;
-    border: 0;
-    background: #1f2b1d44;
-    z-index: 9;
   }
   .workspace > header {
     padding: 0 14px;
@@ -4282,11 +4271,6 @@ option {
   cursor: default;
   opacity: 0.7;
 }
-@media (min-width: 901px) {
-  .scrim {
-    display: none;
-  }
-}
 @media (max-width: 900px) {
   .app,
   .app.left-collapsed,
@@ -4346,14 +4330,6 @@ option {
   }
   .panel-resize-handle {
     display: none;
-  }
-  .scrim {
-    display: block;
-    position: fixed;
-    inset: 0;
-    background: #1f2b1d66;
-    border: 0;
-    z-index: 11;
   }
   .workspace > header {
     padding: 0 16px;

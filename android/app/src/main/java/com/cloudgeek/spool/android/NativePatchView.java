@@ -150,7 +150,7 @@ final class NativePatchView extends LinearLayout {
             toggle.setText((state.rawOpen ? "\u25bc " : "\u25b6 ") + title);
             if (android.os.Build.VERSION.SDK_INT >= 30) toggle.setStateDescription(ui.label(state.rawOpen ? "Expanded" : "Collapsed", state.rawOpen ? "已展开" : "已折叠"));
         };
-        toggle.setOnClickListener(view -> { state.rawOpen = !state.rawOpen; update.run(); });
+        toggle.setOnClickListener(view -> { ui.beforeDisclosure.accept(view); state.rawOpen = !state.rawOpen; update.run(); });
         update.run();
         LayoutParams rawParams = new LayoutParams(-1, -2);
         rawParams.topMargin = ui.dp(8);
