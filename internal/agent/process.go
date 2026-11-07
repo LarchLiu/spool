@@ -318,9 +318,9 @@ func startAgentProcess(ctx context.Context, request AgentRequest) (*agentProcess
 		}
 	}
 	cmd := exec.CommandContext(ctx, request.Binary, args...)
+	cmd.Dir = request.WorkingDirectory
 	configureAgentCommand(cmd)
 	cmd.WaitDelay = agentExitGracePeriod
-	cmd.Dir = request.WorkingDirectory
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

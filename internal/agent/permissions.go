@@ -21,11 +21,11 @@ type permissionCacheEntry struct {
 func (r *CLIRunner) PermissionModes(ctx context.Context, backend chatmodel.Backend, directory string) (chatmodel.PermissionCatalog, error) {
 	binary, err := r.Binary(backend)
 	if err != nil {
-		return chatmodel.PermissionCatalog{}, err
+		return chatmodel.PermissionCatalog{}, fmt.Errorf("resolve %s executable: %w", backend.Label(), err)
 	}
 	directory, err = WorkingDirectory(directory)
 	if err != nil {
-		return chatmodel.PermissionCatalog{}, err
+		return chatmodel.PermissionCatalog{}, fmt.Errorf("resolve project directory: %w", err)
 	}
 	r.permissionMu.Lock()
 	defer r.permissionMu.Unlock()
@@ -51,13 +51,13 @@ func (r *CLIRunner) PermissionModes(ctx context.Context, backend chatmodel.Backe
 	}()
 	p, err := startAgentProcess(ctx, AgentRequest{Backend: backend, Binary: binary, WorkingDirectory: directory})
 	if err != nil {
-		return chatmodel.PermissionCatalog{}, err
+		return chatmodel.PermissionCatalog{}, fmt.Errorf("start permission discovery: %w", err)
 	}
 	defer func() { cancel(); <-p.done }()
 	catalog := chatmodel.PermissionCatalog{Backend: backend, Default: chatmodel.DefaultPermissionMode(backend)}
 	if backend == chatmodel.BackendClaude {
 		if _, err = p.claudeControl(ctx, map[string]any{"subtype": "initialize", "hooks": nil}); err != nil {
-			return catalog, err
+			return catalog, fmt.Errorf("initialize Claude permission discovery: %w", err)
 		}
 		for _, mode := range []string{"manual", "auto", "acceptEdits", "plan", "dontAsk", "bypassPermissions"} {
 			response, e := p.claudeControl(ctx, map[string]any{"subtype": "set_permission_mode", "mode": mode})
@@ -76,15 +76,15 @@ func (r *CLIRunner) PermissionModes(ctx context.Context, backend chatmodel.Backe
 		}
 	} else {
 		if err = p.initializeCodex(ctx); err != nil {
-			return catalog, err
+			return catalog, fmt.Errorf("initialize Codex permission discovery: %w", err)
 		}
 		config, e := p.codexRPC(ctx, "config/read", map[string]any{"includeLayers": false, "cwd": directory})
 		if e != nil {
-			return catalog, e
+			return catalog, fmt.Errorf("read Codex project configuration: %w", e)
 		}
 		requirements, e := p.codexRPC(ctx, "configRequirements/read", map[string]any{})
 		if e != nil {
-			return catalog, e
+			return catalog, fmt.Errorf("read Codex permission requirements: %w", e)
 		}
 		required, _ := requirements["requirements"].(map[string]any)
 		autoEnabled := false

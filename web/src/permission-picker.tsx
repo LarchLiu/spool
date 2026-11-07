@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, ShieldCheck, ShieldQuestion } from "lucide-react";
-import { api } from "./api";
+import { api, APIError } from "./api";
 import type { Backend, PermissionCatalog } from "./types";
 import type { MessageKey, Translator } from "./i18n";
 
@@ -55,19 +55,41 @@ export function usePermissionModes(
   useEffect(() => {
     if (!project || !enabled) return;
     let cancelled = false;
-    setResult({ key });
+    let attempt = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController;
     const params = new URLSearchParams({ project_id: project, backend });
     if (chatID) params.set("chat_id", chatID);
-    api<PermissionCatalog | null>(`/permissions?${params}`)
-      .then((catalog) => {
+    const load = async () => {
+      const request = new AbortController();
+      controller = request;
+      const timeout = setTimeout(() => request.abort(), 25_000);
+      setResult({ key });
+      try {
+        const catalog = await api<PermissionCatalog | null>(
+          `/permissions?${params}`,
+          undefined,
+          request.signal,
+        );
         if (!cancelled)
           setResult({ key, catalog: normalizeCatalog(catalog, backend) });
-      })
-      .catch(() => {
-        if (!cancelled) setResult({ key, failed: true });
-      });
+      } catch (error) {
+        if (cancelled) return;
+        setResult({ key, failed: true });
+        // Retry only this read. Message submission is never replayed.
+        if (!(error instanceof APIError) || error.status >= 500) {
+          const delay = [1_000, 3_000][attempt++];
+          if (delay !== undefined) retryTimer = setTimeout(load, delay);
+        }
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+    void load();
     return () => {
       cancelled = true;
+      controller.abort();
+      clearTimeout(retryTimer);
     };
   }, [key, enabled, revision]);
   const catalog = result.key === key ? result.catalog : undefined;
@@ -83,14 +105,48 @@ export function usePermissionModes(
     mode,
     loading: !catalog && !(result.key === key && result.failed),
     failed: result.key === key && !!result.failed,
-    ready: !!catalog?.modes?.some(
-      (item) => item.id === mode && item.available,
-    ),
+    ready: !!catalog?.modes?.some((item) => item.id === mode && item.available),
     choose: (mode: string) => setChoice({ key, mode }),
     adoptChat: (id: string) =>
       setChoice({ key: `${project}/${id}/${backend}`, mode }),
     retry: () => setRevision((v) => v + 1),
   };
+}
+
+export function PermissionStatus({
+  value,
+  t,
+  onChoose,
+}: {
+  value: ReturnType<typeof usePermissionModes>;
+  t: Translator;
+  onChoose: () => void;
+}) {
+  if (value.ready) return null;
+  return (
+    <div
+      className="connection permission-status"
+      role={value.loading ? "status" : "alert"}
+    >
+      {t(
+        value.loading
+          ? "Checking project permissions…"
+          : value.failed
+            ? "Permission discovery is unavailable"
+            : "Permission mode is unavailable for this project",
+      )}
+      {value.failed && (
+        <button type="button" onClick={value.retry}>
+          {t("Retry")}
+        </button>
+      )}
+      {!value.loading && !value.failed && (
+        <button type="button" onClick={onChoose}>
+          {t("Permissions")}
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function PermissionPicker({

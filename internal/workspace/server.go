@@ -621,7 +621,7 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 	if input.PermissionMode != "" {
 		catalog, err := a.permissionCatalog(r.Context(), chat)
 		if err != nil {
-			apiError(w, 503, "Permission discovery is unavailable")
+			permissionDiscoveryUnavailable(w)
 			return
 		}
 		if err := catalog.Validate(input.PermissionMode); err != nil {

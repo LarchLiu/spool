@@ -26,7 +26,7 @@ import {
   Plus,
   MessageCircle,
 } from "lucide-react";
-import { api, getCSRF, setCSRF } from "./api";
+import { api, APIError, getCSRF, setCSRF } from "./api";
 import {
   isDesktopChat,
   subscribeDesktopNotifications,
@@ -136,6 +136,7 @@ import {
   PermissionPicker,
   ApprovalCard,
   usePermissionModes,
+  PermissionStatus,
 } from "./permission-picker";
 import type { MessageKey } from "./i18n";
 import "./style.css";
@@ -1320,6 +1321,11 @@ function App() {
         setFiles(attached);
         restoredFiles = true;
         fail(e);
+        if (
+          e instanceof APIError &&
+          e.code === "permission_discovery_unavailable"
+        )
+          permissions.retry();
         if (!id) setChat(null);
         else
           api<Chat>("/chats/" + id)
@@ -1950,6 +1956,16 @@ function App() {
             <div className="error" role="alert">
               {error}
             </div>
+          )}
+          {composerWritable && selectedAvailable && !activeTurn && (
+            <PermissionStatus
+              value={permissions}
+              t={t}
+              onChoose={() => {
+                setPermissionOpen(true);
+                setPicker(false);
+              }}
+            />
           )}
           {commandNotice?.chatID === chatID &&
             commandNotice.project === project && (

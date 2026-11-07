@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
+	"spool/internal/i18n"
 	chatmodel "spool/internal/model"
 )
 
@@ -87,18 +89,27 @@ func readMessageInput(w http.ResponseWriter, r *http.Request) (messageInput, boo
 	return input, true
 }
 
-func (a *App) permissionCatalog(ctx context.Context, chat chatmodel.Session) (chatmodel.PermissionCatalog, error) {
+func (a *App) permissionCatalog(ctx context.Context, chat chatmodel.Session) (catalog chatmodel.PermissionCatalog, err error) {
+	stage := "session_directory"
+	defer func() {
+		if err != nil && ctx.Err() == nil {
+			// Native diagnostics belong in the service host's log, not in a
+			// remote response that could disclose local paths or configuration.
+			log.Printf("event=permission_discovery_failed backend=%s project_id=%q chat_id=%q stage=%s error=%q", chat.Backend, chat.ProjectID, chat.ID, stage, err)
+		}
+	}()
 	directory, err := a.store.sessionDirectory(chat)
 	if err != nil {
 		return chatmodel.PermissionCatalog{}, err
 	}
+	stage = "provider"
 	provider, ok := a.runner.(interface {
 		PermissionModes(context.Context, chatmodel.Backend, string) (chatmodel.PermissionCatalog, error)
 	})
 	if !ok {
 		return chatmodel.PermissionCatalog{}, fmt.Errorf("Permission discovery is unavailable")
 	}
-	catalog, err := provider.PermissionModes(ctx, chat.Backend, directory)
+	catalog, err = provider.PermissionModes(ctx, chat.Backend, directory)
 	if err != nil {
 		return chatmodel.PermissionCatalog{}, err
 	}
@@ -106,6 +117,13 @@ func (a *App) permissionCatalog(ctx context.Context, chat chatmodel.Session) (ch
 		catalog.Current = chat.PermissionMode
 	}
 	return catalog, nil
+}
+
+func permissionDiscoveryUnavailable(w http.ResponseWriter) {
+	apiJSON(w, http.StatusServiceUnavailable, map[string]string{
+		"error": i18n.Translate(w.Header().Get("Content-Language"), "Permission discovery is unavailable"),
+		"code":  "permission_discovery_unavailable",
+	})
 }
 
 func (a *App) permissionResponse(w http.ResponseWriter, r *http.Request, user string) {
@@ -134,7 +152,7 @@ func (a *App) permissionResponse(w http.ResponseWriter, r *http.Request, user st
 	}
 	catalog, err := a.permissionCatalog(r.Context(), chat)
 	if err != nil {
-		apiError(w, 503, "Permission discovery is unavailable")
+		permissionDiscoveryUnavailable(w)
 		return
 	}
 	apiJSON(w, 200, catalog)

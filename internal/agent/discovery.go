@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -30,7 +31,10 @@ func Version(ctx context.Context, binary string) (string, error) {
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 	if err := cmd.Run(); err != nil {
-		return "", err
+		if detail := strings.TrimSpace(buf.String()); detail != "" {
+			return "", fmt.Errorf("agent version probe: %w: %s", err, detail)
+		}
+		return "", fmt.Errorf("agent version probe: %w", err)
 	}
 	return strings.TrimSpace(buf.String()), nil
 }

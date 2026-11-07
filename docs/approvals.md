@@ -52,3 +52,37 @@ not copied into the audit summary. Timestamps follow the description inline.
 Protocol coverage uses installed Codex 0.166.0 and Claude Code 2.1.310 schemas.
 Tests use synthetic provider processes and isolated app data; no real inference
 or provider history is needed.
+
+## Permission discovery failures
+
+Spool checks the selected CLI's permissions in the chat's working directory
+before accepting a message. Being able to run Codex interactively does not prove
+that its app-server initialization and configuration RPCs succeed in that directory.
+`Permission discovery is unavailable` reports a failure of this check; by itself
+it does not identify a damaged Spool database.
+
+The Web client shows discovery failures beside the composer, retries transient
+failures at most twice, and keeps an explicit Retry button. A failed message keeps
+its draft and refreshes the permission catalog; the message itself is never retried
+automatically. An unavailable mode still requires choosing an available mode.
+
+On the service host, find `event=permission_discovery_failed` in the Spool log.
+`stage=session_directory` identifies a failure reading the chat's working-directory
+record; `stage=provider` identifies CLI discovery. The error distinguishes executable
+and directory resolution, process startup, initialization, `config/read`, and
+`configRequirements/read`. These details stay in the host log. Remote clients
+receive the localized message and `permission_discovery_unavailable` error code.
+
+On macOS and other Unix desktops, Spool appends the selected CLI's directory and
+existing standard agent installation directories to each agent child's `PATH`.
+This allows CLI launchers to find their runtime when the app was opened from
+Finder with a minimal environment. Existing `PATH` entries retain precedence;
+the parent environment and shell startup files are unchanged. Version-probe
+failures retain their native output alongside the exit code, so an exit status
+127 can identify the missing launcher dependency in the host log.
+
+For `env: node: No such file or directory`, compare `command -v node` in the
+working terminal with the desktop's environment. As a temporary recovery, fully
+quit Spool and launch it from that terminal with
+`open -a "Spool" --env "PATH=$PATH"`, then retry discovery in the client.
+This passes the terminal's PATH to that app launch without changing system settings.

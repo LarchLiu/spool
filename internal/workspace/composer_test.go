@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -273,6 +274,64 @@ func TestCodexAutoApprovalDiscoveryUsesNativeFeaturePagination(t *testing.T) {
 	catalog, err := runner.PermissionModes(context.Background(), chatmodel.BackendCodex, request.WorkingDirectory)
 	if err != nil || catalog.Validate("auto") != nil {
 		t.Fatalf("native auto review was hidden: %#v %v", catalog, err)
+	}
+}
+
+type failingPermissionRunner struct {
+	fakeRunner
+	permissionErr error
+}
+
+func (r *failingPermissionRunner) PermissionModes(ctx context.Context, backend chatmodel.Backend, directory string) (chatmodel.PermissionCatalog, error) {
+	if r.permissionErr != nil {
+		return chatmodel.PermissionCatalog{}, r.permissionErr
+	}
+	return r.fakeRunner.PermissionModes(ctx, backend, directory)
+}
+
+func TestPermissionDiscoveryFailureCanRecoverWithoutCreatingATurn(t *testing.T) {
+	s := testStore(t)
+	u := testUser(t, s, "alice")
+	p := testProject(t, s, u)
+	testAgent(t, s)
+	chat, _ := s.CreateChat(u.ID, p.ID, chatmodel.BackendCodex)
+	underlying := errors.New("initialize Codex permission discovery: private provider configuration diagnostic")
+	runner := &failingPermissionRunner{permissionErr: underlying}
+	a := NewApp(s, runner, "", "")
+	cookie, csrf := loginRequest(t, a, u.Username)
+	permissions := "/api/permissions?project_id=" + p.ID + "&backend=codex&chat_id=" + chat.ID
+	messages := "/api/chats/" + chat.ID + "/messages"
+	for _, request := range []struct{ method, path, body string }{
+		{"GET", permissions, ""},
+		{"POST", messages, `{"message":"Retry after discovery recovers","permission_mode":"ask"}`},
+	} {
+		w := apiRequest(a, request.method, request.path, request.body, cookie, csrf)
+		var response struct{ Error, Code string }
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != 503 || response.Code != "permission_discovery_unavailable" || response.Error != "Permission discovery is unavailable" {
+			t.Fatalf("discovery failure did not identify a retryable operation: %d %s", w.Code, w.Body.String())
+		}
+		if strings.Contains(w.Body.String(), underlying.Error()) {
+			t.Fatal("private provider diagnostic leaked to the remote client")
+		}
+	}
+	if saved, _ := s.Get(chat.ID); len(saved.Turns) != 0 || len(runner.requests) != 0 {
+		t.Fatal("failed permission discovery created or submitted a turn")
+	}
+	runner.permissionErr = nil
+	if w := apiRequest(a, "GET", permissions, "", cookie, csrf); w.Code != 200 {
+		t.Fatalf("discovery did not recover: %d %s", w.Code, w.Body.String())
+	}
+	if w := apiRequest(a, "POST", messages, `{"message":"Retry after discovery recovers","permission_mode":"ask"}`, cookie, csrf); w.Code != 202 {
+		t.Fatalf("manual retry did not recover: %d %s", w.Code, w.Body.String())
+	}
+	waitChat(t, s, chat.ID)
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if len(runner.requests) != 1 {
+		t.Fatalf("expected only the accepted turn, got %d", len(runner.requests))
 	}
 }
 
