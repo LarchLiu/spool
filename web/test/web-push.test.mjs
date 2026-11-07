@@ -21,6 +21,9 @@ function device({
   permission = "granted",
   existing = false,
   failSave = false,
+  failStatus = false,
+  failRefresh = false,
+  statusResponse = { subscribed: true },
 } = {}) {
   const calls = [];
   let current;
@@ -83,6 +86,10 @@ function device({
     calls.push([path, body, signal]);
     if (path === "/push/config") return { public_key: publicKey };
     if (path === "/push/subscribe" && failSave) throw new Error("save failed");
+    if (path === "/push/status" && failStatus) throw new Error("status failed");
+    if (path === "/push/status") return statusResponse;
+    if (path === "/push/refresh" && failRefresh)
+      throw new Error("refresh failed");
     return { subscribed: true };
   };
   const module = { exports: {} };
@@ -199,6 +206,32 @@ test("test and status operate on this browser's subscription only", async () => 
   );
   for (const call of d.calls)
     assert.equal(call[1].endpoint, d.subscription.endpoint);
+});
+
+test("refresh and status failures propagate so settings can distinguish an unknown state from disabled", async () => {
+  const status = device({ existing: true, failStatus: true });
+  await assert.rejects(status.push.pushEnabled(), /status failed/);
+  const refresh = device({ existing: true, failRefresh: true });
+  await assert.rejects(refresh.push.syncExistingPush("en"), /refresh failed/);
+  for (const statusResponse of [{}, null, { subscribed: "false" }]) {
+    const invalid = device({ existing: true, statusResponse });
+    await assert.rejects(
+      invalid.push.pushEnabled(),
+      /Could not check notification status/,
+    );
+  }
+});
+
+test("closing settings can abort both subscription recovery and the status request", async () => {
+  const d = device({ existing: true });
+  const controller = new AbortController();
+  await d.push.syncExistingPush("en", controller.signal);
+  await d.push.pushEnabled(controller.signal);
+  assert.equal(d.calls.length, 2);
+  for (const call of d.calls) assert.equal(call[2], controller.signal);
+  controller.abort();
+  await d.push.syncExistingPush("en", controller.signal);
+  assert.equal(d.calls.length, 2);
 });
 
 test("notification deep links accept native chat IDs but not paths or script fragments", () => {

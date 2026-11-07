@@ -614,6 +614,8 @@
   "Saved value not in current catalog: {value}": "已保存但当前列表不可用：{value}",
   "People & groups": "成员与群聊",
   "Push notifications": "推送通知",
+  "Checking notification status…": "正在检查通知状态…",
+  "Could not check notification status. Please retry.": "暂时无法确认通知状态，请重试。",
   "Notifications require HTTPS (or localhost for development).": "通知需要 HTTPS（本机开发可使用 localhost）。",
   "Push notifications are not supported in this browser. On iPhone or iPad, add Spool to the Home Screen first.": "此浏览器不支持推送通知。iPhone 或 iPad 请先将 Spool 添加到主屏幕。",
   "Notifications are blocked. Allow them in your browser or system settings.": "通知权限未开启，请在浏览器或系统设置中允许通知。",

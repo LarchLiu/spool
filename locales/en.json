@@ -614,6 +614,8 @@
   "Saved value not in current catalog: {value}": "Saved value not in current catalog: {value}",
   "People & groups": "People & groups",
   "Push notifications": "Push notifications",
+  "Checking notification status…": "Checking notification status…",
+  "Could not check notification status. Please retry.": "Could not check notification status. Please retry.",
   "Notifications require HTTPS (or localhost for development).": "Notifications require HTTPS (or localhost for development).",
   "Push notifications are not supported in this browser. On iPhone or iPad, add Spool to the Home Screen first.": "Push notifications are not supported in this browser. On iPhone or iPad, add Spool to the Home Screen first.",
   "Notifications are blocked. Allow them in your browser or system settings.": "Notifications are blocked. Allow them in your browser or system settings.",

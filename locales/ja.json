@@ -614,6 +614,8 @@
   "Saved value not in current catalog: {value}": "保存済みですが現在の一覧にありません：{value}",
   "People & groups": "メンバーとグループ",
   "Push notifications": "プッシュ通知",
+  "Checking notification status…": "通知の状態を確認しています…",
+  "Could not check notification status. Please retry.": "通知の状態を確認できませんでした。もう一度お試しください。",
   "Notifications require HTTPS (or localhost for development).": "通知には HTTPS が必要です（開発時は localhost も利用可能）。",
   "Push notifications are not supported in this browser. On iPhone or iPad, add Spool to the Home Screen first.": "このブラウザはプッシュ通知に対応していません。iPhone または iPad では先に Spool をホーム画面に追加してください。",
   "Notifications are blocked. Allow them in your browser or system settings.": "通知が許可されていません。ブラウザまたはシステムの設定で許可してください。",

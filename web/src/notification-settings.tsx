@@ -8,6 +8,7 @@ import {
   pushEnabled,
   PushError,
   pushSupport,
+  syncExistingPush,
   testPush,
 } from "./web-push";
 
@@ -18,30 +19,36 @@ export function NotificationSettings({
   t: Translator;
   language: Locale;
 }) {
-  const [enabled, setEnabled] = useState(false);
+  const [enabled, setEnabled] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(true);
+  const [attempt, setAttempt] = useState(0);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const support = pushSupport();
   useEffect(() => {
     let cancelled = false;
-    void pushEnabled()
+    const controller = new AbortController();
+    setBusy(true);
+    setEnabled(null);
+    setError("");
+    setNotice("");
+    void syncExistingPush(language, controller.signal)
+      .then(() => pushEnabled(controller.signal))
       .then((value) => {
         if (!cancelled) setEnabled(value);
       })
-      .catch((error: unknown) => {
+      .catch(() => {
         if (!cancelled)
-          setError(
-            error instanceof Error ? error.message : t("Request failed"),
-          );
+          setError(t("Could not check notification status. Please retry."));
       })
       .finally(() => {
         if (!cancelled) setBusy(false);
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, []);
+  }, [attempt, language]);
   async function run(action: "enable" | "disable" | "test") {
     if (busy) return;
     setBusy(true);
@@ -98,6 +105,19 @@ export function NotificationSettings({
               : "Push notifications are not supported in this browser. On iPhone or iPad, add Spool to the Home Screen first.",
           )}
         </p>
+      ) : enabled === null ? (
+        <div className="notification-actions">
+          {busy ? (
+            <p role="status">{t("Checking notification status…")}</p>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAttempt((value) => value + 1)}
+            >
+              {t("Retry")}
+            </button>
+          )}
+        </div>
       ) : (
         <div className="notification-actions">
           <button

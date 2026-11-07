@@ -56,7 +56,8 @@ export async function currentPushSubscription() {
   return registration?.pushManager.getSubscription() ?? null;
 }
 
-// Refresh an existing opt-in without reviving a disabled or signed-out device.
+// Rebind an existing opt-in after login expiry. The server only restores devices
+// still opted in for this account, so disabled and signed-out devices stay off.
 // Never request permission or create a subscription on page load.
 export async function syncExistingPush(language: Locale, signal?: AbortSignal) {
   if (pushSupport() !== "supported" || Notification.permission !== "granted")
@@ -70,12 +71,16 @@ export async function syncExistingPush(language: Locale, signal?: AbortSignal) {
   );
 }
 
-export async function pushEnabled() {
+export async function pushEnabled(signal?: AbortSignal) {
   const subscription = await currentPushSubscription();
   if (!subscription || Notification.permission !== "granted") return false;
-  const status = await api<{ subscribed: boolean }>("/push/status", {
-    endpoint: subscription.endpoint,
-  });
+  const status = await api<{ subscribed: boolean }>(
+    "/push/status",
+    { endpoint: subscription.endpoint },
+    signal,
+  );
+  if (typeof status?.subscribed !== "boolean")
+    throw new PushError("Could not check notification status. Please retry.");
   return status.subscribed;
 }
 

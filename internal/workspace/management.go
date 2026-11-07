@@ -219,6 +219,9 @@ func (s *Store) saveUserWithPasswordCost(v UserInput, passwordCost int) (User, e
 		}
 		_, err = tx.Exec(`UPDATE users SET username=?,nickname=?,password_hash=?,disabled=? WHERE id=?`, v.Username, v.Nickname, hash, v.Disabled, v.ID)
 		if err == nil {
+			_, err = tx.Exec(`DELETE FROM web_push_subscriptions WHERE user_id=?`, v.ID)
+		}
+		if err == nil {
 			_, err = tx.Exec(`DELETE FROM auth_sessions WHERE user_id=?`, v.ID)
 		}
 	}
@@ -246,6 +249,9 @@ func (s *Store) DeleteUser(id string) error {
 	}
 	defer tx.Rollback()
 	if _, err = tx.Exec(`UPDATE users SET disabled=1 WHERE id=?`, id); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`DELETE FROM web_push_subscriptions WHERE user_id=?`, id); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(`DELETE FROM auth_sessions WHERE user_id=?`, id); err != nil {

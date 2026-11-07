@@ -134,6 +134,83 @@ async function runPushBrowserSmoke(otherChat, width, owner, peer, group) {
       "test push accepted",
     );
   }
+  // A failed refresh/status query must leave the state unknown. Retry should
+  // recover the existing opt-in without asking the user to enable it again.
+  const originalFetch = window.fetch;
+  const pushRequests = [];
+  let failingPath = "";
+  let finishFailure;
+  window.fetch = (input, options) => {
+    const path = new URL(
+      typeof input === "string" ? input : input.url,
+      location.href,
+    ).pathname;
+    if (path.startsWith("/api/push/")) pushRequests.push(path);
+    if (path === failingPath)
+      return new Promise((resolve) => {
+        finishFailure = () => resolve(new Response("{}", { status: 503 }));
+      });
+    return originalFetch(input, options);
+  };
+  try {
+    for (const path of ["/api/push/status", "/api/push/refresh"]) {
+      document
+        .querySelector(".appearance-dialog [aria-label='Close settings']")
+        .click();
+      await wait(
+        () => !document.querySelector(".appearance-dialog"),
+        "settings closed before retry probe",
+      );
+      failingPath = path;
+      finishFailure = undefined;
+      document.querySelector("[aria-label='Appearance and language']").click();
+      await wait(() => finishFailure, "pending notification state query");
+      if (
+        document
+          .querySelector(".notification-settings")
+          ?.getAttribute("aria-busy") !== "true" ||
+        !document.querySelector(".notification-settings [role='status']") ||
+        button("Enable notifications") ||
+        button("Disable notifications")
+      )
+        throw new Error(
+          "Pending notification query was shown as a known state",
+        );
+      finishFailure();
+      await wait(
+        () =>
+          document
+            .querySelector(".notification-settings")
+            ?.getAttribute("aria-busy") === "false" && button("Retry"),
+        "unknown notification state",
+      );
+      if (
+        button("Enable notifications") ||
+        button("Disable notifications") ||
+        button("Send test notification") ||
+        document.querySelector(".notification-settings [role='alert']")
+          ?.textContent !== "Could not check notification status. Please retry."
+      )
+        throw new Error("Failed notification query was shown as disabled");
+      failingPath = "";
+      button("Retry").click();
+      await wait(
+        () =>
+          button("Disable notifications") &&
+          !button("Disable notifications").disabled,
+        "retry restored enabled state",
+      );
+    }
+    if (
+      pushRequests.some(
+        (path) =>
+          path === "/api/push/subscribe" || path === "/api/push/unsubscribe",
+      )
+    )
+      throw new Error("Retry changed the device opt-in");
+  } finally {
+    window.fetch = originalFetch;
+  }
   const dialog = document.querySelector(".appearance-dialog");
   const bounds = dialog.getBoundingClientRect();
   if (

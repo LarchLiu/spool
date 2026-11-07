@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS turn_actors(session_id TEXT NOT NULL REFERENCES sessi
 CREATE TABLE IF NOT EXISTS turn_actions(session_id TEXT NOT NULL,turn_id TEXT NOT NULL,id TEXT NOT NULL,kind TEXT NOT NULL,user_id TEXT NOT NULL REFERENCES users(id),approval_id TEXT NOT NULL DEFAULT '',summary TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,PRIMARY KEY(session_id,id),UNIQUE(session_id,turn_id,kind,approval_id),FOREIGN KEY(session_id,turn_id) REFERENCES turn_actors(session_id,turn_id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS auth_sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),csrf TEXT NOT NULL,expires_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS web_push_keys(id INTEGER PRIMARY KEY CHECK(id=1),public_key TEXT NOT NULL,private_key TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS web_push_subscriptions(endpoint TEXT PRIMARY KEY,token_hash TEXT NOT NULL REFERENCES auth_sessions(token_hash) ON DELETE CASCADE,p256dh TEXT NOT NULL,auth TEXT NOT NULL,language TEXT NOT NULL,updated_at INTEGER NOT NULL,last_test_at INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS web_push_subscriptions(endpoint TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),token_hash TEXT REFERENCES auth_sessions(token_hash) ON DELETE SET NULL,p256dh TEXT NOT NULL,auth TEXT NOT NULL,language TEXT NOT NULL,updated_at INTEGER NOT NULL,last_test_at INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS web_push_session ON web_push_subscriptions(token_hash);
 `
 
@@ -115,6 +115,9 @@ func OpenStore(root string) (*Store, error) {
 	}
 	if err = migrateTurnActorSchema(db); err != nil {
 		return fail(fmt.Errorf("migrate turn actors: %w", err))
+	}
+	if err = migrateWebPushSchema(db); err != nil {
+		return fail(fmt.Errorf("migrate web push: %w", err))
 	}
 	// Retain every known Spool origin, even after a chat adopts another ID.
 	if _, err = db.Exec(`INSERT OR IGNORE INTO spool_native_sessions SELECT backend,native_session_id FROM sessions WHERE native_session_id<>'' AND NOT EXISTS(SELECT 1 FROM local_sessions WHERE session_id=sessions.id);

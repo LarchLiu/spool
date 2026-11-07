@@ -261,7 +261,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		}
 		apiJSON(w, 200, navigation)
 	case path == "/api/logout" && r.Method == "POST":
-		if _, err = a.store.db.Exec(`DELETE FROM auth_sessions WHERE token_hash=?`, id.TokenHash); err != nil {
+		if err = a.store.logout(id.TokenHash); err != nil {
 			apiError(w, 500, "退出失败")
 			return
 		}

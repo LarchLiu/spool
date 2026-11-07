@@ -77,6 +77,23 @@ func (s *Store) login(username, password string) (string, authIdentity, error) {
 	identity, err := s.authenticate(token)
 	return token, identity, err
 }
+
+func (s *Store) logout(tokenHash string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// Explicit sign-out revokes the device opt-in; natural expiry only pauses it.
+	if _, err := tx.Exec(`DELETE FROM web_push_subscriptions WHERE token_hash=?`, tokenHash); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM auth_sessions WHERE token_hash=?`, tokenHash); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (a *App) identity(r *http.Request) (authIdentity, error) {
 	c, err := r.Cookie(authCookie)
 	if err != nil || len(c.Value) > 128 {

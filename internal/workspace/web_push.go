@@ -168,7 +168,7 @@ func (a *App) pushRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		a.store.mu.Lock()
 		defer a.store.mu.Unlock()
 		var count int
-		err := a.store.db.QueryRow(`SELECT count(*) FROM web_push_subscriptions p JOIN auth_sessions a ON a.token_hash=p.token_hash WHERE a.user_id=? AND p.endpoint<>?`, id.User.ID, input.Subscription.Endpoint).Scan(&count)
+		err := a.store.db.QueryRow(`SELECT count(*) FROM web_push_subscriptions WHERE user_id=? AND endpoint<>?`, id.User.ID, input.Subscription.Endpoint).Scan(&count)
 		if err != nil {
 			apiError(w, 500, "Could not save push subscription")
 			return
@@ -177,7 +177,7 @@ func (a *App) pushRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 			apiError(w, 409, "Too many notification devices")
 			return
 		}
-		_, err = a.store.db.Exec(`INSERT INTO web_push_subscriptions(endpoint,token_hash,p256dh,auth,language,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET token_hash=excluded.token_hash,p256dh=excluded.p256dh,auth=excluded.auth,language=excluded.language,updated_at=excluded.updated_at`, input.Subscription.Endpoint, id.TokenHash, input.Subscription.Keys.P256dh, input.Subscription.Keys.Auth, input.Language, time.Now().UnixMilli())
+		_, err = a.store.db.Exec(`INSERT INTO web_push_subscriptions(endpoint,user_id,token_hash,p256dh,auth,language,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id,token_hash=excluded.token_hash,p256dh=excluded.p256dh,auth=excluded.auth,language=excluded.language,updated_at=excluded.updated_at`, input.Subscription.Endpoint, id.User.ID, id.TokenHash, input.Subscription.Keys.P256dh, input.Subscription.Keys.Auth, input.Language, time.Now().UnixMilli())
 		if err != nil {
 			apiError(w, 500, "Could not save push subscription")
 			return
@@ -205,7 +205,7 @@ func (a *App) pushRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 			apiError(w, 400, "Invalid push subscription")
 			return
 		}
-		if _, err := a.store.db.Exec(`UPDATE web_push_subscriptions SET language=?,updated_at=? WHERE endpoint=? AND token_hash=?`, input.Language, time.Now().UnixMilli(), input.Endpoint, id.TokenHash); err != nil {
+		if _, err := a.store.db.Exec(`UPDATE web_push_subscriptions SET token_hash=?,language=?,updated_at=? WHERE endpoint=? AND user_id=?`, id.TokenHash, input.Language, time.Now().UnixMilli(), input.Endpoint, id.User.ID); err != nil {
 			apiError(w, 500, "Could not save push subscription")
 			return
 		}
@@ -213,7 +213,7 @@ func (a *App) pushRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		return
 	}
 	if path == "/api/push/unsubscribe" {
-		if _, err := a.store.db.Exec(`DELETE FROM web_push_subscriptions WHERE endpoint=? AND token_hash=?`, input.Endpoint, id.TokenHash); err != nil {
+		if _, err := a.store.db.Exec(`DELETE FROM web_push_subscriptions WHERE endpoint=? AND user_id=?`, input.Endpoint, id.User.ID); err != nil {
 			apiError(w, 500, "Could not save push subscription")
 			return
 		}
@@ -222,7 +222,7 @@ func (a *App) pushRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 	}
 	var sub pushSubscription
 	sub.Endpoint, sub.token, sub.user = input.Endpoint, id.TokenHash, id.User.ID
-	err := a.store.db.QueryRow(`SELECT p256dh,auth,language FROM web_push_subscriptions WHERE endpoint=? AND token_hash=?`, input.Endpoint, id.TokenHash).Scan(&sub.Keys.P256dh, &sub.Keys.Auth, &sub.language)
+	err := a.store.db.QueryRow(`SELECT p256dh,auth,language FROM web_push_subscriptions WHERE endpoint=? AND token_hash=? AND user_id=?`, input.Endpoint, id.TokenHash, id.User.ID).Scan(&sub.Keys.P256dh, &sub.Keys.Auth, &sub.language)
 	if path == "/api/push/status" {
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			apiError(w, 500, "Could not save push subscription")
@@ -328,7 +328,7 @@ func (a *App) deliverPushJob(ctx context.Context, job pushJob) {
 	if ctx.Err() != nil || (!job.queuedAt.IsZero() && time.Since(job.queuedAt) > 5*time.Minute) || !a.pushJobCurrent(job) {
 		return
 	}
-	query := `SELECT ps.endpoint,ps.token_hash,ps.p256dh,ps.auth,ps.language,au.user_id FROM web_push_subscriptions ps JOIN auth_sessions au ON au.token_hash=ps.token_hash JOIN users u ON u.id=au.user_id `
+	query := `SELECT ps.endpoint,ps.token_hash,ps.p256dh,ps.auth,ps.language,au.user_id FROM web_push_subscriptions ps JOIN auth_sessions au ON au.token_hash=ps.token_hash AND au.user_id=ps.user_id JOIN users u ON u.id=au.user_id `
 	var args []any
 	if job.isMessage() {
 		if len(job.recipients) == 0 {
@@ -443,7 +443,7 @@ func (a *App) pushNotificationText(language string, job pushJob) (string, string
 
 func (a *App) sendPush(ctx context.Context, sub pushSubscription, job pushJob) error {
 	var active bool
-	err := a.store.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM web_push_subscriptions p JOIN auth_sessions a ON a.token_hash=p.token_hash JOIN users u ON u.id=a.user_id WHERE p.endpoint=? AND p.token_hash=? AND a.expires_at>? AND u.disabled=0)`, sub.Endpoint, sub.token, time.Now().UnixMilli()).Scan(&active)
+	err := a.store.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM web_push_subscriptions p JOIN auth_sessions a ON a.token_hash=p.token_hash AND a.user_id=p.user_id JOIN users u ON u.id=a.user_id WHERE p.endpoint=? AND p.token_hash=? AND p.user_id=? AND a.expires_at>? AND u.disabled=0)`, sub.Endpoint, sub.token, sub.user, time.Now().UnixMilli()).Scan(&active)
 	if err != nil || !active {
 		return err
 	}
