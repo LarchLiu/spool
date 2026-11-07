@@ -53,6 +53,66 @@ public class MainActivityConnectionTest {
         assertNull(h.get("password"));
     }
 
+    private void health(MainActivityGoalTest.Harness h, String problem, boolean available) {
+        ConnectionRecovery.Snapshot value = new ConnectionRecovery.Snapshot("Running",
+                problem.isEmpty() ? "Verified" : "Failed", problem, "", problem.isEmpty() ? "" : "Fixture failure");
+        ReflectionHelpers.callInstanceMethod(h.activity, "acceptConnectionHealth",
+                ReflectionHelpers.ClassParameter.from(Client.class, h.get("client")),
+                ReflectionHelpers.ClassParameter.from(int.class, h.<Integer>get("generation")),
+                ReflectionHelpers.ClassParameter.from(ConnectionRecovery.Snapshot.class, value),
+                ReflectionHelpers.ClassParameter.from(boolean.class, available));
+    }
+
+    @Test public void healthLossAndRecoveryRetainTheActualWorkspaceDraftAndSessionWithoutReplayingWrites() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            h.set("connected", true);
+            h.composer().input.setText("Draft waiting for network");
+            NativeUi.Composer composer = h.composer();
+            View header = h.get("workspaceHeader");
+            JSONObject user = h.get("user"), chat = h.get("chat");
+            Client client = h.get("client");
+            int generation = h.get("generation"), session = h.get("authEpoch");
+            health(h, "network", true); assertTrue(h.<Boolean>get("connected"));
+            health(h, "network", false); assertFalse(h.<Boolean>get("connected"));
+            assertTrue(h.<Boolean>get("connecting")); assertEquals("Failed", h.<String>get("httpsState"));
+            assertSame(user, h.get("user")); assertSame(chat, h.get("chat"));
+            assertSame(header, h.get("workspaceHeader")); assertSame(composer, h.composer());
+            assertEquals("Draft waiting for network", h.composer().input.getText().toString());
+            assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty()); assertTrue(h.io.jobs.isEmpty());
+            health(h, "", true);
+            assertTrue(h.<Boolean>get("connected")); assertFalse(h.<Boolean>get("connecting"));
+            assertEquals("Verified", h.<String>get("httpsState")); assertEquals("", h.<String>get("connectionMessage"));
+            assertSame(client, h.get("client")); assertSame(user, h.get("user")); assertSame(chat, h.get("chat"));
+            assertEquals(generation, h.<Integer>get("generation").intValue());
+            assertEquals(session, h.<Integer>get("authEpoch").intValue());
+            assertEquals("chat-one", h.<String>get("chatID")); assertEquals("test-csrf", h.<String>get("csrf"));
+            assertSame(composer, h.composer()); assertEquals("Draft waiting for network", composer.input.getText().toString());
+            assertEquals(1, MainActivityGoalTest.ShadowClient.chatSubscriptions.size());
+            assertTrue(MainActivityGoalTest.ShadowClient.calls.stream().noneMatch(call -> call.get(0).equals("POST")));
+            int reads = h.io.jobs.size(), streams = MainActivityGoalTest.ShadowClient.chatSubscriptions.size();
+            health(h, "", true); // Healthy sampling must not repeatedly reopen streams or reload data.
+            assertEquals(reads, h.io.jobs.size()); assertEquals(streams, MainActivityGoalTest.ShadowClient.chatSubscriptions.size());
+        }
+    }
+
+    @Test public void repeatedHealthySamplesSerializeSessionRestoreAndRetryOnlyTheRead() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(false)) {
+            waiting(h);
+            health(h, "", true); health(h, "", true);
+            assertEquals(1, h.io.jobs.size());
+            response(503, "{error:'Server unavailable'}"); h.io.run();
+            assertTrue(h.<Boolean>get("restoringSession")); assertFalse(h.<Boolean>get("sessionCheckBusy"));
+            health(h, "", true); health(h, "", true);
+            assertEquals(1, h.io.jobs.size());
+            response(401, "{error:'Sign in required'}"); h.io.run();
+            assertFalse(h.<Boolean>get("restoringSession")); assertNotNull(h.get("username"));
+            assertEquals(2, MainActivityGoalTest.ShadowClient.calls.size());
+            for (java.util.List<String> call : MainActivityGoalTest.ShadowClient.calls) {
+                assertEquals("GET", call.get(0)); assertEquals("/api/me", call.get(1));
+            }
+        }
+    }
+
     private void layout(View view, int width, int height) {
         view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));

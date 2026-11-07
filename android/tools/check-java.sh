@@ -101,6 +101,7 @@ if [ "$(uname -s)" = Darwin ]; then HOST_SUFFIX=dylib; fi
 "$JAVA" -Dspool.syntax.library="$ROOT/build/android/syntax/host/libspool-textmate.$HOST_SUFFIX" -cp "$TMPDIR/classes:$CP:$ROOT/android/app/src/test/resources" \
     org.junit.runner.JUnitCore com.cloudgeek.spool.android.OriginPolicyTest \
     com.cloudgeek.spool.android.ConnectionMonitorTest \
+    com.cloudgeek.spool.android.ConnectionRecoveryTest \
     com.cloudgeek.spool.android.NativeChatRefreshTest \
     com.cloudgeek.spool.android.NativeChatEventsTest \
     com.cloudgeek.spool.android.NativeChatEventsOracleTest \

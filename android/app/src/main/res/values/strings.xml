@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="app_name">Spool</string>
-    <string name="connection_note">The selected server’s node path is probed in the foreground; the next probe starts 5 seconds after each result. A node response does not guarantee HTTPS or Spool access. Unknown results never imply a direct or relayed connection.</string>
+    <string name="connection_note">HTTPS is checked while the app is in the foreground and recovers automatically after network failures. Persistent network failures trigger a node reconnect. Sign-in, device approval, certificate and server errors are shown separately. Node-path diagnostics refresh 5 seconds after each result while Settings is open.</string>
     <string name="connection_summary">Tailnet: %1$s\nNode path: %2$s\nRound-trip time: %3$s\nTarget node: %4$s\nHTTPS: %5$s\nSampled: %6$s%7$s</string>
 </resources>

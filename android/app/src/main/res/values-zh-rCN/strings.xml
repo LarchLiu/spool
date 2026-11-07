@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="app_name">Spool</string>
-    <string name="connection_note">仅探测所选服务器的节点路径，每次结果返回 5 秒后再次探测，退到后台时暂停。节点可达不代表 HTTPS 或 Spool 有访问权限；无法确认时不会猜测为直连或中继。</string>
+    <string name="connection_note">应用在前台时持续检查 HTTPS，网络故障后自动恢复，持续异常时重连节点。登录、设备审批、证书和服务端错误会单独显示。设置打开时，每次节点路径探测结果返回 5 秒后再次探测。</string>
     <string name="connection_summary">Tailnet：%1$s\n节点路径：%2$s\n往返延迟：%3$s\n目标节点：%4$s\nHTTPS：%5$s\n采样时间：%6$s%7$s</string>
 </resources>

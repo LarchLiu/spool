@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Spool</string>
-    <string name="connection_note">選択したサーバーのノード経路をフォアグラウンドで確認します。各結果の5秒後に再確認します。ノードの応答はHTTPSやSpoolへのアクセスを保証しません。確認できない結果から直接接続や中継接続を推測することはありません。</string>
+    <string name="connection_note">アプリがフォアグラウンドにある間はHTTPSを確認し、ネットワーク障害から自動復旧します。障害が続く場合はノードを再接続します。ログイン、デバイス承認、証明書、サーバーのエラーは個別に表示します。設定を開いている間は各結果の5秒後にノード経路を再確認します。</string>
     <string name="connection_summary">Tailnet：%1$s\nノード経路：%2$s\n往復遅延：%3$s\n対象ノード：%4$s\nHTTPS：%5$s\n測定時刻：%6$s%7$s</string>
 </resources>

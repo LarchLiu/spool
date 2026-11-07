@@ -13,6 +13,17 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 final class NetworkSnapshot {
+    static boolean online(ConnectivityManager connectivity) {
+        for (Network network : connectivity.getAllNetworks()) {
+            NetworkCapabilities capabilities = connectivity.getNetworkCapabilities(network);
+            LinkProperties properties = connectivity.getLinkProperties(network);
+            if (capabilities != null && properties != null && !properties.getLinkAddresses().isEmpty()
+                    && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    && !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return true;
+        }
+        return false;
+    }
+
     static String read(ConnectivityManager connectivity) throws Exception {
         JSONArray result = new JSONArray();
         Set<String> seen = new HashSet<>();

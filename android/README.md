@@ -68,9 +68,15 @@ is no system DNS or system TCP fallback, including when an Android VPN supplies
 Fake-IP DNS answers or the peer disappears during connection setup.
 
 The native layer publishes Android ConnectivityManager interface snapshots to
-Go before starting tsnet and on network changes, avoiding restricted Android
+Go before starting tsnet and on network changes, then wakes tsnet's network
+monitor so the engine can rebind/reprobe after link changes, avoiding restricted Android
 netlink enumeration. Tailscale enrollment uses its official external browser
 login, separately from Spool's username/password login.
+
+A separate foreground supervisor checks backend state and the exact-origin
+HTTPS `/healthz` endpoint even when Settings is closed. It recovers connectivity
+without discarding the selected chat, draft, node identity or Spool cookie. See
+the health/recovery policy under Diagnostics And Scope below.
 
 ## Shared Native Components
 
@@ -2057,15 +2063,36 @@ of relayed traffic. Unknown targets and failed samples never imply a path or
 latency. Diagnostics pause outside Settings/in the background. Node reachability
 is independent of HTTPS, project authorization and Spool authentication.
 
-The initial HTTPS `/healthz` GET retries transient connection errors (including
-EOF, connection reset/refused, timeouts and HTTP 502/503/504) at most three times
-total, with 1- and 2-second backoffs and an overall 60-second limit. Individual
-attempts are limited to 20 seconds. Invalid certificates, redirects, authorization
-failures and non-transient health format errors fail immediately; authenticated mutations
-are never replayed. HTTPS errors identify the failing request phase. Checks run
-separately from interface updates and node shutdown, so a slow check cannot block
-network-change delivery or disconnect cancellation. Exhausted retries still fail
-closed and require an explicit reconnect.
+The foreground `ConnectionRecovery` supervisor samples backend state (3-second
+limit) and performs one exact-origin HTTPS `/healthz` GET (8-second limit).
+Healthy samples repeat 15 seconds after completion. Failures use 2/4/8/16/30-second
+backoff; API transport errors can advance a healthy timer, and network changes
+or returning to the foreground cause an immediate check. There is only one
+health/recovery operation in flight. Backgrounding, disconnecting and selecting
+another server revoke stale results and queued recovery work. With no usable
+underlying non-VPN network, checks/resets wait for the network to return.
+
+A missing peer/path sample does not establish a disconnect. HTTPS success is
+authoritative even when local status is temporarily unavailable. A single
+transient HTTPS/status failure marks the sample as failed but does not discard
+previous availability. Two consecutive failures mark it unavailable and request
+a network refresh. At least three consecutive network/backend failures spanning
+30 seconds trigger a bounded `WantRunning=false/true` cycle on the existing
+embedded node; subsequent resets have 60/120/240/300-second cooldowns. Only a
+successful health sample establishes recovery. The existing SSE/WebSocket retry
+policies resume live data without replaying writes or clearing the workspace.
+
+NeedsLogin requests the official interactive login once per login episode and
+polls for completion; NeedsMachineAuth waits for approval. Certificate/hostname,
+redirect and malformed health errors remain explicit endpoint failures. HTTPS
+502/503/504 and TCP connection refusal are treated as server availability
+problems: health is retried, but the embedded node is not reset for those errors.
+API 401 still expires only the Spool session. Interface updates, disconnect and
+node shutdown use a separate worker from HTTPS checks, so a slow check cannot
+block network-change delivery or disconnect cancellation. Authenticated mutations
+and unacknowledged sends are never automatically replayed. The older Go `Probe`
+entry point retains its bounded three-attempt behavior for explicit callers;
+Android's supervisor uses the single-attempt `Health` entry point.
 
 The native client currently includes the primary workspace, people messaging,
 text/Markdown and image/file-preview flows. It is not an embedded browser: complex

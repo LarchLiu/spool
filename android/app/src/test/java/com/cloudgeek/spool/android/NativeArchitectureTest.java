@@ -71,23 +71,23 @@ public class NativeArchitectureTest {
         assertTrue(settings.contains("this::closeSettings"));
     }
 
-    @Test public void httpsRetriesDoNotBlockInterfaceUpdatesOrDisconnectAndDropStaleResults() throws Exception {
+    @Test public void healthRecoveryDoesNotBlockInterfaceUpdatesOrDisconnectAndDropsStaleResults() throws Exception {
         String activity = source();
-        String poll = activity.substring(activity.indexOf("private void pollStatus("), activity.indexOf("private void probeHTTPS("));
-        assertFalse(poll.contains("captured.probe()"));
-        assertTrue(poll.contains("post(token, () -> probeHTTPS(token, captured))"));
-        String probe = activity.substring(activity.indexOf("private void probeHTTPS("), activity.indexOf("private void restoreSession("));
-        assertTrue(probe.contains("httpsWorker.execute("));
-        assertTrue(probe.contains("generation != token || destroyed"));
-        assertTrue(probe.contains("post(token,"));
-        assertTrue(probe.contains("connectionMessage = \"\""));
+        assertTrue(activity.contains("new ConnectionRecovery(httpsWorker,"));
+        String probe = activity.substring(activity.indexOf("private void watchConnection("), activity.indexOf("private void restoreSession("));
+        assertTrue(probe.contains("captured.health()"));
+        assertTrue(probe.contains("generation != token || client != captured"));
+        assertTrue(probe.contains("captured.reconnect()"));
+        assertFalse(probe.contains("clearWorkspace()"));
         String interfaces = activity.substring(activity.indexOf("private void publishInterfaces()"), activity.indexOf("private void connect("));
         assertTrue(interfaces.contains("connectionWorker.execute("));
+        assertTrue(interfaces.contains("captured.networkChanged()"));
         assertFalse(interfaces.contains("httpsWorker"));
         String disconnect = activity.substring(activity.indexOf("private void disconnect()"), activity.indexOf("private void clearWorkspace()"));
         assertTrue(disconnect.contains("++generation"));
         assertTrue(disconnect.contains("connectionWorker.execute("));
         assertTrue(disconnect.contains("captured.close()"));
+        assertTrue(disconnect.contains("recovery.stop()"));
         assertTrue(activity.contains("httpsWorker.shutdown()"));
     }
 

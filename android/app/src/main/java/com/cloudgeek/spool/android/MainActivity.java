@@ -93,6 +93,17 @@ public final class MainActivity extends Activity {
                             main.removeCallbacks(r);
                         }
                     });
+    private final ConnectionRecovery recovery = new ConnectionRecovery(httpsWorker, new ConnectionRecovery.Scheduler() {
+        public void post(Runnable task) { main.post(task); }
+        public void postDelayed(Runnable task, long millis) { main.postDelayed(task, millis); }
+        public void remove(Runnable task) { main.removeCallbacks(task); }
+        public long now() { return android.os.SystemClock.elapsedRealtime(); }
+    });
+    private boolean sessionCheckBusy;
+    private int sessionCheckGeneration, sessionCheckAuth;
+    private boolean connectionWanted;
+    private int connectionStartAttempts;
+    private final Runnable connectionRetry = this::retryConnectionStart;
     private volatile int generation;
     private volatile boolean destroyed;
     private volatile int authEpoch;
@@ -232,15 +243,18 @@ public final class MainActivity extends Activity {
                 new ConnectivityManager.NetworkCallback() {
                     public void onAvailable(Network network) {
                         publishInterfaces();
+                        recovery.checkNow();
                         resumeWorkspace();
                     }
 
                     public void onLost(Network network) {
                         publishInterfaces();
+                        recovery.checkNow();
                     }
 
                     public void onLinkPropertiesChanged(Network network, LinkProperties p) {
                         publishInterfaces();
+                        recovery.checkNow();
                     }
                 };
         connectivity.registerDefaultNetworkCallback(networkCallback, main);
@@ -392,13 +406,19 @@ public final class MainActivity extends Activity {
             throws Exception {
         if (captured == null)
             throw new IOException(tr("Configure a server in Settings first.", "请先在设置中配置服务器。"));
-        return decodeResponse(
-                captured.request(
+        final String raw;
+        try {
+            raw = captured.request(
                         body == null ? "GET" : "POST",
                         "/api" + path,
                         body == null ? "" : body.toString(),
                         auth,
-                        loc));
+                        loc);
+        } catch (Exception error) {
+            main.post(() -> { if (!destroyed && client == captured) recovery.suspect(); });
+            throw error;
+        }
+        return decodeResponse(raw);
     }
 
     private void api(String path, JSONObject body, Result done) {
@@ -641,6 +661,8 @@ public final class MainActivity extends Activity {
                 () -> {
                     try {
                         Spoolnet.updateInterfaces(NetworkSnapshot.read(connectivity));
+                        Client captured = client;
+                        if (captured != null) captured.networkChanged();
                     } catch (Exception ignored) {
                         /* A later network callback retries. */
                     }
@@ -658,6 +680,9 @@ public final class MainActivity extends Activity {
             return;
         }
         origin = policy.origin;
+        connectionWanted = true;
+        main.removeCallbacks(connectionRetry);
+        sessionCheckBusy = false;
         getPreferences(MODE_PRIVATE).edit().putString("serverOrigin", origin).apply();
         final int token = ++generation;
         final Client old = client;
@@ -668,6 +693,7 @@ public final class MainActivity extends Activity {
         connectionMessage = "";
         connectionInfo = null;
         monitor.stop();
+        recovery.stop();
         if (user == null) {
             restoringSession = true;
             render();
@@ -695,6 +721,7 @@ public final class MainActivity extends Activity {
                                         return;
                                     }
                                     client = next;
+                                    connectionStartAttempts = 0;
                                     monitor.start(
                                             next::connectionInfo,
                                             snapshot -> {
@@ -709,75 +736,70 @@ public final class MainActivity extends Activity {
                                                 }
                                                 updateConnectionSettings();
                                             });
-                                    pollStatus(token, next, false);
+                                    watchConnection(token, next);
                                 });
                     } catch (Exception e) {
-                        post(token, () -> connectionFailed(e));
+                        post(token, () -> {
+                            connectionFailed(e);
+                            if (foreground && connectionWanted) main.postDelayed(connectionRetry,
+                                    Math.min(30000, 2000L << Math.min(4, connectionStartAttempts++)));
+                        });
                     }
                 });
     }
 
-    private void pollStatus(int token, Client captured, boolean requestedLogin) {
-        if (generation != token || destroyed) return;
-        connectionWorker.execute(
-                () -> {
-                    if (generation != token || destroyed) return;
-                    try {
-                        JSONObject value = new JSONObject(captured.status());
-                        String state = value.optString("state", "Unknown"),
-                                url = value.optString("authURL");
-                        post(
-                                token,
-                                () -> {
-                                    tailnetState = state;
-                                    authURL = url;
-                                    updateConnectionSettings();
-                                });
-                        boolean nextRequested = requestedLogin;
-                        if (state.equals("NeedsLogin") && !requestedLogin) {
-                            captured.login();
-                            nextRequested = true;
-                        }
-                        if (state.equals("Running")) {
-                            post(token, () -> probeHTTPS(token, captured));
-                            return;
-                        }
-                        final boolean again = nextRequested;
-                        post(
-                                token,
-                                () ->
-                                        main.postDelayed(
-                                                () -> pollStatus(token, captured, again), 1500));
-                    } catch (Exception e) {
-                        post(token, () -> connectionFailed(e));
-                    }
-                });
+    private void retryConnectionStart() {
+        if (foreground && connectionWanted && !destroyed && client == null && !connecting) connect(origin);
     }
 
-    private void probeHTTPS(int token, Client captured) {
-        httpsState = "Checking";
-        updateConnectionSettings();
-        // Network updates and disconnect/Close must not queue behind probe retries.
-        httpsWorker.execute(() -> {
-            if (generation != token || destroyed) return;
-            try {
-                captured.probe();
-                post(token, () -> {
-                    connected = true;
-                    connecting = false;
-                    httpsState = "Verified";
-                    connectionMessage = "";
-                    updateConnectionSettings();
-                    restoreSession(captured, token);
-                });
-            } catch (Exception e) {
-                post(token, () -> connectionFailed(e));
+    private void watchConnection(int token, Client captured) {
+        recovery.start(new ConnectionRecovery.Source() {
+            public boolean online() { return NetworkSnapshot.online(connectivity); }
+            public ConnectionRecovery.Snapshot check() throws Exception {
+                JSONObject value = new JSONObject(captured.health());
+                return new ConnectionRecovery.Snapshot(value.optString("state", "Unknown"),
+                        value.optString("https", "Not checked"), value.optString("problem"),
+                        value.optString("authURL"), value.optString("message"));
             }
+            public void refreshNetwork() throws Exception {
+                Spoolnet.updateInterfaces(NetworkSnapshot.read(connectivity));
+                captured.networkChanged();
+            }
+            public void reconnect() throws Exception { captured.reconnect(); }
+            public void login() throws Exception { captured.login(); }
+        }, (value, available) -> {
+            if (destroyed || generation != token || client != captured) return;
+            acceptConnectionHealth(captured, token, value, available);
         });
+    }
+
+    private void acceptConnectionHealth(Client captured, int token, ConnectionRecovery.Snapshot value, boolean available) {
+        boolean recovered = !connected && available;
+        connected = available;
+        connecting = !value.healthy() && !value.problem.equals("endpoint");
+        tailnetState = value.state;
+        httpsState = value.https;
+        authURL = value.authURL;
+        connectionMessage = value.message == null ? "" : value.message;
+        if (value.problem.equals("offline")) connectionMessage = tr("Waiting for network", "等待网络恢复");
+        else if (value.problem.equals("network") || value.problem.equals("status") || value.problem.equals("starting"))
+            connectionMessage = tr("Reconnecting…", "正在重连…") + (connectionMessage.isEmpty() ? "" : "\n" + connectionMessage);
+        updateConnectionSettings();
+        if (restoringSession && !value.healthy()) render();
+        if (!value.healthy()) return;
+        if (restoringSession) restoreSession(captured, token);
+        else if (recovered && user != null) {
+            resumeWorkspace();
+            if (chatEvents != null) chatEvents.stop();
+            startChat();
+        }
     }
 
     private void restoreSession(Client captured, int token) {
         final int session = authEpoch;
+        if (sessionCheckBusy && sessionCheckGeneration == token && sessionCheckAuth == session) return;
+        sessionCheckBusy = true;
+        sessionCheckGeneration = token; sessionCheckAuth = session;
         final String loc = locale();
         io.execute(
                 () -> {
@@ -788,6 +810,7 @@ public final class MainActivity extends Activity {
                                 token,
                                 () -> {
                                     if (session != authEpoch) return;
+                                    sessionCheckBusy = false;
                                     restoringSession = false;
                                     user = result.optJSONObject("user");
                                     csrf = result.optString("csrf");
@@ -806,6 +829,7 @@ public final class MainActivity extends Activity {
                                 token,
                                 () -> {
                                     if (session != authEpoch) return;
+                                    sessionCheckBusy = false;
                                     if (e instanceof ApiFailure && ((ApiFailure) e).status == 401)
                                         restoringSession = false;
                                     else
@@ -825,8 +849,11 @@ public final class MainActivity extends Activity {
     }
 
     private void disconnect() {
+        connectionWanted = false;
+        main.removeCallbacks(connectionRetry);
         ++generation;
         monitor.stop();
+        recovery.stop();
         stopStreams();
         clearWorkspace();
         Client captured = client;
@@ -870,6 +897,7 @@ public final class MainActivity extends Activity {
         ++selectionEpoch;
         user = null;
         restoringSession = false;
+        sessionCheckBusy = false;
         chat = null;
         csrf = "";
         chatID = "";
@@ -1077,7 +1105,7 @@ public final class MainActivity extends Activity {
         if (!settingsOpen || connectionText == null) return;
         String state =
                 tailnetState.equals("Running")
-                        ? tr("Connected", "已连接")
+                        ? tr("Running", "运行中")
                         : tailnetState.equals("NeedsLogin")
                                 ? tr("Sign-in required", "等待登录")
                                 : tailnetState.equals("NeedsMachineAuth")
@@ -1121,7 +1149,7 @@ public final class MainActivity extends Activity {
                         connectionMessage == null || connectionMessage.isEmpty()
                                 ? ""
                                 : "\n\n" + connectionMessage);
-        if (connectionSettings != null) connectionSettings.bind(connected, connecting, OriginPolicy.isLoginURL(authURL), summary);
+        if (connectionSettings != null) connectionSettings.bind(connected, connecting || client != null, OriginPolicy.isLoginURL(authURL), summary);
     }
 
     private void workspacePage() {
@@ -2916,6 +2944,9 @@ public final class MainActivity extends Activity {
         super.onStart();
         foreground = true;
         monitor.setActive(settingsOpen);
+        recovery.setActive(true);
+        if (client != null) publishInterfaces();
+        main.post(connectionRetry);
         if (settingsOpen && desktopAvailability != null) {
             main.removeCallbacks(desktopAvailability);
             main.post(desktopAvailability);
@@ -2942,6 +2973,8 @@ public final class MainActivity extends Activity {
         if (historyScroll != null) historyScroll.suspend();
         if (ui != null) ui.dismissMenus();
         monitor.setActive(false);
+        recovery.setActive(false);
+        main.removeCallbacks(connectionRetry);
         closeImagePreview();
         detachPeople();
         stopStreams();
@@ -2959,6 +2992,7 @@ public final class MainActivity extends Activity {
         if (transcriptViewport != null) transcriptViewport.dispose();
         ++generation;
         monitor.stop();
+        recovery.stop();
         dismissSettingsDialog();
         closeAvatarPicker();
         closeImagePreview();
