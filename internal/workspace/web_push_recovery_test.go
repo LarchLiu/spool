@@ -55,8 +55,8 @@ func TestPushSubscriptionRestoresAfterLoginExpiryAndRestart(t *testing.T) {
 	sent := 0
 	a.pushClient = &http.Client{Transport: pushTransport(func(r *http.Request) (*http.Response, error) {
 		sent++
-		if decryptPush(t, r, private, sub)["title"] != "Spool · 任务成功" {
-			t.Fatal("refresh did not update notification language")
+		if title := decryptPush(t, r, private, sub)["title"]; title != "Spool · 任务成功："+chat.Title {
+			t.Fatalf("refresh did not retain notification language and session title: %q", title)
 		}
 		return pushResponse(201), nil
 	})}

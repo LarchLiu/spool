@@ -361,16 +361,18 @@ test("service worker renders push data, keeps navigation same-origin, and tolera
   assert.ok(worker.shown[2].options.body);
 });
 
-test("service worker displays status and sender/group titles with a bounded fallback", async () => {
+test("service worker displays session, sender and group details with a bounded fallback", async () => {
   const worker = serviceWorker();
-  for (const title of [
-    "Spool · 需要审核",
-    "Spool · 任务失败",
-    "Spool · Alice 发来消息",
-    "Spool · 群聊：产品组",
+  for (const [title, body] of [
+    ["Spool · 任务成功：修复通知标题", "任务已完成"],
+    ["Spool · 需要审核：修复通知标题", "任务等待审批"],
+    ["Spool · 任务失败：修复通知标题", "任务执行失败"],
+    ["Spool · Alice 发来消息", "你收到一条新私聊消息"],
+    ["Spool · 群聊：产品组", "Alice 在群内发送了消息"],
   ]) {
-    await worker.dispatch("push", { data: { json: () => ({ title }) } });
+    await worker.dispatch("push", { data: { json: () => ({ title, body }) } });
     assert.equal(worker.shown.at(-1).title, title);
+    assert.equal(worker.shown.at(-1).options.body, body);
   }
   for (const title of [undefined, null, 123, "", " \r\n "]) {
     await worker.dispatch("push", { data: { json: () => ({ title }) } });

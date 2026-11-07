@@ -935,7 +935,7 @@ export function AppearancePage({ data, run, t }: PageProps) {
       </Hint>
       <Hint>
         {t(
-          "Notifications show sender and group names, but never message contents.",
+          "Notifications show session titles, sender and group names, but never message contents.",
         )}
       </Hint>
       <Hint>

@@ -445,6 +445,9 @@ func TestPushHooksAgentCompletionFailureAndStop(t *testing.T) {
 			u := testUser(t, s, "alice")
 			p := testProject(t, s, u)
 			chat, _ := s.CreateChat(u.ID, p.ID, chatmodel.BackendCodex)
+			if _, err := s.db.Exec(`UPDATE sessions SET title=? WHERE id=?`, "Notification task", chat.ID); err != nil {
+				t.Fatal(err)
+			}
 			a := NewApp(s, &fakeRunner{text: "private assistant reply", err: test.err}, "", "")
 			t.Cleanup(func() { a.Close() })
 			cookie, csrf := loginRequest(t, a, u.Username)
@@ -471,12 +474,12 @@ func TestPushHooksAgentCompletionFailureAndStop(t *testing.T) {
 				if payload["url"] != "/?chat="+chat.ID || !strings.HasSuffix(payload["tag"], "-"+test.kind) || bytes.Contains(body, []byte("private")) {
 					t.Fatalf("wrong/private notification payload: %s", body)
 				}
-				expectedTitle := "Spool - Task succeeded"
+				expectedTitle := "Spool - Task succeeded: Notification task"
 				if test.kind == "failed" {
-					expectedTitle = "Spool - Task failed"
+					expectedTitle = "Spool - Task failed: Notification task"
 				}
 				if payload["title"] != expectedTitle {
-					t.Fatalf("task status missing from notification title: %q", payload["title"])
+					t.Fatalf("task status or session title missing from notification: %q", payload["title"])
 				}
 			case <-time.After(3 * time.Second):
 				t.Fatal("agent event did not trigger a push")
@@ -498,6 +501,9 @@ func TestPushApprovalHookAndShutdown(t *testing.T) {
 	u := testUser(t, s, "alice")
 	p := testProject(t, s, u)
 	chat, _ := s.CreateChat(u.ID, p.ID, chatmodel.BackendCodex)
+	if _, err := s.db.Exec(`UPDATE sessions SET title=? WHERE id=?`, "Approval task", chat.ID); err != nil {
+		t.Fatal(err)
+	}
 	a := NewApp(s, &pushApprovalRunner{}, "", "")
 	t.Cleanup(func() { a.Close() })
 	cookie, csrf := loginRequest(t, a, u.Username)
@@ -507,7 +513,7 @@ func TestPushApprovalHookAndShutdown(t *testing.T) {
 	var canceled atomic.Bool
 	a.pushClient = &http.Client{Transport: pushTransport(func(r *http.Request) (*http.Response, error) {
 		payload := decryptPush(t, r, private, sub)
-		if !strings.HasSuffix(payload["tag"], "-approval") || payload["title"] != "Spool - Approval required" {
+		if !strings.HasSuffix(payload["tag"], "-approval") || payload["title"] != "Spool - Approval required: Approval task" {
 			t.Error("approval did not produce approval push")
 		}
 		close(started)
@@ -535,24 +541,65 @@ func TestPushApprovalHookAndShutdown(t *testing.T) {
 }
 
 func TestPushTaskTitlesAreLocalized(t *testing.T) {
-	a := &App{}
+	s := testStore(t)
+	chat, err := s.createSession("", "", chatmodel.BackendCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := NewApp(s, &fakeRunner{}, "", "")
+	t.Cleanup(func() { a.Close() })
 	for _, test := range []struct {
-		language, kind, title string
+		language, kind, title, namedTitle string
 	}{
-		{"en", "completed", "Spool - Task succeeded"},
-		{"en", "failed", "Spool - Task failed"},
-		{"en", "approval", "Spool - Approval required"},
-		{"zh-CN", "completed", "Spool · 任务成功"},
-		{"zh-CN", "failed", "Spool · 任务失败"},
-		{"zh-CN", "approval", "Spool · 需要审核"},
-		{"ja", "completed", "Spool · タスク成功"},
-		{"ja", "failed", "Spool · タスク失敗"},
-		{"ja", "approval", "Spool · 承認が必要"},
+		{"en", "completed", "Spool - Task succeeded", "Spool - Task succeeded: 修复通知 {name}"},
+		{"en", "failed", "Spool - Task failed", "Spool - Task failed: 修复通知 {name}"},
+		{"en", "approval", "Spool - Approval required", "Spool - Approval required: 修复通知 {name}"},
+		{"zh-CN", "completed", "Spool · 任务成功", "Spool · 任务成功：修复通知 {name}"},
+		{"zh-CN", "failed", "Spool · 任务失败", "Spool · 任务失败：修复通知 {name}"},
+		{"zh-CN", "approval", "Spool · 需要审核", "Spool · 需要审核：修复通知 {name}"},
+		{"ja", "completed", "Spool · タスク成功", "Spool · タスク成功：修复通知 {name}"},
+		{"ja", "failed", "Spool · タスク失敗", "Spool · タスク失敗：修复通知 {name}"},
+		{"ja", "approval", "Spool · 承認が必要", "Spool · 承認が必要：修复通知 {name}"},
 	} {
 		t.Run(test.language+"/"+test.kind, func(t *testing.T) {
 			title, body := a.pushNotificationText(test.language, pushJob{kind: test.kind})
 			if title != test.title || body == "" {
 				t.Fatalf("unexpected task text: %q %q", title, body)
+			}
+			for _, label := range []string{"  修复通知\n\x00\u202e{name}\u2069  ", "", " \x00\u202e\u2069 "} {
+				if _, err := s.db.Exec(`UPDATE sessions SET title=? WHERE id=?`, label, chat.ID); err != nil {
+					t.Fatal(err)
+				}
+				want := test.title
+				if strings.Contains(label, "修复通知") {
+					want = test.namedTitle
+				}
+				title, namedBody := a.pushNotificationText(test.language, pushJob{chatID: chat.ID, kind: test.kind})
+				if title != want || namedBody != body {
+					t.Fatalf("unexpected named task text for %q: %q %q", label, title, namedBody)
+				}
+			}
+			if title, missingBody := a.pushNotificationText(test.language, pushJob{chatID: "missing-session", kind: test.kind}); title != test.title || missingBody != body {
+				t.Fatalf("unavailable session did not use generic task text: %q %q", title, missingBody)
+			}
+		})
+	}
+}
+
+func TestPushTaskTitlesFollowNativeSessionRenames(t *testing.T) {
+	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {
+		t.Run(string(backend), func(t *testing.T) {
+			s := testStore(t)
+			chat, rename := titleSessionFixture(t, s, backend, "", "")
+			a := NewApp(s, &fakeRunner{}, "", "")
+			t.Cleanup(func() { a.Close() })
+			job := pushJob{chatID: chat.ID, kind: "completed"}
+			for _, name := range []string{"Provider title", "Renamed while queued"} {
+				rename(name)
+				title, _ := a.pushNotificationText("en", job)
+				if title != "Spool - Task succeeded: "+name {
+					t.Fatalf("notification missed native session title: %q", title)
+				}
 			}
 		})
 	}

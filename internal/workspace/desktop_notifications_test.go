@@ -112,8 +112,11 @@ func TestDesktopTaskNotificationsWithoutPushSubscriptions(t *testing.T) {
 	}
 	a.enqueuePush(pushJob{chatID: chat.ID, turnID: "turn-12345678", kind: "completed"})
 	event := nextDesktopEvent(t, sub)
+	if _, err := s.db.Exec(`UPDATE sessions SET title=? WHERE id=?`, "修复通知标题", chat.ID); err != nil {
+		t.Fatal(err)
+	}
 	note, ok := event.Resolve(tokens["alice"], "zh-CN")
-	if !ok || note.UserID != alice.ID || note.URL != "/?chat="+chat.ID || note.Title != "Spool · 任务成功" {
+	if !ok || note.UserID != alice.ID || note.URL != "/?chat="+chat.ID || note.Title != "Spool · 任务成功：修复通知标题" {
 		t.Fatalf("bad task notification: %+v %v", note, ok)
 	}
 	for _, token := range []string{"", "invalid-token", tokens["bob"], tokens["carol"]} {
@@ -196,13 +199,16 @@ func TestDesktopNotificationLifetimeAndApprovalChecks(t *testing.T) {
 	u := testUser(t, s, "alice")
 	p := testProject(t, s, u)
 	chat, _ := s.CreateChat(u.ID, p.ID, chatmodel.BackendCodex)
+	if _, err := s.db.Exec(`UPDATE sessions SET title=? WHERE id=?`, "审核任务", chat.ID); err != nil {
+		t.Fatal(err)
+	}
 	a := NewApp(s, &fakeRunner{}, "", "")
 	t.Cleanup(func() { a.Close() })
 	s.SaveDesktopNotificationsEnabled(true)
 	token, _, _ := s.login("alice", "test-password-2026")
 	event := DesktopNotificationEvent{a, pushJob{chatID: chat.ID, turnID: "turn-12345678", approvalID: "native-approval", kind: "approval", queuedAt: time.Now()}}
 	a.approvals[event.job.approvalID] = &pendingApproval{chatID: chat.ID, turnID: event.job.turnID}
-	if note, ok := event.Resolve(token, "zh-CN"); !ok || note.Title != "Spool · 需要审核" {
+	if note, ok := event.Resolve(token, "zh-CN"); !ok || note.Title != "Spool · 需要审核：审核任务" {
 		t.Fatal("native approval not delivered")
 	}
 	if _, err := s.db.Exec(`INSERT INTO project_member_own_access VALUES(?,?,'read-only') ON CONFLICT(project_id,user_id) DO UPDATE SET access='read-only'`, p.ID, u.ID); err != nil {

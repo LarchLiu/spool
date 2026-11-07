@@ -438,6 +438,25 @@ func (a *App) pushNotificationText(language string, job pushJob) (string, string
 			message, bodyName = "{name} sent a message in this group. Open Spool to view it.", sender
 		}
 	}
+	if job.chatID != "" {
+		switch job.kind {
+		case "completed", "failed", "approval":
+			// Resolve through Get so native session titles match the chat/sidebar,
+			// including provider renames made while a notification was queued.
+			if chat, ok := a.store.Get(job.chatID); ok {
+				if titleName = pushDisplayName(chat.Title); titleName != "" {
+					switch job.kind {
+					case "completed":
+						title = "Spool - Task succeeded: {name}"
+					case "failed":
+						title = "Spool - Task failed: {name}"
+					case "approval":
+						title = "Spool - Approval required: {name}"
+					}
+				}
+			}
+		}
+	}
 	return i18n.Translate(language, title, "name", titleName), i18n.Translate(language, message, "name", bodyName)
 }
 

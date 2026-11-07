@@ -51,7 +51,7 @@ on the service host before use.
 ### Presence and notifications
 
 - User avatars, presence, theme, and language preferences across supported clients.
-- Desktop system notifications and Web Push without prompts, replies, or project names in notification bodies.
+- Desktop system notifications and Web Push identify tasks by session title, private messages by sender, and group messages by group and sender names.
 - English, Simplified Chinese, and Japanese, with system theme and language support.
 
 ### Automation and remote access

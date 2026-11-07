@@ -89,7 +89,7 @@ export function NotificationSettings({
       </h3>
       <p>
         {t(
-          "Notify this device about private or group messages and task status. Notifications show sender and group names, but never message contents.",
+          "Notify this device about private or group messages and task status. Notifications show session titles, sender and group names, but never message contents.",
         )}
       </p>
       <p>
