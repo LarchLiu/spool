@@ -37,7 +37,7 @@ public class NativeWorkspaceEventsTest {
     static final class Source implements NativeWorkspaceEvents.Source<Connection> {
         final List<Connection> connections = new ArrayList<>(); final JsonArray controls = new JsonArray();
         final List<Boolean> visibility = new ArrayList<>();
-        boolean blocked, failSend; int auth;
+        boolean blocked, failSend, failProbe; int auth, probes;
         Exception authFailure;
         java.util.function.Consumer<NativeWorkspaceEvents.Events> opening = events -> {};
         public Connection open(NativeWorkspaceEvents.Events events) throws Exception {
@@ -47,6 +47,10 @@ public class NativeWorkspaceEventsTest {
         public void close(Connection connection) { if (connection != null) connection.closed = true; }
         public void send(Connection connection, String type, boolean visible) throws Exception {
             if (failSend) throw new Exception("Send failed"); controls.add(type); visibility.add(visible);
+        }
+        public void probe(Connection connection) throws Exception {
+            probes++;
+            if (failProbe) throw new Exception("No pong");
         }
         public void checkAuth() throws Exception { auth++; if (authFailure != null) throw authFailure; }
         Connection current() { return connections.get(connections.size() - 1); }
@@ -151,6 +155,49 @@ public class NativeWorkspaceEventsTest {
         java.util.Collections.reverse(h.worker.tasks); h.flush();
         assertEquals(List.of(true, true), h.source.visibility);
         assertFalse(socket.closed); assertEquals(1, h.source.connections.size());
+        h.stream.stop();
+    }
+
+    @Test public void repeatedResumeDoesNotReplaceTheSocketWhileItIsConnecting() {
+        Harness h = new Harness(); h.bind("session"); h.event("ready", "true");
+        h.event("transport_error", "{}"); h.stream.resume(); h.flush();
+        Connection pending = h.source.current();
+        for (int i = 0; i < 4; i++) { h.stream.resume(); h.flush(); }
+        assertFalse("Focus callbacks must not cancel the handshake already in progress", pending.closed);
+        assertEquals(2, h.source.connections.size());
+        h.event("ready", "true"); assertEquals(Boolean.TRUE, h.sink.connected);
+        h.stream.stop();
+    }
+
+    @Test public void returningProbesOnceAndImmediatelyReplacesAnUnresponsiveSocket() {
+        Harness h = new Harness(); h.bind("session"); h.event("ready", "true");
+        Connection old = h.source.current(); h.source.failProbe = true;
+        long resumed = h.clock.now;
+        h.stream.resume(true); h.stream.resume(true); h.stream.resume();
+        assertEquals(1, h.worker.tasks.size()); h.flush();
+        assertEquals(1, h.source.probes); assertTrue(old.closed);
+        assertEquals("Reconnect starts without waiting for the heartbeat or backoff timer", 2, h.source.connections.size());
+        assertEquals(resumed, h.clock.now); assertTrue(h.source.controls.isEmpty());
+        h.stream.stop();
+    }
+
+    @Test public void returningRearmsTheWatchdogOnAHealthyRoundTripWithoutReplacingTheSocket() {
+        Harness h = new Harness(); h.bind("session"); h.event("ready", "true");
+        Connection old = h.source.current(); h.advance(44000);
+        h.stream.resume(true); h.flush(); h.advance(1001);
+        assertFalse(old.closed); assertEquals(Boolean.TRUE, h.sink.connected);
+        assertEquals(1, h.source.probes); assertEquals(1, h.source.connections.size());
+        assertEquals(1, h.source.controls.size());
+        h.stream.stop();
+    }
+
+    @Test public void returningResetsAccumulatedBackgroundBackoff() {
+        Harness h = new Harness(); h.bind("session"); h.event("ready", "true");
+        for (int i = 0; i < 6; i++) {
+            h.event("transport_error", "{}"); h.advance(550L << i);
+        }
+        h.stream.resume(true); h.flush(); h.event("transport_error", "{}");
+        assertEquals(550, h.clock.timers.get(0).at - h.clock.now);
         h.stream.stop();
     }
 

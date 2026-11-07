@@ -93,8 +93,11 @@ public class MainActivityGoalTest {
             set("workspaceDecode", (java.util.concurrent.Executor) Runnable::run);
             ((ExecutorService) ReflectionHelpers.getField(activity, "io")).shutdown();
             ((ExecutorService) ReflectionHelpers.getField(activity, "workspaceWorker")).shutdown();
+            ((ExecutorService) ReflectionHelpers.getField(activity, "workspaceSocketWorker")).shutdown();
+            ((ExecutorService) ReflectionHelpers.getField(activity, "workspaceProbeWorker")).shutdown();
             // Existing ordered boundary tests share a queue; isolation tests inject separate queues.
             set("workspaceWorker", io);
+            set("workspaceSocketWorker", io); set("workspaceProbeWorker", io);
             set("io", io); set("language", "en"); set("projectID", "project-one");
             android.os.Handler main = new android.os.Handler(Looper.getMainLooper());
             set("chatRefresh", new NativeChatRefresh<JSONObject>(refreshIO, new NativeChatRefresh.Dispatcher() {

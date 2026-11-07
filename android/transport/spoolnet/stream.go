@@ -81,6 +81,20 @@ func (s *EventStream) write(conn *websocket.Conn, closed bool, message string) e
 	return conn.Write(ctx, websocket.MessageText, []byte(message))
 }
 
+// Probe confirms a round trip on the existing WebSocket. A buffered data write
+// alone cannot establish that a socket survived Android's background freeze.
+func (s *EventStream) Probe() error {
+	s.mu.Lock()
+	conn, closed, ready := s.conn, s.closed, s.helloSent
+	s.mu.Unlock()
+	if conn == nil || closed || !ready {
+		return errors.New("stream is not connected")
+	}
+	ctx, cancel := context.WithTimeout(s.ctx, 3*time.Second)
+	defer cancel()
+	return conn.Ping(ctx)
+}
+
 func (s *EventStream) sendPresence(kind, csrf string) error {
 	s.sendMu.Lock()
 	defer s.sendMu.Unlock()

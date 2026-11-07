@@ -47,13 +47,18 @@ public class MainActivityWorkspaceEventsTest {
         static final Map<EventStream, ShadowStream> streams = new IdentityHashMap<>();
         @RealObject EventStream stream;
         final List<JSONObject> sent = new ArrayList<>();
-        boolean closed, fail;
+        boolean closed, fail, failProbe;
+        int probes;
         @Implementation protected static void __staticInitializer__() {}
         @Implementation protected void __constructor__() { streams.put(stream, this); }
         @Implementation protected void close() { closed = true; }
         @Implementation protected void send(String raw) throws Exception {
             if (fail) throw new IllegalStateException("Fixture send failed");
             sent.add(new JSONObject(raw));
+        }
+        @Implementation protected void probe() throws Exception {
+            probes++;
+            if (failProbe) throw new IllegalStateException("No pong");
         }
     }
 
@@ -171,26 +176,34 @@ public class MainActivityWorkspaceEventsTest {
         }
     }
 
-    @Test public void disconnectClearsPresenceAndPendingOperationsWithoutLosingOrReplayingTheDraft() throws Exception {
+    @Test public void disconnectKeepsAvatarsAndRejectsPendingOperationsUntilFreshPresenceArrives() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             ShadowStream old = start(h); presence(); open(h);
             NativeUi.Header header = h.get("workspaceHeader");
             assertTrue(header.online.getChildAt(0) instanceof NativeAvatarStack);
+            View avatars = header.online.getChildAt(0);
             NativePeoplePanel panel = h.get("peoplePanel"); panel.editor.setText("Keep this draft"); h.call("sendPeople");
             NativePeopleModel inbox = h.get("inbox"); assertEquals(1, inbox.sending.size());
             List<String> errors = new ArrayList<>();
             h.<Map<String, NativeGroupPicker.Completion>>get("pendingGroups").put("pending-group", (group, error) -> errors.add(error));
             event("transport_error", "{status:503}");
             assertTrue(old.closed); assertFalse(h.<Boolean>get("workspaceReady")); assertNull(h.get("workspaceStream"));
-            assertEquals(0, h.<JSONArray>get("presence").length()); assertFalse(header.online.getChildAt(0) instanceof NativeAvatarStack);
-            assertEquals("0 online", header.online.getContentDescription());
+            assertEquals(1, h.<JSONArray>get("presence").length()); assertSame(avatars, header.online.getChildAt(0));
+            assertTrue(h.<Boolean>get("presenceStale"));
+            assertEquals("1 online", header.online.getContentDescription());
             assertEquals("Reconnecting…", panel.status.getText().toString()); assertFalse(panel.send.isEnabled());
             assertEquals("Keep this draft", panel.editor.getText().toString()); assertEquals("Keep this draft", inbox.draft("bob"));
             assertTrue(inbox.sending.isEmpty()); assertEquals("unknown", inbox.errors.get("bob")); assertEquals(List.of("unknown"), errors);
             assertTrue(h.<Map<?, ?>>get("pendingGroups").isEmpty());
             run(h); assertTrue("Queued old-connection send is revoked", old.sent.isEmpty());
             run(h); assertEquals("/api/me", MainActivityGoalTest.ShadowClient.calls.get(0).get(1));
-            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(550)); h.io.run(); event("ready", "{}"); presence();
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(550)); h.io.run(); event("ready", "{}");
+            assertSame(avatars, header.online.getChildAt(0)); assertFalse(panel.send.isEnabled());
+            event("presence", "[]");
+            assertEquals(0, h.<JSONArray>get("presence").length());
+            assertFalse(header.online.getChildAt(0) instanceof NativeAvatarStack);
+            assertFalse(h.<Boolean>get("presenceStale"));
+            presence();
             assertEquals("Keep this draft", inbox.draft("bob")); assertTrue(inbox.sending.isEmpty());
             assertTrue(ShadowStream.streams.get(h.<EventStream>get("workspaceStream")).sent.isEmpty());
             assertTrue("Reconnect does not replay people messages or group requests", h.io.jobs.isEmpty());
@@ -217,7 +230,9 @@ public class MainActivityWorkspaceEventsTest {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             ShadowStream stream = start(h);
             h.activity.onWindowFocusChanged(true); h.io.run();
-            h.<ConnectivityManager.NetworkCallback>get("networkCallback").onAvailable(null); h.io.run();
+            h.<ConnectivityManager.NetworkCallback>get("networkCallback").onAvailable(null);
+            while (!h.io.jobs.isEmpty()) run(h);
+            assertEquals(1, stream.probes);
             assertEquals(2, stream.sent.size());
             for (JSONObject value : stream.sent) { assertEquals("refresh", value.getString("type")); assertTrue(value.getBoolean("visible")); }
             assertEquals(1, MainActivityGoalTest.ShadowClient.workspaceSubscriptions.size());
@@ -231,12 +246,11 @@ public class MainActivityWorkspaceEventsTest {
             h.activity.onWindowFocusChanged(true);
             assertEquals("One connection and three batched REST reads", 4, h.io.jobs.size());
             h.<ConnectivityManager.NetworkCallback>get("networkCallback").onAvailable(null);
-            assertEquals("The pending connection is replaced, REST reads stay coalesced", 5, h.io.jobs.size());
-            run(h); assertEquals("Superseded socket work is fenced", 1, MainActivityGoalTest.ShadowClient.workspaceSubscriptions.size());
-            assertEquals(4, h.io.jobs.size());
+            assertEquals("Focus/network callbacks keep the pending connection and coalesced REST reads", 4, h.io.jobs.size());
             assertTrue(old.closed);
+            run(h); assertEquals(2, MainActivityGoalTest.ShadowClient.workspaceSubscriptions.size());
             // Leave the three data reads queued so a fixture response cannot alter the selected chat.
-            h.io.jobs.remove(3).run(); Shadows.shadowOf(Looper.getMainLooper()).idle(); event("ready", "{}");
+            event("ready", "{}");
             Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1100));
             assertEquals("The bypassed backoff timer cannot reconnect again", 2, MainActivityGoalTest.ShadowClient.workspaceSubscriptions.size());
             assertEquals(3, h.io.jobs.size());
@@ -250,7 +264,7 @@ public class MainActivityWorkspaceEventsTest {
             long pingAt = SystemClock.uptimeMillis(); until(pingAt + 44999);
             assertTrue(h.<Boolean>get("workspaceReady")); assertFalse(stream.closed); assertTrue(h.io.jobs.isEmpty());
             until(pingAt + 45000); assertFalse(h.<Boolean>get("workspaceReady")); assertTrue(stream.closed);
-            assertEquals(0, h.<JSONArray>get("presence").length()); assertEquals(1, h.io.jobs.size());
+            assertEquals(1, h.<JSONArray>get("presence").length()); assertEquals(1, h.io.jobs.size());
         }
     }
 
@@ -283,7 +297,9 @@ public class MainActivityWorkspaceEventsTest {
             h.call("stopStreams"); h.controller.pause().stop();
             assertTrue(second.closed); assertFalse(h.<Boolean>get("workspaceReady"));
             japanese.onEvent("ready", "{}"); japanese.onEvent("presence", "[{id:'old',state:'online'}]"); Shadows.shadowOf(Looper.getMainLooper()).idle();
-            assertEquals(0, h.<JSONArray>get("presence").length()); assertTrue(h.io.jobs.isEmpty());
+            assertEquals(1, h.<JSONArray>get("presence").length());
+            assertEquals("bob", h.<JSONArray>get("presence").getJSONObject(0).getString("id"));
+            assertTrue(h.io.jobs.isEmpty());
             MainActivityGoalTest.Queue reads = new MainActivityGoalTest.Queue(); h.set("workspaceWorker", reads);
             h.set("chatID", ""); h.set("chat", null);
             h.controller.start().resume();
@@ -335,7 +351,7 @@ public class MainActivityWorkspaceEventsTest {
             }
             event("transport_error", "{}");
             assertTrue(stream.closed); assertFalse(h.<Boolean>get("workspaceReady"));
-            assertEquals(0, h.<JSONArray>get("presence").length());
+            assertEquals(1, h.<JSONArray>get("presence").length());
             h.io.run();
             Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(550));
             h.io.run();
@@ -347,12 +363,46 @@ public class MainActivityWorkspaceEventsTest {
         }
     }
 
+    @Test public void returningReplacesASilentSocketImmediatelyAndKeepsAvatarsUntilTheNewSnapshot() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            ShadowStream old = start(h); presence();
+            NativeUi.Header header = h.get("workspaceHeader"); View avatars = header.online.getChildAt(0);
+            h.set("chatID", ""); h.set("chat", null);
+            h.controller.pause().stop(); h.io.run(); old.failProbe = true;
+            h.controller.start().resume(); h.activity.onWindowFocusChanged(true);
+            while (!h.io.jobs.isEmpty()) run(h);
+            assertTrue(old.closed); assertEquals(1, old.probes);
+            assertEquals(2, MainActivityGoalTest.ShadowClient.workspaceSubscriptions.size());
+            assertSame(avatars, header.online.getChildAt(0)); assertTrue(h.<Boolean>get("presenceStale"));
+            event("ready", "{}");
+            assertSame(avatars, header.online.getChildAt(0));
+            event("presence", "[{id:'charlie',nickname:'Charlie',state:'online'}]");
+            assertEquals("charlie", h.<JSONArray>get("presence").getJSONObject(0).getString("id"));
+            assertFalse(h.<Boolean>get("presenceStale")); assertNotSame(avatars, header.online.getChildAt(0));
+        }
+    }
+
+    @Test public void socketOpenAndProbeAreIndependentOfStalledApiRequests() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            ShadowStream.streams.clear(); MainActivityGoalTest.ShadowClient.workspaceFactory = EventStream::new;
+            MainActivityGoalTest.Queue sockets = new MainActivityGoalTest.Queue(), probes = new MainActivityGoalTest.Queue();
+            h.set("workspaceSocketWorker", sockets); h.set("workspaceProbeWorker", probes);
+            for (int i = 0; i < 3; i++) h.io.execute(() -> fail("Ordinary API requests stay stalled"));
+            h.call("startWorkspace"); sockets.run(); event("ready", "{}"); presence();
+            ShadowStream stream = ShadowStream.streams.get(h.<EventStream>get("workspaceStream"));
+            h.<ConnectivityManager.NetworkCallback>get("networkCallback").onAvailable(null);
+            probes.run(); sockets.run();
+            assertEquals(1, stream.probes); assertEquals(1, stream.sent.size());
+            assertEquals(3, h.io.jobs.size()); assertFalse(stream.closed);
+        }
+    }
+
     @Test public void failedRefreshControlClosesPresenceAndStartsAuthAndRetry() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             ShadowStream stream = start(h); presence(); stream.fail = true;
             h.activity.onWindowFocusChanged(true); run(h);
             assertTrue(stream.closed); assertFalse(h.<Boolean>get("workspaceReady"));
-            assertEquals(0, h.<JSONArray>get("presence").length()); h.io.run();
+            assertEquals(1, h.<JSONArray>get("presence").length()); h.io.run();
             assertEquals("/api/me", MainActivityGoalTest.ShadowClient.calls.get(0).get(1));
             Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(550)); h.io.run();
             assertEquals(2, MainActivityGoalTest.ShadowClient.workspaceSubscriptions.size());
@@ -391,7 +441,7 @@ public class MainActivityWorkspaceEventsTest {
             assertTrue("No Handler watchdog has fired yet", h.<Boolean>get("workspaceReady"));
             h.activity.onWindowFocusChanged(true);
             assertTrue(old.closed); assertFalse(h.<Boolean>get("workspaceReady"));
-            assertEquals(0, h.<JSONArray>get("presence").length()); assertEquals(3, reads.jobs.size());
+            assertEquals(1, h.<JSONArray>get("presence").length()); assertEquals(3, reads.jobs.size());
             h.io.run(); assertTrue("Stale sockets reconnect, rather than sending refresh", old.sent.isEmpty());
             assertEquals(2, MainActivityGoalTest.ShadowClient.workspaceSubscriptions.size());
         }

@@ -63,6 +63,8 @@ public final class MainActivity extends Activity {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newFixedThreadPool(3);
     private final ExecutorService workspaceWorker = Executors.newFixedThreadPool(3);
+    private final ExecutorService workspaceSocketWorker = Executors.newFixedThreadPool(2);
+    private final ExecutorService workspaceProbeWorker = Executors.newSingleThreadExecutor();
     private final ExecutorService payloadWorker = Executors.newSingleThreadExecutor();
     private java.util.concurrent.Executor workspaceDecode = payloadWorker;
     private final ExecutorService connectionWorker = Executors.newSingleThreadExecutor();
@@ -110,6 +112,8 @@ public final class MainActivity extends Activity {
     private volatile int workspaceEpoch;
     private int selectionEpoch, draftVersion;
     private boolean foreground, connected, connecting, settingsOpen, busy, workspaceReady, restoringSession;
+    private boolean presenceStale;
+    private String presenceScope = "";
     private final NativePerformanceProbe performanceProbe = new NativePerformanceProbe();
     private volatile Client client;
     private EventStream workspaceStream;
@@ -246,7 +250,7 @@ public final class MainActivity extends Activity {
                     public void onAvailable(Network network) {
                         publishInterfaces();
                         recovery.checkNow();
-                        resumeWorkspace();
+                        resumeWorkspace(true);
                     }
 
                     public void onLost(Network network) {
@@ -916,6 +920,8 @@ public final class MainActivity extends Activity {
         profileCache.clear();
         navigation.reset();
         presence = new JSONArray();
+        presenceScope = "";
+        presenceStale = false;
         groups = new JSONArray();
         invalidatePermissions();
         closeAvatarPicker();
@@ -2343,7 +2349,7 @@ public final class MainActivity extends Activity {
 
     private boolean startWorkspace() {
         if (!foreground || destroyed || user == null || client == null) return false;
-        if (workspaceEvents == null) workspaceEvents = new NativeWorkspaceEvents<>(io, new NativeWorkspaceEvents.Scheduler() {
+        if (workspaceEvents == null) workspaceEvents = new NativeWorkspaceEvents<>(workspaceSocketWorker, workspaceProbeWorker, new NativeWorkspaceEvents.Scheduler() {
             public void post(Runnable task) { main.post(task); }
             public void postDelayed(Runnable task, long millis) { main.postDelayed(task, millis); }
             public void remove(Runnable task) { main.removeCallbacks(task); }
@@ -2354,6 +2360,11 @@ public final class MainActivity extends Activity {
         final Client captured = client;
         final String auth = csrf;
         String key = generation + "\n" + authEpoch + "\n" + user.optString("id");
+        if (!presenceScope.equals(key)) {
+            presenceScope = key;
+            presence = new JSONArray(); presenceStale = true;
+            updateHeaderPeople(); updateMissingProfiles();
+        }
         boolean bound = workspaceEvents.bind(key, new NativeWorkspaceEvents.Source<EventStream>() {
             public EventStream open(NativeWorkspaceEvents.Events events) throws Exception {
                 return captured.subscribeWorkspace(auth, locale(), events::event);
@@ -2362,6 +2373,7 @@ public final class MainActivity extends Activity {
             public void send(EventStream stream, String type, boolean visible) throws Exception {
                 stream.send(object("type", type, "visible", visible).toString());
             }
+            public void probe(EventStream stream) throws Exception { stream.probe(); }
             public void checkAuth() throws Exception { request(captured, "/me", null, auth, locale()); }
         }, new NativeWorkspaceEvents.Listener<EventStream>() {
             public void connection(EventStream stream) { workspaceStream = stream; ++workspaceEpoch; }
@@ -2382,17 +2394,21 @@ public final class MainActivity extends Activity {
         workspaceReady = value;
         if (workspaceData != null) workspaceData.ready(value);
         if (!value) {
-            presence = new JSONArray();
+            presenceStale = true;
             disconnectPeople(); updateHeaderPeople(); updateMissingProfiles();
         } else renderPeople();
     }
 
     private void resumeWorkspace() {
+        resumeWorkspace(false);
+    }
+
+    private void resumeWorkspace(boolean returning) {
         if (!foreground || destroyed || user == null || client == null) return;
         if (fileBrowser != null) fileBrowser.resume();
         boolean bound = startWorkspace();
         workspaceEvents.visibility(true);
-        if (!bound) workspaceEvents.resume();
+        if (!bound) workspaceEvents.resume(returning);
         if (!workspaceReady) refreshWorkspace();
         if (!inbox.active.isEmpty()) { inbox.open(inbox.active, profiles); updateHeaderPeople(); renderPeople(); }
     }
@@ -2444,6 +2460,7 @@ public final class MainActivity extends Activity {
                 break;
             case "presence":
                 presence = (JSONArray) value;
+                presenceStale = false;
                 updateHeaderPeople();
                 renderPeople();
                 updateMissingProfiles();
@@ -2622,7 +2639,7 @@ public final class MainActivity extends Activity {
         if (user == null) return;
         inbox.profiles(profiles);
         if (peopleMenu != null && peopleMenu.isShowing()) peopleMenu.bind(user.optString("id"), presence, inbox, this::peopleIdentity);
-        if (peoplePanel != null) peoplePanel.bind(user.optString("id"), presence, workspaceReady);
+        if (peoplePanel != null) peoplePanel.bind(user.optString("id"), presence, workspaceReady && !presenceStale);
         if (groupPicker != null) {
             JSONObject group = inbox.groupInfo(groupPicker.target);
             JSONArray members = group == null ? new JSONArray() : array(group, "members");
@@ -2657,7 +2674,7 @@ public final class MainActivity extends Activity {
 
     private void sendPeople() {
         if (user == null || inbox.active.isEmpty()) return;
-        if (!workspaceReady || workspaceStream == null) { inbox.errors.put(inbox.active, "unavailable"); renderPeople(); return; }
+        if (!workspaceReady || presenceStale || workspaceStream == null) { inbox.errors.put(inbox.active, "unavailable"); renderPeople(); return; }
         String target = inbox.active;
         if (NativePeopleModel.group(target) ? !target.equals(NativePeopleModel.ROOM) && inbox.groupInfo(target) == null : NativePeopleModel.status(presence, target).isEmpty()) {
             inbox.errors.put(target, NativePeopleModel.group(target) ? "forbidden" : "offline"); renderPeople(); return;
@@ -2673,7 +2690,7 @@ public final class MainActivity extends Activity {
     private void dispatchPeople(String request, JSONObject payload) {
         EventStream captured = workspaceStream;
         int token = generation, session = authEpoch, streamEpoch = workspaceEpoch;
-        if (!workspaceReady || captured == null) { failPeople(request, "unavailable"); return; }
+        if (!workspaceReady || presenceStale || captured == null) { failPeople(request, "unavailable"); return; }
         io.execute(() -> {
             if (token != generation || session != authEpoch || streamEpoch != workspaceEpoch) return;
             try { captured.send(payload.toString()); }
@@ -2932,7 +2949,7 @@ public final class MainActivity extends Activity {
             main.post(desktopAvailability);
         }
         if (user != null) {
-            resumeWorkspace();
+            resumeWorkspace(true);
             if (workspaceData != null) bindWorkspaceData(false);
             startChat();
             updateHistoryLoading();
@@ -2995,6 +3012,8 @@ public final class MainActivity extends Activity {
         httpsWorker.shutdown();
         io.shutdown();
         workspaceWorker.shutdown();
+        workspaceSocketWorker.shutdown();
+        workspaceProbeWorker.shutdown();
         payloadWorker.shutdown();
         diagnostics.shutdown();
         avatarImages.clear();

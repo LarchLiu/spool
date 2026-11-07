@@ -15,6 +15,7 @@ final class NativeWorkspaceEvents<C> {
         C open(Events events) throws Exception;
         void close(C connection);
         void send(C connection, String type, boolean visible) throws Exception;
+        void probe(C connection) throws Exception;
         void checkAuth() throws Exception;
     }
     interface Listener<C> {
@@ -27,7 +28,10 @@ final class NativeWorkspaceEvents<C> {
     private static final class Attempt<C> {
         C connection;
         boolean opened;
+        final long started;
+        Object probe;
         final List<String[]> pending = new ArrayList<>();
+        Attempt(long started) { this.started = started; }
     }
     private static final class Scope<C> {
         final String key;
@@ -43,10 +47,15 @@ final class NativeWorkspaceEvents<C> {
         Scope(String key, Source<C> source, Listener<C> listener) { this.key = key; this.source = source; this.listener = listener; }
     }
     private final Executor worker;
+    private final Executor probeWorker;
     private final Scheduler scheduler;
     private volatile Scope<C> scope;
 
-    NativeWorkspaceEvents(Executor worker, Scheduler scheduler) { this.worker = worker; this.scheduler = scheduler; }
+    NativeWorkspaceEvents(Executor worker, Scheduler scheduler) { this(worker, worker, scheduler); }
+
+    NativeWorkspaceEvents(Executor worker, Executor probeWorker, Scheduler scheduler) {
+        this.worker = worker; this.probeWorker = probeWorker; this.scheduler = scheduler;
+    }
 
     boolean bind(String key, Source<C> source, Listener<C> listener) {
         if (scope != null && scope.key.equals(key)) return false;
@@ -66,13 +75,44 @@ final class NativeWorkspaceEvents<C> {
     }
 
     void resume() {
+        resume(false);
+    }
+
+    void resume(boolean returning) {
         Scope<C> current = scope;
         if (current == null) return;
-        if (current.ready && scheduler.now() - current.lastMessage < 45000) send(current, "refresh");
-        else {
-            clearTimers(current); disconnect(current);
-            if (scope == current) connect(current);
+        Attempt<C> attempt = current.attempt;
+        if (returning) current.attempts = 0;
+        if (current.ready && scheduler.now() - current.lastMessage < 45000) {
+            if (returning) probe(current, attempt);
+            else if (attempt.probe == null) send(current, "refresh");
+            return;
         }
+        // onStart, window focus and network callbacks can arrive before ready.
+        // Give the same in-flight handshake its existing watchdog deadline.
+        if (!current.ready && attempt != null && scheduler.now() - attempt.started < 45000) return;
+        clearTimers(current); disconnect(current);
+        if (scope == current) connect(current);
+    }
+
+    private void probe(Scope<C> current, Attempt<C> attempt) {
+        if (attempt == null || !attempt.opened || attempt.probe != null) return;
+        Object token = new Object(); attempt.probe = token;
+        probeWorker.execute(() -> {
+            if (scope != current || current.attempt != attempt) return;
+            Exception failure = null;
+            try { current.source.probe(attempt.connection); } catch (Exception error) { failure = error; }
+            Exception error = failure;
+            scheduler.post(() -> {
+                if (scope != current || current.attempt != attempt || attempt.probe != token) return;
+                if (error != null) lost(current, attempt);
+                else {
+                    attempt.probe = null;
+                    current.lastMessage = scheduler.now(); watchdog(current, attempt);
+                    if (current.visible) send(current, "refresh");
+                }
+            });
+        });
     }
 
     /** Updates server-side presence without tearing down a healthy socket. */
@@ -100,7 +140,7 @@ final class NativeWorkspaceEvents<C> {
     private void connect(Scope<C> current) {
         if (scope != current) return;
         clearTimers(current);
-        Attempt<C> attempt = new Attempt<>(); current.attempt = attempt;
+        Attempt<C> attempt = new Attempt<>(scheduler.now()); current.attempt = attempt;
         watchdog(current, attempt);
         worker.execute(() -> {
             if (scope != current || current.attempt != attempt) return;
@@ -137,6 +177,7 @@ final class NativeWorkspaceEvents<C> {
 
     private void lost(Scope<C> current, Attempt<C> attempt) {
         if (scope != current || current.attempt != attempt) return;
+        boolean returning = current.visible && attempt.probe != null;
         clearTimers(current); disconnect(current);
         if (scope != current) return;
         if (!current.checkingAuth) {
@@ -152,6 +193,11 @@ final class NativeWorkspaceEvents<C> {
                     if (error != null) current.listener.authFailed(error);
                 });
             });
+        }
+        if (returning) {
+            current.attempts = 0;
+            connect(current);
+            return;
         }
         long base = Math.min(30000, 500L << Math.min(current.attempts, 6));
         current.attempts = Math.min(6, current.attempts + 1);

@@ -25,6 +25,13 @@ sampling is for hotspot attribution, not an uninstrumented frame-rate baseline.
   recover through the existing watchdog/retry policy. Android may suspend network
   access or reclaim the process in the background. Failed writes are not
   automatically retried.
+- Foreground return verifies a retained workspace socket with a protocol
+  ping/pong bounded to three seconds. A failed probe reconnects immediately;
+  focus callbacks retain an in-progress handshake, and background retry backoff
+  resets on return. Socket recovery/probes run independently of ordinary API
+  requests. During a transient disconnect, the header keeps the last avatar
+  list until the server's next presence snapshot; messaging waits for that
+  confirmation. Logout, user/server changes clear the retained list.
 - Native document picker and bounded multipart uploads (6 files, 4 MiB each,
   16 MiB total); native project-file browsing and text/image/PDF previews.
 - Native [Word/Excel previews](../docs/office-preview.md) for `.docx`/`.xlsx`,

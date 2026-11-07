@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -542,6 +543,63 @@ func TestNativeWorkspaceKeepsBackgroundVisibilityThroughHandshakeAndHeartbeats(t
 	}
 	assertFrame("visibility", true)
 	assertFrame("pong", true)
+}
+
+func TestNativeWorkspaceProbeRequiresAPongAndBoundsAnUnresponsiveSocket(t *testing.T) {
+	for _, responsive := range []bool{true, false} {
+		t.Run(fmt.Sprint(responsive), func(t *testing.T) {
+			var pings atomic.Int32
+			client := nativeFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+					OnPingReceived: func(context.Context, []byte) bool { pings.Add(1); return responsive },
+				})
+				if err != nil {
+					return
+				}
+				defer conn.CloseNow()
+				ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+				defer cancel()
+				if _, _, err := conn.Read(ctx); err != nil {
+					return
+				}
+				if err := conn.Write(ctx, websocket.MessageText, []byte(`{"type":"ready","data":true}`)); err != nil {
+					return
+				}
+				for {
+					if _, _, err := conn.Read(ctx); err != nil {
+						return
+					}
+				}
+			})
+			events := make(eventRecorder, 8)
+			stream, err := client.SubscribeWorkspace("csrf", "en", events)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stream.Close()
+			select {
+			case event := <-events:
+				if event[0] != "ready" {
+					t.Fatal(event)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("no ready workspace")
+			}
+			started := time.Now()
+			err = stream.Probe()
+			if responsive && err != nil || !responsive && !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("responsive=%v: probe error=%v", responsive, err)
+			}
+			if pings.Load() != 1 || time.Since(started) > 5*time.Second {
+				t.Fatalf("probe did not bound a real ping/pong round trip: pings=%d, elapsed=%v", pings.Load(), time.Since(started))
+			}
+			if responsive {
+				if err := stream.Send(`{"type":"refresh","visible":true}`); err != nil {
+					t.Fatal("a healthy probe must preserve the connection:", err)
+				}
+			}
+		})
+	}
 }
 
 func TestNativeMultipartUpload(t *testing.T) {
