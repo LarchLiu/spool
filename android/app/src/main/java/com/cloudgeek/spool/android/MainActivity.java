@@ -299,6 +299,9 @@ public final class MainActivity extends Activity {
                 "viewport", transcriptViewport == null ? new JSONObject() : transcriptViewport.metrics(),
                 "scrollAnchor", historyScroll == null ? new JSONObject() : historyScroll.metrics(),
                 "historyHeight", historyContent == null ? 0 : historyContent.getHeight(), "scrollY", history == null ? 0 : history.getScrollY(),
+                "realtime", object("epoch", workspaceEpoch, "connected", workspaceReady, "people", presence.length(),
+                        "avatarViews", workspaceHeader == null || workspaceHeader.online.getChildCount() == 0 ? 0
+                                : System.identityHashCode(workspaceHeader.online.getChildAt(0))),
                 "javaUsedBytes", runtime.totalMemory() - runtime.freeMemory(), "javaMaxBytes", runtime.maxMemory(),
                 "toolDetails", ui == null || ui.toolDetails == null ? new JSONObject() : ui.toolDetails.metrics(),
                 "textOrigin", NativeTextView.diagnostics(),
@@ -2229,6 +2232,13 @@ public final class MainActivity extends Activity {
         stopChat();
     }
 
+    private void suspendStreams() {
+        if (workspaceData != null) workspaceData.stop();
+        if (chatRefresh != null) chatRefresh.stop();
+        stopChat();
+        if (workspaceEvents != null) workspaceEvents.visibility(false);
+    }
+
     private void startChat() {
         updateChatRefresh();
         if (!foreground || destroyed || client == null || user == null || chatID.isEmpty()) { stopChat(); return; }
@@ -2349,7 +2359,9 @@ public final class MainActivity extends Activity {
                 return captured.subscribeWorkspace(auth, locale(), events::event);
             }
             public void close(EventStream stream) { if (stream != null) stream.close(); }
-            public void send(EventStream stream, String type) throws Exception { stream.send(object("type", type, "visible", foreground).toString()); }
+            public void send(EventStream stream, String type, boolean visible) throws Exception {
+                stream.send(object("type", type, "visible", visible).toString());
+            }
             public void checkAuth() throws Exception { request(captured, "/me", null, auth, locale()); }
         }, new NativeWorkspaceEvents.Listener<EventStream>() {
             public void connection(EventStream stream) { workspaceStream = stream; ++workspaceEpoch; }
@@ -2379,6 +2391,7 @@ public final class MainActivity extends Activity {
         if (!foreground || destroyed || user == null || client == null) return;
         if (fileBrowser != null) fileBrowser.resume();
         boolean bound = startWorkspace();
+        workspaceEvents.visibility(true);
         if (!bound) workspaceEvents.resume();
         if (!workspaceReady) refreshWorkspace();
         if (!inbox.active.isEmpty()) { inbox.open(inbox.active, profiles); updateHeaderPeople(); renderPeople(); }
@@ -2419,7 +2432,7 @@ public final class MainActivity extends Activity {
         if (destroyed || workspaceEpoch != epoch || user == null) return;
         switch (kind) {
             case "navigation":
-                if (workspaceData != null) workspaceData.navigation((JSONObject) value);
+                if (workspaceData != null && foreground) workspaceData.navigation((JSONObject) value);
                 else acceptNavigation((JSONObject) value);
                 break;
             case "agents":
@@ -2920,6 +2933,7 @@ public final class MainActivity extends Activity {
         }
         if (user != null) {
             resumeWorkspace();
+            if (workspaceData != null) bindWorkspaceData(false);
             startChat();
             updateHistoryLoading();
             if (!inbox.active.isEmpty() && peoplePanel == null && !settingsOpen) openPeople(inbox.active);
@@ -2944,7 +2958,7 @@ public final class MainActivity extends Activity {
         main.removeCallbacks(connectionRetry);
         closeImagePreview();
         detachPeople();
-        stopStreams();
+        suspendStreams();
         super.onStop();
     }
 

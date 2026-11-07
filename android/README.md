@@ -19,8 +19,12 @@ sampling is for hotspot attribution, not an uninstrumented frame-rate baseline.
 - Agent/model and reasoning-effort selection from the server catalog; permission
   modes come from the authorized project's catalog. Bypass modes require confirmation.
 - Live chat snapshots/turns over SSE; navigation, profiles, presence and people
-  messages over a native WebSocket. Streams pause in the background and reconnect
-  on returning. Failed writes are not automatically retried.
+  messages over a native WebSocket. Chat SSE and REST polling pause in the
+  background; the workspace WebSocket stays connected, reports visibility and
+  retains presence. Returning reuses a healthy socket; stale/failed connections
+  recover through the existing watchdog/retry policy. Android may suspend network
+  access or reclaim the process in the background. Failed writes are not
+  automatically retried.
 - Native document picker and bounded multipart uploads (6 files, 4 MiB each,
   16 MiB total); native project-file browsing and text/image/PDF previews.
 - Native [Word/Excel previews](../docs/office-preview.md) for `.docx`/`.xlsx`,

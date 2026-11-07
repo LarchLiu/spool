@@ -36,6 +36,7 @@ public class NativeWorkspaceEventsTest {
     }
     static final class Source implements NativeWorkspaceEvents.Source<Connection> {
         final List<Connection> connections = new ArrayList<>(); final JsonArray controls = new JsonArray();
+        final List<Boolean> visibility = new ArrayList<>();
         boolean blocked, failSend; int auth;
         Exception authFailure;
         java.util.function.Consumer<NativeWorkspaceEvents.Events> opening = events -> {};
@@ -44,7 +45,9 @@ public class NativeWorkspaceEventsTest {
             Connection connection = new Connection(events); connections.add(connection); opening.accept(events); return connection;
         }
         public void close(Connection connection) { if (connection != null) connection.closed = true; }
-        public void send(Connection connection, String type) throws Exception { if (failSend) throw new Exception("Send failed"); controls.add(type); }
+        public void send(Connection connection, String type, boolean visible) throws Exception {
+            if (failSend) throw new Exception("Send failed"); controls.add(type); visibility.add(visible);
+        }
         public void checkAuth() throws Exception { auth++; if (authFailure != null) throw authFailure; }
         Connection current() { return connections.get(connections.size() - 1); }
     }
@@ -139,6 +142,16 @@ public class NativeWorkspaceEventsTest {
         Harness h = new Harness(); h.source.opening = events -> { events.event("presence", "[{\"id\":\"bob\"}]"); events.event("ready", "true"); };
         h.bind("session"); assertEquals(Boolean.TRUE, h.sink.connected); assertEquals("bob", h.sink.presence.getAsJsonArray().get(0).getAsJsonObject().get("id").getAsString());
         assertFalse(h.stream.bind("session", h.source, h.sink)); h.flush(); assertEquals(1, h.source.connections.size()); h.stream.stop();
+    }
+
+    @Test public void delayedVisibilityWorkersCannotMarkAReturnedAppAsHidden() {
+        Harness h = new Harness(); h.bind("session"); h.event("ready", "true");
+        Connection socket = h.source.current();
+        h.stream.visibility(false); h.stream.visibility(true);
+        java.util.Collections.reverse(h.worker.tasks); h.flush();
+        assertEquals(List.of(true, true), h.source.visibility);
+        assertFalse(socket.closed); assertEquals(1, h.source.connections.size());
+        h.stream.stop();
     }
 
     @Test public void aRevokedAuthResultCannotExpireTheNextSession() {

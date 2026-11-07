@@ -540,7 +540,11 @@ final class NativeUi extends WebPalette {
 
         void bindPeople(java.util.List<org.json.JSONObject> people, int unread) {
             org.json.JSONArray identity = new org.json.JSONArray().put(unread);
-            for (org.json.JSONObject person : people) identity.put(person);
+            // Presence state/device counts can change on visibility updates;
+            // keep the avatar Views when their rendered identities are unchanged.
+            for (org.json.JSONObject person : people) identity.put(new org.json.JSONArray()
+                    .put(person.optString("id")).put(person.optBoolean("bot"))
+                    .put(NativeAvatars.config(person)).put(NativeAvatars.seed(person)));
             if (NativeChatState.equivalent(peopleSignature, identity)) return;
             peopleSignature = NativeChatState.snapshot(identity);
             online.removeAllViews();

@@ -14,7 +14,7 @@ final class NativeWorkspaceEvents<C> {
     interface Source<C> {
         C open(Events events) throws Exception;
         void close(C connection);
-        void send(C connection, String type) throws Exception;
+        void send(C connection, String type, boolean visible) throws Exception;
         void checkAuth() throws Exception;
     }
     interface Listener<C> {
@@ -33,8 +33,10 @@ final class NativeWorkspaceEvents<C> {
         final String key;
         final Source<C> source;
         final Listener<C> listener;
+        final Object sendLock = new Object();
         volatile Attempt<C> attempt;
         boolean ready, checkingAuth;
+        volatile boolean visible = true;
         int attempts;
         long lastMessage;
         Runnable retry, watchdog;
@@ -73,6 +75,15 @@ final class NativeWorkspaceEvents<C> {
         }
     }
 
+    /** Updates server-side presence without tearing down a healthy socket. */
+    void visibility(boolean value) {
+        Scope<C> current = scope;
+        if (current == null || current.visible == value) return;
+        current.visible = value;
+        Attempt<C> attempt = current.attempt;
+        if (attempt != null && attempt.opened) send(current, "visibility");
+    }
+
     private void clearTimers(Scope<C> current) {
         if (current.retry != null) scheduler.remove(current.retry);
         if (current.watchdog != null) scheduler.remove(current.watchdog);
@@ -101,6 +112,7 @@ final class NativeWorkspaceEvents<C> {
                     current.listener.connection(connection);
                     List<String[]> pending = new ArrayList<>(attempt.pending); attempt.pending.clear();
                     for (String[] event : pending) receive(current, attempt, event[0], event[1]);
+                    if (!current.visible) send(current, "visibility");
                 });
             } catch (Exception error) { scheduler.post(() -> lost(current, attempt)); }
         });
@@ -151,9 +163,13 @@ final class NativeWorkspaceEvents<C> {
         Attempt<C> attempt = current.attempt;
         if (attempt == null || !attempt.opened) return;
         worker.execute(() -> {
-            if (scope != current || current.attempt != attempt) return;
-            try { current.source.send(attempt.connection, type); }
-            catch (Exception error) { scheduler.post(() -> lost(current, attempt)); }
+            synchronized (current.sendLock) {
+                if (scope != current || current.attempt != attempt) return;
+                // Workers can start out of order during a rapid hide/show.
+                // Sample the latest visibility only when the send owns the wire.
+                try { current.source.send(attempt.connection, type, current.visible); }
+                catch (Exception error) { scheduler.post(() -> lost(current, attempt)); }
+            }
         });
     }
 }

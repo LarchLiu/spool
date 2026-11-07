@@ -19,12 +19,15 @@ import (
 type EventListener interface{ OnEvent(kind, data string) }
 
 type EventStream struct {
-	cancel context.CancelFunc
-	conn   *websocket.Conn
-	ctx    context.Context
-	once   sync.Once
-	mu     sync.Mutex
-	closed bool
+	cancel    context.CancelFunc
+	conn      *websocket.Conn
+	ctx       context.Context
+	once      sync.Once
+	sendMu    sync.Mutex
+	mu        sync.Mutex
+	closed    bool
+	hidden    bool
+	helloSent bool
 }
 
 func (s *EventStream) Close() {
@@ -43,19 +46,61 @@ func (s *EventStream) Close() {
 }
 
 func (s *EventStream) Send(message string) error {
-	s.mu.Lock()
-	conn := s.conn
-	closed := s.closed
-	s.mu.Unlock()
-	if conn == nil || closed {
-		return errors.New("stream is not connected")
-	}
 	if len(message) > 32<<10 || !json.Valid([]byte(message)) {
 		return errors.New("invalid workspace message")
+	}
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+	var control struct {
+		Type    string `json:"type"`
+		Visible *bool  `json:"visible"`
+	}
+	_ = json.Unmarshal([]byte(message), &control)
+	s.mu.Lock()
+	if control.Visible != nil {
+		s.hidden = !*control.Visible
+	}
+	conn := s.conn
+	closed := s.closed
+	helloSent := s.helloSent
+	s.mu.Unlock()
+	// The handle is returned before dialing. A visibility update during the
+	// handshake is retained for hello and subsequent heartbeats.
+	if !helloSent && !closed && control.Type == "visibility" {
+		return nil
+	}
+	return s.write(conn, closed, message)
+}
+
+func (s *EventStream) write(conn *websocket.Conn, closed bool, message string) error {
+	if conn == nil || closed {
+		return errors.New("stream is not connected")
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
 	defer cancel()
 	return conn.Write(ctx, websocket.MessageText, []byte(message))
+}
+
+func (s *EventStream) sendPresence(kind, csrf string) error {
+	s.sendMu.Lock()
+	defer s.sendMu.Unlock()
+	s.mu.Lock()
+	conn, closed, visible := s.conn, s.closed, !s.hidden
+	s.mu.Unlock()
+	message := map[string]any{"type": kind, "visible": visible}
+	if csrf != "" {
+		message["csrf"] = csrf
+	}
+	data, _ := json.Marshal(message)
+	if err := s.write(conn, closed, string(data)); err != nil {
+		return err
+	}
+	if kind == "hello" {
+		s.mu.Lock()
+		s.helloSent = true
+		s.mu.Unlock()
+	}
+	return nil
 }
 
 func (s *EventStream) attach(conn *websocket.Conn) bool {
@@ -158,8 +203,7 @@ func (c *Client) SubscribeWorkspace(csrf, language string, listener EventListene
 			return
 		}
 		conn.SetReadLimit(maxResponseBytes)
-		hello, _ := json.Marshal(map[string]any{"type": "hello", "csrf": csrf, "visible": true})
-		if err := stream.Send(string(hello)); err != nil {
+		if err := stream.sendPresence("hello", csrf); err != nil {
 			streamError(ctx, listener, 0)
 			return
 		}
@@ -184,7 +228,7 @@ func (c *Client) SubscribeWorkspace(csrf, language string, listener EventListene
 				return
 			}
 			if event.Type == "ping" {
-				if err := stream.Send(`{"type":"pong","visible":true}`); err != nil {
+				if err := stream.sendPresence("pong", ""); err != nil {
 					streamError(ctx, listener, 0)
 					return
 				}

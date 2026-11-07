@@ -477,6 +477,73 @@ func TestNativeWorkspaceHeartbeatsReachListenerAndKeepNativePong(t *testing.T) {
 	}
 }
 
+func TestNativeWorkspaceKeepsBackgroundVisibilityThroughHandshakeAndHeartbeats(t *testing.T) {
+	entered, proceed := make(chan struct{}), make(chan struct{})
+	var release sync.Once
+	resume := func() { release.Do(func() { close(proceed) }) }
+	defer resume()
+	frames := make(chan map[string]any, 4)
+	client := nativeFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		<-proceed
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.CloseNow()
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+		read := func() bool {
+			_, data, err := conn.Read(ctx)
+			var value map[string]any
+			if err != nil || json.Unmarshal(data, &value) != nil {
+				return false
+			}
+			frames <- value
+			return true
+		}
+		if !read() || conn.Write(ctx, websocket.MessageText, []byte(`{"type":"ping"}`)) != nil || !read() || !read() {
+			return
+		}
+		if conn.Write(ctx, websocket.MessageText, []byte(`{"type":"ping"}`)) == nil {
+			read()
+		}
+	})
+	events := make(eventRecorder, 8)
+	stream, err := client.SubscribeWorkspace("csrf", "en", events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("workspace handshake did not begin")
+	}
+	if err := stream.Send(`{"type":"visibility","visible":false}`); err != nil {
+		t.Fatal("visibility before handshake was rejected:", err)
+	}
+	resume()
+	assertFrame := func(kind string, visible bool) {
+		t.Helper()
+		select {
+		case frame := <-frames:
+			if frame["type"] != kind || frame["visible"] != visible {
+				t.Fatalf("got %v, want %s visible=%v", frame, kind, visible)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("missing %s frame", kind)
+		}
+	}
+	assertFrame("hello", false)
+	assertFrame("pong", false)
+	if err := stream.Send(`{"type":"visibility","visible":true}`); err != nil {
+		t.Fatal(err)
+	}
+	assertFrame("visibility", true)
+	assertFrame("pong", true)
+}
+
 func TestNativeMultipartUpload(t *testing.T) {
 	client := nativeFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/chats/chat/messages" || r.Header.Get("X-CSRF-Token") != "csrf" {

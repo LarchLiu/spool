@@ -270,7 +270,7 @@ public class MainActivityWorkspaceEventsTest {
         }
     }
 
-    @Test public void sessionAndForegroundRebindingRevokeOldCallbacksAndQueuedSends() throws Exception {
+    @Test public void sessionRebindingAndExplicitDisconnectRevokeOldCallbacksAndQueuedSends() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             ShadowStream first = start(h); presence(); EventListener english = MainActivityGoalTest.ShadowClient.workspaceListener;
             h.activity.onWindowFocusChanged(true); assertEquals(1, h.io.jobs.size());
@@ -280,7 +280,8 @@ public class MainActivityWorkspaceEventsTest {
             assertNotNull(h.get("user")); assertEquals(0, h.<JSONArray>get("presence").length());
             event("ready", "{}"); presence(); EventListener japanese = MainActivityGoalTest.ShadowClient.workspaceListener;
             ShadowStream second = ShadowStream.streams.get(h.<EventStream>get("workspaceStream"));
-            h.controller.pause().stop(); assertTrue(second.closed); assertFalse(h.<Boolean>get("workspaceReady"));
+            h.call("stopStreams"); h.controller.pause().stop();
+            assertTrue(second.closed); assertFalse(h.<Boolean>get("workspaceReady"));
             japanese.onEvent("ready", "{}"); japanese.onEvent("presence", "[{id:'old',state:'online'}]"); Shadows.shadowOf(Looper.getMainLooper()).idle();
             assertEquals(0, h.<JSONArray>get("presence").length()); assertTrue(h.io.jobs.isEmpty());
             MainActivityGoalTest.Queue reads = new MainActivityGoalTest.Queue(); h.set("workspaceWorker", reads);
@@ -291,6 +292,58 @@ public class MainActivityWorkspaceEventsTest {
             event("ready", "{}"); assertTrue(h.<Boolean>get("workspaceReady"));
             assertEquals("Start/focus revoke superseded work and open only one new stream", 3, MainActivityGoalTest.ShadowClient.workspaceSubscriptions.size());
             assertEquals("The foreground reads stay coalesced through focus callbacks", 3, reads.jobs.size());
+        }
+    }
+
+    @Test public void backgroundAndReturnKeepTheSocketPresenceAndAvatarViews() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            ShadowStream stream = start(h); presence();
+            EventStream connection = h.get("workspaceStream");
+            NativeUi.Header header = h.get("workspaceHeader");
+            View avatars = header.online.getChildAt(0);
+            int epoch = h.get("workspaceEpoch");
+            h.set("chatID", ""); h.set("chat", null);
+            h.controller.pause().stop();
+            assertFalse(stream.closed); assertSame(connection, h.get("workspaceStream"));
+            assertTrue(h.<Boolean>get("workspaceReady")); assertEquals(1, h.<JSONArray>get("presence").length());
+            assertSame(avatars, header.online.getChildAt(0));
+            h.io.run();
+            assertEquals("visibility", stream.sent.get(0).getString("type"));
+            assertFalse(stream.sent.get(0).getBoolean("visible"));
+            event("presence", "[{id:'bob',nickname:'Bob',state:'away',devices:1}]");
+            assertSame("Changing presence does not recreate the avatar stack", avatars, header.online.getChildAt(0));
+            MainActivityGoalTest.Queue reads = new MainActivityGoalTest.Queue(); h.set("workspaceWorker", reads);
+            h.controller.start().resume(); h.activity.onWindowFocusChanged(true);
+            while (!h.io.jobs.isEmpty()) run(h);
+            assertFalse(stream.closed); assertSame(connection, h.get("workspaceStream"));
+            assertEquals(epoch, h.<Integer>get("workspaceEpoch").intValue());
+            assertEquals(1, MainActivityGoalTest.ShadowClient.workspaceSubscriptions.size());
+            assertTrue(reads.jobs.isEmpty()); assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
+            assertTrue(stream.sent.stream().skip(1).allMatch(value -> value.optBoolean("visible")));
+            presence(); assertSame(avatars, header.online.getChildAt(0));
+        }
+    }
+
+    @Test public void heartbeatKeepsABackgroundSocketAliveAndAnActualFailureStillReconnects() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            ShadowStream stream = start(h); presence();
+            h.controller.pause().stop(); h.io.run();
+            for (int i = 0; i < 8; i++) {
+                Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(15000));
+                event("ping", "true");
+                assertFalse(stream.closed); assertTrue(h.<Boolean>get("workspaceReady"));
+            }
+            event("transport_error", "{}");
+            assertTrue(stream.closed); assertFalse(h.<Boolean>get("workspaceReady"));
+            assertEquals(0, h.<JSONArray>get("presence").length());
+            h.io.run();
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(550));
+            h.io.run();
+            ShadowStream next = ShadowStream.streams.get(h.<EventStream>get("workspaceStream"));
+            assertNotSame(stream, next); h.io.run();
+            assertFalse(next.sent.get(0).getBoolean("visible"));
+            event("ready", "{}"); presence();
+            assertTrue(h.<Boolean>get("workspaceReady")); assertEquals(2, MainActivityGoalTest.ShadowClient.workspaceSubscriptions.size());
         }
     }
 
