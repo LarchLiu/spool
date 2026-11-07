@@ -55,13 +55,14 @@ sampling is for hotspot attribution, not an uninstrumented frame-rate baseline.
   File image caches distinguish directory scopes, so switching worktrees cannot
   reuse an image from the previous checkout. Source stays selectable while
   native highlighting loads or fails, and horizontal gestures scroll long lines.
-- Appearance, language and **Tailscale (tsnet)** share the Web-style Settings
-  modal. Theme tiles and the language listbox are reusable native components;
-  theme and language choices save immediately on the device without an API call
-  or restarting chat/workspace subscriptions. The modal updates immediately;
-  the underlying workspace applies the accumulated presentation change once
-  when Settings closes. Login does not overwrite device choices. Avatar editing
-  stays in the sidebar, matching Web. Mobile sidebars slide without a backdrop.
+- The palette icon immediately before the sidebar close button opens device
+  appearance/language preferences. Theme tiles and the language listbox remain
+  local and reusable; choices update the dialog and workspace immediately
+  without reconnecting. Opening either settings dialog retains the sidebar; theme
+  and language updates preserve its expanded state and scroll position. Each server tab's footer shows its
+  own profile, Settings, and sign-in/sign-out actions. Settings contains only
+  the selected server's name, enabled state, network entries and desktop action.
+  Explanations and connection diagnostics open from title information icons.
   Normal
   workspace headers contain only chat/project information and workspace actions:
   no server origin, connection bar, latency, or node state.
@@ -69,17 +70,104 @@ sampling is for hotspot attribution, not an uninstrumented frame-rate baseline.
 ```text
 Native Android views
     -> gomobile API / SSE / WebSocket boundary
-    -> Go HTTPS client using a pinned peer IP and tsnet's TCP netstack
+    -> Go HTTPS client using the selected connection mode
+       -> Public HTTPS: system DNS and TCP, without an embedded node
+       -> Tailscale: pinned peer IP and tsnet's TCP netstack
     -> selected server's HTTPS listener
 ```
 
-There is no WebView, JavaScript bridge, loopback CONNECT proxy or direct-network
-fallback in this path. Requests stay on the selected exact HTTPS origin, validate
-TLS, refuse redirects, and carry the server's Origin/CSRF requirements. The cookie
-jar remains in Go. Only the secure Spool session cookie is retained, scoped to the
-exact origin in private, non-backed-up storage; passwords are never retained.
+Use **+** at the end of the sidebar server tabs to add a named server. Tabs
+include disconnected/disabled servers so their settings and sign-in remain
+accessible. The selected tab's footer Settings edits only that server, including
+its name and whether it may connect. Each server can have a **Public HTTPS**
+address, a **Tailscale (tsnet)** address, or both. Click **Connect** on
+the desired entry. The choice is saved separately for each server and restored
+on restart. Both entries share one card, with separate Connect/Disconnect actions
+and a Tailscale sign-in icon at the right of its title. Delete server is at the
+bottom of the selected server's Settings, including when it is the last server.
+Public HTTPS accepts the same origin
+as the PWA (for example `https://chat.example.com`, with an optional port and no
+path). Its reverse proxy must support WebSocket and unbuffered SSE, as described
+in the [Web/PWA setup](../README.md#webpwa-and-https).
 
-The server address must match the selected node's full DNS name. Each new TCP
+Enabled servers retain independent connections, sessions and embedded nodes.
+Each server has exactly one live network entry. A network handoff closes the old
+client/node before opening the replacement; if the replacement fails, recovery
+tries the next configured entry without keeping two routes alive.
+Tabs below the sidebar logo row share a rounded background track with small
+rounded active segments. They select the workspace to display without closing
+other servers. Each connected, signed-in server keeps a workspace WebSocket while
+the app is in the foreground, including inactive tabs. Navigation, agent and profile
+pushes update only that server's memory cache; inactive tabs also use a batched
+REST fallback while their stream is unavailable. Their subscriptions pause when
+the app leaves the foreground and resume with fresh snapshots when it returns.
+Only the displayed server owns chat SSE and the desktop viewer. No background
+service or notification behavior is added.
+Selecting a tab transfers ownership of its existing workspace subscription without
+closing either server's WebSocket. Visibility controls change in place, and decoded
+frames in flight still update the cache belonging to that live server/socket.
+The window, sidebar and tab strip stay mounted; hidden chat transcripts are built
+only when a conversation is opened. True transport teardown runs away from the UI
+thread. Tab selection also retains the bounded local avatar cache.
+Startup and server selection open the sidebar. The current server's footer shows
+a monitor icon before Settings when authorized remote desktop is available.
+Availability snapshots and changes arrive on the workspace WebSocket, scoped to
+that authenticated server; closing or replacing the socket clears the entry.
+The footer retains a per-server display-only account (name and avatar) across
+disconnect, startup, reconnect and retry. Its action connects/retries instead of
+asking that user to sign in again. This cache carries no session token, CSRF or
+permissions and never authenticates workspace requests. Explicit logout or an
+authentication rejection clears it; network errors and failed/malformed session
+reads retain it. Once a starting tsnet route becomes HTTPS-ready, `/me` restores
+the shared login and reloads workspace metadata independently of network status.
+Network status dots reflect connectivity independently of Spool authentication.
+The tsnet information popup contains only node, path, latency and HTTPS details;
+Spool login and session recovery are handled separately in the footer.
+Health/session polling updates the connecting page and existing settings controls
+in place. An open information popup remains anchored and refreshes its contents
+through retries and session recovery. The Disconnect label includes the same
+connection-status dot as the current server tab.
+Sidebar tabs show a colored dot before each server name: green for connected,
+yellow for network setup or Tailscale node authorization, red for a network error and gray for disconnected
+or disabled. Explanations and Tailscale path/latency/HTTPS diagnostics open from
+the information icons beside their titles and update while the popup is visible.
+Theme/language preferences are separate, under the palette icon immediately
+before the sidebar close button. The per-server
+**Allow automatic connection switching** option permits trying the other network
+only after the selected connection fails. Waiting for Tailscale login or device
+approval retains the explicit choice. A healthy selected route stays
+connected without opening a second route for probes. Routing never
+selects another server. Manual network
+selection is also available. Both routes in one server profile share one private
+Spool session, validated with `/me` after each handoff. Different profiles retain
+independent logins, even when their addresses match. Cookies stay in Go and are
+projected only onto the active transport's exact configured HTTPS origin.
+One-time migration prefers the selected route's existing login, then the other
+configured route. Logout persists an empty shared session so old route-specific
+cookies cannot restore it. A retired transport cannot overwrite newer session
+state. Tailscale node enrollment remains independent of the shared Spool login.
+Server enablement and automatic network switching use native switches on the right.
+
+Each server tab retains its own projects, recent chats, profile directory,
+selection, expanded rows, pagination, scroll positions, model choices and unsent
+drafts in memory. Switching tabs shows that server's cached workspace immediately,
+then refreshes it in place. Reconnecting or handing off between public HTTPS and
+Tailscale keeps the existing workspace visible while the network/session recovers.
+Only a definitive endpoint failure clears fetched navigation; temporary network
+and session-check failures preserve it. Logout, confirmed session expiry, account
+changes and server deletion invalidate the affected cache. Workspace caches are
+never persisted and do not authenticate APIs or enable actions before session
+validation. Desktop availability and permissions are fetched from the selected
+server, and changing servers or network entries closes an existing desktop
+viewer. In-flight writes are revoked, never replayed on another connection.
+
+Existing single-server settings migrate to one server named Spool and retain
+its original node/session directories. There is no WebView, JavaScript bridge or
+loopback CONNECT proxy. Each network entry enforces its exact HTTPS origin,
+validates TLS, rejects redirects, and carries Origin/CSRF requirements. Only the
+secure Spool cookie is retained in private, non-backed-up storage.
+
+In Tailscale mode, the server address must match the selected node's full DNS name. Each new TCP
 connection waits up to 10 seconds for that peer to appear in the embedded node's
 Running status, then dials only its Tailscale IP through the userspace netstack.
 The original HTTPS hostname remains the TLS/SNI and HTTP origin identity. There
@@ -92,10 +180,12 @@ monitor so the engine can rebind/reprobe after link changes, avoiding restricted
 netlink enumeration. Tailscale enrollment uses its official external browser
 login, separately from Spool's username/password login.
 
-A separate foreground supervisor checks backend state and the exact-origin
+A separate foreground supervisor checks the exact-origin
 HTTPS `/healthz` endpoint even when Settings is closed. It recovers connectivity
 without discarding the selected chat, draft, node identity or Spool cookie. See
 the health/recovery policy under Diagnostics And Scope below.
+In Tailscale mode it also checks backend state; in Public HTTPS mode network
+recovery refreshes ordinary TCP connections without starting or resetting a node.
 
 ## Shared Native Components
 
@@ -1841,12 +1931,17 @@ production API compatibility separately.
 
 ## Server Setup
 
+For Public HTTPS, use the [existing PWA reverse proxy](../README.md#webpwa-and-https)
+and matching Public origin, enter that origin in the selected server's
+**Public HTTPS** entry in the APK settings. No server or Android Tailscale enrollment is needed.
+
 Desktop and the headless Go server can provide HTTPS using an embedded tsnet
 node, without installing a system Tailscale daemon or configuring Serve.
 In Desktop, open **Service > Tailscale (tsnet)**, enable it, optionally stage an
 Auth Key, then start/restart the service. Without a key, use the displayed
 Tailscale browser login button. Copy the assigned HTTPS address into the Android
-app; the APK does not need rebuilding. Auth Keys are not bundled into the APK.
+app's selected server **Tailscale (tsnet)** entry; the APK does not need rebuilding.
+Auth Keys are not bundled into the APK.
 
 For the headless server:
 
@@ -2076,27 +2171,31 @@ real-device visual and Tailscale enrollment checks above.
 
 ## Diagnostics And Scope
 
-Settings probes only the selected server node. A successful DISCO ping identifies
+In Tailscale mode, Settings probes only the selected server node. A successful DISCO ping identifies
 Direct, DERP (with region), or Peer Relay; the peer's home DERP alone is not proof
 of relayed traffic. Unknown targets and failed samples never imply a path or
 latency. Diagnostics pause outside Settings/in the background. Node reachability
 is independent of HTTPS, project authorization and Spool authentication.
 
-The foreground `ConnectionRecovery` supervisor samples backend state (3-second
-limit) and performs one exact-origin HTTPS `/healthz` GET (8-second limit).
+The foreground `ConnectionRecovery` supervisor performs one exact-origin HTTPS
+`/healthz` GET (8-second limit). In Tailscale mode it also samples backend state
+(3-second limit); Public HTTPS does not query an embedded node or run DISCO probes.
 Healthy samples repeat 15 seconds after completion. Failures use 2/4/8/16/30-second
 backoff; API transport errors can advance a healthy timer, and network changes
 or returning to the foreground cause an immediate check. There is only one
 health/recovery operation in flight. Backgrounding, disconnecting and selecting
 another server revoke stale results and queued recovery work. With no usable
-underlying non-VPN network, checks/resets wait for the network to return.
+network, checks/resets wait for the network to return. Public HTTPS uses Android's
+active system network, including a system VPN; Tailscale requires an underlying
+non-VPN network for its embedded node.
 
 A missing peer/path sample does not establish a disconnect. HTTPS success is
 authoritative even when local status is temporarily unavailable. A single
 transient HTTPS/status failure marks the sample as failed but does not discard
 previous availability. Two consecutive failures mark it unavailable and request
 a network refresh. At least three consecutive network/backend failures spanning
-30 seconds trigger a bounded `WantRunning=false/true` cycle on the existing
+30 seconds trigger a refresh of ordinary connections in Public HTTPS mode, or a
+bounded `WantRunning=false/true` cycle on the existing
 embedded node; subsequent resets have 60/120/240/300-second cooldowns. Only a
 successful health sample establishes recovery. The existing SSE/WebSocket retry
 policies resume live data without replaying writes or clearing the workspace.
@@ -2121,10 +2220,12 @@ updates are not included. The desktop remains responsible for account/project/
 agent/service administration. People-message history and unsent attachments stay
 in app-session memory, not retained diagnostic reports.
 
-The embedded node, its private logs and origin-scoped session cookies live under
-`noBackupFilesDir/tsnet/`; backup and device transfer are disabled. Preferences
-retain only the server origin and appearance/language choices. Disconnect closes
-this app's node but does not sign out of Spool; use **Sign out** to revoke the
+New servers keep each network entry's private state under
+`noBackupFilesDir/servers/<server-id>/{tsnet,https}/`. The migrated original server
+retains `noBackupFilesDir/{tsnet,https}/`. Cookies are scoped to the exact origin and connection
+mode; backup and device transfer are disabled. Preferences retain only the server
+origin, connection mode and appearance/language choices. Disconnect closes
+the selected server's clients/nodes but does not sign out of Spool; use **Sign out** to revoke the
 session. Clearing Android app storage also forgets the node identity; remove the
 old node in the Tailscale console when appropriate. Server-side agent tasks keep
 running if Android stops the app.

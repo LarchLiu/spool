@@ -38,7 +38,9 @@ final class NativeIcons {
             case "chevron_right": resource = R.drawable.web_icon_chevron_right; break;
             case "download": resource = R.drawable.web_icon_download; break;
             case "log_out": resource = R.drawable.web_icon_log_out; break;
+            case "key_round": resource = R.drawable.web_icon_key_round; break;
             case "monitor": resource = R.drawable.web_icon_monitor; break;
+            case "palette": resource = R.drawable.web_icon_palette; break;
             case "sun": resource = R.drawable.web_icon_sun; break;
             case "moon": resource = R.drawable.web_icon_moon; break;
             case "check": resource = R.drawable.web_icon_check; break;
@@ -52,6 +54,7 @@ final class NativeIcons {
             case "search": resource = R.drawable.web_icon_search; break;
             case "refresh": resource = R.drawable.web_icon_refresh; break;
             case "spinner": resource = R.drawable.web_icon_spinner; break;
+            case "plug": resource = R.drawable.web_icon_plug; break;
             case "brain": resource = R.drawable.web_icon_brain; break;
             case "wrench": resource = R.drawable.web_icon_wrench; break;
             case "terminal": resource = R.drawable.web_icon_terminal; break;

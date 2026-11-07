@@ -30,7 +30,7 @@ type DesktopStream struct {
 
 var desktopTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{32,128}$`)
 
-// OpenDesktop uses the same private session jar, TLS policy and tailnet-only
+// OpenDesktop uses the same private session jar, TLS policy and selected
 // dialer as API requests. The caller explicitly obtains a view with POST /connect.
 func (c *Client) OpenDesktop(token string, listener DesktopListener) (*DesktopStream, error) {
 	if !desktopTokenPattern.MatchString(token) || listener == nil {

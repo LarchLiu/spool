@@ -14,6 +14,11 @@ final class NativeHistoryScroll implements ViewTreeObserver.OnPreDrawListener {
         int top;
         Anchor anchor;
         void select(String next) { if (!key.equals(next)) { key = next; following = true; top = 0; anchor = null; } }
+        void copyFrom(State other) {
+            key = other.key; following = other.following; top = other.top;
+            // Anchors refer to Views owned by the old page; only keep its logical position.
+            anchor = null;
+        }
     }
     static final class Anchor {
         final int height, top;

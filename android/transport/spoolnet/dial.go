@@ -15,6 +15,29 @@ import (
 
 var errServerNotReady = errors.New("selected server is not ready in the tailnet")
 
+type directDialer struct {
+	authority string
+	lifetime  context.Context
+	dialTCP   func(context.Context, string, string) (net.Conn, error)
+}
+
+func (d directDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	if network != "tcp" && network != "tcp4" && network != "tcp6" {
+		return nil, errors.New("only HTTPS TCP connections are allowed")
+	}
+	if !strings.EqualFold(address, d.authority) {
+		return nil, errors.New("connection must use the selected server's exact HTTPS origin")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	stop := context.AfterFunc(d.lifetime, cancel)
+	defer stop()
+	if err := d.lifetime.Err(); err != nil {
+		return nil, err
+	}
+	return d.dialTCP(ctx, network, d.authority)
+}
+
 type peerStatusAPI interface {
 	Status(context.Context) (*ipnstate.Status, error)
 }

@@ -187,6 +187,29 @@ The reverse proxy must support WebSocket upgrades and long-lived SSE connections
 and should disable response buffering. Spool still enforces login cookies, CSRF,
 Origin, and project permission checks.
 
+The native Android APK can use this same address: use **+** at the end of the sidebar server tabs to add a named server. Its footer
+**Settings** entry edits only that server. Enter its **Public HTTPS** address and
+choose **Connect** in that network entry.
+Each server may also have a Tailscale address. Click the network entry to use;
+the choice is saved for that server and restored on restart. Enabled servers keep independent connections and appear as tabs at the
+top of the sidebar, with a colored connection-status dot before each name. The
+palette icon to the left of the sidebar close button opens device appearance and
+language preferences. Automatic network switching stays within one server; changing
+servers always requires selecting a tab. Each server shares one login between its
+public and Tailscale routes, while different servers keep independent logins.
+Existing route-specific logins migrate once, preferring the selected route.
+Settings use switches on the right for server enablement and automatic switching.
+Startup and server selection open the sidebar. Each network entry contains its
+own Connect/Disconnect action; the bottom of Settings can delete that server.
+Each tab keeps its own workspace state in memory and shows it immediately on
+selection. Connected, signed-in servers receive project and recent-chat updates
+over independent WebSockets even while another tab is displayed. Reconnection
+and network handoff retain cached lists; workspace caches are never persisted.
+Tab selection reuses the window, sidebar and existing WebSockets without
+reconnecting either server or constructing a hidden chat transcript.
+When available, a monitor icon immediately before Settings in the footer opens
+the selected server's remote desktop. Availability arrives through the workspace WebSocket.
+
 ### Tailscale and Android
 
 Enable embedded Tailscale in **Service > Tailscale (tsnet)** in Desktop, or run
@@ -198,7 +221,8 @@ the following with the headless server:
 
 The first setup requires MagicDNS and HTTPS certificates in the Tailscale admin
 console, followed by node login or approval. The server prints its actual HTTPS
-address after startup; enter that complete address in the Android client. The
+address after startup; enter that complete address in the selected Android
+server's **Tailscale (tsnet)** entry. The
 Tailscale entry still requires Spool login and does not bypass project permissions
 or CSRF checks.
 

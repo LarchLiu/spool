@@ -3,11 +3,14 @@ package com.cloudgeek.spool.android;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /** Web's loading page while the retained session is being checked. */
 final class NativeConnecting extends FrameLayout {
+    final TextView message;
+    final Button retry;
     NativeConnecting(NativeUi ui, String error, Runnable retry, Runnable settings) {
         super(ui.context);
         LinearLayout body = ui.padded(28, 25);
@@ -18,19 +21,21 @@ final class NativeConnecting extends FrameLayout {
         status.setGravity(Gravity.CENTER);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         body.addView(status);
-        if (error != null && !error.isEmpty()) {
-            body.addView(ui.space(15));
-            TextView message = ui.text(error, 12, ui.error);
-            message.setGravity(Gravity.CENTER);
-            body.addView(message);
-            body.addView(ui.space(15));
-            body.addView(ui.button(ui.t("Retry"), false, retry));
-        }
+        body.addView(ui.space(15));
+        message = ui.text("", 12, ui.error); message.setGravity(Gravity.CENTER);
+        body.addView(message); body.addView(ui.space(15));
+        this.retry = ui.button(ui.t("Retry"), false, retry); body.addView(this.retry);
+        bind(error, false);
         addView(body, new LayoutParams(-1, -1));
         NativeUi.IconButton preferences = ui.icon("settings", 20, ui.t("Settings"), settings);
         LayoutParams top = new LayoutParams(ui.dp(32), ui.dp(32), Gravity.TOP | Gravity.END);
         top.topMargin = ui.dp(20);
         top.setMarginEnd(ui.dp(20));
         addView(preferences, top);
+    }
+    void bind(String error, boolean busy) {
+        message.setText(error == null ? "" : error);
+        message.setVisibility(error == null || error.isEmpty() ? GONE : VISIBLE);
+        retry.setVisibility(message.getVisibility()); retry.setEnabled(!busy);
     }
 }

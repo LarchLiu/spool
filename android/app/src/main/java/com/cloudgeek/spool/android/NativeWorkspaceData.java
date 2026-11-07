@@ -49,9 +49,14 @@ final class NativeWorkspaceData {
     }
 
     boolean bind(String key, Source source, Listener listener) {
+        return bind(key, source, listener, true);
+    }
+
+    boolean bind(String key, Source source, Listener listener, boolean initialLoad) {
         if (scope != null && scope.key.equals(key)) return false;
         stop(); scope = new Scope(key, source, listener);
-        load(true); dispatcher.postDelayed(fallback, 15000);
+        if (initialLoad) load(true);
+        dispatcher.postDelayed(fallback, 15000);
         return true;
     }
 

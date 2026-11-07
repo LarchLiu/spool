@@ -26,21 +26,37 @@ final class NativeSidebar extends LinearLayout {
     final NativeSidebarState state;
     private final NativeUi ui;
     private final Consumer<String> select, create;
-    private final Runnable avatar, settings, logout;
+    private final Runnable avatar, settings, logout, login;
+    private String serverLabel = "Spool", serverID = "";
     private final Function<String, JSONObject> person;
     private final Paint border = new Paint();
     private JSONArray projects = new JSONArray(), chats = new JSONArray();
     private JSONObject user = new JSONObject();
+    private JSONObject account;
+    private String connectionAction = "";
+    private boolean connectionPending;
+    View connection;
     private String project = "", chat = "", backend = "", signature = "";
-    private boolean posting, active = true;
+    private boolean posting, cached, active = true;
+    private boolean hasServer = true, desktopAvailable;
+    private Runnable desktop = () -> {};
+    NativeUi.IconButton remote;
+    private NativeServerTabs serverTabs;
+    private String serverSignature = "";
     private int epoch;
 
     NativeSidebar(NativeUi ui, NativeSidebarState state, Function<String, JSONObject> person, Runnable close, Consumer<String> select, Consumer<String> create, Runnable avatar, Runnable settings, Runnable logout) {
-        super(ui.context); this.ui = ui; this.state = state; this.person = person; this.select = select; this.create = create; this.avatar = avatar; this.settings = settings; this.logout = logout;
+        this(ui, state, person, close, select, create, avatar, settings, logout, () -> {});
+    }
+    NativeSidebar(NativeUi ui, NativeSidebarState state, Function<String, JSONObject> person, Runnable close, Consumer<String> select, Consumer<String> create, Runnable avatar, Runnable settings, Runnable logout, Runnable login) {
+        this(ui, state, person, close, select, create, avatar, settings, logout, login, () -> {});
+    }
+    NativeSidebar(NativeUi ui, NativeSidebarState state, Function<String, JSONObject> person, Runnable close, Consumer<String> select, Consumer<String> create, Runnable avatar, Runnable settings, Runnable logout, Runnable login, Runnable appearance) {
+        super(ui.context); this.ui = ui; this.state = state; this.person = person; this.select = select; this.create = create; this.avatar = avatar; this.settings = settings; this.logout = logout; this.login = login;
         setOrientation(VERTICAL); setPadding(0, 0, ui.dp(1), 0); setBackgroundColor(ui.sidebar); setWillNotDraw(false);
         brand = ui.row(); brand.setPadding(ui.dp(18), 0, ui.dp(18), 0); brand.addView(ui.logo(32));
         TextView name = ui.text("Spool", 17, ui.text); ui.typography(name, 17, ui.text, 750); ui.fixedLineHeight(name, 20f / 17); name.setLetterSpacing(-.5f / 17);
-        LayoutParams label = new LayoutParams(0, -2, 1); label.setMarginStart(ui.dp(10)); brand.addView(name, label); brand.addView(ui.icon("close", 18, ui.t("Close sidebar"), () -> { if (active) close.run(); })); addView(brand, new LayoutParams(-1, ui.dp(49))); addView(ui.divider());
+        LayoutParams label = new LayoutParams(0, -2, 1); label.setMarginStart(ui.dp(10)); brand.addView(name, label); brand.addView(ui.icon("palette", 18, ui.t("Appearance and language"), () -> { if (active) appearance.run(); })); brand.addView(ui.icon("close", 18, ui.t("Close sidebar"), () -> { if (active) close.run(); })); addView(brand, new LayoutParams(-1, ui.dp(49))); addView(ui.divider());
         scroll = new ScrollView(ui.context); scroll.setVerticalScrollBarEnabled(false); scroll.setContentDescription(ui.t("Workspace"));
         navigation = ui.column(); navigation.setPadding(ui.dp(4), 0, ui.dp(4), ui.dp(24)); scroll.addView(navigation, new ScrollView.LayoutParams(-1, -2)); addView(scroll, new LayoutParams(-1, 0, 1));
         scroll.setOnScrollChangeListener((view, x, y, oldX, oldY) -> { if (active) state.scrollY = y; });
@@ -48,9 +64,34 @@ final class NativeSidebar extends LinearLayout {
     }
 
     void bind(JSONObject user, JSONArray projects, JSONArray chats, String project, String chat, String backend, boolean posting) {
-        this.user = user; this.projects = projects; this.chats = chats; this.project = project; this.chat = chat; this.backend = backend; this.posting = posting;
+        bind(user, projects, chats, project, chat, backend, posting, false);
+    }
+
+    void bind(JSONObject user, JSONArray projects, JSONArray chats, String project, String chat, String backend, boolean posting, boolean cached) {
+        this.user = user; this.projects = projects; this.chats = chats; this.project = project; this.chat = chat; this.backend = backend; this.posting = posting; this.cached = cached;
         state.select(project, chat, projects, chats);
         render();
+    }
+
+    void connection(JSONObject account, String action, boolean pending) {
+        boolean changed = this.account == null || !this.account.toString().equals(account.toString())
+                || !connectionAction.equals(action) || connectionPending != pending;
+        this.account = account; connectionAction = action; connectionPending = pending;
+        if (changed && active) footer();
+    }
+
+    void servers(ServerProfiles profiles, java.util.Map<String, String> online, Consumer<String> choose, Runnable add) {
+        hasServer = profiles.active() != null;
+        serverLabel = hasServer ? profiles.active().name : ui.t("No servers yet.");
+        serverID = profiles.selected;
+        StringBuilder structure = new StringBuilder();
+        for (ServerProfiles.Server server : profiles.entries) structure.append(server.id).append('\0').append(server.name).append('\0');
+        String signature = structure.toString();
+        if (serverTabs != null && serverSignature.equals(signature)) { serverTabs.status(online); return; }
+        serverSignature = signature;
+        if (serverTabs != null) removeView(serverTabs);
+        serverTabs = new NativeServerTabs(ui, profiles, online, id -> { if (active) choose.accept(id); }, true, () -> { if (active) add.run(); });
+        addView(serverTabs, indexOfChild(brand) + 1, new LayoutParams(-1, -2));
     }
     private void heading(String title) {
         TextView text = ui.text(ui.t(title), 13, ui.muted); ui.typography(text, 13, ui.muted, 500); ui.fixedLineHeight(text, 22f / 13);
@@ -69,23 +110,40 @@ final class NativeSidebar extends LinearLayout {
         List<JSONObject> ordered = NativeSidebarState.sorted(chats, project); int limit = project == null ? state.recentLimit : state.limit(project);
         for (int i = 0; i < Math.min(ordered.size(), limit); i++) {
             JSONObject value = ordered.get(i); String id = value.optString("id");
-            NativeChatLink row = new NativeChatLink(ui, value, nested, chat.equals(id), backend, person, () -> { if (!active) return; state.expanded.add(value.optString("project_id")); select.accept(id); }); row.open.setTag((nested ? "project:" : "recent:") + id); navigation.addView(row, new LayoutParams(-1, ui.dp(31))); chatRows.add(row);
+            NativeChatLink row = new NativeChatLink(ui, value, nested, chat.equals(id), backend, person, () -> { if (!active || cached) return; state.expanded.add(value.optString("project_id")); select.accept(id); }); row.open.setEnabled(!cached); row.open.setTag((nested ? "project:" : "recent:") + id); navigation.addView(row, new LayoutParams(-1, ui.dp(31))); chatRows.add(row);
         }
         if (ordered.isEmpty()) empty("No conversations yet.", nested);
         if (ordered.size() > 5) more(ordered.size() > limit ? "Show more" : "Show less", nested, "more:" + (project == null ? "recents" : project), () -> { state.moreChats(project, ordered.size()); render(); });
     }
     private void render() {
         if (!active) return;
-        StringBuilder next = new StringBuilder().append(user).append(projects).append(chats).append(project).append('\0').append(chat).append('\0').append(backend).append(posting).append(state.projectLimit).append(state.recentLimit).append(state.expanded).append(state.chatLimits);
-        for (int i = 0; i < chats.length(); i++) { JSONArray participants = chats.optJSONObject(i).optJSONArray("participants"); if (participants != null) for (int j = 0; j < participants.length(); j++) next.append(person.apply(participants.optJSONObject(j).optString("id"))); }
+        StringBuilder next = new StringBuilder().append(serverID).append(serverLabel).append(ServerProfiles.displayAccount(user)).append(project).append('\0').append(chat).append('\0').append(backend).append(posting).append(cached).append(state.projectLimit).append(state.recentLimit).append(state.expanded).append(state.chatLimits);
+        if (user.optString("id").isEmpty() && !cached) next.append(connectionAction);
+        // Metadata signatures must never serialize transcript payloads or hidden agent catalogs.
+        for (int i = 0; i < projects.length(); i++) {
+            JSONObject value = projects.optJSONObject(i);
+            next.append(new JSONArray().put(value.optString("id")).put(value.optString("name")).put(value.optBoolean("can_create", true)));
+        }
+        for (int i = 0; i < chats.length(); i++) {
+            JSONObject value = chats.optJSONObject(i);
+            next.append(new JSONArray().put(value.optString("id")).put(value.optString("project_id")).put(value.optString("title"))
+                    .put(value.optString("backend")).put(value.optString("status")).put(value.opt("updated_at")).put(value.optBoolean("local_session")));
+            JSONArray participants = value.optJSONArray("participants");
+            if (participants != null) for (int j = 0; j < participants.length(); j++) next.append(ServerProfiles.displayAccount(person.apply(participants.optJSONObject(j).optString("id"))));
+        }
         if (signature.contentEquals(next)) return;
         signature = next.toString();
         String focus = ""; View focused = findFocus(); if (focused != null && focused.getTag() != null) focus = focused.getTag().toString();
         int y = state.scrollY, renderEpoch = ++epoch;
-        navigation.removeAllViews(); projectRows.clear(); chatRows.clear(); moreButtons.clear(); headings.clear(); heading("Projects");
+        navigation.removeAllViews(); projectRows.clear(); chatRows.clear(); moreButtons.clear(); headings.clear();
+        if (user.optString("id").isEmpty() && !cached) {
+            empty(connectionAction.isEmpty() || connectionAction.equals("Sign in")
+                    ? "Sign in to view this server’s workspace." : "Connect to view this server’s workspace.", false); footer(); return;
+        }
+        heading("Projects");
         for (int i = 0; i < Math.min(projects.length(), state.projectLimit); i++) {
             JSONObject value = projects.optJSONObject(i); String id = value.optString("id"); boolean open = state.expanded.contains(id);
-            NativeProjectRow row = new NativeProjectRow(ui, () -> { if (!active) return; state.toggle(id); render(); }, () -> { if (active) create.accept(id); }); row.bind(value, open, posting); row.toggle.setTag("project:" + id); row.create.setTag("new:" + id);
+            NativeProjectRow row = new NativeProjectRow(ui, () -> { if (!active) return; state.toggle(id); render(); }, () -> { if (active && !cached) create.accept(id); }); row.bind(value, open, posting || cached); row.toggle.setTag("project:" + id); row.create.setTag("new:" + id);
             navigation.addView(row, new LayoutParams(-1, ui.dp(31))); projectRows.add(row); if (open) list(id, true); navigation.addView(ui.space(5));
         }
         if (projects.length() == 0) empty("No authorized projects", false);
@@ -95,12 +153,42 @@ final class NativeSidebar extends LinearLayout {
         scroll.post(() -> { if (!active || renderEpoch != epoch) return; if (restore != null) restore.requestFocus(); scroll.scrollTo(0, y); });
     }
     private void footer() {
-        footer.removeAllViews(); FrameLayout photo = new FrameLayout(ui.context); photo.setPadding(ui.dp(1), ui.dp(1), ui.dp(1), ui.dp(1)); photo.setBackground(ui.shape(ui.soft, 99, ui.borderStrong)); photo.addView(ui.avatar(user, 32), new FrameLayout.LayoutParams(ui.dp(32), ui.dp(32), Gravity.CENTER)); photo.setFocusable(true); photo.setContentDescription(ui.t("Change avatar")); photo.setOnClickListener(view -> { if (active) avatar.run(); }); footer.addView(photo, new LayoutParams(ui.dp(34), ui.dp(34)));
-        LinearLayout copy = ui.column(); TextView name = ui.text(NativeAvatars.name(user), 12, ui.text); ui.fixedLineHeight(name, 14f / 12); ui.preciseText(name); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END); copy.addView(name, new LayoutParams(-1, -2));
-        TextView hint = ui.text(ui.t("Project chat visibility follows project settings"), 9, ui.muted); ui.fixedLineHeight(hint, 10f / 9); hint.setSingleLine(true); hint.setEllipsize(android.text.TextUtils.TruncateAt.END); LayoutParams detail = new LayoutParams(-1, -2); detail.topMargin = ui.dp(4); copy.addView(hint, detail);
-        LayoutParams identity = new LayoutParams(0, -2, 1); identity.setMarginStart(ui.dp(10)); footer.addView(copy, identity);
-        LayoutParams action = new LayoutParams(ui.dp(32), ui.dp(32)); action.setMarginStart(ui.dp(10)); footer.addView(ui.icon("settings", 16, ui.t("Appearance and language"), () -> { if (active) settings.run(); }), action);
-        LayoutParams exit = new LayoutParams(ui.dp(32), ui.dp(32)); exit.setMarginStart(ui.dp(10)); footer.addView(ui.icon("log-out", 16, ui.t("Sign out"), () -> { if (active) logout.run(); }), exit);
+        footer.removeAllViews();
+        remote = null; connection = null;
+        JSONObject identity = account == null ? user : account;
+        if (identity.optString("id").isEmpty()) {
+            TextView name = ui.text(serverLabel, 12, ui.text); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            footer.addView(name, new LayoutParams(0, -2, 1));
+            if (!hasServer) return;
+            footer.addView(ui.icon("settings", 16, ui.t("Settings"), () -> { if (active) settings.run(); }));
+            Button action = ui.quietButton(ui.t(connectionAction.isEmpty() ? "Sign in" : connectionAction), () -> { if (active && !connectionPending) login.run(); });
+            action.setEnabled(!connectionPending); connection = action; footer.addView(action);
+            return;
+        }
+        boolean authenticated = connectionAction.isEmpty() && !user.optString("id").isEmpty();
+        FrameLayout photo = new FrameLayout(ui.context); photo.setPadding(ui.dp(1), ui.dp(1), ui.dp(1), ui.dp(1)); photo.setBackground(ui.shape(ui.soft, 99, ui.borderStrong)); photo.addView(ui.avatar(identity, 32), new FrameLayout.LayoutParams(ui.dp(32), ui.dp(32), Gravity.CENTER)); photo.setFocusable(authenticated); photo.setContentDescription(ui.t("Change avatar")); photo.setEnabled(authenticated); photo.setOnClickListener(view -> { if (active && authenticated) avatar.run(); }); footer.addView(photo, new LayoutParams(ui.dp(34), ui.dp(34)));
+        LinearLayout copy = ui.column(); TextView name = ui.text(NativeAvatars.name(identity), 12, ui.text); ui.fixedLineHeight(name, 14f / 12); ui.preciseText(name); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END); copy.addView(name, new LayoutParams(-1, -2));
+        TextView hint = ui.text(serverLabel, 9, ui.muted); ui.fixedLineHeight(hint, 10f / 9); hint.setSingleLine(true); hint.setEllipsize(android.text.TextUtils.TruncateAt.END); LayoutParams detail = new LayoutParams(-1, -2); detail.topMargin = ui.dp(4); copy.addView(hint, detail);
+        LayoutParams identityParams = new LayoutParams(0, -2, 1); identityParams.setMarginStart(ui.dp(10)); footer.addView(copy, identityParams);
+        if (!connectionAction.isEmpty()) {
+            NativeUi.IconButton action = ui.icon(connectionPending ? "spinner" : connectionAction.equals("Retry") ? "refresh" : "plug", 16, ui.t(connectionAction), () -> { if (active && !connectionPending) login.run(); });
+            action.setEnabled(!connectionPending); connection = action;
+            LayoutParams at = new LayoutParams(ui.dp(32), ui.dp(32)); at.setMarginStart(ui.dp(6)); footer.addView(action, at);
+        } else if (desktopAvailable && authenticated) {
+            remote = ui.icon("monitor", 16, ui.t("Remote connection"), () -> { if (active && desktopAvailable) desktop.run(); });
+            LayoutParams action = new LayoutParams(ui.dp(32), ui.dp(32)); action.setMarginStart(ui.dp(6));
+            footer.addView(remote, action);
+        }
+        LayoutParams action = new LayoutParams(ui.dp(32), ui.dp(32)); action.setMarginStart(ui.dp(10)); footer.addView(ui.icon("settings", 16, ui.t("Settings"), () -> { if (active) settings.run(); }), action);
+        LayoutParams exit = new LayoutParams(ui.dp(32), ui.dp(32)); exit.setMarginStart(ui.dp(10));
+        NativeUi.IconButton signOut = ui.icon("log-out", 16, ui.t("Sign out"), () -> { if (active && authenticated) logout.run(); });
+        signOut.setEnabled(authenticated); footer.addView(signOut, exit);
+    }
+    void desktop(boolean available, Runnable connect) {
+        desktop = connect;
+        if (desktopAvailable == available) return;
+        desktopAvailable = available;
+        if (active) footer();
     }
     void deactivate() { active = false; epoch++; for (NativeChatLink row : chatRows) if (row.operators != null) row.operators.deactivate(); }
     @Override protected void onDetachedFromWindow() { deactivate(); super.onDetachedFromWindow(); }

@@ -55,6 +55,12 @@ final class NativeProfiles {
         people = new JSONArray();
     }
 
+    void copyFrom(NativeProfiles other) {
+        epoch++;
+        revision = other.revision;
+        people = other.people;
+    }
+
     long epoch() { return epoch; }
 
     String missing(JSONArray chats, JSONObject chat, JSONArray presence) {

@@ -41,6 +41,51 @@ func remoteDesktopToken(t *testing.T, app *App, cookie *http.Cookie, csrf string
 	return result.Token
 }
 
+func TestRealtimeRemoteDesktopAvailabilityIsAuthorizedAndTracksServiceChanges(t *testing.T) {
+	store, app, manager := remoteDesktopFixture(t)
+	alice := testUser(t, store, "alice")
+	if _, err := store.SaveUser(UserInput{ID: alice.ID, Username: alice.Username, Nickname: alice.Nickname, RemoteDesktop: true}); err != nil {
+		t.Fatal(err)
+	}
+	testUser(t, store, "bob")
+	aliceCookie, aliceCSRF := loginRequest(t, app, "alice")
+	bobCookie, bobCSRF := loginRequest(t, app, "bob")
+	server := httptest.NewServer(app)
+	t.Cleanup(server.Close)
+	available := func(conn *websocket.Conn, want bool) {
+		t.Helper()
+		message := realtimeUntil(t, conn, func(m realtimeMessage) bool { return m.Type == "desktop" })
+		var value map[string]bool
+		if err := json.Unmarshal(message.Data, &value); err != nil || len(value) != 1 || value["available"] != want {
+			t.Fatalf("desktop snapshot=%s want available=%v: %v", message.Data, want, err)
+		}
+	}
+	conn := realtimeConnect(t, server, aliceCookie, aliceCSRF, true)
+	available(conn, false)
+	realtimeReady(t, conn)
+	manager.SetEnabled(t.Context(), true)
+	available(conn, true)
+	if manager.Status().Running {
+		t.Fatal("pushing availability must not start desktop capture")
+	}
+	denied := realtimeConnect(t, server, bobCookie, bobCSRF, true)
+	available(denied, false)
+	realtimeReady(t, denied)
+	manager.SetEnabled(t.Context(), false)
+	available(conn, false)
+	manager.SetEnabled(t.Context(), true)
+	available(conn, true)
+	// A fresh identity must be used even when a grant changes without replacing the session.
+	if _, err := store.db.Exec(`UPDATE user_remote_desktop SET enabled=0 WHERE user_id=?`, alice.ID); err != nil {
+		t.Fatal(err)
+	}
+	store.changes.publish(changeRemoteDesktop)
+	available(conn, false)
+	if manager.Status().Running {
+		t.Fatal("authorization snapshots started desktop capture")
+	}
+}
+
 func TestRemoteDesktopRequiresLocalEnablementAndSeparateUserGrant(t *testing.T) {
 	store, app, manager := remoteDesktopFixture(t)
 	alice := testUser(t, store, "alice")

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"syscall"
 	"testing"
@@ -18,6 +19,24 @@ import (
 type fakeHealthAPI struct {
 	state string
 	err   error
+}
+
+func TestDirectHealthRecoversDNSAndNetworkFailuresWithoutNodeState(t *testing.T) {
+	for _, test := range []struct {
+		err     error
+		problem string
+	}{
+		{},
+		{&net.DNSError{Err: "no such host", Name: "chat.example.com", IsNotFound: true}, "network"},
+		{syscall.ENETUNREACH, "network"},
+		{healthStatusError{503}, "server"},
+		{&tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, "endpoint"},
+	} {
+		info := checkHealth(context.Background(), nil, func(context.Context) error { return test.err })
+		if info.State != "Running" || info.AuthURL != "" || info.Problem != test.problem {
+			t.Fatalf("direct health depended on a node or misclassified %v: %+v", test.err, info)
+		}
+	}
 }
 
 func (f fakeHealthAPI) StatusWithoutPeers(ctx context.Context) (*ipnstate.Status, error) {

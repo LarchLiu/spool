@@ -21,7 +21,7 @@ func parseEndpoint(address string) (*url.URL, string, error) {
 	host := strings.ToLower(u.Hostname())
 	if !dnsName.MatchString(host) || host == "localhost" || strings.HasSuffix(host, ".localhost") ||
 		strings.Contains(host, "..") || net.ParseIP(host) != nil || !strings.Contains(host, ".") {
-		return nil, "", errors.New("use the server's HTTPS DNS name, for example spool.example.ts.net")
+		return nil, "", errors.New("use the server's HTTPS DNS name, for example spool.example.com")
 	}
 	port := u.Port()
 	if port == "" {

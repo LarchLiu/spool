@@ -34,9 +34,9 @@ final class NativeWorkspaceEvents<C> {
         Attempt(long started) { this.started = started; }
     }
     private static final class Scope<C> {
-        final String key;
+        String key;
         final Source<C> source;
-        final Listener<C> listener;
+        Listener<C> listener;
         final Object sendLock = new Object();
         volatile Attempt<C> attempt;
         boolean ready, checkingAuth;
@@ -62,6 +62,19 @@ final class NativeWorkspaceEvents<C> {
         stop(); Scope<C> next = new Scope<>(key, source, listener); scope = next; connect(next);
         return true;
     }
+
+    /** Transfer display ownership while keeping this server's live socket and retry timers. */
+    boolean handoff(String key, Listener<C> listener) {
+        Scope<C> current = scope;
+        if (current == null) return false;
+        current.key = key; current.listener = listener;
+        Attempt<C> attempt = current.attempt;
+        listener.connection(attempt != null && attempt.opened ? attempt.connection : null);
+        listener.connected(current.ready);
+        return true;
+    }
+
+    boolean ready() { return scope != null && scope.ready; }
 
     void stop() {
         Scope<C> old = scope; scope = null;

@@ -31,6 +31,10 @@ type connectionSnapshot struct {
 // ConnectionInfo probes only the selected server's node, not an arbitrary peer.
 // It is independent of the HTTPS check and safe to call from a diagnostic worker.
 func (c *Client) ConnectionInfo() (string, error) {
+	if c.direct {
+		result, err := json.Marshal(connectionSnapshot{State: "Running", Path: "https", SampledAtMS: time.Now().UnixMilli()})
+		return string(result), err
+	}
 	ctx, cancel := context.WithTimeout(c.ctx, 4*time.Second)
 	defer cancel()
 	snapshot, err := inspectConnection(ctx, c.local, c.origin.Hostname())

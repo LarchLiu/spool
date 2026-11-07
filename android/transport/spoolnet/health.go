@@ -27,38 +27,46 @@ type healthSnapshot struct {
 // DISCO/path diagnostics. One foreground sample takes at most 11 seconds; the
 // Android supervisor owns backoff and recovery, rather than nesting retry loops.
 func (c *Client) Health() (string, error) {
-	info := checkHealth(c.ctx, c.local, c.probeOnce)
+	var api healthAPI
+	if !c.direct {
+		api = c.local
+	}
+	info := checkHealth(c.ctx, api, c.probeOnce)
 	result, err := json.Marshal(info)
 	return string(result), err
 }
 
 func checkHealth(ctx context.Context, api healthAPI, probe func(context.Context) error) healthSnapshot {
 	info := healthSnapshot{State: "Unknown", HTTPS: "Not checked"}
-	statusCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	status, err := api.StatusWithoutPeers(statusCtx)
-	cancel()
-	if err != nil || status == nil {
-		info.Problem = "status"
-		info.Message = "Embedded node status is unavailable"
-		if err != nil {
-			info.Message = fmt.Sprintf("%s: %v", info.Message, err)
-		}
+	if api == nil {
+		info.State = "Running"
 	} else {
-		info.State, info.AuthURL = status.BackendState, status.AuthURL
-	}
-	if status != nil && err == nil && info.State != "Running" {
-		switch info.State {
-		case "NeedsLogin":
-			info.Problem = "login"
-		case "NeedsMachineAuth":
-			info.Problem = "approval"
-		default:
-			info.Problem = "starting"
+		statusCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		status, err := api.StatusWithoutPeers(statusCtx)
+		cancel()
+		if err != nil || status == nil {
+			info.Problem = "status"
+			info.Message = "Embedded node status is unavailable"
+			if err != nil {
+				info.Message = fmt.Sprintf("%s: %v", info.Message, err)
+			}
+		} else {
+			info.State, info.AuthURL = status.BackendState, status.AuthURL
 		}
-		return info
+		if status != nil && err == nil && info.State != "Running" {
+			switch info.State {
+			case "NeedsLogin":
+				info.Problem = "login"
+			case "NeedsMachineAuth":
+				info.Problem = "approval"
+			default:
+				info.Problem = "starting"
+			}
+			return info
+		}
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	err = probe(probeCtx)
+	err := probe(probeCtx)
 	cancel()
 	if err == nil {
 		info.HTTPS = "Verified"

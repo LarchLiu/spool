@@ -1,4 +1,4 @@
-// Package spoolnet provides the native Android API transport over embedded tsnet.
+// Package spoolnet provides native Android HTTPS transport over the system network or embedded tsnet.
 package spoolnet
 
 import (
@@ -33,8 +33,30 @@ type Client struct {
 	http      *http.Client
 	transport *http.Transport
 	closed    bool
+	direct    bool
 	ctx       context.Context
 	cancel    context.CancelFunc
+}
+
+// NewDirectClient connects to one HTTPS origin over the system network without
+// starting or enrolling a Tailscale node. Sessions remain private and origin-scoped.
+func NewDirectClient(dataDir, serverURL string) (*Client, error) {
+	origin, authority, err := parseEndpoint(serverURL)
+	if err != nil {
+		return nil, err
+	}
+	if !filepath.IsAbs(dataDir) {
+		return nil, errors.New("native state directory must be absolute")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	dialer := directDialer{authority: authority, lifetime: ctx, dialTCP: (&net.Dialer{KeepAlive: 30 * time.Second}).DialContext}
+	httpClient, transport := nativeHTTPClient(dialer.DialContext)
+	httpClient.Jar, err = newSessionJar(dataDir, origin)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("prepare native session: %w", err)
+	}
+	return &Client{direct: true, origin: origin, ctx: ctx, cancel: cancel, transport: transport, http: httpClient}, nil
 }
 
 // NewClient starts one app-private userspace node. No WebView or local proxy is used.
@@ -77,8 +99,8 @@ func NewClient(dataDir, serverURL string) (*Client, error) {
 }
 
 func nativeHTTPClient(dial func(context.Context, string, string) (net.Conn, error)) (*http.Client, *http.Transport) {
-	// No HTTP proxy is inherited. The supplied dialer enforces tailnet-only
-	// routing; TLS still verifies the original URL hostname, not the dialed IP.
+	// No HTTP proxy is inherited. Each dialer enforces the selected origin and
+	// routing mode; TLS verifies the original URL hostname, not the dialed IP.
 	transport := &http.Transport{DialContext: dial, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 25 * time.Second, IdleConnTimeout: 60 * time.Second}
 	jar, _ := cookiejar.New(nil)
 	return &http.Client{Transport: transport, Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -89,6 +111,9 @@ func nativeHTTPClient(dial func(context.Context, string, string) (net.Conn, erro
 func (c *Client) ServerURL() string { return c.origin.String() }
 
 func (c *Client) Status() (string, error) {
+	if c.direct {
+		return `{"state":"Running","authURL":""}`, nil
+	}
 	ctx, cancel := context.WithTimeout(c.ctx, 3*time.Second)
 	defer cancel()
 	status, err := c.local.StatusWithoutPeers(ctx)
@@ -103,6 +128,9 @@ func (c *Client) Status() (string, error) {
 }
 
 func (c *Client) Login() error {
+	if c.direct {
+		return errors.New("Tailscale login is unavailable for direct HTTPS connections")
+	}
 	ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
 	defer cancel()
 	return c.local.StartLoginInteractive(ctx)
@@ -197,7 +225,13 @@ func (c *Client) Close() error {
 		return nil
 	}
 	c.closed = true
+	if jar, ok := c.http.Jar.(*serverSessionJar); ok {
+		jar.close()
+	}
 	c.cancel()
 	c.transport.CloseIdleConnections()
-	return c.server.Close()
+	if c.server != nil {
+		return c.server.Close()
+	}
+	return nil
 }

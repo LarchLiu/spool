@@ -134,6 +134,27 @@ public class NativeWorkspaceEventsTest {
         h.flush(); assertEquals(1, h.source.auth); h.stream.stop();
     }
 
+    @Test public void displayHandoffKeepsTheSocketQueuedFramesAndRetryLifecycle() {
+        Harness h = new Harness(); h.bind("shown"); h.event("ready", "true");
+        Connection live = h.source.current(); Sink hidden = new Sink();
+        live.events.event("navigation", "{\"projects\":[]}");
+        int before = h.sink.received.size();
+        assertTrue(h.stream.handoff("hidden", hidden)); h.stream.visibility(false); h.flush();
+        assertFalse(live.closed); assertEquals(1, h.source.connections.size()); assertTrue(h.stream.ready());
+        assertEquals(before, h.sink.received.size()); assertEquals(1, hidden.received.size());
+        assertEquals(Boolean.FALSE, h.source.visibility.get(h.source.visibility.size() - 1));
+        Sink shownAgain = new Sink(); assertTrue(h.stream.handoff("shown-again", shownAgain));
+        h.stream.visibility(true); h.event("profiles", "{\"people\":[]}");
+        assertFalse(live.closed); assertEquals(1, h.source.connections.size()); assertEquals(1, shownAgain.received.size());
+        assertFalse(h.stream.bind("shown-again", h.source, shownAgain));
+        h.event("transport_error", "{}"); assertTrue(live.closed); assertFalse(h.stream.ready());
+        Sink hiddenAgain = new Sink(); assertTrue(h.stream.handoff("hidden-retrying", hiddenAgain));
+        h.advance(650); assertEquals(2, h.source.connections.size());
+        h.event("ready", "true"); assertEquals(Boolean.TRUE, hiddenAgain.connected);
+        h.stream.stop(); h.flush(); assertFalse(h.stream.handoff("stopped", hiddenAgain));
+        assertTrue(h.clock.timers.isEmpty());
+    }
+
     @Test public void stopAndRebindingCancelQueuedOpensAndCloseAlreadyReturnedHandles() {
         Harness h = new Harness(); h.stream.bind("first", h.source, h.sink); h.stream.bind("second", h.source, h.sink); h.stream.stop(); h.flush();
         assertTrue(h.source.connections.isEmpty()); assertTrue(h.clock.timers.isEmpty());

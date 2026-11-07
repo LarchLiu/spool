@@ -9,7 +9,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import java.util.function.BiConsumer;
 
-/** Web AppearanceDialog shell with an extension slot for Android-only tsnet settings. */
+/** Web AppearanceDialog shell with an extension slot for Android connection settings. */
 final class NativeSettings extends Dialog {
     Content content;
     private NativeUi ui;
@@ -18,10 +18,17 @@ final class NativeSettings extends Dialog {
     private final String version;
     private final BiConsumer<String, String> change;
     private final Runnable close;
+    private final boolean appearanceOnly;
 
     NativeSettings(NativeUi ui, String theme, String language, String version,
             BiConsumer<String, String> change, Runnable close) {
+        this(ui, theme, language, version, change, close, true);
+    }
+
+    NativeSettings(NativeUi ui, String theme, String language, String version,
+            BiConsumer<String, String> change, Runnable close, boolean appearanceOnly) {
         super(ui.context);
+        this.appearanceOnly = appearanceOnly;
         this.version = version;
         this.change = change;
         this.close = close;
@@ -37,11 +44,13 @@ final class NativeSettings extends Dialog {
     }
 
     /** Rebuild themed content without removing/re-adding the dialog's window. */
+    boolean matchesAppearance(NativeUi candidate) { return ui.dark == candidate.dark && ui.locale.equals(candidate.locale); }
+
     void bind(NativeUi ui, String theme, String language, java.util.function.Consumer<LinearLayout> additions) {
         if (this.ui != null) this.ui.dismissMenus();
         this.ui = ui;
         int top = scroll == null ? 0 : scroll.getScrollY();
-        content = new Content(ui, theme, language, version, change, close);
+        content = new Content(ui, theme, language, version, change, close, appearanceOnly);
         content.setBackgroundColor(Color.TRANSPARENT);
         additions.accept(content.additions);
         scroll = new ScrollView(ui.context) {
@@ -81,15 +90,19 @@ final class NativeSettings extends Dialog {
         final LinearLayout heading, additions;
         final NativeAppearanceSection appearance;
         final NativeUi.IconButton close;
-        final TextView version;
+        final TextView version, title;
         Content(NativeUi ui, String theme, String language, String currentVersion,
                 BiConsumer<String, String> change, Runnable dismiss) {
+            this(ui, theme, language, currentVersion, change, dismiss, true);
+        }
+        Content(NativeUi ui, String theme, String language, String currentVersion,
+                BiConsumer<String, String> change, Runnable dismiss, boolean appearanceOnly) {
             super(ui.context);
             setOrientation(VERTICAL);
             setPadding(ui.dp(25), ui.dp(25), ui.dp(25), ui.dp(25));
             setBackground(ui.shape(ui.elevated, 18, ui.borderStrong));
             heading = ui.row();
-            TextView title = ui.bold(ui.t("Appearance and language"), 18);
+            title = ui.bold(ui.t(appearanceOnly ? "Appearance and language" : "Settings"), 18);
             ui.fixedLineHeight(title, 7f / 6);
             heading.addView(title, new LayoutParams(0, -2, 1));
             close = ui.icon("close", 19, ui.t("Close settings"), dismiss);
@@ -98,15 +111,15 @@ final class NativeSettings extends Dialog {
             heading.addView(close, icon);
             addView(heading);
             addView(ui.space(24));
-            appearance = new NativeAppearanceSection(ui, theme, language, change);
-            addView(appearance, new LayoutParams(-1, -2));
+            appearance = appearanceOnly ? new NativeAppearanceSection(ui, theme, language, change) : null;
+            if (appearance != null) addView(appearance, new LayoutParams(-1, -2));
             additions = ui.column();
             addView(additions, new LayoutParams(-1, -2));
             version = ui.text(ui.t("Current version: {version}", "version", currentVersion), 11, ui.muted);
             ui.fixedLineHeight(version, 1.8f);
             LayoutParams versionParams = new LayoutParams(-1, -2);
             versionParams.topMargin = ui.dp(22);
-            addView(version, versionParams);
+            if (appearanceOnly) addView(version, versionParams);
         }
     }
 }

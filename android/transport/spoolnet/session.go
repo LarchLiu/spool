@@ -14,8 +14,8 @@ import (
 	"time"
 )
 
-// Only Spool's secure session cookie is retained. Files live beside tsnet's
-// credentials in Android's private, non-backed-up storage, scoped by exact origin.
+// Only Spool's secure session cookie is retained. Files live in the selected
+// mode's private, non-backed-up storage, scoped by exact origin.
 type sessionJar struct {
 	inner  http.CookieJar
 	origin *url.URL

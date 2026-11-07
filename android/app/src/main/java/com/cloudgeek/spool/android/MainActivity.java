@@ -65,6 +65,7 @@ public final class MainActivity extends Activity {
     private final ExecutorService workspaceWorker = Executors.newFixedThreadPool(3);
     private final ExecutorService workspaceSocketWorker = Executors.newFixedThreadPool(2);
     private final ExecutorService workspaceProbeWorker = Executors.newSingleThreadExecutor();
+    private final ExecutorService streamCloser = Executors.newSingleThreadExecutor();
     private final ExecutorService payloadWorker = Executors.newSingleThreadExecutor();
     private java.util.concurrent.Executor workspaceDecode = payloadWorker;
     private final ExecutorService connectionWorker = Executors.newSingleThreadExecutor();
@@ -128,6 +129,8 @@ public final class MainActivity extends Activity {
     private NativeTranscriptViewport transcriptViewport;
     private NativeComposerDock composerDock;
     private NativeSidebar sidebar;
+    private NativeConnecting connectingView;
+    private boolean sidebarPageDeferred;
     private NativeAttachmentCards fileBar;
     private NestedScrollView history;
     private EditText composer, serverInput, username, password;
@@ -140,16 +143,14 @@ public final class MainActivity extends Activity {
     private NativePermissionMenu permissionMenu;
     private boolean permissionLoading, permissionFailed;
     private int permissionRequest;
-    private NativeSettings settingsDialog;
+    private NativeSettings settingsDialog, appearanceDialog;
     private NativeDesktopDialog desktopDialog;
-    private LinearLayout desktopSettings;
-    private Runnable desktopAvailability;
-    private String desktopAvailabilityKey = "";
-    private boolean desktopAvailable, desktopAvailabilityLoading;
+    private boolean desktopAvailable;
     private NativeConnectionSettings connectionSettings;
+    private NativeServerSettings serverSettings;
+    private NativeServerDialog serverDialog;
     private NativeFileBrowser fileBrowser;
     private NativeFileModel fileState;
-    private boolean appearanceDirty;
     private Button loginSubmit;
     private TextView heading, subheading, connectionText, loginError, connectionHint;
     private JSONObject user, chat, connectionInfo, permissionCatalog;
@@ -165,8 +166,54 @@ public final class MainActivity extends Activity {
     private final Map<String, NativeGroupPicker.Completion> pendingGroups = new java.util.LinkedHashMap<>();
     private final NativeSidebarState sidebarState = new NativeSidebarState();
     private Draft pickerDraft;
-    private String csrf = "", origin = "", authURL = "", connectionMessage = "";
+    private String csrf = "", origin = "", authURL = "", connectionMessage = "", networkMessage = "";
     private String tailnetState = "Disconnected", httpsState = "Not checked";
+    private ConnectionMode connectionMode = ConnectionMode.DIRECT;
+    private ConnectionPlan connectionPlan = new ConnectionPlan("", "", ConnectionMode.DIRECT), connectionDraft = connectionPlan;
+    private ConnectionRouter<Client> connectionRouter;
+    private ServerProfiles serverProfiles = new ServerProfiles(connectionPlan);
+    private static final class ServerRuntime {
+        ConnectionRouter<Client> router;
+        ConnectionRouter.Candidate<Client> candidate;
+        ServerFeed feed;
+        boolean selecting;
+        final Map<ConnectionMode, String> states = new java.util.EnumMap<>(ConnectionMode.class);
+        final Map<ConnectionPlan.Endpoint, ConnectionRecovery.Snapshot> health = new HashMap<>();
+    }
+    private final Map<String, ServerRuntime> serverRuntimes = new HashMap<>();
+    private final Runnable serverRefresh = this::refreshServerConnections;
+    private static final class ServerWorkspace {
+        String userID = "", projectID = "", chatID = "", backend = "codex", model = "", effort = "", permission = "";
+        JSONObject chat;
+        JSONArray projects = new JSONArray(), chats = new JSONArray(), agents = new JSONArray(), profiles = new JSONArray();
+        boolean agentsInitialized, cached;
+        final NativeSidebarState sidebar = new NativeSidebarState();
+        final NativeNavigation navigation = new NativeNavigation();
+        final NativeProfiles directory = new NativeProfiles();
+        final NativeHistoryScroll.State history = new NativeHistoryScroll.State();
+        final Map<String, NativeActivityList.State> activityStates = new HashMap<>();
+        final Map<String, Draft> drafts = new HashMap<>();
+    }
+    private static final class ServerFeed {
+        final Client client;
+        final String userID, csrf, locale;
+        final ServerWorkspace cache;
+        NativeWorkspaceEvents<EventStream> events;
+        NativeWorkspaceData data;
+        EventStream stream;
+        boolean desktopAvailable;
+        JSONArray presence = new JSONArray();
+        ServerFeed(Client client, String userID, String csrf, String locale, ServerWorkspace cache) {
+            this.client = client; this.userID = userID; this.csrf = csrf; this.locale = locale; this.cache = cache;
+        }
+    }
+    private final Map<String, ServerWorkspace> serverWorkspaces = new HashMap<>();
+    private String workspaceUserID = "";
+    private boolean workspaceCached;
+    private final Map<ConnectionMode, String> routeStates = new java.util.EnumMap<>(ConnectionMode.class);
+    private boolean routeSelecting, routeLoginRequired;
+    private int routeFailures;
+    private long nextRouteProbe;
     private String projectID = "",
             chatID = "",
             backend = "codex",
@@ -242,6 +289,19 @@ public final class MainActivity extends Activity {
         theme = getPreferences(MODE_PRIVATE).getString("theme", "system");
         language = getPreferences(MODE_PRIVATE).getString("language", "system");
         origin = getPreferences(MODE_PRIVATE).getString("serverOrigin", "");
+        connectionMode = ConnectionMode.restore(getPreferences(MODE_PRIVATE).getString("connectionMode", ""), origin);
+        connectionPlan = ConnectionPlan.restore(getPreferences(MODE_PRIVATE).getString("directOrigin", null),
+                getPreferences(MODE_PRIVATE).getString("tailscaleOrigin", null),
+                getPreferences(MODE_PRIVATE).getString("selectedNetwork", connectionMode.value), origin, connectionMode.value).automatic(getPreferences(MODE_PRIVATE).getBoolean("automaticConnections", true));
+        serverProfiles = ServerProfiles.restore(getPreferences(MODE_PRIVATE).getString("servers", null),
+                getPreferences(MODE_PRIVATE).getString("selectedServer", "legacy"), connectionPlan);
+        connectionPlan = serverProfiles.active() == null ? new ConnectionPlan("", "", ConnectionMode.DIRECT) : serverProfiles.active().plan;
+        connectionDraft = connectionPlan;
+        origin = "";
+        if (!connectionPlan.ordered(null).isEmpty()) {
+            ConnectionPlan.Endpoint first = connectionPlan.ordered(null).get(0);
+            origin = first.origin; connectionMode = first.mode;
+        }
         // Resolve the private, origin-scoped Go session before exposing the login form.
         restoringSession = !origin.isEmpty();
         connectivity = getSystemService(ConnectivityManager.class);
@@ -266,8 +326,9 @@ public final class MainActivity extends Activity {
         connectivity.registerDefaultNetworkCallback(networkCallback, main);
         if (Build.VERSION.SDK_INT >= 33)
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(0, this::back);
+        panel = "sidebar";
         render();
-        if (!origin.isEmpty()) connect(origin);
+        if (!origin.isEmpty() && serverProfiles.active().enabled) selectConnections(connectionPlan.selected, false);
     }
 
     private String tr(String en, String zh) {
@@ -435,6 +496,7 @@ public final class MainActivity extends Activity {
     }
 
     private void api(String path, JSONObject body, Result done, java.util.function.Consumer<Exception> failed) {
+        if (routeLoginRequired) { failed.accept(new IOException(tr("Sign in to this connection first.", "请先登录此连接。"))); return; }
         final Client captured = client;
         final int token = generation, session = authEpoch;
         final String auth = csrf, loc = locale();
@@ -467,9 +529,24 @@ public final class MainActivity extends Activity {
     }
 
     private void render() {
-        appearanceDirty = false;
+        rememberAccount();
         boolean reopenFiles = panel.equals("files");
+        boolean reopenSidebar = panel.equals("sidebar");
         captureDraft();
+        boolean dark = theme.equals("dark") || theme.equals("system")
+                && (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        // A server tab changes the visible sidebar, not the hidden transcript.
+        // Keep its window, tab strip and controls mounted until the user opens a page.
+        if (sidebarPageDeferred && reopenSidebar && sidebar != null && ui.dark == dark && ui.locale.equals(locale())) {
+            renderNavigation();
+            if (settingsOpen) settingsPage();
+            monitor.setActive(foreground && settingsOpen);
+            if (!routeLoginRequired) {
+                if (workspaceData != null) bindWorkspaceData(false);
+                if (workspaceEvents != null) startWorkspace();
+            }
+            return;
+        }
         if (ui != null) ui.dismissMenus();
         closeAvatarPicker();
         closeImagePreview();
@@ -478,12 +555,6 @@ public final class MainActivity extends Activity {
         sidebar = null;
         if (fileBrowser != null) fileBrowser.deactivate();
         fileBrowser = null;
-        boolean dark =
-                theme.equals("dark")
-                        || (theme.equals("system")
-                                && (getResources().getConfiguration().uiMode
-                                                & Configuration.UI_MODE_NIGHT_MASK)
-                                        == Configuration.UI_MODE_NIGHT_YES);
         ui = new NativeUi(this, dark, locale());
         ui.avatars = avatarImages;
         ui.people = this::person;
@@ -511,24 +582,33 @@ public final class MainActivity extends Activity {
         historyContent = null;
         transcriptViews = null;
         composerDock = null;
-        connectionText = null;
-        connectionHint = null;
-        connectionSettings = null;
-        serverInput = null;
+        if (!settingsOpen) {
+            connectionText = null;
+            connectionHint = null;
+            connectionSettings = null;
+            serverInput = null;
+        }
+        connectingView = null;
         drawer = null;
         panel = "";
         username = password = null;
         loginError = null;
         loginSubmit = null;
-        if (user == null && restoringSession) connectingPage();
+        if (sidebarPageDeferred && reopenSidebar) { /* The selected server's page is built when the drawer closes. */ }
+        else if (restoringSession && routeLoginRequired) connectingPage();
+        else if (routeLoginRequired) loginPage();
+        else if (user == null && restoringSession) connectingPage();
         else if (user == null) loginPage();
         else workspacePage();
         setContentView(root);
         root.requestApplyInsets();
-        if (settingsOpen) settingsPage();
+        if (reopenSidebar) openSidebar(false);
         else if (reopenFiles && user != null) openFiles(".");
-        if (!settingsOpen && user != null && !inbox.active.isEmpty()) openPeople(inbox.active);
+        if (settingsOpen) settingsPage();
+        if (appearanceDialog != null) appearanceDialog.bind(ui, theme, language, body -> {});
+        if (!settingsOpen && !routeLoginRequired && user != null && !inbox.active.isEmpty()) openPeople(inbox.active);
         monitor.setActive(foreground && settingsOpen);
+        if (routeLoginRequired) return;
         if (workspaceData != null) bindWorkspaceData(false);
         if (workspaceEvents != null) startWorkspace();
         if (chatEvents != null) startChat();
@@ -549,26 +629,37 @@ public final class MainActivity extends Activity {
     }
 
     private void openSettings() {
+        if (serverProfiles.active() == null) { editServer(true); return; }
         if (settingsOpen) return;
+        closeAppearance();
         captureDraft();
         ui.dismissMenus();
-        closeDrawer();
         closePeople();
         settingsOpen = true;
         settingsPage();
         monitor.setActive(foreground);
     }
 
+    private void openAppearance() {
+        if (appearanceDialog != null) return;
+        captureDraft(); closePeople();
+        appearanceDialog = new NativeSettings(ui, theme, language, "0.2.0-native", this::updatePreferences, this::closeAppearance);
+        appearanceDialog.show();
+    }
+
+    private void closeAppearance() {
+        if (appearanceDialog == null) return;
+        appearanceDialog.dismiss(); appearanceDialog = null;
+    }
+
     private void closeSettings() {
         settingsOpen = false;
-        stopDesktopAvailability();
         dismissSettingsDialog();
         connectionSettings = null;
         serverInput = null;
         connectionText = null;
         connectionHint = null;
         monitor.setActive(false);
-        if (appearanceDirty) render();
     }
 
     private void dismissSettingsDialog() {
@@ -578,18 +669,46 @@ public final class MainActivity extends Activity {
     }
 
     private void loginPage() {
+        if (serverProfiles.active() == null) {
+            LinearLayout page = ui.padded(28, 28); page.setGravity(Gravity.CENTER);
+            page.addView(ui.sidebarButton(this::openSidebar));
+            page.addView(ui.logo(48)); gap(page, 20);
+            page.addView(ui.bold(ui.t("No servers yet."), 20)); gap(page, 16);
+            page.addView(ui.button(ui.t("Add server"), true, () -> editServer(true)));
+            root.addView(page, new FrameLayout.LayoutParams(-1, -1));
+            return;
+        }
         NativeLogin login = new NativeLogin(ui, loginErrorText, busy,
                 this::performLogin, this::openSettings);
         username = login.username;
         password = login.password;
         loginError = login.error;
         loginSubmit = login.submit;
+        NativeUi.IconButton servers = ui.sidebarButton(this::openSidebar);
+        LinearLayout.LayoutParams menu = new LinearLayout.LayoutParams(dp(32), dp(32)); menu.setMarginEnd(dp(10));
+        login.brand.addView(servers, 0, menu);
+        login.story.setPadding(dp(16), 0, dp(16), dp(25));
+        login.brand.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(50) - dp(1)));
+        LinearLayout.LayoutParams headline = (LinearLayout.LayoutParams) login.headline.getLayoutParams();
+        headline.setMarginStart(dp(12)); headline.setMarginEnd(dp(12)); login.headline.setLayoutParams(headline);
+        FrameLayout.LayoutParams preferences = (FrameLayout.LayoutParams) login.preferences.getLayoutParams();
+        preferences.topMargin = (dp(50) - dp(1) - dp(32)) / 2; preferences.setMarginEnd(dp(16));
+        login.preferences.setLayoutParams(preferences);
         root.addView(login, new FrameLayout.LayoutParams(-1, -1));
     }
 
     private void connectingPage() {
-        root.addView(new NativeConnecting(ui, connectionMessage, this::retrySession, this::openSettings),
-                new FrameLayout.LayoutParams(-1, -1));
+        NativeConnecting page = new NativeConnecting(ui, connectionMessage, this::retrySession, this::openSettings);
+        connectingView = page;
+        FrameLayout.LayoutParams menu = new FrameLayout.LayoutParams(dp(32), dp(32), Gravity.TOP | Gravity.START);
+        menu.topMargin = (dp(50) - dp(1) - dp(32)) / 2; menu.setMarginStart(dp(16));
+        page.addView(ui.sidebarButton(this::openSidebar), menu);
+        root.addView(page, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private void updateConnectingPage() {
+        if (connectingView != null) connectingView.bind(connectionMessage, connecting || routeSelecting || sessionCheckBusy);
+        updateConnectionSettings(); renderNavigation();
     }
 
     private void retrySession() {
@@ -636,8 +755,14 @@ public final class MainActivity extends Activity {
                                 () -> {
                                     if (session != authEpoch) return;
                                     busy = false;
-                                    user = value.optJSONObject("user");
+                                    JSONObject account = value.optJSONObject("user");
+                                    if (routeLoginRequired && user != null && account != null && !user.optString("id").equals(account.optString("id"))) clearWorkspace();
+                                    routeLoginRequired = false;
+                                    if (connectionRouter != null) connectionRouter.cancel();
+                                    routeSelecting = false;
+                                    user = account;
                                     csrf = value.optString("csrf");
+                                    restoreServerWorkspace();
                                     loginErrorText = "";
                                     render();
                                     refreshWorkspace();
@@ -662,12 +787,16 @@ public final class MainActivity extends Activity {
 
     private void publishInterfaces() {
         if (destroyed) return;
+        final ConnectionMode mode = connectionMode;
+        final List<ConnectionRouter<Client>> routers = new ArrayList<>();
+        for (ServerRuntime runtime : serverRuntimes.values()) if (runtime.router != null) routers.add(runtime.router);
         connectionWorker.execute(
                 () -> {
                     try {
-                        Spoolnet.updateInterfaces(NetworkSnapshot.read(connectivity));
+                        if (mode == ConnectionMode.TAILSCALE || !routers.isEmpty()) Spoolnet.updateInterfaces(NetworkSnapshot.read(connectivity));
                         Client captured = client;
                         if (captured != null) captured.networkChanged();
+                        for (ConnectionRouter<Client> router : routers) router.networkChanged();
                     } catch (Exception ignored) {
                         /* A later network callback retries. */
                     }
@@ -675,91 +804,237 @@ public final class MainActivity extends Activity {
     }
 
     private void connect(String address) {
-        if (connecting || connected) return;
-        final OriginPolicy policy;
+        ConnectionPlan plan = new ConnectionPlan(connectionMode == ConnectionMode.DIRECT ? address : connectionPlan.direct,
+                connectionMode == ConnectionMode.TAILSCALE ? address : connectionPlan.tailscale, connectionPlan.selected, connectionPlan.autoSwitch);
+        applyConnectionPlan(plan, null);
+    }
+
+    private ConnectionRouter<Client> routes() { connectionRouter = routes(serverProfiles.active()); return connectionRouter; }
+
+    private ConnectionRouter<Client> routes(ServerProfiles.Server owner) {
+        ServerRuntime runtime = serverRuntimes.computeIfAbsent(owner.id, key -> new ServerRuntime());
+        if (runtime.router == null) runtime.router = new ConnectionRouter<>(connectionWorker, task -> main.post(task), new ConnectionRouter.Backend<Client>() {
+            public Client open(ConnectionPlan.Endpoint endpoint) throws Exception {
+                String directory = owner.directory(getNoBackupFilesDir(), endpoint.mode);
+                Client candidate;
+                if (endpoint.mode == ConnectionMode.DIRECT) candidate = Spoolnet.newDirectClient(directory, endpoint.origin);
+                else {
+                    Spoolnet.updateInterfaces(NetworkSnapshot.read(connectivity));
+                    candidate = Spoolnet.newClient(directory, endpoint.origin);
+                }
+                try {
+                    candidate.useServerSession(owner.sessionDirectory(getNoBackupFilesDir()), owner.plan.direct, owner.plan.tailscale);
+                    return candidate;
+                } catch (Exception error) { candidate.close(); throw error; }
+            }
+            public ConnectionRecovery.Snapshot health(Client candidate) throws Exception {
+                JSONObject value = new JSONObject(candidate.health());
+                return new ConnectionRecovery.Snapshot(value.optString("state", "Unknown"), value.optString("https", "Not checked"),
+                        value.optString("problem"), value.optString("authURL"), value.optString("message"));
+            }
+            public ConnectionRouter.Session session(Client candidate) throws Exception {
+                try {
+                    JSONObject value = (JSONObject) request(candidate, "/me", null, "", locale());
+                    JSONObject account = value.optJSONObject("user");
+                    if (account == null || account.optString("id").isEmpty()) throw new IOException("Invalid session response");
+                    return new ConnectionRouter.Session(account.optString("id"), value.toString());
+                } catch (ApiFailure error) { if (error.status == 401) return null; throw error; }
+            }
+            public String login(Client candidate) throws Exception {
+                candidate.login();
+                return new JSONObject(candidate.status()).optString("authURL");
+            }
+            public void networkChanged(Client candidate) { candidate.networkChanged(); }
+            public void close(Client candidate) { try { candidate.close(); } catch (Exception ignored) {} }
+        });
+        return runtime.router;
+    }
+
+    private void applyConnectionPlan(ConnectionPlan draft, ConnectionMode preferred) {
+        if (serverProfiles.active() == null) return;
+        ConnectionPlan validated;
         try {
-            policy = new OriginPolicy(address);
-        } catch (Exception e) {
-            if (serverInput != null) serverInput.setError(e.getMessage());
-            if (restoringSession) connectionFailed(e);
-            return;
-        }
-        origin = policy.origin;
-        connectionWanted = true;
+            for (ConnectionMode mode : ConnectionMode.values()) if (!draft.origin(mode).isEmpty()) {
+                try { new OriginPolicy(draft.origin(mode)); }
+                catch (Exception error) {
+                    if (connectionSettings != null) connectionSettings.input(mode).setError(error.getMessage());
+                    return;
+                }
+            }
+            validated = (preferred == null ? draft : draft.select(preferred)).validated();
+            if (validated.ordered(preferred).isEmpty()) throw new IllegalArgumentException(tr("Enter at least one HTTPS address.", "请至少填写一个 HTTPS 地址。"));
+            if (preferred != null && validated.origin(preferred).isEmpty()) return;
+        } catch (Exception error) { connectionMessage = error.getMessage(); updateConnectionSettings(); return; }
+        connectionPlan = connectionDraft = validated;
+        serverProfiles.active().plan = validated; serverProfiles.active().enabled = true; saveServers();
+        getPreferences(MODE_PRIVATE).edit().putString("directOrigin", validated.direct).putString("tailscaleOrigin", validated.tailscale)
+                .putString("selectedNetwork", validated.selected.value).putBoolean("automaticConnections", validated.autoSwitch).apply();
+        selectConnections(validated.selected, true);
+    }
+
+    private void selectConnections(ConnectionMode preferred, boolean manual) {
+        if (routeSelecting || destroyed || !manual && (busy || pendingSend != null)) return;
+        if (serverProfiles.active() == null || connectionPlan.ordered(preferred).isEmpty() || !serverProfiles.active().enabled) return;
+        final ServerProfiles.Server owner = serverProfiles.active();
+        final String serverID = owner.id;
+        final ConnectionPlan selectedPlan = connectionPlan;
+        ServerRuntime runtime = serverRuntimes.computeIfAbsent(serverID, key -> new ServerRuntime());
+        runtime.selecting = true;
+        connectionWanted = true; routeSelecting = true;
         main.removeCallbacks(connectionRetry);
-        sessionCheckBusy = false;
-        getPreferences(MODE_PRIVATE).edit().putString("serverOrigin", origin).apply();
-        final int token = ++generation;
-        final Client old = client;
-        client = null;
-        connecting = true;
-        tailnetState = "Starting";
-        httpsState = "Not checked";
-        connectionMessage = "";
-        connectionInfo = null;
-        monitor.stop();
-        recovery.stop();
-        if (user == null) {
-            restoringSession = true;
-            render();
-        } else updateConnectionSettings();
-        connectionWorker.execute(
-                () -> {
-                    try {
-                        if (old != null) old.close();
-                        Spoolnet.updateInterfaces(NetworkSnapshot.read(connectivity));
-                        Client next =
-                                Spoolnet.newClient(
-                                        new File(getNoBackupFilesDir(), "tsnet").getAbsolutePath(),
-                                        policy.origin);
-                        if (generation != token || destroyed) {
-                            next.close();
-                            return;
-                        }
-                        main.post(
-                                () -> {
-                                    if (destroyed || generation != token) {
-                                        try {
-                                            next.close();
-                                        } catch (Exception ignored) {
-                                        }
-                                        return;
-                                    }
-                                    client = next;
-                                    connectionStartAttempts = 0;
-                                    monitor.start(
-                                            next::connectionInfo,
-                                            snapshot -> {
-                                                if (generation != token) return;
-                                                try {
-                                                    connectionInfo =
-                                                            snapshot == null
-                                                                    ? null
-                                                                    : new JSONObject(snapshot);
-                                                } catch (Exception e) {
-                                                    connectionInfo = null;
-                                                }
-                                                updateConnectionSettings();
-                                            });
-                                    watchConnection(token, next);
-                                });
-                    } catch (Exception e) {
-                        post(token, () -> {
-                            connectionFailed(e);
-                            if (foreground && connectionWanted) main.postDelayed(connectionRetry,
-                                    Math.min(30000, 2000L << Math.min(4, connectionStartAttempts++)));
-                        });
-                    }
-                });
+        final String account = user == null ? "" : user.optString("id");
+        if (client == null) {
+            connecting = true; restoringSession = true;
+            if (connectingView == null) render(); else updateConnectingPage();
+        }
+        else { updateConnectionSettings(); renderNavigation(); }
+        routes().select(connectionPlan.candidates(preferred), account, manual, preferred != null || client == null, new ConnectionRouter.Listener<Client>() {
+            public void replacing(Client previous) {
+                stopServerFeed(runtime);
+                runtime.candidate = null;
+                if (!serverProfiles.selected.equals(serverID) || client != previous || destroyed) return;
+                beginNetworkHandoff();
+            }
+            public void sampled(ConnectionPlan.Endpoint endpoint, ConnectionRecovery.Snapshot health, boolean signedIn) {
+                if (destroyed) return;
+                runtime.health.keySet().retainAll(selectedPlan.ordered(null));
+                runtime.health.put(endpoint, health);
+                String state = health.healthy() ? tr("Available", "可用")
+                        : health.problem.equals("login") ? tr("Tailscale sign-in required", "需要登录 Tailscale")
+                        : health.problem.equals("approval") ? tr("Device approval required", "等待设备批准") : tr("Unavailable", "不可用");
+                runtime.states.put(endpoint.mode, state);
+                if (!serverProfiles.selected.equals(serverID)) return;
+                routeStates.put(endpoint.mode, health.healthy() ? tr("Available", "可用")
+                        : health.problem.equals("login") ? tr("Tailscale sign-in required", "需要登录 Tailscale")
+                        : health.problem.equals("approval") ? tr("Device approval required", "等待设备批准") : tr("Unavailable", "不可用"));
+                if (endpoint.mode == ConnectionMode.TAILSCALE && !health.authURL.isEmpty()) authURL = health.authURL;
+                updateConnectionSettings();
+            }
+            public void selected(ConnectionRouter.Candidate<Client> candidate) {
+                runtime.selecting = false; runtime.candidate = candidate;
+                if (destroyed) return;
+                if (!serverProfiles.selected.equals(serverID)) {
+                    if (candidate.session != null) try { rememberAccount(owner, new JSONObject(candidate.session.json).optJSONObject("user")); }
+                    catch (Exception ignored) {}
+                    else if (candidate.sessionChecked) forgetAccount(owner);
+                    syncServerFeed(owner); renderNavigation(); return;
+                }
+                routeSelecting = false; nextRouteProbe = android.os.SystemClock.elapsedRealtime() + 30000;
+                adoptConnection(candidate);
+            }
+            public void unavailable() {
+                runtime.selecting = false;
+                if (destroyed || !serverProfiles.selected.equals(serverID)) return;
+                routeSelecting = false; nextRouteProbe = android.os.SystemClock.elapsedRealtime() + 30000;
+                connectionMessage = tr("No other signed-in connection is available. Use an entry below to sign in.", "暂无其他已登录的可用连接，可选择下方入口登录。");
+                if (client == null) {
+                    connecting = false; busy = false;
+                    if (connectingView == null) render(); else updateConnectingPage();
+                    if (foreground && connectionWanted) main.postDelayed(connectionRetry, Math.min(30000, 2000L << Math.min(4, connectionStartAttempts++)));
+                } else { updateConnectionSettings(); renderNavigation(); }
+            }
+        });
+    }
+
+    private void beginNetworkHandoff() {
+        saveServerWorkspace(); closeDesktop(); stopStreams();
+        ++generation; ++authEpoch; sessionCheckBusy = false;
+        monitor.stop(); recovery.stop();
+        client = null; connected = false; connecting = true;
+        if (pendingSend != null) {
+            goalError = tr("Send status unknown. The message may have arrived; it will not be retried automatically.", "发送状态未知，消息可能已送达，不会自动重发。");
+            pendingSend = null;
+        }
+        busy = true; updateComposer(); updateConnectionSettings(); renderNavigation();
+    }
+
+    private void adoptConnection(ConnectionRouter.Candidate<Client> candidate) {
+        connectionWanted = true;
+        if (client == candidate.client) {
+            if (candidate.sessionChecked && candidate.session == null && (user != null || hasWorkspaceCache())) {
+                forgetAccount(); stopStreams(); clearWorkspace(); render();
+            }
+            acceptConnectionHealth(client, generation, candidate.health, candidate.health.healthy());
+            updateConnectionSettings(); return;
+        }
+        saveServerWorkspace(); closeDesktop(); stopStreams();
+        final boolean retained = user != null;
+        ++generation; ++authEpoch; sessionCheckBusy = false;
+        monitor.stop(); recovery.stop();
+        client = candidate.client; origin = candidate.endpoint.origin; connectionMode = candidate.endpoint.mode;
+        connected = false; connecting = true; connectionInfo = null; routeFailures = 0;
+        getPreferences(MODE_PRIVATE).edit().putString("serverOrigin", origin).putString("connectionMode", connectionMode.value).apply();
+        if (pendingSend != null) {
+            goalError = tr("Send status unknown. The message may have arrived; it will not be retried automatically.", "发送状态未知，消息可能已送达，不会自动重发。");
+            pendingSend = null;
+        }
+        busy = false;
+        routeLoginRequired = false;
+        if (candidate.sessionChecked && candidate.session == null) { forgetAccount(); clearWorkspaceData(true); }
+        if (retained && candidate.session != null && user.optString("id").equals(candidate.session.userID)) {
+            try {
+                JSONObject value = new JSONObject(candidate.session.json);
+                user = value.optJSONObject("user"); csrf = value.optString("csrf");
+            } catch (Exception error) { routeLoginRequired = true; csrf = ""; }
+            restoringSession = false;
+        } else if (retained) {
+            // An unavailable network has not rejected the login. Keep API access
+            // blocked until health recovers and /me can validate the shared session.
+            routeLoginRequired = true; restoringSession = !candidate.sessionChecked; csrf = "";
+        }
+        else {
+            routeLoginRequired = false; restoringSession = true;
+            if (candidate.session != null) try {
+                JSONObject value = new JSONObject(candidate.session.json);
+                user = value.optJSONObject("user"); csrf = value.optString("csrf"); restoringSession = false;
+                restoreServerWorkspace();
+            } catch (Exception ignored) {}
+        }
+        final int token = generation;
+        if (connectionMode == ConnectionMode.TAILSCALE) monitor.start(client::connectionInfo, snapshot -> {
+            if (generation != token) return;
+            try { connectionInfo = snapshot == null ? null : new JSONObject(snapshot); } catch (Exception ignored) { connectionInfo = null; }
+            updateConnectionSettings();
+        });
+        render();
+        acceptConnectionHealth(client, token, candidate.health, candidate.health.healthy());
+        watchConnection(token, client);
+        if (user != null && !routeLoginRequired) { refreshWorkspace(); startWorkspace(); startChat(); }
     }
 
     private void retryConnectionStart() {
-        if (foreground && connectionWanted && !destroyed && client == null && !connecting) connect(origin);
+        if (foreground && connectionWanted && !destroyed && client == null && !routeSelecting) selectConnections(connectionPlan.autoSwitch ? null : connectionPlan.selected, false);
+    }
+
+    private void probeAlternate(ConnectionRecovery.Snapshot health) {
+        if (!connectionPlan.autoSwitch || !connectionWanted || routeSelecting || connectionPlan.ordered(null).size() < 2) return;
+        if (health.healthy() || health.problem.equals("login") || health.problem.equals("approval")) { routeFailures = 0; return; }
+        if (health.problem.equals("starting") && android.os.SystemClock.elapsedRealtime() < nextRouteProbe) return;
+        routeFailures++;
+        if (routeFailures < 2 || android.os.SystemClock.elapsedRealtime() < nextRouteProbe && routeFailures != 2) return;
+        selectConnections(null, false);
+    }
+
+    private void enrollTailscale() {
+        if (serverProfiles.active() == null) return;
+        try {
+            String address = connectionDraft.validated().tailscale;
+            if (address.isEmpty()) return;
+            if (client == null || connectionMode != ConnectionMode.TAILSCALE || !origin.equals(address)) {
+                applyConnectionPlan(connectionDraft, ConnectionMode.TAILSCALE); return;
+            }
+            routes().login(new ConnectionPlan.Endpoint(ConnectionMode.TAILSCALE, address), url -> {
+                authURL = url;
+                if (OriginPolicy.isLoginURL(url)) openBrowser(url);
+                recovery.checkNow();
+            }, error -> { connectionMessage = networkMessage = error.getMessage(); updateConnectionSettings(); });
+        } catch (Exception error) { connectionMessage = networkMessage = error.getMessage(); updateConnectionSettings(); }
     }
 
     private void watchConnection(int token, Client captured) {
+        final ConnectionMode mode = connectionMode;
         recovery.start(new ConnectionRecovery.Source() {
-            public boolean online() { return NetworkSnapshot.online(connectivity); }
+            public boolean online() { return NetworkSnapshot.online(connectivity, mode); }
             public ConnectionRecovery.Snapshot check() throws Exception {
                 JSONObject value = new JSONObject(captured.health());
                 return new ConnectionRecovery.Snapshot(value.optString("state", "Unknown"),
@@ -767,7 +1042,7 @@ public final class MainActivity extends Activity {
                         value.optString("authURL"), value.optString("message"));
             }
             public void refreshNetwork() throws Exception {
-                Spoolnet.updateInterfaces(NetworkSnapshot.read(connectivity));
+                if (mode == ConnectionMode.TAILSCALE) Spoolnet.updateInterfaces(NetworkSnapshot.read(connectivity));
                 captured.networkChanged();
             }
             public void reconnect() throws Exception { captured.reconnect(); }
@@ -779,6 +1054,12 @@ public final class MainActivity extends Activity {
     }
 
     private void acceptConnectionHealth(Client captured, int token, ConnectionRecovery.Snapshot value, boolean available) {
+        ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
+        if (runtime != null) runtime.health.put(new ConnectionPlan.Endpoint(connectionMode, origin), value);
+        if (runtime != null && runtime.candidate != null && runtime.candidate.client == captured) {
+            ConnectionRouter.Candidate<Client> previous = runtime.candidate;
+            runtime.candidate = new ConnectionRouter.Candidate<>(previous.endpoint, captured, value, previous.session, previous.sessionChecked);
+        }
         boolean recovered = !connected && available;
         connected = available;
         connecting = !value.healthy() && !value.problem.equals("endpoint");
@@ -789,10 +1070,17 @@ public final class MainActivity extends Activity {
         if (value.problem.equals("offline")) connectionMessage = tr("Waiting for network", "等待网络恢复");
         else if (value.problem.equals("network") || value.problem.equals("status") || value.problem.equals("starting"))
             connectionMessage = tr("Reconnecting…", "正在重连…") + (connectionMessage.isEmpty() ? "" : "\n" + connectionMessage);
+        networkMessage = connectionMessage;
         updateConnectionSettings();
-        if (restoringSession && !value.healthy()) render();
-        if (!value.healthy()) return;
+        renderNavigation();
+        if (restoringSession && !value.healthy()) updateConnectingPage();
+        probeAlternate(value);
+        if (!value.healthy()) {
+            if (definitiveConnectionFailure(value)) clearWorkspaceNavigation();
+            return;
+        }
         if (restoringSession) restoreSession(captured, token);
+        else if (routeLoginRequired) return;
         else if (recovered && user != null) {
             resumeWorkspace();
             if (chatEvents != null) chatEvents.stop();
@@ -805,20 +1093,31 @@ public final class MainActivity extends Activity {
         if (sessionCheckBusy && sessionCheckGeneration == token && sessionCheckAuth == session) return;
         sessionCheckBusy = true;
         sessionCheckGeneration = token; sessionCheckAuth = session;
+        renderNavigation();
         final String loc = locale();
         io.execute(
                 () -> {
                     if (token != generation || session != authEpoch || destroyed) return;
                     try {
                         JSONObject result = (JSONObject) request(captured, "/me", null, "", loc);
+                        JSONObject account = result.optJSONObject("user");
+                        if (account == null || account.optString("id").isEmpty()) throw new IOException("Invalid session response");
                         post(
                                 token,
                                 () -> {
                                     if (session != authEpoch) return;
+                                    if (user != null && !user.optString("id").equals(account.optString("id"))) clearWorkspace();
                                     sessionCheckBusy = false;
-                                    restoringSession = false;
-                                    user = result.optJSONObject("user");
+                                    restoringSession = false; routeLoginRequired = false;
+                                    user = account;
                                     csrf = result.optString("csrf");
+                                    ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
+                                    if (runtime != null && runtime.candidate != null && runtime.candidate.client == captured) {
+                                        ConnectionRouter.Candidate<Client> previous = runtime.candidate;
+                                        runtime.candidate = new ConnectionRouter.Candidate<>(previous.endpoint, captured, previous.health,
+                                                new ConnectionRouter.Session(account.optString("id"), result.toString()));
+                                    }
+                                    restoreServerWorkspace();
                                     render();
                                     refreshWorkspace();
                                     startWorkspace();
@@ -829,11 +1128,13 @@ public final class MainActivity extends Activity {
                                 () -> {
                                     if (session != authEpoch) return;
                                     sessionCheckBusy = false;
-                                    if (e instanceof ApiFailure && ((ApiFailure) e).status == 401)
+                                    if (e instanceof ApiFailure && ((ApiFailure) e).status == 401) {
+                                        forgetAccount();
+                                        stopStreams(); clearWorkspace();
                                         restoringSession = false;
-                                    else
+                                    } else
                                         connectionMessage = e.getMessage();
-                                    render();
+                                    if (restoringSession && connectingView != null) updateConnectingPage(); else render();
                                 });
                     }
                 });
@@ -841,25 +1142,37 @@ public final class MainActivity extends Activity {
 
     private void connectionFailed(Exception e) {
         connecting = false;
-        connectionMessage = e.getMessage();
+        connectionMessage = networkMessage = e.getMessage();
         if (httpsState.equals("Checking")) httpsState = "Failed";
-        if (restoringSession) render();
+        clearWorkspaceNavigation();
+        if (restoringSession && connectingView != null) updateConnectingPage();
+        else if (restoringSession) render();
         else updateConnectionSettings();
     }
 
     private void disconnect() {
-        connectionWanted = false;
+        if (serverProfiles.active() == null) return;
+        rememberAccount();
+        saveServerWorkspace();
+        connectionWanted = false; routeSelecting = false; routeLoginRequired = false;
+        serverProfiles.active().enabled = false; saveServers();
+        ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
+        stopServerFeed(runtime);
+        if (runtime != null) { runtime.candidate = null; runtime.selecting = false; }
         main.removeCallbacks(connectionRetry);
+        if (connectionRouter != null) connectionRouter.stop();
         ++generation;
         monitor.stop();
         recovery.stop();
         stopStreams();
-        clearWorkspace();
+        clearWorkspace(false);
+        restoreServerWorkspace();
         Client captured = client;
+        final boolean routed = connectionRouter != null;
         client = null;
         connectionWorker.execute(
                 () -> {
-                    if (captured != null)
+                    if (captured != null && !routed)
                         try {
                             captured.close();
                         } catch (Exception ignored) {
@@ -871,34 +1184,45 @@ public final class MainActivity extends Activity {
         tailnetState = "Disconnected";
         httpsState = "Not checked";
         connectionInfo = null;
-        connectionMessage = "";
+        connectionMessage = networkMessage = "";
         settingsOpen = true;
         render();
     }
 
-    private void clearWorkspace() {
+    private void clearWorkspace() { clearWorkspace(true); }
+
+    private void clearWorkspace(boolean forget) {
+        ++authEpoch;
+        user = null;
+        routeLoginRequired = false;
+        restoringSession = false;
+        sessionCheckBusy = false;
+        csrf = "";
+        clearWorkspaceData(forget);
+    }
+
+    /** Detach the visible workspace without altering a freshly validated server login. */
+    private void clearWorkspaceData(boolean forget) {
+        if (forget) serverWorkspaces.remove(serverProfiles.selected);
+        workspaceUserID = ""; workspaceCached = false;
+        if (sidebar != null && !sidebarPageDeferred) sidebar.deactivate();
         closeDesktop();
-        stopDesktopAvailability();
+        setDesktopAvailable(false);
         if (workspaceData != null) workspaceData.stop();
         agentsInitialized = false;
         if (chatRefresh != null) chatRefresh.stop();
         if (fileBrowser != null) fileBrowser.deactivate();
         fileBrowser = null;
         fileState = null;
-        avatarImages.clear();
+        if (forget) avatarImages.clear();
         fileImages.clear();
         syntax.clear();
         closeImagePreview();
         pendingDownload = null;
         downloading = false;
         downloadRequest++;
-        ++authEpoch;
         ++selectionEpoch;
-        user = null;
-        restoringSession = false;
-        sessionCheckBusy = false;
         chat = null;
-        csrf = "";
         chatID = "";
         projectID = "";
         busy = false;
@@ -913,6 +1237,7 @@ public final class MainActivity extends Activity {
         pendingGroups.clear();
         peopleBounds = null;
         stopHistory();
+        historyScrollState.select("");
         projects = new JSONArray();
         chats = new JSONArray();
         agents = new JSONArray();
@@ -928,7 +1253,35 @@ public final class MainActivity extends Activity {
         closePeople();
     }
 
+    /** A rejected endpoint clears fetched navigation, while local drafts remain available for retry. */
+    private void clearWorkspaceNavigation() {
+        if (!workspaceCached && projects.length() == 0 && chats.length() == 0) return;
+        stopStreams();
+        projects = new JSONArray(); chats = new JSONArray(); workspaceCached = false;
+        navigation.reset();
+        ServerWorkspace state = serverWorkspaces.get(serverProfiles.selected);
+        if (state != null) { state.projects = projects; state.chats = chats; state.cached = false; state.navigation.reset(); }
+        updateComposer();
+    }
+
+    private boolean definitiveConnectionFailure(ConnectionRecovery.Snapshot current) {
+        return !routeSelecting && definitiveConnectionFailure(connectionPlan, serverRuntimes.get(serverProfiles.selected),
+                new ConnectionPlan.Endpoint(connectionMode, origin), current);
+    }
+
+    private boolean definitiveConnectionFailure(ConnectionPlan plan, ServerRuntime runtime, ConnectionPlan.Endpoint currentEndpoint,
+                                                ConnectionRecovery.Snapshot current) {
+        if (!current.problem.equals("endpoint") || runtime != null && runtime.selecting) return false;
+        for (ConnectionPlan.Endpoint endpoint : plan.candidates(null)) {
+            ConnectionRecovery.Snapshot sample = endpoint.equals(currentEndpoint) ? current
+                    : runtime == null ? null : runtime.health.get(endpoint);
+            if (sample == null || !sample.problem.equals("endpoint")) return false;
+        }
+        return true;
+    }
+
     private void expire() {
+        forgetAccount();
         stopStreams();
         clearWorkspace();
         loginErrorText = tr("Your session expired. Sign in again.", "会话已过期，请重新登录。");
@@ -940,6 +1293,10 @@ public final class MainActivity extends Activity {
                 "/logout",
                 object(),
                 value -> {
+                    forgetAccount();
+                    serverWorkspaces.remove(serverProfiles.selected);
+                    ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
+                    if (runtime != null) runtime.candidate = null;
                     stopStreams();
                     clearWorkspace();
                     render();
@@ -958,40 +1315,486 @@ public final class MainActivity extends Activity {
         boolean dark = theme.equals("dark") || theme.equals("system")
                 && (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
         NativeUi settingsUi = new NativeUi(this, dark, locale());
+        if (settingsDialog != null && connectionSettings != null && settingsDialog.matchesAppearance(settingsUi)
+                && serverProfiles.selected.equals(settingsDialog.content.getTag())) {
+            settingsDialog.content.title.setText(serverProfiles.active().name + " · " + settingsUi.t("Settings"));
+            serverSettings.bind(serverProfiles.active());
+            updateConnectionSettings();
+            return;
+        }
         boolean show = settingsDialog == null;
         if (show) settingsDialog = new NativeSettings(settingsUi, theme, language, "0.2.0-native",
-                this::updatePreferences, this::closeSettings);
+                this::updatePreferences, this::closeSettings, false);
         else settingsDialog.bind(settingsUi, theme, language, body -> settingsAdditions(settingsUi, body));
         if (show) {
             settingsAdditions(settingsUi, settingsDialog.content.additions);
             settingsDialog.show();
         }
+        settingsDialog.content.title.setText(serverProfiles.active().name + " · " + settingsUi.t("Settings"));
+        settingsDialog.content.setTag(serverProfiles.selected);
         updateConnectionSettings();
     }
 
     private void settingsAdditions(NativeUi settingsUi, LinearLayout body) {
-        if (user != null) {
-            desktopSettings = settingsUi.column();
-            gap(desktopSettings, 22);
-            desktopSettings.addView(settingsUi.bold(localizedString(R.string.desktop_section), 14));
-            gap(desktopSettings, 8);
-            desktopSettings.addView(settingsUi.button(localizedString(R.string.desktop_connect), false, this::openDesktop));
-            body.addView(desktopSettings);
-            startDesktopAvailability();
-            desktopSettings.setVisibility(desktopAvailable ? View.VISIBLE : View.GONE);
-        }
-        gap(body, 22);
-        connectionSettings = new NativeConnectionSettings(settingsUi, origin, localizedString(R.string.connection_note),
-                this::connect, this::disconnect,
-                () -> { if (OriginPolicy.isLoginURL(authURL)) openBrowser(authURL); });
-        serverInput = connectionSettings.server;
+        serverSettings = new NativeServerSettings(settingsUi, serverProfiles.active(),
+                enabled -> enableServer(serverProfiles.selected, enabled), () -> editServer(false));
+        body.addView(serverSettings);
+        gap(body, 16);
+        connectionSettings = new NativeConnectionSettings(settingsUi, connectionDraft,
+                this::editConnectionPlan, this::applyConnectionPlan, this::disconnect, this::enrollTailscale);
+        serverInput = connectionSettings.input(connectionDraft.selected);
         connectionText = connectionSettings.diagnostics;
         connectionHint = connectionSettings.note;
         body.addView(connectionSettings);
-        if (user != null) {
-            gap(body, 16);
-            body.addView(settingsUi.button(tr("Sign out of Spool", "退出 Spool 账号"), false, this::logout));
+        gap(body, 24);
+        Button delete = settingsUi.button(settingsUi.t("Delete server"), false, this::deleteServer);
+        delete.setTextColor(settingsUi.error);
+        body.addView(delete, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private void deleteServer() {
+        ServerProfiles.Server removed = serverProfiles.active();
+        if (removed == null) return;
+        closeSettings();
+        removed.enabled = false;
+        ServerRuntime previous = serverRuntimes.remove(removed.id);
+        stopServerFeed(previous);
+        ConnectionRouter<Client> previousRouter = previous == null ? connectionRouter : previous.router;
+        if (previousRouter != null) previousRouter.stop();
+        Client previousClient = client;
+        stopStreams(); clearWorkspace(); serverWorkspaces.remove(removed.id);
+        ++generation; monitor.stop(); recovery.stop(); main.removeCallbacks(connectionRetry);
+        connectionWanted = false; routeSelecting = routeLoginRequired = connected = connecting = false;
+        backend = "codex"; model = effort = permission = "";
+        client = null; connectionRouter = null; origin = authURL = connectionMessage = networkMessage = "";
+        connectionInfo = null; httpsState = "Not checked"; tailnetState = "Disconnected";
+        routeStates.clear(); nextRouteProbe = 0; routeFailures = 0;
+        serverProfiles.remove(removed.id);
+        ServerProfiles.Server next = serverProfiles.active();
+        connectionPlan = connectionDraft = next == null ? new ConnectionPlan("", "", ConnectionMode.DIRECT) : next.plan;
+        ServerRuntime runtime = next == null ? null : serverRuntimes.get(next.id);
+        if (runtime != null) { connectionRouter = runtime.router; routeStates.putAll(runtime.states); }
+        restoreServerWorkspace();
+        saveServers();
+        // The serial connection worker closes the removed node before erasing only its state.
+        connectionWorker.execute(() -> {
+            if (previousRouter == null && previousClient != null) try { previousClient.close(); } catch (Exception ignored) {}
+            List<String> directories = new ArrayList<>();
+            for (ConnectionMode mode : ConnectionMode.values()) directories.add(removed.directory(getNoBackupFilesDir(), mode));
+            directories.add(removed.sessionDirectory(getNoBackupFilesDir()));
+            for (String path : directories) try {
+                java.nio.file.Path directory = new File(path).toPath();
+                if (!java.nio.file.Files.exists(directory)) continue;
+                java.nio.file.Files.walkFileTree(directory, new java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+                    @Override public java.nio.file.FileVisitResult visitFile(java.nio.file.Path file, java.nio.file.attribute.BasicFileAttributes attributes) throws IOException {
+                        java.nio.file.Files.delete(file); return java.nio.file.FileVisitResult.CONTINUE;
+                    }
+                    @Override public java.nio.file.FileVisitResult postVisitDirectory(java.nio.file.Path folder, IOException error) throws IOException {
+                        if (error != null) throw error;
+                        java.nio.file.Files.delete(folder); return java.nio.file.FileVisitResult.CONTINUE;
+                    }
+                });
+            } catch (IOException ignored) { /* A removed profile can never reuse this node or session. */ }
+        });
+        render();
+        if (next == null || !next.enabled) return;
+        if (runtime != null && runtime.candidate != null) adoptConnection(runtime.candidate);
+        else if (!connectionPlan.ordered(null).isEmpty()) selectConnections(null, true);
+    }
+
+    private void saveServers() {
+        getPreferences(MODE_PRIVATE).edit().putString("servers", serverProfiles.encode()).putString("selectedServer", serverProfiles.selected).apply();
+    }
+
+    private void rememberAccount() {
+        if (user != null && !routeLoginRequired) rememberAccount(serverProfiles.active(), user);
+    }
+
+    private void rememberAccount(ServerProfiles.Server server, JSONObject user) {
+        if (server == null || user == null || user.optString("id").isEmpty()) return;
+        JSONObject account = ServerProfiles.displayAccount(user);
+        ServerWorkspace cached = serverWorkspaces.get(server.id);
+        if (cached != null && !cached.userID.equals(account.optString("id"))) serverWorkspaces.remove(server.id);
+        if (server.account.toString().equals(account.toString())) return;
+        server.account = account; saveServers();
+    }
+
+    private void forgetAccount() {
+        workspaceUserID = ""; workspaceCached = false;
+        forgetAccount(serverProfiles.active());
+    }
+
+    private void forgetAccount(ServerProfiles.Server server) {
+        if (server == null) return;
+        serverWorkspaces.remove(server.id);
+        ServerRuntime runtime = serverRuntimes.get(server.id);
+        stopServerFeed(runtime);
+        if (runtime != null && runtime.candidate != null) {
+            ConnectionRouter.Candidate<Client> previous = runtime.candidate;
+            runtime.candidate = new ConnectionRouter.Candidate<>(previous.endpoint, previous.client, previous.health, null, true);
         }
+        if (server.account.length() == 0) return;
+        server.account = new JSONObject(); saveServers();
+    }
+
+    private void saveServerWorkspace() {
+        String owner = user != null && !routeLoginRequired ? user.optString("id") : workspaceUserID;
+        if (owner.isEmpty() || serverProfiles.active() == null) return;
+        if ((user == null || routeLoginRequired) && !owner.equals(serverProfiles.active().account.optString("id"))) return;
+        captureDraft();
+        ServerWorkspace state = serverWorkspaces.get(serverProfiles.selected);
+        if (state == null || !owner.equals(state.userID)) state = new ServerWorkspace();
+        state.userID = owner; state.projectID = projectID; state.chatID = chatID; state.chat = chat;
+        state.backend = backend; state.model = model; state.effort = effort; state.permission = permission;
+        state.projects = projects; state.chats = chats; state.agents = agents; state.profiles = profiles;
+        state.agentsInitialized = agentsInitialized;
+        state.cached = workspaceCached || projects.length() != 0 || chats.length() != 0;
+        state.sidebar.copyFrom(sidebarState); state.navigation.copyFrom(navigation);
+        state.directory.copyFrom(profileCache); state.history.copyFrom(historyScrollState);
+        state.activityStates.clear(); state.activityStates.putAll(activityStates);
+        state.drafts.clear();
+        for (Map.Entry<String, Draft> entry : drafts.entrySet()) {
+            Draft copy = new Draft(); copy.text = entry.getValue().text; copy.files.addAll(entry.getValue().files);
+            state.drafts.put(entry.getKey(), copy);
+        }
+        serverWorkspaces.put(serverProfiles.selected, state);
+        workspaceUserID = owner; workspaceCached = state.cached;
+        ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
+        if (user != null && !routeLoginRequired && runtime != null && runtime.candidate != null && runtime.candidate.client == client) {
+            ConnectionRouter.Candidate<Client> previous = runtime.candidate;
+            runtime.candidate = new ConnectionRouter.Candidate<>(previous.endpoint, previous.client, previous.health,
+                    new ConnectionRouter.Session(owner, object("user", user, "csrf", csrf).toString()));
+        }
+    }
+
+    private void restoreServerWorkspace() {
+        ServerProfiles.Server server = serverProfiles.active();
+        if (server == null) return;
+        String owner = user == null ? server.account.optString("id") : user.optString("id");
+        if (!workspaceUserID.isEmpty()) {
+            if (workspaceUserID.equals(owner)) return;
+            clearWorkspaceData(true);
+        }
+        ServerWorkspace state = serverWorkspaces.get(serverProfiles.selected);
+        if (state == null) return;
+        if (!state.userID.equals(owner)) { serverWorkspaces.remove(serverProfiles.selected); return; }
+        projectID = state.projectID; chatID = state.chatID; chat = state.chat;
+        backend = state.backend; model = state.model; effort = state.effort; permission = state.permission;
+        projects = state.projects; chats = state.chats; agents = state.agents; profiles = state.profiles;
+        agentsInitialized = state.agentsInitialized;
+        sidebarState.copyFrom(state.sidebar); navigation.copyFrom(state.navigation);
+        profileCache.copyFrom(state.directory); historyScrollState.copyFrom(state.history);
+        activityStates.putAll(state.activityStates); drafts.putAll(state.drafts);
+        workspaceUserID = state.userID; workspaceCached = state.cached;
+    }
+
+    private boolean hasWorkspaceCache() {
+        return workspaceCached && serverProfiles.active() != null
+                && workspaceUserID.equals(serverProfiles.active().account.optString("id"));
+    }
+
+    private void selectServer(String id) {
+        if (serverProfiles.selected.equals(id)) return;
+        ServerProfiles.Server next = null;
+        for (ServerProfiles.Server server : serverProfiles.entries) if (server.id.equals(id)) next = server;
+        if (next == null) return;
+        ServerProfiles.Server previous = serverProfiles.active();
+        rememberAccount();
+        if (serverProfiles.active() != null) serverProfiles.active().plan = connectionDraft;
+        saveServerWorkspace(); closeDesktop();
+        parkWorkspaceStream(previous);
+        stopStreams();
+        if (sidebar != null && panel.equals("sidebar")) deferWorkspacePage();
+        clearWorkspace(false);
+        backend = "codex"; model = effort = permission = "";
+        ++generation; monitor.stop(); recovery.stop(); main.removeCallbacks(connectionRetry);
+        routeSelecting = false; routeLoginRequired = false; connected = connecting = false;
+        client = null; connectionRouter = null; origin = authURL = connectionMessage = networkMessage = "";
+        connectionInfo = null; httpsState = "Not checked"; tailnetState = "Disconnected";
+        serverProfiles.selected = next.id;
+        connectionPlan = connectionDraft = next.plan;
+        routeStates.clear(); nextRouteProbe = 0; routeFailures = 0;
+        ServerRuntime runtime = serverRuntimes.get(next.id);
+        if (runtime != null) { connectionRouter = runtime.router; routeStates.putAll(runtime.states); }
+        restoreServerWorkspace();
+        saveServers(); panel = "sidebar";
+        if (next.enabled && runtime != null && runtime.candidate != null) adoptConnection(runtime.candidate);
+        else {
+            render();
+            if (next.enabled && !connectionPlan.ordered(null).isEmpty()) selectConnections(null, true);
+        }
+        if (previous != null) syncServerFeed(previous);
+    }
+
+    private void deferWorkspacePage() {
+        sidebarPageDeferred = true;
+        composer = null; composerView = null; composerDock = null;
+        modelMenu = null; modelPopover = null; workspaceHeader = null;
+        heading = subheading = null;
+        if (transcriptViewport != null) transcriptViewport.dispose();
+        transcriptViewport = null;
+        if (historyScroll != null) historyScroll.dispose();
+        historyScroll = null; history = null; historyContent = null; transcriptViews = null;
+        connectingView = null; username = password = null; loginError = null; loginSubmit = null;
+        ui.beforeDisclosure = view -> {};
+        for (int i = root.getChildCount() - 1; i >= 0; i--) if (root.getChildAt(i) != drawer) root.removeViewAt(i);
+    }
+
+    private void enableServer(String id, boolean enabled) {
+        for (ServerProfiles.Server server : serverProfiles.entries) if (server.id.equals(id)) {
+            server.enabled = enabled; saveServers();
+            if (id.equals(serverProfiles.selected)) {
+                if (enabled) selectConnections(null, true); else disconnect();
+            } else {
+                ServerRuntime runtime = serverRuntimes.get(id);
+                if (!enabled && runtime != null) { stopServerFeed(runtime); runtime.router.stop(); runtime.candidate = null; runtime.selecting = false; }
+                if (enabled) probeServer(server);
+            }
+            renderNavigation(); return;
+        }
+    }
+
+    private void refreshServerConnections() {
+        if (!foreground || destroyed) return;
+        for (ServerProfiles.Server server : serverProfiles.entries)
+            if (server.enabled && !server.id.equals(serverProfiles.selected)) probeServer(server);
+        main.removeCallbacks(serverRefresh); main.postDelayed(serverRefresh, 15000);
+    }
+
+    private void stopServerFeed(ServerRuntime runtime) {
+        if (runtime == null || runtime.feed == null) return;
+        ServerFeed feed = runtime.feed; runtime.feed = null;
+        if (feed.data != null) feed.data.stop();
+        if (feed.events != null) feed.events.stop();
+    }
+
+    private void parkWorkspaceStream(ServerProfiles.Server server) {
+        if (server == null || !server.enabled || user == null || routeLoginRequired || client == null || workspaceEvents == null) return;
+        ServerRuntime runtime = serverRuntimes.get(server.id);
+        ServerWorkspace cache = serverWorkspaces.get(server.id);
+        if (runtime == null || cache == null || runtime.candidate == null || runtime.candidate.client != client) return;
+        stopServerFeed(runtime);
+        ServerFeed feed = new ServerFeed(client, user.optString("id"), csrf, locale(), cache);
+        feed.events = workspaceEvents;
+        feed.stream = workspaceStream; feed.desktopAvailable = desktopAvailable; feed.presence = presence;
+        runtime.feed = feed;
+        workspaceEvents = null; workspaceStream = null;
+    }
+
+    private boolean serverFeedCurrent(ServerProfiles.Server server, ServerRuntime runtime, ServerFeed feed) {
+        return !destroyed && foreground && server.enabled && !server.id.equals(serverProfiles.selected)
+                && serverRuntimes.get(server.id) == runtime && runtime.feed == feed
+                && runtime.candidate != null && runtime.candidate.client == feed.client
+                && serverWorkspaces.get(server.id) == feed.cache;
+    }
+
+    /** Inactive tabs keep their own metadata stream without changing the displayed workspace. */
+    private void syncServerFeed(ServerProfiles.Server server) {
+        ServerRuntime runtime = serverRuntimes.get(server.id);
+        ConnectionRouter.Candidate<Client> candidate = runtime == null ? null : runtime.candidate;
+        if (!foreground || destroyed || !server.enabled || server.id.equals(serverProfiles.selected) || candidate == null) {
+            stopServerFeed(runtime); return;
+        }
+        if (candidate.session == null || !candidate.health.healthy()) {
+            if (definitiveConnectionFailure(server.plan, runtime, candidate.endpoint, candidate.health)) {
+                stopServerFeed(runtime);
+                ServerWorkspace cache = serverWorkspaces.get(server.id);
+                if (cache != null) { cache.projects = new JSONArray(); cache.chats = new JSONArray(); cache.cached = false; cache.navigation.reset(); }
+                return;
+            }
+            // A transient health/auth read can fail while the same WebSocket is still live.
+            if (runtime.feed != null && runtime.feed.client == candidate.client && !candidate.sessionChecked) return;
+            stopServerFeed(runtime); return;
+        }
+        final String auth;
+        try { auth = new JSONObject(candidate.session.json).getString("csrf"); }
+        catch (Exception error) { stopServerFeed(runtime); return; }
+        if (auth.isEmpty()) { stopServerFeed(runtime); return; }
+        ServerWorkspace cache = serverWorkspaces.get(server.id);
+        if (cache == null || !cache.userID.equals(candidate.session.userID)) {
+            cache = new ServerWorkspace(); cache.userID = candidate.session.userID;
+            serverWorkspaces.put(server.id, cache);
+        }
+        ServerFeed current = runtime.feed;
+        boolean reusable = current != null && current.client == candidate.client && current.userID.equals(candidate.session.userID)
+                && current.csrf.equals(auth) && current.locale.equals(locale()) && current.cache == cache;
+        if (reusable && current.data != null) return;
+        if (!reusable) stopServerFeed(runtime);
+        ServerFeed feed = reusable ? current : new ServerFeed(candidate.client, candidate.session.userID, auth, locale(), cache);
+        runtime.feed = feed;
+        String key = UUID.randomUUID().toString();
+        feed.data = new NativeWorkspaceData(workspaceWorker, new NativeWorkspaceData.Dispatcher() {
+            public void post(Runnable task) { main.post(task); }
+            public void postDelayed(Runnable task, long millis) { main.postDelayed(task, millis); }
+            public void remove(Runnable task) { main.removeCallbacks(task); }
+        }, cache.directory);
+        feed.data.bind(key, path -> request(feed.client, path, null, feed.csrf, feed.locale), new NativeWorkspaceData.Listener() {
+            public void navigation(JSONObject value) {
+                if (serverFeedCurrent(server, runtime, feed)) acceptServerNavigation(feed.cache, value);
+            }
+            public void agents(JSONArray value) {
+                if (serverFeedCurrent(server, runtime, feed)) feed.cache.agents = value;
+            }
+            public void profiles(JSONObject value) {
+                if (serverFeedCurrent(server, runtime, feed)) acceptServerProfiles(server, feed.cache, value);
+            }
+            public void failed(Exception error, boolean initial) {
+                if (serverFeedCurrent(server, runtime, feed) && error instanceof ApiFailure && ((ApiFailure) error).status == 401)
+                    forgetAccount(server);
+            }
+        }, feed.events == null || !feed.events.ready());
+        NativeWorkspaceEvents.Listener<EventStream> listener = new NativeWorkspaceEvents.Listener<EventStream>() {
+            public void connection(EventStream stream) { feed.stream = stream; }
+            public void connected(boolean value) {
+                if (!serverFeedCurrent(server, runtime, feed)) return;
+                feed.data.ready(value);
+                if (!value) feed.desktopAvailable = false;
+            }
+            public void expired() { if (serverFeedCurrent(server, runtime, feed)) forgetAccount(server); }
+            public void authFailed(Exception error) {
+                if (serverFeedCurrent(server, runtime, feed) && error instanceof ApiFailure && ((ApiFailure) error).status == 401)
+                    forgetAccount(server);
+            }
+            public void event(String kind, String raw) {
+                if (!java.util.Arrays.asList("navigation", "agents", "profiles", "desktop", "presence").contains(kind)) return;
+                EventStream stream = feed.stream;
+                workspaceDecode.execute(() -> {
+                    if (destroyed) return;
+                    try {
+                        Object value = new JSONTokener(raw).nextValue();
+                        main.post(() -> {
+                            routeServerEvent(server, feed.client, feed.events, stream, feed.userID, feed.csrf, kind, value);
+                        });
+                    } catch (Exception ignored) { /* Keep this tab's last valid snapshot until the next update. */ }
+                });
+            }
+        };
+        if (feed.events != null && feed.events.handoff(key, listener)) {
+            feed.events.visibility(false);
+            return;
+        }
+        feed.events = new NativeWorkspaceEvents<>(workspaceSocketWorker, workspaceProbeWorker, new NativeWorkspaceEvents.Scheduler() {
+            public void post(Runnable task) { main.post(task); }
+            public void postDelayed(Runnable task, long millis) { main.postDelayed(task, millis); }
+            public void remove(Runnable task) { main.removeCallbacks(task); }
+            public long now() { return android.os.SystemClock.elapsedRealtime(); }
+            public double random() { return Math.random(); }
+        });
+        feed.events.bind(key, new NativeWorkspaceEvents.Source<EventStream>() {
+            public EventStream open(NativeWorkspaceEvents.Events events) throws Exception {
+                return feed.client.subscribeWorkspace(feed.csrf, feed.locale, events::event);
+            }
+            public void close(EventStream stream) { closeStream(stream); }
+            public void send(EventStream stream, String type, boolean visible) throws Exception {
+                stream.send(object("type", type, "visible", visible).toString());
+            }
+            public void probe(EventStream stream) throws Exception { stream.probe(); }
+            public void checkAuth() throws Exception { request(feed.client, "/me", null, feed.csrf, feed.locale); }
+        }, listener);
+        feed.events.visibility(false);
+    }
+
+    /** Decoding may cross a tab switch; route the frame by its still-live server/socket owner. */
+    private void routeServerEvent(ServerProfiles.Server server, Client sourceClient, NativeWorkspaceEvents<EventStream> source,
+                                  EventStream stream, String account, String auth, String kind, Object value) {
+        if (destroyed || server == null || source == null) return;
+        if (server.id.equals(serverProfiles.selected) && client == sourceClient && workspaceEvents == source && workspaceStream == stream
+                && user != null && user.optString("id").equals(account) && csrf.equals(auth) && !routeLoginRequired) {
+            try { applyWorkspaceEvent(kind, value, workspaceEpoch); } catch (Exception error) { toast(error); }
+            return;
+        }
+        ServerRuntime runtime = serverRuntimes.get(server.id);
+        ServerFeed feed = runtime == null ? null : runtime.feed;
+        if (feed == null || !serverFeedCurrent(server, runtime, feed) || feed.client != sourceClient || feed.events != source
+                || feed.stream != stream || !feed.userID.equals(account) || !feed.csrf.equals(auth)) return;
+        if (kind.equals("navigation") && value instanceof JSONObject) feed.data.navigation((JSONObject) value);
+        else if (kind.equals("agents") && value instanceof JSONArray) feed.cache.agents = (JSONArray) value;
+        else if (kind.equals("profiles") && value instanceof JSONObject) acceptServerProfiles(server, feed.cache, (JSONObject) value);
+        else if (kind.equals("desktop") && value instanceof JSONObject) feed.desktopAvailable = ((JSONObject) value).optBoolean("available");
+        else if (kind.equals("presence") && value instanceof JSONArray) feed.presence = (JSONArray) value;
+    }
+
+    private void acceptServerNavigation(ServerWorkspace cache, JSONObject value) {
+        cache.projects = array(value, "projects");
+        JSONArray incoming = array(value, "chats");
+        cache.chats = NativeNavigation.merge(cache.chats, incoming);
+        NativeNavigation.Selection next = cache.navigation.select(cache.projectID, cache.chatID, cache.projects, incoming);
+        if (!next.project.equals(cache.projectID) || !next.chat.equals(cache.chatID)) { cache.chat = null; cache.permission = ""; }
+        cache.projectID = next.project; cache.chatID = next.chat;
+        if (cache.chat != null) for (int i = 0; i < incoming.length(); i++) {
+            JSONObject metadata = at(incoming, i);
+            if (!cache.chatID.equals(metadata.optString("id"))) continue;
+            cache.chat = NativeChatState.copy(cache.chat);
+            for (String field : new String[] {"title", "participants", "can_control"}) NativeChatState.put(cache.chat, field, metadata.opt(field));
+            break;
+        }
+        cache.sidebar.select(cache.projectID, cache.chatID, cache.projects, cache.chats);
+        cache.cached = true;
+    }
+
+    private void acceptServerProfiles(ServerProfiles.Server server, ServerWorkspace cache, JSONObject value) {
+        if (!cache.directory.accept(value)) return;
+        cache.profiles = cache.directory.people;
+        for (int i = 0; i < cache.profiles.length(); i++) {
+            JSONObject person = at(cache.profiles, i);
+            if (cache.userID.equals(person.optString("id"))) { rememberAccount(server, person); break; }
+        }
+    }
+
+    private void probeServer(ServerProfiles.Server server) {
+        if (!foreground || !server.enabled || server.plan.ordered(null).isEmpty()) return;
+        ServerRuntime runtime = serverRuntimes.computeIfAbsent(server.id, key -> new ServerRuntime());
+        if (runtime.selecting) return;
+        runtime.selecting = true;
+        String account = runtime.candidate == null || runtime.candidate.session == null ? "" : runtime.candidate.session.userID;
+        ConnectionRouter.Candidate<Client> current = runtime.candidate;
+        boolean awaitingLogin = current != null && (current.health.problem.equals("login") || current.health.problem.equals("approval")
+                || current.health.problem.equals("starting") || current.health.healthy() && current.session == null);
+        List<ConnectionPlan.Endpoint> endpoints = server.plan.autoSwitch && !awaitingLogin
+                ? server.plan.ordered(current == null ? null : current.endpoint.mode)
+                : server.plan.candidates(current == null ? server.plan.selected : current.endpoint.mode);
+        routes(server).select(endpoints, account, false, true, new ConnectionRouter.Listener<Client>() {
+            public void replacing(Client previous) { stopServerFeed(runtime); runtime.candidate = null; }
+            public void sampled(ConnectionPlan.Endpoint endpoint, ConnectionRecovery.Snapshot health, boolean signedIn) {
+                runtime.health.keySet().retainAll(server.plan.ordered(null));
+                runtime.health.put(endpoint, health);
+                runtime.states.put(endpoint.mode, health.healthy() ? tr("Available", "可用") : tr("Unavailable", "不可用"));
+            }
+            public void selected(ConnectionRouter.Candidate<Client> candidate) {
+                runtime.selecting = false;
+                if (!server.enabled || destroyed) return;
+                runtime.candidate = candidate;
+                if (candidate.session != null) try {
+                    rememberAccount(server, new JSONObject(candidate.session.json).optJSONObject("user"));
+                } catch (Exception ignored) {}
+                else if (candidate.sessionChecked && !server.id.equals(serverProfiles.selected)) forgetAccount(server);
+                if (server.id.equals(serverProfiles.selected)) { routeStates.putAll(runtime.states); adoptConnection(candidate); }
+                else syncServerFeed(server);
+                renderNavigation();
+            }
+            public void unavailable() { runtime.selecting = false; renderNavigation(); }
+        });
+    }
+
+    private void editServer(boolean adding) {
+        if (serverDialog != null && serverDialog.isShowing()) return;
+        serverDialog = new NativeServerDialog(ui, adding ? "" : serverProfiles.active().name, adding, name -> {
+            if (adding) { ServerProfiles.Server server = serverProfiles.add(name); selectServer(server.id); openSettings(); }
+            else { serverProfiles.active().name = name; saveServers(); settingsPage(); }
+        });
+        serverDialog.show();
+    }
+
+    private void editConnectionPlan(ConnectionPlan plan) {
+        connectionDraft = plan;
+        if (plan.autoSwitch != connectionPlan.autoSwitch) {
+            connectionPlan = connectionPlan.automatic(plan.autoSwitch);
+            getPreferences(MODE_PRIVATE).edit().putBoolean("automaticConnections", plan.autoSwitch).apply();
+            serverProfiles.active().plan = connectionPlan; saveServers();
+            if (connectionRouter != null) connectionRouter.cancel();
+            routeSelecting = false;
+        }
+        updateConnectionSettings();
     }
 
     private void saveLocalPreferences() {
@@ -1002,47 +1805,16 @@ public final class MainActivity extends Activity {
                 .apply();
     }
 
-    private void startDesktopAvailability() {
-        String key = generation + "\n" + authEpoch + "\n" + user.optString("id");
-        if (desktopAvailability != null && desktopAvailabilityKey.equals(key)) return;
-        stopDesktopAvailability();
-        desktopAvailabilityKey = key;
-        desktopAvailability = this::refreshDesktopAvailability;
-        main.post(desktopAvailability);
-    }
-
-    private void stopDesktopAvailability() {
-        if (desktopAvailability != null) main.removeCallbacks(desktopAvailability);
-        desktopAvailability = null;
-        desktopAvailabilityKey = "";
-        desktopAvailable = desktopAvailabilityLoading = false;
-    }
-
-    private void refreshDesktopAvailability() {
-        if (!foreground || !settingsOpen || destroyed || user == null || desktopSettings == null
-                || desktopAvailability == null || desktopAvailabilityLoading) return;
-        Runnable again = desktopAvailability;
-        desktopAvailabilityLoading = true;
-        api("/desktop", null, value -> {
-            if (!settingsOpen || desktopAvailability != again) return;
-            desktopAvailabilityLoading = false;
-            desktopAvailable = ((JSONObject) value).optBoolean("available");
-            desktopSettings.setVisibility(desktopAvailable ? View.VISIBLE : View.GONE);
-            if (foreground) main.postDelayed(again, 5000);
-        }, error -> {
-            if (!settingsOpen || desktopAvailability != again) return;
-            desktopAvailabilityLoading = false;
-            desktopAvailable = false;
-            desktopSettings.setVisibility(View.GONE);
-            if (foreground) main.postDelayed(again, 5000);
-        });
+    private void setDesktopAvailable(boolean available) {
+        desktopAvailable = available;
+        if (sidebar != null) sidebar.desktop(available, this::openDesktop);
     }
 
     private void openDesktop() {
         if (desktopDialog != null || !foreground || destroyed || user == null || client == null) return;
         final Client captured = client;
         final String auth = csrf, loc = locale();
-        captureDraft(); closeSettings(); closePeople(); closeImagePreview();
+        captureDraft(); closeSettings(); closeDrawer(); closePeople(); closeImagePreview();
         desktopDialog = new NativeDesktopDialog(ui, new NativeDesktopConnection.Transport() {
             public JSONObject request(String path, boolean post) throws Exception {
                 return (JSONObject) MainActivity.this.request(captured, path, post ? object() : null, auth, loc);
@@ -1058,7 +1830,7 @@ public final class MainActivity extends Activity {
                     public void close() { stream.close(); }
                 };
             }
-        }, io, () -> { if (desktopDialog != null && !desktopDialog.isShowing()) desktopDialog = null; });
+        }, io, () -> { if (desktopDialog != null && !desktopDialog.isShowing()) desktopDialog = null; }, serverProfiles.active().name);
         desktopDialog.show();
     }
 
@@ -1072,12 +1844,20 @@ public final class MainActivity extends Activity {
         if (theme.equals(nextTheme) && language.equals(nextLanguage)) return;
         theme = nextTheme; language = nextLanguage;
         saveLocalPreferences();
-        if (settingsOpen) { appearanceDirty = true; settingsPage(); }
-        else render();
+        render();
+        for (ServerProfiles.Server server : serverProfiles.entries) if (!server.id.equals(serverProfiles.selected)) syncServerFeed(server);
     }
 
     private void updateConnectionSettings() {
         if (!settingsOpen || connectionText == null) return;
+        String message = networkMessage == null || networkMessage.isEmpty() ? "" : "\n\n" + networkMessage;
+        if (connectionMode == ConnectionMode.DIRECT) {
+            connectionHint.setText(localizedString(R.string.connection_direct_note));
+            String summary = localizedString(R.string.connection_direct_summary, httpsState, message);
+            if (connectionSettings != null) bindConnectionSettings(summary);
+            return;
+        }
+        connectionHint.setText(localizedString(R.string.connection_note));
         String state =
                 tailnetState.equals("Running")
                         ? tr("Running", "运行中")
@@ -1121,10 +1901,14 @@ public final class MainActivity extends Activity {
                         target,
                         httpsState,
                         sampled,
-                        connectionMessage == null || connectionMessage.isEmpty()
-                                ? ""
-                                : "\n\n" + connectionMessage);
-        if (connectionSettings != null) connectionSettings.bind(connected, connecting || client != null, OriginPolicy.isLoginURL(authURL), summary);
+                        message);
+        if (connectionSettings != null) bindConnectionSettings(summary);
+    }
+
+    private void bindConnectionSettings(String summary) {
+        connectionSettings.bind(routeSelecting ? connectionPlan.selected : connectionMode, connected, client != null || routeSelecting, routeSelecting,
+                !connectionDraft.tailscale.isEmpty(), routeStates, summary,
+                serverConnectionStates().getOrDefault(serverProfiles.selected, "disconnected"));
     }
 
     private void workspacePage() {
@@ -1245,19 +2029,27 @@ public final class MainActivity extends Activity {
     }
 
     private void openSidebar() {
-        closeDrawer();
+        openSidebar(true);
+    }
+
+    private void openSidebar(boolean animate) {
+        closeDrawer(false);
         panel = "sidebar";
         NativeDrawer overlay = new NativeDrawer(ui, false);
         drawer = overlay;
         sidebar = new NativeSidebar(ui, sidebarState, this::person, this::closeDrawer, this::openChat, this::newChat,
-                () -> { closeDrawer(); openAvatarPicker(); }, this::openSettings, this::logout);
+                () -> { closeDrawer(); openAvatarPicker(); }, this::openSettings, this::logout, this::loginFromSidebar, this::openAppearance);
         overlay.sheet.addView(sidebar, new LinearLayout.LayoutParams(-1, -1));
         root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
         renderNavigation();
-        overlay.show();
+        overlay.show(animate);
     }
 
     private void closeDrawer() {
+        closeDrawer(true);
+    }
+
+    private void closeDrawer(boolean showPage) {
         if (fileBrowser != null) fileBrowser.deactivate();
         fileBrowser = null;
         FrameLayout previous = drawer;
@@ -1267,13 +2059,63 @@ public final class MainActivity extends Activity {
         panel = "";
         if (previous instanceof NativeDrawer) ((NativeDrawer) previous).dismiss();
         else if (previous != null) root.removeView(previous);
+        if (sidebarPageDeferred && showPage) {
+            sidebarPageDeferred = false;
+            render();
+        }
+    }
+
+    private Map<String, String> serverConnectionStates() {
+        Map<String, String> states = new HashMap<>();
+        for (ServerProfiles.Server server : serverProfiles.entries) {
+            ServerRuntime runtime = serverRuntimes.get(server.id);
+            String state = "disconnected";
+            if (server.enabled && !server.plan.ordered(null).isEmpty()) {
+                if (runtime != null && runtime.selecting && (runtime.candidate == null || !runtime.candidate.health.healthy())) state = "connecting";
+                else if (server.id.equals(serverProfiles.selected)) {
+                    if (connected) state = "connected";
+                    else if (routeSelecting || connecting && !httpsState.equals("Failed")) state = "connecting";
+                    else state = "error";
+                } else if (runtime != null && runtime.candidate != null) {
+                    ConnectionRecovery.Snapshot health = runtime.candidate.health;
+                    state = health.healthy() ? "connected"
+                            : health.problem.equals("login") || health.problem.equals("approval") ? "login" : "error";
+                } else state = "connecting";
+            }
+            states.put(server.id, state);
+        }
+        return states;
     }
 
     private void renderNavigation() {
+        rememberAccount();
         sidebarState.select(projectID, chatID, projects, chats);
-        if (!panel.equals("sidebar") || sidebar == null || user == null) return;
-        sidebar.bind(person(user.optString("id")), projects, chats, projectID, chatID,
-                chat != null && array(chat, "turns").length() == 0 ? backend : "", busy);
+        if (!panel.equals("sidebar") || sidebar == null) return;
+        sidebar.servers(serverProfiles, serverConnectionStates(), this::selectServer, () -> editServer(true));
+        boolean signedIn = user != null && !routeLoginRequired;
+        boolean showWorkspace = signedIn || hasWorkspaceCache();
+        boolean networkPending = routeSelecting || connecting && !httpsState.equals("Failed");
+        boolean pending = networkPending || sessionCheckBusy;
+        String action = networkPending ? "Connecting…" : sessionCheckBusy ? "Restoring sign-in…" : !connected || client == null || restoringSession
+                ? connectionWanted && serverProfiles.active() != null && serverProfiles.active().enabled ? "Retry" : "Connect"
+                : signedIn ? "" : "Sign in";
+        JSONObject account = signedIn ? ServerProfiles.displayAccount(person(user.optString("id")))
+                : serverProfiles.active() == null ? new JSONObject() : serverProfiles.active().account;
+        sidebar.connection(account, action, pending);
+        sidebar.bind(signedIn ? person(user.optString("id")) : new JSONObject(), showWorkspace ? projects : new JSONArray(),
+                showWorkspace ? chats : new JSONArray(), showWorkspace ? projectID : "", showWorkspace ? chatID : "",
+                showWorkspace && chat != null && array(chat, "turns").length() == 0 ? backend : "", busy, !signedIn && showWorkspace);
+        sidebar.desktop(desktopAvailable, this::openDesktop);
+    }
+
+    private void loginFromSidebar() {
+        if (serverProfiles.active() == null) { editServer(true); return; }
+        if (routeSelecting || sessionCheckBusy) return;
+        if (connectionPlan.ordered(null).isEmpty()) { openSettings(); return; }
+        if (!serverProfiles.active().enabled) enableServer(serverProfiles.selected, true);
+        else if (!connected || client == null) selectConnections(null, true);
+        else if (restoringSession) restoreSession(client, generation);
+        else { closeDrawer(); render(); if (username != null) username.requestFocus(); }
     }
 
     private void refreshWorkspace() {
@@ -1281,7 +2123,7 @@ public final class MainActivity extends Activity {
     }
 
     private void bindWorkspaceData(boolean reload) {
-        if (!foreground || destroyed || user == null || client == null) return;
+        if (routeLoginRequired || !foreground || destroyed || user == null || client == null) return;
         if (workspaceData == null) workspaceData = new NativeWorkspaceData(workspaceWorker, new NativeWorkspaceData.Dispatcher() {
             public void post(Runnable task) { main.post(task); }
             public void postDelayed(Runnable task, long millis) { main.postDelayed(task, millis); }
@@ -1323,6 +2165,8 @@ public final class MainActivity extends Activity {
     }
 
     private void acceptNavigation(JSONObject value) {
+        workspaceCached = true;
+        workspaceUserID = user == null ? workspaceUserID : user.optString("id");
         projects = array(value, "projects");
         JSONArray incoming = array(value, "chats");
         chats = NativeNavigation.merge(chats, incoming);
@@ -1338,7 +2182,7 @@ public final class MainActivity extends Activity {
             stopHistory();
             ++selectionEpoch;
             stopChat();
-            if (!selected.chat.isEmpty()) openChat(selected.chat);
+            if (!selected.chat.isEmpty()) selectChat(selected.chat);
             else { render(); loadPermissions(); }
         }
         if (chat != null)
@@ -1378,7 +2222,7 @@ public final class MainActivity extends Activity {
         ++draftVersion;
         ++selectionEpoch;
         stopChat();
-        closeDrawer();
+        closeDrawer(false); sidebarPageDeferred = false;
         chatID = "";
         projectID = id;
         chat = null;
@@ -1391,12 +2235,19 @@ public final class MainActivity extends Activity {
     }
 
     private void openChat(String id) {
-        if (id.equals(chatID)) { closeDrawer(); return; }
+        boolean deferred = sidebarPageDeferred;
+        closeDrawer(false); sidebarPageDeferred = false;
+        if (deferred && id.equals(chatID)) { render(); startChat(); return; }
+        selectChat(id);
+    }
+
+    /** Restoring a selection from workspace data must preserve the user's open sidebar. */
+    private void selectChat(String id) {
+        if (id.equals(chatID)) return;
         goalNotice = goalError = "";
         discardComposerDrafts();
         ++selectionEpoch;
         stopChat();
-        closeDrawer();
         chatID = id;
         for (int i = 0; i < chats.length(); i++)
             if (at(chats, i).optString("id").equals(id)) projectID = at(chats, i).optString("project_id");
@@ -1662,12 +2513,12 @@ public final class MainActivity extends Activity {
         }
         if (historyLoader == null) historyLoader = new NativeHistoryLoader<>(workspaceWorker, main::post);
         final Client captured = client;
-        final String auth = csrf;
-        String key = generation + "\n" + authEpoch + "\n" + selectionEpoch + "\n" + user.optString("id") + "\n" + chatID;
+        final String auth = csrf, loc = locale();
+        String key = generation + "\n" + authEpoch + "\n" + selectionEpoch + "\n" + user.optString("id") + "\n" + chatID + "\n" + loc;
         final View surface = history;
         historyLoader.bind(key, historyCursor(chat), surface, task -> NativeAfterPaint.schedule(surface, task), new NativeHistoryLoader.Source<JSONObject>() {
             public JSONObject read(NativeHistoryLoader.Cursor from) throws Exception {
-                return (JSONObject) request(captured, "/chats/" + Uri.encode(from.id) + "/history?before=" + Uri.encode(from.before), null, auth, locale());
+                return (JSONObject) request(captured, "/chats/" + Uri.encode(from.id) + "/history?before=" + Uri.encode(from.before), null, auth, loc);
             }
             public NativeHistoryLoader.Cursor cursor(JSONObject page) { return historyCursor(page); }
         }, new NativeHistoryLoader.Listener<JSONObject>() {
@@ -2232,10 +3083,19 @@ public final class MainActivity extends Activity {
         if (chatRefresh != null) chatRefresh.stop();
         ++workspaceEpoch;
         if (workspaceEvents != null) workspaceEvents.stop();
-        else if (workspaceStream != null) workspaceStream.close();
+        else closeStream(workspaceStream);
         workspaceStream = null;
         setWorkspaceConnected(false);
         stopChat();
+    }
+
+    private void closeStream(EventStream stream) {
+        if (stream == null) return;
+        try { streamCloser.execute(stream::close); }
+        catch (java.util.concurrent.RejectedExecutionException ignored) {
+            // A handle returned after Activity teardown still has to be released.
+            stream.close();
+        }
     }
 
     private void suspendStreams() {
@@ -2247,7 +3107,7 @@ public final class MainActivity extends Activity {
 
     private void startChat() {
         updateChatRefresh();
-        if (!foreground || destroyed || client == null || user == null || chatID.isEmpty()) { stopChat(); return; }
+        if (sidebarPageDeferred || routeLoginRequired || !foreground || destroyed || client == null || user == null || chatID.isEmpty()) { stopChat(); return; }
         if (chatEvents == null) chatEvents = new NativeChatEvents<>(io, new NativeChatRefresh.Dispatcher() {
             public void post(Runnable task) { main.post(task); }
             public void postDelayed(Runnable task, long millis) { main.postDelayed(task, millis); }
@@ -2267,7 +3127,7 @@ public final class MainActivity extends Activity {
                         events.event(kind, value);
                     } catch (Exception ignored) { /* An invalid frame is not a chat snapshot. */ }
                 });
-                return () -> { if (stream != null) stream.close(); };
+                return () -> closeStream(stream);
             }
             public JSONObject snapshot() throws Exception {
                 JSONObject value = (JSONObject) request(captured, "/chats/" + Uri.encode(id), null, auth, locale());
@@ -2315,7 +3175,7 @@ public final class MainActivity extends Activity {
     }
 
     private void updateChatRefresh() {
-        if (!foreground || destroyed || client == null || user == null || chatID.isEmpty()
+        if (sidebarPageDeferred || !foreground || destroyed || client == null || user == null || chatID.isEmpty()
                 || chat == null || !chatID.equals(chat.optString("id")) || !NativeChatState.hasRunningTurn(chat)) {
             if (chatRefresh != null) chatRefresh.stop();
             return;
@@ -2348,15 +3208,7 @@ public final class MainActivity extends Activity {
     }
 
     private boolean startWorkspace() {
-        if (!foreground || destroyed || user == null || client == null) return false;
-        if (workspaceEvents == null) workspaceEvents = new NativeWorkspaceEvents<>(workspaceSocketWorker, workspaceProbeWorker, new NativeWorkspaceEvents.Scheduler() {
-            public void post(Runnable task) { main.post(task); }
-            public void postDelayed(Runnable task, long millis) { main.postDelayed(task, millis); }
-            public void remove(Runnable task) { main.removeCallbacks(task); }
-            // Resume must count deep sleep even before paused Handler timers can fire.
-            public long now() { return android.os.SystemClock.elapsedRealtime(); }
-            public double random() { return Math.random(); }
-        });
+        if (routeLoginRequired || !foreground || destroyed || user == null || client == null) return false;
         final Client captured = client;
         final String auth = csrf;
         String key = generation + "\n" + authEpoch + "\n" + user.optString("id");
@@ -2365,27 +3217,49 @@ public final class MainActivity extends Activity {
             presence = new JSONArray(); presenceStale = true;
             updateHeaderPeople(); updateMissingProfiles();
         }
-        boolean bound = workspaceEvents.bind(key, new NativeWorkspaceEvents.Source<EventStream>() {
-            public EventStream open(NativeWorkspaceEvents.Events events) throws Exception {
-                return captured.subscribeWorkspace(auth, locale(), events::event);
-            }
-            public void close(EventStream stream) { if (stream != null) stream.close(); }
-            public void send(EventStream stream, String type, boolean visible) throws Exception {
-                stream.send(object("type", type, "visible", visible).toString());
-            }
-            public void probe(EventStream stream) throws Exception { stream.probe(); }
-            public void checkAuth() throws Exception { request(captured, "/me", null, auth, locale()); }
-        }, new NativeWorkspaceEvents.Listener<EventStream>() {
+        NativeWorkspaceEvents.Listener<EventStream> listener = new NativeWorkspaceEvents.Listener<EventStream>() {
             public void connection(EventStream stream) { workspaceStream = stream; ++workspaceEpoch; }
-            public void event(String kind, String value) {
-                decodeWorkspaceEvent(kind, value, workspaceEpoch);
-            }
+            public void event(String kind, String value) { decodeWorkspaceEvent(kind, value, workspaceEpoch); }
             public void connected(boolean value) { setWorkspaceConnected(value); }
             public void expired() { expire(); }
             public void authFailed(Exception error) {
                 if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
             }
+        };
+        ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
+        ServerFeed feed = runtime == null ? null : runtime.feed;
+        if (feed != null && feed.client == captured && feed.userID.equals(user.optString("id")) && feed.csrf.equals(auth)) {
+            runtime.feed = null;
+            if (feed.data != null) feed.data.stop();
+            if (workspaceEvents != null && workspaceEvents != feed.events) workspaceEvents.stop();
+            workspaceEvents = feed.events;
+            if (workspaceEvents != null && workspaceEvents.handoff(key, listener)) {
+                presence = feed.presence; presenceStale = !workspaceEvents.ready();
+                setDesktopAvailable(workspaceEvents.ready() && feed.desktopAvailable);
+                workspaceEvents.visibility(true);
+                updateHeaderPeople();
+                return true;
+            }
+        } else if (feed != null) stopServerFeed(runtime);
+        if (workspaceEvents == null) workspaceEvents = new NativeWorkspaceEvents<>(workspaceSocketWorker, workspaceProbeWorker, new NativeWorkspaceEvents.Scheduler() {
+            public void post(Runnable task) { main.post(task); }
+            public void postDelayed(Runnable task, long millis) { main.postDelayed(task, millis); }
+            public void remove(Runnable task) { main.removeCallbacks(task); }
+            // Resume must count deep sleep even before paused Handler timers can fire.
+            public long now() { return android.os.SystemClock.elapsedRealtime(); }
+            public double random() { return Math.random(); }
         });
+        boolean bound = workspaceEvents.bind(key, new NativeWorkspaceEvents.Source<EventStream>() {
+            public EventStream open(NativeWorkspaceEvents.Events events) throws Exception {
+                return captured.subscribeWorkspace(auth, locale(), events::event);
+            }
+            public void close(EventStream stream) { closeStream(stream); }
+            public void send(EventStream stream, String type, boolean visible) throws Exception {
+                stream.send(object("type", type, "visible", visible).toString());
+            }
+            public void probe(EventStream stream) throws Exception { stream.probe(); }
+            public void checkAuth() throws Exception { request(captured, "/me", null, auth, locale()); }
+        }, listener);
         if (bound) setWorkspaceConnected(false);
         return bound;
     }
@@ -2394,6 +3268,7 @@ public final class MainActivity extends Activity {
         workspaceReady = value;
         if (workspaceData != null) workspaceData.ready(value);
         if (!value) {
+            setDesktopAvailable(false);
             presenceStale = true;
             disconnectPeople(); updateHeaderPeople(); updateMissingProfiles();
         } else renderPeople();
@@ -2404,7 +3279,7 @@ public final class MainActivity extends Activity {
     }
 
     private void resumeWorkspace(boolean returning) {
-        if (!foreground || destroyed || user == null || client == null) return;
+        if (routeLoginRequired || !foreground || destroyed || user == null || client == null) return;
         if (fileBrowser != null) fileBrowser.resume();
         boolean bound = startWorkspace();
         workspaceEvents.visibility(true);
@@ -2418,7 +3293,7 @@ public final class MainActivity extends Activity {
         if (kind.equals("ready")) { setWorkspaceConnected(true); return; }
         if (kind.equals("transport_error")) { if (workspaceEvents != null) workspaceEvents.failed(); return; }
         if (kind.equals("auth_expired")) { expire(); return; }
-        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result").contains(kind)) return;
+        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result", "desktop").contains(kind)) return;
         Object value = new JSONTokener(raw).nextValue();
         applyWorkspaceEvent(kind, value, epoch);
     }
@@ -2428,15 +3303,21 @@ public final class MainActivity extends Activity {
             try { workspaceEvent(kind, raw, epoch); } catch (Exception error) { toast(error); }
             return;
         }
-        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result").contains(kind)) return;
+        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result", "desktop").contains(kind)) return;
         final int token = generation, session = authEpoch;
+        final ServerProfiles.Server server = serverProfiles.active();
+        final Client sourceClient = client;
+        final NativeWorkspaceEvents<EventStream> source = workspaceEvents;
+        final EventStream stream = workspaceStream;
+        final String account = user == null ? "" : user.optString("id"), auth = csrf;
         workspaceDecode.execute(() -> {
-            if (destroyed || epoch != workspaceEpoch || token != generation || session != authEpoch) return;
+            if (destroyed) return;
             try {
                 Object value = new JSONTokener(raw).nextValue();
-                post(token, () -> {
-                    if (session != authEpoch) return;
-                    try { applyWorkspaceEvent(kind, value, epoch); } catch (Exception error) { toast(error); }
+                main.post(() -> {
+                    if (token == generation && session == authEpoch && epoch == workspaceEpoch && !destroyed) {
+                        try { applyWorkspaceEvent(kind, value, epoch); } catch (Exception error) { toast(error); }
+                    } else routeServerEvent(server, sourceClient, source, stream, account, auth, kind, value);
                 });
             } catch (Exception error) {
                 post(token, () -> { if (session == authEpoch && epoch == workspaceEpoch) toast(error); });
@@ -2447,6 +3328,9 @@ public final class MainActivity extends Activity {
     private void applyWorkspaceEvent(String kind, Object value, int epoch) throws Exception {
         if (destroyed || workspaceEpoch != epoch || user == null) return;
         switch (kind) {
+            case "desktop":
+                setDesktopAvailable(((JSONObject) value).optBoolean("available"));
+                break;
             case "navigation":
                 if (workspaceData != null && foreground) workspaceData.navigation((JSONObject) value);
                 else acceptNavigation((JSONObject) value);
@@ -2532,6 +3416,7 @@ public final class MainActivity extends Activity {
                 if (!profile.optString("id").equals(user.optString("id"))) continue;
                 user.put("nickname", profile.optString("nickname"));
                 user.put("avatar", profile.optJSONObject("avatar"));
+                rememberAccount();
                 break;
             }
         }
@@ -2904,16 +3789,20 @@ public final class MainActivity extends Activity {
             ui.dismissMenus();
             return;
         }
+        if (appearanceDialog != null) {
+            closeAppearance();
+            return;
+        }
+        if (settingsOpen) {
+            closeSettings();
+            return;
+        }
         if (peoplePanel != null) {
             closePeople();
             return;
         }
         if (drawer != null) {
             closeDrawer();
-            return;
-        }
-        if (settingsOpen) {
-            closeSettings();
             return;
         }
         if (!chatID.isEmpty()) {
@@ -2944,11 +3833,8 @@ public final class MainActivity extends Activity {
         recovery.setActive(true);
         if (client != null) publishInterfaces();
         main.post(connectionRetry);
-        if (settingsOpen && desktopAvailability != null) {
-            main.removeCallbacks(desktopAvailability);
-            main.post(desktopAvailability);
-        }
-        if (user != null) {
+        main.post(serverRefresh);
+        if (user != null && !routeLoginRequired) {
             resumeWorkspace(true);
             if (workspaceData != null) bindWorkspaceData(false);
             startChat();
@@ -2965,8 +3851,16 @@ public final class MainActivity extends Activity {
     @Override
     protected void onStop() {
         foreground = false;
+        if (connectionRouter != null) connectionRouter.cancel();
+        if (routeSelecting) { client = null; connected = false; connecting = false; busy = false; }
+        routeSelecting = false;
+        for (ServerRuntime runtime : serverRuntimes.values()) {
+            stopServerFeed(runtime);
+            if (runtime.selecting) runtime.candidate = null;
+            runtime.router.cancel(); runtime.selecting = false;
+        }
+        main.removeCallbacks(serverRefresh);
         closeDesktop();
-        if (desktopAvailability != null) main.removeCallbacks(desktopAvailability);
         if (fileBrowser != null) fileBrowser.deactivate();
         if (historyScroll != null) historyScroll.suspend();
         if (ui != null) ui.dismissMenus();
@@ -2982,16 +3876,19 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         closeDesktop();
-        stopDesktopAvailability();
+        setDesktopAvailable(false);
         if (fileBrowser != null) fileBrowser.deactivate();
         fileBrowser = null;
         destroyed = true;
         if (historyScroll != null) historyScroll.dispose();
         if (transcriptViewport != null) transcriptViewport.dispose();
         ++generation;
+        for (ServerRuntime runtime : serverRuntimes.values()) { stopServerFeed(runtime); runtime.router.stop(); }
         monitor.stop();
         recovery.stop();
         dismissSettingsDialog();
+        if (serverDialog != null) serverDialog.dismiss();
+        if (appearanceDialog != null) { appearanceDialog.dismiss(); appearanceDialog = null; }
         closeAvatarPicker();
         closeImagePreview();
         detachPeople();
@@ -2999,10 +3896,11 @@ public final class MainActivity extends Activity {
         main.removeCallbacksAndMessages(null);
         if (networkCallback != null) connectivity.unregisterNetworkCallback(networkCallback);
         Client captured = client;
+        final boolean routed = connectionRouter != null;
         client = null;
         connectionWorker.execute(
                 () -> {
-                    if (captured != null)
+                    if (captured != null && !routed)
                         try {
                             captured.close();
                         } catch (Exception ignored) {
@@ -3014,6 +3912,7 @@ public final class MainActivity extends Activity {
         workspaceWorker.shutdown();
         workspaceSocketWorker.shutdown();
         workspaceProbeWorker.shutdown();
+        streamCloser.shutdown();
         payloadWorker.shutdown();
         diagnostics.shutdown();
         avatarImages.clear();

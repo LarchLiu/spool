@@ -28,8 +28,13 @@ final class NativeDrawer extends FrameLayout {
     }
 
     void show() {
+        show(true);
+    }
+
+    void show(boolean animate) {
         if (dismissing) return;
-        animateTo(0, null);
+        if (animate) animateTo(0, null);
+        else { stopAnimation(); hidden = 0; positionSheet(); }
     }
 
     void dismiss() {

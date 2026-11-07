@@ -73,12 +73,20 @@ func transientProbeError(err error) bool {
 		}
 	}
 	var network net.Error
+	var dns *net.DNSError
+	if errors.As(err, &dns) {
+		return true
+	}
 	return errors.As(err, &network) && network.Timeout()
 }
 
 func (c *Client) probeOnce(ctx context.Context) error {
 	var phase atomic.Value
-	phase.Store("dialing tailnet server")
+	if c.direct {
+		phase.Store("dialing HTTPS server")
+	} else {
+		phase.Store("dialing tailnet server")
+	}
 	trace := &httptrace.ClientTrace{
 		TLSHandshakeStart: func() { phase.Store("TLS handshake") },
 		TLSHandshakeDone: func(_ tls.ConnectionState, err error) {

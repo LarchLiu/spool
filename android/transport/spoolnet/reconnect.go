@@ -17,7 +17,9 @@ func (c *Client) NetworkChanged() {
 		return
 	}
 	c.transport.CloseIdleConnections()
-	c.server.Sys().NetMon.Get().InjectEvent()
+	if c.server != nil {
+		c.server.Sys().NetMon.Get().InjectEvent()
+	}
 }
 
 type reconnectAPI interface {
@@ -30,6 +32,9 @@ type reconnectAPI interface {
 // replayed. The foreground supervisor serializes and rate-limits this action.
 func (c *Client) Reconnect() error {
 	c.NetworkChanged()
+	if c.direct {
+		return c.ctx.Err()
+	}
 	return reconnectNode(c.ctx, c.local)
 }
 

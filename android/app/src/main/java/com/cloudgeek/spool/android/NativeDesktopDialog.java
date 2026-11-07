@@ -44,6 +44,10 @@ final class NativeDesktopDialog extends Dialog {
     private final Runnable firstFrameTimeout = () -> failed("Could not decode desktop video");
 
     NativeDesktopDialog(NativeUi ui, NativeDesktopConnection.Transport transport, Executor io, Runnable dismissed) {
+        this(ui, transport, io, dismissed, "");
+    }
+
+    NativeDesktopDialog(NativeUi ui, NativeDesktopConnection.Transport transport, Executor io, Runnable dismissed, String serverName) {
         super(ui.context);
         this.ui = ui;
         Configuration config = new Configuration(ui.context.getResources().getConfiguration());
@@ -69,7 +73,7 @@ final class NativeDesktopDialog extends Dialog {
             return insets;
         });
         heading = ui.row(); heading.setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6));
-        TextView title = ui.bold(label(R.string.desktop_title), 16);
+        TextView title = ui.bold(serverName.isEmpty() ? label(R.string.desktop_title) : serverName + " · " + label(R.string.desktop_title), 16);
         heading.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         shell.addView(heading);
         status = ui.text(label(R.string.desktop_connecting), 12, ui.muted);

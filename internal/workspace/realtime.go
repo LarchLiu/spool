@@ -129,10 +129,16 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 	syncState := func(changes changeKind) bool {
 		// Revalidate before every snapshot, not just at connection time. This
 		// prevents revoked sessions from receiving subsequent change events.
-		if _, err := a.identity(r); err != nil {
+		current, err := a.identity(r)
+		if err != nil {
 			a.presence.Remove(identity.TokenHash)
 			_ = conn.Close(websocket.StatusPolicyViolation, "session expired")
 			return false
+		}
+		if changes&(changeRemoteDesktop|changeAuth) != 0 {
+			if send("desktop", map[string]bool{"available": a.remoteDesktopAvailable(current)}) != nil {
+				return false
+			}
 		}
 		var people []PresenceUser
 		if changes&(changeNavigation|changeProfiles|changePresence) != 0 {
@@ -178,7 +184,7 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 	syncGroups := func() bool {
 		return syncState(changeAuth) && send("chat_groups", a.directMessages.groupsFor(identity.User.ID)) == nil
 	}
-	if !syncState(changeNavigation|changeAgents|changePresence) || !syncGroups() || send("ready", true) != nil {
+	if !syncState(changeNavigation|changeAgents|changePresence|changeRemoteDesktop) || !syncGroups() || send("ready", true) != nil {
 		return
 	}
 	incoming := make(chan realtimeInput)
@@ -269,7 +275,7 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 					return
 				}
 			}
-			if input.Type == "refresh" && !syncState(changeNavigation|changeAgents|changePresence) {
+			if input.Type == "refresh" && !syncState(changeNavigation|changeAgents|changePresence|changeRemoteDesktop) {
 				return
 			}
 		case <-ticker.C:

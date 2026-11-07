@@ -19,7 +19,7 @@ final class OriginPolicy {
                 || !host.matches("[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?")
                 || !host.contains(".") || host.contains("..") || host.endsWith(".localhost")
                 || host.matches("[0-9.]+") || port < 1 || port > 65535) {
-            throw new IllegalArgumentException("Use an HTTPS DNS origin, for example https://spool.example.ts.net");
+            throw new IllegalArgumentException("Use an HTTPS DNS origin, for example https://spool.example.com");
         }
         origin = "https://" + host + (port == 443 ? "" : ":" + port);
     }

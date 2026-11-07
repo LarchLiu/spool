@@ -56,5 +56,6 @@ final class NativeNavigation {
         return result;
     }
 
+    void copyFrom(NativeNavigation other) { previousIDs = other.previousIDs == null ? null : new HashSet<>(other.previousIDs); }
     void reset() { previousIDs = null; }
 }

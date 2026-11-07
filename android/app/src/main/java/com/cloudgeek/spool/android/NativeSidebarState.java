@@ -38,5 +38,11 @@ final class NativeSidebarState {
     void toggle(String project) { if (!expanded.add(project)) expanded.remove(project); }
     void moreProjects() { projectLimit += 5; }
     void moreChats(String project, int total) { if (project == null) recentLimit = nextLimit(total, recentLimit); else chatLimits.put(project, nextLimit(total, limit(project))); }
+    void copyFrom(NativeSidebarState other) {
+        projectLimit = other.projectLimit; recentLimit = other.recentLimit; scrollY = other.scrollY;
+        selectedProject = other.selectedProject; selectedChat = other.selectedChat;
+        expanded.clear(); expanded.addAll(other.expanded);
+        chatLimits.clear(); chatLimits.putAll(other.chatLimits);
+    }
     void reset() { projectLimit = recentLimit = 5; scrollY = 0; selectedProject = selectedChat = null; expanded.clear(); chatLimits.clear(); }
 }

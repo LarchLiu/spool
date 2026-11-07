@@ -113,6 +113,8 @@ func (m *Manager) SetEnabled(parent context.Context, enabled bool) {
 	m.mu.Unlock()
 	if !enabled {
 		m.stopLocked()
+	} else {
+		m.notify()
 	}
 }
 

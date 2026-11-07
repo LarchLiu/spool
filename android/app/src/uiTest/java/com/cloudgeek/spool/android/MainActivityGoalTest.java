@@ -41,14 +41,19 @@ public class MainActivityGoalTest {
 
     @Implements(value = Client.class, isInAndroidSdk = false)
     public static class ShadowClient {
+        @org.robolectric.annotation.RealObject Client real;
         static final List<List<String>> calls = new ArrayList<>();
         static String response;
         static java.util.function.Function<List<String>, String> responder;
         static spoolnet.EventListener chatListener;
         static final List<List<String>> chatSubscriptions = new ArrayList<>();
         static spoolnet.EventListener workspaceListener;
+        static final java.util.Map<Client, spoolnet.EventListener> workspaceListeners = new java.util.IdentityHashMap<>();
+        static final java.util.Map<Client, spoolnet.EventStream> workspaceStreams = new java.util.IdentityHashMap<>();
         static final List<List<String>> workspaceSubscriptions = new ArrayList<>();
         static java.util.function.Supplier<spoolnet.EventStream> workspaceFactory = () -> null;
+        String healthResponse = "{state:'Running',https:'Verified'}";
+        String sessionDirectory, directOrigin, tailscaleOrigin;
         @Implementation protected static void __staticInitializer__() {}
         @Implementation protected void __constructor__(String data, String origin) {}
         @Implementation protected String request(String method, String path, String body, String auth, String locale) {
@@ -56,11 +61,20 @@ public class MainActivityGoalTest {
             return responder == null ? response : responder.apply(call);
         }
         @Implementation protected void close() {}
+        @Implementation protected void useServerSession(String directory, String direct, String tailscale) {
+            sessionDirectory = directory; directOrigin = direct; tailscaleOrigin = tailscale;
+        }
+        @Implementation protected String health() { return healthResponse; }
+        @Implementation protected String status() { return "{state:'Running',authURL:''}"; }
+        @Implementation protected void login() {}
+        @Implementation protected void networkChanged() {}
+        @Implementation protected void reconnect() {}
         @Implementation protected spoolnet.EventStream subscribeChat(String id, String locale, spoolnet.EventListener listener) {
             chatSubscriptions.add(List.of(id, locale)); chatListener = listener; return null;
         }
         @Implementation protected spoolnet.EventStream subscribeWorkspace(String auth, String locale, spoolnet.EventListener listener) {
-            workspaceSubscriptions.add(List.of(auth, locale)); workspaceListener = listener; return workspaceFactory.get();
+            workspaceSubscriptions.add(List.of(auth, locale)); workspaceListener = listener; workspaceListeners.put(real, listener);
+            spoolnet.EventStream stream = workspaceFactory.get(); workspaceStreams.put(real, stream); return stream;
         }
         @Implementation protected String upload(String id, String body, String auth, String locale) {
             return request("UPLOAD", "/api/chats/" + id + "/messages", body, auth, locale);
@@ -69,8 +83,11 @@ public class MainActivityGoalTest {
 
     static final class Queue extends AbstractExecutorService {
         final List<Runnable> jobs = new ArrayList<>();
+        final boolean immediate;
+        Queue() { this(false); }
+        Queue(boolean immediate) { this.immediate = immediate; }
         boolean stopped;
-        @Override public void execute(Runnable task) { jobs.add(task); }
+        @Override public void execute(Runnable task) { if (immediate) task.run(); else jobs.add(task); }
         void run() { assertEquals(1, jobs.size()); jobs.remove(0).run(); Shadows.shadowOf(Looper.getMainLooper()).idle(); }
         @Override public void shutdown() { stopped = true; }
         @Override public List<Runnable> shutdownNow() { stopped = true; List<Runnable> rest = new ArrayList<>(jobs); jobs.clear(); return rest; }
@@ -87,14 +104,18 @@ public class MainActivityGoalTest {
         Harness(boolean existing) throws Exception {
             RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
             ShadowClient.calls.clear(); ShadowClient.chatSubscriptions.clear(); ShadowClient.responder = null; ShadowClient.chatListener = null; ShadowClient.response = response(200, "message", "Goal details");
-            ShadowClient.workspaceSubscriptions.clear(); ShadowClient.workspaceListener = null; ShadowClient.workspaceFactory = () -> null;
+            ShadowClient.workspaceSubscriptions.clear(); ShadowClient.workspaceListeners.clear(); ShadowClient.workspaceStreams.clear(); ShadowClient.workspaceListener = null; ShadowClient.workspaceFactory = () -> null;
             controller = Robolectric.buildActivity(MainActivity.class).create().start().resume().visible();
             activity = controller.get();
+            // Workspace tests explicitly enter the workspace after the startup sidebar.
+            call("closeDrawer");
             set("workspaceDecode", (java.util.concurrent.Executor) Runnable::run);
             ((ExecutorService) ReflectionHelpers.getField(activity, "io")).shutdown();
             ((ExecutorService) ReflectionHelpers.getField(activity, "workspaceWorker")).shutdown();
             ((ExecutorService) ReflectionHelpers.getField(activity, "workspaceSocketWorker")).shutdown();
             ((ExecutorService) ReflectionHelpers.getField(activity, "workspaceProbeWorker")).shutdown();
+            ((ExecutorService) ReflectionHelpers.getField(activity, "streamCloser")).shutdown();
+            set("streamCloser", new Queue(true));
             // Existing ordered boundary tests share a queue; isolation tests inject separate queues.
             set("workspaceWorker", io);
             set("workspaceSocketWorker", io); set("workspaceProbeWorker", io);
@@ -109,7 +130,7 @@ public class MainActivityGoalTest {
             set("projects", new JSONArray().put(new JSONObject().put("id", "project-one").put("name", "Project").put("can_create", true)));
             set("agents", new JSONArray().put(new JSONObject().put("backend", "codex").put("enabled", true).put("installed", true)));
             set("permission", "ask"); set("permissionCatalog", new JSONObject().put("modes", new JSONArray().put(new JSONObject().put("id", "ask").put("available", true))));
-            set("csrf", "test-csrf"); set("client", new Client("unused", "https://fixture.invalid"));
+            set("csrf", "test-csrf"); set("client", new Client("unused", "https://fixture.invalid")); set("connected", true);
             set("avatarImages", new NativeAvatars(task -> {}, (style, seed) -> { throw new AssertionError("No avatar generation in Activity request tests"); }));
             if (existing) {
                 set("chatID", "chat-one"); set("chat", chat("chat-one"));

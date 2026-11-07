@@ -492,6 +492,10 @@ final class NativeUi extends WebPalette {
         return view;
     }
 
+    IconButton sidebarButton(Runnable open) {
+        return icon("menu", 18, label("Open sidebar", "打开侧边栏"), open);
+    }
+
     final class Header extends LinearLayout {
         final TextView title, subtitle;
         final LinearLayout online;
@@ -501,7 +505,7 @@ final class NativeUi extends WebPalette {
             setGravity(Gravity.CENTER_VERTICAL);
             setPadding(dp(16), 0, dp(16), 0);
             setBackgroundColor(header);
-            addView(icon("menu", 18, label("Open sidebar", "打开侧边栏"), menu));
+            addView(sidebarButton(menu));
             LinearLayout titles = column();
             title = bold(titleText, 12);
             subtitle = text(subtitleText, 12, muted);

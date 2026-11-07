@@ -67,7 +67,7 @@ public class NativeArchitectureTest {
                         start, source.indexOf("private void saveLocalPreferences()", start));
         assertTrue(settings.contains("new NativeConnectionSettings("));
         assertTrue(settings.contains("serverInput ="));
-        assertTrue(settings.contains("OriginPolicy.isLoginURL(authURL)"));
+        assertTrue(settings.contains("this::enrollTailscale"));
         assertTrue(settings.contains("this::closeSettings"));
     }
 
