@@ -48,8 +48,12 @@ final class NativeServerTabs extends FrameLayout {
             boolean selected = profiles.selected.equals(server.id);
             Button tab = ui.button(server.name, false, () -> choose.accept(server.id));
             SpannableString label = new SpannableString("\ufffc" + server.name);
-            label.setSpan(new Dot(ui.dp(8), ui.dp(8)), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            Dot dot = new Dot(ui.dp(8), ui.dp(8));
+            label.setSpan(dot, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             tab.setText(label);
+            // Balance the leading dot so the server name itself stays centered.
+            tab.setPaddingRelative(tab.getPaddingStart(), tab.getPaddingTop(),
+                    tab.getPaddingEnd() + dot.size + dot.gap, tab.getPaddingBottom());
             tab.setBackground(buttonBackground(selected));
             ui.typography(tab, 12, selected && ui.dark ? ui.thumb : selected || !ui.dark ? ui.text : ui.muted, selected ? 600 : 400);
             tab.setTag(server.id); tab.setSelected(selected); tab.setMinimumWidth(ui.dp(80));
@@ -68,7 +72,7 @@ final class NativeServerTabs extends FrameLayout {
     }
 
     private Drawable buttonBackground(boolean selected) {
-        int fill = selected ? ui.dark ? androidx.core.graphics.ColorUtils.blendARGB(ui.soft, ui.text, .28f) : ui.elevated : 0x00000000;
+        int fill = selected ? ui.dark ? ui.sidebar : ui.elevated : 0x00000000;
         int border = selected && ui.dark ? ui.borderStrong : 0;
         StateListDrawable background = new StateListDrawable();
         background.addState(new int[] {-android.R.attr.state_enabled}, ui.shape(ui.controlActive, 4, border));
@@ -129,7 +133,7 @@ final class NativeServerTabs extends FrameLayout {
                 : state.equals("error") ? ui.error : ui.muted;
     }
 
-    /** An inline dot keeps the entire dot/name group centered, including when ellipsized. */
+    /** An inline status dot with a fixed gap before the label. */
     static final class Dot extends ReplacementSpan {
         final int size, gap;
         int color;
