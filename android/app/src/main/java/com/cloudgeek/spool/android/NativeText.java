@@ -15,6 +15,7 @@ final class NativeText {
             case "Allow and apply permission suggestion": value = "允许并应用权限建议"; break;
             case "Allow and save command rule": value = "允许并保存命令规则"; break;
             case "Allow and save network rule": value = "允许并保存网络规则"; break;
+            case "Allow app installs in system settings, then return.": value = "请在系统设置中允许安装应用，然后返回。"; break;
             case "Allow automatic connection switching": value = "允许自动切换连接"; break;
             case "Allow device MCP tools": value = "允许设备 MCP 工具"; break;
             case "Allow file edits; ask for other protected operations.": value = "自动允许文件编辑，其他受保护操作仍需确认。"; break;
@@ -24,6 +25,7 @@ final class NativeText {
             case "Allow unattended access": value = "允许无人值守访问"; break;
             case "Always allow": value = "始终允许"; break;
             case "Answered by {name}": value = "{name} 提交了回答"; break;
+            case "App updates are available in release builds.": value = "正式版 APK 支持应用更新。"; break;
             case "Appearance and language": value = "外观与语言"; break;
             case "Applies to the next message. Context is preserved.": value = "下条消息生效，聊天上下文保持不变。"; break;
             case "Apply automatic mode settings": value = "应用自动模式设置"; break;
@@ -52,6 +54,8 @@ final class NativeText {
             case "Chat commands": value = "聊天指令"; break;
             case "Chat disconnected. Wait for reconnection before sending.": value = "聊天连接已断开，请等待重连后再发送。"; break;
             case "Chat with {name}": value = "与 {name} 聊天"; break;
+            case "Check for updates": value = "检查更新"; break;
+            case "Checking for updates...": value = "正在检查更新…"; break;
             case "Checking project permissions…": value = "正在检查项目权限…"; break;
             case "Choose 1-31 other people. Groups support up to 32 members.": value = "请选择 1 至 31 位其他成员，每个群最多 32 人。"; break;
             case "Choose a connection below. This server remembers your choice.": value = "选择下方的连接方式，此服务器会记住你的选择。"; break;
@@ -98,8 +102,11 @@ final class NativeText {
             case "Continue in automatic mode": value = "以自动模式继续"; break;
             case "Copy code": value = "复制代码"; break;
             case "Copy message": value = "复制消息"; break;
+            case "Could not check for updates. Try again.": value = "检查更新失败，请重试。"; break;
             case "Could not copy code": value = "无法复制代码"; break;
             case "Could not copy message": value = "无法复制消息"; break;
+            case "Could not download or verify the update. Try again.": value = "更新下载或验证失败，请重试。"; break;
+            case "Could not open the system installer.": value = "无法打开系统安装器。"; break;
             case "Could not save avatar": value = "无法保存头像"; break;
             case "Create group": value = "创建群聊"; break;
             case "Created files": value = "创建文件"; break;
@@ -127,7 +134,10 @@ final class NativeText {
             case "Do not show again": value = "不再显示"; break;
             case "Don't ask": value = "不询问"; break;
             case "Download file": value = "下载文件"; break;
+            case "Download update": value = "下载更新"; break;
+            case "Download v{version}": value = "下载 v{version}"; break;
             case "Download {name}": value = "下载 {name}"; break;
+            case "Downloading update: {percent}%": value = "正在下载更新：{percent}%"; break;
             case "Edit prompt": value = "修改提示词"; break;
             case "Edited files": value = "编辑文件"; break;
             case "Edited {path}": value = "编辑 {path}"; break;
@@ -161,6 +171,7 @@ final class NativeText {
             case "Image unavailable: {name}": value = "图片不可用：{name}"; break;
             case "Information": value = "信息"; break;
             case "Install plugin": value = "安装插件"; break;
+            case "Install update": value = "安装更新"; break;
             case "Invalid history cursor": value = "历史分页位置无效"; break;
             case "Invite people": value = "邀请成员"; break;
             case "Keep current mode": value = "保持当前模式"; break;
@@ -366,6 +377,7 @@ final class NativeText {
             case "Tool input": value = "工具输入"; break;
             case "Tool result": value = "工具结果"; break;
             case "Toon Head": value = "Toon Head"; break;
+            case "Update v{version}": value = "更新 v{version}"; break;
             case "Updates automatically when your name changes": value = "名字变更后，头像会自动更新"; break;
             case "Updating presence…": value = "正在更新在线状态…"; break;
             case "Use automatic mode by default": value = "默认使用自动模式"; break;
@@ -375,6 +387,7 @@ final class NativeText {
             case "Used tools": value = "使用工具"; break;
             case "Used {tool}": value = "使用 {tool}"; break;
             case "Username": value = "用户名"; break;
+            case "Verifying update...": value = "正在验证更新…"; break;
             case "Viewed 1 image": value = "已查看 1 张图片"; break;
             case "Viewed {count} images": value = "已查看 {count} 张图片"; break;
             case "Voxel Art": value = "Voxel Art"; break;
@@ -395,6 +408,7 @@ final class NativeText {
             case "Worktree": value = "Worktree"; break;
             case "You approve requests outside the sandbox.": value = "沙箱之外的操作由你审批。"; break;
             case "You are sending too quickly. Try again shortly.": value = "发送过于频繁，请稍后再试。"; break;
+            case "You are up to date.": value = "当前已是最新版本。"; break;
             case "Your input is needed": value = "等待你的输入"; break;
             case "Your private server, through this app's embedded node. No system VPN or shared auth key.": value = "通过应用内嵌节点连接私有服务器，不启动系统 VPN，也不使用共享入网密钥。"; break;
             case "Zoom in": value = "放大"; break;
@@ -417,6 +431,7 @@ final class NativeText {
             case "Allow and apply permission suggestion": value = "許可して権限の提案を適用"; break;
             case "Allow and save command rule": value = "許可してコマンドルールを保存"; break;
             case "Allow and save network rule": value = "許可してネットワークルールを保存"; break;
+            case "Allow app installs in system settings, then return.": value = "システム設定でアプリのインストールを許可してから戻ってください。"; break;
             case "Allow automatic connection switching": value = "接続の自動切り替えを許可"; break;
             case "Allow device MCP tools": value = "デバイスの MCP ツールを許可"; break;
             case "Allow file edits; ask for other protected operations.": value = "ファイル編集を許可し、その他の保護された操作は確認します。"; break;
@@ -426,6 +441,7 @@ final class NativeText {
             case "Allow unattended access": value = "無人アクセスを許可"; break;
             case "Always allow": value = "常に許可"; break;
             case "Answered by {name}": value = "{name} が回答しました"; break;
+            case "App updates are available in release builds.": value = "アプリの更新は正式版 APK で利用できます。"; break;
             case "Appearance and language": value = "外観と言語"; break;
             case "Applies to the next message. Context is preserved.": value = "次のメッセージから適用されます。会話の文脈は保持されます。"; break;
             case "Apply automatic mode settings": value = "自動モードの設定を適用"; break;
@@ -454,6 +470,8 @@ final class NativeText {
             case "Chat commands": value = "チャットコマンド"; break;
             case "Chat disconnected. Wait for reconnection before sending.": value = "チャットの接続が切れました。再接続してから送信してください。"; break;
             case "Chat with {name}": value = "{name} とチャット"; break;
+            case "Check for updates": value = "アップデートを確認"; break;
+            case "Checking for updates...": value = "アップデートを確認中…"; break;
             case "Checking project permissions…": value = "プロジェクトの権限を確認中…"; break;
             case "Choose 1-31 other people. Groups support up to 32 members.": value = "他のメンバーを 1〜31 人選択してください。グループは最大 32 人です。"; break;
             case "Choose a connection below. This server remembers your choice.": value = "以下の接続方法を選択してください。サーバーごとに選択を保存します。"; break;
@@ -500,14 +518,17 @@ final class NativeText {
             case "Continue in automatic mode": value = "自動モードで続行"; break;
             case "Copy code": value = "コードをコピー"; break;
             case "Copy message": value = "メッセージをコピー"; break;
+            case "Could not check for updates. Try again.": value = "更新を確認できませんでした。もう一度お試しください。"; break;
             case "Could not copy code": value = "コードをコピーできませんでした"; break;
             case "Could not copy message": value = "メッセージをコピーできませんでした"; break;
+            case "Could not download or verify the update. Try again.": value = "更新のダウンロードまたは検証に失敗しました。もう一度お試しください。"; break;
+            case "Could not open the system installer.": value = "システムのインストーラーを開けませんでした。"; break;
             case "Could not save avatar": value = "アバターを保存できませんでした"; break;
             case "Create group": value = "グループを作成"; break;
             case "Created files": value = "ファイルを作成"; break;
             case "Created {path}": value = "{path} を作成"; break;
             case "Croodles": value = "Croodles"; break;
-            case "Current version: {version}": value = "現在のバージョン：{version}"; break;
+            case "Current version: {version}": value = "バージョン：{version}"; break;
             case "Dark": value = "ダーク"; break;
             case "Default": value = "既定"; break;
             case "Delete server": value = "サーバーを削除"; break;
@@ -529,7 +550,10 @@ final class NativeText {
             case "Do not show again": value = "今後表示しない"; break;
             case "Don't ask": value = "確認しない"; break;
             case "Download file": value = "ファイルをダウンロード"; break;
+            case "Download update": value = "更新をダウンロード"; break;
+            case "Download v{version}": value = "ダウンロード v{version}"; break;
             case "Download {name}": value = "{name}をダウンロード"; break;
+            case "Downloading update: {percent}%": value = "更新をダウンロード中：{percent}%"; break;
             case "Edit prompt": value = "プロンプトを編集"; break;
             case "Edited files": value = "ファイルを編集"; break;
             case "Edited {path}": value = "{path} を編集"; break;
@@ -563,6 +587,7 @@ final class NativeText {
             case "Image unavailable: {name}": value = "画像を表示できません: {name}"; break;
             case "Information": value = "情報"; break;
             case "Install plugin": value = "プラグインをインストール"; break;
+            case "Install update": value = "更新をインストール"; break;
             case "Invalid history cursor": value = "履歴のページ位置が無効です"; break;
             case "Invite people": value = "メンバーを招待"; break;
             case "Keep current mode": value = "現在のモードを維持"; break;
@@ -768,6 +793,7 @@ final class NativeText {
             case "Tool input": value = "ツールの入力"; break;
             case "Tool result": value = "ツール結果"; break;
             case "Toon Head": value = "Toon Head"; break;
+            case "Update v{version}": value = "更新 v{version}"; break;
             case "Updates automatically when your name changes": value = "名前の変更に合わせて自動更新"; break;
             case "Updating presence…": value = "オンライン状態を更新中…"; break;
             case "Use automatic mode by default": value = "既定で自動モードを使用"; break;
@@ -777,6 +803,7 @@ final class NativeText {
             case "Used tools": value = "ツールを使用"; break;
             case "Used {tool}": value = "{tool} を使用"; break;
             case "Username": value = "ユーザー名"; break;
+            case "Verifying update...": value = "更新を検証中…"; break;
             case "Viewed 1 image": value = "1枚の画像を表示"; break;
             case "Viewed {count} images": value = "{count}枚の画像を表示"; break;
             case "Voxel Art": value = "Voxel Art"; break;
@@ -797,6 +824,7 @@ final class NativeText {
             case "Worktree": value = "Worktree"; break;
             case "You approve requests outside the sandbox.": value = "サンドボックス外の操作を自分で承認します。"; break;
             case "You are sending too quickly. Try again shortly.": value = "送信が速すぎます。少し待ってからお試しください。"; break;
+            case "You are up to date.": value = "最新のバージョンです。"; break;
             case "Your input is needed": value = "入力が必要です"; break;
             case "Your private server, through this app's embedded node. No system VPN or shared auth key.": value = "アプリ内蔵ノードを通じてプライベートサーバーに接続します。システムVPNや共有認証キーは不要です。"; break;
             case "Zoom in": value = "拡大"; break;

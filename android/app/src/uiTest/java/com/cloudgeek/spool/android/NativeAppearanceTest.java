@@ -55,7 +55,7 @@ public class NativeAppearanceTest {
         }
         assertEquals("外观与语言", NativeText.translate("Appearance and language", "zh-CN"));
         assertEquals("外観と言語", NativeText.translate("Appearance and language", "ja"));
-        assertEquals("現在のバージョン：0.2", NativeText.translate("Current version: {version}", "ja", "version", "0.2"));
+        assertEquals("バージョン：0.2", NativeText.translate("Current version: {version}", "ja", "version", "0.2"));
     }
 
     @Test public void languageListMatchesWebAndSupportsKeyboardSelectionAndDisabledState() throws Exception {

@@ -901,5 +901,15 @@
   "No servers yet.": "No servers yet.",
   "Connect to view this server’s workspace.": "Connect to view this server’s workspace.",
   "Restoring sign-in…": "Restoring sign-in…",
-  "Choose a connection below. This server remembers your choice.": "Choose a connection below. This server remembers your choice."
+  "Choose a connection below. This server remembers your choice.": "Choose a connection below. This server remembers your choice.",
+  "App updates are available in release builds.": "App updates are available in release builds.",
+  "Download update": "Download update",
+  "Downloading update: {percent}%": "Downloading update: {percent}%",
+  "Verifying update...": "Verifying update...",
+  "Could not check for updates. Try again.": "Could not check for updates. Try again.",
+  "Could not download or verify the update. Try again.": "Could not download or verify the update. Try again.",
+  "Allow app installs in system settings, then return.": "Allow app installs in system settings, then return.",
+  "Could not open the system installer.": "Could not open the system installer.",
+  "Download v{version}": "Download v{version}",
+  "Update v{version}": "Update v{version}"
 }

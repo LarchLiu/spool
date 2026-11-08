@@ -35,6 +35,25 @@ public class MainActivityAppearanceTest {
         return value;
     }
 
+    @Test public void apkUpdateStateSurvivesDialogReopenAndAppearanceChangesWithoutDownloading() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(false)) {
+            NativeAppUpdate update = h.get("appUpdates");
+            update.release = NativeUpdateTest.release(NativeUpdateTest.bytes("APK"));
+            update.phase = NativeAppUpdate.Phase.AVAILABLE;
+            h.call("openAppearance"); idle();
+            assertTrue(text(h.<NativeSettings>get("appearanceDialog").content).contains("0.1.18"));
+            change(h, "dark", "zh-CN");
+            NativeUpdateView view = h.get("updateView");
+            assertEquals("下载 v0.1.18", view.action.getText().toString());
+            assertEquals(View.GONE, view.status.getVisibility());
+            h.call("closeAppearance"); h.call("openAppearance"); idle();
+            assertSame(update, h.get("appUpdates"));
+            assertEquals(NativeAppUpdate.Phase.AVAILABLE, update.phase);
+            assertEquals("下载 v0.1.18", h.<NativeUpdateView>get("updateView").action.getText().toString());
+            assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
+        }
+    }
+
     @Test public void rapidChoicesUpdateTheDialogAndWorkspaceImmediatelyWithoutReconnecting() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             MainActivityWorkspaceEventsTest.install(h); h.call("startWorkspace"); h.io.run();

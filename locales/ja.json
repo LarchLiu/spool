@@ -332,7 +332,7 @@
   "Invalid avatar seed": "無効なアバターシードです",
   "Updates": "アップデート",
   "Check for updates": "アップデートを確認",
-  "Current version: {version}": "現在のバージョン：{version}",
+  "Current version: {version}": "バージョン：{version}",
   "Updates are signed and downloaded from GitHub Releases. Running chats always block installation and restart.": "GitHub Releases から署名付き更新を取得します。チャットの実行中はインストールと再起動を行いません。",
   "Updates are unavailable in development builds or read-only installations. Install an official release in a writable location.": "開発ビルドや読み取り専用の場所では更新できません。正式版を書き込み可能な場所にインストールしてください。",
   "Last checked: {time}": "最終確認：{time}",
@@ -901,5 +901,15 @@
   "No servers yet.": "サーバーがまだありません。",
   "Connect to view this server’s workspace.": "接続すると、このサーバーのワークスペースを表示できます。",
   "Restoring sign-in…": "ログインを復元中…",
-  "Choose a connection below. This server remembers your choice.": "以下の接続方法を選択してください。サーバーごとに選択を保存します。"
+  "Choose a connection below. This server remembers your choice.": "以下の接続方法を選択してください。サーバーごとに選択を保存します。",
+  "App updates are available in release builds.": "アプリの更新は正式版 APK で利用できます。",
+  "Download update": "更新をダウンロード",
+  "Downloading update: {percent}%": "更新をダウンロード中：{percent}%",
+  "Verifying update...": "更新を検証中…",
+  "Could not check for updates. Try again.": "更新を確認できませんでした。もう一度お試しください。",
+  "Could not download or verify the update. Try again.": "更新のダウンロードまたは検証に失敗しました。もう一度お試しください。",
+  "Allow app installs in system settings, then return.": "システム設定でアプリのインストールを許可してから戻ってください。",
+  "Could not open the system installer.": "システムのインストーラーを開けませんでした。",
+  "Download v{version}": "ダウンロード v{version}",
+  "Update v{version}": "更新 v{version}"
 }

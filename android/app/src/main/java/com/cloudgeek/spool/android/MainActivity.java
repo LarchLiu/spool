@@ -60,6 +60,8 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final int PICK_FILES = 10;
     private static final int SAVE_FILE = 11;
+    private NativeAppUpdate appUpdates;
+    private NativeUpdateView updateView;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newFixedThreadPool(3);
     private final ExecutorService workspaceWorker = Executors.newFixedThreadPool(3);
@@ -286,6 +288,7 @@ public final class MainActivity extends Activity {
     public void onCreate(Bundle state) {
         super.onCreate(state);
         Seq.setContext(getApplicationContext());
+        appUpdates = new NativeAppUpdate(this, this::bindAppUpdates);
         theme = getPreferences(MODE_PRIVATE).getString("theme", "system");
         language = getPreferences(MODE_PRIVATE).getString("language", "system");
         origin = getPreferences(MODE_PRIVATE).getString("serverOrigin", "");
@@ -605,7 +608,7 @@ public final class MainActivity extends Activity {
         if (reopenSidebar) openSidebar(false);
         else if (reopenFiles && user != null) openFiles(".");
         if (settingsOpen) settingsPage();
-        if (appearanceDialog != null) appearanceDialog.bind(ui, theme, language, body -> {});
+        if (appearanceDialog != null) { appearanceDialog.bind(ui, theme, language, body -> {}); bindAppUpdates(); }
         if (!settingsOpen && !routeLoginRequired && user != null && !inbox.active.isEmpty()) openPeople(inbox.active);
         monitor.setActive(foreground && settingsOpen);
         if (routeLoginRequired) return;
@@ -652,12 +655,24 @@ public final class MainActivity extends Activity {
         if (appearanceDialog != null) return;
         captureDraft(); closePeople();
         appearanceDialog = new NativeSettings(ui, theme, language, appVersion(), this::updatePreferences, this::closeAppearance);
+        bindAppUpdates();
         appearanceDialog.show();
+    }
+
+    private void bindAppUpdates() {
+        if (appearanceDialog == null || appUpdates == null) return;
+        LinearLayout container = appearanceDialog.content.updates;
+        if (updateView == null || updateView.getParent() != container) {
+            updateView = new NativeUpdateView(ui, appUpdates::check, appUpdates::download, () -> appUpdates.install(this), appUpdates::cancel);
+            appearanceDialog.content.setUpdateView(updateView);
+        }
+        updateView.bind(appUpdates);
     }
 
     private void closeAppearance() {
         if (appearanceDialog == null) return;
         appearanceDialog.dismiss(); appearanceDialog = null;
+        updateView = null;
     }
 
     private void closeSettings() {
@@ -2961,6 +2976,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == NativeAppUpdate.INSTALL_PERMISSION) { appUpdates.permissionResult(this); return; }
         if (requestCode == SAVE_FILE) {
             PendingDownload selected = pendingDownload;
             pendingDownload = null;
@@ -3883,6 +3899,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (appUpdates != null) appUpdates.close();
         closeDesktop();
         setDesktopAvailable(false);
         if (fileBrowser != null) fileBrowser.deactivate();

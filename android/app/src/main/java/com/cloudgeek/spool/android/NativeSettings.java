@@ -87,7 +87,7 @@ final class NativeSettings extends Dialog {
     }
 
     static final class Content extends LinearLayout {
-        final LinearLayout heading, additions;
+        final LinearLayout heading, additions, versionRow, updates;
         final NativeAppearanceSection appearance;
         final NativeUi.IconButton close;
         final TextView version, title;
@@ -116,10 +116,23 @@ final class NativeSettings extends Dialog {
             additions = ui.column();
             addView(additions, new LayoutParams(-1, -2));
             version = ui.text(ui.t("Current version: {version}", "version", currentVersion), 11, ui.muted);
+            version.setMaxLines(1);
             ui.fixedLineHeight(version, 1.8f);
+            versionRow = ui.row();
+            versionRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            versionRow.addView(version, new LayoutParams(0, -2, 1));
             LayoutParams versionParams = new LayoutParams(-1, -2);
             versionParams.topMargin = ui.dp(22);
-            if (appearanceOnly) addView(version, versionParams);
+            if (appearanceOnly) addView(versionRow, versionParams);
+            updates = ui.column();
+            if (appearanceOnly) addView(updates, new LayoutParams(-1, -2));
+        }
+
+        void setUpdateView(NativeUpdateView view) {
+            while (versionRow.getChildCount() > 1) versionRow.removeViewAt(1);
+            updates.removeAllViews();
+            versionRow.addView(view.buttons, new LayoutParams(-2, -2));
+            updates.addView(view, new LayoutParams(-1, -2));
         }
     }
 }

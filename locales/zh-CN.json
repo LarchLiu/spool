@@ -901,5 +901,15 @@
   "No servers yet.": "尚未添加服务器。",
   "Connect to view this server’s workspace.": "连接后可查看此服务器的工作区。",
   "Restoring sign-in…": "正在恢复登录…",
-  "Choose a connection below. This server remembers your choice.": "选择下方的连接方式，此服务器会记住你的选择。"
+  "Choose a connection below. This server remembers your choice.": "选择下方的连接方式，此服务器会记住你的选择。",
+  "App updates are available in release builds.": "正式版 APK 支持应用更新。",
+  "Download update": "下载更新",
+  "Downloading update: {percent}%": "正在下载更新：{percent}%",
+  "Verifying update...": "正在验证更新…",
+  "Could not check for updates. Try again.": "检查更新失败，请重试。",
+  "Could not download or verify the update. Try again.": "更新下载或验证失败，请重试。",
+  "Allow app installs in system settings, then return.": "请在系统设置中允许安装应用，然后返回。",
+  "Could not open the system installer.": "无法打开系统安装器。",
+  "Download v{version}": "下载 v{version}",
+  "Update v{version}": "更新 v{version}"
 }

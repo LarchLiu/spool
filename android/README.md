@@ -2099,6 +2099,33 @@ would bypass the repository's scratch/cache wrapper. Gradle and Go build caches
 live under `build/cache/`; every command wrapper owns and cleans a separate
 `build/tmp/android.XXXXXX/` run. `GOPATH` and `GOMODCACHE` are not changed.
 
+### APK Updates
+
+In a signed release APK, open **Appearance and language** using the sidebar
+palette icon. Update action buttons appear beside the current version, with
+download progress and errors underneath. **Check for updates** checks
+the latest published stable GitHub Release. A newer version is offered as a
+**Download v&lt;version&gt;** button without starting a download or adding a
+separate availability message. Tap it to download and view progress; tap
+**Update v&lt;version&gt;** separately after verification to open Android's system
+installer. Nothing downloads or installs automatically. Debug/nativeVerify
+packages show that APK updates require a release build.
+
+The first installation request may open Android's **Allow from this source**
+settings. Granting that permission resumes the explicit installation request;
+denying it keeps the downloaded APK available for a later attempt. The system
+installer still requires user confirmation. Closing and reopening the appearance
+dialog, or changing its theme/language, retains update progress in the running
+app. An interrupted process can check and download again on the next launch.
+
+Update checks and downloads use public system HTTPS independently of all Spool
+server accounts and Tailscale routes. Downloads stay in the app's private cache.
+The client checks the exact asset name, bounded size and `SHA256SUMS`, then
+validates the APK's package, version code and signing certificate against the
+installed app. It repeats verification before sharing a read-only content URI
+with the system installer. Redirects are restricted to GitHub's HTTPS asset hosts.
+Updating requires the same production signing key across releases.
+
 ## Device Verification
 
 ### Remote Desktop
@@ -2262,8 +2289,9 @@ Android's supervisor uses the single-attempt `Health` entry point.
 The native client currently includes the primary workspace, people messaging,
 text/Markdown and image/file-preview flows. It is not an embedded browser: complex
 HTML, the Web client's full Markdown/plugin renderer, group administration,
-background notifications/services and automatic APK
-updates are not included. The desktop remains responsible for account/project/
+background notifications/services and automatic APK downloads/installation
+are not included. Manual APK updates are available as described above.
+The desktop remains responsible for account/project/
 agent/service administration. People-message history and unsent attachments stay
 in app-session memory, not retained diagnostic reports.
 
