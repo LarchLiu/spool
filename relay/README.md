@@ -65,6 +65,29 @@ docker compose down                  # Stop and remove containers; retain data.
 Keep the named volume when updating or moving the deployment. Adding `-v` to
 `docker compose down` deletes its registrations and revocations.
 
+### Platforms deploying the Dockerfile directly
+
+When a platform builds `relay/Dockerfile` without Compose, set these as container
+**runtime** environment variables:
+
+```dotenv
+SPOOL_RELAY_ADMIN_TOKEN=your-generated-management-credential
+RELAY_REQUIRE_REGISTRATION_TOKEN=false
+```
+
+The relay reads the registration setting itself at startup; it does not need to
+be available during the image build. An unset or empty value defaults to `true`;
+an invalid boolean prevents startup. An explicit `-require-registration-token`
+command-line flag takes precedence. Keep `/data` on persistent storage and route
+the public HTTPS endpoint to container port `8788`.
+
+Build and deploy an image containing this runtime environment support before
+using the setting with direct Dockerfile deployments. Earlier images only
+accepted the command-line flag; their Compose file converted the variable into
+that flag. When updating platform environment variables, recreate/redeploy the
+container. The startup log confirms the effective setting with
+`require_registration_token=false` or `require_registration_token=true`.
+
 ## VPS deployment
 
 This directory is a standalone Go module. Copy it to another repository or
