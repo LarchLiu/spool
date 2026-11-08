@@ -12,6 +12,7 @@ final class NativeText {
             case "Add files or images": value = "添加文件或图片"; break;
             case "Add server": value = "添加服务器"; break;
             case "Additional permissions": value = "额外权限"; break;
+            case "After pairing, sign in with your Spool account.": value = "配对后，使用你的 Spool 账号登录。"; break;
             case "Allow and apply permission suggestion": value = "允许并应用权限建议"; break;
             case "Allow and save command rule": value = "允许并保存命令规则"; break;
             case "Allow and save network rule": value = "允许并保存网络规则"; break;
@@ -58,7 +59,6 @@ final class NativeText {
             case "Checking for updates...": value = "正在检查更新…"; break;
             case "Checking project permissions…": value = "正在检查项目权限…"; break;
             case "Choose 1-31 other people. Groups support up to 32 members.": value = "请选择 1 至 31 位其他成员，每个群最多 32 人。"; break;
-            case "Choose a connection below. This server remembers your choice.": value = "选择下方的连接方式，此服务器会记住你的选择。"; break;
             case "Choose a model for this conversation": value = "选择本会话使用的模型"; break;
             case "Choose a project to browse its files.": value = "选择项目以浏览本地文件。"; break;
             case "Choose agent and model": value = "选择 Agent 和模型"; break;
@@ -84,15 +84,17 @@ final class NativeText {
             case "Command execution": value = "执行命令"; break;
             case "Compact context": value = "压缩上下文"; break;
             case "Compacting context…": value = "正在压缩上下文…"; break;
+            case "Compare this identity with Spool Desktop before connecting.": value = "连接前，请核对这里的身份指纹与 Spool Desktop 显示的一致。"; break;
             case "Complete authorization on the linked page, then confirm here.": value = "请在链接页面完成授权，然后在这里确认。"; break;
             case "Completed": value = "已完成"; break;
+            case "Confirm and connect": value = "确认并连接"; break;
             case "Confirm authorization": value = "确认已授权"; break;
             case "Confirm conversation change": value = "确认切换会话"; break;
             case "Confirm operations that require permission.": value = "需要授权的操作由你确认。"; break;
+            case "Confirm server identity": value = "确认服务器身份"; break;
             case "Connect": value = "连接"; break;
             case "Connect to this server": value = "连接当前服务器"; break;
             case "Connect to view this server’s workspace.": value = "连接后可查看此服务器的工作区。"; break;
-            case "Connect using the same public HTTPS address as the PWA. Tailscale is not required.": value = "使用与 PWA 相同的公网 HTTPS 地址连接，无需 Tailscale。"; break;
             case "Connected": value = "已连接"; break;
             case "Connecting to your workspace…": value = "连接你的工作空间…"; break;
             case "Connecting…": value = "正在连接…"; break;
@@ -143,7 +145,6 @@ final class NativeText {
             case "Edited {path}": value = "编辑 {path}"; break;
             case "Enable bypass": value = "确认跳过检查"; break;
             case "Enable full screen": value = "启用全屏"; break;
-            case "Enable only when both addresses reach the same Spool service. When off, switching is manual.": value = "仅当两个地址连接同一个 Spool 服务时开启。关闭时需要手动切换。"; break;
             case "Enter a message of up to 2000 characters.": value = "请输入不超过 2000 字的消息。"; break;
             case "Enter a server name (1–80 characters).": value = "请输入 1–80 个字符的服务器名称。"; break;
             case "Enter workspace": value = "进入工作空间"; break;
@@ -177,6 +178,7 @@ final class NativeText {
             case "Keep current mode": value = "保持当前模式"; break;
             case "Keep current model": value = "保持当前模型"; break;
             case "Keep current settings": value = "保持当前设置"; break;
+            case "LAN / Relay": value = "局域网 / 中继"; break;
             case "Language": value = "语言"; break;
             case "Language server recommendation": value = "语言服务器推荐"; break;
             case "Large directories show up to 2,000 entries.": value = "大型目录最多显示 2,000 项。"; break;
@@ -236,6 +238,7 @@ final class NativeText {
             case "Other answer": value = "其他回答"; break;
             case "PDF page {page} of {count}": value = "PDF 第 {page} 页，共 {count} 页"; break;
             case "PDF preview": value = "PDF 预览"; break;
+            case "Pairing code": value = "配对码"; break;
             case "Password": value = "密码"; break;
             case "People & groups": value = "成员与群聊"; break;
             case "People chat": value = "成员聊天"; break;
@@ -247,6 +250,7 @@ final class NativeText {
             case "Plan": value = "规划模式"; break;
             case "Plan before making changes.": value = "先规划，限制直接执行修改。"; break;
             case "Plugin recommendation": value = "插件推荐"; break;
+            case "Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity.": value = "优先通过局域网连接已配对的服务器，外出时使用中继，两种方式都验证同一服务器身份。"; break;
             case "Prepare a project first.": value = "先准备一个项目。"; break;
             case "Preview": value = "预览"; break;
             case "Preview truncated. Download the full file to see all content.": value = "预览内容已截断，下载文件可查看完整内容。"; break;
@@ -272,6 +276,7 @@ final class NativeText {
             case "Recents": value = "最近聊天"; break;
             case "Reconnecting…": value = "正在重连…"; break;
             case "Refresh files": value = "刷新文件"; break;
+            case "Relay HTTPS address": value = "中继 HTTPS 地址"; break;
             case "Remote connection": value = "远程连接"; break;
             case "Remote desktop": value = "远程桌面"; break;
             case "Remove {name}": value = "移除 {name}"; break;
@@ -302,6 +307,7 @@ final class NativeText {
             case "Save avatar": value = "保存头像"; break;
             case "Save this authorization for future requests.": value = "保存授权，后续请求也会生效。"; break;
             case "Say hello. Only the two of you can see these messages.": value = "打个招呼吧，消息仅你们双方可见。"; break;
+            case "Scan pairing QR code": value = "扫描配对二维码"; break;
             case "Scroll to latest": value = "滚动到最新消息"; break;
             case "Search files": value = "搜索文件"; break;
             case "Searched files": value = "搜索文件"; break;
@@ -317,6 +323,7 @@ final class NativeText {
             case "Send private message": value = "发送私聊消息"; break;
             case "Send status unknown. The message may have arrived; it will not be retried automatically.": value = "发送状态未知，消息可能已送达，系统不会自动重发。"; break;
             case "Server connection": value = "服务器连接"; break;
+            case "Server identity (SHA-256)": value = "服务器身份（SHA-256）"; break;
             case "Server name": value = "服务器名称"; break;
             case "Servers": value = "服务器"; break;
             case "Session directory": value = "会话目录"; break;
@@ -410,9 +417,11 @@ final class NativeText {
             case "You are sending too quickly. Try again shortly.": value = "发送过于频繁，请稍后再试。"; break;
             case "You are up to date.": value = "当前已是最新版本。"; break;
             case "Your input is needed": value = "等待你的输入"; break;
-            case "Your private server, through this app's embedded node. No system VPN or shared auth key.": value = "通过应用内嵌节点连接私有服务器，不启动系统 VPN，也不使用共享入网密钥。"; break;
             case "Zoom in": value = "放大"; break;
             case "Zoom out": value = "缩小"; break;
+            case "connected": value = "已连接"; break;
+            case "connecting": value = "正在连接"; break;
+            case "stopped": value = "已停止"; break;
             case "{count} members": value = "{count} 位成员"; break;
             case "{count} online": value = "{count} 人在线"; break;
             case "{count} selected": value = "已选 {count} 人"; break;
@@ -428,6 +437,7 @@ final class NativeText {
             case "Add files or images": value = "ファイル・画像を追加"; break;
             case "Add server": value = "サーバーを追加"; break;
             case "Additional permissions": value = "追加の権限"; break;
+            case "After pairing, sign in with your Spool account.": value = "After pairing, sign in with your Spool account."; break;
             case "Allow and apply permission suggestion": value = "許可して権限の提案を適用"; break;
             case "Allow and save command rule": value = "許可してコマンドルールを保存"; break;
             case "Allow and save network rule": value = "許可してネットワークルールを保存"; break;
@@ -474,7 +484,6 @@ final class NativeText {
             case "Checking for updates...": value = "アップデートを確認中…"; break;
             case "Checking project permissions…": value = "プロジェクトの権限を確認中…"; break;
             case "Choose 1-31 other people. Groups support up to 32 members.": value = "他のメンバーを 1〜31 人選択してください。グループは最大 32 人です。"; break;
-            case "Choose a connection below. This server remembers your choice.": value = "以下の接続方法を選択してください。サーバーごとに選択を保存します。"; break;
             case "Choose a model for this conversation": value = "この会話のモデルを選択"; break;
             case "Choose a project to browse its files.": value = "プロジェクトを選択してファイルを表示します。"; break;
             case "Choose agent and model": value = "エージェントとモデルを選択"; break;
@@ -500,15 +509,17 @@ final class NativeText {
             case "Command execution": value = "コマンドの実行"; break;
             case "Compact context": value = "コンテキストを圧縮"; break;
             case "Compacting context…": value = "コンテキストを圧縮中…"; break;
+            case "Compare this identity with Spool Desktop before connecting.": value = "Compare this identity with Spool Desktop before connecting."; break;
             case "Complete authorization on the linked page, then confirm here.": value = "リンク先で認証を完了してから、ここで確認してください。"; break;
             case "Completed": value = "完了"; break;
+            case "Confirm and connect": value = "Confirm and connect"; break;
             case "Confirm authorization": value = "認証を確認"; break;
             case "Confirm conversation change": value = "会話の変更を確認"; break;
             case "Confirm operations that require permission.": value = "権限が必要な操作を確認します。"; break;
+            case "Confirm server identity": value = "Confirm server identity"; break;
             case "Connect": value = "接続"; break;
             case "Connect to this server": value = "このサーバーに接続"; break;
             case "Connect to view this server’s workspace.": value = "接続すると、このサーバーのワークスペースを表示できます。"; break;
-            case "Connect using the same public HTTPS address as the PWA. Tailscale is not required.": value = "PWAと同じ公開HTTPSアドレスで接続します。Tailscaleは不要です。"; break;
             case "Connected": value = "接続済み"; break;
             case "Connecting to your workspace…": value = "ワークスペースに接続中…"; break;
             case "Connecting…": value = "接続中…"; break;
@@ -559,7 +570,6 @@ final class NativeText {
             case "Edited {path}": value = "{path} を編集"; break;
             case "Enable bypass": value = "スキップを有効化"; break;
             case "Enable full screen": value = "全画面表示を有効化"; break;
-            case "Enable only when both addresses reach the same Spool service. When off, switching is manual.": value = "両方のアドレスが同じSpoolサービスに接続する場合のみ有効にしてください。無効時は手動で切り替えます。"; break;
             case "Enter a message of up to 2000 characters.": value = "2000 文字以内のメッセージを入力してください。"; break;
             case "Enter a server name (1–80 characters).": value = "サーバー名を1～80文字で入力してください。"; break;
             case "Enter workspace": value = "ワークスペースを開く"; break;
@@ -593,6 +603,7 @@ final class NativeText {
             case "Keep current mode": value = "現在のモードを維持"; break;
             case "Keep current model": value = "現在のモデルを維持"; break;
             case "Keep current settings": value = "現在の設定を維持"; break;
+            case "LAN / Relay": value = "LAN / Relay"; break;
             case "Language": value = "言語"; break;
             case "Language server recommendation": value = "言語サーバーの提案"; break;
             case "Large directories show up to 2,000 entries.": value = "大きなフォルダーは最大 2,000 件まで表示します。"; break;
@@ -652,6 +663,7 @@ final class NativeText {
             case "Other answer": value = "その他の回答"; break;
             case "PDF page {page} of {count}": value = "PDF {count} ページ中 {page} ページ"; break;
             case "PDF preview": value = "PDF プレビュー"; break;
+            case "Pairing code": value = "Pairing code"; break;
             case "Password": value = "パスワード"; break;
             case "People & groups": value = "メンバーとグループ"; break;
             case "People chat": value = "ユーザーチャット"; break;
@@ -663,6 +675,7 @@ final class NativeText {
             case "Plan": value = "プランモード"; break;
             case "Plan before making changes.": value = "変更を行う前に計画します。"; break;
             case "Plugin recommendation": value = "プラグインの提案"; break;
+            case "Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity.": value = "Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity."; break;
             case "Prepare a project first.": value = "まずプロジェクトを準備しましょう。"; break;
             case "Preview": value = "プレビュー"; break;
             case "Preview truncated. Download the full file to see all content.": value = "プレビューは省略されています。全体はダウンロードして確認してください。"; break;
@@ -688,6 +701,7 @@ final class NativeText {
             case "Recents": value = "最近のチャット"; break;
             case "Reconnecting…": value = "再接続中…"; break;
             case "Refresh files": value = "ファイルを更新"; break;
+            case "Relay HTTPS address": value = "Relay HTTPS address"; break;
             case "Remote connection": value = "リモート接続"; break;
             case "Remote desktop": value = "リモートデスクトップ"; break;
             case "Remove {name}": value = "{name}を削除"; break;
@@ -718,6 +732,7 @@ final class NativeText {
             case "Save avatar": value = "アバターを保存"; break;
             case "Save this authorization for future requests.": value = "この承認を今後のリクエストにも適用します。"; break;
             case "Say hello. Only the two of you can see these messages.": value = "挨拶してみましょう。メッセージはお互いにのみ表示されます。"; break;
+            case "Scan pairing QR code": value = "Scan pairing QR code"; break;
             case "Scroll to latest": value = "最新メッセージへ移動"; break;
             case "Search files": value = "ファイルを検索"; break;
             case "Searched files": value = "ファイルを検索"; break;
@@ -733,6 +748,7 @@ final class NativeText {
             case "Send private message": value = "プライベートメッセージを送信"; break;
             case "Send status unknown. The message may have arrived; it will not be retried automatically.": value = "送信状態が不明です。届いている可能性があるため、自動再送はしません。"; break;
             case "Server connection": value = "サーバー接続"; break;
+            case "Server identity (SHA-256)": value = "Server identity (SHA-256)"; break;
             case "Server name": value = "サーバー名"; break;
             case "Servers": value = "サーバー"; break;
             case "Session directory": value = "セッションディレクトリ"; break;
@@ -826,9 +842,11 @@ final class NativeText {
             case "You are sending too quickly. Try again shortly.": value = "送信が速すぎます。少し待ってからお試しください。"; break;
             case "You are up to date.": value = "最新のバージョンです。"; break;
             case "Your input is needed": value = "入力が必要です"; break;
-            case "Your private server, through this app's embedded node. No system VPN or shared auth key.": value = "アプリ内蔵ノードを通じてプライベートサーバーに接続します。システムVPNや共有認証キーは不要です。"; break;
             case "Zoom in": value = "拡大"; break;
             case "Zoom out": value = "縮小"; break;
+            case "connected": value = "connected"; break;
+            case "connecting": value = "connecting"; break;
+            case "stopped": value = "stopped"; break;
             case "{count} members": value = "{count} 人のメンバー"; break;
             case "{count} online": value = "{count} 人がオンライン"; break;
             case "{count} selected": value = "{count} 人を選択中"; break;

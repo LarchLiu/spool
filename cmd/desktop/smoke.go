@@ -424,6 +424,9 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 	if _, err := page.EvalContext(ctx, smokeSettingsReadyScript); err != nil {
 		return err
 	}
+	if err := p.probeRelaySettings(ctx, view, report); err != nil {
+		return fmt.Errorf("relay settings: %w", err)
+	}
 	// This exercises the real native bridge, not an HTTP management endpoint.
 	for _, kind := range []string{"stop-service", "start-service"} {
 		if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: kind}); err != nil {

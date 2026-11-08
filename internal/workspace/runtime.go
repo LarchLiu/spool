@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -41,6 +42,8 @@ type Service struct {
 	tailnetAuthRevision uint64
 	networkProxy        netproxy.Options
 	desktop             *voxl.Manager
+	relay               *relayRuntime
+	relayRegistering    bool
 }
 type ServiceStatus struct {
 	Running                  bool
@@ -52,6 +55,7 @@ type ServiceStatus struct {
 	TSNetAuthKeySet          bool
 	Voxl                     voxl.Status
 	RemoteDesktopConnections map[string]int
+	Relay                    RelayStatus
 }
 
 func OpenService(root string) (*Service, error) {
@@ -194,6 +198,13 @@ func (s *Service) startLocked() error {
 	for _, listener := range listeners {
 		s.serveLocked(server, listener)
 	}
+	if settings.RelayEnabled {
+		if err := s.startRelayLocked(settings); err != nil {
+			s.stopLocked()
+			s.lastError = err.Error()
+			return err
+		}
+	}
 	if settings.TSNetEnabled {
 		s.startTailnetLocked(settings)
 	}
@@ -222,7 +233,7 @@ func (s *Service) serveLocked(server *http.Server, listener net.Listener) {
 	s.workers.Add(1)
 	go func() {
 		defer s.workers.Done()
-		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed && !errors.Is(err, net.ErrClosed) {
 			log.Printf("event=http_server_failed error=%q", err)
 			s.mu.Lock()
 			s.lastError = err.Error()
@@ -251,6 +262,10 @@ func (s *Service) Restart() error {
 }
 
 func (s *Service) stopLocked() error {
+	if s.relay != nil {
+		s.relay.close()
+		s.relay = nil
+	}
 	if s.desktop != nil {
 		s.desktop.SetEnabled(s.ctx, false)
 	}
@@ -292,6 +307,7 @@ func (s *Service) Status() ServiceStatus {
 			restartRequired = active.Host != settings.Host || active.Port != settings.Port ||
 				s.app.publicURL() != settings.PublicURL || active.IdleMinutes != settings.IdleMinutes ||
 				!sameTailnetSettings(active, settings) || active.TSNetEnabled && active.proxyOptions() != settings.proxyOptions()
+			restartRequired = restartRequired || !sameRelaySettings(active, settings)
 		}
 	}
 	tailnetStatus := tailnet.Status{State: "Disabled"}
@@ -306,7 +322,18 @@ func (s *Service) Status() ServiceStatus {
 	if s.desktop != nil {
 		desktopStatus = s.desktop.Status()
 	}
-	return ServiceStatus{Running: s.server != nil, RestartRequired: restartRequired, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != "", Voxl: desktopStatus, RemoteDesktopConnections: connections}
+	relayStatus := RelayStatus{State: "disabled"}
+	if settings.RelayEnabled {
+		relayStatus.State = "stopped"
+	}
+	if s.relay != nil {
+		relayStatus = s.relay.snapshot()
+		restartRequired = restartRequired || s.relay.host.RegistrationToken() != s.relayRegistrationToken()
+	}
+	relayStatus.RegistrationTokenSet = s.relayRegistrationToken() != ""
+	relayStatus.Registered = s.relayRegisteredLocked(settings.RelayURL)
+	relayStatus.Registering = s.relayRegistering
+	return ServiceStatus{Running: s.server != nil, RestartRequired: restartRequired, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != "", Voxl: desktopStatus, RemoteDesktopConnections: connections, Relay: relayStatus}
 }
 func (s *Service) WebURL() string {
 	s.mu.Lock()

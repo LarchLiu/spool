@@ -5,6 +5,10 @@
 
 [English](README.md)
 
+Android 现可通过独立部署在 VPS 上的 Go 中继连接家里的 Spool，自动优先使用
+经过身份验证的局域网连接。Spool Desktop 提供配对二维码，手机可直接扫码确认。
+部署与配对步骤见 [中继说明](relay/README.md)。
+
 > Spool 是一个面向多端和多人协作的本地 AI 编程工作区。它把 Desktop、
 Web/PWA 和 Android 客户端接入同一个项目与聊天空间，让团队成员可以从不同
 设备协作，并共享一致的权限、在线状态和项目上下文。

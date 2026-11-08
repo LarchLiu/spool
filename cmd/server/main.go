@@ -41,6 +41,11 @@ func run() (runErr error) {
 	tailnetEnabled := flag.Bool("tsnet", false, "persist embedded Tailscale HTTPS enablement (no system VPN or Funnel)")
 	tailnetHostname := flag.String("tsnet-hostname", "spool-server", "embedded Tailscale node hostname (state persists in data-dir/tsnet)")
 	tailnetPort := flag.Int("tsnet-port", 443, "HTTPS port on the embedded Tailscale node (does not bind a host TCP port)")
+	relayEnabled := flag.Bool("relay", false, "persist outbound Spool relay and secure LAN listener enablement")
+	relayURL := flag.String("relay-url", "", "public HTTPS origin of the independent Spool relay")
+	relayLANPort := flag.Int("relay-lan-port", 8789, "secure LAN listener and discovery port")
+	relayPair := flag.Bool("relay-pair", false, "print an Android pairing code locally and exit (service must be stopped)")
+	relayRegister := flag.Bool("relay-register", false, "register with the relay using SPOOL_RELAY_REGISTRATION_TOKEN (empty for automatic registration), save the credential, and exit")
 	systemProxy := flag.Bool("system-proxy", false, "persist use of system HTTP/HTTPS proxy settings for Spool (macOS)")
 	proxyEnabled := flag.Bool("proxy-enabled", true, "persist whether Spool uses outbound proxies (false forces direct connections)")
 	proxyURL := flag.String("proxy-url", "", "persist a custom outbound proxy URL (used when proxies are enabled and system proxy is off; blank inherits environment)")
@@ -215,6 +220,12 @@ func run() (runErr error) {
 	}
 	flag.Visit(func(f *flag.Flag) {
 		switch f.Name {
+		case "relay":
+			settings.RelayEnabled = *relayEnabled
+		case "relay-url":
+			settings.RelayURL = *relayURL
+		case "relay-lan-port":
+			settings.RelayLANPort = *relayLANPort
 		case "public-url":
 			settings.PublicURL = *publicURL
 		case "tsnet":
@@ -240,8 +251,32 @@ func run() (runErr error) {
 	if err = settings.Validate(); err != nil {
 		return err
 	}
+	wantRelayEnabled := settings.RelayEnabled
+	if *relayRegister {
+		settings.RelayEnabled = false
+	}
 	if err = service.SaveSettings(settings); err != nil {
 		return err
+	}
+	if *relayRegister {
+		if err = service.RegisterRelay(ctx, settings.RelayURL, os.Getenv("SPOOL_RELAY_REGISTRATION_TOKEN")); err != nil {
+			return err
+		}
+		settings.RelayEnabled = wantRelayEnabled
+		if err = service.SaveSettings(settings); err != nil {
+			return err
+		}
+		if !*relayPair {
+			return nil
+		}
+	}
+	if *relayPair {
+		code, err := service.RelayPairingCode()
+		if err != nil {
+			return err
+		}
+		fmt.Println(code)
+		return nil
 	}
 	if err = service.Start(); err != nil {
 		return err

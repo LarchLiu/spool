@@ -14,10 +14,10 @@ import org.json.JSONObject;
 
 final class NetworkSnapshot {
     static boolean online(ConnectivityManager connectivity, ConnectionMode mode) {
-        if (mode == ConnectionMode.DIRECT) {
+        if (mode != ConnectionMode.TAILSCALE) {
             Network active = connectivity.getActiveNetwork();
             NetworkCapabilities capabilities = active == null ? null : connectivity.getNetworkCapabilities(active);
-            return capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+            return capabilities != null && (mode == ConnectionMode.RELAY || capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET));
         }
         for (Network network : connectivity.getAllNetworks()) {
             NetworkCapabilities capabilities = connectivity.getNetworkCapabilities(network);

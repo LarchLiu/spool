@@ -1,0 +1,27 @@
+[Unit]
+Description=Spool Relay
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=spool-relay
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/spool-relay
+EnvironmentFile=/etc/spool-relay/relay.env
+ExecStart=/usr/local/bin/spool-relay -listen 127.0.0.1:8788 -admin-listen 127.0.0.1:8787 -data-dir /var/lib/spool-relay
+Restart=always
+RestartSec=5s
+TimeoutStopSec=15s
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

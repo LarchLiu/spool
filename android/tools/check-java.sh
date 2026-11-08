@@ -68,6 +68,13 @@ fetch core-1.17.0.aar \
     https://dl.google.com/dl/android/maven2/androidx/core/core/1.17.0/core-1.17.0.aar \
     e1bd22bbcf5cee3a992dedb7d2d3c3b31c9f761c01e56d00ea443c8aaa981182
 unzip -p "$CACHE/core-1.17.0.aar" classes.jar > "$TMPDIR/core.jar"
+fetch zxing-core-3.5.3.jar \
+    https://repo.maven.apache.org/maven2/com/google/zxing/core/3.5.3/core-3.5.3.jar \
+    8d8064c1636fdaef7189dd9055c7d59950a8940a12f2293956446ec3c109fd82
+fetch zxing-android-embedded-4.3.0.aar \
+    https://repo.maven.apache.org/maven2/com/journeyapps/zxing-android-embedded/4.3.0/zxing-android-embedded-4.3.0.aar \
+    4ab03353127c34e55cbb80fbc9a34031decbcfb1ec5e8f991944d2d494621a33
+unzip -p "$CACHE/zxing-android-embedded-4.3.0.aar" classes.jar > "$TMPDIR/zxing-embedded.jar"
 (
     cd android/transport
     go run golang.org/x/mobile/cmd/gobind -lang=java -outdir="$TMPDIR/generated" ./spoolnet
@@ -87,6 +94,7 @@ mkdir -p "$TMPDIR/r" "$TMPDIR/classes"
     --java "$TMPDIR/r" --min-sdk-version 26 --target-sdk-version 36 \
     -o "$TMPDIR/resources.ap_" "$TMPDIR/resources.zip"
 CP="$SDK_JAR:$CACHE/junit-4.13.2.jar:$CACHE/hamcrest-core-1.3.jar:$CACHE/commonmark-0.24.0.jar:$CACHE/commonmark-ext-gfm-tables-0.24.0.jar:$CACHE/commonmark-ext-gfm-strikethrough-0.24.0.jar:$CACHE/commonmark-ext-task-list-items-0.24.0.jar:$TMPDIR/androidsvg.jar:$TMPDIR/exifinterface.jar:$TMPDIR/core.jar:$TMPDIR/textmate.jar:$CACHE/gson-2.13.1.jar"
+CP="$CP:$CACHE/zxing-core-3.5.3.jar:$TMPDIR/zxing-embedded.jar"
 python3 - "$JAVAC" "$CP" "$TMPDIR" "$ROOT" <<'PY'
 import pathlib, subprocess, sys
 javac, cp, scratch, root = sys.argv[1:]

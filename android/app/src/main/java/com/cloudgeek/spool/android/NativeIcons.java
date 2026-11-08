@@ -39,6 +39,7 @@ final class NativeIcons {
             case "download": resource = R.drawable.web_icon_download; break;
             case "log_out": resource = R.drawable.web_icon_log_out; break;
             case "key_round": resource = R.drawable.web_icon_key_round; break;
+            case "scan_qr_code": resource = R.drawable.web_icon_scan_qr_code; break;
             case "monitor": resource = R.drawable.web_icon_monitor; break;
             case "palette": resource = R.drawable.web_icon_palette; break;
             case "sun": resource = R.drawable.web_icon_sun; break;

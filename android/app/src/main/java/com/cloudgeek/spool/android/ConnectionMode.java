@@ -2,7 +2,7 @@ package com.cloudgeek.spool.android;
 
 /** Persisted routing choice; existing installations retain their embedded node. */
 enum ConnectionMode {
-    DIRECT("direct", "https"), TAILSCALE("tailscale", "tsnet");
+    DIRECT("direct", "https"), TAILSCALE("tailscale", "tsnet"), RELAY("relay", "relay");
 
     final String value, directory;
 

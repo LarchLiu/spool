@@ -2,14 +2,17 @@ module spool/android/transport
 
 go 1.27.3
 
+replace spool => ../..
+
+replace spool/relay => ../../relay
+
 require (
 	github.com/coder/websocket v1.8.15
 	golang.org/x/mobile v0.0.0-20261011034528-197770444867
 	spool v0.0.0
+	spool/relay v0.0.0
 	tailscale.com v1.104.4
 )
-
-replace spool => ../..
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect

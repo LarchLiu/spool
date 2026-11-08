@@ -85,8 +85,11 @@ public final class NativeVisualProbeActivity extends Activity {
             if (settings != null) settings.dismiss();
         });
         if (screen.equals("settings")) {
-            NativeConnectionSettings connection = new NativeConnectionSettings(ui, "https://spool.example.ts.net", "Synthetic offline fixture", ignored -> {}, () -> {}, () -> {});
-            connection.bind(false, false, false, "Offline"); settings.content.additions.addView(connection);
+            NativeConnectionSettings connection = new NativeConnectionSettings(ui,
+                    new ConnectionPlan("https://spool.example.com", "https://spool.example.ts.net", "", ConnectionMode.TAILSCALE, false),
+                    ignored -> {}, (plan, mode) -> {}, () -> {}, () -> {}, () -> {});
+            connection.bind(ConnectionMode.TAILSCALE, false, false, false, true, java.util.Map.of(), "Synthetic offline fixture");
+            settings.content.additions.addView(connection);
         }
         settings.show();
         root.post(this::report);

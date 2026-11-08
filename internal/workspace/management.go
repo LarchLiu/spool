@@ -19,6 +19,7 @@ import (
 	chatmodel "spool/internal/model"
 	"spool/internal/netproxy"
 	"spool/internal/tailnet"
+	"spool/relay"
 )
 
 type User struct {
@@ -71,13 +72,24 @@ type Settings struct {
 	ProxyURL             string `json:"proxy_url"`
 	NoProxy              string `json:"no_proxy"`
 	RemoteDesktopEnabled bool   `json:"remote_desktop_enabled"`
+	RelayEnabled         bool   `json:"relay_enabled"`
+	RelayURL             string `json:"relay_url"`
+	RelayLANPort         int    `json:"relay_lan_port"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{Host: "127.0.0.1", Port: 8787, IdleMinutes: 15, AutoStart: true, HistoryCacheMiB: 64, TSNetHostname: "spool-server", TSNetPort: 443, ProxyEnabled: true}
+	return Settings{Host: "127.0.0.1", Port: 8787, IdleMinutes: 15, AutoStart: true, HistoryCacheMiB: 64, TSNetHostname: "spool-server", TSNetPort: 443, ProxyEnabled: true, RelayLANPort: 8789}
 }
 func (s Settings) Address() string { return net.JoinHostPort(s.Host, fmt.Sprint(s.Port)) }
 func (s Settings) Validate() error {
+	if s.RelayEnabled {
+		if _, err := relay.ParseRelayURL(s.RelayURL); err != nil {
+			return err
+		}
+		if s.RelayLANPort < 1 || s.RelayLANPort > 65535 {
+			return fmt.Errorf("relay LAN port must be between 1 and 65535")
+		}
+	}
 	if s.Port < 1 || s.Port > 65535 {
 		return fmt.Errorf("port must be between 1 and 65535")
 	}

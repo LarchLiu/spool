@@ -18,6 +18,9 @@ func (c *Client) NetworkChanged() {
 	}
 	c.responseActivity.Store(nil)
 	c.transport.CloseIdleConnections()
+	if c.relay != nil {
+		c.relay.NetworkChanged()
+	}
 	if c.server != nil {
 		c.server.Sys().NetMon.Get().InjectEvent()
 	}

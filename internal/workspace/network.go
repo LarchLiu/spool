@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"fmt"
 	"strings"
 
 	"spool/internal/netproxy"
@@ -26,6 +27,13 @@ func (s *Service) SaveSettings(settings Settings) error {
 	defer s.mu.Unlock()
 	if err := settings.Validate(); err != nil {
 		return err
+	}
+	previous, err := s.Store.Settings()
+	if err != nil {
+		return err
+	}
+	if settings.RelayEnabled && (!previous.RelayEnabled || relayOrigin(previous.RelayURL) != relayOrigin(settings.RelayURL)) && !s.relayRegisteredLocked(settings.RelayURL) {
+		return fmt.Errorf("Register this server with the relay before enabling it.")
 	}
 	var policy *netproxy.Policy
 	options := settings.proxyOptions()

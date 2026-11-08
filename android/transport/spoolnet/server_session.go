@@ -34,6 +34,9 @@ type savedServerSession struct {
 // any requests start. Both configured routes then reuse the same Spool login.
 // The separate Tailscale node state remains in NewClient's data directory.
 func (c *Client) UseServerSession(directory, directURL, tailscaleURL string) error {
+	return c.useServerSession(directory, directURL, tailscaleURL)
+}
+func (c *Client) useServerSession(directory, directURL, tailscaleURL string, extra ...string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
@@ -42,7 +45,7 @@ func (c *Client) UseServerSession(directory, directURL, tailscaleURL string) err
 	if _, bound := c.http.Jar.(*serverSessionJar); bound {
 		return errors.New("server session is already configured")
 	}
-	jar, err := newServerSessionJar(directory, c.origin, directURL, tailscaleURL, c.direct)
+	jar, err := newServerSessionJar(directory, c.origin, directURL, tailscaleURL, c.direct, extra...)
 	if err != nil {
 		return err
 	}
@@ -50,12 +53,12 @@ func (c *Client) UseServerSession(directory, directURL, tailscaleURL string) err
 	return nil
 }
 
-func newServerSessionJar(directory string, origin *url.URL, directURL, tailscaleURL string, direct bool) (*serverSessionJar, error) {
+func newServerSessionJar(directory string, origin *url.URL, directURL, tailscaleURL string, direct bool, extra ...string) (*serverSessionJar, error) {
 	if !filepath.IsAbs(directory) {
 		return nil, errors.New("server session directory must be absolute")
 	}
 	jar := &serverSessionJar{origin: origin, path: filepath.Join(directory, "session.json")}
-	for _, address := range []string{directURL, tailscaleURL} {
+	for _, address := range append([]string{directURL, tailscaleURL}, extra...) {
 		if address == "" {
 			continue
 		}

@@ -43,10 +43,13 @@ public class NetworkSnapshotTest {
                 ReflectionHelpers.ClassParameter.from(LinkAddress.class, address));
         shadow.setLinkProperties(active, properties);
         assertTrue(NetworkSnapshot.online(connectivity, ConnectionMode.DIRECT));
+        assertTrue(NetworkSnapshot.online(connectivity, ConnectionMode.RELAY));
         assertFalse(NetworkSnapshot.online(connectivity, ConnectionMode.TAILSCALE));
         Shadows.shadowOf(capabilities).removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
         assertFalse(NetworkSnapshot.online(connectivity, ConnectionMode.DIRECT));
+        assertTrue("paired LAN remains usable without an Internet capability", NetworkSnapshot.online(connectivity, ConnectionMode.RELAY));
         shadow.setActiveNetworkInfo(null);
         assertFalse(NetworkSnapshot.online(connectivity, ConnectionMode.DIRECT));
+        assertFalse(NetworkSnapshot.online(connectivity, ConnectionMode.RELAY));
     }
 }

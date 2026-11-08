@@ -26,6 +26,7 @@ import {
 import { SettingsBack, SettingsList } from "./settings-list";
 import { ThemePicker } from "./theme-picker";
 import { VoxlSettings } from "./voxl-settings";
+import { RelayPairing, RelayRegistration } from "./relay-settings";
 import { CustomSelect } from "./custom-select";
 import {
   NetworkSettingsAutosave,
@@ -169,6 +170,47 @@ export function NetworkPage({ data, run, t }: PageProps) {
 export function ServicePage({ data, run, t }: PageProps) {
   const autosave = useSettingsAutosave({ data, run }, ServiceSettingsAutosave);
   const draft = autosave.draft;
+  const [registeredRelayURL, setRegisteredRelayURL] = useState<string>();
+  const [registeringRelay, setRegisteringRelay] = useState(false);
+  useEffect(() => {
+    if (
+      data.status.Relay?.Registered ||
+      registeredRelayURL !== data.settings.relay_url
+    )
+      setRegisteredRelayURL(undefined);
+  }, [
+    data.status.Relay?.Registered,
+    data.settings.relay_url,
+    registeredRelayURL,
+  ]);
+  const relayRegistered =
+    draft.relay_url === data.settings.relay_url &&
+    (data.status.Relay?.Registered || registeredRelayURL === draft.relay_url);
+  const relayRegistering = registeringRelay || data.status.Relay?.Registering;
+  const relayAddress = (
+    <div
+      className="settings-relay-section"
+      role="group"
+      aria-label={t("Relay HTTPS address")}
+    >
+      <TextField
+        title={t("Relay HTTPS address")}
+        value={draft.relay_url}
+        disabled={relayRegistering || draft.relay_enabled}
+        onChange={(v) => autosave.edit("relay_url", v)}
+        onCommit={() => void autosave.commit("relay_url")}
+      />
+      {!relayRegistered && (
+        <RelayRegistration
+          data={data}
+          t={t}
+          disabled={draft.relay_url !== data.settings.relay_url}
+          onRegistered={() => setRegisteredRelayURL(data.settings.relay_url)}
+          onBusyChange={setRegisteringRelay}
+        />
+      )}
+    </div>
+  );
   const [authKey, setAuthKey] = useState("");
   const [requestingLogin, setRequestingLogin] = useState(false);
   const [loginError, setLoginError] = useState("");
@@ -300,6 +342,59 @@ export function ServicePage({ data, run, t }: PageProps) {
           onChange={(v) => autosave.edit("public_url", v)}
           onCommit={() => void autosave.commit("public_url")}
         />
+      </Card>
+      <Card title={t("LAN / Relay")}>
+        <Row
+          title={t("Enable LAN and relay connections")}
+          help={t(
+            relayRegistered
+              ? "Phones prefer a verified LAN connection and use the relay when away. Restart the service after changing these settings."
+              : "Register this server with the relay before enabling it.",
+          )}
+        >
+          {draft.relay_enabled && (
+            <span
+              className={`settings-state${data.status.Relay?.State === "connected" ? " online" : ""}`}
+              role="status"
+              aria-label={t("Relay status")}
+              title={
+                data.status.Relay?.DiscoveryError
+                  ? knownMessage(data.status.Relay.DiscoveryError, t)
+                  : undefined
+              }
+            >
+              <span className="settings-status-dot" />
+              {knownMessage(
+                data.status.Relay?.State === "disabled"
+                  ? "stopped"
+                  : (data.status.Relay?.State ?? "stopped"),
+                t,
+              )}
+            </span>
+          )}
+          <Toggle
+            label={t("Enable LAN and relay connections")}
+            value={draft.relay_enabled}
+            disabled={
+              relayRegistering || (!draft.relay_enabled && !relayRegistered)
+            }
+            onChange={(v) => {
+              autosave.edit("relay_enabled", v);
+              void autosave.commit("relay_enabled");
+            }}
+          />
+        </Row>
+        {relayAddress}
+        <TextField
+          title={t("Secure LAN port")}
+          value={draft.relay_lan_port}
+          type="number"
+          min={1}
+          max={65535}
+          onChange={(v) => autosave.edit("relay_lan_port", v)}
+          onCommit={() => void autosave.commit("relay_lan_port")}
+        />
+        <RelayPairing data={data} t={t} />
       </Card>
       <Card title="Tailscale (tsnet)">
         <Row

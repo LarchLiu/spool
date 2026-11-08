@@ -40,7 +40,7 @@ final class ServerProfiles {
                 String network = value.optString("selectedNetwork", value.optString("priority"));
                 if (!value.has("selectedNetwork") && id.equals(selected)
                         && !value.optString(legacy.selected == ConnectionMode.DIRECT ? "direct" : "tailscale").isEmpty()) network = legacy.selected.value;
-                ConnectionPlan plan = new ConnectionPlan(value.optString("direct"), value.optString("tailscale"),
+                ConnectionPlan plan = new ConnectionPlan(value.optString("direct"), value.optString("tailscale"), value.optString("relay"),
                         ConnectionMode.restore(network, ""), value.optBoolean("automatic", true));
                 Server server = new Server(id, name, plan); server.enabled = value.optBoolean("enabled", true);
                 server.account = displayAccount(value.optJSONObject("account")); restored.add(server);
@@ -75,7 +75,7 @@ final class ServerProfiles {
     String encode() {
         JSONArray array = new JSONArray();
         try { for (Server server : entries) array.put(new JSONObject().put("id", server.id).put("name", server.name)
-                .put("direct", server.plan.direct).put("tailscale", server.plan.tailscale).put("selectedNetwork", server.plan.selected.value).put("automatic", server.plan.autoSwitch).put("enabled", server.enabled).put("account", displayAccount(server.account))); }
+                .put("direct", server.plan.direct).put("tailscale", server.plan.tailscale).put("relay", server.plan.relay).put("selectedNetwork", server.plan.selected.value).put("automatic", server.plan.autoSwitch).put("enabled", server.enabled).put("account", displayAccount(server.account))); }
         catch (Exception error) { throw new IllegalArgumentException(error); }
         return array.toString();
     }

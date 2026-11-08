@@ -68,6 +68,12 @@ func TestSettingsBridgeRejectsCallsWithoutDesktopPage(t *testing.T) {
 		if _, err := bridge.TSNetRegister(context.Background(), rand.Text()); err == nil {
 			t.Fatal("key registration allowed without calling page")
 		}
+		if _, err := bridge.RelayPairing(context.Background()); err == nil {
+			t.Fatal("pairing secret exposed without private desktop page")
+		}
+		if _, err := bridge.RegisterRelay(context.Background(), "https://relay.example.com", strings.Repeat("r", 32)); err == nil {
+			t.Fatal("relay credential changed without private desktop page")
+		}
 		if _, err := bridge.Action(context.Background(), settingsCommand{Kind: "copy-tsnet-url"}); err == nil {
 			t.Fatal("clipboard action allowed without calling page")
 		}

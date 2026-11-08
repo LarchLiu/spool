@@ -349,7 +349,7 @@ test("service UI commits on blur/Enter, removes save controls and restarts only 
     pages.indexOf("export function PeoplePage"),
   );
   assert.doesNotMatch(service, /<form|<Save|Save settings|submit\(/);
-  assert.equal((service.match(/onCommit=/g) ?? []).length, 7);
+  assert.equal((service.match(/onCommit=/g) ?? []).length, 9);
   assert.match(
     service,
     /autosave\.edit\("auto_start", v\);\s*void autosave\.commit\("auto_start"\)/,

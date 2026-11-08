@@ -16,7 +16,7 @@ final class ConnectionPlan {
         @Override public int hashCode() { return Objects.hash(mode, origin); }
     }
 
-    final String direct, tailscale;
+    final String direct, tailscale, relay;
     final ConnectionMode selected;
     final boolean autoSwitch;
 
@@ -25,24 +25,28 @@ final class ConnectionPlan {
     }
 
     ConnectionPlan(String direct, String tailscale, ConnectionMode selected, boolean autoSwitch) {
-        this.direct = direct.trim(); this.tailscale = tailscale.trim(); this.selected = selected; this.autoSwitch = autoSwitch;
+        this(direct, tailscale, "", selected, autoSwitch);
+    }
+
+    ConnectionPlan(String direct, String tailscale, String relay, ConnectionMode selected, boolean autoSwitch) {
+        this.direct = direct.trim(); this.tailscale = tailscale.trim(); this.relay = relay.trim(); this.selected = selected; this.autoSwitch = autoSwitch;
     }
 
     static ConnectionPlan restore(String direct, String tailscale, String selection, String legacyOrigin, String legacyMode) {
         if (direct == null && tailscale == null) {
             ConnectionMode mode = ConnectionMode.restore(legacyMode, legacyOrigin);
             return new ConnectionPlan(mode == ConnectionMode.DIRECT ? legacyOrigin : "",
-                    mode == ConnectionMode.TAILSCALE ? legacyOrigin : "", mode);
+                    mode == ConnectionMode.TAILSCALE ? legacyOrigin : "", mode == ConnectionMode.RELAY ? legacyOrigin : "", mode, false);
         }
         return new ConnectionPlan(direct == null ? "" : direct, tailscale == null ? "" : tailscale,
                 ConnectionMode.restore(selection, ""));
     }
 
-    String origin(ConnectionMode mode) { return mode == ConnectionMode.DIRECT ? direct : tailscale; }
+    String origin(ConnectionMode mode) { return mode == ConnectionMode.DIRECT ? direct : mode == ConnectionMode.TAILSCALE ? tailscale : relay; }
 
-    ConnectionPlan automatic(boolean value) { return new ConnectionPlan(direct, tailscale, selected, value); }
+    ConnectionPlan automatic(boolean value) { return new ConnectionPlan(direct, tailscale, relay, selected, value); }
 
-    ConnectionPlan select(ConnectionMode mode) { return new ConnectionPlan(direct, tailscale, mode, autoSwitch); }
+    ConnectionPlan select(ConnectionMode mode) { return new ConnectionPlan(direct, tailscale, relay, mode, autoSwitch); }
 
     List<Endpoint> candidates(ConnectionMode preferred) {
         List<Endpoint> entries = ordered(preferred);
@@ -52,13 +56,16 @@ final class ConnectionPlan {
     List<Endpoint> ordered(ConnectionMode preferred) {
         List<Endpoint> result = new ArrayList<>();
         ConnectionMode start = preferred == null ? selected : preferred;
-        for (ConnectionMode mode : new ConnectionMode[] {start, start == ConnectionMode.DIRECT ? ConnectionMode.TAILSCALE : ConnectionMode.DIRECT})
+        List<ConnectionMode> order = new ArrayList<>(); order.add(start);
+        for (ConnectionMode mode : ConnectionMode.values()) if (mode != start) order.add(mode);
+        for (ConnectionMode mode : order)
             if (!origin(mode).isEmpty()) result.add(new Endpoint(mode, origin(mode)));
         return result;
     }
 
     ConnectionPlan validated() {
         return new ConnectionPlan(direct.isEmpty() ? "" : new OriginPolicy(direct).origin,
-                tailscale.isEmpty() ? "" : new OriginPolicy(tailscale).origin, selected, autoSwitch);
+                tailscale.isEmpty() ? "" : new OriginPolicy(tailscale).origin,
+                relay.isEmpty() ? "" : new RelayPairing(relay).code, selected, autoSwitch);
     }
 }

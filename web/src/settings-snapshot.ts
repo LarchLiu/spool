@@ -49,6 +49,7 @@ export function settingsPageDataEqual(
         a.status.Error === b.status.Error &&
         a.status.Voxl === b.status.Voxl &&
         a.status.TSNet === b.status.TSNet &&
+        a.status.Relay === b.status.Relay &&
         a.status.TSNetAuthKeySet === b.status.TSNetAuthKeySet
       );
     case "Network":

@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"spool/relay"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -40,6 +41,9 @@ type Client struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
 	responseActivity atomic.Pointer[time.Time]
+	relay            *relay.Dialer
+	relayHTTP        *http.Transport
+	relayLAN         string
 }
 
 // NewDirectClient connects to one HTTPS origin over the system network without
@@ -240,6 +244,10 @@ func (c *Client) Close() error {
 		jar.close()
 	}
 	c.cancel()
+	if c.relay != nil {
+		c.relay.Close()
+		c.relayHTTP.CloseIdleConnections()
+	}
 	if c.node != nil {
 		<-c.node.done
 	}

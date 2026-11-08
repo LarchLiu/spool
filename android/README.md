@@ -15,6 +15,28 @@ sampling is for hotspot attribution, not an uninstrumented frame-rate baseline.
 
 ## Interface And Transport
 
+**LAN / Relay** is also available in each server's connection settings. Deploy the
+independent Go module on a VPS, enable it in Spool Desktop, then use **Scan pairing
+QR code** in the app. The confirmation screen shows the relay address and pinned
+server identity. Sign in with the ordinary Spool account after confirming.
+See [deployment, pairing, routing and protocol](../relay/README.md).
+
+Connection settings use three compact tabs: **Public HTTPS**, **Tailscale (tsnet)**,
+and **LAN / Relay**. They share the sidebar server tabs' rounded style through
+`NativeTabs` (`REGULAR` uses 40dp buttons; `COMPACT` uses 32dp buttons). Browsing a
+tab preserves all three inputs and the active connection until **Connect** is
+pressed. Connect/Disconnect stays centered at its natural width; Tailscale's
+information and sign-in icons sit at the right of the same row. The relay tab
+puts its scanner icon at the far right of that row.
+
+This mode uses native Android DNS-SD discovery and bounded probes of paired LAN
+addresses, then an outbound WebSocket tunnel through the relay. Both paths use
+TLS 1.3 with the same pinned server identity and shared private session. LAN
+discovery only suggests addresses; it cannot authenticate a server. Active streams
+finish on their current path; new connections prefer LAN. Network changes close
+stale connections and the existing subscriptions recover without replaying writes.
+The camera scanner runs inside the app; no external scanner service is required.
+
 - Native sign-in, project/recent-chat drawer, transcript and composer.
 - Agent/model and reasoning-effort selection from the server catalog; permission
   modes come from the authorized project's catalog. Bypass modes require confirmation.
@@ -2343,10 +2365,10 @@ agent/service administration. People-message history and unsent attachments stay
 in app-session memory, not retained diagnostic reports.
 
 New servers keep each network entry's private state under
-`noBackupFilesDir/servers/<server-id>/{tsnet,https}/`. The migrated original server
-retains `noBackupFilesDir/{tsnet,https}/`. Cookies are scoped to the exact origin and connection
-mode; backup and device transfer are disabled. Preferences retain only the server
-origin, connection mode and appearance/language choices. Disconnect closes
+`noBackupFilesDir/servers/<server-id>/{tsnet,https,relay}/`. The migrated original server
+retains `noBackupFilesDir/{tsnet,https,relay}/`. Cookies are scoped to the exact origin and connection
+mode; backup and device transfer are disabled. Preferences retain the server
+origins, paired relay admission code, connection mode and appearance/language choices. Disconnect closes
 the selected server's clients/nodes but does not sign out of Spool; use **Sign out** to revoke the
 session. Clearing Android app storage also forgets the node identity; remove the
 old node in the Tailscale console when appropriate. Server-side agent tasks keep

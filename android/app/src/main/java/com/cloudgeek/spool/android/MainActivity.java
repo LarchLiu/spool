@@ -124,6 +124,9 @@ public final class MainActivity extends Activity {
     private NativeChatEvents<JSONObject> chatEvents;
     private ConnectivityManager connectivity;
     private ConnectivityManager.NetworkCallback networkCallback;
+    private RelayDiscovery relayDiscovery;
+    private String pairingOwner = "";
+    private static final int SCAN_PAIRING = 49371;
     private NativeUi ui;
     private FrameLayout root, drawer;
     private LinearLayout historyContent;
@@ -324,9 +327,11 @@ public final class MainActivity extends Activity {
         // Resolve the private, origin-scoped Go session before exposing the login form.
         restoringSession = !origin.isEmpty();
         connectivity = getSystemService(ConnectivityManager.class);
+        relayDiscovery = new RelayDiscovery(this, this::relayDiscovered);
         networkCallback =
                 new ConnectivityManager.NetworkCallback() {
                     public void onAvailable(Network network) {
+                        if (relayDiscovery != null) relayDiscovery.networkChanged();
                         publishInterfaces();
                         checkConnectionsNow();
                         resumeWorkspace(true);
@@ -911,9 +916,22 @@ public final class MainActivity extends Activity {
                 });
     }
 
+    private void relayDiscovered(String id, String addresses) {
+        if (destroyed) return;
+        for (ServerRuntime runtime : serverRuntimes.values()) {
+            ConnectionRouter.Candidate<Client> current = runtime.candidate;
+            if (current == null || current.endpoint.mode != ConnectionMode.RELAY) continue;
+            try {
+                if (!new RelayPairing(current.endpoint.origin).id.equals(id)) continue;
+                connectionWorker.execute(() -> { try { current.client.setLANAddresses(addresses); } catch (Exception ignored) {} });
+            } catch (IllegalArgumentException ignored) {}
+        }
+    }
+
     private void connect(String address) {
         ConnectionPlan plan = new ConnectionPlan(connectionMode == ConnectionMode.DIRECT ? address : connectionPlan.direct,
-                connectionMode == ConnectionMode.TAILSCALE ? address : connectionPlan.tailscale, connectionPlan.selected, connectionPlan.autoSwitch);
+                connectionMode == ConnectionMode.TAILSCALE ? address : connectionPlan.tailscale,
+                connectionMode == ConnectionMode.RELAY ? address : connectionPlan.relay, connectionPlan.selected, connectionPlan.autoSwitch);
         applyConnectionPlan(plan, null);
     }
 
@@ -926,12 +944,20 @@ public final class MainActivity extends Activity {
                 String directory = owner.directory(getNoBackupFilesDir(), endpoint.mode);
                 Client candidate;
                 if (endpoint.mode == ConnectionMode.DIRECT) candidate = Spoolnet.newDirectClient(directory, endpoint.origin);
+                else if (endpoint.mode == ConnectionMode.RELAY) {
+                    candidate = Spoolnet.newRelayClient(directory, endpoint.origin);
+                    if (relayDiscovery != null) {
+                        String local = relayDiscovery.addresses(new RelayPairing(endpoint.origin).id);
+                        if (!local.isEmpty()) candidate.setLANAddresses(local);
+                    }
+                }
                 else {
                     Spoolnet.updateInterfaces(NetworkSnapshot.read(connectivity));
                     candidate = Spoolnet.newClient(directory, endpoint.origin);
                 }
                 try {
-                    candidate.useServerSession(owner.sessionDirectory(getNoBackupFilesDir()), owner.plan.direct, owner.plan.tailscale);
+                    if (owner.plan.relay.isEmpty()) candidate.useServerSession(owner.sessionDirectory(getNoBackupFilesDir()), owner.plan.direct, owner.plan.tailscale);
+                    else candidate.usePairedServerSession(owner.sessionDirectory(getNoBackupFilesDir()), owner.plan.direct, owner.plan.tailscale, owner.plan.relay);
                     return candidate;
                 } catch (Exception error) { candidate.close(); throw error; }
             }
@@ -962,7 +988,7 @@ public final class MainActivity extends Activity {
         ConnectionPlan validated;
         try {
             for (ConnectionMode mode : ConnectionMode.values()) if (!draft.origin(mode).isEmpty()) {
-                try { new OriginPolicy(draft.origin(mode)); }
+                try { if (mode == ConnectionMode.RELAY) new RelayPairing(draft.origin(mode)); else new OriginPolicy(draft.origin(mode)); }
                 catch (Exception error) {
                     if (connectionSettings != null) connectionSettings.input(mode).setError(error.getMessage());
                     return;
@@ -1098,7 +1124,7 @@ public final class MainActivity extends Activity {
             } catch (Exception ignored) {}
         }
         final int token = generation;
-        if (connectionMode == ConnectionMode.TAILSCALE) monitor.start(client::connectionInfo, snapshot -> {
+        if (connectionMode != ConnectionMode.DIRECT) monitor.start(client::connectionInfo, snapshot -> {
             if (generation != token) return;
             try { connectionInfo = snapshot == null ? null : new JSONObject(snapshot); } catch (Exception ignored) { connectionInfo = null; }
             updateConnectionSettings();
@@ -1454,7 +1480,7 @@ public final class MainActivity extends Activity {
         body.addView(serverSettings);
         gap(body, 16);
         connectionSettings = new NativeConnectionSettings(settingsUi, connectionDraft,
-                this::editConnectionPlan, this::applyConnectionPlan, this::disconnect, this::enrollTailscale);
+                this::editConnectionPlan, this::applyConnectionPlan, this::disconnect, this::enrollTailscale, this::scanPairing);
         serverInput = connectionSettings.input(connectionDraft.selected);
         connectionText = connectionSettings.diagnostics;
         connectionHint = connectionSettings.note;
@@ -1463,6 +1489,17 @@ public final class MainActivity extends Activity {
         Button delete = settingsUi.button(settingsUi.t("Delete server"), false, this::deleteServer);
         delete.setTextColor(settingsUi.error);
         body.addView(delete, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private void scanPairing() {
+        if (serverProfiles.active() == null) return;
+        pairingOwner = serverProfiles.selected;
+        new com.google.zxing.integration.android.IntentIntegrator(this)
+                .setRequestCode(SCAN_PAIRING)
+                .setCaptureActivity(PairingScanActivity.class)
+                .setDesiredBarcodeFormats(com.google.zxing.integration.android.IntentIntegrator.QR_CODE)
+                .setPrompt(tr("Scan the pairing code in Spool Desktop", "扫描 Spool Desktop 显示的配对二维码"))
+                .setOrientationLocked(false).setBeepEnabled(false).initiateScan();
     }
 
     private void deleteServer() {
@@ -1675,6 +1712,7 @@ public final class MainActivity extends Activity {
 
     private void refreshServerConnections(boolean force) {
         if (!foreground || destroyed) return;
+        if (relayDiscovery != null && serverProfiles.entries.stream().anyMatch(s -> s.enabled && !s.plan.relay.isEmpty())) relayDiscovery.refresh();
         for (ServerProfiles.Server server : serverProfiles.entries)
             if (server.enabled && !server.id.equals(serverProfiles.selected)) probeServer(server, force);
         main.removeCallbacks(serverRefresh); main.postDelayed(serverRefresh, 15000);
@@ -1979,6 +2017,12 @@ public final class MainActivity extends Activity {
     private void updateConnectionSettings() {
         if (!settingsOpen || connectionText == null) return;
         String message = networkMessage == null || networkMessage.isEmpty() ? "" : "\n\n" + networkMessage;
+        if (connectionMode == ConnectionMode.RELAY) {
+            String path = connectionInfo == null ? "" : connectionInfo.optString("path");
+            connectionHint.setText(tr("Paired identity verified on both LAN and relay.", "局域网和中继均验证已配对的服务器身份。"));
+            if (connectionSettings != null) bindConnectionSettings((path.equals("lan") ? tr("LAN", "局域网直连") : path.equals("relay") ? tr("Relay", "中继") : tr("Connecting", "连接中")) + "\nHTTPS: " + httpsState + message);
+            return;
+        }
         if (connectionMode == ConnectionMode.DIRECT) {
             connectionHint.setText(localizedString(R.string.connection_direct_note));
             String summary = localizedString(R.string.connection_direct_summary, httpsState, message);
@@ -3169,6 +3213,22 @@ public final class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == SCAN_PAIRING) {
+            String owner = pairingOwner; pairingOwner = "";
+            com.google.zxing.integration.android.IntentResult result = com.google.zxing.integration.android.IntentIntegrator.parseActivityResult(resultCode, data);
+            if (resultCode != RESULT_OK || result == null || result.getContents() == null || !owner.equals(serverProfiles.selected)) return;
+            try {
+                RelayPairing pairing = new RelayPairing(result.getContents());
+                new NativePairingDialog(ui, pairing, () -> {
+                    if (!owner.equals(serverProfiles.selected)) return;
+                    ConnectionPlan plan = new ConnectionPlan(connectionPlan.direct, connectionPlan.tailscale, pairing.code, ConnectionMode.RELAY, connectionPlan.autoSwitch);
+                    if (connectionSettings != null) connectionSettings.input(ConnectionMode.RELAY).setText(pairing.code);
+                    applyConnectionPlan(plan, ConnectionMode.RELAY);
+                    if (relayDiscovery != null) relayDiscovery.refresh();
+                }).show();
+            } catch (IllegalArgumentException error) { toast(error); }
+            return;
+        }
         if (requestCode == NativeAppUpdate.INSTALL_PERMISSION) { appUpdates.permissionResult(this); return; }
         if (requestCode == SAVE_FILE) {
             PendingDownload selected = pendingDownload;
@@ -4050,6 +4110,7 @@ public final class MainActivity extends Activity {
     protected void onStart() {
         super.onStart();
         foreground = true;
+        if (relayDiscovery != null) relayDiscovery.refresh();
         monitor.setActive(settingsOpen);
         recovery.setActive(true);
         if (client != null) publishInterfaces();
@@ -4072,6 +4133,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onStop() {
         foreground = false;
+        if (relayDiscovery != null) relayDiscovery.close();
         if (connectionRouter != null) connectionRouter.cancel();
         if (routeSelecting) { client = null; connected = false; connecting = false; busy = false; }
         routeSelecting = false;
@@ -4119,6 +4181,7 @@ public final class MainActivity extends Activity {
         stopStreams();
         main.removeCallbacksAndMessages(null);
         if (networkCallback != null) connectivity.unregisterNetworkCallback(networkCallback);
+        if (relayDiscovery != null) relayDiscovery.close();
         Client captured = client;
         final boolean routed = connectionRouter != null;
         client = null;

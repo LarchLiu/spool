@@ -199,69 +199,84 @@ public class NativeAppearanceTest {
         }
     }
 
-    @Test @Config(sdk = {26, 35}) public void bothConnectionsKeepTheirAddressesAndRememberTheClickedEntry() throws Exception {
+    @Test @Config(sdk = {26, 35}) public void connectionTabsPreserveDraftsAndKeepActionsCentered() throws Exception {
         RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
-        AtomicReference<ConnectionPlan> saved = new AtomicReference<>();
-        AtomicReference<ConnectionMode> selected = new AtomicReference<>();
-        AtomicInteger stopped = new AtomicInteger(), enrolled = new AtomicInteger();
-        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
-            NativeUi ui = new NativeUi(controller.get(), false, "zh-CN");
-            NativeSettings dialog = new NativeSettings(ui, "system", "zh-CN", "test", (a, b) -> {}, () -> {}, false);
+        for (boolean dark : new boolean[] {false, true}) try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            AtomicReference<ConnectionPlan> saved = new AtomicReference<>();
+            AtomicReference<ConnectionMode> selected = new AtomicReference<>();
+            AtomicInteger stopped = new AtomicInteger(), enrolled = new AtomicInteger(), scanned = new AtomicInteger();
+            NativeUi ui = new NativeUi(controller.get(), dark, "zh-CN");
+            NativeSettings dialog = new NativeSettings(ui, dark ? "dark" : "light", "zh-CN", "test", (a, b) -> {}, () -> {}, false);
             ServerProfiles profiles = new ServerProfiles(new ConnectionPlan("", "", ConnectionMode.DIRECT));
             profiles.active().name = "Home";
             dialog.content.additions.addView(new NativeServerSettings(ui, profiles.active(), enabled -> {}, () -> {}));
             dialog.content.additions.addView(ui.space(16));
             NativeConnectionSettings settings = new NativeConnectionSettings(ui,
-                    new ConnectionPlan("https://chat.example.com", "https://spool.example.ts.net", ConnectionMode.DIRECT, true),
-                    saved::set, (plan, mode) -> { saved.set(plan); selected.set(mode); }, stopped::incrementAndGet, enrolled::incrementAndGet);
+                    new ConnectionPlan("https://chat.example.com", "https://spool.example.ts.net", RelayPairingTest.code("https://relay.example.com"), ConnectionMode.DIRECT, true),
+                    saved::set, (plan, mode) -> { saved.set(plan); selected.set(mode); }, stopped::incrementAndGet, enrolled::incrementAndGet, scanned::incrementAndGet);
             dialog.content.additions.addView(settings);
             dialog.content.additions.addView(ui.space(24));
             android.widget.Button delete = ui.button(ui.t("Delete server"), false, () -> {}); delete.setTextColor(ui.error);
             dialog.content.additions.addView(delete, new android.widget.LinearLayout.LayoutParams(-1, -2));
             settings.bind(ConnectionMode.DIRECT, true, true, false, true, java.util.Map.of(), "HTTPS: Verified");
             dialog.show(); org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
-            layout(dialog.modal, 360);
             assertEquals(3, settings.entries.getChildCount());
-            assertNotNull(settings.entries.getBackground());
-            assertNull(settings.rows.get(ConnectionMode.DIRECT).getBackground());
-            assertNull(settings.rows.get(ConnectionMode.TAILSCALE).getBackground());
-            assertSame(settings.rows.get(ConnectionMode.TAILSCALE), settings.entries.getChildAt(2));
             assertTrue(settings.automatic.isChecked());
-            assertTrue(settings.input(ConnectionMode.TAILSCALE).isEnabled());
-            assertEquals("公网 HTTPS", settings.rows.get(ConnectionMode.DIRECT).title.getText().toString());
-            assertEquals("Tailscale (tsnet)", settings.rows.get(ConnectionMode.TAILSCALE).title.getText().toString());
-            assertSame(settings.rows.get(ConnectionMode.DIRECT), settings.entries.getChildAt(0));
+            assertNull(settings.rows.get(ConnectionMode.DIRECT).information);
+            settings.automatic.performClick(); assertFalse(settings.plan().autoSwitch);
+            for (int width : new int[] {320, 360, 430}) for (ConnectionMode mode : ConnectionMode.values()) {
+                settings.tabs.button(mode.value).performClick();
+                org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); layout(dialog.modal, width);
+                NativeConnectionSettings.Row row = settings.rows.get(mode);
+                assertEquals(View.VISIBLE, row.getVisibility());
+                for (ConnectionMode other : ConnectionMode.values()) if (other != mode) assertEquals(View.GONE, settings.rows.get(other).getVisibility());
+                assertEquals("Browsing a tab must not change the saved route", ConnectionMode.DIRECT, settings.plan().selected);
+                assertNull("Browsing a tab must not connect", selected.get());
+                assertTrue(settings.tabs.button(mode.value).isSelected());
+                assertEquals(ui.dp(32), settings.tabs.button(mode.value).getHeight());
+                assertTrue(row.use.getWidth() < row.actions.getWidth());
+                assertEquals(row.actions.getWidth() / 2f, (row.use.getLeft() + row.use.getRight()) / 2f, 1f);
+                if (mode != ConnectionMode.DIRECT) {
+                    assertTrue(row.use.getRight() <= row.tools.getLeft());
+                    assertEquals(row.actions.getWidth(), row.tools.getRight());
+                    assertEquals(row.actions.getHeight() / 2f, (row.tools.getTop() + row.tools.getBottom()) / 2f, 1f);
+                }
+                if (width == 360) {
+                    File directory = new File(System.getProperty("spool.ui.artifacts"), "connection-tabs");
+                    assertTrue(directory.isDirectory() || directory.mkdirs());
+                    Bitmap bitmap = Bitmap.createBitmap(dialog.modal.surface.getWidth(), dialog.modal.surface.getHeight(), Bitmap.Config.ARGB_8888);
+                    dialog.modal.surface.draw(new Canvas(bitmap));
+                    try (FileOutputStream output = new FileOutputStream(new File(directory, mode.value + (dark ? "-dark" : "-light") + ".png"))) { bitmap.compress(Bitmap.CompressFormat.PNG, 100, output); }
+                    bitmap.recycle();
+                }
+            }
+            settings.input(ConnectionMode.RELAY).setText("spool-pair:edited-draft");
+            settings.tabs.button(ConnectionMode.TAILSCALE.value).performClick();
+            assertEquals("spool-pair:edited-draft", settings.plan().relay);
+            settings.bind(ConnectionMode.DIRECT, true, true, false, true, java.util.Map.of(), "HTTPS: Verified");
+            assertTrue("Polling preserves the tab being edited", settings.tabs.button(ConnectionMode.TAILSCALE.value).isSelected());
+            settings.rows.get(ConnectionMode.TAILSCALE).use.performClick();
+            assertSame(ConnectionMode.TAILSCALE, selected.get()); assertSame(ConnectionMode.TAILSCALE, saved.get().selected);
             assertEquals("https://chat.example.com", settings.plan().direct);
             assertEquals("https://spool.example.ts.net", settings.plan().tailscale);
-            settings.automatic.performClick(); assertFalse(settings.plan().autoSwitch);
-            settings.rows.get(ConnectionMode.TAILSCALE).use.performClick();
-            assertSame(ConnectionMode.TAILSCALE, selected.get());
-            assertSame(ConnectionMode.TAILSCALE, settings.plan().selected);
-            assertSame(ConnectionMode.TAILSCALE, saved.get().selected);
-            assertSame("Choosing a network does not reorder the entries", settings.rows.get(ConnectionMode.DIRECT), settings.entries.getChildAt(0));
+            settings.login.performClick(); assertEquals(1, enrolled.get());
+            assertSame(settings.rows.get(ConnectionMode.TAILSCALE).tools, settings.login.getParent());
+            settings.tabs.button(ConnectionMode.RELAY.value).performClick();
+            settings.scan.performClick(); assertEquals(1, scanned.get());
+            assertSame(settings.rows.get(ConnectionMode.RELAY).tools, settings.scan.getParent());
+            settings.tabs.button(ConnectionMode.DIRECT.value).performClick();
+            settings.rows.get(ConnectionMode.DIRECT).use.performClick(); assertEquals(1, stopped.get());
             assertEquals("断开连接", settings.rows.get(ConnectionMode.DIRECT).use.getContentDescription());
-            assertTrue(settings.rows.get(ConnectionMode.DIRECT).use.getText() instanceof android.text.Spanned);
             NativeServerTabs.Dot dot = ((android.text.Spanned) settings.rows.get(ConnectionMode.DIRECT).use.getText()).getSpans(0, 1, NativeServerTabs.Dot.class)[0];
             assertEquals(NativeServerTabs.statusColor(ui, "connected"), dot.color);
-            assertEquals("连接", settings.rows.get(ConnectionMode.TAILSCALE).use.getText().toString());
-            settings.rows.get(ConnectionMode.DIRECT).use.performClick(); assertEquals(1, stopped.get());
-            settings.login.performClick(); assertEquals(1, enrolled.get());
-            assertSame(settings.rows.get(ConnectionMode.TAILSCALE).title.getParent(), settings.login.getParent());
-            assertEquals("登录 Tailscale", settings.login.getContentDescription());
             settings.bind(ConnectionMode.DIRECT, true, true, true, false, java.util.Map.of(), "Checking");
-            assertFalse(settings.automatic.isEnabled()); assertFalse(settings.login.isEnabled());
+            assertFalse(settings.automatic.isEnabled()); assertFalse(settings.login.isEnabled()); assertFalse(settings.scan.isEnabled());
             assertTrue("A pending connection can be disconnected", settings.rows.get(ConnectionMode.DIRECT).use.isEnabled());
             assertFalse(settings.input(ConnectionMode.DIRECT).isEnabled());
             assertFalse(settings.rows.get(ConnectionMode.TAILSCALE).use.isEnabled());
-            settings.bind(ConnectionMode.DIRECT, true, true, false, true, java.util.Map.of(), "HTTPS: Verified");
-            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
-            layout(dialog.modal, 360);
-            File directory = new File(System.getProperty("spool.ui.artifacts"));
-            assertTrue(directory.isDirectory() || directory.mkdirs());
-            Bitmap bitmap = Bitmap.createBitmap(dialog.modal.surface.getWidth(), dialog.modal.surface.getHeight(), Bitmap.Config.ARGB_8888);
-            dialog.modal.surface.draw(new Canvas(bitmap));
-            try (FileOutputStream output = new FileOutputStream(new File(directory, "settings-connections-360-light.png"))) { bitmap.compress(Bitmap.CompressFormat.PNG, 100, output); }
-            bitmap.recycle(); dialog.dismiss();
+            settings.tabs.button(ConnectionMode.DIRECT.value).dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT));
+            assertTrue(settings.tabs.button(ConnectionMode.TAILSCALE.value).isSelected());
+            dialog.dismiss();
         }
     }
 
@@ -271,7 +286,7 @@ public class NativeAppearanceTest {
             AtomicReference<ConnectionPlan> selected = new AtomicReference<>();
             NativeConnectionSettings settings = new NativeConnectionSettings(ui,
                     new ConnectionPlan("https://chat.example.com", "", ConnectionMode.DIRECT), plan -> {},
-                    (plan, mode) -> selected.set(plan), () -> {}, () -> {});
+                    (plan, mode) -> selected.set(plan), () -> {}, () -> {}, () -> {});
             settings.bind(ConnectionMode.DIRECT, false, false, false, false, java.util.Map.of(), "");
             assertFalse(settings.login.isEnabled());
             assertEquals("Connect", settings.rows.get(ConnectionMode.DIRECT).use.getText().toString());
@@ -281,20 +296,18 @@ public class NativeAppearanceTest {
         }
     }
 
-    @Test @Config(sdk = {26, 35}) public void explanationsAndLiveTailnetDetailsAppearOnlyInTitleInformationPopups() {
+    @Test @Config(sdk = {26, 35}) public void liveTailnetDetailsRemainInTheActionRowInformationPopup() {
         try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
             NativeUi ui = new NativeUi(controller.get(), false);
             NativeConnectionSettings settings = new NativeConnectionSettings(ui,
                     new ConnectionPlan("https://chat.example.com", "https://spool.example.ts.net", ConnectionMode.TAILSCALE, true),
-                    plan -> {}, (plan, mode) -> {}, () -> {}, () -> {});
+                    plan -> {}, (plan, mode) -> {}, () -> {}, () -> {}, () -> {});
             controller.get().setContentView(settings);
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); layout(settings, 360);
             assertNull(settings.note.getParent()); assertNull(settings.diagnostics.getParent());
             assertNull(settings.rows.get(ConnectionMode.TAILSCALE).status.getParent());
-            settings.information.button.performClick();
-            assertNotNull(ui.activePopover);
-            assertTrue(((android.widget.TextView) ui.activePopover.content.getChildAt(2)).getText().toString().contains("remembers your choice"));
-            ui.activePopover.dismiss();
+            assertNull(settings.rows.get(ConnectionMode.DIRECT).information);
+            assertSame(settings.rows.get(ConnectionMode.TAILSCALE).tools, settings.rows.get(ConnectionMode.TAILSCALE).information.button.getParent());
             settings.bind(ConnectionMode.TAILSCALE, true, true, false, true, java.util.Map.of(), "Tailnet: Running\nNode path: DERP\nRound-trip time: 6.5 ms");
             settings.rows.get(ConnectionMode.TAILSCALE).information.button.performClick();
             assertNotNull(ui.activePopover);

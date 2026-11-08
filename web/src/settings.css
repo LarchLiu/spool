@@ -428,6 +428,21 @@
   border-top: 1px solid var(--line);
   background: var(--surface);
 }
+.settings-relay-section {
+  border-bottom: 1px solid var(--line);
+}
+.settings-relay-section:last-child,
+.settings-relay-section > .settings-row {
+  border-bottom: 0;
+}
+.settings-relay-section > .settings-card-actions {
+  padding-top: 0;
+  border-top: 0;
+  background: transparent;
+}
+.settings-relay-section > .settings-error {
+  margin: 0 19px 17px;
+}
 .settings-action-spacer {
   flex: 1;
 }

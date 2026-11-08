@@ -308,6 +308,23 @@ func (s *desktopSettings) TSNetLogin(ctx context.Context) (bool, error) {
 	})
 }
 
+func (s *desktopSettings) RelayPairing(ctx context.Context) (workspace.RelayPairingInfo, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return workspace.RelayPairingInfo{}, err
+	}
+	return s.panel.service.RelayPairingInfo()
+}
+
+func (s *desktopSettings) RegisterRelay(ctx context.Context, address, token string) (workspace.RelayStatus, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return workspace.RelayStatus{}, err
+	}
+	if err := s.panel.service.RegisterRelay(ctx, address, token); err != nil {
+		return workspace.RelayStatus{}, err
+	}
+	return s.panel.service.Status().Relay, nil
+}
+
 func (s *desktopSettings) TSNetRegister(ctx context.Context, key string) (bool, error) {
 	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
 		return false, err

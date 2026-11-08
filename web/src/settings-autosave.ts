@@ -41,6 +41,9 @@ type ServiceDraft = {
   tsnet_enabled: boolean;
   tsnet_hostname: string;
   tsnet_port: string;
+  relay_enabled: boolean;
+  relay_url: string;
+  relay_lan_port: string;
 };
 type NetworkDraft = {
   proxy_enabled: boolean;
@@ -68,6 +71,9 @@ function toServiceDraft(settings: ServerSettings): ServiceDraft {
     tsnet_enabled: settings.tsnet_enabled ?? false,
     tsnet_hostname: settings.tsnet_hostname ?? "spool-server",
     tsnet_port: String(settings.tsnet_port ?? 443),
+    relay_enabled: settings.relay_enabled ?? false,
+    relay_url: settings.relay_url ?? "",
+    relay_lan_port: String(settings.relay_lan_port ?? 8789),
   };
 }
 
@@ -133,6 +139,7 @@ class SettingsAutosave<K extends keyof SettingsDraft> {
     if (
       key === "port" ||
       key === "tsnet_port" ||
+      key === "relay_lan_port" ||
       key === "idle_minutes" ||
       key === "history_cache_mib"
     ) {
@@ -140,7 +147,8 @@ class SettingsAutosave<K extends keyof SettingsDraft> {
       if (
         !Number.isSafeInteger(value) ||
         value < 1 ||
-        ((key === "port" || key === "tsnet_port") && value > 65535) ||
+        ((key === "port" || key === "tsnet_port" || key === "relay_lan_port") &&
+          value > 65535) ||
         (key === "idle_minutes" && value > 10080)
       )
         return;

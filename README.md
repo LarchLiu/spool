@@ -5,6 +5,10 @@
 
 [简体中文](README.zh-CN.md)
 
+Android can connect to a home Spool server through an independent Go relay, with
+verified LAN connections preferred automatically. Spool Desktop supplies a pairing
+QR code. See [relay deployment and pairing](relay/README.md).
+
 > Spool is a multi-platform, multi-user workspace for local AI coding. It brings
 Desktop, Web/PWA, and Android clients into one shared project and chat space,
 so a team can work together from different devices with the same permissions,

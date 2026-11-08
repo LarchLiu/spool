@@ -28,6 +28,9 @@ export type ServerSettings = {
   proxy_url: string;
   no_proxy: string;
   remote_desktop_enabled?: boolean;
+  relay_enabled?: boolean;
+  relay_url?: string;
+  relay_lan_port?: number;
 };
 export type Person = User & {
   disabled: boolean;
@@ -115,6 +118,15 @@ export type SettingsSnapshot = {
     Online: (Online & Pick<User, "nickname" | "avatar">)[];
     TSNet?: { State: string; AuthURL: string; URL: string; Error: string };
     TSNetAuthKeySet?: boolean;
+    Relay?: {
+      State: string;
+      ServerID: string;
+      LANAddress: string;
+      DiscoveryError: string;
+      RegistrationTokenSet: boolean;
+      Registered: boolean;
+      Registering: boolean;
+    };
     RemoteDesktopConnections?: Record<string, number>;
     Voxl?: {
       installed: boolean;
@@ -217,7 +229,9 @@ export function settingsCall<T>(
     | "ChoosePath"
     | "ReleaseNotes"
     | "TSNetLogin"
-    | "TSNetRegister",
+    | "TSNetRegister"
+    | "RelayPairing"
+    | "RegisterRelay",
   ...args: unknown[]
 ): Promise<T> {
   const bridge = runtime();

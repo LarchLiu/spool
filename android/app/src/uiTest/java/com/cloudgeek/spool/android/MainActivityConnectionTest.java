@@ -431,8 +431,8 @@ public class MainActivityConnectionTest {
             connectionQueue(h);
             try {
                 h.call("clearWorkspace");
-                String address = mode == ConnectionMode.DIRECT ? "https://public.example.com" : "https://private.example.ts.net";
-                ConnectionPlan plan = new ConnectionPlan(mode == ConnectionMode.DIRECT ? address : "", mode == ConnectionMode.TAILSCALE ? address : "", mode);
+                String address = mode == ConnectionMode.DIRECT ? "https://public.example.com" : mode == ConnectionMode.TAILSCALE ? "https://private.example.ts.net" : RelayPairingTest.code("https://relay.example.com");
+                ConnectionPlan plan = new ConnectionPlan(mode == ConnectionMode.DIRECT ? address : "", mode == ConnectionMode.TAILSCALE ? address : "", mode == ConnectionMode.RELAY ? address : "", mode, false);
                 ServerProfiles profiles = h.get("serverProfiles"); profiles.active().plan = plan;
                 h.set("connectionPlan", plan); h.set("connectionDraft", plan); h.call("openSidebar");
                 Client next = new Client("unused", address);
@@ -899,7 +899,7 @@ public class MainActivityConnectionTest {
         for (ConnectionMode chosen : ConnectionMode.values()) {
             ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class);
             MainActivity activity = controller.get();
-            ServerProfiles profiles = new ServerProfiles(new ConnectionPlan("https://chat.example.com", "https://spool.example.ts.net", chosen, true));
+            ServerProfiles profiles = new ServerProfiles(new ConnectionPlan("https://chat.example.com", "https://spool.example.ts.net", RelayPairingTest.code("https://relay.example.com"), chosen, true));
             profiles.active().account = new JSONObject("{id:'alice',nickname:'Alice'}");
             ConnectionMode other = chosen == ConnectionMode.DIRECT ? ConnectionMode.TAILSCALE : ConnectionMode.DIRECT;
             activity.getPreferences(Activity.MODE_PRIVATE).edit().clear().putString("servers", profiles.encode())
