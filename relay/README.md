@@ -5,6 +5,66 @@ this directory on a VPS. It does not run Spool, agents, a database, or voxl.
 Both the home server and Android make outbound connections to the VPS; there
 is no hole punching, Internet P2P, or port forwarding at home.
 
+## Docker Compose
+
+The included `compose.yaml` runs the independent relay on either a local Docker
+host or a VPS. From this directory, configure it once and start it:
+
+```sh
+cp .env.example .env
+chmod 600 .env
+openssl rand -hex 32
+# Put the generated value in SPOOL_RELAY_ADMIN_TOKEN in .env.
+docker compose up -d --build
+docker compose ps
+curl --fail http://127.0.0.1:8788/healthz
+```
+
+Compose refuses to start if the administrative credential is missing. This is
+the management credential; Spool servers use their own registration tokens.
+The local `.env` is excluded from Git and the image build context.
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `SPOOL_RELAY_ADMIN_TOKEN` | Required | Management API credential, 32–512 characters. |
+| `RELAY_REQUIRE_REGISTRATION_TOKEN` | `true` | Set `false` to allow signed automatic server registration. |
+| `RELAY_BIND_ADDRESS` | `127.0.0.1` | Host interface for the HTTP relay backend. |
+| `RELAY_PORT` | `8788` | Host port for the HTTP relay backend. |
+| `RELAY_ADMIN_PORT` | `18787` | Host loopback port for the management API, avoiding Spool's default port 8787. |
+
+For automatic registration, set `RELAY_REQUIRE_REGISTRATION_TOKEN=false` in
+`.env` and run `docker compose up -d`. The administrative credential remains
+required. Leave the registration token empty in Spool Desktop and click
+**Register**; Spool saves the server token returned by the relay.
+
+With the default token requirement, issue server tokens through
+`http://127.0.0.1:18787/v1/registrations`, using the administrative credential
+from `.env`. The [administration examples below](#registration-administration)
+apply with port `18787` instead of `8787` when using this Compose configuration.
+
+The relay HTTP port and the administrative port are separate. Put an HTTPS
+reverse proxy in front of `127.0.0.1:8788`, as in the Caddy example below, and
+enter that HTTPS origin in Spool Desktop. Android pairing requires an HTTPS
+origin with a certificate trusted by the app; a LAN HTTP address does not work.
+The default loopback mapping is accessible only from the Docker host. Running
+the container at home does not itself create a publicly reachable endpoint.
+
+Registrations and revocations persist in the `relay-data` named volume. The
+container uses the image's non-root user, a read-only root filesystem and a
+writable `/data` volume. It restarts after an unexpected exit, and `/healthz`
+supplies its Docker health status. An unhealthy status alone does not trigger
+an automatic restart. Logs are rotated with a maximum of three 10 MiB files.
+
+```sh
+docker compose logs -f relay
+docker compose restart relay          # Restart the current configuration.
+docker compose up -d --build          # Apply source or configuration changes.
+docker compose down                  # Stop and remove containers; retain data.
+```
+
+Keep the named volume when updating or moving the deployment. Adding `-v` to
+`docker compose down` deletes its registrations and revocations.
+
 ## VPS deployment
 
 This directory is a standalone Go module. Copy it to another repository or

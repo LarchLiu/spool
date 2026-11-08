@@ -1,0 +1,39 @@
+name: spool-relay
+
+services:
+  relay:
+    build:
+      context: .
+    image: spool-relay:local
+    restart: unless-stopped
+    environment:
+      SPOOL_RELAY_ADMIN_TOKEN: ${SPOOL_RELAY_ADMIN_TOKEN:?Set SPOOL_RELAY_ADMIN_TOKEN in .env}
+    command:
+      - -listen=0.0.0.0:8788
+      - -admin-listen=0.0.0.0:8787
+      - -data-dir=/data
+      - -require-registration-token=${RELAY_REQUIRE_REGISTRATION_TOKEN:-true}
+    ports:
+      - "${RELAY_BIND_ADDRESS:-127.0.0.1}:${RELAY_PORT:-8788}:8788"
+      - "127.0.0.1:${RELAY_ADMIN_PORT:-18787}:8787"
+    volumes:
+      - relay-data:/data
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8788/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  relay-data:
