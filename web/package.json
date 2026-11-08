@@ -1,7 +1,7 @@
 {
   "name": "spool-web",
   "private": true,
-  "version": "0.1.17",
+  "version": "0.1.18",
   "packageManager": "bun@1.4.4",
   "engines": {
     "bun": ">=1.4.4"
