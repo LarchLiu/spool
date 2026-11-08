@@ -68,6 +68,41 @@ public class MainActivitySessionFilesTest {
         }
     }
 
+    @Test @Config(sdk = {26, 34, 35}) public void markdownTapsReachTheFilePreviewAndExternalBrowserThroughTheRealActivity() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            responses();
+            String answer = "[Read report](/exports/report.md#L2)\n\n[Open website](https://example.com/docs)";
+            JSONArray parts = new JSONArray().put(new JSONObject().put("role", "user").put("kind", "text").put("text", "Show files"))
+                    .put(new JSONObject().put("role", "assistant").put("kind", "text").put("phase", "final_answer").put("text", answer));
+            JSONObject turn = new JSONObject("{id:'turn',user_id:'alice',backend:'codex',status:'completed',part_start:0,input_end:1,part_end:2}");
+            h.<JSONObject>get("chat").put("project_id", "project-one").put("title", "Links")
+                    .put("turns", new JSONArray().put(turn)).put("transcript", new JSONObject().put("parts", parts))
+                    .put("history", new JSONObject().put("has_more", false));
+            h.call("renderChat"); NativeMarkwonHistory history = h.get("markwonHistory"); NativeMarkwonHistoryTest.await(history);
+            android.widget.TextView website = NativeMarkwonHistoryTest.texts(history).stream()
+                    .filter(t -> t.getText().toString().equals("Open website")).findFirst().orElseThrow();
+            NativeMarkwonInteractionTest.tapLink(history, website, "https://example.com/docs");
+            Intent intent = Shadows.shadowOf(h.activity).getNextStartedActivity(); assertNotNull(intent);
+            assertEquals(Intent.ACTION_VIEW, intent.getAction()); assertTrue(intent.hasCategory(Intent.CATEGORY_BROWSABLE));
+            assertEquals("https://example.com/docs", intent.getDataString());
+            assertNull("A single tap opens the browser only once", Shadows.shadowOf(h.activity).getNextStartedActivity());
+            assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
+
+            android.widget.TextView report = NativeMarkwonHistoryTest.texts(history).stream()
+                    .filter(t -> t.getText().toString().equals("Read report")).findFirst().orElseThrow();
+            NativeMarkwonInteractionTest.tapLink(history, report, "/exports/report.md#L2"); drain(h);
+            NativeFileBrowser browser = h.get("fileBrowser"); assertNotNull(browser);
+            assertEquals("chat-one", browser.state.chat);
+            assertEquals("report.md:2", browser.preview.name.getText().toString());
+            assertEquals("/exports/report.md", browser.state.file.getString("path"));
+            assertEquals("one\ntwo\nthree", browser.state.file.getString("content"));
+            assertTrue(MainActivityGoalTest.ShadowClient.calls.stream()
+                    .anyMatch(call -> call.get(1).equals("/api/chats/chat-one/file?path=%2Fexports%2Freport.md")));
+            assertTrue(MainActivityGoalTest.ShadowClient.calls.stream()
+                    .allMatch(call -> call.get(1).startsWith("/api/chats/chat-one/")));
+        }
+    }
+
     @Test public void switchingChatsInTheSameProjectRejectsQueuedFilesAndOldDownloadActions() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             responses();

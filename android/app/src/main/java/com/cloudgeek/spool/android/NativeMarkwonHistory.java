@@ -46,6 +46,7 @@ final class NativeMarkwonHistory extends RecyclerView {
     private final LinearLayoutManager layout;
     private final ConcatAdapter adapters;
     private final Markwon markwon;
+    private final Consumer<String> open;
     private final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
     private final PrecomputedTextCompat.Params textMetrics;
     private final ExecutorService parser = Executors.newSingleThreadExecutor();
@@ -164,7 +165,153 @@ final class NativeMarkwonHistory extends RecyclerView {
         return node instanceof FencedCodeBlock ? ((FencedCodeBlock) node).getLiteral() : ((IndentedCodeBlock) node).getLiteral();
     }
 
+    // Keep a few detached table documents, rather than changing every cell's text when
+    // scrolling back to a table. Both source and cell budgets bound the retained widgets.
+    private final java.util.LinkedHashMap<NativeMarkdownBlocks.NativeBlock, View> nativeBlockCache = new java.util.LinkedHashMap<>();
+    private int nativeCacheCells, nativeCacheChars;
+    private long nativeBlockBinds, nativeBlockNanos, maxNativeBlockNanos, nativeBlockCacheHits;
+    private static final int NATIVE_CACHE_BLOCKS = 16, NATIVE_CACHE_CELLS = 384, NATIVE_CACHE_CHARS = 65536;
+    private NativeMarkdown.Preparation nativePreparation;
+    private boolean nativePreparationPosted;
+    private long nativePreparedBlocks;
+    private final Runnable prepareNative = this::prepareNativeStep;
+    private static final class NativeBlockHolder extends MarkwonAdapter.Holder {
+        View content;
+        NativeMarkdownBlocks.NativeBlock block;
+        NativeBlockHolder(View row) { super(row); }
+    }
+
+    private void releaseNativeBlock(NativeBlockHolder holder) {
+        if (holder.content == null) return;
+        View content = holder.content;
+        NativeMarkdownBlocks.NativeBlock block = holder.block;
+        clearSelection(content); resetHorizontalScroll(content);
+        ((ViewGroup) holder.itemView).removeView(content);
+        holder.content = null; holder.block = null;
+        cacheNativeBlock(block, content);
+    }
+
+    private void cacheNativeBlock(NativeMarkdownBlocks.NativeBlock block, View content) {
+        if (disposed || block.cells > NATIVE_CACHE_CELLS || block.source.length() > NATIVE_CACHE_CHARS) return;
+        View replaced = nativeBlockCache.put(block, content);
+        if (replaced == null) { nativeCacheCells += block.cells; nativeCacheChars += block.source.length(); }
+        while (nativeBlockCache.size() > NATIVE_CACHE_BLOCKS || nativeCacheCells > NATIVE_CACHE_CELLS || nativeCacheChars > NATIVE_CACHE_CHARS) {
+            NativeMarkdownBlocks.NativeBlock oldest = nativeBlockCache.keySet().iterator().next();
+            nativeBlockCache.remove(oldest); nativeCacheCells -= oldest.cells; nativeCacheChars -= oldest.source.length();
+        }
+    }
+
+    private boolean mountedNativeBlock(NativeMarkdownBlocks.NativeBlock block) {
+        for (RowAnchor anchor : rowAnchors.values()) if (anchor.node == block) return true;
+        return false;
+    }
+
+    private void pruneNativeBlockCache() {
+        Set<Node> live = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (Segment segment : current.values()) for (NativeMarkdownBlocks.Block block : segment.blocks)
+            if (block.node instanceof NativeMarkdownBlocks.NativeBlock) live.add(block.node);
+        java.util.Iterator<NativeMarkdownBlocks.NativeBlock> iterator = nativeBlockCache.keySet().iterator();
+        while (iterator.hasNext()) {
+            NativeMarkdownBlocks.NativeBlock block = iterator.next();
+            if (!live.contains(block)) { nativeCacheCells -= block.cells; nativeCacheChars -= block.source.length(); iterator.remove(); }
+        }
+        if (nativePreparation != null && !live.contains(nativePreparation.block)) nativePreparation = null;
+    }
+
+    private void scheduleNativePreparation() {
+        if (!disposed && !nativePreparationPosted) {
+            nativePreparationPosted = true; main.postDelayed(prepareNative, 32);
+        }
+    }
+
+    private void prepareNativeStep() {
+        nativePreparationPosted = false;
+        if (disposed || !isAttachedToWindow() || !isShown()) return;
+        if (getScrollState() != SCROLL_STATE_IDLE || hasPendingAdapterUpdates() || pending() != 0) { scheduleNativePreparation(); return; }
+        NativeMarkdownBlocks.NativeBlock candidate = null;
+        int nearest = Integer.MAX_VALUE, first = layout.findFirstVisibleItemPosition();
+        for (Segment segment : current.values()) for (int i = 0; i < segment.blocks.size(); i++) {
+            Node node = segment.blocks.get(i).node;
+            if (!(node instanceof NativeMarkdownBlocks.NativeBlock)) continue;
+            NativeMarkdownBlocks.NativeBlock block = (NativeMarkdownBlocks.NativeBlock) node;
+            if (!(block.content instanceof org.commonmark.ext.gfm.tables.TableBlock)
+                    || nativeBlockCache.containsKey(block) || mountedNativeBlock(block)
+                    || block.cells > NATIVE_CACHE_CELLS || block.source.length() > NATIVE_CACHE_CHARS) continue;
+            if (nativePreparation != null && nativePreparation.block == block) { candidate = block; nearest = -1; continue; }
+            if (nativeBlockCache.size() >= NATIVE_CACHE_BLOCKS || nativeCacheCells + block.cells > NATIVE_CACHE_CELLS
+                    || nativeCacheChars + block.source.length() > NATIVE_CACHE_CHARS) continue;
+            int distance = Math.abs(segment.position + i - first);
+            if (distance < nearest) { nearest = distance; candidate = block; }
+        }
+        if (candidate == null) { nativePreparation = null; return; }
+        if (nativePreparation == null || nativePreparation.block != candidate)
+            nativePreparation = new NativeMarkdown.Preparation(ui, candidate, open);
+        // A single cell is the largest non-interruptible unit. Yield before the next
+        // frame, and pause the sequence as soon as scrolling or an update starts.
+        long deadline = System.nanoTime() + 2_000_000;
+        do {
+            if (nativePreparation.step()) {
+                cacheNativeBlock(candidate, nativePreparation.root); nativePreparation = null; nativePreparedBlocks++; break;
+            }
+        } while (System.nanoTime() < deadline);
+        scheduleNativePreparation();
+    }
+
+    private final class NativeBlockEntry extends MarkwonAdapter.Entry<NativeMarkdownBlocks.NativeBlock, NativeBlockHolder> {
+        final TextEntry textEntry;
+        final Consumer<String> open;
+        NativeBlockEntry(TextEntry textEntry, Consumer<String> open) { this.textEntry = textEntry; this.open = open; }
+        @Override public long id(NativeMarkdownBlocks.NativeBlock node) { return textEntry.ids.get(node); }
+        @Override public NativeBlockHolder createHolder(LayoutInflater inflater, ViewGroup parent) {
+            ChromeRow row = new ChromeRow(ui);
+            row.setLayoutParams(new RecyclerView.LayoutParams(-1, -2));
+            row.setPadding(0, ui.dp(4), 0, ui.dp(8));
+            creates++;
+            return new NativeBlockHolder(row);
+        }
+        @Override public void bindHolder(Markwon renderer, NativeBlockHolder holder, NativeMarkdownBlocks.NativeBlock node) {
+            long started = System.nanoTime();
+            rowAnchors.put(holder.itemView, new RowAnchor(textEntry.segment, node));
+            if (holder.block != node) {
+                releaseNativeBlock(holder);
+                holder.content = nativeBlockCache.remove(node);
+                if (holder.content != null) {
+                    nativeCacheCells -= node.cells; nativeCacheChars -= node.source.length(); nativeBlockCacheHits++;
+                } else if (nativeBlockCache.size() >= NATIVE_CACHE_BLOCKS || nativeCacheCells + node.cells > NATIVE_CACHE_CELLS || nativeCacheChars + node.source.length() > NATIVE_CACHE_CHARS) {
+                    if (!nativeBlockCache.isEmpty()) {
+                        NativeMarkdownBlocks.NativeBlock oldest = nativeBlockCache.keySet().iterator().next();
+                        holder.content = nativeBlockCache.remove(oldest);
+                        nativeCacheCells -= oldest.cells; nativeCacheChars -= oldest.source.length();
+                    }
+                }
+                if (holder.content == null && nativePreparation != null && nativePreparation.block == node) {
+                    holder.content = nativePreparation.root; nativePreparation = null;
+                }
+                if (holder.content == null) holder.content = NativeMarkdown.view(ui, "", false, open);
+                holder.block = node;
+                ((ViewGroup) holder.itemView).addView(holder.content, new LinearLayout.LayoutParams(-1, -2));
+            }
+            NativeMarkdown.bindBlock(holder.content, node);
+            long elapsed = System.nanoTime() - started;
+            nativeBlockBinds++; nativeBlockNanos += elapsed; maxNativeBlockNanos = Math.max(maxNativeBlockNanos, elapsed);
+            markdownBinds++; markdownNanos += elapsed; bound(elapsed);
+        }
+        @Override public void onViewRecycled(NativeBlockHolder holder) {
+            rowAnchors.remove(holder.itemView); releaseNativeBlock(holder); recycles++;
+        }
+    }
+
+    private static void resetHorizontalScroll(View view) {
+        if (view instanceof android.widget.HorizontalScrollView) view.scrollTo(0, 0);
+        if (view instanceof NativeCodeBlock) ((NativeCodeBlock) view).resetFeedback();
+        if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++)
+            resetHorizontalScroll(((ViewGroup) view).getChildAt(i));
+    }
+
     private void configureText(TextView text) {
+        // Selectable TextViews already have ArrowKeyMovementMethod, so Markwon
+        // leaves it in place. Install link handling explicitly, as NativeMarkdown does.
+        text.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
         text.setTextColor(ui.text); text.setLinkTextColor(ui.primary);
         text.setTextLocale(java.util.Locale.forLanguageTag(ui.locale));
         text.setTypeface(NativeTypefaces.weight(400));
@@ -296,6 +443,7 @@ final class NativeMarkwonHistory extends RecyclerView {
                                 .blockQuoteColor(ui.line);
                     }
                 }).build();
+        this.open = open;
         TextView prototype = (TextView) LayoutInflater.from(ui.context).inflate(R.layout.markwon_block, this, false);
         configureText(prototype); textMetrics = TextViewCompat.getTextMetricsParams(prototype);
         // Prepare data before publishing nodes. Never asynchronously setText on a holder:
@@ -357,7 +505,8 @@ final class NativeMarkwonHistory extends RecyclerView {
             TextEntry entry = new TextEntry();
             CodeEntry code = new CodeEntry(entry);
             segment = new Segment(key, MarkwonAdapter.builder(entry)
-                    .include(FencedCodeBlock.class, code).include(IndentedCodeBlock.class, code).build()); segment.textEntry = entry; entry.segment = segment;
+                    .include(FencedCodeBlock.class, code).include(IndentedCodeBlock.class, code)
+                    .include(NativeMarkdownBlocks.NativeBlock.class, new NativeBlockEntry(entry, open)).build()); segment.textEntry = entry; entry.segment = segment;
         }
         next.put(key, segment);
         if (source.equals(segment.source)) return;
@@ -380,13 +529,19 @@ final class NativeMarkwonHistory extends RecyclerView {
                     String signature = NativeMarkdownBlocks.key(node, source);
                     ArrayDeque<NativeMarkdownBlocks.Block> matches = available.get(signature);
                     if (matches != null && !matches.isEmpty()) { blocks.add(matches.removeFirst()); reused++; continue; }
-                    Spanned text = codeBlock(node) ? new android.text.SpannableString(codeLiteral(node)) : markwon.render(node);
-                    if (codeBlock(node)) skipped++;
+                    // The table span renderer hides cell text behind placeholders and can
+                    // calculate negative widths. Use selectable, horizontally scrollable cells,
+                    // including tables nested in a quote/list, while keeping the parsed AST.
+                    boolean nativeTable = NativeMarkdownBlocks.containsTable(node);
+                    Spanned text = nativeTable ? new android.text.SpannableString("")
+                            : codeBlock(node) ? new android.text.SpannableString(codeLiteral(node)) : markwon.render(node);
+                    if (nativeTable || codeBlock(node)) skipped++;
                     else if (text.getSpans(0, text.length(), android.text.style.ReplacementSpan.class).length == 0) {
                         try { text = PrecomputedTextCompat.create(text, textMetrics); precomputed++; }
                         catch (RuntimeException error) { failures++; }
                     } else skipped++;
-                    blocks.add(new NativeMarkdownBlocks.Block(nextBlockId++, signature, node, text));
+                    blocks.add(new NativeMarkdownBlocks.Block(nextBlockId++, signature,
+                            nativeTable ? new NativeMarkdownBlocks.NativeBlock(node, source) : node, text));
                 }
                 // A retained top-level node must not retain every old document via parent/sibling links.
                 for (Node node : nodes) node.unlink();
@@ -435,7 +590,7 @@ final class NativeMarkwonHistory extends RecyclerView {
             target.textEntry.positions.put(block.node, i);
         }
         target.blocks = blocks;
-        diff.dispatchUpdatesTo(adapter); reindex(); settlePosition();
+        diff.dispatchUpdatesTo(adapter); reindex(); pruneNativeBlockCache(); settlePosition(); scheduleNativePreparation();
     }
 
     void end() {
@@ -459,7 +614,7 @@ final class NativeMarkwonHistory extends RecyclerView {
                 }
                 position++;
             }
-            current = next; next = null; reindex();
+            current = next; next = null; reindex(); pruneNativeBlockCache();
         } finally { updating = false; }
         settlePosition();
     }
@@ -615,7 +770,16 @@ final class NativeMarkwonHistory extends RecyclerView {
         JSONObject result = new JSONObject();
         int first = layout.findFirstVisibleItemPosition();
         View firstView = layout.findViewByPosition(first);
-        try { result.put("renderer", "markwon-recycler").put("blocks", blocks()).put("pendingParses", pending())
+        try {
+            org.json.JSONArray nativeBlocks = new org.json.JSONArray();
+            for (Segment segment : current.values()) for (int i = 0; i < segment.blocks.size(); i++) {
+                Node node = segment.blocks.get(i).node;
+                if (node instanceof NativeMarkdownBlocks.NativeBlock) {
+                    NativeMarkdownBlocks.NativeBlock block = (NativeMarkdownBlocks.NativeBlock) node;
+                    nativeBlocks.put(new JSONObject().put("position", segment.position + i).put("cells", block.cells).put("sourceChars", block.source.length()));
+                }
+            }
+            result.put("nativeBlocks", nativeBlocks).put("renderer", "markwon-recycler").put("blocks", blocks()).put("pendingParses", pending())
                 .put("firstVisible", first).put("lastVisible", layout.findLastVisibleItemPosition())
                 .put("canScrollUp", canScrollVertically(-1)).put("canScrollDown", canScrollVertically(1))
                 .put("firstTop", firstView == null ? 0 : layout.getDecoratedTop(firstView) - getPaddingTop())
@@ -624,6 +788,10 @@ final class NativeMarkwonHistory extends RecyclerView {
                 .put("recycles", recycles).put("bindMs", bindNanos / 1_000_000d).put("maxBindMs", maxBindNanos / 1_000_000d)
                 .put("chromeBindMs", chromeNanos / 1_000_000d).put("markdownBindMs", markdownNanos / 1_000_000d)
                 .put("chromeReuses", chromeReuses).put("chromeTransfers", chromeTransfers)
+                .put("nativeBlockBinds", nativeBlockBinds).put("nativeBlockMs", nativeBlockNanos / 1_000_000d)
+                .put("maxNativeBlockMs", maxNativeBlockNanos / 1_000_000d).put("nativeBlockCacheHits", nativeBlockCacheHits)
+                .put("nativePreparedBlocks", nativePreparedBlocks)
+                .put("nativeCachedBlocks", nativeBlockCache.size()).put("nativeCachedCells", nativeCacheCells).put("nativeCachedChars", nativeCacheChars)
                 .put("timeCacheHits", NativeMessageTime.cacheHits()).put("timeFormats", NativeMessageTime.formats())
                 .put("timeFormatterCreates", NativeMessageTime.formatterCreates())
                 .put("reusedBlocks", reusedBlocks).put("reconciledSegments", reconciledSegments)
@@ -637,6 +805,7 @@ final class NativeMarkwonHistory extends RecyclerView {
         if (disposed) return;
         remember(); state.top = computeVerticalScrollOffset(); disposed = true; stopScroll(); parser.shutdownNow(); main.removeCallbacksAndMessages(null);
         for (Segment segment : current.values()) segment.cancel();
-        setAdapter(null); getRecycledViewPool().clear(); current.clear(); adapterOrder.clear(); owners.clear(); rowAnchors.clear(); rowCount = 0; disclosureHeading = null; following = value -> {};
+        setAdapter(null); getRecycledViewPool().clear(); nativeBlockCache.clear(); nativeCacheCells = nativeCacheChars = 0; nativePreparation = null;
+        current.clear(); adapterOrder.clear(); owners.clear(); rowAnchors.clear(); rowCount = 0; disclosureHeading = null; following = value -> {};
     }
 }

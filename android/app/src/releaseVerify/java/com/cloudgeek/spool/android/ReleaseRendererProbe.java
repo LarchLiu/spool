@@ -91,6 +91,15 @@ public final class ReleaseRendererProbe extends Application implements Applicati
                 if (history != null && history.pending() == 0 && history.getChildCount() > 0
                         && text(history, "Markdown 中文") && text(history, "releaseValue = 42") && code != null && colors(code.code) > 0) {
                     if (field(activity, "history") != null) throw new IllegalStateException("Legacy history also mounted");
+                    NativeMarkdownTable table = child(history, NativeMarkdownTable.class);
+                    if (table == null || !text(table, "fixture") || !text(table, "ready") || table.getWidth() == 0)
+                        throw new IllegalStateException("Release table did not render its cell text");
+                    for (int row = 0; row < table.getChildCount(); row++) {
+                        ViewGroup cells = (ViewGroup) table.getChildAt(row);
+                        for (int cell = 0; cell < cells.getChildCount(); cell++)
+                            if (!((TextView) cells.getChildAt(cell)).isTextSelectable())
+                                throw new IllegalStateException("Release table cell is not selectable");
+                    }
                     if (sourcePreview == null) {
                         NativeUi ui = (NativeUi) field(activity, "ui");
                         sourcePreview = new NativeFilePreview(ui, "fixture", null, target -> {}, path -> {}, file -> {}, () -> {});
@@ -108,6 +117,7 @@ public final class ReleaseRendererProbe extends Application implements Applicati
                         try { report(activity, new JSONObject().put("debuggable", false).put("defaultMarkwon", true)
                                 .put("legacyPreferenceIgnored", true).put("legacyIntentIgnored", !activity.getIntent().getBooleanExtra("spool_markwon", true))
                                 .put("markdownRendered", true).put("codeBlockRendered", true).put("codeSyntaxHighlighted", true)
+                                .put("tableRendered", true).put("tableCellsSelectable", true)
                                 .put("fileSourceSyntaxHighlighted", true).put("codeColorSpans", colors(code.code)).put("sourceColorSpans", colors(source))
                                 .put("frameCommitted", true).put("blocks", history.blocks())); }
                         catch (Exception error) { failure(activity, error); }

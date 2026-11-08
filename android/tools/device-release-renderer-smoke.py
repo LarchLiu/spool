@@ -76,14 +76,14 @@ def main():
         if result.get("error"):
             raise RuntimeError(result["error"])
         expected = ("defaultMarkwon", "legacyPreferenceIgnored", "legacyIntentIgnored", "markdownRendered", "codeBlockRendered",
-                    "codeSyntaxHighlighted", "fileSourceSyntaxHighlighted", "frameCommitted")
+                    "tableRendered", "tableCellsSelectable", "codeSyntaxHighlighted", "fileSourceSyntaxHighlighted", "frameCommitted")
         if result.get("debuggable") is not False or any(result.get(key) is not True for key in expected):
             raise RuntimeError("Release renderer assertions failed")
         probe = adb("shell", "dumpsys", "activity", component, "spool-performance").stdout
         if "SPOOL_PERF " in probe:
             raise RuntimeError("The debug performance entry point was exposed by a release APK")
         summary["performanceProbeBlocked"] = True
-        print("Non-debuggable release Activity rendered Markdown, highlighted answer code and file source, and committed a frame; legacy overrides ignored; performance probe blocked.")
+        print("Non-debuggable release Activity rendered Markdown, selectable table cells, highlighted answer code and file source, and committed a frame; legacy overrides ignored; performance probe blocked.")
     except Exception as error:
         summary["error"] = str(error)
         raise

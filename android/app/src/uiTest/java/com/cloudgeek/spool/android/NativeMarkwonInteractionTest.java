@@ -5,6 +5,9 @@ import android.app.Activity;
 import android.os.Looper;
 import android.text.Selection;
 import android.text.Spannable;
+import android.text.Spanned;
+import android.text.style.URLSpan;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.TextView;
 import androidx.recyclerview.widget.ConcatAdapter;
@@ -43,6 +46,87 @@ public class NativeMarkwonInteractionTest {
     }
     private TextView text(Fixture f, String contains) {
         return NativeMarkwonHistoryTest.texts(f.history).stream().filter(t -> t.getText().toString().contains(contains)).findFirst().orElseThrow();
+    }
+
+    static float[] linkPoint(View root, TextView text, String target) {
+        Spanned document = (Spanned) text.getText();
+        URLSpan link = java.util.Arrays.stream(document.getSpans(0, text.length(), URLSpan.class))
+                .filter(span -> span.getURL().equals(target)).findFirst().orElseThrow();
+        int start = document.getSpanStart(link), line = text.getLayout().getLineForOffset(start);
+        float x = (text.getLayout().getPrimaryHorizontal(start) + text.getLayout().getPrimaryHorizontal(start + 1)) / 2;
+        float y = (text.getLayout().getLineTop(line) + text.getLayout().getLineBottom(line)) / 2f;
+        int[] origin = new int[2], child = new int[2]; root.getLocationOnScreen(origin); text.getLocationOnScreen(child);
+        return new float[] {child[0] - origin[0] + text.getTotalPaddingLeft() - text.getScrollX() + x,
+                child[1] - origin[1] + text.getTotalPaddingTop() - text.getScrollY() + y};
+    }
+
+    static void touch(View root, long start, long at, int action, float x, float y) {
+        MotionEvent event = MotionEvent.obtain(start, at, action, x, y, 0);
+        event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+        try { root.dispatchTouchEvent(event); } finally { event.recycle(); }
+    }
+
+    static void tapLink(View root, TextView text, String target) {
+        float[] point = linkPoint(root, text, target); long now = android.os.SystemClock.uptimeMillis();
+        touch(root, now, now, MotionEvent.ACTION_DOWN, point[0], point[1]);
+        touch(root, now, now + 40, MotionEvent.ACTION_UP, point[0], point[1]);
+    }
+
+    @Test @Config(sdk = {26, 34, 35}) public void aSingleTapOpensFileUrlImageAndCitationLinksInSelectableMarkdown() throws Exception {
+        try (Fixture f = new Fixture()) {
+            String[][] cases = {
+                    {"Before [File](docs/guide.md#L3) after.", "docs/guide.md#L3"},
+                    {"Before [Website](https://example.com/docs) after.", "https://example.com/docs"},
+                    {"Visit https://example.com/bare", "https://example.com/bare"},
+                    {"![Diagram](docs/diagram.png)", "docs/diagram.png"},
+                    {"See :codex-file-citation{path=\"src/Main.java\"}", "src/Main.java"}
+            };
+            for (String[] value : cases) {
+                f.source(value[0]); f.ready(); TextView text = NativeMarkwonHistoryTest.texts(f.history).get(0);
+                assertTrue(text.isTextSelectable()); text.clearFocus(); f.opened.clear();
+                tapLink(f.history, text, value[1]);
+                assertEquals("One real tap must dispatch " + value[1], java.util.List.of(value[1]), f.opened);
+            }
+        }
+    }
+
+    @Test @Config(sdk = {26, 34, 35}) public void fileLinksStillRespondToTouchAfterRecyclingAndReferenceUpdates() throws Exception {
+        try (Fixture f = new Fixture()) {
+            String paragraphs = "\n\nText with no link. ".repeat(100);
+            f.source("[Open file][file]" + paragraphs + "\n\n[file]: docs/old.md#L2"); f.ready();
+            f.history.scrollToPosition(0); f.ready();
+            tapLink(f.history, text(f, "Open file"), "docs/old.md#L2");
+            assertEquals(java.util.List.of("docs/old.md#L2"), f.opened);
+            f.history.scrollToPosition(75); f.ready();
+            assertTrue(f.history.metrics().getLong("recycles") > 0);
+            f.source("[Open file][file]" + paragraphs + "\n\n[file]: docs/new.md#L5"); f.ready();
+            f.history.scrollToPosition(0); f.ready();
+            TextView rebound = text(f, "Open file");
+            tapLink(f.history, rebound, "docs/new.md#L5");
+            assertEquals(java.util.List.of("docs/old.md#L2", "docs/new.md#L5"), f.opened);
+            assertTrue(rebound.isTextSelectable());
+            Selection.setSelection((Spannable) rebound.getText(), 0, 4);
+            assertTrue(rebound.onTextContextMenuItem(android.R.id.copy));
+            android.content.ClipboardManager clipboard = (android.content.ClipboardManager) f.controller.get().getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+            assertEquals("Open", clipboard.getPrimaryClip().getItemAt(0).getText().toString());
+        }
+    }
+
+    @Test @Config(sdk = {26, 34, 35}) public void draggingFromALinkScrollsHistoryWithoutOpeningIt() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.source(("[File](docs/file.md) and plain words.\n\n").repeat(100)); f.ready();
+            f.history.scrollToPosition(40); f.ready();
+            TextView text = NativeMarkwonHistoryTest.texts(f.history).stream().filter(t -> t.getTop() > 250 && t.getBottom() < 600).findFirst().orElseThrow();
+            float[] point = linkPoint(f.history, text, "docs/file.md");
+            int first = f.history.metrics().getInt("firstVisible"), top = f.history.metrics().getInt("firstTop");
+            long now = android.os.SystemClock.uptimeMillis();
+            touch(f.history, now, now, MotionEvent.ACTION_DOWN, point[0], point[1]);
+            touch(f.history, now, now + 30, MotionEvent.ACTION_MOVE, point[0], point[1] - 60);
+            touch(f.history, now, now + 60, MotionEvent.ACTION_MOVE, point[0], point[1] - 160);
+            touch(f.history, now, now + 100, MotionEvent.ACTION_UP, point[0], point[1] - 160);
+            assertTrue("Scrolling across links must not navigate", f.opened.isEmpty());
+            assertTrue("The parent must still scroll", first != f.history.metrics().getInt("firstVisible") || top != f.history.metrics().getInt("firstTop"));
+        }
     }
     @Test public void extendingLastParagraphPreservesSelectionInUnchangedParagraph() throws Exception {
         try (Fixture f = new Fixture()) {

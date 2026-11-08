@@ -6,10 +6,38 @@ import org.commonmark.node.SourceSpan;
 import org.commonmark.node.Link;
 import org.commonmark.node.Image;
 import org.commonmark.ext.gfm.tables.TableCell;
+import org.commonmark.ext.gfm.tables.TableBlock;
 import org.commonmark.ext.task.list.items.TaskListItemMarker;
 
 /** Immutable block results; retaining a block also retains its selectable document and identity. */
 final class NativeMarkdownBlocks {
+    /** Keep resolved references and only this block's source for the native table renderer. */
+    static final class NativeBlock extends org.commonmark.node.CustomBlock {
+        final Node content;
+        final String source;
+        final int sourceOffset;
+        final int cells;
+        NativeBlock(Node content, String markdown) {
+            this.content = content;
+            java.util.List<SourceSpan> spans = content.getSourceSpans();
+            sourceOffset = spans.get(0).getInputIndex();
+            SourceSpan last = spans.get(spans.size() - 1);
+            source = markdown.substring(sourceOffset, last.getInputIndex() + last.getLength());
+            cells = countCells(content);
+        }
+    }
+    private static int countCells(Node node) {
+        int count = node instanceof TableCell ? 1 : 0;
+        for (Node child = node.getFirstChild(); child != null; child = child.getNext()) count += countCells(child);
+        return count;
+    }
+    static boolean containsTable(Node node) {
+        if (node instanceof TableBlock) return true;
+        for (Node child = node.getFirstChild(); child != null; child = child.getNext())
+            if (containsTable(child)) return true;
+        return false;
+    }
+
     static final class Block {
         final long id;
         final String key;

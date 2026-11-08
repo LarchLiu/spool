@@ -50,6 +50,9 @@ final class NativeMarkdown {
     private boolean preview;
     private boolean normalWhitespace;
     private String source;
+    private int sourceOffset;
+    private NativeMarkdownBlocks.NativeBlock boundBlock;
+    private final Map<Node, TextView> preparedCells = new java.util.IdentityHashMap<>();
     private TextView inlineView;
     private Flow document;
 
@@ -71,7 +74,7 @@ final class NativeMarkdown {
         Map<String, Bound> children = new HashMap<>();
     }
 
-    private Node parse(String source) { this.source = source; return PARSER.parse(source); }
+    private Node parse(String source) { this.source = source; sourceOffset = 0; return PARSER.parse(source); }
 
     private NativeMarkdown(NativeUi ui, boolean mine, Consumer<String> open) {
         this(ui, mine, open, 14);
@@ -123,8 +126,43 @@ final class NativeMarkdown {
         ((Root) root).renderer.update(source);
     }
 
+    /** Bind an already parsed block without reparsing or losing out-of-block references. */
+    static void bindBlock(View root, NativeMarkdownBlocks.NativeBlock block) {
+        NativeMarkdown renderer = ((Root) root).renderer;
+        if (renderer.boundBlock == block) return;
+        renderer.source = block.source; renderer.sourceOffset = block.sourceOffset;
+        renderer.blocks(block.content, renderer.ui.text, false, renderer.document, true);
+        renderer.boundBlock = block;
+    }
+
+    /** Create one selectable cell at a time while the history is idle, never from a worker. */
+    static final class Preparation {
+        final Root root;
+        final NativeMarkdownBlocks.NativeBlock block;
+        final List<Node> cells = new ArrayList<>();
+        int index;
+        Preparation(NativeUi ui, NativeMarkdownBlocks.NativeBlock block, Consumer<String> open) {
+            root = render(new NativeMarkdown(ui, false, open), ""); this.block = block;
+            root.renderer.source = block.source; root.renderer.sourceOffset = block.sourceOffset;
+            collect(block.content);
+        }
+        private void collect(Node node) {
+            if (node instanceof TableCell) cells.add(node);
+            else for (Node child = node.getFirstChild(); child != null; child = child.getNext()) collect(child);
+        }
+        boolean step() {
+            if (index < cells.size()) {
+                Node cell = cells.get(index++);
+                root.renderer.preparedCells.put(cell, root.renderer.inline(cell, root.renderer.ui.text, null));
+                return false;
+            }
+            bindBlock(root, block); return true;
+        }
+    }
+
     private void update(String value) {
-        if (value.equals(source)) return;
+        if (boundBlock == null && value.equals(source)) return;
+        boundBlock = null;
         blocks(parse(value), ui.text, false, document);
     }
 
@@ -139,15 +177,19 @@ final class NativeMarkdown {
     private float px(float value) { return value * ui.context.getResources().getDisplayMetrics().density; }
 
     private Flow blocks(Node parent, int color, boolean tight, Flow state) {
+        return blocks(parent, color, tight, state, false);
+    }
+
+    private Flow blocks(Node parent, int color, boolean tight, Flow state, boolean single) {
         if (state == null) state = new Flow(new NativeMarkdownFlow(ui));
         NativeMarkdownFlow column = state.view;
-        column.zeroFirst = parent instanceof Document;
-        column.zeroLast = parent instanceof Document || parent instanceof BlockQuote;
+        column.zeroFirst = single || parent instanceof Document;
+        column.zeroLast = single || parent instanceof Document || parent instanceof BlockQuote;
         Map<String, Integer> counts = new HashMap<>();
         Map<String, Bound> next = new HashMap<>();
         List<NativeMarkdownFlow.Item> items = new ArrayList<>();
         List<String> keys = new ArrayList<>();
-        for (Node node = parent.getFirstChild(); node != null; node = node.getNext()) {
+        for (Node node = single ? parent : parent.getFirstChild(); node != null; node = single ? null : node.getNext()) {
             String kind = kind(node, tight);
             if (kind.isEmpty()) continue;
             int index = counts.getOrDefault(kind, 0); counts.put(kind, index + 1);
@@ -167,7 +209,7 @@ final class NativeMarkdown {
             next.put(key, bound);
             keys.add(key);
         }
-        reconcileSelection(state, next, keys, parent instanceof BlockQuote || parent instanceof ListItem && !tight);
+        reconcileSelection(state, next, keys, !single && (parent instanceof BlockQuote || parent instanceof ListItem && !tight));
         column.replace(items); state.children = next;
         return state;
     }
@@ -205,7 +247,7 @@ final class NativeMarkdown {
 
     private String sourceKey(Node node, int color, boolean tight) {
         StringBuilder key = new StringBuilder().append(color).append('/').append(tight).append('/').append(node.getClass().getName());
-        for (SourceSpan span : node.getSourceSpans()) key.append('\n').append(source, span.getInputIndex(), span.getInputIndex() + span.getLength());
+        for (SourceSpan span : node.getSourceSpans()) key.append('\n').append(source, span.getInputIndex() - sourceOffset, span.getInputIndex() - sourceOffset + span.getLength());
         resolvedKey(node, key);
         return key.toString();
     }
@@ -373,7 +415,8 @@ final class NativeMarkdown {
                     String signature = sourceKey(cell, color, false) + "/" + value.getAlignment();
                     TextView text = (TextView) cellState.view;
                     if (!signature.equals(cellState.signature)) {
-                        text = inline(cell, color, text);
+                        TextView prepared = preparedCells.remove(cell);
+                        text = prepared == null ? inline(cell, color, text) : prepared;
                         text.setGravity(Gravity.CENTER_VERTICAL | (value.getAlignment() == TableCell.Alignment.RIGHT ? Gravity.END
                                 : value.getAlignment() == TableCell.Alignment.CENTER || value.isHeader() && value.getAlignment() == null
                                 ? Gravity.CENTER_HORIZONTAL : Gravity.START));
@@ -504,7 +547,7 @@ final class NativeMarkdown {
 
     private boolean appendLiteralLinks(Node node, SpannableStringBuilder out) {
         StringBuilder raw = new StringBuilder();
-        for (SourceSpan span : node.getSourceSpans()) raw.append(source, span.getInputIndex(), span.getInputIndex() + span.getLength());
+        for (SourceSpan span : node.getSourceSpans()) raw.append(source, span.getInputIndex() - sourceOffset, span.getInputIndex() - sourceOffset + span.getLength());
         String value = raw.toString();
         List<NativeGfmLinks.Link> links = NativeGfmLinks.find(value);
         if (links.isEmpty()) return false;

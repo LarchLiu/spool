@@ -16,17 +16,35 @@ final class NativeMarkdownTable extends ViewGroup implements NativeMarkdownFlowB
         private final float density;
         private float roundingY;
         private float[] widths;
+        private float[] intrinsic;
+        private int layouts;
         Row(NativeUi ui) { super(ui.context); density = getResources().getDisplayMetrics().density; }
-        void cell(TextView cell) { cells.add(cell); addView(cell); }
+        void cell(TextView cell) { cells.add(cell); addView(cell); intrinsic = null; widths = null; }
         void cells(List<TextView> next) {
-            NativeKeyedViews.sync(this, next); cells.clear(); cells.addAll(next); requestLayout();
+            NativeKeyedViews.sync(this, next); cells.clear(); cells.addAll(next); intrinsic = null; widths = null; requestLayout();
+        }
+        float[] intrinsicWidths() {
+            if (intrinsic == null) {
+                intrinsic = new float[cells.size()];
+                for (int i = 0; i < cells.size(); i++) {
+                    TextView cell = cells.get(i);
+                    intrinsic[i] = Layout.getDesiredWidth(cell.getText(), cell.getPaint()) + 25 * density;
+                }
+            }
+            return intrinsic;
         }
         private float cellHeight(TextView cell) {
             // Collapsed cells own half of each 1px border plus 7px of CSS padding.
             return NativeUi.cssTextHeight(cell) - cell.getCompoundPaddingTop() - cell.getCompoundPaddingBottom() + 15 * density;
         }
         void measureColumns(float[] widths) {
-            this.widths = widths;
+            boolean changed = !java.util.Arrays.equals(this.widths, widths);
+            if (!changed) {
+                boolean requested = false;
+                for (TextView cell : cells) requested |= cell.isLayoutRequested();
+                if (!requested) { setMeasuredDimension(getMeasuredWidth(), Math.round(height)); return; }
+            }
+            this.widths = widths.clone();
             height = 0;
             float x = 0;
             for (int i = 0; i < cells.size(); i++) {
@@ -43,7 +61,7 @@ final class NativeMarkdownTable extends ViewGroup implements NativeMarkdownFlowB
             setMeasuredDimension(Math.round(x), Math.round(height));
         }
         @Override protected void onLayout(boolean changed, int l, int t, int r, int b) {
-            layoutCells();
+            layouts++; layoutCells();
         }
         void layoutCells() {
             float x = 0;
@@ -68,6 +86,7 @@ final class NativeMarkdownTable extends ViewGroup implements NativeMarkdownFlowB
     private float height;
     private float roundingY;
     private boolean roundingDirty;
+    private boolean columnsDirty = true;
 
     NativeMarkdownTable(NativeUi ui) {
         super(ui.context);
@@ -75,29 +94,33 @@ final class NativeMarkdownTable extends ViewGroup implements NativeMarkdownFlowB
         border.setColor(ui.borderStrong); border.setStrokeWidth(density);
     }
 
-    void row(Row row) { rows.add(row); addView(row); }
+    void row(Row row) { rows.add(row); addView(row); columnsDirty = true; }
     void rows(List<Row> next) {
-        NativeKeyedViews.sync(this, next); rows.clear(); rows.addAll(next); requestLayout();
+        NativeKeyedViews.sync(this, next); rows.clear(); rows.addAll(next); columnsDirty = true; requestLayout();
     }
-    void availableWidth(int width) { available = width; }
+    void availableWidth(int width) { if (available != width) { available = width; columnsDirty = true; } }
 
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
-        int count = 0;
-        for (Row row : rows) count = Math.max(count, row.cells.size());
-        columns = new float[count];
-        java.util.Arrays.fill(columns, 90 * density);
-        for (Row row : rows) for (int i = 0; i < row.cells.size(); i++) {
-            TextView cell = row.cells.get(i);
-            columns[i] = Math.max(columns[i], Layout.getDesiredWidth(cell.getText(), cell.getPaint()) + 25 * density);
+        if (columnsDirty) {
+            int count = 0;
+            for (Row row : rows) count = Math.max(count, row.cells.size());
+            columns = new float[count];
+            java.util.Arrays.fill(columns, 90 * density);
+            for (Row row : rows) {
+                float[] intrinsic = row.intrinsicWidths();
+                for (int i = 0; i < intrinsic.length; i++) columns[i] = Math.max(columns[i], intrinsic[i]);
+            }
+            float desired = density;
+            for (float column : columns) desired += column;
+            if (available > 0 && desired > available && 90 * density * count + density <= available) {
+                float flexible = desired - density - 90 * density * count;
+                float extra = available - density - 90 * density * count;
+                for (int i = 0; i < count; i++) columns[i] = 90 * density + (columns[i] - 90 * density) * extra / flexible;
+            }
+            columnsDirty = false;
         }
         float width = density;
         for (float column : columns) width += column;
-        if (available > 0 && width > available && 90 * density * count + density <= available) {
-            float flexible = width - density - 90 * density * count;
-            float extra = available - density - 90 * density * count;
-            for (int i = 0; i < count; i++) columns[i] = 90 * density + (columns[i] - 90 * density) * extra / flexible;
-            width = available;
-        }
         height = density;
         for (Row row : rows) {
             row.measureColumns(columns);
@@ -117,8 +140,9 @@ final class NativeMarkdownTable extends ViewGroup implements NativeMarkdownFlowB
             int y = Math.round(row.y + roundingY), x = Math.round(density / 2);
             int bottom = Math.round(row.y + row.height + roundingY);
             row.roundingY = row.y + roundingY - y;
+            int layouts = row.layouts;
             row.layout(x, y, x + row.getMeasuredWidth(), bottom);
-            row.layoutCells();
+            if (row.layouts == layouts) row.layoutCells();
         }
     }
 

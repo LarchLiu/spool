@@ -434,7 +434,8 @@ activity disclosures, approvals, actions and message footers using AndroidX
 `ConcatAdapter`. A single `RecyclerView` is the scrolling surface. Markdown
 blocks are recycled across answers rather than mounting a whole turn inside a
 `NestedScrollView`. The GFM tables, task-list and strikethrough plugins are
-enabled; tables use Markwon's span renderer. File citations retain their native
+enabled; blocks containing tables use the existing selectable native table
+renderer inside a recycled block holder. File citations retain their native
 file action through a parser/visitor extension and all links use the existing
 message-link router. Images do not introduce an automatic remote image loader.
 
@@ -979,3 +980,130 @@ intermediate runs are recorded in
 `audit-verification.json`. Only `audit-layout-round-trip-1/2/3.json` and
 `audit-layout-reversals-1/2/3.json` represent this final APK. Earlier row-reuse-only
 runs and the discarded `code-final-*` width experiment are not final results.
+
+## Markdown link touch handling (2026-11-08)
+
+Selectable Markdown TextViews install Android's `ArrowKeyMovementMethod` during
+inflation. Markwon only supplies its default link movement method when no
+movement method exists, leaving file links and URLs styled correctly but inert
+to a normal tap. `NativeMarkwonHistory.configureText` now explicitly installs
+`LinkMovementMethod` on each empty Markdown view, matching `NativeMarkdown`.
+Deferred layout and background precomputation remain in place.
+
+The regression first reproduced a real down/up gesture that dispatched no file
+action. API26/34/35 tests now dispatch touch events through the RecyclerView for
+file links, URLs, bare URLs, image links and citations, including recycled rows
+and changed reference targets. They also check that dragging from a link scrolls
+without navigating and that selected text can still be copied. Activity-level
+touch tests verify the browser intent and the selected chat's file preview with
+its requested line. Earlier tests that invoked span callbacks directly did not
+cover this failure.
+
+All 84 related tests, debug/release lint and debug/release builds passed. The
+installed debug APK was checked on API34: tapping the previously inert URL
+opened Chrome, and tapping an existing file link opened the file sidebar with
+the Markdown source loaded. Build hashes and results are retained in
+`build/artifacts/android-markdown-link-touch/verification.json`.
+
+## Table interaction and width review (2026-11-08)
+
+Three additional defects were reproduced with native drawing and touch tests on
+API26/34/35. Markwon's table spans move visible cell text into private layouts,
+leaving nonbreaking-space placeholders in the TextView document. As a result,
+ordinary link handling cannot reach cell links and copying selected table text
+returns placeholders. A 48-column table at a 360px phone width also threw
+`IllegalArgumentException: Layout: -1 < 0` while drawing because equal-width
+columns became narrower than their padding. The parse fallback cannot catch an
+exception raised later during drawing.
+
+The RecyclerView now sends a top-level block containing any table, including a
+table inside a quote or list, to a recycled native Markdown holder. It binds the
+already parsed AST and a source slice local to that block. Resolved references
+outside the slice remain in the AST; binding does not parse Markdown again or
+retain the whole answer's source. Other blocks keep the Markwon path. Native
+table cells provide real selectable text, normal link touch handling and
+horizontal scrolling for columns that do not fit. Recycling clears selection,
+copy feedback and horizontal offsets before the holder changes owners.
+
+The 121 related regressions passed, including 21 new API26/34/35 cases for actual
+cell-link touches, copying cell text, wide-table drawing/scrolling, resolved and
+bare URLs, unchanged streamed tables, nested tables, reading anchors and
+recycling. Debug/release lint completed without errors; debug, R8-shrunk release
+and isolated release-verification APKs built successfully. The non-debuggable,
+R8-shrunk release smoke also passed on the API34 22041211AC phone over Wi-Fi
+ADB: native table cells rendered as selectable text, answer code and file source
+contained syntax-color spans, and a frame committed. Release ignored the legacy
+renderer overrides and blocked the debug performance entry point. The isolated
+verification package was removed after the check.
+
+A bounded device scroll regression used the current foreground chat with 36
+turns, 2,382 parts and 445 rows after the standard tool/image expansion. The
+earlier exact chat title was not uniquely available in the current list. From
+row 220, 12 alternating flings at 1.25-second intervals, without method sampling,
+rendered 1,980 frames with 46 janky frames (2.32%); P50 was 9ms, P95 17ms and P99
+30ms. Content/geometry digests matched before/after at rows 0 and 220; parse
+errors stayed at zero. This one interval is not a repeat of the earlier
+three-group full traversal benchmark or a performance claim about all chats.
+Tables are recycled as blocks, not as individual rows, so a single very large
+table can still incur work when its cells are first created and measured.
+Reports are retained in `build/artifacts/android-markwon-review/`.
+
+### Table entry stalls in the contract chat (2026-11-08)
+
+The user reopened `梳理合同数据与录入时点` and reported pauses when tables
+entered the viewport. This is a different fixture from the 36-turn interval
+above: it has 19 turns, 3,247 transcript parts, 191 rows and 16 tables containing
+9–39 cells each. Its pre-fix full bottom/top/bottom traversal measured 100/6,574
+janky frames (1.52%), P95 19ms and P99 44ms. The low average concealed individual
+binding stalls: the process had observed a Markdown bind of 108.64ms. A first
+attempt with a small table cache still recorded a 95.14ms table bind and did not
+establish a frame-rate improvement.
+
+Native table documents now have a bounded cache (16 blocks, 384 cells, 65,536
+source characters). While the RecyclerView is attached, visible and idle, the
+nearest eligible plain table prepares one cell at a time on the UI thread, with
+a 2ms work budget and a yield between slices. Preparation pauses during scrolling,
+pending adapter updates and Markdown parsing. This moves selectable-cell creation
+out of the first visible bind without creating Android views on a worker thread.
+The final binding uses the same parsed AST, resolved links and cell text buffers.
+Changed/removed blocks discard their cached documents; disposal releases all
+preparation and cached views. Very large tables beyond the cache budget and
+tables nested in quotes/lists retain the normal on-demand binding path.
+
+Unchanged table identity skips AST reconciliation. Column intrinsic widths are
+retained until cell bindings change; allocated widths are recomputed when the
+available width changes. Unchanged rows keep their measured cell geometry, and
+one table layout no longer invokes every row's cell layout twice. Existing
+fractional-width, CSS baseline, selection/copy and reference-update tests remain
+part of the regression set.
+
+The final 140 tests passed on the configured API26/34/35 combinations, with no
+failures, errors or skips. Debug/release lint had zero errors, and debug,
+R8-shrunk release and isolated release-verification APKs built successfully.
+New tests cover retained cell documents, idle preparation with actual link
+touches and source copying, bounded cache size, stale-reference replacement and
+cache disposal.
+
+Three final physical-device groups each performed a complete bottom/top/bottom
+traversal followed by 12 alternating flings from row 20 near the largest tables.
+All used the same 191-row disclosure state and 1.25s fling intervals without
+method sampling. Position verification and settling allowed idle preparation
+before the measurement; this does not measure immediate scrolling on a cold
+chat entry.
+
+| Group | Full traversal jank | Table-area reversal jank | P95 (both) | P99 traversal / table area |
+| --- | --- | --- | --- | --- |
+| 1 | 100/6,757 (1.48%) | 21/2,029 (1.03%) | 17ms | 31ms / 25ms |
+| 2 | 103/6,812 (1.51%) | 13/2,093 (0.62%) | 17ms | 28ms / 26ms |
+| 3 | 96/6,837 (1.40%) | 21/2,002 (1.05%) | 17ms | 26ms / 26ms |
+
+All 15 visible-content/geometry checks matched, every full traversal reached
+both native boundaries and parse errors stayed at zero. All 16 tables were
+prepared; maximum table binding was 1.92ms across these groups. Weighted jank
+was 354/26,530 (1.33%). The full-traversal jank average remained near the baseline;
+the clear change is the smaller table-binding spike and P99, rather than a
+demonstrated large reduction in average jank. The final non-debuggable R8 release
+device smoke also passed, including selectable cells and answer/file syntax
+highlighting; its isolated package was removed. Reports and per-group data are in
+`build/artifacts/android-markwon-review/table-performance-report.md` and
+`table-final-summary.json`. The debug app was restored to the 39-cell table.
