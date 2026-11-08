@@ -123,7 +123,7 @@ the shared login and reloads workspace metadata independently of network status.
 Network status dots reflect connectivity independently of Spool authentication.
 The tsnet information popup contains only node, path, latency and HTTPS details;
 Spool login and session recovery are handled separately in the footer.
-Health/session polling updates the connecting page and existing settings controls
+Health/session checks and node notifications update the connecting page and existing settings controls
 in place. An open information popup remains anchored and refreshes its contents
 through retries and session recovery. The Disconnect label includes the same
 connection-status dot as the current server tab.
@@ -2251,12 +2251,26 @@ of relayed traffic. Unknown targets and failed samples never imply a path or
 latency. Diagnostics pause outside Settings/in the background. Node reachability
 is independent of HTTPS, project authorization and Spool authentication.
 
+Each embedded node keeps one IPN state subscription. Routine status and health
+reads use its shared memory snapshot; changed state/login links wake the selected
+server's foreground recovery immediately. UI subscriptions close in the background
+and on a server/network switch; returning subscribes to the latest snapshot.
+A dropped IPN stream invalidates stale state and resubscribes with a one-second
+delay. Node shutdown cancels and waits for that subscription before closing tsnet.
+
 The foreground `ConnectionRecovery` supervisor performs one exact-origin HTTPS
-`/healthz` GET (8-second limit). In Tailscale mode it also samples backend state
-(3-second limit); Public HTTPS does not query an embedded node or run DISCO probes.
-Healthy samples repeat 15 seconds after completion. Failures use 2/4/8/16/30-second
-backoff; API transport errors can advance a healthy timer, and network changes
-or returning to the foreground cause an immediate check. There is only one
+`/healthz` GET (8-second limit). In Tailscale mode it also reads the subscribed
+backend state (waiting at most 3 seconds for an initial snapshot); Public HTTPS
+does not query an embedded node or run DISCO probes.
+Healthy samples wait 60 seconds after completion. If that client's authenticated
+WebSocket heartbeat, valid SSE event or successful API response arrived within
+the last 60 seconds, the next standalone HTTPS check waits until that traffic
+has been quiet for 60 seconds. Local writes and cached node status do not count;
+responses belong to the exact client/server and network changes invalidate them.
+Inactive server tabs also skip routine health/session probes while their traffic
+is recent. Failures use 2/4/8/16/30-second backoff; API/stream failures can advance
+a healthy timer, and network changes or returning to the foreground force a
+check even with recent traffic. There is only one
 health/recovery operation in flight. Backgrounding, disconnecting and selecting
 another server revoke stale results and queued recovery work. With no usable
 network, checks/resets wait for the network to return. Public HTTPS uses Android's
@@ -2275,7 +2289,10 @@ successful health sample establishes recovery. The existing SSE/WebSocket retry
 policies resume live data without replaying writes or clearing the workspace.
 
 NeedsLogin requests the official interactive login once per login episode and
-polls for completion; NeedsMachineAuth waits for approval. Certificate/hostname,
+waits for node notifications; NeedsMachineAuth waits for an approval notification.
+The explicit sign-in action waits up to 10 seconds for a trusted login-link
+notification. Clients without a UI subscription and failed login requests retain
+the bounded polling fallback. Certificate/hostname,
 redirect and malformed health errors remain explicit endpoint failures. HTTPS
 502/503/504 and TCP connection refusal are treated as server availability
 problems: health is retried, but the embedded node is not reset for those errors.

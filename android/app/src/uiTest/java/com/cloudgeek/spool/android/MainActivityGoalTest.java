@@ -53,6 +53,7 @@ public class MainActivityGoalTest {
         static final List<List<String>> workspaceSubscriptions = new ArrayList<>();
         static java.util.function.Supplier<spoolnet.EventStream> workspaceFactory = () -> null;
         String healthResponse = "{state:'Running',https:'Verified'}";
+        long responseAge = -1;
         String sessionDirectory, directOrigin, tailscaleOrigin;
         @Implementation protected static void __staticInitializer__() {}
         @Implementation protected void __constructor__(String data, String origin) {}
@@ -66,6 +67,9 @@ public class MainActivityGoalTest {
         }
         @Implementation protected String health() { return healthResponse; }
         @Implementation protected String status() { return "{state:'Running',authURL:''}"; }
+        @Implementation protected long responseAgeMillis() { return responseAge; }
+        @Implementation protected String loginURL() { return "https://login.tailscale.com/a/test"; }
+        @Implementation protected spoolnet.EventStream subscribeStatus(spoolnet.EventListener listener) { return null; }
         @Implementation protected void login() {}
         @Implementation protected void networkChanged() {}
         @Implementation protected void reconnect() {}

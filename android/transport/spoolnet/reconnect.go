@@ -16,6 +16,7 @@ func (c *Client) NetworkChanged() {
 	if c.closed {
 		return
 	}
+	c.responseActivity.Store(nil)
 	c.transport.CloseIdleConnections()
 	if c.server != nil {
 		c.server.Sys().NetMon.Get().InjectEvent()

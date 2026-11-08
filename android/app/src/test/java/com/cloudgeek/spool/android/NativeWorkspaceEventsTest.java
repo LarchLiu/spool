@@ -56,7 +56,7 @@ public class NativeWorkspaceEventsTest {
         Connection current() { return connections.get(connections.size() - 1); }
     }
     static final class Sink implements NativeWorkspaceEvents.Listener<Connection> {
-        Boolean connected; int expired; JsonElement presence = new JsonArray(); final JsonArray received = new JsonArray();
+        Boolean connected; int expired, failures; JsonElement presence = new JsonArray(); final JsonArray received = new JsonArray();
         final List<String> authErrors = new ArrayList<>();
         public void connection(Connection value) {}
         public void event(String kind, String value) {
@@ -68,6 +68,7 @@ public class NativeWorkspaceEventsTest {
         public void connected(boolean value) { connected = value; if (!value) presence = new JsonArray(); }
         public void expired() { expired++; }
         public void authFailed(Exception error) { authErrors.add(error.getMessage()); }
+        public void failed() { failures++; }
     }
     static final class Harness {
         final Queue worker = new Queue(); final Clock clock = new Clock(); final Source source = new Source(); final Sink sink = new Sink();
@@ -235,5 +236,15 @@ public class NativeWorkspaceEventsTest {
         assertEquals(Boolean.FALSE, h.sink.connected); assertEquals(0, h.sink.presence.getAsJsonArray().size());
         assertTrue(h.source.current().closed); assertEquals(1, h.source.auth); assertEquals(1, h.clock.timers.size()); assertEquals(550, h.clock.timers.get(0).at - h.clock.now);
         h.stream.stop(); assertTrue(h.clock.timers.isEmpty());
+    }
+
+    @Test public void actualSocketFailuresNotifyRecoveryButNormalStopAndStaleFramesDoNot() {
+        Harness h = new Harness(); h.bind("session"); h.event("ready", "true");
+        Connection first = h.source.current();
+        h.event("ping", "true"); assertEquals(0, h.sink.failures);
+        h.event("transport_error", "{}"); assertEquals(1, h.sink.failures);
+        first.events.event("transport_error", "{}"); h.flush(); assertEquals(1, h.sink.failures);
+        h.advance(550); h.event("ready", "true");
+        h.stream.stop(); assertEquals(1, h.sink.failures);
     }
 }

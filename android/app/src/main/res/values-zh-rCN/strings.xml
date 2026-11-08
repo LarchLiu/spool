@@ -3,6 +3,5 @@
     <string name="app_name">Spool</string>
     <string name="connection_direct_note">填写为 PWA 配置的公网 HTTPS 地址，不包含路径。反向代理需支持 WebSocket 和 SSE。应用在前台时持续检查 HTTPS，网络故障后自动恢复连接。</string>
     <string name="connection_direct_summary">连接方式：公网 HTTPS\nHTTPS：%1$s%2$s</string>
-    <string name="connection_note">应用在前台时持续检查 HTTPS，网络故障后自动恢复，持续异常时重连节点。登录、设备审批、证书和服务端错误会单独显示。设置打开时，每次节点路径探测结果返回 5 秒后再次探测。</string>
     <string name="connection_summary">Tailnet：%1$s\n节点路径：%2$s\n往返延迟：%3$s\n目标节点：%4$s\nHTTPS：%5$s\n采样时间：%6$s%7$s</string>
 </resources>

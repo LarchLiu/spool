@@ -80,7 +80,12 @@ func transientProbeError(err error) bool {
 	return errors.As(err, &network) && network.Timeout()
 }
 
-func (c *Client) probeOnce(ctx context.Context) error {
+func (c *Client) probeOnce(ctx context.Context) (runErr error) {
+	defer func() {
+		if runErr != nil {
+			c.responseActivity.Store(nil)
+		}
+	}()
 	var phase atomic.Value
 	if c.direct {
 		phase.Store("dialing HTTPS server")
@@ -121,5 +126,6 @@ func (c *Client) probeOnce(ctx context.Context) error {
 	if !health.OK {
 		return healthStatusError{resp.StatusCode}
 	}
+	c.receivedResponse()
 	return nil
 }

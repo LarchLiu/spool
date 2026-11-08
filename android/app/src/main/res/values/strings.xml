@@ -3,6 +3,5 @@
     <string name="app_name">Spool</string>
     <string name="connection_direct_note">Use the public HTTPS origin configured for the PWA, without a path. The proxy must support WebSocket and SSE. HTTPS is checked in the foreground and reconnects automatically after network failures.</string>
     <string name="connection_direct_summary">Connection: Public HTTPS\nHTTPS: %1$s%2$s</string>
-    <string name="connection_note">HTTPS is checked while the app is in the foreground and recovers automatically after network failures. Persistent network failures trigger a node reconnect. Sign-in, device approval, certificate and server errors are shown separately. Node-path diagnostics refresh 5 seconds after each result while Settings is open.</string>
     <string name="connection_summary">Tailnet: %1$s\nNode path: %2$s\nRound-trip time: %3$s\nTarget node: %4$s\nHTTPS: %5$s\nSampled: %6$s%7$s</string>
 </resources>

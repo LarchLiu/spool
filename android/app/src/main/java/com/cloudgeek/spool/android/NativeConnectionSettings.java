@@ -91,7 +91,7 @@ final class NativeConnectionSettings extends LinearLayout {
         automatic.setEnabled(!selecting);
         login.setEnabled(canSignIn && !selecting);
         diagnostics.setText(summary);
-        details.put(current, summary + (note.getText().length() == 0 ? "" : "\n\n" + note.getText()));
+        details.put(current, summary + (current == ConnectionMode.TAILSCALE || note.getText().length() == 0 ? "" : "\n\n" + note.getText()));
         for (Row row : rows.values()) {
             row.server.setEnabled(!selecting);
             row.status.setText(states.getOrDefault(row.mode, ""));
@@ -116,9 +116,9 @@ final class NativeConnectionSettings extends LinearLayout {
             LinearLayout heading = ui.row(); heading.setGravity(Gravity.CENTER_VERTICAL);
             title = ui.bold(ui.t(mode == ConnectionMode.DIRECT ? "Public HTTPS" : "Tailscale (tsnet)"), 12); heading.addView(title);
             information = new NativeInfo(ui, ui.t(mode == ConnectionMode.DIRECT ? "Public HTTPS" : "Tailscale (tsnet)"),
-                    () -> details.getOrDefault(mode, ui.t(mode == ConnectionMode.DIRECT
-                            ? "Connect using the same public HTTPS address as the PWA. Tailscale is not required."
-                            : "Your private server, through this app's embedded node. No system VPN or shared auth key.") + "\n\n" + statusText()));
+                    () -> details.getOrDefault(mode, mode == ConnectionMode.DIRECT
+                            ? ui.t("Connect using the same public HTTPS address as the PWA. Tailscale is not required.") + "\n\n" + statusText()
+                            : statusText()));
             heading.addView(information.button);
             heading.addView(new View(ui.context), new LayoutParams(0, 1, 1));
             if (mode == ConnectionMode.TAILSCALE) heading.addView(login);

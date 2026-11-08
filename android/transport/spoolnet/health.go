@@ -29,7 +29,7 @@ type healthSnapshot struct {
 func (c *Client) Health() (string, error) {
 	var api healthAPI
 	if !c.direct {
-		api = c.local
+		api = c.node
 	}
 	info := checkHealth(c.ctx, api, c.probeOnce)
 	result, err := json.Marshal(info)

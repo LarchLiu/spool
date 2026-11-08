@@ -16,26 +16,30 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"tailscale.com/client/local"
+	"tailscale.com/ipn"
 	"tailscale.com/tsnet"
 )
 
 const maxResponseBytes = 16 << 20
 
 type Client struct {
-	mu        sync.Mutex
-	server    *tsnet.Server
-	local     *local.Client
-	origin    *url.URL
-	http      *http.Client
-	transport *http.Transport
-	closed    bool
-	direct    bool
-	ctx       context.Context
-	cancel    context.CancelFunc
+	mu               sync.Mutex
+	server           *tsnet.Server
+	local            *local.Client
+	node             *nodeStatus
+	origin           *url.URL
+	http             *http.Client
+	transport        *http.Transport
+	closed           bool
+	direct           bool
+	ctx              context.Context
+	cancel           context.CancelFunc
+	responseActivity atomic.Pointer[time.Time]
 }
 
 // NewDirectClient connects to one HTTPS origin over the system network without
@@ -95,7 +99,10 @@ func NewClient(dataDir, serverURL string) (*Client, error) {
 		server.Close()
 		return nil, fmt.Errorf("prepare native session: %w", err)
 	}
-	return &Client{server: server, local: lc, origin: origin, ctx: ctx, cancel: cancel, transport: transport, http: httpClient}, nil
+	state := newNodeStatus(ctx, func(ctx context.Context) (nodeStatusStream, error) {
+		return lc.WatchIPNBus(ctx, ipn.NotifyInitialState)
+	})
+	return &Client{server: server, local: lc, node: state, origin: origin, ctx: ctx, cancel: cancel, transport: transport, http: httpClient}, nil
 }
 
 func nativeHTTPClient(dial func(context.Context, string, string) (net.Conn, error)) (*http.Client, *http.Transport) {
@@ -116,7 +123,7 @@ func (c *Client) Status() (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(c.ctx, 3*time.Second)
 	defer cancel()
-	status, err := c.local.StatusWithoutPeers(ctx)
+	status, err := c.node.StatusWithoutPeers(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -174,7 +181,11 @@ func (c *Client) request(ctx context.Context, method, path string, body io.Reade
 	if method == http.MethodPost {
 		req.Header.Set("X-CSRF-Token", csrf)
 	}
-	return c.http.Do(req)
+	resp, err := c.http.Do(req)
+	if err != nil || resp.StatusCode >= 500 {
+		c.responseActivity.Store(nil)
+	}
+	return resp, err
 }
 
 type apiResponse struct {
@@ -215,7 +226,7 @@ func (c *Client) Request(method, path, body, csrf, language string) (string, err
 	if err != nil {
 		return "", err
 	}
-	return encodeResponse(resp)
+	return c.encodeResponse(resp)
 }
 
 func (c *Client) Close() error {
@@ -229,6 +240,9 @@ func (c *Client) Close() error {
 		jar.close()
 	}
 	c.cancel()
+	if c.node != nil {
+		<-c.node.done
+	}
 	c.transport.CloseIdleConnections()
 	if c.server != nil {
 		return c.server.Close()

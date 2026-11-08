@@ -62,5 +62,5 @@ func (c *Client) Upload(chatID, payload, csrf, language string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return encodeResponse(resp)
+	return c.encodeResponse(resp)
 }

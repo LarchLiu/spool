@@ -312,18 +312,18 @@ public final class MainActivity extends Activity {
                 new ConnectivityManager.NetworkCallback() {
                     public void onAvailable(Network network) {
                         publishInterfaces();
-                        recovery.checkNow();
+                        checkConnectionsNow();
                         resumeWorkspace(true);
                     }
 
                     public void onLost(Network network) {
                         publishInterfaces();
-                        recovery.checkNow();
+                        checkConnectionsNow();
                     }
 
                     public void onLinkPropertiesChanged(Network network, LinkProperties p) {
                         publishInterfaces();
-                        recovery.checkNow();
+                        checkConnectionsNow();
                     }
                 };
         connectivity.registerDefaultNetworkCallback(networkCallback, main);
@@ -487,11 +487,28 @@ public final class MainActivity extends Activity {
                         body == null ? "" : body.toString(),
                         auth,
                         loc);
+            return decodeResponse(raw);
         } catch (Exception error) {
-            main.post(() -> { if (!destroyed && client == captured) recovery.suspect(); });
+            if (!(error instanceof ApiFailure) || ((ApiFailure) error).status < 400 || ((ApiFailure) error).status >= 500)
+                main.post(() -> connectionFailed(captured));
             throw error;
         }
-        return decodeResponse(raw);
+    }
+
+    private void connectionFailed(Client captured) {
+        if (destroyed || !foreground) return;
+        if (client == captured) { recovery.suspect(); return; }
+        for (ServerProfiles.Server server : serverProfiles.entries) {
+            ServerRuntime runtime = serverRuntimes.get(server.id);
+            if (runtime != null && runtime.candidate != null && runtime.candidate.client == captured) {
+                probeServer(server, true); return;
+            }
+        }
+    }
+
+    private void checkConnectionsNow() {
+        recovery.checkNow();
+        refreshServerConnections(true);
     }
 
     private void api(String path, JSONObject body, Result done) {
@@ -864,8 +881,7 @@ public final class MainActivity extends Activity {
                 } catch (ApiFailure error) { if (error.status == 401) return null; throw error; }
             }
             public String login(Client candidate) throws Exception {
-                candidate.login();
-                return new JSONObject(candidate.status()).optString("authURL");
+                return candidate.loginURL();
             }
             public void networkChanged(Client candidate) { candidate.networkChanged(); }
             public void close(Client candidate) { try { candidate.close(); } catch (Exception ignored) {} }
@@ -1070,6 +1086,12 @@ public final class MainActivity extends Activity {
             }
             public void reconnect() throws Exception { captured.reconnect(); }
             public void login() throws Exception { captured.login(); }
+            public long responseAgeMillis() { return captured.responseAgeMillis(); }
+            public ConnectionRecovery.Subscription subscribe(Runnable changed) throws Exception {
+                if (mode != ConnectionMode.TAILSCALE) return null;
+                EventStream subscription = captured.subscribeStatus((kind, data) -> changed.run());
+                return subscription == null ? null : subscription::close;
+            }
         }, (value, available) -> {
             if (destroyed || generation != token || client != captured) return;
             acceptConnectionHealth(captured, token, value, available);
@@ -1578,9 +1600,13 @@ public final class MainActivity extends Activity {
     }
 
     private void refreshServerConnections() {
+        refreshServerConnections(false);
+    }
+
+    private void refreshServerConnections(boolean force) {
         if (!foreground || destroyed) return;
         for (ServerProfiles.Server server : serverProfiles.entries)
-            if (server.enabled && !server.id.equals(serverProfiles.selected)) probeServer(server);
+            if (server.enabled && !server.id.equals(serverProfiles.selected)) probeServer(server, force);
         main.removeCallbacks(serverRefresh); main.postDelayed(serverRefresh, 15000);
     }
 
@@ -1678,6 +1704,7 @@ public final class MainActivity extends Activity {
                 if (serverFeedCurrent(server, runtime, feed) && error instanceof ApiFailure && ((ApiFailure) error).status == 401)
                     forgetAccount(server);
             }
+            public void failed() { if (serverFeedCurrent(server, runtime, feed)) probeServer(server, true); }
             public void event(String kind, String raw) {
                 if (!java.util.Arrays.asList("navigation", "agents", "profiles", "desktop", "presence").contains(kind)) return;
                 EventStream stream = feed.stream;
@@ -1765,12 +1792,20 @@ public final class MainActivity extends Activity {
     }
 
     private void probeServer(ServerProfiles.Server server) {
+        probeServer(server, false);
+    }
+
+    private void probeServer(ServerProfiles.Server server, boolean force) {
         if (!foreground || !server.enabled || server.plan.ordered(null).isEmpty()) return;
         ServerRuntime runtime = serverRuntimes.computeIfAbsent(server.id, key -> new ServerRuntime());
         if (runtime.selecting) return;
+        ConnectionRouter.Candidate<Client> current = runtime.candidate;
+        if (!force && current != null && current.health.healthy() && current.sessionChecked) {
+            long age = current.client.responseAgeMillis();
+            if (age >= 0 && age < ConnectionRecovery.QUIET_CHECK_MILLIS) return;
+        }
         runtime.selecting = true;
         String account = runtime.candidate == null || runtime.candidate.session == null ? "" : runtime.candidate.session.userID;
-        ConnectionRouter.Candidate<Client> current = runtime.candidate;
         boolean awaitingLogin = current != null && (current.health.problem.equals("login") || current.health.problem.equals("approval")
                 || current.health.problem.equals("starting") || current.health.healthy() && current.session == null);
         List<ConnectionPlan.Endpoint> endpoints = server.plan.autoSwitch && !awaitingLogin
@@ -1880,7 +1915,7 @@ public final class MainActivity extends Activity {
             if (connectionSettings != null) bindConnectionSettings(summary);
             return;
         }
-        connectionHint.setText(localizedString(R.string.connection_note));
+        connectionHint.setText("");
         String state =
                 tailnetState.equals("Running")
                         ? tr("Running", "运行中")
@@ -3143,7 +3178,10 @@ public final class MainActivity extends Activity {
         chatEvents.bind(key, new NativeChatEvents.Source<JSONObject>() {
             public Runnable open(NativeChatEvents.Events<JSONObject> events) throws Exception {
                 EventStream stream = captured.subscribeChat(id, locale(), (kind, raw) -> {
-                    if (kind.equals("transport_error")) { events.error(); return; }
+                    if (kind.equals("transport_error")) {
+                        main.post(() -> { if (client == captured && chatID.equals(id)) connectionFailed(captured); });
+                        events.error(); return;
+                    }
                     if (!kind.equals("snapshot") && !kind.equals("metadata") && !kind.equals("turn")) return;
                     try {
                         JSONObject value = new JSONObject(raw);
@@ -3245,6 +3283,7 @@ public final class MainActivity extends Activity {
             public void connection(EventStream stream) { workspaceStream = stream; ++workspaceEpoch; }
             public void event(String kind, String value) { decodeWorkspaceEvent(kind, value, workspaceEpoch); }
             public void connected(boolean value) { setWorkspaceConnected(value); }
+            public void failed() { if (client == captured) connectionFailed(captured); }
             public void expired() { expire(); }
             public void authFailed(Exception error) {
                 if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
@@ -3857,7 +3896,7 @@ public final class MainActivity extends Activity {
         recovery.setActive(true);
         if (client != null) publishInterfaces();
         main.post(connectionRetry);
-        main.post(serverRefresh);
+        refreshServerConnections(true);
         if (user != null && !routeLoginRequired) {
             resumeWorkspace(true);
             if (workspaceData != null) bindWorkspaceData(false);

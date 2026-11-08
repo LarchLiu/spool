@@ -24,6 +24,7 @@ final class NativeWorkspaceEvents<C> {
         void connected(boolean value);
         void expired();
         void authFailed(Exception error);
+        default void failed() {}
     }
     private static final class Attempt<C> {
         C connection;
@@ -192,6 +193,8 @@ final class NativeWorkspaceEvents<C> {
         if (scope != current || current.attempt != attempt) return;
         boolean returning = current.visible && attempt.probe != null;
         clearTimers(current); disconnect(current);
+        if (scope != current) return;
+        current.listener.failed();
         if (scope != current) return;
         if (!current.checkingAuth) {
             current.checkingAuth = true;

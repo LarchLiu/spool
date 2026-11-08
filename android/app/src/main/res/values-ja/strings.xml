@@ -3,6 +3,5 @@
     <string name="app_name">Spool</string>
     <string name="connection_direct_note">PWAに設定した公開HTTPSオリジンをパスなしで入力してください。プロキシはWebSocketとSSEに対応する必要があります。アプリがフォアグラウンドにある間はHTTPSを確認し、ネットワーク障害後は自動的に再接続します。</string>
     <string name="connection_direct_summary">接続方式：公開HTTPS\nHTTPS：%1$s%2$s</string>
-    <string name="connection_note">アプリがフォアグラウンドにある間はHTTPSを確認し、ネットワーク障害から自動復旧します。障害が続く場合はノードを再接続します。ログイン、デバイス承認、証明書、サーバーのエラーは個別に表示します。設定を開いている間は各結果の5秒後にノード経路を再確認します。</string>
     <string name="connection_summary">Tailnet：%1$s\nノード経路：%2$s\n往復遅延：%3$s\n対象ノード：%4$s\nHTTPS：%5$s\n測定時刻：%6$s%7$s</string>
 </resources>

@@ -577,6 +577,44 @@ public class MainActivityConnectionTest {
         }
     }
 
+    @Test public void inactiveServersReuseRecentTrafficButResumeNetworkAndFailuresStillProbe() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(false)) {
+            MainActivityGoalTest.Queue connections = connectionQueue(h);
+            h.call("disconnect"); drain(connections);
+            try {
+                response(200, "{user:{id:'alice'},csrf:'csrf'}");
+                NativeConnectionSettings settings = h.get("connectionSettings");
+                settings.input(ConnectionMode.DIRECT).setText("https://first.example.com");
+                settings.rows.get(ConnectionMode.DIRECT).use.performClick(); drain(connections); h.io.jobs.clear();
+                ServerProfiles profiles = h.get("serverProfiles");
+                ServerProfiles.Server second = profiles.add("Office");
+                second.plan = new ConnectionPlan("https://second.example.com", "", ConnectionMode.DIRECT);
+                h.call("refreshServerConnections"); drain(connections);
+                java.util.Map<String, ?> runtimes = h.get("serverRuntimes");
+                Object runtime = runtimes.get(second.id);
+                Client secondClient = ((ConnectionRouter.Candidate<Client>) ReflectionHelpers.getField(runtime, "candidate")).client;
+                MainActivityGoalTest.ShadowClient shadow = org.robolectric.shadow.api.Shadow.extract(secondClient);
+                MainActivityGoalTest.ShadowClient.calls.clear();
+                shadow.responseAge = 1000;
+                h.call("refreshServerConnections");
+                assertTrue("A live inactive server does not need another health/session probe", connections.jobs.isEmpty());
+                assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
+                shadow.responseAge = 60000;
+                h.call("refreshServerConnections");
+                assertEquals(1, connections.jobs.size()); drain(connections);
+                shadow.responseAge = 1000;
+                h.call("checkConnectionsNow");
+                assertEquals("Network/foreground checks bypass recent traffic", 1, connections.jobs.size()); drain(connections);
+                ReflectionHelpers.callInstanceMethod(h.activity, "connectionFailed", ReflectionHelpers.ClassParameter.from(Client.class, secondClient));
+                assertEquals("An inactive server's failure bypasses recent traffic", 1, connections.jobs.size()); drain(connections);
+                Client retired = new Client("unused", "https://retired.example.com");
+                ReflectionHelpers.callInstanceMethod(h.activity, "connectionFailed", ReflectionHelpers.ClassParameter.from(Client.class, retired));
+                assertTrue("Retired clients cannot trigger checks on another server", connections.jobs.isEmpty());
+                assertSame(secondClient, ((ConnectionRouter.Candidate<Client>) ReflectionHelpers.getField(runtime, "candidate")).client);
+            } finally { h.activity.getPreferences(Activity.MODE_PRIVATE).edit().clear().commit(); }
+        }
+    }
+
     @Test public void bothNetworksShareTheServersSessionWhileOnlyTheSelectedNetworkIsLive() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(false)) {
             MainActivityGoalTest.Queue connections = connectionQueue(h);

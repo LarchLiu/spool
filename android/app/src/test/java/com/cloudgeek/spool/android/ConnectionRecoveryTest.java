@@ -25,12 +25,22 @@ public class ConnectionRecoveryTest {
     private static final class Source implements ConnectionRecovery.Source {
         boolean online = true, failLogin;
         int checks, refreshes, reconnects, logins;
+        long responseAge = -1;
         ConnectionRecovery.Snapshot value = snapshot("");
+        boolean notifications;
+        Runnable changed;
+        int subscriptions, closes;
         public boolean online() { return online; }
         public ConnectionRecovery.Snapshot check() { checks++; return value; }
         public void refreshNetwork() { refreshes++; }
         public void reconnect() { reconnects++; }
+        public long responseAgeMillis() { return responseAge; }
         public void login() throws Exception { logins++; if (failLogin) throw new Exception("login failed"); }
+        public ConnectionRecovery.Subscription subscribe(Runnable callback) {
+            if (!notifications) return null;
+            changed = callback; subscriptions++;
+            return () -> { changed = null; closes++; };
+        }
     }
     private static final class Harness {
         final Queue worker = new Queue(), ui = new Queue();
@@ -55,7 +65,7 @@ public class ConnectionRecoveryTest {
         assertTrue(h.worker.immediate.isEmpty());
         h.policy.setActive(true); h.policy.setActive(true); h.policy.suspect();
         assertEquals(1, h.worker.immediate.size());
-        h.finish(); assertTrue(h.available()); assertEquals(15000, h.ui.delay);
+        h.finish(); assertTrue(h.available()); assertEquals(60000, h.ui.delay);
         h.tick(); assertEquals(2, h.source.checks); assertEquals(1, h.ui.delayed.size());
         h.policy.setActive(false); assertTrue(h.ui.delayed.isEmpty());
         h.policy.setActive(true); assertEquals(1, h.worker.immediate.size());
@@ -72,7 +82,7 @@ public class ConnectionRecoveryTest {
         h.tick(); assertEquals(1, h.source.reconnects);
         h.tick(); assertEquals(2, h.source.reconnects); assertTrue(h.ui.now - resetAt >= 60000);
         h.tick(); h.tick(); h.tick(); assertEquals(2, h.source.reconnects);
-        h.source.value = snapshot(""); h.tick(); assertTrue(h.available()); assertEquals(15000, h.ui.delay);
+        h.source.value = snapshot(""); h.tick(); assertTrue(h.available()); assertEquals(60000, h.ui.delay);
         assertEquals(List.of(true, true, false), h.available.subList(0, 3));
     }
 
@@ -138,5 +148,72 @@ public class ConnectionRecoveryTest {
         assertEquals(1, h.worker.immediate.size());
         h.policy.setActive(false); h.finish(); assertEquals(0, h.source.logins);
         h.policy.setActive(true); h.finish(); assertEquals(1, h.source.logins);
+    }
+
+    @Test public void nodeNotificationsReplaceLoginAndApprovalPolling() {
+        Harness h = new Harness(); h.source.notifications = true; h.source.value = snapshot("login");
+        h.start();
+        assertEquals(1, h.source.logins); assertTrue(h.ui.delayed.isEmpty());
+        h.source.value = snapshot("approval"); h.source.changed.run(); h.finish();
+        assertEquals(2, h.source.checks); assertTrue(h.ui.delayed.isEmpty());
+        h.source.value = snapshot(""); h.source.changed.run(); h.finish();
+        assertTrue(h.available()); assertEquals(60000, h.ui.delay);
+        assertEquals(1, h.source.subscriptions);
+    }
+
+    @Test public void oldSubscriptionsCannotWakeAnotherClientOrBackgroundRecovery() {
+        Harness h = new Harness(); h.source.notifications = true; h.start();
+        Runnable old = h.source.changed;
+        h.policy.setActive(false); old.run(); h.finish();
+        assertEquals(1, h.source.closes); assertEquals(1, h.source.checks);
+        assertTrue(h.ui.delayed.isEmpty());
+        h.policy.setActive(true); h.finish();
+        assertEquals(2, h.source.subscriptions);
+        old.run(); h.finish(); assertEquals(2, h.source.checks);
+        Runnable current = h.source.changed;
+        h.policy.stop(); current.run(); h.finish();
+        assertEquals(2, h.source.closes); assertEquals(2, h.source.checks);
+    }
+
+    @Test public void failedInteractiveLoginStillRetriesWithNotifications() {
+        Harness h = new Harness(); h.source.notifications = true; h.source.failLogin = true; h.source.value = snapshot("login");
+        h.start(); assertEquals(1500, h.ui.delay);
+        h.source.failLogin = false; h.tick();
+        assertEquals(2, h.source.logins); assertTrue(h.ui.delayed.isEmpty());
+    }
+
+    @Test public void recentResponsesSuppressHealthTrafficUntilTheConnectionIsQuiet() {
+        Harness h = new Harness(); h.start();
+        assertEquals(1, h.source.checks); assertEquals(60000, h.ui.delay);
+        for (int i = 0; i < 10; i++) {
+            h.source.responseAge = 15000; h.tick();
+            assertEquals("Existing heartbeats replace standalone HTTPS checks", 1, h.source.checks);
+            assertEquals(45000, h.ui.delay);
+        }
+        h.source.responseAge = 60000; h.tick();
+        assertEquals("A quiet connection still gets a bounded health check", 2, h.source.checks);
+        assertEquals(60000, h.ui.delay);
+    }
+
+    @Test public void initialResumeNetworkAndFailureChecksIgnoreRecentResponses() {
+        Harness h = new Harness(); h.source.responseAge = 0; h.start();
+        assertEquals(1, h.source.checks);
+        h.policy.checkNow(); h.finish(); assertEquals(2, h.source.checks);
+        h.policy.setActive(false); h.policy.setActive(true); h.finish(); assertEquals(3, h.source.checks);
+        h.source.value = snapshot("network"); h.policy.suspect(); h.finish();
+        assertEquals(4, h.source.checks); assertEquals(2000, h.ui.delay);
+        h.tick(); assertEquals("Recent traffic cannot hide a known failure", 5, h.source.checks);
+        for (int i = 0; i < 50; i++) h.policy.suspect();
+        assertTrue(h.worker.immediate.isEmpty()); assertEquals(4000, h.ui.delay);
+    }
+
+    @Test public void aForcedCheckDuringARequestCannotBeLostOrSuppressedByOtherTraffic() {
+        Harness h = new Harness(); h.start(); h.source.responseAge = 0;
+        h.policy.checkNow(); h.worker.run();
+        h.policy.checkNow(); h.ui.run();
+        assertEquals(0, h.ui.delay);
+        h.tick(); assertEquals(3, h.source.checks); assertEquals(60000, h.ui.delay);
+        h.policy.stop(); h.policy.suspect();
+        assertTrue(h.ui.delayed.isEmpty()); assertTrue(h.worker.immediate.isEmpty());
     }
 }

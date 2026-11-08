@@ -4,13 +4,17 @@ import java.util.concurrent.Executor;
 
 /** Foreground health/recovery policy. Control and listener callbacks run on the UI thread. */
 final class ConnectionRecovery {
+    static final long QUIET_CHECK_MILLIS = 60000;
     interface Scheduler extends ConnectionMonitor.Dispatcher { long now(); }
+    interface Subscription { void close(); }
     interface Source {
         boolean online();
         Snapshot check() throws Exception;
         void refreshNetwork() throws Exception;
         void reconnect() throws Exception;
         void login() throws Exception;
+        default Subscription subscribe(Runnable changed) throws Exception { return null; }
+        default long responseAgeMillis() { return -1; }
     }
     interface Listener { void update(Snapshot value, boolean available); }
     private interface Action { void run() throws Exception; }
@@ -28,8 +32,10 @@ final class ConnectionRecovery {
     private final Runnable refresh = this::refresh;
     private Source source;
     private Listener listener;
+    private Subscription subscription;
+    private long subscriptionGeneration;
     private volatile long generation;
-    private boolean active, busy, available, loginRequested, refreshed;
+    private boolean active, busy, available, loginRequested, refreshed, checkRequested;
     private int failures, retryAttempts, resetAttempts;
     private long firstFailure, nextReset;
 
@@ -39,24 +45,47 @@ final class ConnectionRecovery {
 
     void start(Source source, Listener listener) {
         stop(); this.source = source; this.listener = listener;
-        refresh();
+        checkRequested = true;
+        subscribe(); refresh();
     }
 
     void stop() {
         ++generation; scheduler.remove(refresh);
-        source = null; listener = null; available = loginRequested = refreshed = false;
+        unsubscribe();
+        source = null; listener = null; available = loginRequested = refreshed = checkRequested = false;
         failures = retryAttempts = resetAttempts = 0; firstFailure = nextReset = 0;
     }
 
     void setActive(boolean value) {
         if (active == value) return;
         active = value; ++generation; scheduler.remove(refresh);
-        if (active) { failures = retryAttempts = 0; refreshed = false; refresh(); }
+        if (active) { failures = retryAttempts = 0; refreshed = false; checkRequested = true; subscribe(); refresh(); }
+        else unsubscribe();
+    }
+
+    private void subscribe() {
+        if (!active || source == null || subscription != null) return;
+        Source captured = source;
+        long token = ++subscriptionGeneration;
+        try {
+            subscription = captured.subscribe(() -> scheduler.post(() -> {
+                if (active && source == captured && subscriptionGeneration == token) checkNow();
+            }));
+        } catch (Exception ignored) {
+            // A client without notifications retains the bounded health fallback.
+        }
+    }
+
+    private void unsubscribe() {
+        ++subscriptionGeneration;
+        Subscription previous = subscription; subscription = null;
+        if (previous != null) previous.close();
     }
 
     void checkNow() {
         // A pre-switch/pre-resume sample cannot trigger recovery on the new network.
         ++generation; failures = retryAttempts = 0; refreshed = false;
+        checkRequested = true;
         scheduler.remove(refresh); refresh();
     }
 
@@ -64,6 +93,7 @@ final class ConnectionRecovery {
         // API/stream failures can advance a healthy timer, but cannot defeat
         // failure backoff or keep invalidating an in-flight health request.
         if (!active || busy || retryAttempts != 0) return;
+        checkRequested = true;
         scheduler.remove(refresh); refresh();
     }
 
@@ -77,6 +107,15 @@ final class ConnectionRecovery {
             if (active && source == captured && token == generation) scheduler.postDelayed(refresh, 5000);
             return;
         }
+        if (!checkRequested && available && retryAttempts == 0) {
+            long age = captured.responseAgeMillis();
+            if (age >= 0 && age < QUIET_CHECK_MILLIS) {
+                scheduler.remove(refresh);
+                scheduler.postDelayed(refresh, QUIET_CHECK_MILLIS - age);
+                return;
+            }
+        }
+        checkRequested = false;
         busy = true;
         long token = generation;
         worker.execute(() -> {
@@ -106,7 +145,8 @@ final class ConnectionRecovery {
         listener.update(value, available);
         // A listener may disconnect or replace the selected server.
         if (generation != token || !active || source != captured) { finish(token, 0); return; }
-        long delay = value.healthy() ? 15000 : value.problem.equals("login") ? 1500
+        long delay = subscription != null && (value.problem.equals("login") || value.problem.equals("approval")) ? -1
+                : value.healthy() ? QUIET_CHECK_MILLIS : value.problem.equals("login") ? 1500
                 : value.problem.equals("approval") ? 5000 : Math.min(30000, 2000L << Math.max(0, retryAttempts - 1));
         Action action = null;
         boolean loggingIn = value.problem.equals("login") && !loginRequested;
@@ -130,7 +170,7 @@ final class ConnectionRecovery {
             scheduler.post(() -> {
                 if (source == captured && loggingIn) loginRequested = actionSucceeded;
                 // Only a subsequent health response can establish recovery.
-                finish(token, delay);
+                finish(token, loggingIn && !actionSucceeded && delay < 0 ? 1500 : delay);
             });
         });
     }
@@ -139,7 +179,8 @@ final class ConnectionRecovery {
         busy = false;
         if (active && source != null) {
             scheduler.remove(refresh);
-            scheduler.postDelayed(refresh, generation == token ? delay : 0);
+            long nextDelay = generation == token ? delay : 0;
+            if (nextDelay >= 0) scheduler.postDelayed(refresh, nextDelay);
         }
     }
 }

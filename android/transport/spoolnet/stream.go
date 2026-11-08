@@ -28,6 +28,7 @@ type EventStream struct {
 	closed    bool
 	hidden    bool
 	helloSent bool
+	activity  func()
 }
 
 func (s *EventStream) Close() {
@@ -92,7 +93,11 @@ func (s *EventStream) Probe() error {
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 3*time.Second)
 	defer cancel()
-	return conn.Ping(ctx)
+	err := conn.Ping(ctx)
+	if err == nil && s.activity != nil {
+		s.activity()
+	}
+	return err
 }
 
 func (s *EventStream) sendPresence(kind, csrf string) error {
@@ -159,7 +164,7 @@ func (c *Client) SubscribeChat(chatID, language string, listener EventListener) 
 			streamError(ctx, listener, 0)
 			return
 		}
-		err = readSSE(resp.Body, listener)
+		err = readSSE(resp.Body, responseActivityListener{client: c, listener: listener})
 		if err != nil || ctx.Err() == nil {
 			streamError(ctx, listener, 0)
 		}
@@ -199,7 +204,7 @@ func (c *Client) SubscribeWorkspace(csrf, language string, listener EventListene
 		return nil, errors.New("authenticated workspace required")
 	}
 	ctx, cancel := context.WithCancel(c.ctx)
-	stream := &EventStream{ctx: ctx, cancel: cancel}
+	stream := &EventStream{ctx: ctx, cancel: cancel, activity: c.receivedResponse}
 	// Return a cancelable handle before dialing, just as WebSocket creation does.
 	go func() {
 		defer stream.Close()
@@ -241,6 +246,7 @@ func (c *Client) SubscribeWorkspace(csrf, language string, listener EventListene
 				streamError(ctx, listener, 0)
 				return
 			}
+			c.receivedResponse()
 			if event.Type == "ping" {
 				if err := stream.sendPresence("pong", ""); err != nil {
 					streamError(ctx, listener, 0)
