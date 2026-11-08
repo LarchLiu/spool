@@ -105,12 +105,14 @@ public class MainActivityGoalTest {
         final MainActivity activity;
         final Queue io = new Queue();
         final Queue refreshIO = new Queue();
-        Harness(boolean existing) throws Exception {
+        Harness(boolean existing) throws Exception { this(existing, null); }
+        Harness(boolean existing, Boolean useMarkwonHistory) throws Exception {
             RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
             ShadowClient.calls.clear(); ShadowClient.chatSubscriptions.clear(); ShadowClient.responder = null; ShadowClient.chatListener = null; ShadowClient.response = response(200, "message", "Goal details");
             ShadowClient.workspaceSubscriptions.clear(); ShadowClient.workspaceListeners.clear(); ShadowClient.workspaceStreams.clear(); ShadowClient.workspaceListener = null; ShadowClient.workspaceFactory = () -> null;
             controller = Robolectric.buildActivity(MainActivity.class).create().start().resume().visible();
             activity = controller.get();
+            if (useMarkwonHistory != null) set("useMarkwonHistory", useMarkwonHistory);
             // Workspace tests explicitly enter the workspace after the startup sidebar.
             call("closeDrawer");
             set("workspaceDecode", (java.util.concurrent.Executor) Runnable::run);

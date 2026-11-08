@@ -130,7 +130,11 @@ public final class MainActivity extends Activity {
     private NativeKeyedViews transcriptViews;
     private NativeTranscriptViewport transcriptViewport;
     private NativeMarkwonHistory markwonHistory;
-    private boolean markwonTrial;
+    private boolean useMarkwonHistory;
+    private final NativeTurnPresentation.Cache turnPresentations = new NativeTurnPresentation.Cache();
+    private final Map<String, NativeActivityList> virtualActivityRows = new HashMap<>();
+    private final java.util.Set<String> activityRebinds = new java.util.HashSet<>();
+    private NativeMarkwonHistory activityRenderOwner;
     private NativeComposerDock composerDock;
     private NativeSidebar sidebar;
     private NativeConnecting connectingView;
@@ -289,12 +293,14 @@ public final class MainActivity extends Activity {
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
+        useMarkwonHistory = true;
+        // Production always uses the recycler; debug builds retain a persisted comparison switch.
         if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            android.content.SharedPreferences trial = getSharedPreferences("rendering-trial", MODE_PRIVATE);
-            markwonTrial = trial.getBoolean("markwon", false);
+            android.content.SharedPreferences rendering = getSharedPreferences("rendering-trial", MODE_PRIVATE);
+            useMarkwonHistory = rendering.getBoolean("markwon", true);
             if (getIntent().hasExtra("spool_markwon")) {
-                markwonTrial = getIntent().getBooleanExtra("spool_markwon", false);
-                trial.edit().putBoolean("markwon", markwonTrial).apply();
+                useMarkwonHistory = getIntent().getBooleanExtra("spool_markwon", true);
+                rendering.edit().putBoolean("markwon", useMarkwonHistory).apply();
             }
         }
         Seq.setContext(getApplicationContext());
@@ -357,8 +363,29 @@ public final class MainActivity extends Activity {
         // dumpsys visits background instances too: only the exact focused page may gesture.
         boolean focused = hasWindowFocus();
         boolean historyVisible = (markwonHistory != null ? markwonHistory.isShown() : history != null && history.isShown()) && !settingsOpen && peoplePanel == null;
-        Integer velocity = performanceProbe.fling(args, foreground && focused && historyVisible && !destroyed, selectionEpoch);
+        boolean interactive = foreground && focused && historyVisible && !destroyed;
+        Integer velocity = performanceProbe.fling(args, interactive, selectionEpoch);
         if (velocity != null) { if (markwonHistory != null) markwonHistory.fling(0, velocity); else history.fling(velocity); }
+        Integer position = performanceProbe.position(args, interactive, selectionEpoch);
+        Boolean reuse = performanceProbe.reuse(args, interactive, selectionEpoch);
+        boolean controlAccepted = position != null && markwonHistory != null && markwonHistory.probePosition(position);
+        if (reuse != null && markwonHistory != null) { markwonHistory.reuseActivityRows = reuse; controlAccepted = true; }
+        String title = performanceProbe.value(args, "open-title", foreground && focused && !destroyed, selectionEpoch);
+        if (title != null && !title.isEmpty()) {
+            String match = null; int matches = 0;
+            for (int i = 0; i < chats.length(); i++) if (title.equals(at(chats, i).optString("title"))) { match = at(chats, i).optString("id"); matches++; }
+            if (matches == 1 && match != null && !match.isEmpty()) { openChat(match); controlAccepted = true; }
+        }
+        String scenario = performanceProbe.value(args, "expand-tools", interactive, selectionEpoch);
+        JSONObject scenarioResult = "standard".equals(scenario) ? probeExpandedTools() : null;
+        if (scenarioResult != null) controlAccepted = true;
+        if ("retry".equals(performanceProbe.value(args, "history-retry", interactive, selectionEpoch)) && historyLoader != null && historyLoader.failed()) {
+            loadEarlier(); controlAccepted = true;
+        }
+        JSONObject visibleContent = null;
+        if ("visible".equals(performanceProbe.value(args, "verify-content", interactive, selectionEpoch)) && markwonHistory != null) {
+            visibleContent = markwonHistory.probeVisibleContent(performanceProbe.token); controlAccepted = true;
+        }
         // Debug-only A/B switch for offscreen preparation; "viewport" reports its state.
         if (args.length >= 3 && args[1].equals("prepare")) NativeTranscriptViewport.prepareEnabled = !args[2].equals("off");
         int rows = 0, mounted = 0;
@@ -371,11 +398,14 @@ public final class MainActivity extends Activity {
         Runtime runtime = Runtime.getRuntime();
         if (markwonHistory != null) { rows = markwonHistory.blocks(); mounted = markwonHistory.getChildCount(); }
         writer.println("SPOOL_PERF " + object("probeVersion", 2, "probeToken", performanceProbe.token, "selectionEpoch", selectionEpoch,
-                "foreground", foreground, "focused", focused, "historyVisible", historyVisible, "flingAccepted", velocity != null,
+                "foreground", foreground, "focused", focused, "historyVisible", historyVisible, "flingAccepted", velocity != null, "controlAccepted", controlAccepted,
+                "scenario", scenarioResult == null ? new JSONObject() : scenarioResult,
+                "visibleContent", visibleContent == null ? new JSONObject() : visibleContent,
                 "historyHasMore", chat != null && chat.optJSONObject("history") != null && chat.optJSONObject("history").optBoolean("has_more"),
+                "historyFailed", historyLoader != null && historyLoader.failed(),
                 "turns", array(chat, "turns").length(), "parts", array(chat == null ? null : chat.optJSONObject("transcript"), "parts").length(),
                 "views", diagnosticViewCount(root), "virtualRows", rows, "mountedRows", mounted,
-                "renderer", markwonHistory == null ? "native-views" : "markwon-recycler", "renderPending", markwonHistory == null ? 0 : markwonHistory.pending(),
+                "turnPresentationBuilds", turnPresentations.builds, "renderer", markwonHistory == null ? "native-views" : "markwon-recycler", "renderPending", markwonHistory == null ? 0 : markwonHistory.pending(),
                 "viewport", markwonHistory != null ? markwonHistory.metrics() : transcriptViewport == null ? new JSONObject() : transcriptViewport.metrics(),
                 "scrollAnchor", historyScroll == null ? new JSONObject() : historyScroll.metrics(),
                 "historyHeight", markwonHistory != null ? markwonHistory.contentHeight() : historyContent == null ? 0 : historyContent.getHeight(),
@@ -387,6 +417,29 @@ public final class MainActivity extends Activity {
                 "toolDetails", ui == null || ui.toolDetails == null ? new JSONObject() : ui.toolDetails.metrics(),
                 "textOrigin", NativeTextView.diagnostics(),
                 "nativeAllocatedBytes", android.os.Debug.getNativeHeapAllocatedSize()));
+    }
+
+    private JSONObject probeExpandedTools() {
+        if (markwonHistory == null || chat == null || historyCursor(chat).more || markwonHistory.pending() != 0 || NativeChatState.hasRunningTurn(chat)) return null;
+        Map<String, NativeTurnPresentation> turns = turnPresentations.update(authEpoch + "\n" + selectionEpoch + "\n" + chatID, chat, java.util.Collections.emptySet());
+        String chosen = null; int largest = -1, index = 0, chosenIndex = -1;
+        for (Map.Entry<String, NativeTurnPresentation> entry : turns.entrySet()) {
+            NativeTurnPresentation value = entry.getValue(); NativeActivityList.State state = activityState(chat, value.turn);
+            state.update(false, state.count); state.open = false;
+            if (value.process.size() > largest) { largest = value.process.size(); chosen = entry.getKey(); chosenIndex = index; }
+            index++;
+        }
+        if (chosen == null || largest == 0) return null;
+        NativeActivityList.State state = activityState(chat, turns.get(chosen).turn); state.open = true;
+        renderChat();
+        NativeActivityList rows = virtualActivityRows.get(chosen);
+        int group = rows.probeExpansion(); renderChat();
+        int imagePosition = markwonHistory.positionOf(chosen + "/activity/group:" + group);
+        int start = Math.min(markwonHistory.blocks() - 30, imagePosition + 30);
+        if (start < 0) return null;
+        markwonHistory.probePosition(start);
+        return object("turnIndex", chosenIndex, "groups", state.count, "imageGroups", state.imageGroups.size(),
+                "openDetails", state.items.size(), "anchorPosition", imagePosition, "startPosition", start);
     }
 
     private static int diagnosticViewCount(View view) {
@@ -610,7 +663,7 @@ public final class MainActivity extends Activity {
         if (transcriptViewport != null) transcriptViewport.dispose();
         transcriptViewport = null;
         if (markwonHistory != null) markwonHistory.dispose();
-        markwonHistory = null;
+        markwonHistory = null; activityRenderOwner = null; virtualActivityRows.clear(); activityRebinds.clear(); turnPresentations.clear();
         if (historyScroll != null) historyScroll.dispose();
         historyScroll = null;
         history = null;
@@ -1594,7 +1647,7 @@ public final class MainActivity extends Activity {
         if (transcriptViewport != null) transcriptViewport.dispose();
         transcriptViewport = null;
         if (markwonHistory != null) markwonHistory.dispose();
-        markwonHistory = null;
+        markwonHistory = null; activityRenderOwner = null; virtualActivityRows.clear(); activityRebinds.clear(); turnPresentations.clear();
         if (historyScroll != null) historyScroll.dispose();
         historyScroll = null; history = null; historyContent = null; transcriptViews = null;
         connectingView = null; username = password = null; loginError = null; loginSubmit = null;
@@ -1997,7 +2050,7 @@ public final class MainActivity extends Activity {
         page.addView(header);
         page.addView(ui.divider());
         historyScrollState.select(authEpoch + "\n" + selectionEpoch + "\n" + chatID);
-        if (markwonTrial) {
+        if (useMarkwonHistory) {
             markwonHistory = new NativeMarkwonHistory(ui, historyScrollState, this::openMessageLink);
             ui.beforeDisclosure = markwonHistory::preservePosition;
         } else {
@@ -2359,7 +2412,8 @@ public final class MainActivity extends Activity {
                 visible |= optimisticSend.turnID.equals(at(array(chat, "turns"), i).optString("id"));
             if (!visible) optimisticSend = null;
         }
-        if (markwonHistory != null) { renderMarkwonChat(rebinds); return; }
+        Map<String, NativeTurnPresentation> turns = turnPresentations.update(authEpoch + "\n" + selectionEpoch + "\n" + chatID, chat, rebinds);
+        if (markwonHistory != null) { renderMarkwonChat(turns, rebinds); return; }
         historyScroll.changing(anchor);
         transcriptViews.begin();
         updateHistoryLoading();
@@ -2385,24 +2439,19 @@ public final class MainActivity extends Activity {
         }
         heading.setText(chat.optString("title", tr("New chat", "新对话")));
         subheading.setText(projectName());
-        Map<String, Integer> occurrences = new HashMap<>();
         boolean virtual = array(chat, "turns").length() > 32 || array(chat.optJSONObject("transcript"), "parts").length() > 256 || transcriptViewport != null;
         if (virtual && transcriptViewport == null)
             transcriptViewport = new NativeTranscriptViewport(history, historyContent, historyScroll, historyScrollState);
-        for (int i = 0; i < array(chat, "turns").length(); i++) {
-            JSONObject turn = at(array(chat, "turns"), i);
-            String id = turn.optString("id");
-            String key = new JSONArray().put(id.isEmpty() ? "index" : "turn").put(id.isEmpty() ? i : id)
-                    .put(occurrences.merge(id, 1, Integer::sum)).toString();
+        for (Map.Entry<String, NativeTurnPresentation> entry : turns.entrySet()) {
+            String key = entry.getKey(); NativeTurnPresentation value = entry.getValue();
+            String id = value.turn.optString("id");
             if (virtual) {
                 JSONObject page = chat;
                 NativeTranscriptViewport.Row row = (NativeTranscriptViewport.Row) transcriptViews.use(key + "/viewport", "viewport",
                         () -> new NativeTranscriptViewport.Row(ui));
-                int partCount = array(page.optJSONObject("transcript"), "parts").length();
-                row.partCount = Math.max(0, Math.min(partCount, turn.optInt("part_end", partCount)) - Math.max(0, turn.optInt("part_start")));
-                // Live events name the turns they changed; untouched rows keep their documents and closures.
-                if (rebinds == null || id.isEmpty() || rebinds.contains(id) || !row.bound()) row.bind(children -> renderTurn(page, turn, key, children));
-            } else renderTurn(chat, turn, key, transcriptViews);
+                row.partCount = value.parts.length();
+                if (rebinds == null || id.isEmpty() || rebinds.contains(id) || !row.bound()) row.bind(children -> renderTurn(page, value, key, children, true));
+            } else renderTurn(chat, value, key, transcriptViews, true);
         }
         transcriptViews.end();
         historyScroll.changed();
@@ -2410,7 +2459,7 @@ public final class MainActivity extends Activity {
         updateComposer();
     }
 
-    private void renderMarkwonChat(java.util.Set<String> rebinds) {
+    private void renderMarkwonChat(Map<String, NativeTurnPresentation> turns, java.util.Set<String> rebinds) {
         NativeMarkwonHistory recycler = markwonHistory;
         updateHistoryLoading();
         recycler.begin();
@@ -2430,85 +2479,108 @@ public final class MainActivity extends Activity {
         } else {
             heading.setText(chat.optString("title", tr("New chat", "新对话"))); subheading.setText(projectName());
             JSONObject page = chat;
-            JSONArray parts = array(page.optJSONObject("transcript"), "parts");
-            Map<String, Integer> occurrences = new HashMap<>();
-            for (int i = 0; i < array(page, "turns").length(); i++) {
-                JSONObject turn = at(array(page, "turns"), i);
+            java.util.Set<String> expanded = new java.util.HashSet<>();
+            for (Map.Entry<String, NativeTurnPresentation> entry : turns.entrySet()) {
+                String key = entry.getKey(); NativeTurnPresentation value = entry.getValue(); JSONObject turn = value.turn;
                 String id = turn.optString("id");
-                String key = new JSONArray().put(id.isEmpty() ? "index" : "turn").put(id.isEmpty() ? i : id)
-                        .put(occurrences.merge(id, 1, Integer::sum)).toString();
-                boolean refresh = rebinds == null || id.isEmpty() || rebinds.contains(id);
-                recycler.chrome(key + "/heading", refresh, children -> renderTurn(page, turn, key, children, false));
-                int start = Math.max(0, turn.optInt("part_start"));
-                int end = Math.min(parts.length(), turn.optInt("part_end", parts.length()));
-                int inputEnd = NativeTurnExchange.split(parts, start, end).get(0).inputEnd;
-                String source = NativeTurn.answer(parts, inputEnd, end, turn);
-                if (!source.isEmpty()) recycler.markdown(key + "/answer", source);
+                boolean refresh = rebinds == null || id.isEmpty() || rebinds.contains(id) || activityRebinds.contains(key);
+                NativeActivityList.State state = activityState(page, turn);
+                state.update(value.running && !value.answered, state.count);
+                NativeActivityList rows = null;
+                if (state.open && !value.process.isEmpty()) {
+                    rows = virtualActivityRows.computeIfAbsent(key, ignored -> NativeActivityList.virtualRows(ui, state,
+                            this::openMessageLink, transcriptImages(page), () -> requestActivityRender(recycler, key)));
+                    rows.bindVirtual(value, turnUserInput(page, value)); expanded.add(key);
+                }
+                recycler.chrome(key + "/heading", refresh, children -> renderTurn(page, value, key, children, false));
+                if (rows != null) rows.appendVirtualRows(recycler, key + "/activity", refresh);
+                if (!value.answer.isEmpty()) recycler.markdown(key + "/answer", value.answer);
                 recycler.chrome(key + "/footer", refresh, children -> {
-                    if (!source.isEmpty()) {
-                        JSONArray actions = array(turn, "actions");
-                        if (actions.length() > 0) {
-                            NativeTurnActions audit = (NativeTurnActions) children.use("actions", "actions", () -> new NativeTurnActions(ui));
-                            audit.bind(actions);
-                        }
-                        NativeMessageFooter footer = (NativeMessageFooter) children.use("footer", "footer",
-                                () -> new NativeMessageFooter(ui, false, null, source, turn.optLong("finished_at")));
-                        footer.bindText(source); footer.bindTimestamp(turn.optLong("finished_at"));
+                    if (value.actions.length() > 0) {
+                        NativeTurnActions audit = (NativeTurnActions) children.use("actions", "actions", () -> new NativeTurnActions(ui));
+                        audit.bind(value.actions);
                     }
+                    if (!value.answer.isEmpty()) {
+                        NativeMessageFooter footer = (NativeMessageFooter) children.use("footer", "footer",
+                                () -> new NativeMessageFooter(ui, false, null, value.answer, turn.optLong("finished_at")));
+                        footer.bindText(value.answer); footer.bindTimestamp(turn.optLong("finished_at"));
+                    }
+                    renderTurnStatus(page, value, key, children);
                     children.use("gap", "", () -> ui.space(38));
                 });
             }
+            virtualActivityRows.keySet().retainAll(expanded);
         }
+        activityRebinds.clear();
         recycler.end(); updateComposer();
     }
 
-    private void renderTurn(JSONObject page, JSONObject turn, String key, NativeKeyedViews transcriptViews) {
-        renderTurn(page, turn, key, transcriptViews, true);
+    private void requestActivityRender(NativeMarkwonHistory owner, String key) {
+        if (destroyed || owner != markwonHistory) return;
+        activityRebinds.add(key);
+        if (activityRenderOwner == owner) return;
+        activityRenderOwner = owner;
+        main.post(() -> {
+            if (activityRenderOwner != owner) return;
+            activityRenderOwner = null;
+            if (destroyed || owner != markwonHistory) return;
+            pendingRebinds = java.util.Collections.emptySet(); renderChat();
+        });
     }
 
-    private void renderTurn(JSONObject page, JSONObject turn, String key, NativeKeyedViews transcriptViews, boolean renderAnswer) {
-        JSONArray parts = array(page.optJSONObject("transcript"), "parts");
-        int start = Math.max(0, turn.optInt("part_start")),
-                end = Math.min(parts.length(), turn.optInt("part_end", parts.length()));
-        String operatorID = turn.optString("user_id");
-        if (operatorID.isEmpty()) operatorID = page.optString("user_id");
-        JSONObject operator = operatorID.isEmpty() ? null : person(operatorID);
-        String activityKey = turn.optString("id", page.optString("id") + ":" + turn.optInt("part_start"));
-        int inputEnd = NativeTurnExchange.split(parts, start, end).get(0).inputEnd;
-        String input = NativeUserRow.text(parts, start, inputEnd);
-        JSONArray files = array(turn, "attachments");
-        long timestamp = NativeUserRow.timestamp(parts, start, inputEnd, turn.optLong("started_at"));
-        if (NativeUserRow.hasContent(input, files, parts, start, inputEnd)) {
+    private NativeActivityList.State activityState(JSONObject page, JSONObject turn) {
+        String key = turn.optString("id", page.optString("id") + ":" + turn.optInt("part_start"));
+        return activityStates.computeIfAbsent(key, ignored -> new NativeActivityList.State());
+    }
+
+    private JSONObject turnOperator(JSONObject page, JSONObject turn) {
+        String id = turn.optString("user_id"); if (id.isEmpty()) id = page.optString("user_id");
+        return id.isEmpty() ? null : person(id);
+    }
+
+    private NativeActivityList.UserInput turnUserInput(JSONObject page, NativeTurnPresentation value) {
+        JSONObject operator = turnOperator(page, value.turn);
+        return (row, from, to) -> {
+            int first = value.inputEnd + from, last = value.inputEnd + to;
+            String text = NativeUserRow.text(value.parts, first, last);
+            row.setVisibility(NativeUserRow.hasContent(text, new JSONArray(), value.parts, first, last) ? View.VISIBLE : View.GONE);
+            row.bind(operator, text, NativeUserRow.timestamp(value.parts, first, last, value.turn.optLong("started_at")),
+                    userFiles(page, value.turn, row, value.parts, first, last, false));
+        };
+    }
+
+    private void renderTurn(JSONObject page, NativeTurnPresentation value, String key, NativeKeyedViews transcriptViews, boolean renderAnswer) {
+        JSONObject turn = value.turn, operator = turnOperator(page, turn);
+        if (NativeUserRow.hasContent(value.input, value.attachments, value.parts, 0, value.inputEnd)) {
             NativeUserRow userRow = (NativeUserRow) transcriptViews.use(renderAnswer ? key + "/user" : "user", "user",
-                    () -> new NativeUserRow(ui, operator, input, timestamp, null, this::openMessageLink));
-            userRow.bind(operator, input, timestamp, userFiles(page, turn, userRow, start, inputEnd, true));
+                    () -> new NativeUserRow(ui, operator, value.input, value.inputTimestamp, null, this::openMessageLink));
+            userRow.bind(operator, value.input, value.inputTimestamp, userFiles(page, turn, userRow, value.parts, 0, value.inputEnd, true));
             transcriptViews.use(renderAnswer ? key + "/user-gap" : "user-gap", "", () -> ui.space(22));
         }
-        boolean[] created = {false};
-        NativeActivityList.State activityState = activityStates.computeIfAbsent(activityKey, value -> new NativeActivityList.State());
+        NativeActivityList.State activityState = activityState(page, turn);
         NativeTranscriptImages images = transcriptImages(page);
-        NativeTurn response = (NativeTurn) transcriptViews.use(renderAnswer ? key + "/response" : "response", "", () -> {
-            created[0] = true;
-            return new NativeTurn(ui, parts, inputEnd, end, turn,
-                    locale().startsWith("zh"), activityState, this::openMessageLink, images, renderAnswer);
-        });
+        NativeMarkwonHistory owner = markwonHistory;
+        NativeTurn response = (NativeTurn) transcriptViews.use(renderAnswer ? key + "/response" : "response", "", () ->
+                new NativeTurn(ui, value, activityState, this::openMessageLink, images, renderAnswer,
+                        renderAnswer ? null : () -> requestActivityRender(owner, key)));
         response.rebindForTurn(activityState, images);
-        if (!created[0]) response.bind(parts, inputEnd, end, turn);
-        response.userInput((row, from, to) -> {
-            int first = inputEnd + from, last = inputEnd + to;
-            String text = NativeUserRow.text(parts, first, last);
-            row.setVisibility(NativeUserRow.hasContent(text, new JSONArray(), parts, first, last) ? View.VISIBLE : View.GONE);
-            row.bind(operator, text, NativeUserRow.timestamp(parts, first, last, turn.optLong("started_at")), userFiles(page, turn, row, first, last, false));
-        });
-        JSONObject approval = turn.optJSONObject("pending_approval");
-        if (approval != null) transcriptViews.use(key + "/approval/" + approval.optString("id"),
-                new JSONArray().put(approval).put(writable()), () -> approvalCard(page.optString("id"), turn.optString("id"), approval));
-        if (!turn.optString("error").isEmpty() && !turn.optString("status").equals("stopped"))
-            transcriptViews.use(key + "/error", turn.optString("error"), () -> ui.text(turn.optString("error"), 12, ui.error));
-        if (renderAnswer) transcriptViews.use(key + "/turn-gap", "", () -> ui.space(38));
+        response.activityRowsChanged(renderAnswer ? null : () -> requestActivityRender(owner, key));
+        response.bind(value);
+        response.userInput(turnUserInput(page, value));
+        if (renderAnswer) {
+            renderTurnStatus(page, value, key, transcriptViews);
+            transcriptViews.use(key + "/turn-gap", "", () -> ui.space(38));
+        }
     }
 
-    private List<NativeAttachmentCards.Item> userFiles(JSONObject page, JSONObject turn, NativeUserRow row, int start, int end, boolean first) {
+    private void renderTurnStatus(JSONObject page, NativeTurnPresentation value, String key, NativeKeyedViews children) {
+        JSONObject approval = value.approval;
+        if (approval != null) children.use(key + "/approval/" + approval.optString("id"),
+                new JSONArray().put(approval).put(writable()), () -> approvalCard(page.optString("id"), value.turn.optString("id"), approval));
+        if (!value.error.isEmpty()) children.use(key + "/error", value.error, () -> ui.text(value.error, 12, ui.error));
+    }
+
+    private List<NativeAttachmentCards.Item> userFiles(JSONObject page, JSONObject turn, NativeUserRow row, JSONArray parts, int start, int end, boolean first) {
         JSONArray files = first ? array(turn, "attachments") : new JSONArray();
         List<NativeAttachmentCards.Item> items = new ArrayList<>();
         final int session = authEpoch, selected = selectionEpoch;
@@ -2535,19 +2607,18 @@ public final class MainActivity extends Activity {
                         } }, image -> fileImages.remote(image, path, Math.min(512, dp(120)), null)));
             }
         } else {
-            JSONArray parts = array(page.optJSONObject("transcript"), "parts");
             for (int i = start; i < end; i++) {
                 JSONObject part = at(parts, i);
                 if (!part.optString("role").equals("user")) continue;
                 String source = part.optString("image_url"), name = part.optString("name", "image");
                 if (part.optString("kind").equals("context") && !part.optString("name").isEmpty()) {
                     String filePath = part.optString("file_path");
-                    items.add(new NativeAttachmentCards.Item(ownerChat + ":" + turn.optString("id") + ":file:" + (i - turn.optInt("part_start")), name, "application/octet-stream", "", "",
+                    items.add(new NativeAttachmentCards.Item(ownerChat + ":" + turn.optString("id") + ":file:" + i, name, "application/octet-stream", "", "",
                             () -> { if (current.getAsBoolean()) { if (filePath.isEmpty()) toast(new IOException(tr("File unavailable", "文件不可用"))); else openFile(new NativeFileTarget(filePath, 0, 0)); } }, null));
                     continue;
                 }
                 if (!part.optString("kind").equals("image") || !NativeFileData.inlineImage(source)) continue;
-                String id = ownerChat + ":" + turn.optString("id") + ":image:" + (i - turn.optInt("part_start"));
+                String id = ownerChat + ":" + turn.optString("id") + ":image:" + i;
                 items.add(new NativeAttachmentCards.Item(id, name, "image/png", "", source,
                         () -> { if (current.getAsBoolean()) previewInlineImage(source, name); },
                         image -> fileImages.inline(image, source, Math.min(512, dp(120)), null)));

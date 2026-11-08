@@ -126,7 +126,11 @@ public final class NativePerformanceInstrumentation extends Instrumentation {
                     frames.add(frame.getMetric(FrameMetrics.TOTAL_DURATION) / 1e6), new Handler(metrics.getLooper())));
             for (int round = 0; round < 12; round++) {
                 final int velocity = round % 2 == 0 ? -7000 : 7000;
-                action("history.fling", () -> ((NestedScrollView) field("history")).fling(velocity));
+                action("history.fling", () -> {
+                    NativeMarkwonHistory recycler = (NativeMarkwonHistory) field("markwonHistory");
+                    if (recycler != null) recycler.fling(0, velocity);
+                    else ((NestedScrollView) field("history")).fling(velocity);
+                });
                 SystemClock.sleep(500);
             }
             for (int round = 0; round < 8; round++) {

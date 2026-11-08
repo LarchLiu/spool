@@ -64,7 +64,15 @@ final class NativeSyntaxEngine implements AutoCloseable {
     }
 
     synchronized List<Line> highlight(String path, String contents, boolean dark) throws IOException {
-        String language = language(path);
+        return highlightLanguage(language(path), contents, dark);
+    }
+
+    synchronized List<Line> highlightCode(String info, String contents, boolean dark) throws IOException {
+        String language = info == null ? "" : info.trim().split("\\s+", 2)[0].toLowerCase(java.util.Locale.ROOT);
+        return highlightLanguage(language, contents, dark);
+    }
+
+    private List<Line> highlightLanguage(String language, String contents, boolean dark) throws IOException {
         JsonElement scope = manifest().getAsJsonObject("languages").get(language);
         IGrammar grammar = null;
         if (scope != null) {

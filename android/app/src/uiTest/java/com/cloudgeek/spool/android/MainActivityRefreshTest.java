@@ -81,7 +81,7 @@ public class MainActivityRefreshTest {
     }
 
     @Test public void unchangedAndOlderSnapshotsKeepTranscriptViewsScrollAndNativeSelection() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             start(h); android.widget.LinearLayout history = h.get("historyContent"); View row = history.getChildAt(0);
             JSONObject before = h.get("chat"); NativeUi.Composer editor = h.composer(); editor.input.setText("Next draft"); editor.input.setSelection(2);
             MainActivityGoalTest.ShadowClient.response = envelope(200, chat("running", 20)); h.refreshIO.run();

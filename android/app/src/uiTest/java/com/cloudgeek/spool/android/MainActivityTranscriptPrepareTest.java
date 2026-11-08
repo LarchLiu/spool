@@ -50,7 +50,7 @@ public class MainActivityTranscriptPrepareTest {
     static long metric(NativeTranscriptViewport viewport, String key) throws Exception { return viewport.metrics().getLong(key); }
 
     @Test public void offscreenTurnsArePreparedBetweenFramesWithoutMountingOrReplacingAttachedDocuments() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value = longChat(100);
             h.set("chat", value); h.call("renderChat"); settle(h);
             LinearLayout content = h.get("historyContent"); NestedScrollView history = h.get("history");
@@ -86,7 +86,7 @@ public class MainActivityTranscriptPrepareTest {
     }
 
     @Test public void prependedPagesRebindOnlyTheNewTurnsAndDetachNothing() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value = longChat(40);
             h.set("chat", value); h.call("renderChat"); settle(h);
             LinearLayout content = h.get("historyContent"); NativeTranscriptViewport viewport = h.get("transcriptViewport");

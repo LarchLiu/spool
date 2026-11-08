@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Reproducible Android platform adaptation of the pinned, otherwise unmodified TM4E core.
 
-The replacement OnigString source lives in android/textmate. No tokenizer rules,
-theme matching, grammars or regex patterns are rewritten here.
+The replacement OnigString source lives in android/textmate. Grammar patterns,
+tokenizer rules and theme matching are unchanged. One Java-regex helper escapes
+its literal closing brace explicitly for Android's ICU regex implementation.
 """
 import hashlib
 import pathlib
@@ -91,6 +92,11 @@ def adapt(data):
             value = value.replace(b'java/lang/System$Logger$Level', BRIDGE + b'$Level')
             value = value.replace(b'java/lang/System$Logger', BRIDGE + b'$Logger')
             value = value.replace(b'java/lang/System', BRIDGE)
+            # JDK Pattern accepts the unmatched literal '}', but Android ICU rejects
+            # it when RegexSource initializes. This is a helper for $1/${1:/upcase}
+            # substitutions, not an Oniguruma grammar expression.
+            if value == rb'\$(\d+)|\$\{(\d+):\/(downcase|upcase)}':
+                value = rb'\$(\d+)|\$\{(\d+):\/(downcase|upcase)\}'
             result.extend(struct.pack('>H', len(value)))
             result.extend(value)
         else:

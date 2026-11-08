@@ -60,7 +60,7 @@ public class MainActivityAppearanceTest {
             MainActivityWorkspaceEventsTest.event("ready", "{}"); h.call("startChat");
             Client client = h.get("client"); Object stream = h.get("workspaceStream");
             EventListener workspaceListener = MainActivityGoalTest.ShadowClient.workspaceListener, chatListener = MainActivityGoalTest.ShadowClient.chatListener;
-            View root = h.get("root"), history = h.get("history"), editor = h.composer();
+            View root = h.get("root"), history = h.get("markwonHistory"), editor = h.composer();
             h.composer().input.setText("Keep this draft while changing appearance");
             MainActivityGoalTest.ShadowClient.responder = call -> {
                 assertEquals("Appearance must not request or save server state", "/api/desktop", call.get(1));
@@ -74,7 +74,7 @@ public class MainActivityAppearanceTest {
             assertFalse(text(dialog.content).contains("Choose your avatar"));
             dialog.content.appearance.themes.getChildAt(1).performClick();
             assertEquals("dark", h.<String>get("theme")); assertTrue(dialog.content.appearance.themes.getChildAt(1).isSelected());
-            assertNotSame(root, h.get("root")); assertNotSame(history, h.get("history")); assertNotSame(editor, h.composer());
+            assertNotSame(root, h.get("root")); assertNotSame(history, h.get("markwonHistory")); assertNotSame(editor, h.composer());
             assertTrue(h.<NativeUi>get("ui").dark);
             assertEquals("Keep this draft while changing appearance", h.composer().input.getText().toString());
             assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty()); assertTrue(h.io.jobs.isEmpty());

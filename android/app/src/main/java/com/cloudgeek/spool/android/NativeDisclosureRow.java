@@ -44,14 +44,17 @@ final class NativeDisclosureRow extends FrameLayout {
             label.setSingleLine(true);
             label.setEllipsize(TextUtils.TruncateAt.END);
         }
-        addView(label);
+        // The row measures this label with AT_MOST. MATCH_PARENT makes TextView
+        // synchronously reshape new text at the previous row's width during bind,
+        // only to reshape it again in onMeasure at the new available width.
+        addView(label, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
         caret = work ? null : ui.decorativeIcon(expanded ? "chevron-down" : "chevron-right", size);
         if (caret != null) addView(caret);
         stats = statistics.isEmpty() ? null : ui.text(statistics, 11, ui.subtle);
         if (stats != null) {
             stats.setSingleLine(true);
             stats.setFontFeatureSettings("tnum");
-            addView(stats);
+            addView(stats, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
         }
         this.expanded = expanded;
         setBackground(ui.states(0, work || group ? 6 : 5, 0, ui.hover, 0));
@@ -91,12 +94,18 @@ final class NativeDisclosureRow extends FrameLayout {
     }
 
     void bind(CharSequence title, String symbol, String statistics) {
+        bind(title, symbol, statistics, true);
+    }
+
+    void bind(CharSequence title, String symbol, String statistics, boolean preservePlainFallback) {
         boolean changed = false;
-        if (!java.util.Objects.equals(boundTitle, title)) {
-            boundTitle = title; label.setText(title); setContentDescription(title);
-        // TextView's fixed LayoutParams shortcut can retain its old intrinsic
-        // width, but this flex row measures the label with AT_MOST on every bind.
-            label.forceLayout(); changed = true;
+        NativeTextView text = (NativeTextView) label;
+        boolean modeChanged = text.preservePlainFallback != preservePlainFallback;
+        text.preservePlainFallback = preservePlainFallback;
+        if (modeChanged || !java.util.Objects.equals(boundTitle, title)) {
+            boundTitle = title; label.setText(title);
+            setContentDescription(title);
+            changed = true;
         }
         if (!work && !this.symbol.equals(symbol)) {
             this.symbol = symbol;
@@ -110,9 +119,9 @@ final class NativeDisclosureRow extends FrameLayout {
             if (stats == null) {
                 stats = ui.text(statistics, 11, ui.subtle); stats.setSingleLine(true);
                 stats.setFontFeatureSettings("tnum"); stats.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-                addView(stats);
+                addView(stats, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
                 changed = true;
-            } else if (!TextUtils.equals(stats.getText(), statistics)) { stats.setText(statistics); stats.forceLayout(); changed = true; }
+            } else if (!TextUtils.equals(stats.getText(), statistics)) { stats.setText(statistics); changed = true; }
         }
         if (changed) requestLayout();
     }

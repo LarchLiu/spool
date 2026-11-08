@@ -38,6 +38,11 @@ these binary changes:
    absent on API 26 and are not rewritten by core desugaring. Only the invoke
    opcode/reference changes; interface-call padding becomes NOPs, preserving
    branch offsets, exception ranges and stack maps. No grammar semantics change.
+4. Escape the literal closing brace in `RegexSource`'s capture-substitution
+   helper. The JDK accepts the unescaped brace, but Android ICU throws a
+   `PatternSyntaxException` during class initialization, disabling every source
+   and diff highlighter. The escaped expression has the same capture semantics;
+   no Oniguruma grammar patterns are rewritten.
 
 The transform has deterministic ZIP ordering/timestamps. The replacement Java
 files document their upstream EPL/MIT attribution. These source modifications
@@ -73,7 +78,9 @@ VM-neutral `jni.h` with `-idirafter` when Android Studio's JBR omits headers.
 Host/Android builds share a file lock. No upstream test programs are built and
 no system native libraries are required at runtime.
 
-The app serializes syntax computation and native cleanup on `codeWorker`.
+Source and native code widgets schedule syntax computation on `codeWorker`;
+nested Markwon code prepares tokens on its parser worker. The shared engine
+serializes both tokenization and cleanup with its existing monitor.
 Grammars are registered lazily, retaining visited-language injection history,
 and compiled handles are released when changing the current language/theme or
 clearing the session. Each document/hunk side resets multiline state. Lines
@@ -81,6 +88,10 @@ longer than 1,000 UTF-16 units stay plain without advancing that state, matching
 the Web. Detachment cancels tasks; view/session epochs reject late results.
 Source keeps its original selectable text and tab spans. Diff colors update
 together with precise rows; neither renderer creates one View per token.
+Markdown fences resolve language names/aliases from the grammar manifest, while
+file previews keep the exact filename mapping. Rebinding a code widget cancels
+its previous subscription and removes only syntax-owned spans, retaining
+selection and tab stops when the code bytes have not changed.
 
 Conformance uses actual Web token outputs, checking every UTF-16 unit's color
 and font flags in 29 fixtures, both themes. It includes embedded grammars,

@@ -33,13 +33,15 @@ public class NativeMarkwonHistoryTest {
     private static final class Fixture implements AutoCloseable {
         final ActivityController<Activity> controller;
         final NativeMarkwonHistory history;
+        final NativeUi ui;
         final NativeHistoryScroll.State state = new NativeHistoryScroll.State();
         final List<String> opened = new ArrayList<>();
         Fixture() { this("mdpi"); }
         Fixture(String density) {
             RuntimeEnvironment.setQualifiers("w360dp-h800dp-" + density);
             controller = Robolectric.buildActivity(Activity.class).setup();
-            history = new NativeMarkwonHistory(new NativeUi(controller.get(), false, "zh-CN"), state, opened::add);
+            ui = new NativeUi(controller.get(), false, "zh-CN");
+            history = new NativeMarkwonHistory(ui, state, opened::add);
             controller.get().setContentView(history);
         }
         void source(String source) { history.begin(); history.markdown("answer", source); history.end(); }
@@ -58,7 +60,15 @@ public class NativeMarkwonHistoryTest {
             if (history.pending() == 0) break;
             Thread.sleep(10);
         }
-        assertEquals("The owned background parser must finish", 0, history.pending());
+        if (history.pending() != 0) {
+            java.lang.reflect.Field field = NativeMarkwonHistory.class.getDeclaredField("current"); field.setAccessible(true);
+            for (Object segment : ((java.util.Map<?, ?>) field.get(history)).values()) {
+                java.lang.reflect.Field parsing = segment.getClass().getDeclaredField("parsing"); parsing.setAccessible(true);
+                java.util.concurrent.Future<?> task = (java.util.concurrent.Future<?>) parsing.get(segment);
+                if (task != null && task.isDone()) task.get();
+            }
+        }
+        assertEquals("The owned background parser must finish: " + history.metrics(), 0, history.pending());
         assertEquals("CommonMark/Markwon binary compatibility must hold", 0, history.metrics().getLong("parseErrors"));
         for (int i = 0; i < 4; i++) { Shadows.shadowOf(Looper.getMainLooper()).idle(); layout(history); }
     }
@@ -67,6 +77,55 @@ public class NativeMarkwonHistoryTest {
         if (root instanceof TextView) result.add((TextView) root);
         if (root instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) root).getChildCount(); i++) result.addAll(texts(((ViewGroup) root).getChildAt(i)));
         return result;
+    }
+
+    private static NativeCodeBlock code(View root) {
+        if (root instanceof NativeCodeBlock) return (NativeCodeBlock) root;
+        if (root instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) root).getChildCount(); i++) {
+            NativeCodeBlock found = code(((ViewGroup) root).getChildAt(i)); if (found != null) return found;
+        }
+        return null;
+    }
+
+    @Test public void codeRowsUseNativeHeadersHorizontalScrollAndLazySyntaxWithoutChangingCopiedBytes() throws Exception {
+        try (Fixture f = new Fixture()) {
+            List<Runnable> jobs = new ArrayList<>();
+            f.ui.syntax = new NativeSyntax(jobs::add, (language, source, dark) -> List.of(new NativeSyntaxEngine.Line(0, source.length(),
+                    List.of(new NativeSyntaxEngine.Run(1, 6, 0xff123456, 0)))), () -> {});
+            String literal = "\tconst value = '" + "long text ".repeat(30) + "';  \n\n";
+            String source = "```typescript fixture.ts\n" + literal + "\n```\n\n" + "Tail paragraph.\n\n".repeat(80);
+            f.source(source); f.ready();
+            assertTrue("Offscreen code does not start view-bound tokenization", jobs.isEmpty());
+            f.history.scrollToPosition(0); f.ready();
+            NativeCodeBlock block = code(f.history); assertNotNull(block);
+            assertEquals("typescript", block.language.getText().toString()); assertEquals(literal, block.code.getText().toString());
+            assertTrue(block.code.getWidth() > block.scroll.getWidth());
+            Object document = block.code.getText(); Selection.setSelection((Spannable) document, 1, 6);
+            int height = block.getHeight(); for (Runnable job : List.copyOf(jobs)) job.run(); Shadows.shadowOf(Looper.getMainLooper()).idle(); f.frame();
+            assertSame(document, block.code.getText()); assertEquals(1, block.code.getSelectionStart()); assertEquals(height, block.getHeight());
+            assertEquals(1, ((Spanned) document).getSpans(0, literal.length(), android.text.style.ForegroundColorSpan.class).length);
+            block.scroll.scrollTo(200, 0); assertTrue(block.copy.getRight() <= block.getWidth()); block.copy.performClick();
+            android.content.ClipboardManager clipboard = (android.content.ClipboardManager) f.controller.get().getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+            assertEquals(literal, clipboard.getPrimaryClip().getItemAt(0).getText().toString());
+            long parses = f.history.metrics().getLong("preparedBlocks"); f.source(source); f.ready();
+            assertEquals(parses, f.history.metrics().getLong("preparedBlocks")); assertSame(document, code(f.history).code.getText());
+            f.history.scrollToPosition(f.history.blocks() - 1); f.ready(); f.history.scrollToPosition(0); f.ready();
+            assertEquals(literal, code(f.history).code.getText().toString());
+        }
+    }
+
+    @Test public void codeNestedInQuotesStillGetsSyntaxDuringBackgroundBlockPreparation() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.ui.syntax = new NativeSyntax(Runnable::run, (language, source, dark) -> {
+                assertNotEquals(Looper.getMainLooper().getThread(), Thread.currentThread());
+                assertEquals("ts", language);
+                return List.of(new NativeSyntaxEngine.Line(0, source.length(), List.of(new NativeSyntaxEngine.Run(0, 5, 0xff123456, 0))));
+            }, () -> {});
+            f.source("> ```ts\n> const value = 1;\n> ```"); f.ready();
+            assertTrue(texts(f.history).stream().anyMatch(text -> text.getText() instanceof Spanned &&
+                    java.util.Arrays.stream(((Spanned) text.getText()).getSpans(0, text.length(), android.text.style.ForegroundColorSpan.class))
+                            .anyMatch(span -> span.getForegroundColor() == 0xff123456)));
+        }
     }
 
     @Test public void officialBlockAdapterReusesNativeHoldersAcrossHundredsOfParagraphs() throws Exception {

@@ -161,11 +161,15 @@ final class NativeCjkFallback {
     }
 
     CharSequence apply(CharSequence value, String locale, int weight) {
-        return apply(value, locale, weight, false);
+        return apply(value, locale, weight, false, true);
     }
 
     CharSequence applyCss(CharSequence value, String locale, int weight) {
-        return apply(value, locale, weight, true);
+        return applyCss(value, locale, weight, true);
+    }
+
+    CharSequence applyCss(CharSequence value, String locale, int weight, boolean preservePlainText) {
+        return apply(value, locale, weight, true, preservePlainText);
     }
 
     static boolean containsCjk(CharSequence value) {
@@ -177,10 +181,19 @@ final class NativeCjkFallback {
         return false;
     }
 
-    private CharSequence apply(CharSequence value, String locale, int weight, boolean css) {
+    private CharSequence apply(CharSequence value, String locale, int weight, boolean css, boolean preservePlainText) {
         if (value == null || value.length() == 0) return value;
         boolean containsCjk = containsCjk(value);
-        if (!containsCjk && (!(value instanceof Spanned) || ((Spanned) value).getSpans(0, value.length(), FaceSpan.class).length == 0)) return value;
+        boolean previousFaces = value instanceof Spanned && ((Spanned) value).getSpans(0, value.length(), FaceSpan.class).length > 0;
+        if (!containsCjk && !previousFaces) return value;
+        String language = Locale.forLanguageTag(locale).getLanguage();
+        // face() only supplies Japanese/Chinese locale faces. Wrapping an unchanged
+        // English-locale label in an empty Spannable disables BoringLayout's direct
+        // String drawing path and allocates span structures for every recycled row.
+        // Legacy TextView renders mixed-direction String/Spanned text differently.
+        // Preserve that platform's existing shaping path.
+        if (android.os.Build.VERSION.SDK_INT >= 28 && preservePlainText && !previousFaces
+                && !language.equals("ja") && !language.equals("zh")) return value;
         // Do not freeze a real variable family to one fontconfig named instance.
         if (css && containsCjk && variableWeightFamily(locale)) return value;
         // Builder excludes NoCopySpan (TextView watchers/selection), unlike SpannableString's copy constructor.

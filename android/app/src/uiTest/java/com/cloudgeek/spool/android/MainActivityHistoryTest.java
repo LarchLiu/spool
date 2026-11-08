@@ -62,7 +62,7 @@ public class MainActivityHistoryTest {
     }
 
     @Test public void automaticallyHydratesSequentiallyOnlyAfterPaintAndRetainsLiveMetadata() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             MainActivityGoalTest.Queue reads = prepare(h, chat("recent", 4, "middle/日本 ?&", true));
             assertTrue(reads.jobs.isEmpty()); assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
             assertTrue(h.<LinearLayout>get("historyContent").getChildAt(0) instanceof NativeHistoryNotice);
@@ -83,7 +83,7 @@ public class MainActivityHistoryTest {
     }
 
     @Test public void prependPreservesTheReadingAnchorAndEditorCompositionWhileFollowingStaysAtTheBottom() throws Exception {
-        for (boolean following : new boolean[] {false, true}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        for (boolean following : new boolean[] {false, true}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             MainActivityGoalTest.Queue reads = prepare(h, chat("recent", 9, "older", true)); paint(h);
             NestedScrollView scroll = h.get("history"); LinearLayout content = h.get("historyContent");
             assertEquals(content.getHeight() - scroll.getHeight(), scroll.getScrollY());
@@ -108,7 +108,7 @@ public class MainActivityHistoryTest {
     }
 
     @Test public void invalidCursorAndNetworkErrorsStopAutomaticLoadingUntilTheVisibleRetry() throws Exception {
-        for (int kind = 0; kind < 4; kind++) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        for (int kind = 0; kind < 4; kind++) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             MainActivityGoalTest.Queue reads = prepare(h, chat("recent", 2, "older", true)); paint(h);
             JSONObject invalid = chat("invalid", 1, kind == 1 ? "" : "older", true);
             if (kind == 2) invalid.put("id", "other-chat");
@@ -125,7 +125,7 @@ public class MainActivityHistoryTest {
     }
 
     @Test public void navigationRevokesUndrawnQueuedAndPostedHistoryEvenWhenReturningToTheSameChat() throws Exception {
-        for (int stage = 0; stage < 3; stage++) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        for (int stage = 0; stage < 3; stage++) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             MainActivityGoalTest.Queue reads = prepare(h, chat("recent", 2, "older", true));
             if (stage >= 1) paint(h);
             MainActivityGoalTest.ShadowClient.response = response(401, new JSONObject().put("error", "Late expiration"));
@@ -138,7 +138,7 @@ public class MainActivityHistoryTest {
     }
 
     @Test public void liveCursorChangesFenceOldPagesAndDoNotLoseTheNewTranscript() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             MainActivityGoalTest.Queue reads = prepare(h, chat("recent", 3, "old", true)); paint(h);
             MainActivityGoalTest.ShadowClient.response = response(200, chat("stale", 2, "older", true)); reads.jobs.remove(0).run();
             h.set("chat", chat("live", 4, "new", true).put("updated_at", 40)); h.call("renderChat"); idle();
@@ -149,7 +149,7 @@ public class MainActivityHistoryTest {
     }
 
     @Test public void unavailableHistoryHasAStatusButNoRequestAndCurrentAuthenticationFailureExpires() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value = chat("recent", 2, "older", true); value.getJSONObject("history").put("error", "unavailable");
             MainActivityGoalTest.Queue reads = prepare(h, value); paint(h); assertTrue(reads.jobs.isEmpty());
             NativeHistoryNotice notice = (NativeHistoryNotice) h.<LinearLayout>get("historyContent").getChildAt(0);
@@ -161,7 +161,7 @@ public class MainActivityHistoryTest {
     }
 
     @Test public void rebuildingTheWorkspaceMovesUndrawnWorkAndLocaleRebindingRevokesOldRequests() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             MainActivityGoalTest.Queue reads = prepare(h, chat("recent", 2, "older", true));
             h.call("render"); paint(h); assertEquals(1, reads.jobs.size());
             MainActivityGoalTest.ShadowClient.response = response(401, new JSONObject().put("error", "Old locale")); reads.jobs.remove(0).run();
@@ -172,7 +172,7 @@ public class MainActivityHistoryTest {
     }
 
     @Test public void aSameCursorLiveSnapshotDuringTheReadSurvivesPrependAndLaterStatusRefresh() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             MainActivityGoalTest.Queue reads = prepare(h, chat("recent", 3, "older", true)); paint(h);
             JSONObject live = chat("recent", 3, "older", true).put("updated_at", 50).put("title", "Live title");
             live.getJSONObject("transcript").getJSONArray("parts").getJSONObject(5).put("text", "Newest live output");
@@ -189,7 +189,7 @@ public class MainActivityHistoryTest {
     }
 
     @Test public void backgroundingRevokesUndrawnAndQueuedPagesAndPreservesFailureUntilExplicitRetry() throws Exception {
-        for (boolean failed : new boolean[] {false,true}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        for (boolean failed : new boolean[] {false,true}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             MainActivityGoalTest.Queue reads = prepare(h, chat("recent", 2, "older", true));
             if (failed) {
                 paint(h); MainActivityGoalTest.ShadowClient.response = response(503, new JSONObject().put("error", "Offline")); reads.run(); paint(h);
@@ -205,7 +205,7 @@ public class MainActivityHistoryTest {
     }
 
     @Test public void themeRecreationBeforePrependLayoutRetainsThePendingContentAnchor() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             MainActivityGoalTest.Queue reads = prepare(h, chat("recent", 9, "older", true)); paint(h);
             NestedScrollView scroll = h.get("history"); scroll.scrollTo(0, 150);
             int oldHeight = h.<LinearLayout>get("historyContent").getHeight(), oldTop = scroll.getScrollY();

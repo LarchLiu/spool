@@ -426,9 +426,9 @@ and the first CSS baseline snap remains on the mount path. Raw content-free
 reports are `build/artifacts/android-scroll-prefetch/pause3-{on,off}-up*.json`;
 the 1.25-second-cadence runs are `up.json`, `alternate.json` and `ab*.json`.
 
-## Markwon Recycler Trial
+## Default Markwon Recycler History
 
-A debug-only opt-in now renders assistant answers with Markwon 4.6.2's official
+All build types now render assistant answers by default with Markwon 4.6.2's official
 `MarkwonAdapter` / `SimpleEntry`, composed with the existing native user rows,
 activity disclosures, approvals, actions and message footers using AndroidX
 `ConcatAdapter`. A single `RecyclerView` is the scrolling surface. Markdown
@@ -438,7 +438,7 @@ enabled; tables use Markwon's span renderer. File citations retain their native
 file action through a parser/visitor extension and all links use the existing
 message-link router. Images do not introduce an automatic remote image loader.
 
-The trial uses the existing CommonMark 0.24.0 classes. The obsolete
+The renderer uses the existing CommonMark 0.24.0 classes. The obsolete
 `com.atlassian.commonmark` transitive artifacts are excluded from every Markwon
 dependency to prevent duplicate `org.commonmark` classes in the APK. The
 API26/35 GFM tests exercise the resulting binary combination, including ordered
@@ -453,10 +453,11 @@ disposed. Prepared data is published before its nodes; text binding remains
 synchronous. Upstream explicitly warns
 that `PrecomputedTextSetterCompat` must not be used directly with
 `markwon-recycler`, because its asynchronous `setText` can overwrite a recycled
-holder. The trial uses a synchronous TextSetter with the public AndroidX
+holder. The renderer uses a synchronous TextSetter with the public AndroidX
 `TextViewCompat.setPrecomputedText` API instead. See the [official implementation warning](https://github.com/noties/Markwon/blob/master/markwon-core/src/main/java/io/noties/markwon/PrecomputedTextSetterCompat.java).
 
-Enable the trial on a debug APK, preserving app data:
+Markwon is the default without an intent or saved preference. To restore it
+after a debug-only comparison, preserving app data:
 
 ```sh
 sh android/tools/run.sh adb -s DEVICE_SERIAL shell am force-stop com.cloudgeek.spool.android.dev
@@ -466,9 +467,14 @@ sh android/tools/run.sh adb -s DEVICE_SERIAL shell am start \
 ```
 
 The setting survives app restarts in the debug package. Repeat the commands with
-`--ez spool_markwon false` to select the existing renderer. The intent option is
-accepted only when the package is debuggable. The existing renderer remains the
-release default while this trial is evaluated.
+`--ez spool_markwon false` to select the legacy renderer for comparison. Debug
+packages default to Markwon when the preference is absent and retain an explicit
+saved override. Release always uses Markwon and ignores both the saved override
+and intent extra. The old `rendering-trial` preference file/key is retained for
+debug compatibility; the runtime field is named `useMarkwonHistory`.
+
+The `spool-performance` dump and its ADB scrolling/setup controls remain guarded
+by `FLAG_DEBUGGABLE`, independently of the production renderer selection.
 
 The performance dump identifies `renderer: "markwon-recycler"` and reports
 block count, created/bound/recycled holders, bind times, parse time, parse errors
@@ -477,9 +483,20 @@ and background Markdown parsing. RecyclerView scroll range/offset are native
 estimates based on visible item sizes; they are not directly comparable with
 the previous renderer's exact document pixel coordinates.
 
-This is a performance and interaction trial. Markwon's typography, table
-wrapping and code-block presentation are not the existing Web raster contract;
-the current trial does not add code syntax highlighting to the Markwon blocks.
+Top-level fenced and indented code blocks use `NativeCodeBlock`, shared with
+native Markdown previews: language label, copy feedback, selectable original
+text, tab spacing and horizontal scrolling. Its TextMate work starts on
+attachment, cancels on detach/rebind, and rejects results for an old language or
+document. Code within quotes/lists receives syntax spans during background
+Markwon preparation. The shared engine serializes tokenization and cleanup.
+The TM4E adapter explicitly escapes the closing brace in its Java capture helper
+for Android ICU; the unescaped form previously disabled source/diff syntax at
+class initialization even though host-JVM tests passed. APK checks reject that
+old constant, and the release device smoke checks actual colored spans in both
+the answer code widget and file source preview.
+
+Markwon's ordinary Markdown typography and table wrapping still differ from the
+existing Web raster contract; whole-document pixel parity is not claimed.
 User bubbles and expanded tool/activity details retain their existing native
 renderers. Content-free device measurements and the verification summary live
 in `build/artifacts/android-scroll-debug/`.
@@ -594,3 +611,316 @@ failures remain documented above; the full suite was not re-run for this
 continuation. Current reports are `hotspots-precomputed-{up,down,alternate}.json`,
 `hotspots-repeat-{up,down}.json` and `hotspots-precomputed-methods.json`, plus
 `hotspots-tests.log` and the updated verification manifest.
+
+
+## Expanded Tools And Shared Turn Presentation
+
+A subsequent user report reproduced a large pause when scrolling upward into
+an expanded tool process containing image previews. The focused Android 34
+phone had 19 turns and 3,247 transcript parts, with history hydration complete.
+A no-sampler alternating run recorded 25/525 janky frames (4.76%), P99 150ms,
+15 slow bitmap uploads and zero new Markdown parses/binds. A separate complete,
+non-overflowed ART sample recorded one 600.6ms native chrome binding and about
+942–950 mounted Views when the expanded process entered the viewport. That
+sample attributes the main-thread burst to constructing the whole activity
+subtree. The instrumented frame times are not a performance baseline.
+
+The five review corrections and the extra measured hotspot are now handled:
+
+- Disclosure position is captured relative to its containing recycler item and
+  restored during actual layout, including child-only and delayed body layouts.
+  User gestures release that anchor; explicit list jumps are respected. Manual
+  disclosure pauses following, while ordinary scrolling retains the existing
+  90dp bottom-follow threshold.
+- Each Markdown block has a stable identity and a retained styled document.
+  Background parsing fingerprints source and resolved references, renders and
+  precomputes changed blocks, and calculates a diff. Unchanged blocks keep their
+  selection. Rendering boundaries, table alignment, task state and resolved
+  references participate in identity checks. Retained blocks are unlinked from
+  old document parents/siblings. Main-thread delivery is independent of View
+  attachment and rejects removed, superseded or disposed requests.
+- Image Markdown, bare URLs and file citations use the existing native open
+  router. Code, escaped URLs and nested link labels retain literal boundaries.
+- Segment reconciliation retains adapter order and ownership. An unchanged
+  pass visits each segment once without copying the adapter list per segment.
+- Both renderer paths consume `NativeTurnPresentation`: initial input and files,
+  chronological process, final answer, actions, approval and normalized error.
+  Changed-turn updates reuse every untouched presentation. Turn-local part
+  indices remain valid after prepending history. Approval/error UI follows the
+  answer and actions in either renderer.
+- Markwon expanded processes emit independent user, progress, image, group and
+  tool rows. Only visible/nearby rows create native widgets. Distinct row types
+  have distinct recycled pools, preventing alternating tool/group/message rows
+  from repeatedly rebuilding each other's children. Tool ownership updates
+  both details and click IDs. Details retain their existing detach/cancellation
+  lifecycle. Thinking preview reuse is bounded to 64 entries and 131,072 source
+  plus display characters per factory, excluding entries over 32,768 characters.
+
+The targeted suite passes 142 tests on API26/35, including the original four
+review reproductions, cross-block references, insertion/deletion/reordering,
+400 expanded tools, mixed-type holder reuse, delayed tool body lifetimes, image
+preview ownership, and production Activity steering/files/status/composer flow.
+The 500-turn presentation test reads only the changed turn's two parts on an
+incremental update. The 14 Python probe tests, debug APK build and lint pass.
+An additional broad behavior check still encounters the previously documented
+fixture mismatch: `rg -n foo src` is classified as `read`, while the fixture
+expects `search`. The classifier, activity model, test and fixture all match
+HEAD; this is recorded separately rather than included in the passing suite.
+
+An intermediate row-splitting build reduced the observed mounted View peak to
+205 and P99 to 38ms for 8 upward flings, but still had 87/428 janky frames
+(20.33%) while traversing new rows. Its nearby alternating run recorded 33/655
+(5.04%) and P99 31ms. The follow-up ART sample identified repeated mixed-row
+construction and thinking-preview parsing, motivating the separate pools and
+bounded preview reuse described above. The sample did not overflow, but its
+large instrumentation overhead precludes comparing its frame times.
+
+The refined build was cover-installed and measured without ART sampling. The
+same chat still had 19 turns / 3,247 parts; the reader opened additional groups,
+so it now contained 752 recycler entries rather than the intermediate 432.
+Each fling used a 0.5s pause; upward/downward runs had eight flings and the
+alternating run had ten.
+
+| Refined build | Janky frames | P95 | P99 | Sampled maximum Views | Total chrome bind time |
+| --- | --- | --- | --- | --- | --- |
+| Upward traversal | 66 / 475 (13.89%) | 29ms | 36ms | 204 | 464ms |
+| Downward traversal | 66 / 476 (13.87%) | 29ms | 34ms | 204 | 526ms |
+| Nearby alternating | 38 / 666 (5.71%) | 22ms | 28ms | 143 | 7.9ms |
+
+All three runs performed zero additional Markdown parses, turn-presentation
+builds or segment reconciliations. The alternating run created zero holders and
+bound native chrome four times. The large tail is shorter than the initial
+150ms P99 alternating observation, while sustained traversal still drops about
+13.9% of frames; this is not a claim of consistently smooth rendering.
+
+Reports and the installed APK hash are retained under
+`build/artifacts/android-chat-scroll-fix/`. These observations do not establish
+a controlled speed ratio: viewport position, rows traversed, cache warmth and
+frame totals vary. Expanded rows no longer mount a complete turn's activity
+View tree, but individual large progress blocks, tool bodies and image groups
+still use their existing native content widgets. Prepared Markdown remains
+retained per loaded answer, so total history memory is not bounded by the
+holder pool. Very large single blocks/image groups and an overall parsed-data
+budget remain separate scalability work.
+
+
+### Avoiding Duplicate Disclosure Text Layout
+
+The follow-up focused on the remaining dropped-frame percentage while scrolling
+through expanded tools. Before this change, a same-chat upward run (19 turns,
+3,247 parts, 752 entries, eight flings with 0.5s pauses) still measured 51/484
+janky frames (10.54%), P95 27ms and P99 42ms. A separate 10,000us ART sample did
+not overflow. Its main-thread call stacks attributed 277ms CPU to native text
+updates, with 197ms in `TextView.checkForRelayout`; the sample is attribution,
+not the no-sampler baseline.
+
+`NativeDisclosureRow` measures its title and change statistics with AT_MOST and
+positions them explicitly. They nevertheless inherited FrameLayout's default
+MATCH_PARENT layout parameters. Android's fixed-width TextView update path
+therefore reshaped each new title synchronously using the previous holder's
+width; the row's subsequent measurement then reshaped it again. The forced
+label remeasure in the binder had been compensating for the same mismatch.
+Titles and statistics now declare WRAP_CONTENT, allowing TextView to discard
+its stale layout and wait for the row's real width. Unchanged text keeps its
+existing layout. The measured label sizes, typography, ellipsis and positions
+remain the same.
+
+API26/35 tests compare complete pixels, title width/baseline/ellipsis and row
+height with the old parameter path after changing both content and width. They
+cover summary/group/item rows, mdpi/420dpi/xxhdpi, styled mixed CJK/English text
+and changing/removing/recreating statistics. The update test asserts that
+binding creates no premature text layout and that unchanged bindings preserve
+the current layout object. The 162-test regression set, 14 probe tests, APK build
+and lint pass. Attribution, APK hash and verification are retained in
+`build/artifacts/android-chat-scroll-fix/row-layout-verification.json`.
+
+The cover-installed text-layout build did **not** demonstrate a reduced overall
+dropped-frame percentage. The reopened chat had 411 entries; upward traversal
+recorded 67/460 janky frames (14.57%), P95 31ms and P99 46ms; downward traversal
+recorded 49/501 (9.78%), P95 26ms and P99 32ms. Text-setting time in the upward
+run fell to 83ms across 243 calls (previously 250ms across 136), but the expanded
+state and traversed row counts differed, so these are not a controlled speedup.
+A complete 10,000us ART sample still found repeated disclosure/TextView
+construction when pooled containers crossed turn owners, and repeated change
+statistics work in tool binding.
+
+### Reusing Tool Widgets Across Turns
+
+Tool item and group holders now retain their inner widgets across turn owners.
+An item explicitly rebinds its factory, tool ID and state; changing either
+owner or ID removes the old detail widget before binding the new tool. Clicks
+read the current owner. Group headings replace their current click callback.
+The factory caches change statistics for its prepared presentation and clears
+them when the presentation changes. User, image and progress widgets retain
+their existing owner-specific lifetime because their callbacks and image
+requests have different ownership requirements.
+
+The content-free debug probe can align a recycler row at the viewport top and
+temporarily disable this tool reuse path for an in-process A/B comparison. Both
+controls require the exact focused Activity token and selection epoch. Reports
+include first/last visible row positions, top offset and inner activity-widget
+inflations. The runner rejects changed transcript/disclosure row counts, warms
+the same interval if requested, resets before measurement, lets the final fling
+settle, and restores the original reuse mode when it exits. For example:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 sh android/tools/run.sh python3 android/tools/device-performance.py \
+  --serial DEVICE --expect-renderer markwon-recycler --min-parts 1000 \
+  --start-position 240 --direction up --rounds 8 --warmup-rounds 8 \
+  --pause-seconds 0.5 --activity-reuse on \
+  --output build/artifacts/android-chat-scroll-fix/controlled-reuse-on.json
+```
+
+Use an identical start position and expanded state with `--activity-reuse off`.
+Row positions identify layout slots only; reports do not include message text,
+tool arguments, image URLs or chat IDs. Frame comparisons must use runs without
+ART sampling; sampling is reserved for attribution.
+
+The first fixed-interval comparison of cross-turn widget reuse alone did not
+reduce jank: off was 57/694 (8.21%) and on was 59/698 (8.45%), both traversing
+row 220 to row 56 in the same 369-row expansion state. This narrows its benefit
+to less construction/binding work, rather than establishing a frame-rate gain.
+
+At the reader's request, setup is now automatic as well. `--chat-title` selects
+one exact matching title from the focused Activity's existing navigation data;
+duplicates, missing titles and a replaced Activity are rejected. The runner
+waits for complete hydration and retries a failed history read at most three
+times through the same native retry action. `--expand-tools` closes other turns,
+opens the turn with the most process parts, opens all its groups/images and one
+tool detail before its middle image group, then positions the viewport thirty
+rows below that image group. This fixture has 19 turns, 3,247 parts, 887 entries,
+388 groups, four image groups and one open detail; its start is row 638.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 sh android/tools/run.sh python3 android/tools/device-performance.py \
+  --serial DEVICE --chat-title 'EXACT TITLE' --expand-tools --wait-history-seconds 180 \
+  --expect-renderer markwon-recycler --min-parts 1000 --direction up \
+  --rounds 8 --warmup-rounds 8 --pause-seconds 0.5 --activity-reuse on \
+  --output build/artifacts/android-chat-scroll-fix/standard-on.json
+```
+
+Subsequent comparisons use `--start-position 638` with the same row count and
+toggle `--activity-reuse`. They do not repeat setup or change the expansion
+state. A fling's final distance can still vary with scheduling; reports retain
+both endpoint row positions. These are warmed scrolling measurements, not a
+claim about first-open latency or every possible tool body.
+
+An intermediate whole-label shaping cache showed an aggregate 5.76% off versus
+4.55% on in three rounds per mode. After fixing watcher retention and reusing
+image headings, two further rounds were 6.31% off versus 5.80% on, with overlapping
+individual results. These measurements do not establish a consistent 21% gain.
+Another experiment moved tool-row measurement into binding and prefetched two
+extra adjacent entries. It regressed to 8.35% on versus 4.44% off and was removed.
+
+The retained widget changes flatten each virtual tool item by one layout
+container, reuse image headings within their turn with the current group index,
+and clear focus only on the focused descendant. The long-label ellipsis cache
+was also removed: its controlled run was 5.29% on versus 4.13% off, with only
+eight cache hits in 239 tool binds. None of these cache or extra-prefetch
+experiments are part of the final implementation.
+
+The remaining text change avoids copying CJK labels into an empty span wrapper
+when the current locale supplies no custom fallback face. Android 9 and later
+can retain the original String and its direct BoringLayout drawing path.
+Existing style spans remain intact, and a locale change still removes old
+custom font spans. Android 8 keeps its former path because native pixel tests
+found a mixed-direction rendering difference. Density, ellipsis, baseline,
+complex emoji and CJK/RTL parity are covered by native raster tests.
+
+Three balanced fixed-interval runs per mode, with no method sampler, measured:
+
+| Mode | Run 1 | Run 2 | Run 3 | Combined |
+| --- | --- | --- | --- | --- |
+| Off | 40/702 (5.70%) | 63/682 (9.24%) | 31/726 (4.27%) | 134/2110 (6.35%) |
+| On | 37/709 (5.22%) | 25/722 (3.46%) | 48/697 (6.89%) | 110/2128 (5.17%) |
+
+The combined comparison improved, but individual results overlap and do not
+establish a stable 4% target. The debug switch includes widget reuse, layout
+flattening, statistics reuse and plain-label fallback together; this is not an
+isolated attribution to font wrapping.
+
+### Full Traversal and Content Verification
+
+`--traversal bottom-to-top`, `top-to-bottom`, and `round-trip` start at the
+appropriate native scroll boundary and continue issuing 7000px/s flings until
+`canScrollVertically` reports the other boundary. The round trip goes from
+bottom to top and back to bottom. Unlike a fixed fling count, this checks that
+the complete range was traversed, including partially visible edge rows.
+
+`--verify-position ROW` can be repeated. Outside the measured frame interval,
+the runner aligns those rows before and after traversal and compares salted
+SHA-256 digests of visible text, accessibility descriptions, image source keys,
+image-loaded state and widget coordinates. The random per-Activity salt and
+the digest leave message bodies and image sources inside the app. A mismatch
+fails the run while preserving its numeric report for diagnosis. These checks
+verify the chosen anchors, not every pixel of every possible tool body.
+
+The final device validation uses three groups, each containing a full upward
+traversal, full downward traversal and complete round trip, with images and
+the selected tool detail expanded. It uses the same 887-row fixture and no ART
+sampler. Reports are `full-{1,2,3}-{up,down,roundtrip}.json` in the current
+artifact directory.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 sh android/tools/run.sh python3 android/tools/device-performance.py \
+  --serial DEVICE --traversal bottom-to-top --activity-reuse on \
+  --verify-position 608 --verify-position 638 --pause-seconds 0.5 \
+  --min-parts 1000 --expect-renderer markwon-recycler \
+  --output build/artifacts/android-chat-scroll-fix/full-up.json
+```
+
+Use `top-to-bottom` and `round-trip` for the other full traversals. For rapid
+reversals near the image/detail anchor, replace `--traversal` with
+`--start-position 620 --direction alternate --rounds 24`. Position verification
+is outside the measured frame interval in both modes.
+
+
+Final three-group results on API34 / 22041211AC (no ART sampler):
+
+| Scenario | Group 1 | Group 2 | Group 3 | Combined |
+| --- | --- | --- | --- | --- |
+| Bottom to top | 111/3196 (3.47%) | 68/3566 (1.91%) | 61/3563 (1.71%) | 240/10325 (2.32%) |
+| Top to bottom | 74/3542 (2.09%) | 67/3554 (1.89%) | 56/3567 (1.57%) | 197/10663 (1.85%) |
+| Bottom/top/bottom | 113/7078 (1.60%) | 117/7103 (1.65%) | 131/7103 (1.84%) | 361/21284 (1.70%) |
+| Rapid reversals near tools/images | 40/1785 (2.24%) | 62/1807 (3.43%) | 40/1823 (2.19%) | 142/5415 (2.62%) |
+
+All full traversals reached both intended native boundaries. All 24 selected
+anchor content/geometry comparisons passed; row/turn/part counts stayed fixed.
+No additional turn presentation builds, Markdown parsing or segment
+reconciliation occurred during measurement. The sampled mounted view count
+peaked at 211. Full traversal P99 ranged from 24–31ms; rapid reversal P99 was
+27–40ms. The full traversals and rapid reversals are below the requested
+approximately 4% janky-frame threshold. The separate dense-tool single-direction
+interval remains 5.17% and is explicitly not hidden by the whole-chat average.
+
+The final build passed 198 targeted Android tests, 18 Python probe tests,
+assembleDebug and lintDebug. Device reports, exact frame counts and the APK
+SHA-256 are retained in `build/artifacts/android-chat-scroll-fix/standard-results.md`
+and `cross-turn-verification.json`.
+
+
+### Production Default Verification
+
+Markwon is now the default for every build. The debug preference defaults to
+true and retains explicit old/new comparisons; release ignores the preference
+and `spool_markwon` intent entirely. The separate performance dump remains
+restricted to debuggable packages. The former runtime field `markwonTrial` is
+now `useMarkwonHistory`.
+
+The change passed 395 Activity/Markwon/probe regression tests on API26/35, the
+production R8/resource-shrunk `assembleRelease`, `lintRelease`, debug and
+verification lints, and compilation of the debug device instrumentation.
+The ARM64 release package check preserved all 263 syntax assets and JNI names,
+verified 16KB native alignment and found no checked unresolved API26 methods.
+
+A non-debuggable `.releaseverify` variant was installed on API34 / 22041211AC.
+It starts the actual MainActivity with a synthetic chat, no Internet permission,
+and both the saved legacy preference and intent override set to false. It
+confirmed the default Markwon renderer, Markdown and code-block text, and a
+committed frame; `spool-performance` returned no probe data. The owned package
+was removed after the check. This variant inherits release optimization and
+resource shrinking but retains the Activity members used by fixture injection;
+production has neither that fixture code nor those additional keep rules.
+Detailed results are in `build/artifacts/android-markwon-release/verification.json`
+and `device-smoke.json`. This verifies release startup/linkage/rendering, not
+another end-to-end benchmark of the user's authenticated production installation.

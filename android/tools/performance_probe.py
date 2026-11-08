@@ -13,6 +13,32 @@ def validate_target(snapshot, min_parts=0, renderer=None):
         raise ValueError(f"Expected renderer {renderer}, got {snapshot.get('renderer', 'unknown')}; no gestures were issued")
 
 
+def validate_interval(snapshot, expected, position=None):
+    """Keep disclosure state and the measured starting row comparable without exposing content."""
+    if any(snapshot.get(key) != expected.get(key) for key in ("parts", "turns", "virtualRows", "renderer")):
+        raise ValueError("Transcript or disclosure row count changed; fixed-interval measurement aborted")
+    if position is not None:
+        viewport = snapshot.get("viewport", {})
+        if viewport.get("firstVisible") != position or viewport.get("firstTop") != 0:
+            raise ValueError("The requested starting row did not settle at the viewport top; measurement aborted")
+
+
+def reached_edge(snapshot, direction):
+    """Require native scroll bounds, including partial first/last rows."""
+    viewport = snapshot.get("viewport", {})
+    key = "canScrollUp" if direction == "up" else "canScrollDown"
+    if type(viewport.get(key)) is not bool:
+        raise ValueError("Use a debug APK that reports native scroll boundaries")
+    return not viewport[key]
+
+
+def validate_visible_content(before, after):
+    """Compare salted content/geometry digests at an identical settled position."""
+    left, right = before.get("visibleContent", {}), after.get("visibleContent", {})
+    if not left.get("rows") or not re.fullmatch(r"[a-f0-9]{64}", left.get("sha256", "")) or left != right:
+        raise ValueError("Visible content or geometry changed after scrolling back to the verification row")
+
+
 def wait_finished_art_trace(copy_trace, path, attempts=40, interval=.25):
     """Profile stop is asynchronous; reject partial or still-growing ART output."""
     previous = None
@@ -35,7 +61,7 @@ def wait_finished_art_trace(copy_trace, path, attempts=40, interval=.25):
     raise ValueError("ART trace did not finish writing after profile stop; incomplete sampling data was not used")
 
 
-def foreground_snapshot(output, expected=None, require_fling=False, allow_hydrating=False):
+def foreground_snapshot(output, expected=None, require_fling=False, allow_hydrating=False, require_history=True):
     snapshots = []
     for match in re.finditer(r"^SPOOL_PERF (\{[^\r\n]+\})\s*$", output, re.MULTILINE):
         try:
@@ -53,7 +79,7 @@ def foreground_snapshot(output, expected=None, require_fling=False, allow_hydrat
     if len(focused) != 1:
         raise ValueError("Exactly one foreground, focused Activity is required; no background page was selected")
     value = focused[0]
-    if value.get("historyVisible") is not True or not value.get("turns"):
+    if require_history and (value.get("historyVisible") is not True or not value.get("turns")):
         raise ValueError("Open a chat in the foreground; its history must be visible")
     if not re.fullmatch(r"[a-f0-9-]{36}", str(value.get("probeToken", ""))):
         raise ValueError("Missing per-Activity probe token")

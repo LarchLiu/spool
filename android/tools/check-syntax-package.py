@@ -30,6 +30,8 @@ def dex_methods(data):
         at += 1
         # Names checked here are ASCII; arbitrary DEX MUTF-8 literal strings are not interpreted.
         strings.append(data[at:data.index(b'\0', at)].decode('utf8', errors='replace'))
+    if r'\$(\d+)|\$\{(\d+):\/(downcase|upcase)}' in strings:
+        raise ValueError('TextMate RegexSource still contains the ICU-incompatible capture pattern')
     types_count, types_offset = struct.unpack_from('<II', data, 0x40)
     types = [strings[struct.unpack_from('<I', data, types_offset + i * 4)[0]] for i in range(types_count)]
     methods_count, methods_offset = struct.unpack_from('<II', data, 0x58)

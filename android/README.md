@@ -2063,6 +2063,36 @@ The low-level Gradle release build above is unsigned. `make build apk release`
 signs locally; the GitHub Release workflow below signs during publication.
 R8 mappings are written to `build/android/gradle/app/outputs/mapping/release/`.
 
+Chat history uses the Markwon RecyclerView by default in both debug and release.
+Debug builds retain the persisted `spool_markwon` intent override for comparing
+the legacy renderer; release ignores that override and its saved preference.
+The separate `spool-performance` ADB entry point remains debug-only. Top-level
+answer code blocks use the existing native code widget with language/copy
+controls, horizontal scrolling and asynchronous TextMate highlighting. Nested
+code is highlighted during block preparation. Ordinary Markdown typography and
+table wrapping still differ from the legacy renderer. See
+[scroll performance and renderer behavior](../docs/android-scroll-performance.md).
+
+To smoke-test release startup without replacing an installed production app:
+
+```sh
+sh android/gradlew --offline --no-daemon :app:assembleRelease :app:lintRelease :app:assembleReleaseVerify
+PYTHONDONTWRITEBYTECODE=1 sh android/tools/run.sh python3 android/tools/device-release-renderer-smoke.py --serial DEVICE_SERIAL
+```
+
+`releaseVerify` inherits release R8 optimization and resource shrinking, remains
+non-debuggable, and uses a separate `.releaseverify` application ID signed by
+the local debug key. It has no Internet permission. Its test-only Application
+starts the actual MainActivity with a synthetic chat and checks a committed
+Markdown/code frame plus real colored spans in answer code and a source-file
+preview, while both the saved and intent legacy overrides are false.
+The production release has no fixture injection code or fixture keep rules;
+the verification variant retains only the Activity members needed by that
+injection/inspection. The runner refuses an existing verification installation,
+removes the package it installs, and records only synthetic results under
+`build/artifacts/android-markwon-release/`. It also checks that the release
+performance dump is unavailable.
+
 ### GitHub Releases
 
 The Release workflow builds and lints the ARM64 APK alongside the desktop

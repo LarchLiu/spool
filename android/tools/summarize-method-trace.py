@@ -67,6 +67,9 @@ result = {
     "sampledMainCpuMs": round(sum(cpu_leaf.values()) / 1000, 3),
     "leafWallMs": {key: round(value / 1000, 3) for key, value in leaf.most_common(25)},
     "leafCpuMs": {key: round(value / 1000, 3) for key, value in cpu_leaf.most_common(25)},
+    "platformInclusiveCpuMs": {key: round(value / 1000, 3) for key, value in cpu_inclusive.most_common()
+                               if key.startswith(("androidx.recyclerview.", "android.widget.TextView.", "android.text.",
+                                                  "android.view.ViewRootImpl.", "android.view.ThreadedRenderer."))},
     "appInclusiveWallMs": {key: round(value / 1000, 3) for key, value in inclusive.most_common() if key.startswith("com.cloudgeek.spool.android.")},
     "appInclusiveCpuMs": {key: round(value / 1000, 3) for key, value in cpu_inclusive.most_common() if key.startswith("com.cloudgeek.spool.android.")},
     "appMethodChildrenCpuMs": {key: {child: round(value / 1000, 3) for child, value in app_branches[key].most_common(12)}

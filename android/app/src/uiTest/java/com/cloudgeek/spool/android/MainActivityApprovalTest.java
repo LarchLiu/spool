@@ -234,9 +234,9 @@ public class MainActivityApprovalTest {
         return null;
     }
 
-    @Test public void approvalAuditRecordsRenderBelowTheReplyAndUpdateWithTheSameTurn() throws Exception {
+    @Test public void legacyApprovalAuditRecordsRenderBelowTheReplyAndUpdateWithTheSameTurn() throws Exception {
         for (boolean dark : new boolean[] {false, true}) {
-            try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
                 h.set("user", new JSONObject().put("id", "alice").put("nickname", "Alex"));
                 show(h, request(), dark);
                 JSONObject chat = h.get("chat"), turn = chat.getJSONArray("turns").getJSONObject(0);

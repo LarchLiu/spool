@@ -142,7 +142,7 @@ public class MainActivityChatEventsTest {
     }
 
     @Test public void unchangedSnapshotsRetainTranscriptViewsAndTheNativeComposingEditor() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             h.call("startChat"); event("snapshot", chat("chat-one", 20));
             NativeUi.Composer editor = h.composer(); assertTrue(editor.input.requestFocus()); editor.input.setText("Next draft"); editor.input.setSelection(4);
             Spannable text = editor.input.getText(); Object composition = new Object(); text.setSpan(composition, 0, 4, Spanned.SPAN_COMPOSING | Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);

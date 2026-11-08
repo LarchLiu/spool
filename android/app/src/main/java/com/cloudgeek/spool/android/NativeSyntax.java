@@ -24,25 +24,41 @@ import java.util.function.Consumer;
 final class NativeSyntax implements AutoCloseable {
     interface Highlighter { List<NativeSyntaxEngine.Line> compute(String path, String source, boolean dark) throws Exception; }
     private final Executor worker;
-    private final Highlighter highlighter;
+    private final Highlighter highlighter, codeHighlighter;
     private final Runnable cleanup;
     private volatile int epoch;
     private volatile boolean closed;
 
-    NativeSyntax(Executor worker, NativeSyntaxEngine engine) { this(worker, engine::highlight, engine::close); }
-    NativeSyntax(Executor worker, Highlighter highlighter, Runnable cleanup) { this.worker = worker; this.highlighter = highlighter; this.cleanup = cleanup; }
+    NativeSyntax(Executor worker, NativeSyntaxEngine engine) { this(worker, engine::highlight, engine::highlightCode, engine::close); }
+    NativeSyntax(Executor worker, Highlighter highlighter, Runnable cleanup) { this(worker, highlighter, highlighter, cleanup); }
+    private NativeSyntax(Executor worker, Highlighter highlighter, Highlighter codeHighlighter, Runnable cleanup) {
+        this.worker = worker; this.highlighter = highlighter; this.codeHighlighter = codeHighlighter; this.cleanup = cleanup;
+    }
     int epoch() { return epoch; }
     boolean current(int token) { return !closed && epoch == token; }
     List<NativeSyntaxEngine.Line> compute(String path, String source, boolean dark, int token) throws Exception {
+        return compute(highlighter, path, source, dark, token);
+    }
+    List<NativeSyntaxEngine.Line> computeCode(String language, String source, boolean dark, int token) throws Exception {
+        return compute(codeHighlighter, language, source, dark, token);
+    }
+    private List<NativeSyntaxEngine.Line> compute(Highlighter renderer, String path, String source, boolean dark, int token) throws Exception {
         if (!current(token) || Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
-        List<NativeSyntaxEngine.Line> result = highlighter.compute(path, source, dark);
+        List<NativeSyntaxEngine.Line> result = renderer.compute(path, source, dark);
         if (!current(token) || Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
         return result;
     }
-    void bind(View view, String path, String contents, boolean dark, Consumer<List<NativeSyntaxEngine.Line>> apply) {
-        Binding binding = new Binding(view, path, contents, dark, apply);
+    Binding bind(View view, String path, String contents, boolean dark, Consumer<List<NativeSyntaxEngine.Line>> apply) {
+        return bind(view, highlighter, path, contents, dark, apply);
+    }
+    Binding bindCode(TextView view, String language, String contents, boolean dark) {
+        return bind(view, codeHighlighter, language, contents, dark, lines -> apply(view, lines));
+    }
+    private Binding bind(View view, Highlighter renderer, String path, String contents, boolean dark, Consumer<List<NativeSyntaxEngine.Line>> apply) {
+        Binding binding = new Binding(view, renderer, path, contents, dark, apply);
         view.addOnAttachStateChangeListener(binding);
         if (view.isAttachedToWindow()) binding.onViewAttachedToWindow(view);
+        return binding;
     }
     void decorateDiff(NativePatch.File file, List<NativeDiffLayout.Row> rows, boolean dark, int token) throws Exception {
         List<List<NativeDiffLayout.Cell>> groups = new java.util.ArrayList<>();
@@ -62,22 +78,23 @@ final class NativeSyntax implements AutoCloseable {
                 cells.get(line).syntax = renderRuns(cells.get(line).text, 0, lines.get(line).runs, dark ? 0xfffafafa : 0xff0a0a0a);
         }
     }
-    private final class Binding implements View.OnAttachStateChangeListener {
+    final class Binding implements View.OnAttachStateChangeListener, AutoCloseable {
         final WeakReference<View> view;
+        final Highlighter renderer;
         final String path;
         String contents;
         final boolean dark;
         final int token = epoch;
         final Consumer<List<NativeSyntaxEngine.Line>> apply;
         int attachment;
-        boolean complete;
+        boolean complete, disposed;
         Request pending;
-        Binding(View view, String path, String contents, boolean dark, Consumer<List<NativeSyntaxEngine.Line>> apply) {
-            this.view = new WeakReference<>(view); this.path = path; this.contents = contents; this.dark = dark; this.apply = apply;
+        Binding(View view, Highlighter renderer, String path, String contents, boolean dark, Consumer<List<NativeSyntaxEngine.Line>> apply) {
+            this.view = new WeakReference<>(view); this.renderer = renderer; this.path = path; this.contents = contents; this.dark = dark; this.apply = apply;
         }
         public void onViewAttachedToWindow(View view) {
-            if (complete || !current(token)) return;
-            pending = new Request(NativeSyntax.this, this, path, contents, dark, token, ++attachment);
+            if (complete || !ownerCurrent()) return;
+            pending = new Request(NativeSyntax.this, this, renderer, path, contents, dark, token, ++attachment);
             try { worker.execute(pending); }
             catch (java.util.concurrent.RejectedExecutionException ignored) { pending.cancel(false); pending = null; }
         }
@@ -85,19 +102,31 @@ final class NativeSyntax implements AutoCloseable {
             ++attachment;
             if (pending != null) { pending.cancel(true); pending = null; }
         }
-        boolean ownerCurrent() { return current(token); }
+        boolean ownerCurrent() { return !disposed && current(token); }
+        @Override public void close() {
+            disposed = true; contents = null;
+            View target = view.get();
+            if (target != null) target.removeOnAttachStateChangeListener(this);
+            onViewDetachedFromWindow(target);
+        }
     }
     private static final class Request extends FutureTask<List<NativeSyntaxEngine.Line>> {
         final WeakReference<Binding> target;
         final int attachment;
-        Request(NativeSyntax owner, Binding binding, String path, String contents, boolean dark, int token, int attachment) {
-            super(() -> owner.compute(path, contents, dark, token));
+        Request(NativeSyntax owner, Binding binding, Highlighter renderer, String path, String contents, boolean dark, int token, int attachment) {
+            super(() -> owner.compute(renderer, path, contents, dark, token));
             target = new WeakReference<>(binding); this.attachment = attachment;
         }
         @Override protected void done() {
             if (isCancelled()) return;
             final List<NativeSyntaxEngine.Line> lines;
-            try { lines = get(); } catch (Exception ignored) { return; }
+            try { lines = get(); }
+            catch (java.util.concurrent.ExecutionException error) {
+                if (!(error.getCause() instanceof java.util.concurrent.CancellationException))
+                    android.util.Log.w("SpoolSyntax", "Source highlighting failed", error.getCause());
+                return;
+            } catch (InterruptedException error) { Thread.currentThread().interrupt(); return; }
+            catch (java.util.concurrent.CancellationException ignored) { return; }
             new Handler(Looper.getMainLooper()).post(() -> {
                 Binding binding = target.get();
                 View view = binding == null ? null : binding.view.get();
@@ -112,17 +141,30 @@ final class NativeSyntax implements AutoCloseable {
 
     static void apply(TextView view, List<NativeSyntaxEngine.Line> lines) {
         Spannable text = view.getText() instanceof Spannable ? (Spannable) view.getText() : new SpannableString(view.getText());
-        for (NativeSyntaxEngine.Line line : lines) for (NativeSyntaxEngine.Run run : renderRuns(text, line.offset, line.runs, view.getCurrentTextColor())) {
-            int from = line.offset + run.start, end = line.offset + run.end;
-            if (from < 0 || end > text.length() || end <= from) continue;
-            if (run.color != view.getCurrentTextColor()) text.setSpan(new ForegroundColorSpan(run.color), from, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            int style = typefaceStyle(run.style);
-            if (style != Typeface.NORMAL) text.setSpan(new StyleSpan(style), from, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            if ((run.style & 4) != 0) text.setSpan(new UnderlineSpan(), from, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            if ((run.style & 8) != 0) text.setSpan(new StrikethroughSpan(), from, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
+        apply(text, lines, view.getCurrentTextColor());
         if (text != view.getText()) view.setText(text, TextView.BufferType.SPANNABLE);
         view.invalidate();
+    }
+    private interface SyntaxSpan {}
+    private static final class Color extends ForegroundColorSpan implements SyntaxSpan { Color(int value) { super(value); } }
+    private static final class Style extends StyleSpan implements SyntaxSpan { Style(int value) { super(value); } }
+    private static final class Underline extends UnderlineSpan implements SyntaxSpan {}
+    private static final class Strike extends StrikethroughSpan implements SyntaxSpan {}
+    static void clearSpans(CharSequence text) {
+        if (text instanceof Spannable) for (SyntaxSpan span : ((Spannable) text).getSpans(0, text.length(), SyntaxSpan.class))
+            ((Spannable) text).removeSpan(span);
+    }
+    static void apply(Spannable text, List<NativeSyntaxEngine.Line> lines, int foreground) {
+        clearSpans(text);
+        for (NativeSyntaxEngine.Line line : lines) for (NativeSyntaxEngine.Run run : renderRuns(text, line.offset, line.runs, foreground)) {
+            int from = line.offset + run.start, end = line.offset + run.end;
+            if (from < 0 || end > text.length() || end <= from) continue;
+            if (run.color != foreground) text.setSpan(new Color(run.color), from, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            int style = typefaceStyle(run.style);
+            if (style != Typeface.NORMAL) text.setSpan(new Style(style), from, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            if ((run.style & 4) != 0) text.setSpan(new Underline(), from, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            if ((run.style & 8) != 0) text.setSpan(new Strike(), from, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
     }
     static List<NativeSyntaxEngine.Run> renderRuns(CharSequence text, int offset, List<NativeSyntaxEngine.Run> tokens, int foreground) {
         // Pierre's renderTokenLines merges undecorated whitespace into the following token.

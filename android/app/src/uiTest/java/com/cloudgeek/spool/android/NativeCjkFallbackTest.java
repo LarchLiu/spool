@@ -138,6 +138,36 @@ public class NativeCjkFallbackTest {
         assertEquals(1, text.getSpanStart(spans[0])); assertEquals(value.length() - 1, text.getSpanEnd(spans[0]));
     }
 
+    @Test @Config(sdk = 35) public void localesWithoutCustomFacesPreservePlainTextAndExistingStyles() {
+        NativeCjkFallback fonts = runtimeFonts();
+        String plain = "Read 中文の結果 👩🏽‍💻";
+        SpannableString styled = new SpannableString(plain);
+        ForegroundColorSpan color = new ForegroundColorSpan(0xff123456);
+        styled.setSpan(color, 5, 7, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        for (String locale : new String[] {"en", "en-US", "ar", "ko"}) {
+            assertSame(plain, fonts.apply(plain, locale, 400));
+            assertSame(plain, fonts.applyCss(plain, locale, 400));
+            assertSame(styled, fonts.applyCss(styled, locale, 400));
+            assertEquals(5, styled.getSpanStart(color)); assertEquals(7, styled.getSpanEnd(color));
+        }
+        assertTrue("The A/B reference retains the former empty span wrapper", fonts.applyCss(plain, "en", 400, false) instanceof Spanned);
+    }
+
+    @Test public void switchingAwayFromCustomLocaleRemovesItsFaceButRetainsOtherSpans() {
+        NativeCjkFallback fonts = runtimeFonts();
+        for (String locale : new String[] {"ja", "zh-CN"}) {
+            SpannableString source = new SpannableString("中文と日本語");
+            ForegroundColorSpan color = new ForegroundColorSpan(0xff123456);
+            source.setSpan(color, 0, 2, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            Spanned localized = (Spanned) fonts.apply(source, locale, 400);
+            assertTrue(localized.getSpans(0, localized.length(), NativeCjkFallback.FaceSpan.class).length > 0);
+            Spanned english = (Spanned) fonts.applyCss(localized, "en", 400);
+            assertEquals(0, english.getSpans(0, english.length(), NativeCjkFallback.FaceSpan.class).length);
+            assertEquals(0, english.getSpanStart(color)); assertEquals(2, english.getSpanEnd(color));
+            assertEquals(source.toString(), english.toString());
+        }
+    }
+
     @Test public void cssWeightOrderAndGenuineItalicFacesAreNotReplacedBySyntheticStyles() throws Exception {
         runtimeFonts(); File fonts = new File(System.getProperty("robolectric.nativeruntime.fontdir"));
         File scratch = Files.createTempDirectory(new File(System.getProperty("java.io.tmpdir")).toPath(), "font-style-").toFile();

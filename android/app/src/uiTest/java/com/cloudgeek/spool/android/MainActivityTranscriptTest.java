@@ -46,7 +46,7 @@ public class MainActivityTranscriptTest {
     private void show(MainActivityGoalTest.Harness h, JSONObject value) { h.set("chat",value); h.call("renderChat"); layout(h); }
 
     @Test public void steeringInputsAndEarlierAnswersShareOneCollapsibleProcessWithTheirOwnFiles() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value = chat();
             JSONArray parts = new JSONArray()
                     .put(new JSONObject("{role:'user',kind:'text',text:'Initial request',timestamp:1000}"))
@@ -102,7 +102,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void nativeHistoricalImageAndFileAttachmentsRenderWithoutUploadMetadataAndKeepClickOwnership() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(16, 8, android.graphics.Bitmap.Config.ARGB_8888);
             bitmap.eraseColor(0xff52704a); java.io.ByteArrayOutputStream encoded = new java.io.ByteArrayOutputStream(); bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, encoded); bitmap.recycle();
             String source = "data:image/png;base64," + android.util.Base64.encodeToString(encoded.toByteArray(), android.util.Base64.NO_WRAP);
@@ -129,7 +129,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void toolImageFileURLsUseDecodedLocalPathsForThumbnailsAndPreview() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(16, 8, android.graphics.Bitmap.Config.ARGB_8888);
             bitmap.eraseColor(0xff52704a); java.io.ByteArrayOutputStream encoded = new java.io.ByteArrayOutputStream();
             bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, encoded); bitmap.recycle();
@@ -161,7 +161,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void toolImagePathsRejectRemoteAndMalformedFileURLs() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             List<Runnable> jobs = new ArrayList<>();
             h.set("fileImages", new NativeImages(jobs::add, path -> { throw new AssertionError("Invalid image path reached transport: " + path); }));
             String[] paths = {"https://example.com/image.png", "file://remote-host/fixture/image.png",
@@ -182,7 +182,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void toolImagePixelsUseCapturedChatAPIAndPreviewIgnoresRetiredOrForeignReferences() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             List<Runnable> jobs = new ArrayList<>(); List<String> requests = new ArrayList<>();
             h.set("fileImages", new NativeImages(jobs::add, path -> { requests.add(path); throw new java.io.IOException("Missing fixture image"); }));
             JSONObject page = chat(); JSONArray parts = page.getJSONObject("transcript").getJSONArray("parts");
@@ -205,7 +205,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void providerOnlyInputHasNoEmptyUserRowAndCompactionRebindsWithoutTextChanges() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value = chat();
             JSONArray parts = value.getJSONObject("transcript").getJSONArray("parts");
             parts.getJSONObject(0).put("role", "assistant").put("text", "Historical answer");
@@ -239,7 +239,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void settingsOverlayKeepsTranscriptEditorSelectionAndScrollTree() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             show(h, chat()); View root = h.get("root"), history = h.get("history"), composer = h.get("composer");
             LinearLayout content = h.get("historyContent"); NativeUserRow first = views(content, NativeUserRow.class).get(0);
             first.message.toggle.performClick(); layout(h);
@@ -258,7 +258,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void scrollingUserAndAgentMessagesNeverPaintOverTheWorkspaceHeader() throws Exception {
-        for (String theme : new String[] {"light", "dark"}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        for (String theme : new String[] {"light", "dark"}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             h.set("theme", theme); h.call("render");
             JSONObject value = chat();
             value.getJSONObject("transcript").getJSONArray("parts").getJSONObject(1).put("text", "Agent response\n\n".repeat(80));
@@ -285,7 +285,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void unchangedComposerAndPresenceUpdatesKeepTextHintsIconsAndAvatarTrees() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             show(h, chat()); NativeUi.Composer composer = h.composer(); NativeUi.Header header = h.get("workspaceHeader");
             Object hint = composer.input.getHint(), label = composer.model.label.getText(), icon = composer.model.symbol.getDrawable();
             View people = header.online.getChildAt(0);
@@ -296,7 +296,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void productionLongTranscriptUsesViewportRowsAndRebindsOffscreenDataOnReturn() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value = chat(); JSONArray parts = new JSONArray(), turns = new JSONArray();
             for (int i = 0; i < 100; i++) {
                 parts.put(new JSONObject().put("role", "user").put("kind", "text").put("text", "Prompt " + i));
@@ -325,7 +325,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void streamingAndMetadataKeepOtherDocumentsExpansionSelectionAndCopyFeedback() throws Exception {
-        try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value = chat(); show(h,value);
             LinearLayout content=h.get("historyContent"); List<NativeUserRow> users=views(content,NativeUserRow.class); List<NativeTurn> responses=views(content,NativeTurn.class);
             NativeUserRow first=users.get(0); first.message.toggle.performClick(); layout(h); assertTrue(first.message.content.expanded);
@@ -346,7 +346,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void historyRebasesPartsWithoutDetachingExistingNodesOrReplacingTheirDocuments() throws Exception {
-        try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value=chat(); show(h,value); LinearLayout content=h.get("historyContent");
             NativeUserRow first=views(content,NativeUserRow.class).get(0); NativeTurn response=views(content,NativeTurn.class).get(0);
             TextView answer=text(response,"Selectable answer"); Object document=answer.getText(); Selection.setSelection((Spannable)document,2,6);
@@ -360,7 +360,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void profileRefreshRebindsNameAndLocalAvatarWithoutLosingSelectionOrCopyState() throws Exception {
-        try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             h.set("user",new JSONObject().put("id","alice").put("nickname","Original").put("avatar",NativeAvatars.options("clay","one")));
             JSONObject value=chat(); show(h,value); NativeUserRow row=views(h.get("historyContent"),NativeUserRow.class).get(0);
             TextView selected=text(row,"Long prompt"); Object document=selected.getText(); Selection.setSelection((Spannable)document,2,7);
@@ -375,7 +375,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void terminalMetadataKeepsUnchangedAnswerAndUpdatesTimestampButChangedTextIsNeverStale() throws Exception {
-        try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value=chat(); show(h,value); NativeTurn response=views(h.get("historyContent"),NativeTurn.class).get(1);
             NativeMessage message=views(response,NativeMessage.class).get(0); TextView selected=text(message,"Selectable answer 1"); Object document=selected.getText();
             Selection.setSelection((Spannable)document,2,8); message.footer.copy.performClick();
@@ -391,7 +391,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void realActivityToolSnapshotsKeepTheirMountedInputAndOutputUntilFinalAnswerCollapsesProcess() throws Exception {
-        try(MainActivityGoalTest.Harness h=new MainActivityGoalTest.Harness(true)) {
+        try(MainActivityGoalTest.Harness h=new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value=chat();JSONArray parts=value.getJSONObject("transcript").getJSONArray("parts");JSONObject turn=value.getJSONArray("turns").getJSONObject(1);
             parts.put(3,new JSONObject().put("role","assistant").put("kind","tool_use").put("id","read-one").put("name","read_file").put("text","{\"file_path\":\"src/example.ts\"}"));show(h,value);
             NativeTurn response=views(h.get("historyContent"),NativeTurn.class).get(1);NativeActivityList activity=response.activity;
@@ -403,7 +403,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void changedPromptsAndAttachmentsRetainMountedUserFooterDocumentsAndUnchangedImages() throws Exception {
-        try(MainActivityGoalTest.Harness h=new MainActivityGoalTest.Harness(true)) {
+        try(MainActivityGoalTest.Harness h=new MainActivityGoalTest.Harness(true, false)) {
             List<Runnable> loads=new ArrayList<>();h.set("fileImages",new NativeImages(loads::add,path->{throw new AssertionError("Do not execute image API in identity test");}));
             JSONObject value=chat(),turn=value.getJSONArray("turns").getJSONObject(0),image=new JSONObject("{id:'a',name:'old.png',media_type:'image/png'}"),file=new JSONObject("{id:'b',name:'note.txt',media_type:'text/plain',excerpt:'Original excerpt'}");
             turn.put("attachments",new JSONArray().put(image).put(file));show(h,value);NativeUserRow row=views(h.get("historyContent"),NativeUserRow.class).get(0);NativeMessage message=row.message;
@@ -422,7 +422,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void retiredOrBackgroundAttachmentControlsCannotPreviewAnotherSelectionOrRevokedWorkspace() throws Exception {
-        try(MainActivityGoalTest.Harness h=new MainActivityGoalTest.Harness(true)) {
+        try(MainActivityGoalTest.Harness h=new MainActivityGoalTest.Harness(true, false)) {
             h.set("fileImages",new NativeImages(task->{},path->{throw new AssertionError("No image API in click-ownership test");}));JSONObject value=chat();value.getJSONArray("turns").getJSONObject(0).put("attachments",new JSONArray("[{id:'a',name:'image.png',media_type:'image/png'}]"));show(h,value);
             NativeUserRow row=views(h.get("historyContent"),NativeUserRow.class).get(0);View open=((NativeAttachmentCard)row.attachments.getChildAt(0)).open;
             h.controller.pause().stop();open.performClick();assertNull(h.get("imagePreview"));h.controller.start().resume();h.set("foreground",true);
@@ -433,7 +433,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void approvalsStayKeyedAndRetiredButtonsCannotSubmitForAnotherApprovalOrChat() throws Exception {
-        try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value=chat(); JSONObject turn=value.getJSONArray("turns").getJSONObject(1);
             turn.put("pending_approval",new JSONObject().put("id","approval-one").put("title","Review action").put("detail","Detail")); show(h,value);
             Button old=textButton(h.get("historyContent"),"Allow once"); show(h,new JSONObject(value.toString())); assertSame(old,textButton(h.get("historyContent"),"Allow once"));
@@ -447,7 +447,7 @@ public class MainActivityTranscriptTest {
 
     @Test public void lastTurnToolDisclosuresPreserveReadingPositionUntilTheReaderReturnsToLatest() throws Exception {
         for (boolean virtual : new boolean[] {false, true}) for (boolean running : new boolean[] {false, true})
-                try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+                try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value = chat(), turn = value.getJSONArray("turns").getJSONObject(1);
             JSONArray parts = value.getJSONObject("transcript").getJSONArray("parts");
             parts.getJSONObject(1).put("text", "Earlier response paragraph.\n\n".repeat(60));
@@ -500,7 +500,7 @@ public class MainActivityTranscriptTest {
     private int screenY(View view) { int[] position = new int[2]; view.getLocationOnScreen(position); return position[1]; }
 
     @Test public void lastTurnLazyToolResponseDoesNotResumeFollowingAfterTheLoadingPlaceholder() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             List<Runnable> jobs = new ArrayList<>(); String body = "Delayed command output\n".repeat(50);
             h.<NativeUi>get("ui").toolDetails = new NativeToolDetails(jobs::add, Runnable::run, path -> new JSONObject()
                     .put("text", body).put("offset", 0).put("next", body.length()).put("total", body.length()).put("version", "v1"));
@@ -526,7 +526,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void lastTurnImageAndToolGroupTogglesKeepTheirHeadingsInPlace() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             h.set("fileImages", new NativeImages(task -> {}, path -> { throw new AssertionError("No image reads in scroll test"); }));
             JSONObject value = chat(); JSONArray parts = value.getJSONObject("transcript").getJSONArray("parts");
             parts.getJSONObject(1).put("text", "Earlier response paragraph.\n\n".repeat(60));
@@ -557,7 +557,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void latestIsWiredToTheCurrentActivitySurfaceAndOldOrBackgroundButtonsAreInert() throws Exception {
-        try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             show(h,chat()); NativeComposerDock old=h.get("composerDock"); androidx.core.widget.NestedScrollView scroll=h.get("history");
             views(h.get("historyContent"),NativeUserRow.class).get(0).message.toggle.performClick(); layout(h);
             scroll.scrollTo(0,0); assertEquals(View.VISIBLE,old.latest.getVisibility()); old.latest.performClick();
@@ -570,7 +570,7 @@ public class MainActivityTranscriptTest {
     }
 
     @Test public void stoppedErrorsAreHiddenAndRetiredTurnViewsAreRemoved() throws Exception {
-        try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value=chat(); value.getJSONArray("turns").getJSONObject(1).put("error","Failure text"); show(h,value); TextView error=text(h.get("historyContent"),"Failure text");
             value.getJSONArray("turns").getJSONObject(1).put("status","stopped"); show(h,value); assertNull(error.getParent());
             NativeUserRow retired=views(h.get("historyContent"),NativeUserRow.class).get(0); value.getJSONArray("turns").remove(0); show(h,value); assertNull(retired.getParent());

@@ -25,6 +25,7 @@ class NativeTextView extends TextView {
     private final android.view.ViewTreeObserver.OnPreDrawListener originObserver = this::onOriginPreDraw;
     private NativeLineHeight alignedOnce;
     private int alignedPadding;
+    boolean preservePlainFallback = true;
     /** Baseline re-snaps that rebuilt this document's layout; tests pin warm-document reuse with it. */
     int slowAligns;
     // Debug-only process counters for the spool-performance dump; no text content is retained.
@@ -138,7 +139,7 @@ class NativeTextView extends TextView {
     private CharSequence fallback(CharSequence value) {
         if (fallback != null) {
             if (normalFallback && Build.VERSION.SDK_INT < 28) value = fallback.apply(value, getTextLocale().toLanguageTag(), fontWeight);
-            value = fallback.applyCss(value, getTextLocale().toLanguageTag(), fontWeight);
+            value = fallback.applyCss(value, getTextLocale().toLanguageTag(), fontWeight, preservePlainFallback);
         }
         return value;
     }

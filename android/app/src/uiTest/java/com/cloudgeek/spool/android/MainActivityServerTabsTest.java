@@ -152,7 +152,7 @@ public class MainActivityServerTabsTest {
                 assertSame(tabs, ReflectionHelpers.getField(sidebar, "serverTabs"));
                 assertSame(homeTab, tabs.tabs.findViewWithTag(f.home)); assertSame(officeTab, tabs.tabs.findViewWithTag(f.office.id));
                 assertEquals(selected.equals(f.home), homeTab.isSelected()); assertEquals(selected.equals(f.office.id), officeTab.isSelected());
-                assertNull(f.h.get("history")); assertNull(f.h.get("transcriptViews")); assertNull(f.h.get("composerView"));
+                assertNull(f.h.get("history")); assertNull(f.h.get("markwonHistory")); assertNull(f.h.get("transcriptViews")); assertNull(f.h.get("composerView"));
                 assertSame(homeEvents, f.listener(f.homeClient)); assertSame(officeEvents, f.listener(f.officeClient));
                 assertSame(home, f.stream(f.homeClient)); assertSame(office, f.stream(f.officeClient));
                 assertFalse(f.socket(f.homeClient).closed); assertFalse(f.socket(f.officeClient).closed);
@@ -162,7 +162,7 @@ public class MainActivityServerTabsTest {
             f.h.<JSONArray>get("chats").getJSONObject(0).remove("transcript");
             f.h.<JSONObject>get("chat").remove("transcript");
             sidebar.chatRows.get(0).open.performClick();
-            assertEquals("", f.h.<String>get("panel")); assertNotNull(f.h.get("history")); assertNotNull(f.h.get("composerView"));
+            assertEquals("", f.h.<String>get("panel")); assertNotNull(f.h.get("markwonHistory")); assertNotNull(f.h.get("composerView"));
             assertSame(home, f.h.get("workspaceStream")); assertFalse(f.socket(f.homeClient).closed);
         }
     }

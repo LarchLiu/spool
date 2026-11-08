@@ -37,6 +37,31 @@ public class NativeCodeBlockTest {
         view.layout(0, 0, width, view.getMeasuredHeight());
     }
 
+    @Test public void syntaxSurvivesSelectionAndRejectsLateResultsAfterLanguageChangesAndRecycling() {
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false, "en"); List<Runnable> tasks = new ArrayList<>();
+            ui.syntax = new NativeSyntax(tasks::add, (language, source, dark) -> List.of(new NativeSyntaxEngine.Line(0, source.length(),
+                    language.equals("text") ? List.of() : List.of(new NativeSyntaxEngine.Run(1, 6, language.equals("js") ? 0xff112233 : 0xff445566, 0)))), () -> {});
+            NativeCodeBlock block = new NativeCodeBlock(ui, ui.text, 14);
+            controller.get().setContentView(block); block.bind("js", "\tconst value = 1;\n"); layout(block, 320);
+            Spannable document = (Spannable) block.code.getText(); Selection.setSelection(document, 1, 6);
+            int height = block.getHeight(); Object[] tabs = document.getSpans(0, document.length(), android.text.style.TabStopSpan.class);
+            tasks.get(0).run();
+            block.bind("ts", "\tconst value = 1;\n");
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertEquals(0, document.getSpans(0, document.length(), android.text.style.ForegroundColorSpan.class).length);
+            tasks.get(1).run(); Shadows.shadowOf(Looper.getMainLooper()).idle(); layout(block, 320);
+            assertSame(document, block.code.getText()); assertEquals(1, block.code.getSelectionStart()); assertEquals(6, block.code.getSelectionEnd());
+            assertEquals(height, block.getHeight()); assertArrayEquals(tabs, document.getSpans(0, document.length(), android.text.style.TabStopSpan.class));
+            assertEquals(0xff445566, document.getSpans(0, document.length(), android.text.style.ForegroundColorSpan.class)[0].getForegroundColor());
+            block.bind("ts", "\tconst value = 1;\n"); assertEquals("An unchanged holder retains its tokens", 2, tasks.size());
+            block.bind("text", "\tconst value = 1;\n");
+            assertSame(document, block.code.getText()); assertEquals(0, document.getSpans(0, document.length(), android.text.style.ForegroundColorSpan.class).length);
+            tasks.get(2).run(); block.bind("", ""); Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertEquals("", block.code.getText().toString()); assertFalse(block.copy.isEnabled());
+        }
+    }
+
     @Test public void headerStaysVisibleWhileLongCodeScrollsAndCopiesOnlyTheLatestLiteral() throws Exception {
         RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
         for (boolean dark : new boolean[] {false, true}) try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {

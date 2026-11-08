@@ -26,6 +26,8 @@ final class NativeTurn extends LinearLayout {
     private final NativeKeyedViews children;
     private JSONObject current;
     private Object bound;
+    private NativeTurnPresentation presentation;
+    private Runnable activityRowsChanged;
 
     NativeTurn(NativeUi ui, JSONArray parts, int start, int end, JSONObject turn,
             boolean chinese, Consumer<String> open) {
@@ -44,9 +46,14 @@ final class NativeTurn extends LinearLayout {
 
     NativeTurn(NativeUi ui, JSONArray parts, int start, int end, JSONObject turn,
             boolean chinese, NativeActivityList.State state, Consumer<String> open, NativeTranscriptImages images, boolean renderAnswer) {
+        this(ui, NativeTurnPresentation.response(parts, start, end, turn), state, open, images, renderAnswer, null);
+    }
+
+    NativeTurn(NativeUi ui, NativeTurnPresentation presentation, NativeActivityList.State state,
+            Consumer<String> open, NativeTranscriptImages images, boolean renderAnswer, Runnable activityRowsChanged) {
         super(ui.context);
         this.ui = ui; this.state = state; this.open = open; this.images = images;
-        this.renderAnswer = renderAnswer;
+        this.renderAnswer = renderAnswer; this.activityRowsChanged = activityRowsChanged;
         setOrientation(VERTICAL);
         children = new NativeKeyedViews(this);
         tick = new Runnable() {
@@ -56,7 +63,7 @@ final class NativeTurn extends LinearLayout {
                 if (isAttachedToWindow() && getWindowVisibility() == VISIBLE && running) main.postDelayed(this, 1000);
             }
         };
-        bind(parts, start, end, turn);
+        bind(presentation);
     }
 
     void bind(JSONArray parts, int start, int end, JSONObject turn) {
@@ -81,76 +88,46 @@ final class NativeTurn extends LinearLayout {
             if (NativeChatState.equivalent(bound, inputs)) return;
             bound = NativeChatState.snapshot(inputs);
         }
-        current = turn; running = nextRunning;
-        List<JSONObject> finalParts = finalParts(parts, start, end, running), process = new ArrayList<>();
-        for (int i = start; i < end; i++) {
-            JSONObject part = parts.optJSONObject(i);
-            if (part != null && !finalParts.contains(part)) process.add(part);
-        }
-        answered = !finalParts.isEmpty();
-        CharSequence summary = summary(ui, turn, answered, System.currentTimeMillis());
+        bind(NativeTurnPresentation.response(parts, start, end, turn));
+    }
+
+    void bind(NativeTurnPresentation value) {
+        if (presentation == value) return;
+        presentation = value; current = value.turn; running = value.running; answered = value.answered;
+        CharSequence summary = summary(ui, current, answered, System.currentTimeMillis());
         children.begin();
+        NativeActivityList previous = activity;
         activity = (NativeActivityList) children.use("activity", "activity",
-                () -> new NativeActivityList(ui, process, turn.optString("backend"), summary, running && !answered, state, open, images));
-        activity.bindParts(process, turn.optString("backend"), summary, running && !answered);
-        String source = answer(finalParts);
-        if (!source.isEmpty() && renderAnswer) {
+                () -> new NativeActivityList(ui, value.process, current.optString("backend"), summary,
+                        running && !answered, state, open, images, activityRowsChanged));
+        if (activity == previous) activity.bindParts(value.process, current.optString("backend"), summary, running && !answered);
+        if (!value.answer.isEmpty() && renderAnswer) {
             NativeMessage message = (NativeMessage) children.use("answer", "answer",
-                    () -> new NativeMessage(ui, source, false, null, turn.optLong("finished_at"), ui.chinese, open));
-            message.bindSource(source);
-            message.bindActions(actions);
-            message.footer.bindTimestamp(turn.optLong("finished_at"));
-        } else if (source.isEmpty() && actions != null && actions.length() > 0) {
+                    () -> new NativeMessage(ui, value.answer, false, null, current.optLong("finished_at"), ui.chinese, open));
+            message.bindSource(value.answer); message.bindActions(value.actions);
+            message.footer.bindTimestamp(current.optLong("finished_at"));
+        } else if (value.answer.isEmpty() && value.actions.length() > 0 && activityRowsChanged == null) {
             NativeTurnActions audit = (NativeTurnActions) children.use("actions", "actions", () -> new NativeTurnActions(ui));
-            audit.bind(actions);
+            audit.bind(value.actions);
         }
         children.end();
         main.removeCallbacks(tick);
         if (running && isAttachedToWindow() && getWindowVisibility() == VISIBLE) tick.run();
     }
 
-    private static List<JSONObject> finalParts(JSONArray parts, int start, int end, boolean running) {
-        List<JSONObject> finalParts = new ArrayList<>();
-        int lastActivity = -1, lastUser = -1;
-        for (int i = start; i < end; i++) {
-            JSONObject part = parts.optJSONObject(i);
-            if (part != null && part.optString("role").equals("user")) lastUser = i;
-        }
-        for (int i = start; i < end; i++) {
-            JSONObject part = parts.optJSONObject(i);
-            if (part == null) continue;
-            if (activity(part)) lastActivity = i;
-            if (i > lastUser && text(part) && part.optString("phase").equals("final_answer")) finalParts.add(part);
-        }
-        if (finalParts.isEmpty() && !running)
-            for (int i = Math.max(start, Math.max(lastUser, lastActivity) + 1); i < end; i++) {
-                JSONObject part = parts.optJSONObject(i);
-                if (part != null && text(part) && part.optString("phase").isEmpty()) finalParts.add(part);
-            }
-        return finalParts;
-    }
-
     static String answer(JSONArray parts, int start, int end, JSONObject turn) {
-        return answer(finalParts(parts, start, end, turn.optString("status").equals("running")));
-    }
-
-    private static String answer(List<JSONObject> finalParts) {
-        StringBuilder answer = new StringBuilder();
-        String previous = "";
-        for (JSONObject part : finalParts) {
-            String id = part.optString("id");
-            if (answer.length() > 0 && (id.isEmpty() || !id.equals(previous))) answer.append("\n\n");
-            answer.append(part.optString("text"));
-            previous = id;
-        }
-        return answer.toString();
+        return NativeTurnPresentation.response(parts, start, end, turn).answer;
     }
 
     void userInput(NativeActivityList.UserInput input) { activity.userInput(input); }
 
+    void activityRowsChanged(Runnable changed) {
+        activityRowsChanged = changed; activity.rowsChanged(changed);
+    }
+
     void rebindForTurn(NativeActivityList.State next, NativeTranscriptImages nextImages) {
         if (state == next) return;
-        main.removeCallbacks(tick); running = answered = false; current = null; bound = null;
+        main.removeCallbacks(tick); running = answered = false; current = null; bound = null; presentation = null;
         state = next; images = nextImages; activity.rebindForTurn(next, nextImages);
     }
 
@@ -169,17 +146,6 @@ final class NativeTurn extends LinearLayout {
         if (tick == null) return;
         main.removeCallbacks(tick);
         if (visibility == VISIBLE && running && isAttachedToWindow()) tick.run();
-    }
-
-    private static boolean text(JSONObject part) {
-        return part.optString("role").equals("assistant") && part.optString("kind").equals("text")
-                && !part.optString("text").trim().isEmpty();
-    }
-
-    private static boolean activity(JSONObject part) {
-        String kind = part.optString("kind");
-        return !part.optString("role").equals("user")
-                && (kind.equals("thinking") || kind.equals("tool_use") || kind.equals("tool_result"));
     }
 
     static CharSequence summary(NativeUi ui, JSONObject turn, boolean answered, long now) {

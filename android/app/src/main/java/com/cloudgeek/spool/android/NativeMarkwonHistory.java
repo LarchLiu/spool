@@ -10,6 +10,7 @@ import android.widget.TextView;
 import androidx.recyclerview.widget.ConcatAdapter;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.recyclerview.widget.DiffUtil;
 import androidx.core.text.PrecomputedTextCompat;
 import androidx.core.widget.TextViewCompat;
 import io.noties.markwon.AbstractMarkwonPlugin;
@@ -28,29 +29,41 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.ArrayDeque;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.function.Consumer;
 import org.commonmark.node.Node;
+import org.commonmark.node.FencedCodeBlock;
+import org.commonmark.node.IndentedCodeBlock;
 import org.json.JSONObject;
 
-/** Opt-in trial: the official Markwon block adapter inside one native RecyclerView. */
+/** Chat history with the official Markwon block adapter inside one native RecyclerView. */
 final class NativeMarkwonHistory extends RecyclerView {
     private final NativeUi ui;
     private final NativeHistoryScroll.State state;
     private final LinearLayoutManager layout;
     private final ConcatAdapter adapters;
     private final Markwon markwon;
+    private final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
     private final PrecomputedTextCompat.Params textMetrics;
     private final ExecutorService parser = Executors.newSingleThreadExecutor();
     private Map<String, Segment> current = new LinkedHashMap<>(), next;
     private Consumer<Boolean> following = value -> {};
-    private boolean disposed, updating;
+    private boolean disposed, updating, restoring, movingToLatest, explicitScroll;
+    private java.lang.ref.WeakReference<View> disclosureHeading;
+    private int disclosureTop;
+    private final List<RecyclerView.Adapter<?>> adapterOrder = new ArrayList<>();
+    private final Map<RecyclerView.Adapter<?>, Segment> owners = new IdentityHashMap<>();
+    private long nextBlockId, reusedBlocks, reconciledSegments;
     private long creates, binds, markdownBinds, chromeBinds, recycles, bindNanos, maxBindNanos, parseNanos, parseErrors;
     private long chromeNanos, markdownNanos, chromeReuses, chromeTransfers;
+    boolean reuseActivityRows = true;
+    long activityInflations;
     private long prepareNanos, preparedBlocks, precomputedBlocks, precomputeSkips, precomputeFailures, precomputeFallbacks;
-    private static final int CHROME_HEADING = 0x10000000, CHROME_FOOTER = 0x10000001, CHROME_OTHER = 0x10000002;
+    private static final int CHROME_HEADING = 0x10000000, CHROME_FOOTER = 0x10000001,
+            CHROME_OTHER = 0x10000002, CHROME_ACTIVITY = 0x10000003;
 
     private final class Segment {
         final String key;
@@ -59,13 +72,18 @@ final class NativeMarkwonHistory extends RecyclerView {
         Future<?> parsing;
         TextEntry textEntry;
         boolean pending;
+        long version;
+        int position;
+        List<NativeMarkdownBlocks.Block> blocks = Collections.emptyList();
         Segment(String key, RecyclerView.Adapter<?> adapter) { this.key = key; this.adapter = adapter; }
-        void cancel() { if (parsing != null) parsing.cancel(true); pending = false; }
+        void cancel() { version++; if (parsing != null) parsing.cancel(true); pending = false; }
     }
 
     private final class TextEntry extends SimpleEntry {
         Map<Node, Spanned> prepared = new IdentityHashMap<>();
+        Map<Node, Long> ids = new IdentityHashMap<>();
         TextEntry() { super(R.layout.markwon_block, 0); }
+        @Override public long id(Node node) { return ids.get(node); }
         @Override public SimpleEntry.Holder createHolder(LayoutInflater inflater, ViewGroup parent) {
             SimpleEntry.Holder holder = super.createHolder(inflater, parent);
             TextView text = (TextView) holder.itemView;
@@ -86,7 +104,39 @@ final class NativeMarkwonHistory extends RecyclerView {
             ((TextView) holder.itemView).setText(""); recycles++;
             super.onViewRecycled(holder);
         }
-        @Override public void clear() { super.clear(); prepared = new IdentityHashMap<>(); }
+        @Override public void clear() { super.clear(); prepared = new IdentityHashMap<>(); ids = new IdentityHashMap<>(); }
+    }
+
+    private static final class CodeHolder extends MarkwonAdapter.Holder {
+        final NativeCodeBlock code;
+        CodeHolder(View view, NativeCodeBlock code) { super(view); this.code = code; }
+    }
+    private final class CodeEntry extends MarkwonAdapter.Entry<Node, CodeHolder> {
+        final TextEntry textEntry;
+        CodeEntry(TextEntry textEntry) { this.textEntry = textEntry; }
+        @Override public long id(Node node) { return textEntry.ids.get(node); }
+        @Override public CodeHolder createHolder(LayoutInflater inflater, ViewGroup parent) {
+            // Use the same code widget as file Markdown previews, with a row-local origin.
+            ChromeRow row = new ChromeRow(ui);
+            row.setLayoutParams(new RecyclerView.LayoutParams(-1, -2));
+            row.setPadding(0, ui.dp(4), 0, ui.dp(8));
+            NativeCodeBlock code = new NativeCodeBlock(ui, ui.text, 14);
+            row.addView(code, new LinearLayout.LayoutParams(-1, -2)); creates++;
+            return new CodeHolder(row, code);
+        }
+        @Override public void bindHolder(Markwon renderer, CodeHolder holder, Node node) {
+            long started = System.nanoTime();
+            holder.code.bind(node instanceof FencedCodeBlock ? ((FencedCodeBlock) node).getInfo() : "", codeLiteral(node));
+            long elapsed = System.nanoTime() - started;
+            markdownBinds++; markdownNanos += elapsed; bound(elapsed);
+        }
+        @Override public void onViewRecycled(CodeHolder holder) {
+            clearSelection(holder.itemView); holder.code.bind("", ""); holder.code.scroll.scrollTo(0, 0); recycles++;
+        }
+    }
+    private static boolean codeBlock(Node node) { return node instanceof FencedCodeBlock || node instanceof IndentedCodeBlock; }
+    private static String codeLiteral(Node node) {
+        return node instanceof FencedCodeBlock ? ((FencedCodeBlock) node).getLiteral() : ((IndentedCodeBlock) node).getLiteral();
     }
 
     private void configureText(TextView text) {
@@ -159,19 +209,22 @@ final class NativeMarkwonHistory extends RecyclerView {
         if (view instanceof NativeMessageFooter) ((NativeMessageFooter) view).resetFeedback();
         if (view instanceof TextView && ((TextView) view).getText() instanceof android.text.Spannable)
             android.text.Selection.removeSelection((android.text.Spannable) ((TextView) view).getText());
-        view.clearFocus();
+        if (view.isFocused()) view.clearFocus();
         if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++) clearSelection(((ViewGroup) view).getChildAt(i));
     }
 
     NativeMarkwonHistory(NativeUi ui, NativeHistoryScroll.State state, Consumer<String> open) {
         super(ui.context); this.ui = ui; this.state = state;
         layout = new LinearLayoutManager(ui.context);
-        layout.setStackFromEnd(true); layout.setInitialPrefetchItemCount(4);
+        // Welcome and short conversations start at the top; restorePosition follows long histories.
+        layout.setStackFromEnd(false); layout.setInitialPrefetchItemCount(4);
         setLayoutManager(layout); setItemAnimator(null); setHasFixedSize(true);
         setItemViewCacheSize(8); getRecycledViewPool().setMaxRecycledViews(0, 24);
         getRecycledViewPool().setMaxRecycledViews(CHROME_HEADING, 8);
         getRecycledViewPool().setMaxRecycledViews(CHROME_FOOTER, 8);
         getRecycledViewPool().setMaxRecycledViews(CHROME_OTHER, 2);
+        for (int type = CHROME_ACTIVITY; type < CHROME_ACTIVITY + 6; type++)
+            getRecycledViewPool().setMaxRecycledViews(type, type == CHROME_ACTIVITY + 4 ? 32 : 8);
         setVerticalScrollBarEnabled(false); setClipToPadding(false);
         setPadding(ui.dp(12), ui.dp(25), ui.dp(12), ui.dp(25));
         adapters = new ConcatAdapter(new ConcatAdapter.Config.Builder()
@@ -193,24 +246,23 @@ final class NativeMarkwonHistory extends RecyclerView {
                 .usePlugin(TablePlugin.create(ui.context))
                 .usePlugin(StrikethroughPlugin.create())
                 .usePlugin(TaskListPlugin.create(ui.context))
+                .usePlugin(new NativeMarkwonLinks(open))
                 .usePlugin(new AbstractMarkwonPlugin() {
-                    @Override public void configureParser(org.commonmark.parser.Parser.Builder builder) {
-                        builder.customInlineContentParserFactory(new NativeCodexFileCitation.Factory());
-                    }
-                    @Override public void configureVisitor(io.noties.markwon.MarkwonVisitor.Builder builder) {
-                        builder.on(NativeCodexFileCitation.class, (visitor, citation) -> {
-                            for (Node parent = citation.getParent(); parent != null; parent = parent.getParent())
-                                if (parent instanceof org.commonmark.node.Link || parent instanceof org.commonmark.node.Image) {
-                                    visitor.builder().append(citation.source); return;
-                                }
-                            int start = visitor.length(); visitor.builder().append(citation.name);
-                            visitor.setSpans(start, new android.text.style.URLSpan(citation.path.replace('\\', '/')) {
-                                @Override public void onClick(View view) { open.accept(getURL()); }
-                            });
-                        });
-                    }
                     @Override public void configureConfiguration(MarkwonConfiguration.Builder builder) {
                         builder.linkResolver((view, link) -> open.accept(link));
+                        // Nested fences inside lists/quotes still use Markwon spans. Their
+                        // tokens are prepared with the containing block on the parser worker.
+                        builder.syntaxHighlight((language, source) -> {
+                            if (ui.syntax == null || android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) return source;
+                            try {
+                                android.text.SpannableString text = new android.text.SpannableString(source);
+                                NativeSyntax.apply(text, ui.syntax.computeCode(language, source, ui.dark, ui.syntax.epoch()), ui.text);
+                                return text;
+                            } catch (java.util.concurrent.CancellationException cancelled) { throw cancelled; }
+                            catch (Exception | LinkageError error) {
+                                android.util.Log.w("SpoolSyntax", "Markdown highlighting failed", error); return source;
+                            }
+                        });
                     }
                     @Override public void configureTheme(MarkwonTheme.Builder builder) {
                         builder.linkColor(ui.primary).codeBackgroundColor(ui.soft).codeTextColor(ui.text)
@@ -223,11 +275,18 @@ final class NativeMarkwonHistory extends RecyclerView {
         // upstream PrecomputedTextSetterCompat cannot safely track RecyclerView ownership.
         addOnScrollListener(new OnScrollListener() {
             @Override public void onScrolled(RecyclerView view, int dx, int dy) {
-                if (disposed || updating || dy == 0) return;
-                state.following = !canScrollVertically(1);
+                if (disposed || updating || restoring || dy == 0) return;
+                if (movingToLatest) return;
+                disclosureHeading = null;
+                state.following = nearBottom();
                 remember(); following.accept(state.following);
             }
-            @Override public void onScrollStateChanged(RecyclerView view, int value) { if (!disposed) remember(); }
+            @Override public void onScrollStateChanged(RecyclerView view, int value) {
+                if (disposed) return;
+                if (value == SCROLL_STATE_DRAGGING) { movingToLatest = false; disclosureHeading = null; }
+                if (value == SCROLL_STATE_IDLE) movingToLatest = false;
+                if (!restoring) remember();
+            }
         });
     }
 
@@ -237,9 +296,26 @@ final class NativeMarkwonHistory extends RecyclerView {
     void begin() { next = new LinkedHashMap<>(); }
 
     void chrome(String key, boolean refresh, Consumer<NativeKeyedViews> render) {
+        chrome(key, key.endsWith("/heading") ? CHROME_HEADING : key.endsWith("/footer") ? CHROME_FOOTER : CHROME_OTHER, refresh, render);
+    }
+
+    void activity(String key, String kind, boolean refresh, Consumer<NativeKeyedViews> render) {
+        int type;
+        switch (kind) {
+            case "user": type = 0; break;
+            case "message": type = 1; break;
+            case "image": type = 2; break;
+            case "group": type = 3; break;
+            case "item": type = 4; break;
+            default: type = 5;
+        }
+        chrome(key, CHROME_ACTIVITY + type, refresh, render);
+    }
+
+    private void chrome(String key, int type, boolean refresh, Consumer<NativeKeyedViews> render) {
         Segment segment = current.get(key);
-        if (segment == null || !(segment.adapter instanceof NativeMarkwonHistory.ChromeAdapter))
-            segment = new Segment(key, new ChromeAdapter(key.endsWith("/heading") ? CHROME_HEADING : key.endsWith("/footer") ? CHROME_FOOTER : CHROME_OTHER));
+        if (segment == null || !(segment.adapter instanceof NativeMarkwonHistory.ChromeAdapter) || ((ChromeAdapter) segment.adapter).type != type)
+            segment = new Segment(key, new ChromeAdapter(type));
         ChromeAdapter adapter = (ChromeAdapter) segment.adapter;
         boolean changed = adapter.render == null || refresh;
         if (changed) { adapter.render = render; adapter.revision++; adapter.notifyItemChanged(0); }
@@ -250,64 +326,85 @@ final class NativeMarkwonHistory extends RecyclerView {
         Segment segment = current.get(key);
         if (segment == null || !(segment.adapter instanceof MarkwonAdapter)) {
             TextEntry entry = new TextEntry();
-            segment = new Segment(key, MarkwonAdapter.create(entry)); segment.textEntry = entry;
+            CodeEntry code = new CodeEntry(entry);
+            segment = new Segment(key, MarkwonAdapter.builder(entry)
+                    .include(FencedCodeBlock.class, code).include(IndentedCodeBlock.class, code).build()); segment.textEntry = entry;
         }
         next.put(key, segment);
         if (source.equals(segment.source)) return;
         segment.cancel(); segment.source = source; segment.pending = true;
-        Segment target = segment;
+        Segment target = segment; long version = segment.version;
+        List<NativeMarkdownBlocks.Block> previous = segment.blocks;
         segment.parsing = parser.submit(() -> {
             long started = System.nanoTime();
             try {
                 Node document = markwon.parse(source);
                 long elapsed = System.nanoTime() - started;
                 List<Node> nodes = io.noties.markwon.MarkwonReducer.directChildren().reduce(document);
-                Map<Node, Spanned> prepared = new IdentityHashMap<>();
-                long preparing = System.nanoTime(); int precomputed = 0, skipped = 0, failures = 0;
+                Map<String, ArrayDeque<NativeMarkdownBlocks.Block>> available = new LinkedHashMap<>();
+                for (NativeMarkdownBlocks.Block block : previous)
+                    available.computeIfAbsent(block.key, ignored -> new ArrayDeque<>()).add(block);
+                List<NativeMarkdownBlocks.Block> blocks = new ArrayList<>();
+                long preparing = System.nanoTime(); int precomputed = 0, skipped = 0, failures = 0, reused = 0;
                 for (Node node : nodes) {
                     if (Thread.currentThread().isInterrupted()) return;
-                    Spanned text = markwon.render(node);
-                    // Tables and other replacements can need an attached TextView's width.
-                    // Keep their native measuring path; only immutable text runs are precomputed.
-                    if (text.getSpans(0, text.length(), android.text.style.ReplacementSpan.class).length == 0) {
-                        try {
-                            PrecomputedTextCompat measured = PrecomputedTextCompat.create(text, textMetrics);
-                            text = measured;
-                            precomputed++;
-                        } catch (RuntimeException error) { failures++; }
+                    String signature = NativeMarkdownBlocks.key(node, source);
+                    ArrayDeque<NativeMarkdownBlocks.Block> matches = available.get(signature);
+                    if (matches != null && !matches.isEmpty()) { blocks.add(matches.removeFirst()); reused++; continue; }
+                    Spanned text = codeBlock(node) ? new android.text.SpannableString(codeLiteral(node)) : markwon.render(node);
+                    if (codeBlock(node)) skipped++;
+                    else if (text.getSpans(0, text.length(), android.text.style.ReplacementSpan.class).length == 0) {
+                        try { text = PrecomputedTextCompat.create(text, textMetrics); precomputed++; }
+                        catch (RuntimeException error) { failures++; }
                     } else skipped++;
-                    prepared.put(node, text);
+                    blocks.add(new NativeMarkdownBlocks.Block(nextBlockId++, signature, node, text));
                 }
+                // A retained top-level node must not retain every old document via parent/sibling links.
+                for (Node node : nodes) node.unlink();
                 long prepareElapsed = System.nanoTime() - preparing;
-                int measured = precomputed, replacements = skipped, failed = failures;
-                post(() -> {
-                    if (!current(target, source)) return;
-                    prepareNanos += prepareElapsed; preparedBlocks += nodes.size(); precomputedBlocks += measured;
-                    precomputeSkips += replacements; precomputeFailures += failed;
-                    parsed(target, source, nodes, prepared, elapsed, false);
+                int measured = precomputed, replacements = skipped, failed = failures, retained = reused;
+                DiffUtil.DiffResult diff = diff(previous, blocks);
+                main.post(() -> {
+                    if (!current(target, version)) return;
+                    prepareNanos += prepareElapsed; preparedBlocks += blocks.size() - retained; reusedBlocks += retained;
+                    precomputedBlocks += measured; precomputeSkips += replacements; precomputeFailures += failed;
+                    parsed(target, version, blocks, diff, elapsed, false);
                 });
             } catch (RuntimeException | LinkageError error) {
-                org.commonmark.node.Document document = new org.commonmark.node.Document();
                 org.commonmark.node.Paragraph paragraph = new org.commonmark.node.Paragraph();
-                paragraph.appendChild(new org.commonmark.node.Text(source)); document.appendChild(paragraph);
-                post(() -> parsed(target, source, io.noties.markwon.MarkwonReducer.directChildren().reduce(document), new IdentityHashMap<>(), System.nanoTime() - started, true));
+                paragraph.appendChild(new org.commonmark.node.Text(source));
+                List<NativeMarkdownBlocks.Block> blocks = Collections.singletonList(new NativeMarkdownBlocks.Block(
+                        nextBlockId++, source, paragraph, new android.text.SpannableString(source)));
+                DiffUtil.DiffResult diff = diff(previous, blocks);
+                main.post(() -> parsed(target, version, blocks, diff, System.nanoTime() - started, true));
             }
         });
     }
 
-    private boolean current(Segment target, String source) { return !disposed && current.get(target.key) == target && source.equals(target.source); }
+    private static DiffUtil.DiffResult diff(List<NativeMarkdownBlocks.Block> previous, List<NativeMarkdownBlocks.Block> next) {
+        return DiffUtil.calculateDiff(new DiffUtil.Callback() {
+            @Override public int getOldListSize() { return previous.size(); }
+            @Override public int getNewListSize() { return next.size(); }
+            @Override public boolean areItemsTheSame(int old, int value) { return previous.get(old).id == next.get(value).id; }
+            @Override public boolean areContentsTheSame(int old, int value) { return previous.get(old) == next.get(value); }
+        });
+    }
 
-    private void parsed(Segment target, String source, List<Node> nodes, Map<Node, Spanned> prepared, long elapsed, boolean failed) {
-        if (!current(target, source)) return;
+    private boolean current(Segment target, long version) { return !disposed && current.get(target.key) == target && version == target.version; }
+
+    private void parsed(Segment target, long version, List<NativeMarkdownBlocks.Block> blocks,
+            DiffUtil.DiffResult diff, long elapsed, boolean failed) {
+        if (!current(target, version)) return;
         target.pending = false; parseNanos += elapsed; if (failed) parseErrors++;
         MarkwonAdapter adapter = (MarkwonAdapter) target.adapter;
-        int before = adapter.getItemCount();
-        adapter.setParsedMarkdown(markwon, nodes); target.textEntry.prepared = prepared;
-        int after = adapter.getItemCount(), retained = Math.min(before, after);
-        if (retained > 0) adapter.notifyItemRangeChanged(0, retained);
-        if (after > before) adapter.notifyItemRangeInserted(before, after - before);
-        else if (before > after) adapter.notifyItemRangeRemoved(after, before - after);
-        settlePosition();
+        List<Node> nodes = new ArrayList<>();
+        for (NativeMarkdownBlocks.Block block : blocks) nodes.add(block.node);
+        adapter.setParsedMarkdown(markwon, nodes);
+        for (NativeMarkdownBlocks.Block block : blocks) {
+            target.textEntry.prepared.put(block.node, block.text); target.textEntry.ids.put(block.node, block.id);
+        }
+        target.blocks = blocks;
+        diff.dispatchUpdatesTo(adapter); reindex(); settlePosition();
     }
 
     void end() {
@@ -315,76 +412,180 @@ final class NativeMarkwonHistory extends RecyclerView {
         try {
             Set<RecyclerView.Adapter<?>> wanted = Collections.newSetFromMap(new IdentityHashMap<>());
             for (Segment segment : next.values()) wanted.add(segment.adapter);
+            Set<RecyclerView.Adapter<?>> present = Collections.newSetFromMap(new IdentityHashMap<>());
+            present.addAll(adapterOrder);
             for (Segment segment : current.values()) if (!wanted.contains(segment.adapter)) segment.cancel();
-            for (RecyclerView.Adapter<?> adapter : new ArrayList<>(adapters.getAdapters()))
-                if (!wanted.contains(adapter)) adapters.removeAdapter(adapter);
+            for (int i = adapterOrder.size() - 1; i >= 0; i--) if (!wanted.contains(adapterOrder.get(i))) {
+                RecyclerView.Adapter<?> removed = adapterOrder.remove(i); present.remove(removed); adapters.removeAdapter(removed);
+            }
             int position = 0;
             for (Segment segment : next.values()) {
-                List<? extends RecyclerView.Adapter<?>> attached = adapters.getAdapters();
-                if (position >= attached.size() || attached.get(position) != segment.adapter) {
-                    adapters.removeAdapter(segment.adapter); adapters.addAdapter(position, segment.adapter);
+                reconciledSegments++;
+                if (position >= adapterOrder.size() || adapterOrder.get(position) != segment.adapter) {
+                    int old = present.contains(segment.adapter) ? adapterOrder.indexOf(segment.adapter) : -1;
+                    if (old >= 0) { adapterOrder.remove(old); adapters.removeAdapter(segment.adapter); }
+                    adapterOrder.add(position, segment.adapter); adapters.addAdapter(position, segment.adapter); present.add(segment.adapter);
                 }
                 position++;
             }
-            current = next; next = null;
+            current = next; next = null; reindex();
         } finally { updating = false; }
         settlePosition();
     }
 
-    private void settlePosition() {
-        post(() -> {
-            if (disposed) return;
-            if (state.following) latest(false);
-            else if (!state.recyclerKey.isEmpty() && getScrollState() == SCROLL_STATE_IDLE) {
-                int position = 0;
-                for (Segment segment : current.values()) {
-                    if (segment.key.equals(state.recyclerKey)) {
-                        layout.scrollToPositionWithOffset(position + Math.min(state.recyclerItem, Math.max(0, segment.adapter.getItemCount() - 1)), state.recyclerOffset);
-                        break;
-                    }
-                    position += segment.adapter.getItemCount();
-                }
+    private void reindex() {
+        int position = 0; owners.clear();
+        for (Segment segment : current.values()) {
+            segment.position = position; position += segment.adapter.getItemCount(); owners.put(segment.adapter, segment);
+        }
+    }
+
+    // Coalesce updates into RecyclerView's next layout. Restore before that layout chooses its
+    // reading anchor, including layouts caused only by a disclosure or delayed tool body.
+    private void settlePosition() { requestLayout(); }
+
+    private void restorePosition() {
+        if (state.following) { if (!movingToLatest && adapters.getItemCount() > 0) layout.scrollToPosition(adapters.getItemCount() - 1); return; }
+        Segment segment = current.get(state.recyclerKey);
+        if (segment == null || segment.adapter.getItemCount() == 0) return;
+        int item = Math.min(state.recyclerItem, segment.adapter.getItemCount() - 1);
+        if (state.recyclerId >= 0) for (int i = 0; i < segment.adapter.getItemCount(); i++)
+            if (segment.adapter.getItemId(i) == state.recyclerId) { item = i; break; }
+        layout.scrollToPositionWithOffset(segment.position + item, state.recyclerOffset);
+    }
+
+    @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        restoring = true;
+        try {
+            boolean requested = explicitScroll; explicitScroll = false;
+            if (!requested) restorePosition();
+            super.onLayout(changed, left, top, right, bottom);
+            if (requested) { state.following = nearBottom(); following.accept(state.following); }
+            View heading = disclosureHeading == null ? null : disclosureHeading.get();
+            View item = heading == null ? null : findContainingItemView(heading);
+            if (!state.following && item != null) {
+                int delta = relativeTop(heading, this) - disclosureTop;
+                if (delta != 0) scrollBy(0, delta);
             }
-        });
+            if (!movingToLatest) remember();
+        } finally { restoring = false; }
+    }
+
+    @Override public void scrollToPosition(int position) {
+        disclosureHeading = null; movingToLatest = false; explicitScroll = true;
+        super.scrollToPosition(position);
+    }
+
+    boolean probePosition(int position) {
+        if (position < 0 || position >= blocks()) return false;
+        stopScroll(); disclosureHeading = null; movingToLatest = false; explicitScroll = true;
+        state.following = false; following.accept(false);
+        layout.scrollToPositionWithOffset(position, 0); return true;
+    }
+
+    private boolean nearBottom() {
+        int last = adapters.getItemCount() - 1;
+        View tail = layout.findViewByPosition(last);
+        return last < 0 || tail != null && layout.getDecoratedBottom(tail) - (getHeight() - getPaddingBottom()) < ui.dp(90);
     }
 
     private void remember() {
         int first = layout.findFirstVisibleItemPosition();
         View item = layout.findViewByPosition(first);
-        if (item == null) return;
-        int position = first;
-        for (Segment segment : current.values()) {
-            int count = segment.adapter.getItemCount();
-            if (position < count) {
-                state.recyclerKey = segment.key; state.recyclerItem = position;
-                state.recyclerOffset = layout.getDecoratedTop(item) - getPaddingTop();
-                state.top = computeVerticalScrollOffset(); return;
-            }
-            position -= count;
-        }
+        if (item != null) remember(item);
+    }
+    private void remember(View item) {
+        RecyclerView.ViewHolder holder = getChildViewHolder(item);
+        Segment segment = owners.get(holder.getBindingAdapter()); int position = holder.getBindingAdapterPosition();
+        if (segment == null || position < 0 || position >= segment.adapter.getItemCount()) return;
+        state.recyclerKey = segment.key; state.recyclerItem = position; state.recyclerId = segment.adapter.getItemId(position);
+        state.recyclerOffset = layout.getDecoratedTop(item) - getPaddingTop(); state.top = computeVerticalScrollOffset();
+    }
+    private static int relativeTop(View child, View parent) {
+        int top = 0;
+        for (View view = child; view != parent && view != null; view = view.getParent() instanceof View ? (View) view.getParent() : null)
+            top += view.getTop();
+        return top;
     }
 
-    void preservePosition(View heading) { state.following = false; remember(); following.accept(false); }
-    void latest() { latest(true); }
-    private void latest(boolean animate) {
+    void preservePosition(View heading) {
+        state.following = false; movingToLatest = false;
+        View item = findContainingItemView(heading);
+        if (item != null) {
+            remember(item); disclosureHeading = new java.lang.ref.WeakReference<>(heading); disclosureTop = relativeTop(heading, this);
+        } else remember();
+        following.accept(false); requestLayout();
+    }
+    @Override public boolean fling(int velocityX, int velocityY) {
+        disclosureHeading = null; movingToLatest = false; return super.fling(velocityX, velocityY);
+    }
+    @Override public boolean onInterceptTouchEvent(android.view.MotionEvent event) {
+        if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) { disclosureHeading = null; movingToLatest = false; }
+        return super.onInterceptTouchEvent(event);
+    }
+    void latest() {
         if (disposed || adapters.getItemCount() == 0) return;
-        state.following = true; following.accept(true);
-        if (animate) smoothScrollToPosition(adapters.getItemCount() - 1);
-        else layout.scrollToPosition(adapters.getItemCount() - 1);
+        disclosureHeading = null; state.following = true; following.accept(true); movingToLatest = true;
+        smoothScrollToPosition(adapters.getItemCount() - 1);
     }
     int contentHeight() { return computeVerticalScrollRange(); }
     int contentOffset() { return computeVerticalScrollOffset(); }
     int blocks() { return adapters.getItemCount(); }
+    int positionOf(String key) { Segment segment = current.get(key); return segment == null ? -1 : segment.position; }
     int pending() { int count = 0; for (Segment segment : current.values()) if (segment.pending) count++; return count; }
+
+    /** Explicit idle-only verification; native content never leaves the process. */
+    JSONObject probeVisibleContent(String salt) {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            digestValue(digest, salt); int rows = 0;
+            for (int i = 0; i < getChildCount(); i++) {
+                View row = getChildAt(i);
+                if (row.getBottom() <= getPaddingTop() || row.getTop() >= getHeight() - getPaddingBottom()) continue;
+                digestValue(digest, Integer.toString(getChildAdapterPosition(row)));
+                digestView(digest, row); rows++;
+            }
+            StringBuilder hex = new StringBuilder();
+            for (byte value : digest.digest()) hex.append(Character.forDigit((value >>> 4) & 15, 16)).append(Character.forDigit(value & 15, 16));
+            return new JSONObject().put("rows", rows).put("sha256", hex.toString());
+        } catch (java.security.NoSuchAlgorithmException | org.json.JSONException impossible) { throw new IllegalStateException(impossible); }
+    }
+    private static void digestValue(java.security.MessageDigest digest, CharSequence value) {
+        byte[] bytes = (value == null ? "" : value.toString()).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        digest.update(java.nio.ByteBuffer.allocate(4).putInt(bytes.length).array()); digest.update(bytes);
+    }
+    private static void digestView(java.security.MessageDigest digest, View view) {
+        if (view.getVisibility() != VISIBLE) return;
+        digestValue(digest, view.getClass().getName());
+        digestValue(digest, view.getLeft() + "/" + view.getTop() + "/" + view.getRight() + "/" + view.getBottom());
+        digestValue(digest, view.getContentDescription());
+        if (view instanceof TextView) digestValue(digest, ((TextView) view).getText());
+        if (view instanceof NativeImageView) {
+            // NativeImages tags each request with its current source key.
+            digestValue(digest, view.getTag() instanceof String ? (String) view.getTag() : "");
+            digestValue(digest, ((NativeImageView) view).getDrawable() == null ? "empty" : "loaded");
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) digestView(digest, group.getChildAt(i));
+        }
+    }
     JSONObject metrics() {
         JSONObject result = new JSONObject();
+        int first = layout.findFirstVisibleItemPosition();
+        View firstView = layout.findViewByPosition(first);
         try { result.put("renderer", "markwon-recycler").put("blocks", blocks()).put("pendingParses", pending())
+                .put("firstVisible", first).put("lastVisible", layout.findLastVisibleItemPosition())
+                .put("canScrollUp", canScrollVertically(-1)).put("canScrollDown", canScrollVertically(1))
+                .put("firstTop", firstView == null ? 0 : layout.getDecoratedTop(firstView) - getPaddingTop())
+                .put("activityRowReuse", reuseActivityRows).put("activityInflations", activityInflations)
                 .put("creates", creates).put("binds", binds).put("markdownBinds", markdownBinds).put("chromeBinds", chromeBinds)
                 .put("recycles", recycles).put("bindMs", bindNanos / 1_000_000d).put("maxBindMs", maxBindNanos / 1_000_000d)
                 .put("chromeBindMs", chromeNanos / 1_000_000d).put("markdownBindMs", markdownNanos / 1_000_000d)
                 .put("chromeReuses", chromeReuses).put("chromeTransfers", chromeTransfers)
                 .put("timeCacheHits", NativeMessageTime.cacheHits()).put("timeFormats", NativeMessageTime.formats())
                 .put("timeFormatterCreates", NativeMessageTime.formatterCreates())
+                .put("reusedBlocks", reusedBlocks).put("reconciledSegments", reconciledSegments)
                 .put("prepareMs", prepareNanos / 1_000_000d).put("preparedBlocks", preparedBlocks).put("precomputedBlocks", precomputedBlocks)
                 .put("precomputeSkips", precomputeSkips).put("precomputeFailures", precomputeFailures).put("precomputeFallbacks", precomputeFallbacks)
                 .put("parseMs", parseNanos / 1_000_000d).put("parseErrors", parseErrors); }
@@ -393,8 +594,8 @@ final class NativeMarkwonHistory extends RecyclerView {
     }
     void dispose() {
         if (disposed) return;
-        remember(); disposed = true; stopScroll(); parser.shutdownNow();
+        remember(); disposed = true; stopScroll(); parser.shutdownNow(); main.removeCallbacksAndMessages(null);
         for (Segment segment : current.values()) segment.cancel();
-        setAdapter(null); getRecycledViewPool().clear(); current.clear(); following = value -> {};
+        setAdapter(null); getRecycledViewPool().clear(); current.clear(); adapterOrder.clear(); owners.clear(); disclosureHeading = null; following = value -> {};
     }
 }

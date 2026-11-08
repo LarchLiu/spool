@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from performance_probe import foreground_snapshot, validate_target, wait_finished_art_trace
+from performance_probe import foreground_snapshot, reached_edge, validate_interval, validate_target, validate_visible_content, wait_finished_art_trace
 
 
 class PerformanceProbeTest(unittest.TestCase):
@@ -47,6 +47,12 @@ class PerformanceProbeTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "visible"):
                 foreground_snapshot(self.dump(self.snapshot(**changes)))
 
+    def test_title_navigation_can_wait_for_history_but_still_requires_the_focused_activity(self):
+        loading = self.snapshot(historyVisible=False, turns=0, historyHasMore=True)
+        self.assertEqual(loading, foreground_snapshot(self.dump(loading), allow_hydrating=True, require_history=False))
+        with self.assertRaisesRegex(ValueError, "Exactly one"):
+            foreground_snapshot(self.dump({**loading, "focused": False}), allow_hydrating=True, require_history=False)
+
     def test_hydrating_data_requires_explicit_opt_in(self):
         output = self.dump(self.snapshot(historyHasMore=True))
         with self.assertRaisesRegex(ValueError, "hydrating"):
@@ -77,9 +83,37 @@ class PerformanceProbeTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 foreground_snapshot(self.dump(self.snapshot(**changes)))
 
+    def test_fixed_interval_requires_the_same_rows_and_exact_start(self):
+        expected = self.snapshot(parts=3000, virtualRows=400, renderer="markwon-recycler",
+                                 viewport=dict(firstVisible=120, firstTop=0))
+        validate_interval(expected, expected, 120)
+        for changes in [dict(parts=3001), dict(turns=65), dict(virtualRows=399), dict(renderer="native-views")]:
+            with self.assertRaisesRegex(ValueError, "row count changed"):
+                validate_interval({**expected, **changes}, expected)
+        for viewport in [dict(firstVisible=119, firstTop=0), dict(firstVisible=120, firstTop=-1), {}]:
+            with self.assertRaisesRegex(ValueError, "viewport top"):
+                validate_interval({**expected, "viewport": viewport}, expected, 120)
+
     def trace(self, records=1):
         return (b"*version\n3\nclock=dual\n*end\n" + struct.pack("<4sHHQH", b"SLOW", 3, 18, 0, 14)
                 + struct.pack("<HIII", 1, 4, 0, 0) * records)
+
+    def test_edges_require_native_bounds_not_just_a_visible_last_row(self):
+        partial = self.snapshot(viewport=dict(firstVisible=0, lastVisible=10, canScrollUp=True, canScrollDown=True))
+        self.assertFalse(reached_edge(partial, "up")); self.assertFalse(reached_edge(partial, "down"))
+        self.assertTrue(reached_edge(self.snapshot(viewport=dict(canScrollUp=False)), "up"))
+        self.assertTrue(reached_edge(self.snapshot(viewport=dict(canScrollDown=False)), "down"))
+        with self.assertRaisesRegex(ValueError, "boundaries"):
+            reached_edge(self.snapshot(viewport=dict(lastVisible=10)), "down")
+
+    def test_content_verification_rejects_missing_and_changed_digests(self):
+        valid = self.snapshot(visibleContent=dict(rows=25, sha256="a" * 64))
+        validate_visible_content(valid, valid)
+        for value in [{}, dict(rows=24, sha256="a" * 64), dict(rows=25, sha256="b" * 64)]:
+            with self.assertRaisesRegex(ValueError, "content or geometry changed"):
+                validate_visible_content(valid, self.snapshot(visibleContent=value))
+        with self.assertRaisesRegex(ValueError, "content or geometry changed"):
+            validate_visible_content(self.snapshot(), self.snapshot())
 
     def wait_trace(self, copies, attempts=4):
         with tempfile.TemporaryDirectory() as directory:

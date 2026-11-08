@@ -58,6 +58,14 @@ android {
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+        releaseVerify {
+            initWith release
+            applicationIdSuffix '.releaseverify'
+            versionNameSuffix '-verify'
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+            proguardFiles 'release-verify-rules.pro'
+        }
     }
 
     compileOptions {
@@ -85,12 +93,14 @@ android {
 }
 
 androidComponents {
-    onVariants(selector().withBuildType('release')) { variant ->
+    onVariants(selector().all()) { variant ->
         // Direct APK downloads benefit from compressing the large Go library.
         // The installer extracts it before loading; App Bundle delivery can
         // keep using uncompressed native libraries for direct loading.
-        variant.packaging.jniLibs.useLegacyPackaging.set(true)
-        variant.packaging.jniLibs.useLegacyPackagingFromBundle.set(false)
+        if (variant.buildType in ['release', 'releaseVerify']) {
+            variant.packaging.jniLibs.useLegacyPackaging.set(true)
+            variant.packaging.jniLibs.useLegacyPackagingFromBundle.set(false)
+        }
     }
 }
 

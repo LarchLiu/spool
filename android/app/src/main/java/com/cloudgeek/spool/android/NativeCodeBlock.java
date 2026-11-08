@@ -21,6 +21,8 @@ final class NativeCodeBlock extends LinearLayout implements NativeMarkdownFlowBo
     private final int containerSize;
     private final Runnable reset;
     private String source = "";
+    private String syntaxLanguage = "";
+    private NativeSyntax.Binding syntaxBinding;
 
     NativeCodeBlock(NativeUi ui, int color, int containerSize) {
         this(ui, color, containerSize, value -> {
@@ -77,10 +79,19 @@ final class NativeCodeBlock extends LinearLayout implements NativeMarkdownFlowBo
         String label = token.isEmpty() || token.matches("(?i)text|txt|plaintext") ? ui.t("Plain text") : token;
         if (!language.getText().toString().equals(label)) language.setText(label);
         if (literal.endsWith("\n")) literal = literal.substring(0, literal.length() - 1);
-        if (!source.equals(literal)) {
+        boolean changed = !source.equals(literal);
+        if (changed) {
             source = literal;
             NativeCodeTabs.setText(code, source, code.getTextSize() * containerSize / 12);
             copy.removeCallbacks(reset); reset.run();
+        }
+        if (changed || !syntaxLanguage.equals(token)) {
+            if (syntaxBinding != null) syntaxBinding.close();
+            syntaxBinding = null; syntaxLanguage = token;
+            NativeSyntax.clearSpans(code.getText());
+            if (ui.syntax != null && !token.isEmpty() && !source.isEmpty())
+                syntaxBinding = ui.syntax.bindCode(code, token, source, ui.dark);
+            code.invalidate();
         }
         copy.setEnabled(!source.isEmpty());
     }

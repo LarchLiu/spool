@@ -33,6 +33,28 @@ public class NativeSyntaxEngineTest {
             assertEquals(value.get("file").getAsString(), value.get("lang").getAsString(), engine.language(value.get("file").getAsString()));
         }
     }
+    @Test public void fencedLanguageNamesAndAliasesUseTheSameGrammarAsSourceFiles() throws Exception {
+        try (NativeSyntaxEngine engine = engine()) {
+            for (String[] pair : new String[][] {{"typescript file.ts", "fixture.ts"}, {"TS", "fixture.ts"},
+                    {"javascript", "fixture.js"}, {"python", "fixture.py"}, {"c++", "fixture.cpp"}, {"c#", "fixture.cs"}}) {
+                String source = "const value = \"hello\"; // comment\n";
+                for (boolean dark : new boolean[] {false, true}) {
+                    List<NativeSyntaxEngine.Line> expected = engine.highlight(pair[1], source, dark);
+                    List<NativeSyntaxEngine.Line> actual = engine.highlightCode(pair[0], source, dark);
+                    assertEquals(expected.size(), actual.size());
+                    for (int line = 0; line < expected.size(); line++) {
+                        assertEquals(expected.get(line).runs.size(), actual.get(line).runs.size());
+                        for (int i = 0; i < expected.get(line).runs.size(); i++) {
+                            NativeSyntaxEngine.Run a = expected.get(line).runs.get(i), b = actual.get(line).runs.get(i);
+                            assertArrayEquals(pair[0], new int[] {a.start,a.end,a.color,a.style}, new int[] {b.start,b.end,b.color,b.style});
+                        }
+                    }
+                }
+            }
+            assertEquals(0xff0a0a0a, engine.highlightCode("unknown-language", "literal", false).get(0).runs.get(0).color);
+            assertEquals(0xfffafafa, engine.highlightCode(null, "literal", true).get(0).runs.get(0).color);
+        }
+    }
     @Test public void nativeTextMateColorsAndStylesMatchTheActualWebForEveryUtf16Unit() throws Exception {
         try (NativeSyntaxEngine engine = engine()) {
         JsonObject data = fixtures();

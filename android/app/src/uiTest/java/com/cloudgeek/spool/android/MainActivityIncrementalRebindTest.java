@@ -37,7 +37,7 @@ public class MainActivityIncrementalRebindTest {
     }
 
     @Test public void turnEventsRebindOnlyTheirTurnAndUnchangedSnapshotsRebindNothing() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value = MainActivityTranscriptPrepareTest.longChat(100);
             value.put("status", "running"); value.getJSONArray("turns").getJSONObject(99).put("status", "running").put("finished_at", 0);
             h.call("startChat"); event("snapshot", value); MainActivityTranscriptPrepareTest.settle(h);

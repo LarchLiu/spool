@@ -60,6 +60,17 @@ public class MainActivitySubmissionTest {
         MainActivityGoalTest.ShadowClient.chatListener.onEvent(kind, value.toString());
     }
 
+    private void assertShortHistoryStartsAtTop(MainActivityGoalTest.Harness h) {
+        for (int i = 0; i < 3; i++) {
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+            NativeMarkwonHistoryTest.layout(h.get("root"));
+        }
+        NativeMarkwonHistory history = h.get("markwonHistory");
+        assertTrue(history.getChildCount() > 0);
+        assertEquals("Welcome and short messages retain the original top inset", history.getPaddingTop(), history.getChildAt(0).getTop());
+        assertFalse(history.canScrollVertically(-1)); assertFalse(history.canScrollVertically(1));
+    }
+
     @Test public void sendImmediatelyRendersThePromptAndKeepsTheSameWritableEditorThroughAcknowledgement() throws Exception {
         for (boolean existing : new boolean[] {false, true}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(existing)) {
             respond(existing ? "chat-one" : "created-one");
@@ -67,6 +78,7 @@ public class MainActivitySubmissionTest {
             android.view.View root = h.get("root");
             root.measure(android.view.View.MeasureSpec.makeMeasureSpec(360, android.view.View.MeasureSpec.EXACTLY), android.view.View.MeasureSpec.makeMeasureSpec(800, android.view.View.MeasureSpec.EXACTLY));
             root.layout(0, 0, 360, 800);
+            assertShortHistoryStartsAtTop(h);
             assertTrue("Attached editor must take focus before sending", composer.input.requestFocus());
             assertTrue(composer.input.hasFocus());
             h.send("  Hello\n");
@@ -77,6 +89,7 @@ public class MainActivitySubmissionTest {
             JSONObject pending = h.get("chat");
             assertTrue(NativeChatState.runningTurn(pending).getString("id").startsWith("pending-"));
             assertEquals("Hello", pending.getJSONObject("transcript").getJSONArray("parts").getJSONObject(0).getString("text"));
+            assertShortHistoryStartsAtTop(h);
             assertTrue(composer.input.onCreateInputConnection(new EditorInfo()).commitText("Next draft", 1));
             Object draftAfterSend = ReflectionHelpers.callInstanceMethod(h.activity, "draft");
             attach(h);
@@ -90,6 +103,7 @@ public class MainActivitySubmissionTest {
             assertEquals(1, composer.attachments.getChildCount());
             JSONObject accepted = h.get("chat");
             assertEquals("server-turn", NativeChatState.runningTurn(accepted).getString("id")); assertEquals(1, accepted.getJSONArray("turns").length());
+            assertShortHistoryStartsAtTop(h);
             assertFalse(h.<Boolean>get("busy"));
             List<String> call = MainActivityGoalTest.ShadowClient.calls.get(existing ? 0 : 1);
             assertEquals(existing ? "/api/chats/chat-one/messages" : "/api/chats/created-one/messages", call.get(1));
@@ -252,7 +266,7 @@ public class MainActivitySubmissionTest {
     }
 
     @Test public void failedOptimisticImageStaysLocalEvenAfterRemovingItsRestoredDraftAttachment() throws Exception {
-        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             h.set("fileImages", new NativeImages(task -> {}, path -> { throw new AssertionError("A pending image cannot use an API URL"); }));
             byte[] image = java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=");
             attach(h, "pixel.png", "image/png", image);
