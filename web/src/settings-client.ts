@@ -123,6 +123,7 @@ export type SettingsSnapshot = {
       directory: string;
       error?: string;
       install_step?: string;
+      application?: string;
     };
   };
   users: Person[];

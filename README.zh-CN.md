@@ -241,8 +241,23 @@ headless CLI 中安装并启用 voxl，并且管理员给某个用户授予远�
 crates.io 构建 `voxl-server` **0.3.3**。各平台还需要 voxl 的原生依赖：macOS
 需要 Xcode Command Line Tools 和 Rust；Linux 需要 X11/Xvfb、Rust、x264、libyuv、
 Opus、PulseAudio 等库；Windows 需要 Rust MSVC、Visual Studio C++ Build Tools、
-LLVM 和 vcpkg。macOS 还需要为 Spool 或 voxl 授予 Screen Recording 和
-Accessibility 权限。
+LLVM 和 vcpkg。
+
+macOS 安装时还会用 Xcode 命令行工具在本机编译一个小型原生启动器，并生成
+`<data-dir>/voxl/bin/Voxl Helper.app`。应用包包含原生监督程序和本机编译的 voxl，
+在本机进行 ad-hoc 签名，不需要 Apple Developer ID 证书。请在系统设置 > 隐私与
+安全性中，为 **Voxl Helper** 授予屏幕录制和辅助功能权限，授权后重新连接。
+使用 CLI 时也需要在已登录的 macOS 桌面会话中运行 Spool。
+只有已获授权的远程桌面连接到来时，Spool 才通过 LaunchServices 启动 helper。
+带认证的本机回环控制连接负责监督 voxl；Spool 停止或寿命管道关闭时停止采集。
+最后一个查看者和文件传输结束后，helper 和 voxl 都会退出。安装或启用远程桌面
+不会启动采集，也不会注册登录启动项。
+
+旧版 macOS 安装如果只有 `bin/voxl`，请在本机点击一次 **安装 voxl** 或执行
+`-install-voxl`，即可将已有二进制包装成应用包，无需下载或重新编译 Rust。
+原二进制会保留，共享文件继续放在应用包外的 `voxl/shared/`。普通 Spool 升级
+会原样复用完整的 helper 应用包及其签名；替换或重新编译 helper 本身仍可能需要
+重新授权。Windows 和 Linux 继续直接运行 voxl，并使用相同的按需启停规则。
 
 远程桌面通过现有 Spool HTTPS/Tailscale 入口访问，voxl helper 只监听本机回环地址。
 文件面板使用 `<data-dir>/voxl/shared/`，上传和下载仍受 Spool 登录、远程桌面授权、

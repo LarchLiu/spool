@@ -255,8 +255,27 @@ Without `-voxl-binary`, Spool first searches for a local executable and then
 builds `voxl-server` **0.3.3** from crates.io when needed. The native prerequisites
 vary by platform: macOS needs Xcode Command Line Tools and Rust; Linux needs
 X11/Xvfb, Rust, x264, libyuv, Opus, and PulseAudio libraries; Windows needs Rust
-MSVC, Visual Studio C++ Build Tools, LLVM, and vcpkg. macOS also requires Screen
-Recording and Accessibility permission for Spool or voxl.
+MSVC, Visual Studio C++ Build Tools, LLVM, and vcpkg.
+
+On macOS, local installation also compiles a small native launcher with Xcode
+Command Line Tools and creates `<data-dir>/voxl/bin/Voxl Helper.app`. Its native
+supervisor and the locally built voxl are signed ad hoc on this Mac; no Apple
+Developer ID certificate is needed. Grant **Voxl Helper** Screen Recording and
+Accessibility access in System Settings > Privacy & Security, then reconnect.
+Run Spool in the logged-in macOS desktop session, including when using the CLI.
+The application is launched through LaunchServices only for an authorized
+desktop connection. An authenticated loopback control connection supervises
+voxl and revokes capture when Spool stops or its lifetime pipe closes. The last
+viewer/transfer closing stops both the helper app and voxl. Installing or
+enabling remote desktop does not start capture, and no login item is installed.
+
+Existing macOS installations containing only `bin/voxl` need one local
+**Install voxl** action (or `-install-voxl`). This packages the existing binary
+without downloading or rebuilding Rust. The old binary is retained; shared
+files remain outside the app in `voxl/shared/`. A complete helper app is reused
+unchanged across ordinary Spool upgrades, including its signature. Replacing
+or rebuilding the helper itself can require new macOS authorization. Windows
+and Linux continue to run voxl directly with the same on-demand lifetime.
 
 Remote desktop uses the existing Spool HTTPS/Tailscale entry, while the voxl
 helper listens only on loopback. Its file panel uses `<data-dir>/voxl/shared/`;

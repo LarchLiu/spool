@@ -57,6 +57,20 @@ export function VoxlSettings({ data, run, t }: PageProps) {
       {voxl.installed && (
         <Row title={t("Shared folder")} help={`${voxl.directory}/shared`} />
       )}
+      {voxl.application && (
+        <Row
+          title={t("macOS permissions")}
+          help={
+            <>
+              {t(
+                "Allow Voxl Helper in System Settings > Privacy & Security > Screen Recording and Accessibility. Connect again after granting access.",
+              )}
+              <br />
+              {voxl.application}
+            </>
+          }
+        />
+      )}
       <Row
         title={t("Local installation only")}
         help={
@@ -121,7 +135,10 @@ export function VoxlSettings({ data, run, t }: PageProps) {
       />
       {voxl.error && (
         <p className="settings-error" role="alert">
-          {voxl.error.split("\n").map((line) => knownMessage(line, t)).join("\n")}
+          {voxl.error
+            .split("\n")
+            .map((line) => knownMessage(line, t))
+            .join("\n")}
         </p>
       )}
     </Card>

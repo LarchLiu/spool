@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"spool/internal/voxl/macapp"
 )
 
 const Version = "0.3.3"
@@ -29,6 +31,7 @@ type Status struct {
 	Directory   string `json:"directory"`
 	Error       string `json:"error,omitempty"`
 	InstallStep string `json:"install_step,omitempty"`
+	Application string `json:"application,omitempty"`
 }
 
 type Manager struct {
@@ -59,6 +62,9 @@ func New(root string, changed func()) *Manager {
 }
 
 func (m *Manager) executable() string {
+	if runtime.GOOS == "darwin" {
+		return macapp.Executable(m.root)
+	}
 	name := "voxl"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
@@ -73,6 +79,10 @@ func (m *Manager) Status() Status {
 	v.Directory = m.root
 	info, err := os.Stat(m.executable())
 	v.Installed = err == nil && info.Mode().IsRegular()
+	if runtime.GOOS == "darwin" {
+		v.Application = macapp.Bundle(m.root)
+		v.Installed = macapp.Installed(m.root)
+	}
 	return v
 }
 
@@ -216,19 +226,23 @@ func (m *Manager) startLocked(request, parent context.Context) error {
 	ctx, cancel := context.WithCancel(parent)
 	stopRequestCancel := context.AfterFunc(request, cancel)
 	defer stopRequestCancel()
-	cmd := exec.CommandContext(ctx, m.executable(), "--addr=127.0.0.1", fmt.Sprintf("--port=%d", port),
+	cmd, cleanup, err := m.desktopCommand(ctx, "--addr=127.0.0.1", fmt.Sprintf("--port=%d", port),
 		"--file-transfers=upload,download", "--files-root="+shared, "--upload-dir=",
 		"--enable-clipboard=false", "--microphone-enabled=false", "--audio-enabled=false", "--enable-resize=false",
 		// Spool validates the real browser origin before rewriting it to the
 		// loopback origin. No wildcard host/origin exceptions are needed here.
 		"--enable-basic-auth=true", "--title=Spool")
+	if err != nil {
+		cancel()
+		return m.fail("Could not start voxl. Check its local installation and system permissions.")
+	}
 	cmd.Env = append(withoutEnv(os.Environ(), "VOXL_PASSWORD"), "VOXL_PASSWORD="+password)
 	cmd.Dir = m.root
 	// voxl can print its sign-in URL. Never copy helper output into host logs.
 	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
-	configureCommand(cmd)
 	if err = cmd.Start(); err != nil {
 		cancel()
+		cleanup()
 		return m.fail("Could not start voxl. Check its local installation and system permissions.")
 	}
 	done := make(chan struct{})
@@ -242,6 +256,7 @@ func (m *Manager) startLocked(request, parent context.Context) error {
 	m.mu.Unlock()
 	go func() {
 		err := cmd.Wait()
+		cleanup()
 		m.mu.Lock()
 		m.status.Running = false
 		m.url, m.secret = "", ""
@@ -305,6 +320,15 @@ func (m *Manager) startLocked(request, parent context.Context) error {
 			return nil
 		}
 	}
+}
+
+func (m *Manager) desktopCommand(ctx context.Context, args ...string) (*exec.Cmd, func(), error) {
+	if runtime.GOOS == "darwin" {
+		return macapp.Command(ctx, m.root, args...)
+	}
+	cmd := exec.CommandContext(ctx, m.executable(), args...)
+	configureCommand(cmd)
+	return cmd, func() {}, nil
 }
 
 func (m *Manager) Stop() {
@@ -380,6 +404,11 @@ func (m *Manager) Install(ctx context.Context, source ...string) (installErr err
 		name += ".exe"
 	}
 	candidates := []string{filepath.Join(home, ".cargo", "bin", name)}
+	if runtime.GOOS == "darwin" {
+		// Complete an old installation locally without rebuilding Rust or
+		// launching capture. Remote connection requests never install helpers.
+		candidates = append([]string{filepath.Join(m.root, "bin", "voxl")}, candidates...)
+	}
 	if path, err := exec.LookPath(name); err == nil {
 		candidates = append(candidates, path)
 	}
@@ -431,7 +460,7 @@ func (m *Manager) Install(ctx context.Context, source ...string) (installErr err
 		}
 		return m.fail("Could not build voxl. Check Rust, the native libraries, esbuild and access to crates.io, then retry.")
 	}
-	return m.finishInstall(filepath.Join(stage, "bin"))
+	return m.finishInstall(ctx, filepath.Join(stage, "bin"))
 }
 
 func (m *Manager) installStep(step string) {
@@ -482,13 +511,23 @@ func (m *Manager) installBinary(ctx context.Context, source string) error {
 	if err = cmd.Run(); err != nil {
 		return m.fail("Could not run the local voxl executable. Check its executable format and runtime libraries.")
 	}
-	return m.finishInstall(dir)
+	return m.finishInstall(ctx, dir)
 }
 
 // Publish only the prepared executable. The bin directory can already contain
 // renamed helpers or other files, which must survive an installation retry.
 // Both binary imports and Cargo builds use this path.
-func (m *Manager) finishInstall(dir string) error {
+func (m *Manager) finishInstall(ctx context.Context, dir string) error {
+	if runtime.GOOS == "darwin" {
+		m.installStep("Preparing Voxl Helper…")
+		if err := macapp.Install(ctx, m.root, filepath.Join(dir, "voxl")); err != nil {
+			if ctx.Err() != nil {
+				return errors.New("voxl installation was canceled.")
+			}
+			return fmt.Errorf("Could not finish installing voxl.\n%w", err)
+		}
+		return nil
+	}
 	if err := os.MkdirAll(filepath.Dir(m.executable()), 0700); err != nil {
 		return fmt.Errorf("Could not finish installing voxl. %w", err)
 	}

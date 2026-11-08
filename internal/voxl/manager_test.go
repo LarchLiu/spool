@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"spool/internal/testutil/voxlfixture"
+	"spool/internal/voxl/macapp"
 )
 
 func TestMain(m *testing.M) {
@@ -283,7 +285,7 @@ func TestInstallExistingLocalBinaryPreservesExistingBinDirectory(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "source")
 	voxlfixture.Install(t, source)
 	m := New(filepath.Join(t.TempDir(), "voxl"), nil)
-	bin := filepath.Dir(m.executable())
+	bin := filepath.Join(m.root, "bin")
 	if err := os.MkdirAll(bin, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +323,11 @@ func TestInstallExistingLocalBinaryReportsFinalPathFailure(t *testing.T) {
 	}
 	err := m.Install(t.Context(), filepath.Join(source, "bin", filepath.Base(m.executable())))
 	var fileErr *os.LinkError
-	if !errors.As(err, &fileErr) || !strings.Contains(err.Error(), m.executable()) {
+	target := m.executable()
+	if runtime.GOOS == "darwin" {
+		target = macapp.Bundle(m.root)
+	}
+	if !errors.As(err, &fileErr) || !strings.Contains(err.Error(), target) {
 		t.Fatal("installation hid its filesystem error", err)
 	}
 	if content, err := os.ReadFile(retained); err != nil || string(content) != "keep me" {

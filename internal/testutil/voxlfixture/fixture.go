@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"spool/internal/voxl/macapp"
+
 	"github.com/coder/websocket"
 )
 
@@ -124,5 +126,10 @@ func Install(t *testing.T, root string) {
 	closeErr := out.Close()
 	if copyErr != nil || closeErr != nil {
 		t.Fatal(copyErr, closeErr)
+	}
+	if runtime.GOOS == "darwin" {
+		if err := macapp.Install(t.Context(), root, filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

@@ -515,6 +515,10 @@ func (p *panel) serviceView(c *ui.Context) {
 	ui.Text(c, p.tr("Changes are saved on blur or Enter; switches save immediately. The service never restarts automatically. Closing this window keeps it in the tray; Quit stops it.")).Wrap().FontSize(12)
 	ui.Text(c, p.tr("Remote desktop")).Bold()
 	ui.Text(c, p.status.Voxl.Directory).Selectable().Wrap().FontSize(12)
+	if p.status.Voxl.Application != "" {
+		ui.Text(c, p.tr("Allow Voxl Helper in System Settings > Privacy & Security > Screen Recording and Accessibility. Connect again after granting access.")).Wrap().FontSize(12)
+		ui.Text(c, p.status.Voxl.Application).Selectable().Wrap().FontSize(12)
+	}
 	ui.Text(c, p.tr("Only authorized users can connect while Spool is running. voxl starts on demand and stops when the last connection closes. Turning this off disconnects everyone.")).Wrap().FontSize(12)
 	if !p.status.Voxl.Installed {
 		if ui.Button(c, p.tr("Install voxl")).Disabled(p.busy || p.status.Voxl.Installing).Clicked() {
