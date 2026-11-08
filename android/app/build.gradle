@@ -2,6 +2,23 @@ plugins {
     id 'com.android.application'
 }
 
+def desktopVersion = new groovy.json.JsonSlurper().parse(rootProject.file('../mygo.json')).version
+def releaseTag = System.getenv('RELEASE_TAG')
+if (releaseTag && !releaseTag.startsWith('v')) {
+    throw new GradleException('RELEASE_TAG must start with v')
+}
+def appVersion = releaseTag ? releaseTag.substring(1) : desktopVersion
+def versionMatch = appVersion =~ /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+if (!versionMatch.matches()) {
+    throw new GradleException('Android version must match the desktop SemVer version')
+}
+def (major, minor, patch) = (1..3).collect { versionMatch.group(it).toBigInteger() }
+// Reserve three decimal digits each for minor and patch; 0.0.0 still has code 1.
+def appVersionCode = major * 1000000 + minor * 1000 + patch + 1
+if (minor >= 1000 || patch >= 1000 || appVersionCode > 2100000000) {
+    throw new GradleException('Android versionCode exceeds its supported version range')
+}
+
 android {
     namespace 'com.cloudgeek.spool.android'
     buildToolsVersion '36.1.0'
@@ -14,8 +31,8 @@ android {
         applicationId 'com.cloudgeek.spool.android'
         minSdk 26
         targetSdk 36
-        versionCode 1
-        versionName '0.2.0-native'
+        versionCode appVersionCode.intValue()
+        versionName appVersion
         testInstrumentationRunner 'com.cloudgeek.spool.android.NativePerformanceInstrumentation'
         ndk { abiFilters 'arm64-v8a' }
     }

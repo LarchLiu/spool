@@ -168,6 +168,51 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  android:
+    name: Build Android ARM64 APK
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install pinned Android SDK components
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh android/tools/run.sh "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+            'platforms;android-36.1' 'build-tools;36.1.0' 'ndk;29.0.14206865'
+          # Hosted runners also export an older default NDK; override it explicitly.
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - name: Build optimized APK without signing secrets
+        run: sh android/tools/build.sh :app:assembleRelease :app:lintRelease
+      - name: Verify APK contents and release version
+        shell: bash
+        run: |
+          sh android/tools/run.sh bash <<'BASH'
+          set -euo pipefail
+          apk=build/android/gradle/app/outputs/apk/release/app-release-unsigned.apk
+          python3 android/tools/check-syntax-package.py --apk "$apk" --abis arm64-v8a
+          "$ANDROID_HOME/build-tools/36.1.0/aapt" dump badging "$apk" > "$TMPDIR/apk-badging.txt"
+          grep -F "package: name='com.cloudgeek.spool.android'" "$TMPDIR/apk-badging.txt"
+          grep -F "versionName='${RELEASE_TAG#v}'" "$TMPDIR/apk-badging.txt"
+          BASH
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: android-unsigned
+          path: build/android/gradle/app/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 7
+
   smoke:
     name: Run ${{ matrix.target }} package
     needs: [prepare, build]
@@ -222,7 +267,7 @@ jobs:
 
   publish:
     name: Publish complete release
-    needs: [prepare, build, smoke]
+    needs: [prepare, build, android, smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Serialize publication across tags so an older build cannot replace Latest.
@@ -247,11 +292,49 @@ jobs:
           pattern: packages-*
           path: release-assets
           merge-multiple: true
-      - name: Sign and verify all six targets and metadata
+      - name: Sign and verify all six desktop targets and metadata
         env:
           MYGO_UPDATER_PUBLIC_KEY: ${{ vars.MYGO_UPDATER_PUBLIC_KEY }}
           MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
         run: bun tools/sign-release.mjs
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install pinned Android signing tools
+        run: sh android/tools/run.sh "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'build-tools;36.1.0'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: android-unsigned
+          path: android-unsigned
+      - name: Sign and verify Android APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          sh android/tools/run.sh bash <<'BASH'
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Configure the $name Actions secret before releasing Android APKs." >&2
+              exit 1
+            fi
+          done
+          umask 077
+          keystore="$TMPDIR/release.keystore"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$keystore"
+          tools="$ANDROID_HOME/build-tools/36.1.0"
+          apk="release-assets/spool-${RELEASE_TAG#v}-android-arm64.apk"
+          "$tools/zipalign" -P 16 -f 4 android-unsigned/app-release-unsigned.apk "$TMPDIR/aligned.apk"
+          "$tools/apksigner" sign --ks "$keystore" --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --v4-signing-enabled false --out "$apk" "$TMPDIR/aligned.apk"
+          "$tools/apksigner" verify --verbose "$apk"
+          "$tools/zipalign" -c -P 16 4 "$apk"
+          BASH
       - name: Generate SHA256SUMS
         shell: bash
         run: |

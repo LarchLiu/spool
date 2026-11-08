@@ -10,3 +10,10 @@
 /.mygo/
 /smoke-results/
 .DS_Store
+
+# Local Android release signing material
+/android/signing/
+*.keystore
+*.jks
+*.p12
+*.pfx

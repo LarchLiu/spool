@@ -200,7 +200,13 @@ test("workflow pins actions, keeps private keys out of builds and uploads assets
   assert.equal((publish.match(/secrets\.MYGO_UPDATER_PRIVATE_KEY/g) ?? []).length, 1);
   assert.match(beforePublish, /go test -race -v -timeout=10m/);
   assert.equal((publish.match(/gh release upload/g) ?? []).length, 1);
-  assert.match(publish, /needs: \[prepare, build, smoke\]/);
+  assert.match(publish, /needs: \[prepare, build, android, smoke\]/);
+  for (const name of ["ANDROID_KEYSTORE_BASE64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD"]) {
+    assert.doesNotMatch(beforePublish, new RegExp(`secrets\\.${name}`));
+    assert.equal((publish.match(new RegExp(`secrets\\.${name}`, "g")) ?? []).length, 1);
+  }
+  const verifyAPK = publish.indexOf('"$tools/apksigner" verify');
+  assert.ok(verifyAPK >= 0 && verifyAPK < publish.indexOf("name: Generate SHA256SUMS"));
   assert.doesNotMatch(workflow, /RELEASE_BUILD_ONLY|inputs\.publish/);
   assert.doesNotMatch(publish, /^    if:/m);
   for (const runner of ["macos-15-intel", "windows-11-arm", "ubuntu-24.04-arm"]) assert.ok(beforePublish.includes(runner));

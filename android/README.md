@@ -1994,6 +1994,13 @@ the installer checks this before downloading.
 Run from the repository root:
 
 ```sh
+# Build and lint an ARM64 debug APK (default).
+make build apk
+
+# Build, lint, align and sign a release APK with the local production key.
+make build apk release
+# Equivalent: make build apk mode=release
+
 # ARM64 Go AAR, debug APK, Java tests, and Android lint.
 sh android/tools/build.sh
 
@@ -2023,7 +2030,18 @@ The debug application ID is `com.cloudgeek.spool.android.dev`. Its debug key is
 created in `build/android/debug.keystore`, not the developer's Android home.
 This debug build is not a signed production release.
 
-For an optimized phone release APK:
+`make build apk release` reads the ignored local signing files
+`android/signing/spool-release.p12` and `android/signing/github-secrets.env`.
+The environment file must define `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Override their paths with
+`ANDROID_KEYSTORE_FILE` and `SPOOL_ANDROID_SIGNING_ENV` when needed. After
+signature and alignment verification, the signed APK is written to
+`build/android/spool-<version>-android-arm64.apk`. Versioning follows
+`mygo.json`, or `RELEASE_TAG` when set, just like the GitHub Release build.
+In this command, the `release` goal selects the APK build type. Standalone
+`make release` continues to update version files, commit and create a local tag.
+
+For an optimized unsigned phone release APK:
 
 ```sh
 sh android/tools/build.sh :app:assembleRelease :app:lintRelease
@@ -2041,8 +2059,37 @@ delivery keeps native libraries uncompressed for direct loading. Debug and
 nativeVerify also package ARM64 only, matching the current phone and Apple
 Silicon development machine.
 
-The release APK is unsigned until a production signing configuration is supplied.
+The low-level Gradle release build above is unsigned. `make build apk release`
+signs locally; the GitHub Release workflow below signs during publication.
 R8 mappings are written to `build/android/gradle/app/outputs/mapping/release/`.
+
+### GitHub Releases
+
+The Release workflow builds and lints the ARM64 APK alongside the desktop
+installers. Publication waits for the Android build, then aligns, signs and
+verifies the APK before uploading `spool-<version>-android-arm64.apk` with the
+other Release attachments and including it in `SHA256SUMS`.
+
+Configure these repository Actions secrets before running a release:
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | Base64-encoded production JKS or PKCS12 keystore |
+| `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
+| `ANDROID_KEY_ALIAS` | Alias of the production signing key |
+| `ANDROID_KEY_PASSWORD` | Signing key password; use the keystore password when they are the same |
+
+Keep the same signing key across releases so installed APKs can be upgraded.
+Only the final publication job receives these secrets. The decoded keystore
+lives in that command's owned scratch directory and is removed on exit. A
+missing secret or failed signature check prevents publication.
+
+Android `versionName` follows the same `RELEASE_TAG` as the desktop build,
+including prerelease suffixes. The settings dialogs display the installed
+package's version. Local builds read the desktop version from `mygo.json`.
+`versionCode` is `major * 1000000 + minor * 1000 + patch + 1`;
+minor and patch must each be below 1000 and the result must not exceed
+2100000000. Prereleases of the same core version share its `versionCode`.
 
 The Go transport and Android syntax libraries also default to ARM64 builds.
 

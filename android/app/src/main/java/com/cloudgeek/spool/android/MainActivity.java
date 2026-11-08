@@ -640,10 +640,18 @@ public final class MainActivity extends Activity {
         monitor.setActive(foreground);
     }
 
+    private String appVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (android.content.pm.PackageManager.NameNotFoundException error) {
+            throw new IllegalStateException("Cannot read installed app version", error);
+        }
+    }
+
     private void openAppearance() {
         if (appearanceDialog != null) return;
         captureDraft(); closePeople();
-        appearanceDialog = new NativeSettings(ui, theme, language, "0.2.0-native", this::updatePreferences, this::closeAppearance);
+        appearanceDialog = new NativeSettings(ui, theme, language, appVersion(), this::updatePreferences, this::closeAppearance);
         appearanceDialog.show();
     }
 
@@ -1323,7 +1331,7 @@ public final class MainActivity extends Activity {
             return;
         }
         boolean show = settingsDialog == null;
-        if (show) settingsDialog = new NativeSettings(settingsUi, theme, language, "0.2.0-native",
+        if (show) settingsDialog = new NativeSettings(settingsUi, theme, language, appVersion(),
                 this::updatePreferences, this::closeSettings, false);
         else settingsDialog.bind(settingsUi, theme, language, body -> settingsAdditions(settingsUi, body));
         if (show) {

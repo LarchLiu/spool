@@ -50,6 +50,8 @@ public class MainActivityAppearanceTest {
             h.call("openAppearance"); idle();
             MainActivityGoalTest.ShadowClient.calls.clear();
             NativeSettings dialog = h.get("appearanceDialog");
+            assertEquals("Current version: " + h.activity.getPackageManager().getPackageInfo(h.activity.getPackageName(), 0).versionName,
+                    dialog.content.version.getText().toString());
             assertFalse(text(dialog.content).contains("Choose your avatar"));
             dialog.content.appearance.themes.getChildAt(1).performClick();
             assertEquals("dark", h.<String>get("theme")); assertTrue(dialog.content.appearance.themes.getChildAt(1).isSelected());
