@@ -69,6 +69,11 @@ func port(t *testing.T) string {
 
 func start(t *testing.T, cmd *exec.Cmd) (processes, <-chan error) {
 	t.Helper()
+	marker := filepath.Join(t.TempDir(), "engine-started")
+	if cmd.Env == nil {
+		cmd.Env = os.Environ()
+	}
+	cmd.Env = append(cmd.Env, "SPOOL_TEST_VOXL_STARTED="+marker)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -116,6 +121,16 @@ func start(t *testing.T, cmd *exec.Cmd) (processes, <-chan error) {
 	if p.Helper <= 0 || p.Voxl <= 0 {
 		t.Fatal("invalid native app handshake", p)
 	}
+	// The PID acknowledgement precedes exec. Exercise the actual engine, not
+	// merely the waiting gate, in the lifetime and TCC responsibility tests.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(marker); err == nil {
+			return p, done
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("acknowledged process did not execute the engine")
 	return p, done
 }
 
@@ -128,13 +143,16 @@ func waitStopped(t *testing.T, p processes) {
 		}
 		time.Sleep(30 * time.Millisecond)
 	}
+	if output, err := exec.Command("/bin/ps", "-p", fmt.Sprintf("%d,%d", p.Helper, p.Voxl), "-o", "pid=,ppid=,state=,comm=").CombinedOutput(); err == nil {
+		t.Logf("remaining owned processes:\n%s", output)
+	}
 	t.Errorf("owned app/voxl survived shutdown: %+v", p)
 }
 
 func TestNativeAppLifetimeAndFailureCleanup(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "data with spaces", "voxl")
 	voxlfixture.Install(t, root)
-	for _, mode := range []string{"cancel", "launcher-crash", "helper-crash", "engine-exit", "heartbeat-timeout"} {
+	for _, mode := range []string{"cancel", "launcher-crash", "helper-crash", "helper-stall", "engine-exit", "heartbeat-timeout"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -152,6 +170,9 @@ func TestNativeAppLifetimeAndFailureCleanup(t *testing.T) {
 				_ = cmd.Process.Kill()
 			case "helper-crash":
 				_ = syscall.Kill(p.Helper, syscall.SIGKILL)
+			case "helper-stall":
+				_ = syscall.Kill(p.Helper, syscall.SIGSTOP)
+				cancel()
 			case "engine-exit":
 				_ = syscall.Kill(p.Voxl, syscall.SIGTERM)
 			case "heartbeat-timeout":
@@ -179,6 +200,99 @@ func TestOwnerCrashRevokesCapture(t *testing.T) {
 	_ = cmd.Process.Kill()
 	<-done
 	waitStopped(t, p)
+}
+
+func TestStartupFailureBeforePIDAcknowledgement(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "voxl")
+	voxlfixture.Install(t, root)
+	source, err := filepath.Abs("native/helper.m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook, err := filepath.Abs("testdata/startup_fault.h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher := filepath.Join(macapp.Bundle(root), "Contents", "MacOS", "voxl-helper")
+	commands := [][]string{
+		{"/usr/bin/xcrun", "--sdk", "macosx", "clang", "-O2", "-fobjc-arc", "-Wall", "-Wextra", "-Werror", "-mmacosx-version-min=12.0", "-framework", "AppKit", "-framework", "Foundation", "-include", hook, source, "-o", launcher},
+		{"/usr/bin/codesign", "--force", "--sign", "-", macapp.Bundle(root)},
+	}
+	for _, args := range commands {
+		if output, err := exec.CommandContext(t.Context(), args[0], args[1:]...).CombinedOutput(); err != nil {
+			t.Fatal("prepare startup fault helper:", err, string(output))
+		}
+	}
+	for _, mode := range []string{"helper-crash", "cancel", "handshake-timeout"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			cmd, cleanup, err := macapp.Command(ctx, root, "--port="+port(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cleanup()
+			record := filepath.Join(t.TempDir(), "processes.json")
+			marker := filepath.Join(t.TempDir(), "engine-started")
+			fault := "wait"
+			if mode == "helper-crash" {
+				fault = "exit"
+			}
+			cmd.Dir = root
+			cmd.Env = append(os.Environ(), "SPOOL_TEST_STARTUP_FAULT="+fault, "SPOOL_TEST_STARTUP_PIDS="+record, "SPOOL_TEST_VOXL_STARTED="+marker)
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			done := make(chan error, 1)
+			go func() { done <- cmd.Wait(); close(done) }()
+			var p processes
+			t.Cleanup(func() {
+				cancel()
+				select {
+				case <-done:
+				case <-time.After(12 * time.Second):
+					_ = cmd.Process.Kill()
+					<-done
+				}
+				// A regression must not leave the test's own mock processes alive.
+				if p.Helper > 0 {
+					_ = syscall.Kill(p.Helper, syscall.SIGKILL)
+				}
+				if p.Voxl > 0 {
+					_ = syscall.Kill(p.Voxl, syscall.SIGKILL)
+				}
+				if p.Helper > 0 && p.Voxl > 0 {
+					waitStopped(t, p)
+				}
+			})
+			deadline := time.Now().Add(10 * time.Second)
+			for time.Now().Before(deadline) {
+				data, err := os.ReadFile(record)
+				if err == nil && json.Unmarshal(data, &p) == nil && p.Helper > 0 && p.Voxl > 0 {
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			if p.Helper <= 0 || p.Voxl <= 0 {
+				t.Fatal("helper did not reach the spawn boundary")
+			}
+			if mode == "cancel" {
+				cancel()
+			}
+			select {
+			case err := <-done:
+				if err == nil {
+					t.Error("failed startup was reported as successful")
+				}
+			case <-time.After(12 * time.Second):
+				t.Fatal("failed startup left the launcher running")
+			}
+			waitStopped(t, p)
+			if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+				t.Error("engine ran before its PID was acknowledged", err)
+			}
+		})
+	}
 }
 
 func TestIndependentApplicationResponsibility(t *testing.T) {
@@ -275,13 +389,16 @@ func TestHelperRefusesCaptureWithoutAuthenticatedStart(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "voxl")
 	voxlfixture.Install(t, root)
 	launcher := filepath.Join(macapp.Bundle(root), "Contents", "MacOS", "voxl-helper")
-	for _, mode := range []string{"manual-open", "missing-control", "wrong-start"} {
+	for _, mode := range []string{"manual-open", "missing-control", "wrong-start", "missing-gate"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 			args := []string{}
 			if mode != "manual-open" {
 				args = []string{"--run"}
+			}
+			if mode == "missing-gate" {
+				args = []string{"--exec"}
 			}
 			cmd := exec.CommandContext(ctx, launcher, args...)
 			cmd.Env = os.Environ()

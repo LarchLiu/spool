@@ -47,6 +47,11 @@ func Run() bool {
 			transfers = strings.TrimPrefix(arg, "--file-transfers=")
 		}
 	}
+	if marker := os.Getenv("SPOOL_TEST_VOXL_STARTED"); marker != "" {
+		if err := os.WriteFile(marker, []byte("started"), 0600); err != nil {
+			os.Exit(3)
+		}
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:"+port)
 	if err != nil || port == "" {
 		os.Exit(2)

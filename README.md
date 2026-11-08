@@ -274,8 +274,12 @@ Existing macOS installations containing only `bin/voxl` need one local
 without downloading or rebuilding Rust. The old binary is retained; shared
 files remain outside the app in `voxl/shared/`. A complete helper app is reused
 unchanged across ordinary Spool upgrades, including its signature. Replacing
-or rebuilding the helper itself can require new macOS authorization. Windows
-and Linux continue to run voxl directly with the same on-demand lifetime.
+or rebuilding the helper itself can require new macOS authorization. The
+original helper (installation format 1) also needs one local **Install voxl**
+action to apply the startup cleanup fix. This reuses its bundled engine and
+atomically replaces the app after verification; a failed upgrade keeps the old
+app intact. Grant the replacement helper access again if macOS requests it.
+Windows and Linux continue to run voxl directly with the same on-demand lifetime.
 
 Remote desktop uses the existing Spool HTTPS/Tailscale entry, while the voxl
 helper listens only on loopback. Its file panel uses `<data-dir>/voxl/shared/`;

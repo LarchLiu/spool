@@ -408,6 +408,9 @@ func (m *Manager) Install(ctx context.Context, source ...string) (installErr err
 		// Complete an old installation locally without rebuilding Rust or
 		// launching capture. Remote connection requests never install helpers.
 		candidates = append([]string{filepath.Join(m.root, "bin", "voxl")}, candidates...)
+		if macapp.NeedsUpgrade(m.root) {
+			candidates = append([]string{macapp.Executable(m.root)}, candidates...)
+		}
 	}
 	if path, err := exec.LookPath(name); err == nil {
 		candidates = append(candidates, path)

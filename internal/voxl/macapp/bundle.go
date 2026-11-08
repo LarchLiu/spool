@@ -20,7 +20,7 @@ const bundleName = "Voxl Helper.app"
 
 // This is an installation format, not the Spool version. Do not bump it for
 // ordinary application releases: replacing an ad-hoc signed app loses identity.
-const format = "1\n"
+const format = "2\n"
 
 //go:embed native/helper.m
 var source []byte
@@ -37,13 +37,26 @@ func launcher(root string) string {
 }
 
 func Installed(root string) bool {
+	return installedFormat(root) == format
+}
+
+// NeedsUpgrade recognizes the original helper, whose startup handshake could
+// leave an unowned engine. Only an explicit local installation replaces it.
+func NeedsUpgrade(root string) bool {
+	return installedFormat(root) == "1\n"
+}
+
+func installedFormat(root string) string {
 	for _, path := range []string{Executable(root), launcher(root), filepath.Join(Bundle(root), "Contents", "Info.plist")} {
 		if stat, err := os.Stat(path); err != nil || !stat.Mode().IsRegular() {
-			return false
+			return ""
 		}
 	}
 	data, err := os.ReadFile(filepath.Join(Bundle(root), "Contents", "Resources", "installation-format"))
-	return err == nil && string(data) == format
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // Install publishes one complete application atomically. Nothing launches or
@@ -110,6 +123,11 @@ func Install(ctx context.Context, root, voxl string) error {
 	}
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if NeedsUpgrade(root) {
+		// The old bundle moves into staging only after the replacement is fully
+		// verified. Failed publication leaves the previous installation intact.
+		return exchangeBundles(app, Bundle(root))
 	}
 	return os.Rename(app, Bundle(root))
 }

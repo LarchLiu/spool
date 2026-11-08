@@ -72,7 +72,7 @@ static bool readLine(int fd, char *line, size_t capacity, double deadline, bool 
         if (result < 0) return false;
         if (result == 0) continue;
         char c;
-        if (recv(fd, &c, 1, 0) != 1) return false;
+        if (read(fd, &c, 1) != 1) return false;
         if (c == '\n') { line[used] = 0; return true; }
         line[used++] = c;
     }
@@ -108,11 +108,11 @@ static int reapChild(pid_t pid, bool graceful) {
     return 128 + (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
 }
 
-typedef struct { pid_t pid; uint64_t seconds; uint64_t microseconds; } ChildIdentity;
+typedef struct { pid_t pid; uint64_t seconds; uint64_t microseconds; } ProcessIdentity;
 
-static ChildIdentity identity(pid_t pid) {
+static ProcessIdentity identity(pid_t pid) {
     struct proc_bsdinfo info = {0};
-    ChildIdentity result = {0};
+    ProcessIdentity result = {0};
     if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, sizeof(info)) == sizeof(info)) {
         result.pid = pid;
         result.seconds = info.pbi_start_tvsec;
@@ -121,12 +121,36 @@ static ChildIdentity identity(pid_t pid) {
     return result;
 }
 
-static void killOwnedChild(ChildIdentity child) {
-    if (child.pid <= 0) return;
-    ChildIdentity current = identity(child.pid);
-    if (current.pid == child.pid && current.seconds == child.seconds && current.microseconds == child.microseconds && getpgid(child.pid) == child.pid) {
+static bool sameProcess(ProcessIdentity process) {
+    if (process.pid <= 0) return false;
+    ProcessIdentity current = identity(process.pid);
+    return current.pid == process.pid && current.seconds == process.seconds && current.microseconds == process.microseconds;
+}
+
+static void killOwnedChild(ProcessIdentity child) {
+    if (sameProcess(child) && getpgid(child.pid) == child.pid) {
         kill(-child.pid, SIGKILL);
     }
+}
+
+// This process keeps the same PID and process group when it execs voxl. Until
+// the launcher owns that identity, only the helper holds the pipe's write end.
+// A helper crash before its PID acknowledgement therefore exits this gate
+// without ever starting capture.
+static int runEngine(void) {
+    char line[16];
+    if (!readLine(STDIN_FILENO, line, sizeof(line), now() + 8, false) || strcmp(line, "EXEC") != 0 || stopping) return 1;
+    int input = open("/dev/null", O_RDONLY);
+    if (input < 0) return 1;
+    if (dup2(input, STDIN_FILENO) < 0) { close(input); return 1; }
+    if (input != STDIN_FILENO) close(input);
+    NSString *executable = [NSBundle.mainBundle.executablePath.stringByDeletingLastPathComponent stringByAppendingPathComponent:@"voxl"];
+    NSArray<NSString *> *arguments = NSProcessInfo.processInfo.arguments;
+    char **argv = calloc(arguments.count, sizeof(char *));
+    argv[0] = strdup(executable.fileSystemRepresentation);
+    for (NSUInteger i = 2; i < arguments.count; ++i) argv[i - 1] = strdup(arguments[i].UTF8String);
+    execv(executable.fileSystemRepresentation, argv);
+    return 1;
 }
 
 static int runHelper(void) {
@@ -147,11 +171,17 @@ static int runHelper(void) {
         return 1;
     }
     if (chdir(directory.fileSystemRepresentation) != 0) { close(fd); return 1; }
-    NSString *executable = [NSBundle.mainBundle.executablePath.stringByDeletingLastPathComponent stringByAppendingPathComponent:@"voxl"];
+    int gate[2];
+    if (pipe(gate) != 0) { close(fd); return 1; }
+    if (fcntl(gate[0], F_SETFD, FD_CLOEXEC) != 0 || fcntl(gate[1], F_SETFD, FD_CLOEXEC) != 0) {
+        close(gate[0]); close(gate[1]); close(fd); return 1;
+    }
+    NSString *executable = NSBundle.mainBundle.executablePath;
     NSArray<NSString *> *arguments = NSProcessInfo.processInfo.arguments;
-    char **argv = calloc(arguments.count, sizeof(char *));
+    char **argv = calloc(arguments.count + 1, sizeof(char *));
     argv[0] = strdup(executable.fileSystemRepresentation);
-    for (NSUInteger i = 2; i < arguments.count; ++i) argv[i - 1] = strdup(arguments[i].UTF8String);
+    argv[1] = strdup("--exec");
+    for (NSUInteger i = 2; i < arguments.count; ++i) argv[i] = strdup(arguments[i].UTF8String);
     NSMutableDictionary<NSString *, NSString *> *childEnv = env.mutableCopy;
     for (NSString *key in @[@"SPOOL_VOXL_CONTROL_TOKEN", @"SPOOL_VOXL_CONTROL_PORT", @"SPOOL_VOXL_DIRECTORY"]) [childEnv removeObjectForKey:key];
     char **envp = calloc(childEnv.count + 1, sizeof(char *));
@@ -163,20 +193,25 @@ static int runHelper(void) {
     posix_spawnattr_setpgroup(&attr, 0);
     posix_spawn_file_actions_t files;
     posix_spawn_file_actions_init(&files);
-    posix_spawn_file_actions_addopen(&files, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+    posix_spawn_file_actions_adddup2(&files, gate[0], STDIN_FILENO);
+    if (gate[0] != STDIN_FILENO) posix_spawn_file_actions_addclose(&files, gate[0]);
+    posix_spawn_file_actions_addclose(&files, gate[1]);
     posix_spawn_file_actions_addopen(&files, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
     posix_spawn_file_actions_addopen(&files, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
     pid_t child = 0;
     int error = posix_spawn(&child, executable.fileSystemRepresentation, &files, &attr, argv, envp);
+    close(gate[0]);
     posix_spawn_file_actions_destroy(&files);
     posix_spawnattr_destroy(&attr);
     for (NSUInteger i = 0; argv[i]; ++i) free(argv[i]);
     for (NSUInteger i = 0; envp[i]; ++i) free(envp[i]);
     free(argv);
     free(envp);
-    if (error != 0) { close(fd); return 1; }
-    snprintf(line, sizeof(line), "RUNNING %d\n", child);
-    bool connected = sendLine(fd, line);
+    if (error != 0) { close(gate[1]); close(fd); return 1; }
+    snprintf(line, sizeof(line), "PREPARED %d\n", child);
+    bool connected = sendLine(fd, line) && readLine(fd, line, sizeof(line), now() + 4, false) && strcmp(line, "CONTINUE") == 0 && !stopping;
+    if (connected) connected = write(gate[1], "EXEC\n", 5) == 5;
+    close(gate[1]);
     double heartbeat = now();
     bool naturalExit = false;
     while (connected && !stopping && now() - heartbeat < 5) {
@@ -252,6 +287,7 @@ static int launchHelper(void) {
     double deadline = now() + 8;
     while (!completed && now() < deadline) pump();
     if (!application) { close(server); return 1; }
+    ProcessIdentity appIdentity = identity(application.processIdentifier);
     int fd = -1;
     deadline = now() + 8;
     while (leaseAlive() && !application.terminated && now() < deadline) {
@@ -268,10 +304,13 @@ static int launchHelper(void) {
     close(server);
     char line[128];
     pid_t childPID = 0;
-    ChildIdentity child = {0};
-    bool started = fd >= 0 && leaseAlive() && sendLine(fd, "START\n") && readLine(fd, line, sizeof(line), now() + 4, true) && sscanf(line, "RUNNING %d", &childPID) == 1 && childPID > 0;
+    ProcessIdentity child = {0};
+    bool started = fd >= 0 && leaseAlive() && sendLine(fd, "START\n") && readLine(fd, line, sizeof(line), now() + 4, true) && sscanf(line, "PREPARED %d", &childPID) == 1 && childPID > 0;
     if (started) {
         child = identity(childPID);
+        started = child.pid > 0 && getpgid(child.pid) == child.pid && leaseAlive() && sendLine(fd, "CONTINUE\n");
+    }
+    if (started) {
         // Non-sensitive process identifiers are useful for lifecycle diagnostics.
         printf("{\"helper_pid\":%d,\"voxl_pid\":%d}\n", application.processIdentifier, childPID);
         fflush(stdout);
@@ -301,7 +340,9 @@ static int launchHelper(void) {
     deadline = now() + 2;
     while (!application.terminated && now() < deadline) pump();
     if (!application.terminated) {
-        [application forceTerminate];
+        // AppKit's quit request can be refused by a stalled supervisor. Match
+        // the launched process before forcing it to stop, without PID reuse.
+        if (sameProcess(appIdentity)) kill(appIdentity.pid, SIGKILL);
         deadline = now() + 1;
         while (!application.terminated && now() < deadline) pump();
     }
@@ -315,6 +356,7 @@ int main(int argc, const char *argv[]) {
         signal(SIGINT, stopSignal);
         if (argc < 2) return 64; // Opening the app manually never starts capture.
         if (strcmp(argv[1], "--launch") == 0) return launchHelper();
+        if (strcmp(argv[1], "--exec") == 0) return runEngine();
         if (strcmp(argv[1], "--run") != 0) return 64;
         NSApplication *app = NSApplication.sharedApplication;
         [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
