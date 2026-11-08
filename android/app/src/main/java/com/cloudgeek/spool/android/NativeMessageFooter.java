@@ -62,9 +62,15 @@ final class NativeMessageFooter extends LinearLayout {
         setMinimumHeight(ui.dp(28));
     }
 
-    void bindText(String value) { text = value; copy.setEnabled(!value.isEmpty()); }
+    void bindText(String value) {
+        text = value;
+        if (copy.isEnabled() != !value.isEmpty()) copy.setEnabled(!value.isEmpty());
+    }
 
-    void resetFeedback() { copy.removeCallbacks(reset); reset.run(); }
+    void resetFeedback() {
+        if (copyState.equals("idle")) return;
+        copy.removeCallbacks(reset); reset.run();
+    }
 
     void bindAuthor(String name) {
         if (!mine || author.getText().toString().equals(name)) return;

@@ -2496,10 +2496,8 @@ public final class MainActivity extends Activity {
                 if (rows != null) rows.appendVirtualRows(recycler, key + "/activity", refresh);
                 if (!value.answer.isEmpty()) recycler.markdown(key + "/answer", value.answer);
                 recycler.chrome(key + "/footer", refresh, children -> {
-                    if (value.actions.length() > 0) {
-                        NativeTurnActions audit = (NativeTurnActions) children.use("actions", "actions", () -> new NativeTurnActions(ui));
-                        audit.bind(value.actions);
-                    }
+                    NativeTurnActions audit = (NativeTurnActions) children.use("actions", "actions", () -> new NativeTurnActions(ui));
+                    audit.bind(value.actions);
                     if (!value.answer.isEmpty()) {
                         NativeMessageFooter footer = (NativeMessageFooter) children.use("footer", "footer",
                                 () -> new NativeMessageFooter(ui, false, null, value.answer, turn.optLong("finished_at")));

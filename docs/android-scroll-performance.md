@@ -924,3 +924,58 @@ production has neither that fixture code nor those additional keep rules.
 Detailed results are in `build/artifacts/android-markwon-release/verification.json`
 and `device-smoke.json`. This verifies release startup/linkage/rendering, not
 another end-to-end benchmark of the user's authenticated production installation.
+
+## Authorization history and recycled Markdown layout (2026-11-08)
+
+The authorization-history scenario contains 9 turns, 88 transcript parts and
+46 virtual rows, with one tool process expanded. On the physical 22041211AC
+(API34, 120 Hz), its initial fixed-interval reversals measured 5.12% janky frames
+and its full bottom/top/bottom traversal measured 4.76%.
+
+Sampled attribution found two avoidable costs. Footer transfers reconstructed
+authorization rows, including avatars, text widgets and line-height setup.
+`NativeTurnActions` now rebinds those widgets and retains at most four detached
+rows per container. Empty turns keep a hidden audit container so a later footer
+transfer can reuse it. Changed operator metadata, timestamps and decisions still
+update; stale asynchronous avatar decodes cannot overwrite a different operator.
+An idle `NativeMessageFooter` also skips redundant copy-feedback resets.
+
+Ordinary Markdown recycling cleared a full-width `TextView`, synchronously
+constructing an empty text layout before rebinding and measuring the next block.
+`NativeMarkwonTextView` uses a wrap-content layout parameter to defer that work,
+then measures at the full available row width. Cached text is still released on
+recycle, background precomputation remains active, and Markdown retains its
+original full-width geometry. This does not introduce a per-conversation view
+cache or share selection state between holders.
+
+The final APK was installed and tested without method sampling. Each full
+traversal reached both native boundaries, with four flings per direction; each
+reversal run used 12 alternating flings from row 32:
+
+| Group | Bottom → top → bottom | P99 | Reversals | P99 |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 30/791 (3.79%) | 44 ms | 33/1941 (1.70%) | 25 ms |
+| 2 | 26/804 (3.23%) | 32 ms | 41/1934 (2.12%) | 28 ms |
+| 3 | 25/801 (3.12%) | 42 ms | 73/1847 (3.95%) | 38 ms |
+
+Weighted totals are **3.38%** for full traversal and **2.57%** for reversals.
+All 12 content/geometry comparisons passed: rows 0/16/32 on each full traversal
+and row 32 on each reversal run. Each measurement checked the focused Activity,
+selection epoch, part/row counts and scroll boundaries. Two setup attempts were
+aborted before obtaining valid measurements and are excluded. The same chat was
+re-entered before the resumed third group; its scenario was checked again.
+
+The change passed 91 targeted regressions, including API26/34/35 cases for audit
+row reuse, avatar ownership and deferred Markdown layout. Existing native text
+geometry, links, selection, streaming, short-chat positioning, scroll-anchor and
+copy-feedback checks passed. Debug/release lint, debug assembly and R8-shrunk
+release assembly passed; release keep rules preserve the XML view constructor.
+Physical performance numbers here are from the debug package and still include
+occasional slow frames.
+
+The final build hash, individual counts, method-sampling limits and excluded
+intermediate runs are recorded in
+`build/artifacts/android-audit-code-scroll/audit-report.md` and
+`audit-verification.json`. Only `audit-layout-round-trip-1/2/3.json` and
+`audit-layout-reversals-1/2/3.json` represent this final APK. Earlier row-reuse-only
+runs and the discarded `code-final-*` width experiment are not final results.

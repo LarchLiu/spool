@@ -36,7 +36,10 @@ final class NativeComposerDock extends FrameLayout {
         latest.setVisibility(GONE);
     }
 
-    void following(boolean value) { latest.setVisibility(value ? GONE : VISIBLE); }
+    void following(boolean value) {
+        int visibility = value ? GONE : VISIBLE;
+        if (latest.getVisibility() != visibility) latest.setVisibility(visibility);
+    }
 
     @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         super.onLayout(changed, left, top, right, bottom);

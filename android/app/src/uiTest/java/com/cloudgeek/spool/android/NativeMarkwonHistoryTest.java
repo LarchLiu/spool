@@ -128,6 +128,33 @@ public class NativeMarkwonHistoryTest {
         }
     }
 
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    @Test @Config(sdk = {28, 34, 35}) public void recyclingCodeRetainsItsOwnDocumentButResetsSelectionFeedbackAndChangedOwner() throws Exception {
+        try (Fixture f = new Fixture()) {
+            List<Runnable> jobs = new ArrayList<>();
+            f.ui.syntax = new NativeSyntax(jobs::add, (language, source, dark) -> List.of(new NativeSyntaxEngine.Line(0, source.length(),
+                    List.of(new NativeSyntaxEngine.Run(0, 5, 0xff123456, 0)))), () -> {});
+            f.source("```ts\nconst first = 1;\n```\n\n```text\nsecond literal\n```"); f.ready();
+            RecyclerView.Adapter adapter = ((ConcatAdapter) f.history.getAdapter()).getAdapters().get(0);
+            RecyclerView.ViewHolder holder = adapter.createViewHolder(f.history, adapter.getItemViewType(0));
+            adapter.bindViewHolder(holder, 0); f.controller.get().setContentView(holder.itemView); layout(holder.itemView);
+            for (Runnable job : List.copyOf(jobs)) job.run(); Shadows.shadowOf(Looper.getMainLooper()).idle();
+            NativeCodeBlock block = code(holder.itemView); Object document = block.code.getText(); int scheduled = jobs.size();
+            assertEquals(1, ((Spanned) document).getSpans(0, block.code.length(), android.text.style.ForegroundColorSpan.class).length);
+            Selection.setSelection((Spannable) document, 1, 5); block.copy.performClick();
+            adapter.onViewRecycled(holder); adapter.bindViewHolder(holder, 0);
+            assertSame("Returning to the same code retains its measured buffer and syntax", document, block.code.getText());
+            assertEquals(-1, block.code.getSelectionStart()); assertEquals(f.ui.t("Copy code"), block.copy.getContentDescription());
+            assertEquals(scheduled, jobs.size());
+            adapter.onViewRecycled(holder); adapter.bindViewHolder(holder, 1);
+            assertEquals("second literal", block.code.getText().toString()); assertEquals(f.ui.t("Plain text"), block.language.getText().toString());
+            assertEquals(0, ((Spanned) block.code.getText()).getSpans(0, block.code.length(), android.text.style.ForegroundColorSpan.class).length);
+            assertEquals(scheduled, jobs.size()); block.copy.performClick();
+            android.content.ClipboardManager clipboard = (android.content.ClipboardManager) f.controller.get().getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+            assertEquals("second literal", clipboard.getPrimaryClip().getItemAt(0).getText().toString());
+        }
+    }
+
     @Test public void officialBlockAdapterReusesNativeHoldersAcrossHundredsOfParagraphs() throws Exception {
         try (Fixture f = new Fixture()) {
             StringBuilder source = new StringBuilder();
@@ -199,6 +226,34 @@ public class NativeMarkwonHistoryTest {
                 assertEquals(actual.getLayout().getLineEnd(line), reference.getLayout().getLineEnd(line));
                 assertEquals(actual.getLayout().getLineBaseline(line), reference.getLayout().getLineBaseline(line));
             }
+        }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    @Test @Config(sdk = {26, 34, 35}) public void recycledMarkdownDefersLayoutUntilMeasuredAtTheCurrentWidthAndKeepsOnlyCurrentLinks() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.source("First **paragraph** with [old link](https://example.com/old).\n\nSecond _paragraph_ with [new link](https://example.com/new). "
+                    + "中文换行内容 with more words to wrap. ".repeat(5));
+            f.ready();
+            RecyclerView.Adapter adapter = ((ConcatAdapter) f.history.getAdapter()).getAdapters().get(0);
+            RecyclerView.ViewHolder holder = adapter.createViewHolder(f.history, adapter.getItemViewType(0));
+            TextView text = (TextView) holder.itemView;
+            adapter.bindViewHolder(holder, 0); layout(text);
+            Selection.setSelection((Spannable) text.getText(), 0, 5); assertNotNull(text.getLayout());
+            adapter.onViewRecycled(holder);
+            assertEquals("", text.getText().toString());
+            assertNull("Clearing an offscreen holder must not construct an empty text layout", text.getLayout());
+            adapter.bindViewHolder(holder, 1);
+            assertNull("The replacement document waits for its current row width", text.getLayout());
+            assertEquals("The next document must not inherit the old selected range", text.getSelectionStart(), text.getSelectionEnd());
+            text.measure(View.MeasureSpec.makeMeasureSpec(220, View.MeasureSpec.AT_MOST),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            assertEquals("Short blocks and paragraph backgrounds still fill the row", 220, text.getMeasuredWidth());
+            assertTrue(text.getLineCount() > 1);
+            ClickableSpan[] links = ((Spanned) text.getText()).getSpans(0, text.length(), ClickableSpan.class);
+            assertEquals(1, links.length);
+            for (ClickableSpan link : links) link.onClick(text);
+            assertEquals(List.of("https://example.com/new"), f.opened);
         }
     }
 

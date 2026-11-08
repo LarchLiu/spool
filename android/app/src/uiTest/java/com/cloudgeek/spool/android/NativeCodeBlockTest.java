@@ -57,6 +57,8 @@ public class NativeCodeBlockTest {
             block.bind("ts", "\tconst value = 1;\n"); assertEquals("An unchanged holder retains its tokens", 2, tasks.size());
             block.bind("text", "\tconst value = 1;\n");
             assertSame(document, block.code.getText()); assertEquals(0, document.getSpans(0, document.length(), android.text.style.ForegroundColorSpan.class).length);
+            assertEquals("Explicit plain text does not queue a syntax job", 2, tasks.size());
+            block.bind("js", "\tconst next = 2;\n");
             tasks.get(2).run(); block.bind("", ""); Shadows.shadowOf(Looper.getMainLooper()).idle();
             assertEquals("", block.code.getText().toString()); assertFalse(block.copy.isEnabled());
         }

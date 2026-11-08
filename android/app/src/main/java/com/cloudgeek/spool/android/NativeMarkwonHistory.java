@@ -56,6 +56,8 @@ final class NativeMarkwonHistory extends RecyclerView {
     private int disclosureTop;
     private final List<RecyclerView.Adapter<?>> adapterOrder = new ArrayList<>();
     private final Map<RecyclerView.Adapter<?>, Segment> owners = new IdentityHashMap<>();
+    private final Map<View, RowAnchor> rowAnchors = new java.util.WeakHashMap<>();
+    private int rowCount;
     private long nextBlockId, reusedBlocks, reconciledSegments;
     private long creates, binds, markdownBinds, chromeBinds, recycles, bindNanos, maxBindNanos, parseNanos, parseErrors;
     private long chromeNanos, markdownNanos, chromeReuses, chromeTransfers;
@@ -79,9 +81,21 @@ final class NativeMarkwonHistory extends RecyclerView {
         void cancel() { version++; if (parsing != null) parsing.cancel(true); pending = false; }
     }
 
+    /** Bound row identity avoids walking ConcatAdapter's segments on every scroll frame. */
+    private final class RowAnchor {
+        final Segment segment;
+        final Node node;
+        RowAnchor(Segment segment, Node node) { this.segment = segment; this.node = node; }
+        int item() { return node == null ? 0 : segment.textEntry.positions.getOrDefault(node, -1); }
+        long id() { return node == null ? 0 : segment.textEntry.ids.getOrDefault(node, -1L); }
+        boolean current() { return segment != null && current.get(segment.key) == segment; }
+    }
+
     private final class TextEntry extends SimpleEntry {
         Map<Node, Spanned> prepared = new IdentityHashMap<>();
         Map<Node, Long> ids = new IdentityHashMap<>();
+        Map<Node, Integer> positions = new IdentityHashMap<>();
+        Segment segment;
         TextEntry() { super(R.layout.markwon_block, 0); }
         @Override public long id(Node node) { return ids.get(node); }
         @Override public SimpleEntry.Holder createHolder(LayoutInflater inflater, ViewGroup parent) {
@@ -93,6 +107,7 @@ final class NativeMarkwonHistory extends RecyclerView {
         }
         @Override public void bindHolder(Markwon renderer, SimpleEntry.Holder holder, Node node) {
             long started = System.nanoTime();
+            rowAnchors.put(holder.itemView, new RowAnchor(segment, node));
             Spanned text = prepared.get(node);
             if (text == null) super.bindHolder(renderer, holder, node);
             else renderer.setParsedMarkdown((TextView) holder.itemView, text);
@@ -101,10 +116,13 @@ final class NativeMarkwonHistory extends RecyclerView {
         }
         @Override public void onViewRecycled(SimpleEntry.Holder holder) {
             // Release TextView watchers from the cached document before this holder changes blocks.
-            ((TextView) holder.itemView).setText(""); recycles++;
+            rowAnchors.remove(holder.itemView); ((TextView) holder.itemView).setText(""); recycles++;
             super.onViewRecycled(holder);
         }
-        @Override public void clear() { super.clear(); prepared = new IdentityHashMap<>(); ids = new IdentityHashMap<>(); }
+        @Override public void clear() {
+            super.clear(); prepared = new IdentityHashMap<>(); ids = new IdentityHashMap<>();
+            positions = new IdentityHashMap<>();
+        }
     }
 
     private static final class CodeHolder extends MarkwonAdapter.Holder {
@@ -126,12 +144,19 @@ final class NativeMarkwonHistory extends RecyclerView {
         }
         @Override public void bindHolder(Markwon renderer, CodeHolder holder, Node node) {
             long started = System.nanoTime();
+            rowAnchors.put(holder.itemView, new RowAnchor(textEntry.segment, node));
             holder.code.bind(node instanceof FencedCodeBlock ? ((FencedCodeBlock) node).getInfo() : "", codeLiteral(node));
             long elapsed = System.nanoTime() - started;
             markdownBinds++; markdownNanos += elapsed; bound(elapsed);
         }
         @Override public void onViewRecycled(CodeHolder holder) {
-            clearSelection(holder.itemView); holder.code.bind("", ""); holder.code.scroll.scrollTo(0, 0); recycles++;
+            // This widget owns its text buffer; unlike Markwon's shared prepared text it
+            // cannot retain a holder through a document cache. Keep the bounded pool's
+            // layout/tokens until the next bind, which replaces changed source/language.
+            rowAnchors.remove(holder.itemView);
+            // Legacy intrinsic paragraph rounding depends on a fresh layout (also below).
+            if (android.os.Build.VERSION.SDK_INT < 28) holder.code.bind("", "");
+            clearSelection(holder.itemView); holder.code.resetFeedback(); holder.code.scroll.scrollTo(0, 0); recycles++;
         }
     }
     private static boolean codeBlock(Node node) { return node instanceof FencedCodeBlock || node instanceof IndentedCodeBlock; }
@@ -174,6 +199,7 @@ final class NativeMarkwonHistory extends RecyclerView {
             return new ChromeHolder(column);
         }
         @Override public void onBindViewHolder(ChromeHolder holder, int position) {
+            rowAnchors.put(holder.itemView, new RowAnchor(owners.get(this), null));
             if (holder.owner == this && holder.revision == revision) { chromeReuses++; return; }
             long started = System.nanoTime();
             boolean transferred = holder.owner != this;
@@ -190,6 +216,7 @@ final class NativeMarkwonHistory extends RecyclerView {
             chromeBinds++; chromeNanos += elapsed; bound(elapsed);
         }
         @Override public void onViewRecycled(ChromeHolder holder) {
+            rowAnchors.remove(holder.itemView);
             rememberExpanded(holder); clearSelection(holder.itemView); recycles++;
             // Detached children stop their own requests/timers. Keep this bounded holder's
             // widgets so the next footer/user binding can update them rather than inflate again.
@@ -278,13 +305,15 @@ final class NativeMarkwonHistory extends RecyclerView {
                 if (disposed || updating || restoring || dy == 0) return;
                 if (movingToLatest) return;
                 disclosureHeading = null;
+                boolean wasFollowing = state.following;
                 state.following = nearBottom();
-                remember(); following.accept(state.following);
+                remember();
+                if (wasFollowing != state.following) following.accept(state.following);
             }
             @Override public void onScrollStateChanged(RecyclerView view, int value) {
                 if (disposed) return;
                 if (value == SCROLL_STATE_DRAGGING) { movingToLatest = false; disclosureHeading = null; }
-                if (value == SCROLL_STATE_IDLE) movingToLatest = false;
+                if (value == SCROLL_STATE_IDLE) { movingToLatest = false; state.top = computeVerticalScrollOffset(); }
                 if (!restoring) remember();
             }
         });
@@ -328,7 +357,7 @@ final class NativeMarkwonHistory extends RecyclerView {
             TextEntry entry = new TextEntry();
             CodeEntry code = new CodeEntry(entry);
             segment = new Segment(key, MarkwonAdapter.builder(entry)
-                    .include(FencedCodeBlock.class, code).include(IndentedCodeBlock.class, code).build()); segment.textEntry = entry;
+                    .include(FencedCodeBlock.class, code).include(IndentedCodeBlock.class, code).build()); segment.textEntry = entry; entry.segment = segment;
         }
         next.put(key, segment);
         if (source.equals(segment.source)) return;
@@ -400,8 +429,10 @@ final class NativeMarkwonHistory extends RecyclerView {
         List<Node> nodes = new ArrayList<>();
         for (NativeMarkdownBlocks.Block block : blocks) nodes.add(block.node);
         adapter.setParsedMarkdown(markwon, nodes);
-        for (NativeMarkdownBlocks.Block block : blocks) {
+        for (int i = 0; i < blocks.size(); i++) {
+            NativeMarkdownBlocks.Block block = blocks.get(i);
             target.textEntry.prepared.put(block.node, block.text); target.textEntry.ids.put(block.node, block.id);
+            target.textEntry.positions.put(block.node, i);
         }
         target.blocks = blocks;
         diff.dispatchUpdatesTo(adapter); reindex(); settlePosition();
@@ -438,6 +469,7 @@ final class NativeMarkwonHistory extends RecyclerView {
         for (Segment segment : current.values()) {
             segment.position = position; position += segment.adapter.getItemCount(); owners.put(segment.adapter, segment);
         }
+        rowCount = position;
     }
 
     // Coalesce updates into RecyclerView's next layout. Restore before that layout chooses its
@@ -484,22 +516,31 @@ final class NativeMarkwonHistory extends RecyclerView {
     }
 
     private boolean nearBottom() {
-        int last = adapters.getItemCount() - 1;
-        View tail = layout.findViewByPosition(last);
-        return last < 0 || tail != null && layout.getDecoratedBottom(tail) - (getHeight() - getPaddingBottom()) < ui.dp(90);
+        if (rowCount == 0) return true;
+        View tail = layout.getChildAt(layout.getChildCount() - 1);
+        RowAnchor anchor = rowAnchors.get(tail);
+        return anchor != null && anchor.current() && anchor.item() >= 0
+                && anchor.segment.position + anchor.item() == rowCount - 1
+                && layout.getDecoratedBottom(tail) - (getHeight() - getPaddingBottom()) < ui.dp(90);
     }
 
     private void remember() {
-        int first = layout.findFirstVisibleItemPosition();
-        View item = layout.findViewByPosition(first);
-        if (item != null) remember(item);
+        for (int i = 0; i < layout.getChildCount(); i++) {
+            View item = layout.getChildAt(i);
+            if (layout.getDecoratedBottom(item) > getPaddingTop() && layout.getDecoratedTop(item) < getHeight() - getPaddingBottom()) {
+                remember(item); return;
+            }
+        }
     }
     private void remember(View item) {
-        RecyclerView.ViewHolder holder = getChildViewHolder(item);
-        Segment segment = owners.get(holder.getBindingAdapter()); int position = holder.getBindingAdapterPosition();
-        if (segment == null || position < 0 || position >= segment.adapter.getItemCount()) return;
-        state.recyclerKey = segment.key; state.recyclerItem = position; state.recyclerId = segment.adapter.getItemId(position);
-        state.recyclerOffset = layout.getDecoratedTop(item) - getPaddingTop(); state.top = computeVerticalScrollOffset();
+        RowAnchor anchor = rowAnchors.get(item);
+        if (anchor == null || !anchor.current()) return;
+        int position = anchor.item();
+        if (position < 0) return;
+        state.recyclerKey = anchor.segment.key; state.recyclerItem = position; state.recyclerId = anchor.id();
+        // The recycler restores the logical row/id/offset, not the scrollbar's estimate.
+        // Keep that estimate for renderer handoff at idle/disposal instead of every frame.
+        state.recyclerOffset = layout.getDecoratedTop(item) - getPaddingTop();
     }
     private static int relativeTop(View child, View parent) {
         int top = 0;
@@ -530,7 +571,7 @@ final class NativeMarkwonHistory extends RecyclerView {
     }
     int contentHeight() { return computeVerticalScrollRange(); }
     int contentOffset() { return computeVerticalScrollOffset(); }
-    int blocks() { return adapters.getItemCount(); }
+    int blocks() { return rowCount; }
     int positionOf(String key) { Segment segment = current.get(key); return segment == null ? -1 : segment.position; }
     int pending() { int count = 0; for (Segment segment : current.values()) if (segment.pending) count++; return count; }
 
@@ -594,8 +635,8 @@ final class NativeMarkwonHistory extends RecyclerView {
     }
     void dispose() {
         if (disposed) return;
-        remember(); disposed = true; stopScroll(); parser.shutdownNow(); main.removeCallbacksAndMessages(null);
+        remember(); state.top = computeVerticalScrollOffset(); disposed = true; stopScroll(); parser.shutdownNow(); main.removeCallbacksAndMessages(null);
         for (Segment segment : current.values()) segment.cancel();
-        setAdapter(null); getRecycledViewPool().clear(); current.clear(); adapterOrder.clear(); owners.clear(); disclosureHeading = null; following = value -> {};
+        setAdapter(null); getRecycledViewPool().clear(); current.clear(); adapterOrder.clear(); owners.clear(); rowAnchors.clear(); rowCount = 0; disclosureHeading = null; following = value -> {};
     }
 }

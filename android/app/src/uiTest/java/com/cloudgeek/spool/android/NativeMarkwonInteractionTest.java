@@ -88,6 +88,19 @@ public class NativeMarkwonInteractionTest {
             assertTrue("Moving 40 pixels up remains inside the existing 90dp follow threshold", f.state.following);
         }
     }
+
+    @Test public void scrollingAnUnchangedFollowRegionDoesNotPublishRepeatedComposerUpdates() throws Exception {
+        try (Fixture f = new Fixture()) {
+            f.source("Paragraph.\n\n".repeat(100)); f.ready();
+            f.history.scrollToPosition(30); f.ready();
+            java.util.List<Boolean> updates = new java.util.ArrayList<>(); f.history.onFollowing(updates::add);
+            assertEquals(java.util.List.of(false), updates);
+            for (int i = 0; i < 30; i++) f.history.scrollBy(0, -2);
+            assertEquals("Scroll anchors keep updating without publishing the same follow state every frame", java.util.List.of(false), updates);
+            assertFalse(f.state.recyclerKey.isEmpty()); f.history.latest();
+            assertEquals(java.util.List.of(false, true), updates);
+        }
+    }
     @Test public void markdownImageAndBareUrlKeepTheirExistingOpenActions() throws Exception {
         try (Fixture f = new Fixture()) {
             String source = "![diagram](docs/diagram.png)\n\nVisit https://example.com/docs";

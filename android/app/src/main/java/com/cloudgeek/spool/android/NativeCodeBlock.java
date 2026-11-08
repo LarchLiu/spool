@@ -23,6 +23,7 @@ final class NativeCodeBlock extends LinearLayout implements NativeMarkdownFlowBo
     private String source = "";
     private String syntaxLanguage = "";
     private NativeSyntax.Binding syntaxBinding;
+    private boolean showingFeedback;
 
     NativeCodeBlock(NativeUi ui, int color, int containerSize) {
         this(ui, color, containerSize, value -> {
@@ -54,7 +55,7 @@ final class NativeCodeBlock extends LinearLayout implements NativeMarkdownFlowBo
         copyPadding();
         header.addView(copy, new LayoutParams(ui.dp(28), ui.dp(28)));
         addView(header, new LayoutParams(-1, -2));
-        reset = () -> feedback("copy", "Copy code", false);
+        reset = () -> { if (showingFeedback) feedback("copy", "Copy code", false); };
         copy.setOnClickListener(view -> {
             try { writer.write(source); feedback("check", "Code copied", true); }
             catch (RuntimeException error) { feedback("circle-alert", "Could not copy code", true); }
@@ -75,8 +76,8 @@ final class NativeCodeBlock extends LinearLayout implements NativeMarkdownFlowBo
     }
 
     void bind(String info, String literal) {
-        String token = info.trim().split("\\s+", 2)[0];
-        String label = token.isEmpty() || token.matches("(?i)text|txt|plaintext") ? ui.t("Plain text") : token;
+        String token = languageToken(info);
+        String label = plainLanguage(token) ? ui.t("Plain text") : token;
         if (!language.getText().toString().equals(label)) language.setText(label);
         if (literal.endsWith("\n")) literal = literal.substring(0, literal.length() - 1);
         boolean changed = !source.equals(literal);
@@ -89,14 +90,20 @@ final class NativeCodeBlock extends LinearLayout implements NativeMarkdownFlowBo
             if (syntaxBinding != null) syntaxBinding.close();
             syntaxBinding = null; syntaxLanguage = token;
             NativeSyntax.clearSpans(code.getText());
-            if (ui.syntax != null && !token.isEmpty() && !source.isEmpty())
+            if (ui.syntax != null && !plainLanguage(token) && !source.isEmpty())
                 syntaxBinding = ui.syntax.bindCode(code, token, source, ui.dark);
             code.invalidate();
         }
         copy.setEnabled(!source.isEmpty());
     }
 
+    static String languageToken(String info) { return info.trim().split("\\s+", 2)[0]; }
+    static boolean plainLanguage(String token) {
+        return token.isEmpty() || token.equalsIgnoreCase("text") || token.equalsIgnoreCase("txt") || token.equalsIgnoreCase("plaintext");
+    }
+
     private void feedback(String icon, String key, boolean announce) {
+        showingFeedback = !icon.equals("copy");
         copy.setKind(icon); copyPadding(); copy.setContentDescription(ui.t(key));
         if (announce) copy.announceForAccessibility(ui.t(key));
     }
@@ -106,12 +113,14 @@ final class NativeCodeBlock extends LinearLayout implements NativeMarkdownFlowBo
         copy.setPadding(gap / 2, gap / 2, gap - gap / 2, gap - gap / 2);
     }
 
+    void resetFeedback() { copy.removeCallbacks(reset); reset.run(); }
+
     @Override public float cssHeight() {
         return getPaddingTop() + header.getMeasuredHeight() + NativeUi.cssTextHeight(code) + getPaddingBottom();
     }
 
     @Override protected void onDetachedFromWindow() {
-        copy.removeCallbacks(reset); reset.run();
+        resetFeedback();
         super.onDetachedFromWindow();
     }
 }
