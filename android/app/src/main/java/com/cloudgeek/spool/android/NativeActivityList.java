@@ -174,9 +174,9 @@ final class NativeActivityList extends LinearLayout {
         }
     }
     private final NativeUi ui;
-    private final State state;
+    private State state;
     private final Consumer<String> openLink;
-    private final NativeTranscriptImages imageActions;
+    private NativeTranscriptImages imageActions;
     private UserInput userInput;
     private final LinearLayout list;
     private final View summaryGap, bottomGap;
@@ -215,6 +215,14 @@ final class NativeActivityList extends LinearLayout {
         super(ui.context); this.ui = ui; this.state = state; this.openLink = openLink;
         imageActions = images;
         setOrientation(VERTICAL); list = ui.column(); summaryGap = ui.space(12); bottomGap = ui.space(10);
+    }
+
+    /** Reuse the native summary widgets, with a different turn's own disclosure state and actions. */
+    void rebindForTurn(State next, NativeTranscriptImages images) {
+        if (state == next) return;
+        state = next; imageActions = images;
+        bound = null; deferredParts = null; deferredBackend = null; userInput = null;
+        groups = new ArrayList<>(); entries.clear(); gaps.clear(); list.removeAllViews();
     }
 
     void bindParts(List<org.json.JSONObject> parts, String backend, CharSequence summary, boolean live) {

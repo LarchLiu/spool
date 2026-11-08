@@ -129,6 +129,8 @@ public final class MainActivity extends Activity {
     private LinearLayout historyContent;
     private NativeKeyedViews transcriptViews;
     private NativeTranscriptViewport transcriptViewport;
+    private NativeMarkwonHistory markwonHistory;
+    private boolean markwonTrial;
     private NativeComposerDock composerDock;
     private NativeSidebar sidebar;
     private NativeConnecting connectingView;
@@ -287,6 +289,14 @@ public final class MainActivity extends Activity {
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            android.content.SharedPreferences trial = getSharedPreferences("rendering-trial", MODE_PRIVATE);
+            markwonTrial = trial.getBoolean("markwon", false);
+            if (getIntent().hasExtra("spool_markwon")) {
+                markwonTrial = getIntent().getBooleanExtra("spool_markwon", false);
+                trial.edit().putBoolean("markwon", markwonTrial).apply();
+            }
+        }
         Seq.setContext(getApplicationContext());
         appUpdates = new NativeAppUpdate(this, this::bindAppUpdates);
         theme = getPreferences(MODE_PRIVATE).getString("theme", "system");
@@ -346,9 +356,9 @@ public final class MainActivity extends Activity {
         // The random probe token is per Activity, not a session ID or credential.
         // dumpsys visits background instances too: only the exact focused page may gesture.
         boolean focused = hasWindowFocus();
-        boolean historyVisible = history != null && history.isShown() && !settingsOpen && peoplePanel == null;
+        boolean historyVisible = (markwonHistory != null ? markwonHistory.isShown() : history != null && history.isShown()) && !settingsOpen && peoplePanel == null;
         Integer velocity = performanceProbe.fling(args, foreground && focused && historyVisible && !destroyed, selectionEpoch);
-        if (velocity != null) history.fling(velocity);
+        if (velocity != null) { if (markwonHistory != null) markwonHistory.fling(0, velocity); else history.fling(velocity); }
         // Debug-only A/B switch for offscreen preparation; "viewport" reports its state.
         if (args.length >= 3 && args[1].equals("prepare")) NativeTranscriptViewport.prepareEnabled = !args[2].equals("off");
         int rows = 0, mounted = 0;
@@ -359,14 +369,17 @@ public final class MainActivity extends Activity {
             }
         }
         Runtime runtime = Runtime.getRuntime();
+        if (markwonHistory != null) { rows = markwonHistory.blocks(); mounted = markwonHistory.getChildCount(); }
         writer.println("SPOOL_PERF " + object("probeVersion", 2, "probeToken", performanceProbe.token, "selectionEpoch", selectionEpoch,
                 "foreground", foreground, "focused", focused, "historyVisible", historyVisible, "flingAccepted", velocity != null,
                 "historyHasMore", chat != null && chat.optJSONObject("history") != null && chat.optJSONObject("history").optBoolean("has_more"),
                 "turns", array(chat, "turns").length(), "parts", array(chat == null ? null : chat.optJSONObject("transcript"), "parts").length(),
                 "views", diagnosticViewCount(root), "virtualRows", rows, "mountedRows", mounted,
-                "viewport", transcriptViewport == null ? new JSONObject() : transcriptViewport.metrics(),
+                "renderer", markwonHistory == null ? "native-views" : "markwon-recycler", "renderPending", markwonHistory == null ? 0 : markwonHistory.pending(),
+                "viewport", markwonHistory != null ? markwonHistory.metrics() : transcriptViewport == null ? new JSONObject() : transcriptViewport.metrics(),
                 "scrollAnchor", historyScroll == null ? new JSONObject() : historyScroll.metrics(),
-                "historyHeight", historyContent == null ? 0 : historyContent.getHeight(), "scrollY", history == null ? 0 : history.getScrollY(),
+                "historyHeight", markwonHistory != null ? markwonHistory.contentHeight() : historyContent == null ? 0 : historyContent.getHeight(),
+                "scrollY", markwonHistory != null ? markwonHistory.contentOffset() : history == null ? 0 : history.getScrollY(),
                 "realtime", object("epoch", workspaceEpoch, "connected", workspaceReady, "people", presence.length(),
                         "avatarViews", workspaceHeader == null || workspaceHeader.online.getChildCount() == 0 ? 0
                                 : System.identityHashCode(workspaceHeader.online.getChildAt(0))),
@@ -596,6 +609,8 @@ public final class MainActivity extends Activity {
         workspaceHeader = null;
         if (transcriptViewport != null) transcriptViewport.dispose();
         transcriptViewport = null;
+        if (markwonHistory != null) markwonHistory.dispose();
+        markwonHistory = null;
         if (historyScroll != null) historyScroll.dispose();
         historyScroll = null;
         history = null;
@@ -1578,6 +1593,8 @@ public final class MainActivity extends Activity {
         heading = subheading = null;
         if (transcriptViewport != null) transcriptViewport.dispose();
         transcriptViewport = null;
+        if (markwonHistory != null) markwonHistory.dispose();
+        markwonHistory = null;
         if (historyScroll != null) historyScroll.dispose();
         historyScroll = null; history = null; historyContent = null; transcriptViews = null;
         connectingView = null; username = password = null; loginError = null; loginSubmit = null;
@@ -1979,20 +1996,25 @@ public final class MainActivity extends Activity {
         subheading = header.subtitle;
         page.addView(header);
         page.addView(ui.divider());
-        // Delta-based fling steps preserve corrections when virtual rows change height.
-        history = new NestedScrollView(this);
-        history.setFillViewport(true);
-        history.setVerticalScrollBarEnabled(false);
-        historyContent = padded(12, 25);
-        transcriptViews = new NativeKeyedViews(historyContent);
-        history.addView(historyContent);
         historyScrollState.select(authEpoch + "\n" + selectionEpoch + "\n" + chatID);
-        historyScroll = new NativeHistoryScroll(history, historyContent, historyScrollState, 90 * getResources().getDisplayMetrics().density);
-        ui.beforeDisclosure = historyScroll::preservePosition;
+        if (markwonTrial) {
+            markwonHistory = new NativeMarkwonHistory(ui, historyScrollState, this::openMessageLink);
+            ui.beforeDisclosure = markwonHistory::preservePosition;
+        } else {
+            // Delta-based fling steps preserve corrections when virtual rows change height.
+            history = new NestedScrollView(this);
+            history.setFillViewport(true);
+            history.setVerticalScrollBarEnabled(false);
+            historyContent = padded(12, 25);
+            transcriptViews = new NativeKeyedViews(historyContent);
+            history.addView(historyContent);
+            historyScroll = new NativeHistoryScroll(history, historyContent, historyScrollState, 90 * getResources().getDisplayMetrics().density);
+            ui.beforeDisclosure = historyScroll::preservePosition;
+        }
         // Keep message/shadow overflow inside the scrolling viewport. The page
         // itself permits overflow so the composer's shadow can reach the history.
         FrameLayout historyViewport = new FrameLayout(this);
-        historyViewport.addView(history, new FrameLayout.LayoutParams(-1, -1));
+        historyViewport.addView(markwonHistory != null ? markwonHistory : history, new FrameLayout.LayoutParams(-1, -1));
         page.addView(historyViewport, new LinearLayout.LayoutParams(-1, 0, 1));
         composerView = ui.new Composer(composerHint(), this::pickFiles, this::chooseModel,
                 this::choosePermission, this::sendOrStop);
@@ -2012,10 +2034,14 @@ public final class MainActivity extends Activity {
         });
         page.addView(composerView, new LinearLayout.LayoutParams(-1, -2));
         final NativeHistoryScroll behavior = historyScroll;
+        final NativeMarkwonHistory recycler = markwonHistory;
         composerDock = new NativeComposerDock(ui, page, composerView, () -> {
-            if (foreground && !destroyed && historyScroll == behavior && user != null) behavior.latest();
+            if (foreground && !destroyed && user != null) {
+                if (recycler != null && markwonHistory == recycler) recycler.latest();
+                else if (behavior != null && historyScroll == behavior) behavior.latest();
+            }
         });
-        behavior.onFollowing(composerDock::following);
+        if (recycler != null) recycler.onFollowing(composerDock::following); else behavior.onFollowing(composerDock::following);
         root.addView(composerDock, new FrameLayout.LayoutParams(-1, -1));
         renderFiles();
         renderChat();
@@ -2219,7 +2245,7 @@ public final class MainActivity extends Activity {
 
     private void refreshProfileViews() {
         updateHeaderPeople(); renderPeople();
-        if (!settingsOpen && historyContent != null) renderChat();
+        if (!settingsOpen && (historyContent != null || markwonHistory != null)) renderChat();
     }
 
     private void acceptNavigation(JSONObject value) {
@@ -2326,13 +2352,14 @@ public final class MainActivity extends Activity {
         java.util.Set<String> rebinds = pendingRebinds; pendingRebinds = null;
         updateChatRefresh();
         updateMissingProfiles();
-        if (historyContent == null) return;
+        if (historyContent == null && markwonHistory == null) return;
         if (optimisticSend != null) {
             boolean visible = false;
             for (int i = 0; i < array(chat, "turns").length(); i++)
                 visible |= optimisticSend.turnID.equals(at(array(chat, "turns"), i).optString("id"));
             if (!visible) optimisticSend = null;
         }
+        if (markwonHistory != null) { renderMarkwonChat(rebinds); return; }
         historyScroll.changing(anchor);
         transcriptViews.begin();
         updateHistoryLoading();
@@ -2383,7 +2410,63 @@ public final class MainActivity extends Activity {
         updateComposer();
     }
 
+    private void renderMarkwonChat(java.util.Set<String> rebinds) {
+        NativeMarkwonHistory recycler = markwonHistory;
+        updateHistoryLoading();
+        recycler.begin();
+        NativeHistoryLoader.Cursor cursor = historyCursor(chat);
+        boolean failed = historyLoader != null && historyLoader.failed();
+        if (!cursor.error.isEmpty() || cursor.more)
+            recycler.chrome("history-notice", true, children -> children.use("notice", new JSONArray().put(!cursor.error.isEmpty()).put(cursor.more).put(failed),
+                    () -> new NativeHistoryNotice(ui, !cursor.error.isEmpty(), cursor.more, failed, this::loadEarlier)));
+        if (chat == null || array(chat, "turns").length() == 0) {
+            heading.setText(projectID.isEmpty() ? tr("Workspace", "工作空间") : tr("New chat", "新对话"));
+            subheading.setText(projectName());
+            recycler.chrome("welcome", true, children -> children.use("welcome", projectID + "\n" + projectName(), () -> ui.welcome(
+                    ui.t(projectID.isEmpty() ? "Prepare a project first." : "What shall we build today?"),
+                    projectID.isEmpty() ? ui.t("Ask your desktop administrator to create a project and grant you access.")
+                            : ui.t("Describe your idea. Your agent takes it from here."),
+                    projectID.isEmpty() ? ui.t("Waiting for project access") : projectName(), ui.t("Run locally. Pick up anytime."))));
+        } else {
+            heading.setText(chat.optString("title", tr("New chat", "新对话"))); subheading.setText(projectName());
+            JSONObject page = chat;
+            JSONArray parts = array(page.optJSONObject("transcript"), "parts");
+            Map<String, Integer> occurrences = new HashMap<>();
+            for (int i = 0; i < array(page, "turns").length(); i++) {
+                JSONObject turn = at(array(page, "turns"), i);
+                String id = turn.optString("id");
+                String key = new JSONArray().put(id.isEmpty() ? "index" : "turn").put(id.isEmpty() ? i : id)
+                        .put(occurrences.merge(id, 1, Integer::sum)).toString();
+                boolean refresh = rebinds == null || id.isEmpty() || rebinds.contains(id);
+                recycler.chrome(key + "/heading", refresh, children -> renderTurn(page, turn, key, children, false));
+                int start = Math.max(0, turn.optInt("part_start"));
+                int end = Math.min(parts.length(), turn.optInt("part_end", parts.length()));
+                int inputEnd = NativeTurnExchange.split(parts, start, end).get(0).inputEnd;
+                String source = NativeTurn.answer(parts, inputEnd, end, turn);
+                if (!source.isEmpty()) recycler.markdown(key + "/answer", source);
+                recycler.chrome(key + "/footer", refresh, children -> {
+                    if (!source.isEmpty()) {
+                        JSONArray actions = array(turn, "actions");
+                        if (actions.length() > 0) {
+                            NativeTurnActions audit = (NativeTurnActions) children.use("actions", "actions", () -> new NativeTurnActions(ui));
+                            audit.bind(actions);
+                        }
+                        NativeMessageFooter footer = (NativeMessageFooter) children.use("footer", "footer",
+                                () -> new NativeMessageFooter(ui, false, null, source, turn.optLong("finished_at")));
+                        footer.bindText(source); footer.bindTimestamp(turn.optLong("finished_at"));
+                    }
+                    children.use("gap", "", () -> ui.space(38));
+                });
+            }
+        }
+        recycler.end(); updateComposer();
+    }
+
     private void renderTurn(JSONObject page, JSONObject turn, String key, NativeKeyedViews transcriptViews) {
+        renderTurn(page, turn, key, transcriptViews, true);
+    }
+
+    private void renderTurn(JSONObject page, JSONObject turn, String key, NativeKeyedViews transcriptViews, boolean renderAnswer) {
         JSONArray parts = array(page.optJSONObject("transcript"), "parts");
         int start = Math.max(0, turn.optInt("part_start")),
                 end = Math.min(parts.length(), turn.optInt("part_end", parts.length()));
@@ -2396,27 +2479,33 @@ public final class MainActivity extends Activity {
         JSONArray files = array(turn, "attachments");
         long timestamp = NativeUserRow.timestamp(parts, start, inputEnd, turn.optLong("started_at"));
         if (NativeUserRow.hasContent(input, files, parts, start, inputEnd)) {
-            NativeUserRow userRow = (NativeUserRow) transcriptViews.use(key + "/user", "user",
+            NativeUserRow userRow = (NativeUserRow) transcriptViews.use(renderAnswer ? key + "/user" : "user", "user",
                     () -> new NativeUserRow(ui, operator, input, timestamp, null, this::openMessageLink));
             userRow.bind(operator, input, timestamp, userFiles(page, turn, userRow, start, inputEnd, true));
-            transcriptViews.use(key + "/user-gap", "", () -> ui.space(22));
+            transcriptViews.use(renderAnswer ? key + "/user-gap" : "user-gap", "", () -> ui.space(22));
         }
-        NativeTurn response = (NativeTurn) transcriptViews.use(key + "/response", "", () -> new NativeTurn(ui, parts, inputEnd, end, turn,
-                locale().startsWith("zh"), activityStates.computeIfAbsent(activityKey, value -> new NativeActivityList.State()), this::openMessageLink,
-                transcriptImages(page)));
+        boolean[] created = {false};
+        NativeActivityList.State activityState = activityStates.computeIfAbsent(activityKey, value -> new NativeActivityList.State());
+        NativeTranscriptImages images = transcriptImages(page);
+        NativeTurn response = (NativeTurn) transcriptViews.use(renderAnswer ? key + "/response" : "response", "", () -> {
+            created[0] = true;
+            return new NativeTurn(ui, parts, inputEnd, end, turn,
+                    locale().startsWith("zh"), activityState, this::openMessageLink, images, renderAnswer);
+        });
+        response.rebindForTurn(activityState, images);
+        if (!created[0]) response.bind(parts, inputEnd, end, turn);
         response.userInput((row, from, to) -> {
             int first = inputEnd + from, last = inputEnd + to;
             String text = NativeUserRow.text(parts, first, last);
             row.setVisibility(NativeUserRow.hasContent(text, new JSONArray(), parts, first, last) ? View.VISIBLE : View.GONE);
             row.bind(operator, text, NativeUserRow.timestamp(parts, first, last, turn.optLong("started_at")), userFiles(page, turn, row, first, last, false));
         });
-        response.bind(parts, inputEnd, end, turn);
         JSONObject approval = turn.optJSONObject("pending_approval");
         if (approval != null) transcriptViews.use(key + "/approval/" + approval.optString("id"),
                 new JSONArray().put(approval).put(writable()), () -> approvalCard(page.optString("id"), turn.optString("id"), approval));
         if (!turn.optString("error").isEmpty() && !turn.optString("status").equals("stopped"))
             transcriptViews.use(key + "/error", turn.optString("error"), () -> ui.text(turn.optString("error"), 12, ui.error));
-        transcriptViews.use(key + "/turn-gap", "", () -> ui.space(38));
+        if (renderAnswer) transcriptViews.use(key + "/turn-gap", "", () -> ui.space(38));
     }
 
     private List<NativeAttachmentCards.Item> userFiles(JSONObject page, JSONObject turn, NativeUserRow row, int start, int end, boolean first) {
@@ -2566,14 +2655,14 @@ public final class MainActivity extends Activity {
 
     private void updateHistoryLoading() {
         if (!foreground) { if (historyLoader != null) historyLoader.suspend(); return; }
-        if (destroyed || user == null || client == null || chat == null || !chatID.equals(chat.optString("id")) || history == null) {
+        if (destroyed || user == null || client == null || chat == null || !chatID.equals(chat.optString("id")) || history == null && markwonHistory == null) {
             stopHistory(); return;
         }
         if (historyLoader == null) historyLoader = new NativeHistoryLoader<>(workspaceWorker, main::post);
         final Client captured = client;
         final String auth = csrf, loc = locale();
         String key = generation + "\n" + authEpoch + "\n" + selectionEpoch + "\n" + user.optString("id") + "\n" + chatID + "\n" + loc;
-        final View surface = history;
+        final View surface = markwonHistory != null ? markwonHistory : history;
         historyLoader.bind(key, historyCursor(chat), surface, task -> NativeAfterPaint.schedule(surface, task), new NativeHistoryLoader.Source<JSONObject>() {
             public JSONObject read(NativeHistoryLoader.Cursor from) throws Exception {
                 return (JSONObject) request(captured, "/chats/" + Uri.encode(from.id) + "/history?before=" + Uri.encode(from.before), null, auth, loc);
@@ -3926,6 +4015,7 @@ public final class MainActivity extends Activity {
         closeDesktop();
         if (fileBrowser != null) fileBrowser.deactivate();
         if (historyScroll != null) historyScroll.suspend();
+        if (markwonHistory != null) markwonHistory.stopScroll();
         if (ui != null) ui.dismissMenus();
         monitor.setActive(false);
         recovery.setActive(false);
@@ -3946,6 +4036,7 @@ public final class MainActivity extends Activity {
         destroyed = true;
         if (historyScroll != null) historyScroll.dispose();
         if (transcriptViewport != null) transcriptViewport.dispose();
+        if (markwonHistory != null) markwonHistory.dispose();
         ++generation;
         for (ServerRuntime runtime : serverRuntimes.values()) { stopServerFeed(runtime); runtime.router.stop(); }
         monitor.stop();

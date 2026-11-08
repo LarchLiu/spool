@@ -279,7 +279,7 @@ final class NativeUi extends WebPalette {
             // A virtual transcript row is a CSS origin boundary. Its own position depends on
             // placeholder heights above it; without this, one corrected row re-snaps every
             // mounted text view below and rebuilds their layouts during a fling.
-            if (view instanceof NativeTranscriptViewport.Row) break;
+            if (view instanceof NativeTranscriptViewport.Row || view instanceof NativeMarkwonHistory.ChromeRow) break;
             y += view.getTop();
         }
         return y;

@@ -28,13 +28,13 @@ class NativeTextView extends TextView {
     /** Baseline re-snaps that rebuilt this document's layout; tests pin warm-document reuse with it. */
     int slowAligns;
     // Debug-only process counters for the spool-performance dump; no text content is retained.
-    static long originAligns, originFresh, originNanos, textSets, textSetNanos;
+    static long originAligns, originFresh, originNanos, textSets, textSetNanos, contentSets;
     static long originTopChanges, originRoundingChanges, originMetricChanges;
     static org.json.JSONObject diagnostics() {
         org.json.JSONObject result = new org.json.JSONObject();
         try { result.put("aligns", originAligns).put("freshAligns", originFresh).put("alignMs", originNanos / 1_000_000d)
                 .put("topChanges", originTopChanges).put("roundingChanges", originRoundingChanges).put("metricChanges", originMetricChanges)
-                .put("textSets", textSets).put("textSetMs", textSetNanos / 1_000_000d); }
+                .put("textSets", textSets).put("textSetMs", textSetNanos / 1_000_000d).put("contentSets", contentSets); }
         catch (org.json.JSONException impossible) { throw new IllegalStateException(impossible); }
         return result;
     }
@@ -164,6 +164,7 @@ class NativeTextView extends TextView {
     }
     @Override public void setText(CharSequence value, BufferType type) {
         long started = System.nanoTime();
+        if (value != null && value.length() > 0) contentSets++;
         try { setTextTimed(value, type); } finally { textSets++; textSetNanos += System.nanoTime() - started; }
     }
     private void setTextTimed(CharSequence value, BufferType type) {

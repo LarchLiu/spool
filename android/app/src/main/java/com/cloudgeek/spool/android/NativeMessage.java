@@ -56,9 +56,9 @@ final class NativeMessage extends LinearLayout {
         content = new ClipContent(ui, mine);
         content.addView(NativeMarkdown.view(ui, source, mine, open), new FrameLayout.LayoutParams(mine ? -2 : -1, -2));
         bubble.addView(content, new LinearLayout.LayoutParams(mine ? -2 : -1, -2));
-        toggle = ui.quietButton(ui.t("Show more"), () -> {});
-        toggle.setVisibility(GONE);
         if (mine) {
+            toggle = ui.quietButton(ui.t("Show more"), () -> {});
+            toggle.setVisibility(GONE);
             android.graphics.drawable.GradientDrawable shape = ui.shape(ui.soft, 19, 0);
             shape.setCornerRadii(new float[] {ui.dp(19),ui.dp(19),ui.dp(19),ui.dp(19),ui.dp(5),ui.dp(5),ui.dp(19),ui.dp(19)});
             bubble.setBackground(shape);

@@ -112,6 +112,12 @@ dependencies {
     implementation 'org.commonmark:commonmark-ext-task-list-items:0.24.0'
     implementation 'com.caverock:androidsvg-aar:1.4'
     implementation 'androidx.core:core:1.17.0'
+    implementation 'androidx.recyclerview:recyclerview:1.4.0'
+    implementation('io.noties.markwon:core:4.6.2') { exclude group: 'com.atlassian.commonmark' }
+    implementation('io.noties.markwon:recycler:4.6.2') { exclude group: 'com.atlassian.commonmark' }
+    implementation('io.noties.markwon:ext-tables:4.6.2') { exclude group: 'com.atlassian.commonmark' }
+    implementation('io.noties.markwon:ext-strikethrough:4.6.2') { exclude group: 'com.atlassian.commonmark' }
+    implementation('io.noties.markwon:ext-tasklist:4.6.2') { exclude group: 'com.atlassian.commonmark' }
     implementation 'androidx.exifinterface:exifinterface:1.4.1'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.robolectric:robolectric:4.16.1'

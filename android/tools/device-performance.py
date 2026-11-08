@@ -11,7 +11,7 @@ import time
 import uuid
 from pathlib import Path
 
-from performance_probe import foreground_snapshot, wait_finished_art_trace
+from performance_probe import foreground_snapshot, validate_target, wait_finished_art_trace
 
 
 def main():
@@ -23,6 +23,10 @@ def main():
     parser.add_argument("--method-sampling-us", type=int, default=0,
                         help="Optional ART method sampling; adds overhead, use for attribution only")
     parser.add_argument("--allow-hydrating", action="store_true")
+    parser.add_argument("--min-parts", type=int, default=0,
+                        help="Require at least this many transcript parts before issuing gestures")
+    parser.add_argument("--expect-renderer", choices=("native-views", "markwon-recycler"),
+                        help="Require the selected rendering implementation before issuing gestures")
     parser.add_argument("--wait-history-seconds", type=int, default=0,
                         help="Wait up to 300 seconds for this same foreground chat to finish hydration")
     parser.add_argument("--pause-seconds", type=float, default=1.25,
@@ -34,6 +38,8 @@ def main():
         parser.error("--method-sampling-us must be between 1000 and 100000")
     if not 0 <= args.wait_history_seconds <= 300:
         parser.error("--wait-history-seconds must be between 0 and 300")
+    if args.min_parts < 0:
+        parser.error("--min-parts must be nonnegative")
     if not 0.25 <= args.pause_seconds <= 10:
         parser.error("--pause-seconds must be between 0.25 and 10")
     if not os.environ.get("TMPDIR", "").startswith(str(root / "build/tmp/")):
@@ -57,11 +63,12 @@ def main():
     try:
         before = snapshot(allow_hydrating=args.allow_hydrating or args.wait_history_seconds > 0)
         deadline = time.monotonic() + args.wait_history_seconds
-        while before.get("historyHasMore") and not args.allow_hydrating:
+        while (before.get("historyHasMore") or before.get("renderPending", 0)) and not args.allow_hydrating:
             if time.monotonic() >= deadline:
                 raise ValueError("The same foreground chat is still hydrating; no gestures were issued")
             time.sleep(min(5, max(0, deadline - time.monotonic())))
             before = snapshot(before, allow_hydrating=True)
+        validate_target(before, args.min_parts, args.expect_renderer)
         if args.method_sampling_us:
             # Android's system_server cannot write app/external-storage contexts.
             # This device-only exception is removed in finally; host scratch stays in build/tmp.
@@ -95,6 +102,8 @@ def main():
             "direction": args.direction,
             "pauseSeconds": args.pause_seconds,
             "methodSamplingUs": args.method_sampling_us,
+            "minParts": args.min_parts,
+            "expectedRenderer": args.expect_renderer,
             "limitations": "Memory and gfxinfo counters cover the process, not only the selected Activity. Not finger-to-photon latency or Web/native raster parity.",
         }
         if profiling:

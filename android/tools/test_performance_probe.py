@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from performance_probe import foreground_snapshot, wait_finished_art_trace
+from performance_probe import foreground_snapshot, validate_target, wait_finished_art_trace
 
 
 class PerformanceProbeTest(unittest.TestCase):
@@ -52,6 +52,20 @@ class PerformanceProbeTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "hydrating"):
             foreground_snapshot(output)
         self.assertTrue(foreground_snapshot(output, allow_hydrating=True)["historyHasMore"])
+
+    def test_pending_markdown_requires_settling_before_a_baseline(self):
+        output = self.dump(self.snapshot(renderPending=3))
+        with self.assertRaisesRegex(ValueError, "Markdown parsing"):
+            foreground_snapshot(output)
+        self.assertEqual(3, foreground_snapshot(output, allow_hydrating=True)["renderPending"])
+        self.assertEqual(0, foreground_snapshot(self.dump(self.snapshot(renderPending=0)))["renderPending"])
+
+    def test_short_chats_and_wrong_renderers_are_rejected_before_gestures(self):
+        with self.assertRaisesRegex(ValueError, "at least 1000.*no gestures"):
+            validate_target(self.snapshot(parts=49, renderer="markwon-recycler"), 1000, "markwon-recycler")
+        with self.assertRaisesRegex(ValueError, "Expected renderer.*no gestures"):
+            validate_target(self.snapshot(parts=2000, renderer="native-views"), 1000, "markwon-recycler")
+        validate_target(self.snapshot(parts=2000, renderer="markwon-recycler"), 1000, "markwon-recycler")
 
     def test_rejected_gestures_cannot_be_reported_as_valid_fling_samples(self):
         with self.assertRaisesRegex(ValueError, "rejected"):

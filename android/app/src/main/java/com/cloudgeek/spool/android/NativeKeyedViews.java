@@ -51,6 +51,13 @@ final class NativeKeyedViews {
 
     boolean staged() { return pending != null; }
 
+    /** Park the current sibling order for reattachment without running unchanged binders. */
+    void detach() {
+        pending = new ArrayList<>();
+        for (int i = 0; i < parent.getChildCount(); i++) pending.add(parent.getChildAt(i));
+        parent.removeAllViews();
+    }
+
     /** The committed, detached views in sibling order; callers must not modify the list. */
     List<View> stagedViews() { return pending; }
 

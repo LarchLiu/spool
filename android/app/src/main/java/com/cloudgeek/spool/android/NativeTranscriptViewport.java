@@ -31,7 +31,7 @@ final class NativeTranscriptViewport implements ViewTreeObserver.OnPreDrawListen
             this.render = render;
             if (children != null) update();
             // Data changed while the document waited offscreen; refresh it through the keyed path at mount.
-            else if (prepared) stale = true;
+            else if (cached != null) stale = true;
         }
 
         private void update() { children.begin(); render.accept(children); children.end(); }
@@ -46,7 +46,7 @@ final class NativeTranscriptViewport implements ViewTreeObserver.OnPreDrawListen
             if (mounted() || render == null) return;
             children = cached == null ? new NativeKeyedViews(this) : cached;
             cached = null;
-            // A prepared, current document only needs attaching: no Markdown or text is rebuilt.
+            // An unchanged parked document only needs attaching, including previously visible rows.
             if (children.staged() && !stale) children.attach(); else update();
             prepared = false; stale = false;
             for (int i = 0; i < getChildCount(); i++) if (getChildAt(i) instanceof NativeUserRow) {
@@ -75,7 +75,8 @@ final class NativeTranscriptViewport implements ViewTreeObserver.OnPreDrawListen
             retainedHeight = Math.max(1, getMeasuredHeight());
             for (int i = 0; i < getChildCount(); i++) if (getChildAt(i) instanceof NativeUserRow)
                 expanded.put(i, ((NativeUserRow) getChildAt(i)).message.content.expanded);
-            removeAllViews(); cached = retain ? children : null; children = null;
+            if (retain) children.detach(); else removeAllViews();
+            cached = retain ? children : null; children = null;
         }
 
         boolean pinned() { return mounted() && (hasFocus() || selected(this)); }

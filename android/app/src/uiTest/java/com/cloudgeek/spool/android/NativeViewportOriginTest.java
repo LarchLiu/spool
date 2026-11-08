@@ -35,6 +35,34 @@ public class NativeViewportOriginTest {
         if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++) collect(((ViewGroup) view).getChildAt(i), out);
     }
 
+    @Test public void recyclerOffsetsDoNotResnapLegacyUserOrExpandedActivityText() {
+        RuntimeEnvironment.setQualifiers("w360dp-h800dp-420dpi");
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false);
+            android.widget.FrameLayout host = new android.widget.FrameLayout(ui.context);
+            NativeMarkwonHistory.ChromeRow item = new NativeMarkwonHistory.ChromeRow(ui);
+            item.addView(new NativeUserRow(ui, null, "中文 **加粗** and English prompt.\n\nMore prompt.", 1000L, null, s -> {}));
+            item.addView(NativeMarkdown.progress(ui, "Expanded **tool** activity.\n\nMore activity.", s -> {}));
+            host.addView(item, new android.widget.FrameLayout.LayoutParams(-1, -2)); controller.get().setContentView(host);
+            for (int pass = 0; pass < 4; pass++) {
+                host.measure(View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(2000, View.MeasureSpec.EXACTLY));
+                host.layout(0, 0, 1080, 2000); host.getViewTreeObserver().dispatchOnPreDraw();
+            }
+            List<NativeTextView> texts = new ArrayList<>(); collect(item, texts); assertTrue(texts.size() >= 4);
+            List<Float> origins = new ArrayList<>(); List<Object> documents = new ArrayList<>(), layouts = new ArrayList<>();
+            for (NativeTextView text : texts) { origins.add(NativeUi.cssBlockOrigin(text)); documents.add(text.getText()); layouts.add(text.getLayout()); }
+            long aligns = NativeTextView.originAligns;
+            for (int frame = 0; frame < 120; frame++) {
+                item.offsetTopAndBottom(-7); host.getViewTreeObserver().dispatchOnPreDraw();
+                for (int i = 0; i < texts.size(); i++) {
+                    assertEquals(origins.get(i), NativeUi.cssBlockOrigin(texts.get(i)), 0f);
+                    assertSame(documents.get(i), texts.get(i).getText()); assertSame(layouts.get(i), texts.get(i).getLayout());
+                }
+            }
+            assertEquals("RecyclerView translates whole rows; their local text layouts must remain unchanged", aligns, NativeTextView.originAligns);
+        }
+    }
+
     @Test public void warmDocumentsAreNotResnappedWhileDetachedOrOnRemountAndOtherRowsHeightsDoNotLeakIntoTheirOrigin() {
         RuntimeEnvironment.setQualifiers("w360dp-h800dp-420dpi");
         try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {

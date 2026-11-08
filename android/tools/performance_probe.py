@@ -5,6 +5,14 @@ import struct
 import time
 
 
+def validate_target(snapshot, min_parts=0, renderer=None):
+    """Reject an unintended short chat or renderer before issuing any gesture."""
+    if snapshot.get("parts", 0) < min_parts:
+        raise ValueError(f"The foreground chat has {snapshot.get('parts', 0)} parts; at least {min_parts} are required; no gestures were issued")
+    if renderer is not None and snapshot.get("renderer") != renderer:
+        raise ValueError(f"Expected renderer {renderer}, got {snapshot.get('renderer', 'unknown')}; no gestures were issued")
+
+
 def wait_finished_art_trace(copy_trace, path, attempts=40, interval=.25):
     """Profile stop is asynchronous; reject partial or still-growing ART output."""
     previous = None
@@ -55,6 +63,8 @@ def foreground_snapshot(output, expected=None, require_fling=False, allow_hydrat
         raise ValueError("The Activity or selected chat changed; measurement aborted")
     if value.get("historyHasMore") is not False and not allow_hydrating:
         raise ValueError("History is still hydrating; wait for it to finish or explicitly allow hydration measurements")
+    if value.get("renderPending", 0) and not allow_hydrating:
+        raise ValueError("Markdown parsing is still pending; wait for the renderer to settle")
     if require_fling and value.get("flingAccepted") is not True:
         raise ValueError("The focused page rejected the targeted gesture; measurement aborted")
     return value

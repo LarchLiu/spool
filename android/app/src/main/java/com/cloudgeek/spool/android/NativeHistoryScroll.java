@@ -13,9 +13,12 @@ final class NativeHistoryScroll implements ViewTreeObserver.OnPreDrawListener {
         boolean following = true;
         int top;
         Anchor anchor;
-        void select(String next) { if (!key.equals(next)) { key = next; following = true; top = 0; anchor = null; } }
+        String recyclerKey = "";
+        int recyclerItem, recyclerOffset;
+        void select(String next) { if (!key.equals(next)) { key = next; following = true; top = 0; anchor = null; recyclerKey = ""; recyclerItem = recyclerOffset = 0; } }
         void copyFrom(State other) {
             key = other.key; following = other.following; top = other.top;
+            recyclerKey = other.recyclerKey; recyclerItem = other.recyclerItem; recyclerOffset = other.recyclerOffset;
             // Anchors refer to Views owned by the old page; only keep its logical position.
             anchor = null;
         }
@@ -142,7 +145,10 @@ final class NativeHistoryScroll implements ViewTreeObserver.OnPreDrawListener {
     }
 
     private void scroll(int top) {
-        restoring = true; view.scrollTo(0, top); restoring = false; rememberPosition();
+        restoring = true; view.scrollTo(0, top); restoring = false;
+        // A shrinking document may clamp an old reading position to the new bottom.
+        // The suppressed scroll callback cannot resume following in that case.
+        if (state.anchor == null && view.getScrollY() < top) updatePosition(); else rememberPosition();
     }
     private void bottom() { scroll(Math.max(0, content.getHeight() - view.getHeight())); }
 

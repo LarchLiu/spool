@@ -265,16 +265,7 @@ final class NativeMarkdown {
 
     private View block(Node node, int color, Bound bound) {
         if (node instanceof Paragraph || node instanceof Heading) {
-            boolean fresh = bound.view == null;
-            TextView view = inline(node, color, (TextView) bound.view);
-            if (fresh && node instanceof Heading) {
-                float size = fontSize * headingScale((Heading) node);
-                ui.typography(view, Math.round(size), color, 650);
-                view.setTextSize(size);
-                ui.cssLineHeight(view, 1.4f);
-                view.setLetterSpacing(-.02f);
-            }
-            return view;
+            return inline(node, color, (TextView) bound.view);
         }
         if (node instanceof FencedCodeBlock || node instanceof IndentedCodeBlock) {
             String literal = node instanceof FencedCodeBlock ? ((FencedCodeBlock) node).getLiteral()
@@ -382,16 +373,7 @@ final class NativeMarkdown {
                     String signature = sourceKey(cell, color, false) + "/" + value.getAlignment();
                     TextView text = (TextView) cellState.view;
                     if (!signature.equals(cellState.signature)) {
-                        boolean fresh = text == null;
                         text = inline(cell, color, text);
-                        if (fresh) {
-                            if (value.isHeader()) ui.typography(text, 13, color, 650);
-                            text.setTextSize(fontSize * .92f);
-                            ui.cssLineHeight(text, lineHeight);
-                            text.setPadding(ui.dp(12), ui.dp(7), ui.dp(12), ui.dp(8));
-                            text.setBackgroundColor(value.isHeader() ? ui.soft : 0x00000000);
-                            NativeCssWrap.install(text);
-                        }
                         text.setGravity(Gravity.CENTER_VERTICAL | (value.getAlignment() == TableCell.Alignment.RIGHT ? Gravity.END
                                 : value.getAlignment() == TableCell.Alignment.CENTER || value.isHeader() && value.getAlignment() == null
                                 ? Gravity.CENTER_HORIZONTAL : Gravity.START));
@@ -436,9 +418,26 @@ final class NativeMarkdown {
         inlineView = text;
         if (fresh) {
             ui.preciseText(text, true);
-            ui.cssLineHeight(text, lineHeight);
+            if (parent instanceof Heading) {
+                float size = fontSize * headingScale((Heading) parent);
+                ui.typography(text, Math.round(size), color, 650);
+                text.setTextSize(size);
+                text.setLetterSpacing(-.02f);
+            } else if (parent instanceof TableCell) {
+                TableCell cell = (TableCell) parent;
+                if (cell.isHeader()) ui.typography(text, 13, color, 650);
+                text.setTextSize(fontSize * .92f);
+                text.setPadding(ui.dp(12), ui.dp(7), ui.dp(12), ui.dp(8));
+                text.setBackgroundColor(cell.isHeader() ? ui.soft : 0x00000000);
+            }
+            ui.cssLineHeight(text, parent instanceof Heading ? 1.4f : lineHeight);
             text.setBreakStrategy(android.graphics.text.LineBreaker.BREAK_STRATEGY_SIMPLE);
             text.setHyphenationFrequency(android.text.Layout.HYPHENATION_FREQUENCY_NONE);
+            // These platform setters call setText themselves. Configure the empty view first,
+            // so CJK fallback spans and selectable documents are built only once per block.
+            text.setTextIsSelectable(true);
+            text.setMovementMethod(LinkMovementMethod.getInstance());
+            if (parent instanceof TableCell) NativeCssWrap.install(text);
         }
         SpannableStringBuilder out = new SpannableStringBuilder();
         boolean oldWhitespace = normalWhitespace;
@@ -447,10 +446,6 @@ final class NativeMarkdown {
         appendChildren(parent, out, true);
         normalWhitespace = oldWhitespace;
         if (fresh) text.setText(out); else ((NativeTextView) text).bindMarkdownText(out);
-        if (fresh) {
-            text.setTextIsSelectable(true);
-            text.setMovementMethod(LinkMovementMethod.getInstance());
-        }
         return text;
     }
 

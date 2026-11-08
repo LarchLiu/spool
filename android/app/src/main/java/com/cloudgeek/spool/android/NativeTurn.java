@@ -19,9 +19,10 @@ final class NativeTurn extends LinearLayout {
     private boolean running, answered;
     private final Runnable tick;
     private final NativeUi ui;
-    private final NativeActivityList.State state;
+    private NativeActivityList.State state;
     private final Consumer<String> open;
-    private final NativeTranscriptImages images;
+    private NativeTranscriptImages images;
+    private final boolean renderAnswer;
     private final NativeKeyedViews children;
     private JSONObject current;
     private Object bound;
@@ -38,8 +39,14 @@ final class NativeTurn extends LinearLayout {
 
     NativeTurn(NativeUi ui, JSONArray parts, int start, int end, JSONObject turn,
             boolean chinese, NativeActivityList.State state, Consumer<String> open, NativeTranscriptImages images) {
+        this(ui, parts, start, end, turn, chinese, state, open, images, true);
+    }
+
+    NativeTurn(NativeUi ui, JSONArray parts, int start, int end, JSONObject turn,
+            boolean chinese, NativeActivityList.State state, Consumer<String> open, NativeTranscriptImages images, boolean renderAnswer) {
         super(ui.context);
         this.ui = ui; this.state = state; this.open = open; this.images = images;
+        this.renderAnswer = renderAnswer;
         setOrientation(VERTICAL);
         children = new NativeKeyedViews(this);
         tick = new Runnable() {
@@ -53,22 +60,57 @@ final class NativeTurn extends LinearLayout {
     }
 
     void bind(JSONArray parts, int start, int end, JSONObject turn) {
-        JSONArray inputs = new JSONArray(), content = new JSONArray();
+        JSONArray actions = turn.optJSONArray("actions");
+        boolean nextRunning = turn.optString("status").equals("running");
+        if (!renderAnswer && !nextRunning && !state.open) {
+            // A Markwon answer has its own block adapter. This folded row only displays
+            // turn metadata; keep the latest deferred parts without cloning tool JSON.
+            bound = null;
+        } else {
+            JSONArray inputs = new JSONArray(), content = new JSONArray();
+            for (int i = start; i < end; i++) {
+                JSONObject part = parts.optJSONObject(i);
+                if (part != null) content.put(part);
+            }
+            inputs.put(content);
+            for (String field : new String[] {"status", "compacting", "backend", "model", "reasoning_effort", "started_at", "finished_at", "actions"}) inputs.put(turn.opt(field));
+            if (actions != null && ui.people != null) for (int i = 0; i < actions.length(); i++) {
+                JSONObject action = actions.optJSONObject(i);
+                if (action != null) inputs.put(ui.people.apply(action.optString("user_id")));
+            }
+            if (NativeChatState.equivalent(bound, inputs)) return;
+            bound = NativeChatState.snapshot(inputs);
+        }
+        current = turn; running = nextRunning;
+        List<JSONObject> finalParts = finalParts(parts, start, end, running), process = new ArrayList<>();
         for (int i = start; i < end; i++) {
             JSONObject part = parts.optJSONObject(i);
-            if (part != null) content.put(part);
+            if (part != null && !finalParts.contains(part)) process.add(part);
         }
-        inputs.put(content);
-        for (String field : new String[] {"status", "compacting", "backend", "model", "reasoning_effort", "started_at", "finished_at", "actions"}) inputs.put(turn.opt(field));
-        JSONArray actions = turn.optJSONArray("actions");
-        if (actions != null && ui.people != null) for (int i = 0; i < actions.length(); i++) {
-            JSONObject action = actions.optJSONObject(i);
-            if (action != null) inputs.put(ui.people.apply(action.optString("user_id")));
+        answered = !finalParts.isEmpty();
+        CharSequence summary = summary(ui, turn, answered, System.currentTimeMillis());
+        children.begin();
+        activity = (NativeActivityList) children.use("activity", "activity",
+                () -> new NativeActivityList(ui, process, turn.optString("backend"), summary, running && !answered, state, open, images));
+        activity.bindParts(process, turn.optString("backend"), summary, running && !answered);
+        String source = answer(finalParts);
+        if (!source.isEmpty() && renderAnswer) {
+            NativeMessage message = (NativeMessage) children.use("answer", "answer",
+                    () -> new NativeMessage(ui, source, false, null, turn.optLong("finished_at"), ui.chinese, open));
+            message.bindSource(source);
+            message.bindActions(actions);
+            message.footer.bindTimestamp(turn.optLong("finished_at"));
+        } else if (source.isEmpty() && actions != null && actions.length() > 0) {
+            NativeTurnActions audit = (NativeTurnActions) children.use("actions", "actions", () -> new NativeTurnActions(ui));
+            audit.bind(actions);
         }
-        if (NativeChatState.equivalent(bound, inputs)) return;
-        bound = NativeChatState.snapshot(inputs); current = turn;
-        running = turn.optString("status").equals("running");
-        List<JSONObject> finalParts = new ArrayList<>(), process = new ArrayList<>();
+        children.end();
+        main.removeCallbacks(tick);
+        if (running && isAttachedToWindow() && getWindowVisibility() == VISIBLE) tick.run();
+    }
+
+    private static List<JSONObject> finalParts(JSONArray parts, int start, int end, boolean running) {
+        List<JSONObject> finalParts = new ArrayList<>();
         int lastActivity = -1, lastUser = -1;
         for (int i = start; i < end; i++) {
             JSONObject part = parts.optJSONObject(i);
@@ -85,16 +127,14 @@ final class NativeTurn extends LinearLayout {
                 JSONObject part = parts.optJSONObject(i);
                 if (part != null && text(part) && part.optString("phase").isEmpty()) finalParts.add(part);
             }
-        for (int i = start; i < end; i++) {
-            JSONObject part = parts.optJSONObject(i);
-            if (part != null && !finalParts.contains(part)) process.add(part);
-        }
-        answered = !finalParts.isEmpty();
-        CharSequence summary = summary(ui, turn, answered, System.currentTimeMillis());
-        children.begin();
-        activity = (NativeActivityList) children.use("activity", "activity",
-                () -> new NativeActivityList(ui, process, turn.optString("backend"), summary, running && !answered, state, open, images));
-        activity.bindParts(process, turn.optString("backend"), summary, running && !answered);
+        return finalParts;
+    }
+
+    static String answer(JSONArray parts, int start, int end, JSONObject turn) {
+        return answer(finalParts(parts, start, end, turn.optString("status").equals("running")));
+    }
+
+    private static String answer(List<JSONObject> finalParts) {
         StringBuilder answer = new StringBuilder();
         String previous = "";
         for (JSONObject part : finalParts) {
@@ -103,23 +143,16 @@ final class NativeTurn extends LinearLayout {
             answer.append(part.optString("text"));
             previous = id;
         }
-        if (answer.length() > 0) {
-            String source = answer.toString();
-            NativeMessage message = (NativeMessage) children.use("answer", "answer",
-                    () -> new NativeMessage(ui, source, false, null, turn.optLong("finished_at"), ui.chinese, open));
-            message.bindSource(source);
-            message.bindActions(actions);
-            message.footer.bindTimestamp(turn.optLong("finished_at"));
-        } else if (actions != null && actions.length() > 0) {
-            NativeTurnActions audit = (NativeTurnActions) children.use("actions", "actions", () -> new NativeTurnActions(ui));
-            audit.bind(actions);
-        }
-        children.end();
-        main.removeCallbacks(tick);
-        if (running && isAttachedToWindow() && getWindowVisibility() == VISIBLE) tick.run();
+        return answer.toString();
     }
 
     void userInput(NativeActivityList.UserInput input) { activity.userInput(input); }
+
+    void rebindForTurn(NativeActivityList.State next, NativeTranscriptImages nextImages) {
+        if (state == next) return;
+        main.removeCallbacks(tick); running = answered = false; current = null; bound = null;
+        state = next; images = nextImages; activity.rebindForTurn(next, nextImages);
+    }
 
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();

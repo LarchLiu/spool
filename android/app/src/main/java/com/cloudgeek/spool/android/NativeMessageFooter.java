@@ -64,6 +64,8 @@ final class NativeMessageFooter extends LinearLayout {
 
     void bindText(String value) { text = value; copy.setEnabled(!value.isEmpty()); }
 
+    void resetFeedback() { copy.removeCallbacks(reset); reset.run(); }
+
     void bindAuthor(String name) {
         if (!mine || author.getText().toString().equals(name)) return;
         author.setText(name);
@@ -123,7 +125,7 @@ final class NativeMessageFooter extends LinearLayout {
     }
 
     @Override protected void onDetachedFromWindow() {
-        copy.removeCallbacks(reset); reset.run();
+        resetFeedback();
         super.onDetachedFromWindow();
     }
 }

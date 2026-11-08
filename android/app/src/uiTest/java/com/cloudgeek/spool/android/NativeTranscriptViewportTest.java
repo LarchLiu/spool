@@ -76,11 +76,15 @@ public class NativeTranscriptViewportTest {
             NativeHistoryScroll.State state = new NativeHistoryScroll.State(); state.following = false;
             NativeHistoryScroll behavior = new NativeHistoryScroll(scroll, content, state, 90);
             NativeTranscriptViewport viewport = new NativeTranscriptViewport(scroll, content, behavior, state);
+            AtomicInteger firstRenders = new AtomicInteger();
             for (int i = 0; i < 100; i++) {
                 final int index = i; NativeTranscriptViewport.Row row = new NativeTranscriptViewport.Row(ui); row.partCount = 200;
-                row.bind(children -> children.use("body", index, () -> {
-                    TextView text = ui.text("Turn " + index, 14, ui.text); text.setMinHeight(240); return text;
-                })); content.addView(row);
+                row.bind(children -> {
+                    if (index == 0) firstRenders.incrementAndGet();
+                    children.use("body", index, () -> {
+                        TextView text = ui.text("Turn " + index, 14, ui.text); text.setMinHeight(240); return text;
+                    });
+                }); content.addView(row);
             }
             settle(scroll);
             NativeTranscriptViewport.Row first = (NativeTranscriptViewport.Row) content.getChildAt(0);
@@ -88,11 +92,16 @@ public class NativeTranscriptViewportTest {
             scroll.scrollTo(0, 2000); settle(scroll); assertFalse(first.mounted());
             long deferred = viewport.metrics().getLong("drawDeferrals");
             scroll.scrollTo(0, 0); settle(scroll); assertSame("Reversing scroll must not rebuild the same document", original, first.getChildAt(0));
+            assertEquals("Unchanged cached rows must attach without rerunning turn/Markdown binders", 1, firstRenders.get());
             assertEquals("Known-height remounts must not cancel a scroll frame", deferred, viewport.metrics().getLong("drawDeferrals"));
             assertTrue(viewport.metrics().getLong("cacheHits") > 0);
             scroll.scrollTo(0, 2000); settle(scroll);
-            first.bind(children -> children.use("body", "updated", () -> { TextView text = ui.text("Updated offscreen", 14, ui.text); text.setMinHeight(240); return text; }));
+            first.bind(children -> {
+                firstRenders.incrementAndGet();
+                children.use("body", "updated", () -> { TextView text = ui.text("Updated offscreen", 14, ui.text); text.setMinHeight(240); return text; });
+            });
             scroll.scrollTo(0, 0); settle(scroll); assertEquals("Updated offscreen", ((TextView) first.getChildAt(0)).getText().toString());
+            assertEquals("A real offscreen update must still rebind before attaching", 2, firstRenders.get());
             for (int y = 0; y < 18000; y += 1600) { scroll.scrollTo(0, y); settle(scroll); }
             assertTrue(viewport.metrics().getInt("cachedRows") <= 12); assertTrue(viewport.metrics().getInt("cachedViews") <= 768);
             assertTrue(viewport.metrics().getInt("cachedCharacters") <= 262144); assertTrue(viewport.metrics().getInt("cachedParts") <= 2048);

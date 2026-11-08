@@ -210,6 +210,7 @@ final class NativeCjkFallback {
     }
 
     private static boolean cjk(int code) {
+        if (code < 0x2e80) return false;
         Character.UnicodeScript script = Character.UnicodeScript.of(code);
         return script == Character.UnicodeScript.HAN || script == Character.UnicodeScript.HIRAGANA
                 || script == Character.UnicodeScript.KATAKANA || script == Character.UnicodeScript.BOPOMOFO

@@ -425,3 +425,172 @@ main-thread time when it is built, a fling that never pauses still mounts cold,
 and the first CSS baseline snap remains on the mount path. Raw content-free
 reports are `build/artifacts/android-scroll-prefetch/pause3-{on,off}-up*.json`;
 the 1.25-second-cadence runs are `up.json`, `alternate.json` and `ab*.json`.
+
+## Markwon Recycler Trial
+
+A debug-only opt-in now renders assistant answers with Markwon 4.6.2's official
+`MarkwonAdapter` / `SimpleEntry`, composed with the existing native user rows,
+activity disclosures, approvals, actions and message footers using AndroidX
+`ConcatAdapter`. A single `RecyclerView` is the scrolling surface. Markdown
+blocks are recycled across answers rather than mounting a whole turn inside a
+`NestedScrollView`. The GFM tables, task-list and strikethrough plugins are
+enabled; tables use Markwon's span renderer. File citations retain their native
+file action through a parser/visitor extension and all links use the existing
+message-link router. Images do not introduce an automatic remote image loader.
+
+The trial uses the existing CommonMark 0.24.0 classes. The obsolete
+`com.atlassian.commonmark` transitive artifacts are excluded from every Markwon
+dependency to prevent duplicate `org.commonmark` classes in the APK. The
+API26/35 GFM tests exercise the resulting binary combination, including ordered
+lists, tables, task lists, strikethrough and file citations.
+
+Parsing and native text precomputation run on an owned single-thread worker.
+Changed or removed answers and
+disposed pages reject stale results. Unchanged sources retain their official
+adapter and node/span cache; hydration inserts earlier adapters while retaining
+the native reading position. The background worker stops when the page is
+disposed. Prepared data is published before its nodes; text binding remains
+synchronous. Upstream explicitly warns
+that `PrecomputedTextSetterCompat` must not be used directly with
+`markwon-recycler`, because its asynchronous `setText` can overwrite a recycled
+holder. The trial uses a synchronous TextSetter with the public AndroidX
+`TextViewCompat.setPrecomputedText` API instead. See the [official implementation warning](https://github.com/noties/Markwon/blob/master/markwon-core/src/main/java/io/noties/markwon/PrecomputedTextSetterCompat.java).
+
+Enable the trial on a debug APK, preserving app data:
+
+```sh
+sh android/tools/run.sh adb -s DEVICE_SERIAL shell am force-stop com.cloudgeek.spool.android.dev
+sh android/tools/run.sh adb -s DEVICE_SERIAL shell am start \
+  -n com.cloudgeek.spool.android.dev/com.cloudgeek.spool.android.MainActivity \
+  --ez spool_markwon true
+```
+
+The setting survives app restarts in the debug package. Repeat the commands with
+`--ez spool_markwon false` to select the existing renderer. The intent option is
+accepted only when the package is debuggable. The existing renderer remains the
+release default while this trial is evaluated.
+
+The performance dump identifies `renderer: "markwon-recycler"` and reports
+block count, created/bound/recycled holders, bind times, parse time, parse errors
+and `renderPending`. Settled-history measurements wait for both network history
+and background Markdown parsing. RecyclerView scroll range/offset are native
+estimates based on visible item sizes; they are not directly comparable with
+the previous renderer's exact document pixel coordinates.
+
+This is a performance and interaction trial. Markwon's typography, table
+wrapping and code-block presentation are not the existing Web raster contract;
+the current trial does not add code syntax highlighting to the Markwon blocks.
+User bubbles and expanded tool/activity details retain their existing native
+renderers. Content-free device measurements and the verification summary live
+in `build/artifacts/android-scroll-debug/`.
+
+### Completed long-session retest
+
+The initial Markwon trial checkpoint APK SHA256 was
+`df2989d8d5609b951cf5b1f2993191561c1746d8269db4599cfc55d3e4a268cd`.
+The user selected the same API34-device chat with 36 turns and 2,382 parts. All
+history pages and background parses completed before the three runs; the list
+contained 247 native/Markdown blocks and all runs stayed on the same Activity
+and selection epoch.
+
+| Native ADB fling run | Janky frames | P95 | P99 |
+| --- | --- | --- | --- |
+| 24 upward, 350ms pauses | 114 / 980 (11.63%) | 32ms | 77ms |
+| 24 downward, 350ms pauses | 109 / 1,008 (10.81%) | 34ms | 73ms |
+| 32 alternating, 250ms pauses | 60 / 1,208 (4.97%) | 22ms | 27ms |
+
+The alternating run stays in one nearby warmed interval. Each run created zero
+new holders and performed zero additional Markdown parsing; traversal still
+spent about 1.9 seconds binding existing holders, including native user/activity
+and footer subtrees. An additional non-overflowed ART sample attributes remaining
+work to those native bindings and official Markdown TextView binding. Its frame
+times are not an uninstrumented baseline, and bridge/overload inclusive method
+totals overlap.
+
+The tail is shorter than the earlier 150–200ms native samples on this chat, but
+starting positions and cache states differ. At that checkpoint the approximately 11% traversal
+jank remains a limitation; these numbers do not establish a controlled speed
+ratio or completely smooth scrolling.
+
+Two integration corrections are in the final APK: Recycler native user/tool
+rows are local CSS text-origin boundaries, so offsetting an item does not
+re-snap its text; `renderMarkwonChat` schedules the history loader on every
+render, so hydration continues past the initial pages. An API26/35 production
+Activity test loads successive pages after successive paints until `has_more`
+is false and preserves the composer document/focus. The measurement tool also
+accepts `--min-parts 1000 --expect-renderer markwon-recycler` and aborts before
+gesturing when the wrong chat/renderer is selected.
+
+The latest 40 Markwon/history/origin tests and 14 Python probe tests pass;
+the preceding 94-test focused run, APK build and lint also passed. A broader
+1,036-test run retained five failures: one activity-classification fixture
+mismatch and four native-library classloader conflicts. The native syntax
+groups pass when run separately. The full suite was not repeated after the
+final origin/history corrections. Exact logs, report paths and limitations are
+recorded in `build/artifacts/android-scroll-debug/verification.json`.
+
+### Native holder reuse and prepared text follow-up
+
+The user-authorized continuation addresses the sampled native row construction,
+date formatting, folded tool snapshots and Markdown TextView work. The installed
+APK SHA256 is now
+`d1534f5250d7a03d634f9f0e20bb1be0fb80b7c32c829cd9409b9272ca9d6daa`.
+
+Native headings, footers and other UI have separate shared view types and
+bounded recycled pools (8 heading, 8 footer, 2 other holders; 24 Markdown
+holders and the existing 8-item view cache). A recycled native holder retains
+its keyed widgets; generic user/response keys allow a new turn to reuse the
+bubble, footer and activity-summary widgets. Transferring ownership clears
+selection/copy feedback and switches to the destination turn's own disclosure
+state, deferred tool parts and image actions. Returning to a message restores
+its user expansion state. An unchanged owner/revision skips binding. Removed
+or disposed pages clear retained holders with the RecyclerView.
+
+Folded completed Markwon turns retain their latest deferred tool data without
+deep-copying it for an invisible comparison; expanded and live paths still
+detect changes. New turns no longer execute their constructor binding again
+immediately in `renderTurn`. `NativeMessageTime` reuses bounded, per-thread
+formatters (16) and formatted results (128). The result keys include timestamp,
+locale, a cloned time zone and today/same-year classification; day, year and
+custom-zone changes cannot reuse an incorrect display value.
+
+The background worker now renders each Markdown node to styled text and
+precomputes native metrics using `PrecomputedTextCompat`. The official adapter
+still owns block binding/recycling and binds synchronously through the public
+AndroidX setter. Nodes with ReplacementSpans, including the tested tables, keep
+native measurement; incompatible font/density changes fall back to a copied
+styled document with the current widget metrics. No background task writes to
+a recycled TextView. Stale/removed/disposed results are still rejected. The
+current chat prepared 175 blocks: 170 precomputed and 5 native-measurement
+exceptions, with zero precompute errors or binding fallbacks.
+
+All runs below used the same fully loaded 36-turn, 2,382-part chat and 247 blocks.
+Traversal used 24 flings at 350ms intervals; alternating used 32 at 250ms.
+
+| Run | Janky frames | P95 | P99 | Total binding time |
+| --- | --- | --- | --- | --- |
+| Upward, final build | 32 / 1,148 (2.79%) | 18ms | 36ms | 577ms |
+| Downward, final build | 33 / 1,174 (2.81%) | 17ms | 32ms | 499ms |
+| Alternating, final build | 8 / 1,239 (0.65%) | 17ms | 19ms | 21ms |
+| Upward, independent repeat | 35 / 1,149 (3.05%) | 19ms | 34ms | 549ms |
+| Downward, independent repeat | 32 / 1,180 (2.71%) | 17ms | 34ms | 520ms |
+
+For comparison, the initial trial above had 10.81–11.63% traversal jank, 73–77ms
+P99 and about 1.9 seconds binding per traversal. Starting rows, cache warmth and
+frame totals vary, so these are repeated device observations rather than a
+controlled speed ratio. The final non-overflowed method sample contains no
+samples of `NativeMessageFooter`, `NativeTurn` or `NativeActivityList`
+constructors and no `NativeChatState.snapshot` samples. That is attribution
+evidence for the removed hot paths, not proof those functions never execute.
+Remaining work is predominantly native text binding/measurement and rendering.
+The 2.7–3.1% traversal jank still means this is not a claim of zero missed frames.
+
+The latest focused suite passes all 126 tests, with APK build and lint passing.
+It checks actual user/footer/summary object reuse, per-turn expansion, old/new
+tool data, selection and copy isolation, date/year/zone/cache bounds,
+background result races, unchanged answer caching, and equal native text line
+starts/ends/baselines/heights at mdpi/420dpi/xxhdpi on API26/35. Prior full-suite
+failures remain documented above; the full suite was not re-run for this
+continuation. Current reports are `hotspots-precomputed-{up,down,alternate}.json`,
+`hotspots-repeat-{up,down}.json` and `hotspots-precomputed-methods.json`, plus
+`hotspots-tests.log` and the updated verification manifest.
