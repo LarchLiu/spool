@@ -46,15 +46,18 @@ final class NativeServerTabs extends NativeTabs {
             int color = statusColor(ui, state);
             Dot dot = ((Spanned) tab.getText()).getSpans(0, 1, Dot.class)[0];
             if (dot.color != color) { dot.color = color; tab.invalidate(); }
-            String label = state.equals("connected") ? "Connected" : state.equals("connecting") ? "Connecting…"
-                    : state.equals("login") ? "Sign-in required" : state.equals("error") ? "Connection failed" : "Disconnected";
-            tab.setContentDescription(server.name + ", " + ui.t(label));
+            tab.setContentDescription(server.name + ", " + ui.t(statusLabel(state)));
         }
     }
 
-    static CharSequence statusText(NativeUi ui, String label, String state) {
+    static String statusLabel(String state) {
+        return state.equals("connected") ? "Connected" : state.equals("connecting") ? "Connecting…"
+                : state.equals("login") ? "Sign-in required" : state.equals("error") ? "Connection failed" : "Disconnected";
+    }
+
+    static CharSequence statusText(NativeUi ui, String label, String state, int size, int gap) {
         SpannableString text = new SpannableString("\ufffc" + label);
-        Dot dot = new Dot(ui.dp(8), ui.dp(8)); dot.color = statusColor(ui, state);
+        Dot dot = new Dot(ui.dp(size), ui.dp(gap)); dot.color = statusColor(ui, state);
         text.setSpan(dot, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         return text;
     }

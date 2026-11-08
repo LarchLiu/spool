@@ -418,8 +418,8 @@ public class MainActivityConnectionTest {
                 assertTrue(popup.isShowing());
                 String details = ((android.widget.TextView) popup.content.getChildAt(2)).getText().toString();
                 assertTrue(details.contains("HTTPS: Verified")); assertFalse(details.contains("Spool session"));
-                android.widget.Button disconnect = settings.rows.get(ConnectionMode.TAILSCALE).use;
-                NativeServerTabs.Dot dot = ((android.text.Spanned) disconnect.getText()).getSpans(0, 1, NativeServerTabs.Dot.class)[0];
+                android.widget.Button tab = settings.tabs.button(ConnectionMode.TAILSCALE.value);
+                NativeServerTabs.Dot dot = ((android.text.Spanned) tab.getText()).getSpans(0, 1, NativeServerTabs.Dot.class)[0];
                 assertEquals(NativeServerTabs.statusColor(h.get("ui"), "connected"), dot.color);
                 h.io.jobs.clear(); h.call("closeSettings"); assertFalse(popup.isShowing());
             } finally { h.activity.getPreferences(Activity.MODE_PRIVATE).edit().clear().commit(); }
@@ -448,7 +448,7 @@ public class MainActivityConnectionTest {
                 NativeConnectionSettings settings = h.get("connectionSettings");
                 String details = settings.details.get(mode);
                 assertTrue(details.contains("HTTPS: Verified")); assertFalse(details.contains("Spool"));
-                NativeServerTabs.Dot dot = ((android.text.Spanned) settings.rows.get(mode).use.getText()).getSpans(0, 1, NativeServerTabs.Dot.class)[0];
+                NativeServerTabs.Dot dot = ((android.text.Spanned) settings.tabs.button(mode.value).getText()).getSpans(0, 1, NativeServerTabs.Dot.class)[0];
                 assertEquals(NativeServerTabs.statusColor(h.get("ui"), "connected"), dot.color);
             } finally { h.activity.getPreferences(Activity.MODE_PRIVATE).edit().clear().commit(); }
         }

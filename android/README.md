@@ -21,11 +21,12 @@ QR code** in the app. The confirmation screen shows the relay address and pinned
 server identity. Sign in with the ordinary Spool account after confirming.
 See [deployment, pairing, routing and protocol](../relay/README.md).
 
-Connection settings use three compact tabs: **Public HTTPS**, **Tailscale (tsnet)**,
+Connection settings use three compact tabs: **Public HTTPS**, **Tailscale**,
 and **LAN / Relay**. They share the sidebar server tabs' rounded style through
 `NativeTabs` (`REGULAR` uses 40dp buttons; `COMPACT` uses 32dp buttons). Browsing a
 tab preserves all three inputs and the active connection until **Connect** is
-pressed. Connect/Disconnect stays centered at its natural width; Tailscale's
+pressed. Status dots appear before the connection-mode tab names.
+Connect/Disconnect stays centered, at least 112dp wide when space permits; Tailscale's
 information and sign-in icons sit at the right of the same row. The relay tab
 puts its scanner icon at the far right of that row.
 
@@ -102,10 +103,10 @@ Use **+** at the end of the sidebar server tabs to add a named server. Tabs
 include disconnected/disabled servers so their settings and sign-in remain
 accessible. The selected tab's footer Settings edits only that server, including
 its name and whether it may connect. Each server can have a **Public HTTPS**
-address, a **Tailscale (tsnet)** address, or both. Click **Connect** on
-the desired entry. The choice is saved separately for each server and restored
-on restart. Both entries share one card, with separate Connect/Disconnect actions
-and a Tailscale sign-in icon at the right of its title. Delete server is at the
+address, a **Tailscale (tsnet)** address, and **LAN / Relay** pairing. Click
+**Connect** in the desired tab. The choice is saved separately for each server
+and restored on restart. The tabs share one card, with centered Connect/Disconnect
+actions and Tailscale sign-in or relay scanning icons at the right. Delete server is at the
 bottom of the selected server's Settings, including when it is the last server.
 Public HTTPS accepts the same origin
 as the PWA (for example `https://chat.example.com`, with an optional port and no
@@ -147,8 +148,9 @@ The tsnet information popup contains only node, path, latency and HTTPS details;
 Spool login and session recovery are handled separately in the footer.
 Health/session checks and node notifications update the connecting page and existing settings controls
 in place. An open information popup remains anchored and refreshes its contents
-through retries and session recovery. The Disconnect label includes the same
-connection-status dot as the current server tab.
+through retries and session recovery. The active connection-mode tab shows the
+same connection-status dot as the current server tab; the action button contains
+only its Connect/Disconnect label.
 Sidebar tabs show a colored dot before each server name: green for connected,
 yellow for network setup or Tailscale node authorization, red for a network error and gray for disconnected
 or disabled. Explanations and Tailscale path/latency/HTTPS diagnostics open from

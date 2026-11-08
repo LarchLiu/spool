@@ -57,6 +57,7 @@ final class NativeConnectionSettings extends LinearLayout {
         for (ConnectionMode mode : ConnectionMode.values()) rows.put(mode, new Row(mode, plan.origin(mode), connect, stop));
         for (ConnectionMode mode : ConnectionMode.values()) {
             tabs.addTab(mode.value, ui.t(title(mode)), () -> show(mode));
+            tabStatus(mode, "disconnected");
             entries.addView(rows.get(mode), new LayoutParams(-1, -2));
         }
         show(plan.selected);
@@ -73,7 +74,14 @@ final class NativeConnectionSettings extends LinearLayout {
     private boolean loginAllowed() { return login != null && login.isEnabled(); }
     private boolean scanAllowed() { return scan != null && scan.isEnabled(); }
     private static String title(ConnectionMode mode) {
-        return mode == ConnectionMode.DIRECT ? "Public HTTPS" : mode == ConnectionMode.TAILSCALE ? "Tailscale (tsnet)" : "LAN / Relay";
+        return mode == ConnectionMode.DIRECT ? "Public HTTPS" : mode == ConnectionMode.TAILSCALE ? "Tailscale" : "LAN / Relay";
+    }
+
+    private void tabStatus(ConnectionMode mode, String state) {
+        Button tab = tabs.button(mode.value);
+        String label = ui.t(title(mode));
+        tab.setText(NativeServerTabs.statusText(ui, label, state, 6, 4));
+        tab.setContentDescription(label + ", " + ui.t(NativeServerTabs.statusLabel(state)));
     }
 
     void show(ConnectionMode mode) {
@@ -104,9 +112,10 @@ final class NativeConnectionSettings extends LinearLayout {
         for (Row row : rows.values()) {
             row.server.setEnabled(!selecting);
             row.status.setText(states.getOrDefault(row.mode, ""));
+            tabStatus(row.mode, row.mode == current ? connectionState : "disconnected");
             boolean selected = active && row.mode == current;
             String label = ui.t(selected ? "Disconnect" : "Connect");
-            row.use.setText(selected ? NativeServerTabs.statusText(ui, label, connectionState) : label);
+            row.use.setText(label);
             row.use.setContentDescription(label);
             row.use.setEnabled(selected || !selecting && !row.server.getText().toString().trim().isEmpty());
             if (row.information != null) row.information.refresh();
@@ -127,8 +136,8 @@ final class NativeConnectionSettings extends LinearLayout {
             information = mode == ConnectionMode.DIRECT ? null : new NativeInfo(ui, ui.t(title(mode)),
                     () -> details.getOrDefault(mode, mode == ConnectionMode.RELAY
                             ? ui.t("Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity.") : statusText()));
-            server = ui.field(mode == ConnectionMode.DIRECT ? "https://spool.example.com" : mode == ConnectionMode.TAILSCALE ? "https://spool.example.ts.net" : "spool-pair:…", mode == ConnectionMode.RELAY);
-            if (mode != ConnectionMode.RELAY) server.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+            server = ui.field(mode == ConnectionMode.DIRECT ? "https://spool.example.com" : mode == ConnectionMode.TAILSCALE ? "https://spool.example.ts.net" : "spool-pair:…", false);
+            server.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
             server.setText(origin); server.setContentDescription(ui.t(mode == ConnectionMode.DIRECT ? "Public HTTPS address" : mode == ConnectionMode.TAILSCALE ? "Tailscale HTTPS address" : "Pairing code"));
             server.setImportantForAutofill(IMPORTANT_FOR_AUTOFILL_NO);
             addView(server, new LayoutParams(-1, -2)); addView(ui.space(8));
@@ -140,6 +149,8 @@ final class NativeConnectionSettings extends LinearLayout {
                 changed.accept(plan());
                 connect.accept(plan(), mode);
             });
+            use.setBackground(ui.states(ui.dark ? ui.controlHover : ui.soft, 6, ui.dark ? ui.subtle : 0,
+                    ui.controlActive, ui.soft, ui.dark ? ui.controlActive : ui.controlHover));
             use.setMaxLines(1); use.setEllipsize(android.text.TextUtils.TruncateAt.END);
             tools = ui.row();
             if (information != null) tools.addView(information.button);
@@ -149,7 +160,9 @@ final class NativeConnectionSettings extends LinearLayout {
                 @Override protected void onMeasure(int widthSpec, int heightSpec) {
                     int width = MeasureSpec.getSize(widthSpec);
                     tools.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.AT_MOST), heightSpec);
-                    use.setMaxWidth(Math.max(0, width - 2 * (tools.getMeasuredWidth() + ui.dp(4))));
+                    int available = Math.max(0, width - 2 * (tools.getMeasuredWidth() + ui.dp(4)));
+                    use.setMinWidth(Math.min(ui.dp(112), available));
+                    use.setMaxWidth(available);
                     super.onMeasure(widthSpec, heightSpec);
                 }
             };

@@ -267,7 +267,8 @@ public class NativeAppearanceTest {
             settings.tabs.button(ConnectionMode.DIRECT.value).performClick();
             settings.rows.get(ConnectionMode.DIRECT).use.performClick(); assertEquals(1, stopped.get());
             assertEquals("断开连接", settings.rows.get(ConnectionMode.DIRECT).use.getContentDescription());
-            NativeServerTabs.Dot dot = ((android.text.Spanned) settings.rows.get(ConnectionMode.DIRECT).use.getText()).getSpans(0, 1, NativeServerTabs.Dot.class)[0];
+            assertEquals("断开连接", settings.rows.get(ConnectionMode.DIRECT).use.getText().toString());
+            NativeServerTabs.Dot dot = ((android.text.Spanned) settings.tabs.button(ConnectionMode.DIRECT.value).getText()).getSpans(0, 1, NativeServerTabs.Dot.class)[0];
             assertEquals(NativeServerTabs.statusColor(ui, "connected"), dot.color);
             settings.bind(ConnectionMode.DIRECT, true, true, true, false, java.util.Map.of(), "Checking");
             assertFalse(settings.automatic.isEnabled()); assertFalse(settings.login.isEnabled()); assertFalse(settings.scan.isEnabled());
