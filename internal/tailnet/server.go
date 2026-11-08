@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tsnet"
 )
@@ -40,7 +41,13 @@ type tailnetNode interface {
 	Listen(string, string) (net.Listener, error)
 	GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, error)
 	Status(context.Context) (*ipnstate.Status, error)
+	WatchIPNBus(context.Context, ipn.NotifyWatchOpt) (tailnetWatcher, error)
 	StartLoginInteractive(context.Context) error
+	Close() error
+}
+
+type tailnetWatcher interface {
+	Next() (ipn.Notify, error)
 	Close() error
 }
 
@@ -52,6 +59,14 @@ func (n embeddedTailnet) Status(ctx context.Context) (*ipnstate.Status, error) {
 		return nil, err
 	}
 	return client.StatusWithoutPeers(ctx)
+}
+
+func (n embeddedTailnet) WatchIPNBus(ctx context.Context, mask ipn.NotifyWatchOpt) (tailnetWatcher, error) {
+	client, err := n.LocalClient()
+	if err != nil {
+		return nil, err
+	}
+	return client.WatchIPNBus(ctx, mask)
 }
 
 func (n embeddedTailnet) StartLoginInteractive(ctx context.Context) error {
@@ -271,26 +286,65 @@ func (e *Endpoint) watch(ctx context.Context, report func(Status)) {
 	e.watchDone = make(chan struct{})
 	go func() {
 		defer close(e.watchDone)
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		for {
-			probe, cancel := context.WithTimeout(ctx, 2*time.Second)
-			status, err := e.node.Status(probe)
-			cancel()
-			if err == nil && status != nil {
-				authURL := status.AuthURL
-				if !IsLoginURL(authURL) {
-					authURL = ""
-				}
-				report(Status{State: status.BackendState, AuthURL: authURL})
+		var previous Status
+		reported := false
+		reportChanged := func(status Status) {
+			if ctx.Err() == nil && (!reported || status != previous) {
+				previous, reported = status, true
+				report(status)
 			}
+		}
+		for ctx.Err() == nil {
+			// The initial event seeds state and the login URL atomically. A
+			// stable node then blocks on notifications without status polling.
+			_ = e.watchStatus(ctx, reportChanged)
+			if ctx.Err() != nil {
+				return
+			}
+			// Reconnect a dropped local notification stream without restarting
+			// the node or turning subscription failures into a busy loop.
+			retry := time.NewTimer(time.Second)
 			select {
 			case <-ctx.Done():
+				retry.Stop()
 				return
-			case <-ticker.C:
+			case <-retry.C:
 			}
 		}
 	}()
+}
+
+func (e *Endpoint) watchStatus(ctx context.Context, report func(Status)) error {
+	watcher, err := e.node.WatchIPNBus(ctx, ipn.NotifyInitialState)
+	if err != nil {
+		return err
+	}
+	defer watcher.Close()
+	var status Status
+	for {
+		update, err := watcher.Next()
+		if err != nil {
+			return err
+		}
+		if update.BrowseToURL != nil {
+			status.AuthURL = ""
+			if IsLoginURL(*update.BrowseToURL) {
+				status.AuthURL = *update.BrowseToURL
+			}
+		}
+		if update.State != nil {
+			status.State = update.State.String()
+			if *update.State != ipn.NeedsLogin {
+				status.AuthURL = ""
+			}
+		}
+		if update.LoginFinished != nil {
+			status.AuthURL = ""
+		}
+		if status.State != "" {
+			report(status)
+		}
+	}
 }
 
 func IsLoginURL(address string) bool {

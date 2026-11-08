@@ -1072,6 +1072,10 @@ func chatStreamSignature(turn chatmodel.Turn, status chatmodel.SessionStatus, pa
 }
 
 func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string) {
+	// Subscribe before the snapshot so a turn starting during initialization
+	// cannot leave an idle stream asleep after its initial state is sent.
+	sub := a.store.changes.subscribe()
+	defer sub.close()
 	chat, ok := a.accessibleChat(user, id)
 	if !ok {
 		apiError(w, 404, "聊天不存在")
@@ -1094,8 +1098,13 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 		baseTranscript = hydrated
 	}
 	a.liveMu.Unlock()
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
+	var ticker *time.Ticker
+	var frames <-chan time.Time
+	defer func() {
+		if ticker != nil {
+			ticker.Stop()
+		}
+	}()
 	heart := time.NewTicker(a.streamHeartbeat)
 	defer heart.Stop()
 	var previous [sha256.Size]byte
@@ -1117,6 +1126,15 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 		}
 		allowed := a.store.CanControlChat(user, id)
 		meta.CanControl = &allowed
+		// Only running turns need frame polling. Idle streams wake on store
+		// changes or the heartbeat, even while a hidden desktop stays connected.
+		if meta.Status == chatmodel.StatusRunning && ticker == nil {
+			ticker = time.NewTicker(100 * time.Millisecond)
+			frames = ticker.C
+		} else if meta.Status != chatmodel.StatusRunning && ticker != nil {
+			ticker.Stop()
+			ticker, frames = nil, nil
+		}
 		a.liveMu.Lock()
 		current, live := a.live[id]
 		if live {
@@ -1200,16 +1218,30 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 				previous = signature
 			}
 		}
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-		case <-heart.C:
-			if _, err := a.identity(r); err != nil {
+		for waiting := true; waiting; {
+			select {
+			case <-r.Context().Done():
 				return
-			}
-			if err := writeSSE(w, "ping", map[string]bool{"ok": true}); err != nil {
+			case <-a.shutdown:
 				return
+			case <-frames:
+				waiting = false
+			case <-sub.wake:
+				changes := sub.take()
+				if changes&changeAuth != 0 {
+					if _, err := a.identity(r); err != nil {
+						return
+					}
+				}
+				waiting = changes&(changeNavigation|changeAuth) == 0
+			case <-heart.C:
+				if _, err := a.identity(r); err != nil {
+					return
+				}
+				if err := writeSSE(w, "ping", map[string]bool{"ok": true}); err != nil {
+					return
+				}
+				waiting = false
 			}
 		}
 	}

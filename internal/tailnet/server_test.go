@@ -12,8 +12,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
+	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 )
 
@@ -84,8 +86,9 @@ type fakeTailnet struct {
 	network, address         string
 	certificate              *tls.Certificate
 	starts, closes, certs    atomic.Int32
-	logins                   atomic.Int32
+	logins, statusCalls      atomic.Int32
 	statusProbe              func(context.Context) (*ipnstate.Status, error)
+	watchProbe               func(context.Context, ipn.NotifyWatchOpt) (tailnetWatcher, error)
 	login                    func(context.Context) error
 }
 
@@ -95,10 +98,56 @@ func (n *fakeTailnet) Start() error {
 }
 
 func (n *fakeTailnet) Status(ctx context.Context) (*ipnstate.Status, error) {
+	n.statusCalls.Add(1)
 	if n.statusProbe != nil {
 		return n.statusProbe(ctx)
 	}
 	return n.status, nil
+}
+
+type fakeTailnetWatchResult struct {
+	update ipn.Notify
+	err    error
+}
+
+type fakeTailnetWatcher struct {
+	ctx     context.Context
+	updates chan fakeTailnetWatchResult
+	closes  atomic.Int32
+}
+
+func (w *fakeTailnetWatcher) Next() (ipn.Notify, error) {
+	select {
+	case <-w.ctx.Done():
+		return ipn.Notify{}, w.ctx.Err()
+	case result := <-w.updates:
+		return result.update, result.err
+	}
+}
+
+func (w *fakeTailnetWatcher) Close() error {
+	w.closes.Add(1)
+	return nil
+}
+
+func (n *fakeTailnet) WatchIPNBus(ctx context.Context, mask ipn.NotifyWatchOpt) (tailnetWatcher, error) {
+	if n.watchProbe != nil {
+		return n.watchProbe(ctx, mask)
+	}
+	status, err := n.Status(ctx)
+	if err != nil {
+		return nil, err
+	}
+	watcher := &fakeTailnetWatcher{ctx: ctx, updates: make(chan fakeTailnetWatchResult, 1)}
+	var update ipn.Notify
+	if status != nil {
+		if state, ok := ipn.StateFromString(status.BackendState); ok {
+			update.State = &state
+		}
+		update.BrowseToURL = &status.AuthURL
+	}
+	watcher.updates <- fakeTailnetWatchResult{update: update}
+	return watcher, nil
 }
 
 func (n *fakeTailnet) StartLoginInteractive(ctx context.Context) error {
@@ -203,6 +252,178 @@ func TestTailnetLoginStatusIsAvailableBeforeEnrollment(t *testing.T) {
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) || node.closes.Load() != 1 {
 		t.Fatal("cancellation did not close the watcher and node", err)
+	}
+}
+
+func TestTailnetWatchUsesEventsWithoutIdlePolling(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var opens atomic.Int32
+		watcher := &fakeTailnetWatcher{updates: make(chan fakeTailnetWatchResult, 8)}
+		node := &fakeTailnet{
+			status: &ipnstate.Status{BackendState: "Running"},
+			watchProbe: func(ctx context.Context, mask ipn.NotifyWatchOpt) (tailnetWatcher, error) {
+				if mask != ipn.NotifyInitialState {
+					t.Errorf("unnecessary notification data requested: %v", mask)
+				}
+				opens.Add(1)
+				watcher.ctx = ctx
+				return watcher, nil
+			},
+		}
+		updates := make(chan Status, 64)
+		endpoint, err := startTailnet(context.Background(), node, 443, func(status Status) { updates <- status })
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer endpoint.Close()
+		publish := func(state ipn.State, address string) {
+			watcher.updates <- fakeTailnetWatchResult{update: ipn.Notify{State: &state, BrowseToURL: &address}}
+		}
+		read := func() Status {
+			t.Helper()
+			select {
+			case status := <-updates:
+				return status
+			case <-time.After(5 * time.Second):
+				t.Fatal("missing state notification")
+				return Status{}
+			}
+		}
+		publish(ipn.Running, "")
+		if status := read(); status.State != "Running" {
+			t.Fatal("missing initial connected state", status)
+		}
+		publish(ipn.Running, "")
+		watcher.updates <- fakeTailnetWatchResult{update: ipn.Notify{Version: "unchanged"}}
+		synctest.Wait()
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		t.Logf("10 seconds idle: subscriptions=%d status queries=%d duplicate updates=%d", opens.Load(), node.statusCalls.Load(), len(updates))
+		if opens.Load() != 1 || node.statusCalls.Load() != 0 || len(updates) != 0 {
+			t.Fatal("idle node kept polling or reporting unchanged state")
+		}
+		const address = "https://login.tailscale.com/a/test"
+		publish(ipn.NeedsLogin, address)
+		if status := read(); status.State != "NeedsLogin" || status.AuthURL != address {
+			t.Fatal("initial state lost the login URL", status)
+		}
+		publish(ipn.NeedsLogin, "https://untrusted.example/login")
+		if status := read(); status.State != "NeedsLogin" || status.AuthURL != "" {
+			t.Fatal("untrusted login URL was retained", status)
+		}
+		addressOnly := address
+		watcher.updates <- fakeTailnetWatchResult{update: ipn.Notify{BrowseToURL: &addressOnly}}
+		if status := read(); status.State != "NeedsLogin" || status.AuthURL != address {
+			t.Fatal("a later login URL did not update the pending state", status)
+		}
+		publish(ipn.Running, address)
+		if status := read(); status.State != "Running" || status.AuthURL != "" {
+			t.Fatal("connected state retained a stale login URL", status)
+		}
+		publish(ipn.Stopped, "")
+		if status := read(); status.State != "Stopped" {
+			t.Fatal("disconnect was not reported", status)
+		}
+		if err := endpoint.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if watcher.closes.Load() != 1 || node.closes.Load() != 1 {
+			t.Fatal("shutdown did not close the subscription before the node")
+		}
+	})
+}
+
+func TestTailnetWatchReconnectsAfterSubscriptionAndStreamFailures(t *testing.T) {
+	for _, streamFailure := range []bool{false, true} {
+		t.Run(map[bool]string{false: "subscribe", true: "stream"}[streamFailure], func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var opens atomic.Int32
+				var watchers []*fakeTailnetWatcher
+				node := &fakeTailnet{watchProbe: func(ctx context.Context, _ ipn.NotifyWatchOpt) (tailnetWatcher, error) {
+					attempt := opens.Add(1)
+					if attempt == 1 && !streamFailure {
+						return nil, errors.New("test subscription failure")
+					}
+					watcher := &fakeTailnetWatcher{ctx: ctx, updates: make(chan fakeTailnetWatchResult, 1)}
+					watchers = append(watchers, watcher)
+					if attempt == 1 {
+						watcher.updates <- fakeTailnetWatchResult{err: io.ErrUnexpectedEOF}
+					} else {
+						state := ipn.Running
+						watcher.updates <- fakeTailnetWatchResult{update: ipn.Notify{State: &state}}
+					}
+					return watcher, nil
+				}}
+				updates := make(chan Status, 4)
+				began := time.Now()
+				endpoint, err := startTailnet(context.Background(), node, 443, func(status Status) { updates <- status })
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer endpoint.Close()
+				select {
+				case status := <-updates:
+					if status.State != "Running" || opens.Load() != 2 || time.Since(began) != time.Second {
+						t.Fatal("failed subscription was not retried with backoff", status, opens.Load(), time.Since(began))
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("status subscription did not recover")
+				}
+				if err := endpoint.Close(); err != nil {
+					t.Fatal(err)
+				}
+				for _, watcher := range watchers {
+					if watcher.closes.Load() != 1 {
+						t.Fatal("a failed or stopped subscription was not closed")
+					}
+				}
+			})
+		})
+	}
+}
+
+func TestTailnetWatchCancellationStopsSubscriptionAndRetry(t *testing.T) {
+	for _, stage := range []string{"subscribe", "stream", "retry"} {
+		t.Run(stage, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				var opens atomic.Int32
+				watcher := &fakeTailnetWatcher{updates: make(chan fakeTailnetWatchResult)}
+				node := &fakeTailnet{watchProbe: func(ctx context.Context, _ ipn.NotifyWatchOpt) (tailnetWatcher, error) {
+					opens.Add(1)
+					switch stage {
+					case "subscribe":
+						<-ctx.Done()
+						return nil, ctx.Err()
+					case "retry":
+						return nil, errors.New("test subscription failure")
+					default:
+						watcher.ctx = ctx
+						return watcher, nil
+					}
+				}}
+				endpoint, err := startTailnet(ctx, node, 443, func(Status) { t.Error("unexpected notification") })
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer endpoint.Close()
+				synctest.Wait()
+				cancel()
+				synctest.Wait()
+				select {
+				case <-endpoint.watchDone:
+				default:
+					t.Fatal("parent cancellation left the status watcher running")
+				}
+				if err := endpoint.Close(); err != nil {
+					t.Fatal(err)
+				}
+				if opens.Load() != 1 || node.closes.Load() != 1 || stage == "stream" && watcher.closes.Load() != 1 {
+					t.Fatal("cancellation retried or leaked the subscription")
+				}
+			})
+		})
 	}
 }
 
