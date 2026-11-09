@@ -32,6 +32,11 @@ func (a *App) realtimeConnectSources(r *http.Request) string {
 	if r.TLS != nil {
 		scheme = "https"
 	}
+	if web, ok := r.Context().Value(webRequestKey{}).(webRequest); ok {
+		if u, err := url.Parse(web.origin); err == nil {
+			scheme = u.Scheme
+		}
+	}
 	sources := "'self'"
 	for _, origin := range []string{scheme + "://" + r.Host, a.publicURL()} {
 		u, err := url.Parse(origin)

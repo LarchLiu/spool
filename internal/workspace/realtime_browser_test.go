@@ -119,6 +119,10 @@ func TestRealtimeBrowser(t *testing.T) {
 									name = "chat-header"
 								} else if r.URL.Query().Get("capture") == "unread" {
 									name = "chat-unread"
+								} else if r.URL.Query().Get("capture") == "settings" {
+									name = "settings"
+								} else if r.URL.Query().Get("capture") == "settings-about" {
+									name = "settings-about"
 								}
 								err = os.WriteFile(filepath.Join(output, fmt.Sprintf("%s-%d.png", name, width)), data, 0644)
 							}
@@ -134,7 +138,7 @@ func TestRealtimeBrowser(t *testing.T) {
 					return
 				case "/smoke/login":
 					http.SetCookie(w, cookie)
-					http.Redirect(w, r, "/", http.StatusFound)
+					http.Redirect(w, r, "/?chat="+watching.ID, http.StatusFound)
 					return
 				case "/smoke/probe.js":
 					w.Header().Set("Content-Type", "text/javascript")
@@ -146,7 +150,7 @@ func TestRealtimeBrowser(t *testing.T) {
 					w.Header().Set("Content-Type", "text/javascript")
 					w.Write(settingsBridge)
 					return
-				case "/smoke/settings":
+				case "/smoke-settings.html":
 					recorder := httptest.NewRecorder()
 					request := r.Clone(r.Context())
 					request.URL.Path = "/desktop.html"

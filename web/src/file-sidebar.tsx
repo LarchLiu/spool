@@ -1,3 +1,4 @@
+import { apiPath } from "./app-path";
 import {
   useCallback,
   useEffect,
@@ -31,7 +32,7 @@ import { filePreviewKind, HtmlFilePreview } from "./file-preview";
 import { OfficePreview, type OfficeDocument } from "./office-preview";
 import { desktopFileAccessURL, subscribeDesktopFileAccess } from "./runtime";
 
-const readOffice = (path: string, signal: AbortSignal) => api<OfficeDocument>(path.slice(4), undefined, signal);
+const readOffice = (path: string, signal: AbortSignal) => api<OfficeDocument>(apiPath(path), undefined, signal);
 
 export type FileSelection = {
   target: LocalFileTarget;
@@ -206,13 +207,13 @@ function ProjectFiles({
     const controller = new AbortController();
     setFileError(null);
     api<ProjectFile>(
-      projectFileURL(
+      apiPath(projectFileURL(
         project.id,
         selection.target.path,
         undefined,
         chatID,
         workspacePath,
-      ).slice(4),
+      )),
       undefined,
       controller.signal,
     )

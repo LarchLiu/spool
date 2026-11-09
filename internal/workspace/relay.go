@@ -27,6 +27,7 @@ import (
 
 type RelayStatus struct {
 	State, ServerID, LANAddress, DiscoveryError string
+	WebURL                                      string
 	RegistrationTokenSet                        bool
 	Registered, Registering                     bool
 }
@@ -41,7 +42,7 @@ type relayRuntime struct {
 func (r *relayRuntime) snapshot() RelayStatus { r.mu.Lock(); defer r.mu.Unlock(); return r.status }
 func (r *relayRuntime) close()                { r.cancel(); r.host.Close(); r.lan.Close() }
 func sameRelaySettings(a, b Settings) bool {
-	return a.RelayEnabled == b.RelayEnabled && (!a.RelayEnabled || a.RelayURL == b.RelayURL && a.RelayLANPort == b.RelayLANPort)
+	return a.RelayEnabled == b.RelayEnabled && (!a.RelayEnabled || a.RelayURL == b.RelayURL && a.RelayLANPort == b.RelayLANPort && a.RelayWebEnabled == b.RelayWebEnabled)
 }
 
 func (s *Service) startRelayLocked(settings Settings) error {
@@ -74,6 +75,15 @@ func (s *Service) startRelayLocked(settings Settings) error {
 		return fmt.Errorf("listen for secure LAN connections: %w", err)
 	}
 	runtime := &relayRuntime{cancel: cancel, host: host, lan: listener, status: RelayStatus{State: "connecting", ServerID: id.ID(), LANAddress: listener.Addr().String(), RegistrationTokenSet: token != ""}}
+	host.WebEnabled = settings.RelayWebEnabled
+	host.OnWebURL = func(address string) {
+		runtime.mu.Lock()
+		runtime.status.WebURL = address
+		runtime.mu.Unlock()
+		if address != "" {
+			log.Printf("Spool Relay Web: %s", address)
+		}
+	}
 	host.OnStatus = func(state string) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -82,6 +92,9 @@ func (s *Service) startRelayLocked(settings Settings) error {
 		}
 		runtime.mu.Lock()
 		runtime.status.State = state
+		if state != "connected" {
+			runtime.status.WebURL = ""
+		}
 		runtime.mu.Unlock()
 		if state == "registration_required" && !s.relayRegistering && s.relayRegistrationToken(settings.RelayURL) == host.RegistrationToken() && s.relayRegisteredLocked(settings.RelayURL) {
 			// A network outage preserves registration. An explicit rejection

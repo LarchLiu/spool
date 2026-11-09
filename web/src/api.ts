@@ -1,3 +1,4 @@
+import { appURL } from "./app-path";
 import { translator } from "./i18n";
 import { resolveLanguage, type Locale } from "./preferences";
 import { setToolDetailSource, toolDetailCache } from "./tool-detail.js";
@@ -36,7 +37,7 @@ export async function api<T>(
   const multipart = body instanceof FormData;
   const lazyPath = path.startsWith("/chats/") && !path.includes("/tool-detail?")
     ? path + (path.includes("?") ? "&" : "?") + "tool_details=lazy" : path;
-  const response = await fetch("/api" + lazyPath, {
+  const response = await fetch(appURL("/api" + lazyPath), {
     method: body === undefined ? "GET" : "POST",
     credentials: "same-origin",
     cache: "no-store",

@@ -436,6 +436,7 @@
   "Keep the database and its sidecar files intact. Check the error and logs before restoring a backup or changing the data directory.": "请保留数据库及其伴随文件。在恢复备份或更改数据目录前，先检查错误和日志。",
   "Data directory": "数据目录",
   "Application log": "应用日志",
+  "Update log": "更新日志",
   "File logging is unavailable. Diagnostic output is sent to stderr.": "无法写入日志文件，诊断信息将输出到标准错误流。",
   "Retry startup": "重试启动",
   "Show data directory": "查看数据目录",
@@ -662,6 +663,7 @@
   "Could not show system notification": "无法显示系统通知",
   "System notifications are working on this desktop.": "此桌面的系统通知已正常工作。",
   "Connected to tailnet": "已连接 Tailnet",
+  "Registered": "已注册",
   "Waiting for Tailscale login": "等待登录 Tailscale",
   "Waiting for device approval": "等待管理员批准设备",
   "Tailscale unavailable": "Tailscale 暂不可用",
@@ -918,7 +920,7 @@
   "Could not open the system installer.": "无法打开系统安装器。",
   "Download v{version}": "下载 v{version}",
   "Update v{version}": "更新 v{version}",
-  "LAN / Relay": "局域网 / 中继",
+  "Spool Relay": "Spool 中继",
   "Pair Android phone": "配对 Android 手机",
   "Relay registration token": "中继注册令牌",
   "Registration token saved locally.": "注册令牌已保存在本机。",
@@ -935,7 +937,7 @@
   "Pairing code": "配对码",
   "Relay HTTPS address": "中继 HTTPS 地址",
   "Secure LAN port": "局域网加密端口",
-  "Enable LAN and relay connections": "启用局域网与中继连接",
+  "Enable Spool Relay": "启用 Spool 中继",
   "Phones prefer a verified LAN connection and use the relay when away. Restart the service after changing these settings.": "手机优先使用经过身份验证的局域网连接，外出时使用中继。修改设置后请重启服务。",
   "Relay status": "中继状态",
   "Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity.": "优先通过局域网连接已配对的服务器，外出时使用中继，两种方式都验证同一服务器身份。",
@@ -971,5 +973,8 @@
   "Unregistering…": "正在注销…",
   "Relay name must be at most 128 bytes and contain no control characters.": "服务器名称最多 128 字节，不能包含控制字符。",
   "No saved registration for this relay.": "没有此中继的注册记录。",
-  "Could not unregister from the relay. Check its address and network connection, then retry.": "无法从中继注销。请检查地址和网络连接后重试。"
+  "Could not unregister from the relay. Check its address and network connection, then retry.": "无法从中继注销。请检查地址和网络连接后重试。",
+  "Public Web / PWA access": "公网 Web / PWA 访问",
+  "Open this workspace at the relay HTTPS address without Tailscale. The relay can read Web traffic. Restart the service after changing this setting.": "通过中继 HTTPS 地址打开工作区，无需 Tailscale。中继可以读取 Web 流量。更改后需要重启服务。",
+  "Public Web address": "公网 Web 地址"
 }

@@ -1,4 +1,17 @@
-const CACHE = "spool-chat-shell-v2";
+const BASE = new URL(self.registration.scope).pathname;
+const at = (path) => BASE + path.replace(/^\//, "");
+const CACHE_PREFIX = "spool-chat-shell:" + BASE + ":";
+const CACHE = CACHE_PREFIX + "v3";
+function notificationURL(value) {
+  const target = new URL(BASE, self.location.origin);
+  try {
+    const url = new URL(value || "/", self.location.origin);
+    if (url.origin === self.location.origin && (url.pathname === "/" || url.pathname === BASE)) {
+      target.search = url.search;
+    }
+  } catch {}
+  return target;
+}
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") event.waitUntil(self.skipWaiting());
 });
@@ -11,12 +24,7 @@ self.addEventListener("push", (event) => {
       } catch {
         // Even an empty or malformed push must produce a visible notification.
       }
-      let target = new URL("/", self.location.origin);
-      try {
-        const url = new URL(data?.url || "/", self.location.origin);
-        if (url.origin === self.location.origin && url.pathname === "/")
-          target = url;
-      } catch {}
+      const target = notificationURL(data?.url);
       const title =
         typeof data?.title === "string" && data.title.trim()
           ? Array.from(data.title.trim()).slice(0, 160).join("")
@@ -26,8 +34,8 @@ self.addEventListener("push", (event) => {
           typeof data?.body === "string"
             ? data.body.slice(0, 300)
             : "Open Spool to view your task.",
-        icon: "/icon-192.png",
-        badge: "/favicon.png",
+        icon: at("/icon-192.png"),
+        badge: at("/favicon.png"),
         tag:
           typeof data?.tag === "string" ? data.tag.slice(0, 200) : "spool-task",
         data: { url: target.href },
@@ -39,19 +47,11 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(
     (async () => {
-      let target = new URL("/", self.location.origin);
-      try {
-        const url = new URL(
-          event.notification.data?.url || "/",
-          self.location.origin,
-        );
-        if (url.origin === self.location.origin && url.pathname === "/")
-          target = url;
-      } catch {}
+      const target = notificationURL(event.notification.data?.url);
       const windows = await self.clients.matchAll({ type: "window" });
       for (const client of windows) {
         const url = new URL(client.url);
-        if (url.origin !== self.location.origin || url.pathname !== "/")
+        if (url.origin !== self.location.origin || url.pathname !== BASE)
           continue;
         await client.focus();
         const chatID = target.searchParams.get("chat");
@@ -102,7 +102,7 @@ self.addEventListener("install", (event) =>
         "/apple-touch-icon.png",
         "/favicon.png",
         "/logo.png",
-      ]);
+      ].map(at));
     })(),
   ),
 );
@@ -111,8 +111,8 @@ self.addEventListener("activate", (event) =>
     (async () => {
       for (const key of await caches.keys())
         if (
-          (key.startsWith("spool-chat-shell-") ||
-            key.startsWith("tern-chat-shell-")) &&
+          (key.startsWith(CACHE_PREFIX) ||
+            BASE === "/" && (key.startsWith("spool-chat-shell-") || key.startsWith("tern-chat-shell-"))) &&
           key !== CACHE
         )
           await caches.delete(key);
@@ -122,23 +122,33 @@ self.addEventListener("activate", (event) =>
 );
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
+  const path = "/" + url.pathname.slice(BASE.length);
   // Credentials, chat data, login responses and SSE never enter Cache Storage.
   if (
     url.origin !== self.location.origin ||
+    !url.pathname.startsWith(BASE) ||
     event.request.method !== "GET" ||
-    url.pathname.startsWith("/api/") ||
-    url.pathname === "/sw.js"
+    path.startsWith("/api/") ||
+    path === "/sw.js"
   )
     return;
   if (event.request.mode === "navigate") {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match("/offline.html")),
+      (async () => {
+        try {
+          const response = await fetch(event.request);
+          if (response.status !== 502 && response.status !== 503) return response;
+          return (await caches.open(CACHE).then((cache) => cache.match(at("/offline.html")))) || response;
+        } catch {
+          return caches.open(CACHE).then((cache) => cache.match(at("/offline.html")));
+        }
+      })(),
     );
   } else if (
-    url.pathname.startsWith("/assets/") ||
-    url.pathname === "/offline.js" ||
+    path.startsWith("/assets/") ||
+    path === "/offline.js" ||
     /^\/(?:icon-(?:maskable-)?\d+|apple-touch-icon|favicon|logo)\.png$/.test(
-      url.pathname,
+      path,
     )
   ) {
     event.respondWith(

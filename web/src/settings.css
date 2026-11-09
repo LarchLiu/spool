@@ -142,16 +142,51 @@
   background: #49a876;
   box-shadow: 0 0 0 3px #49a87612;
 }
-.settings-main {
+.settings-main-area {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
-  overflow: auto;
-  scrollbar-gutter: stable;
+  min-height: 0;
   background: radial-gradient(
     ellipse at 100% 0,
     var(--atmosphere),
     transparent 52%
   );
+}
+.settings-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.settings-restart-bar {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  flex-shrink: 0;
+  gap: 18px;
+  width: calc(100% - 48px);
+  max-width: 826px;
+  margin: 0 24px 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--elevated);
+  box-shadow: 0 5px 20px var(--shadow);
+}
+.settings-restart-bar p {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.settings-restart-bar button {
+  flex-shrink: 0;
+}
+.settings-main-area:has(.settings-restart-bar) .settings-save-status {
+  display: none;
 }
 .settings-page {
   max-width: 930px;
@@ -935,6 +970,19 @@
   }
   .settings-page-header h1 {
     font-size: 23px;
+  }
+  .settings-restart-bar {
+    flex-wrap: wrap;
+    gap: 10px;
+    width: calc(100% - 24px);
+    margin: 0 12px 12px;
+    padding: 12px;
+  }
+  .settings-restart-bar p {
+    flex-basis: 100%;
+  }
+  .settings-restart-bar button {
+    margin-left: auto;
   }
   .settings-row {
     align-items: stretch;

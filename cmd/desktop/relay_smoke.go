@@ -71,7 +71,7 @@ func (p *panel) probeRelaySettings(ctx context.Context, view *mygo.WebView, repo
 		const bounds = input.getBoundingClientRect();
 		if (bounds.top < 0 || bounds.bottom > innerHeight || bounds.right > innerWidth) throw new Error('relay address is outside the viewport');
 		const registration = document.querySelector('input[aria-label="中继注册令牌"]');
-		const toggle = document.querySelector('[role="switch"][aria-label="启用局域网与中继连接"]');
+		const toggle = document.querySelector('[role="switch"][aria-label="启用 Spool 中继"]');
 		if (!registration || !toggle?.disabled || toggle.getAttribute('aria-checked') !== 'false') throw new Error('unregistered relay switch is not locked');
 		if (!group.querySelector('.settings-card').firstElementChild.contains(toggle)) throw new Error('relay switch must stay first');
 		if (!input.closest('[role="group"]').contains(registration)) throw new Error('registration must be inside relay address group');
@@ -117,13 +117,13 @@ func (p *panel) probeRelaySettings(ctx context.Context, view *mygo.WebView, repo
 	}
 	if err := waitChatScript(ctx, page, `
 		const snapshot = await mygo.call('DesktopSettings.Snapshot');
-		const toggle = document.querySelector('[role="switch"][aria-label="启用局域网与中继连接"]');
+		const toggle = document.querySelector('[role="switch"][aria-label="启用 Spool 中继"]');
 		return snapshot.status.Relay.Registered && snapshot.status.Relay.RegistrationTokenSet && !snapshot.settings.relay_enabled &&
 			!document.querySelector('input[aria-label="中继注册令牌"]') && !toggle.disabled && toggle.getAttribute('aria-checked') === 'false';
 	`); err != nil {
 		return fmt.Errorf("relay registration: %w", err)
 	}
-	if _, err := page.EvalContext(ctx, `document.querySelector('[role="switch"][aria-label="启用局域网与中继连接"]').click();`); err != nil {
+	if _, err := page.EvalContext(ctx, `document.querySelector('[role="switch"][aria-label="启用 Spool 中继"]').click();`); err != nil {
 		return err
 	}
 	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).settings.relay_enabled && smokeSettingsReady('Service');`); err != nil {
@@ -134,7 +134,7 @@ func (p *panel) probeRelaySettings(ctx context.Context, view *mygo.WebView, repo
 	}
 	if err := waitChatScript(ctx, page, `
 		const snapshot = await mygo.call('DesktopSettings.Snapshot');
-		const toggle = document.querySelector('[role="switch"][aria-label="启用局域网与中继连接"]');
+		const toggle = document.querySelector('[role="switch"][aria-label="启用 Spool 中继"]');
 		const status = document.querySelector('[aria-label="中继状态"]');
 		return snapshot.status.Relay.State === 'connected' && status?.textContent.includes('已连接') &&
 			status.closest('.settings-row') === toggle.closest('.settings-row') &&

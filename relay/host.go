@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,9 @@ type Host struct {
 	Identity   *Identity
 	HTTPClient *http.Client
 	OnStatus   func(string)
+	// Set before Run. Opts into a public Web route for this host connection.
+	WebEnabled bool
+	OnWebURL   func(string)
 	// Set before Run. Automatically issued credentials must be saved before
 	// accepting traffic; returning an error causes enrollment to retry.
 	OnRegistrationToken func(string) error
@@ -34,6 +38,7 @@ type Host struct {
 	workers           sync.WaitGroup
 	mu                sync.Mutex
 	registrationToken string
+	webURL            string
 	connections       map[*ownedConn]struct{}
 }
 
@@ -106,7 +111,7 @@ func RegisterNamed(ctx context.Context, url, token, name string, id *Identity, c
 		return "", err
 	}
 	defer h.Close()
-	c, credential, err := h.handshake("/v1/register", name)
+	c, credential, err := h.handshakeNamed("/v1/register", name)
 	if err != nil {
 		return "", err
 	}
@@ -114,7 +119,11 @@ func RegisterNamed(ctx context.Context, url, token, name string, id *Identity, c
 	return credential, nil
 }
 
-func (h *Host) handshake(path, name string) (_ *websocket.Conn, credential string, result error) {
+func (h *Host) handshake(path string) (*websocket.Conn, string, error) {
+	return h.handshakeNamed(path, "")
+}
+
+func (h *Host) handshakeNamed(path, name string) (_ *websocket.Conn, credential string, result error) {
 	dialCtx, cancel := context.WithTimeout(h.ctx, handshakeTimeout)
 	token := h.RegistrationToken()
 	c, err := dialWebsocket(dialCtx, h.HTTPClient, h.URL, path, token)
@@ -133,8 +142,13 @@ func (h *Host) handshake(path, name string) (_ *websocket.Conn, credential strin
 	if err != nil || m.Type != "challenge" || !validToken(m.Challenge) {
 		return nil, "", fmt.Errorf("relay challenge failed: %w", errors.Join(err, errors.New("invalid registration challenge")))
 	}
-	if err := writeControl(authCtx, c, controlMessage{Type: "register", PublicKey: h.Identity.PublicKey(), AccessToken: h.Identity.AccessToken, Name: name,
-		Signature: ed25519.Sign(h.Identity.PrivateKey(), registrationProof(m.Challenge, h.Identity.AccessToken, name))}); err != nil {
+	webOrigin := ""
+	if h.WebEnabled && path == "/v1/host" {
+		u, _ := ParseRelayURL(h.URL)
+		webOrigin = u.String()
+	}
+	if err := writeControl(authCtx, c, controlMessage{Type: "register", PublicKey: h.Identity.PublicKey(), AccessToken: h.Identity.AccessToken, WebOrigin: webOrigin, Name: name,
+		Signature: ed25519.Sign(h.Identity.PrivateKey(), namedRegistrationProof(m.Challenge, h.Identity.AccessToken, webOrigin, name))}); err != nil {
 		return nil, "", err
 	}
 	m, err = readControl(authCtx, c)
@@ -156,11 +170,17 @@ func (h *Host) handshake(path, name string) (_ *websocket.Conn, credential strin
 	if token == "" {
 		return nil, "", errors.New("relay did not issue a registration token")
 	}
+	if m.WebURL != "" && (webOrigin == "" || m.WebURL != webOrigin+WebPath(h.Identity.ID())) {
+		return nil, "", errors.New("invalid relay Web address")
+	}
+	h.mu.Lock()
+	h.webURL = m.WebURL
+	h.mu.Unlock()
 	return c, token, nil
 }
 
 func (h *Host) session() error {
-	c, token, err := h.handshake("/v1/host", "")
+	c, token, err := h.handshake("/v1/host")
 	if err != nil {
 		return err
 	}
@@ -185,6 +205,12 @@ func (h *Host) session() error {
 	if h.OnStatus != nil {
 		h.OnStatus("connected")
 	}
+	if h.OnWebURL != nil {
+		h.mu.Lock()
+		webURL := h.webURL
+		h.mu.Unlock()
+		h.OnWebURL(webURL)
+	}
 	go keepAlive(ctx, c)
 	// The relay bounds outstanding requests. Also bound local dial/handshake
 	// work in case an operator runs a malicious or misconfigured relay.
@@ -208,13 +234,23 @@ func (h *Host) session() error {
 }
 
 func (h *Host) open(ctx context.Context, m controlMessage) {
+	var remote net.Addr
+	if m.ClientIP != "" {
+		ip, err := netip.ParseAddr(m.ClientIP)
+		if err != nil || ip.Zone() != "" {
+			return
+		}
+		// The authenticated control channel supplies this address. HTTP headers
+		// inside native or Web streams cannot change the login limiter's key.
+		remote = relayAddr("relay-client/" + ip.Unmap().String())
+	}
 	dialCtx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	c, err := dialWebsocket(dialCtx, h.HTTPClient, h.URL, "/v1/data/"+m.ID, m.Secret)
 	cancel()
 	if err != nil {
 		return
 	}
-	stream := &ownedConn{Conn: byteStream(ctx, c)}
+	stream := &ownedConn{Conn: byteStream(ctx, c), remote: remote}
 	stream.release = func() { h.mu.Lock(); delete(h.connections, stream); h.mu.Unlock() }
 	h.mu.Lock()
 	if h.ctx.Err() != nil || len(h.connections) >= 128 {
@@ -233,8 +269,16 @@ func (h *Host) open(ctx context.Context, m controlMessage) {
 
 type ownedConn struct {
 	net.Conn
+	remote  net.Addr
 	once    sync.Once
 	release func()
+}
+
+func (c *ownedConn) RemoteAddr() net.Addr {
+	if c.remote != nil {
+		return c.remote
+	}
+	return c.Conn.RemoteAddr()
 }
 
 func (c *ownedConn) Close() error { err := c.Conn.Close(); c.once.Do(c.release); return err }

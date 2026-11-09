@@ -4,7 +4,7 @@ const model = (id, levels) => ({
   supportedReasoningEfforts: levels.map((reasoningEffort) => ({ reasoningEffort, description: "" })),
 });
 const snapshot = {
-  section: "Appearance", message: "", version: "test", database: "", application_log: "", crash_log: "", update_log: "",
+  section: "Appearance", message: "", version: "test", database: "/fixture/spool.sqlite", application_log: "/fixture/application.log", crash_log: "/fixture/crash.log", update_log: "/fixture/update.log",
   github_path: "", github_state: "", github_message: "", github_login: "",
   settings: { host: "127.0.0.1", port: 8787, public_url: "https://chat.example.com", idle_minutes: 10, history_cache_mib: 256, auto_start: false, tsnet_enabled: false, tsnet_hostname: "spool-server", tsnet_port: 443, proxy_enabled: true, use_system_proxy: false, proxy_url: "", no_proxy: "" },
   preferences: { theme: "system", language: "system" },

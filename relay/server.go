@@ -22,24 +22,28 @@ type ServerOptions struct {
 	MaxHosts               int
 	MaxConnections         int
 	MaxConnectionsPerHost  int
-	TrustedProxies         []netip.Prefix
+	// Only these proxy peers may supply X-Forwarded-For client addresses.
+	TrustedProxies []string
 }
 
-// Server is an opaque byte forwarder. It has no Spool database, user accounts,
-// HTTP routing, desktop helper or TLS identity belonging to a home server.
+// Server forwards opaque native streams and optional public Web requests.
+// It has no Spool database, user accounts or home-server private keys.
 type Server struct {
-	opts          ServerOptions
-	mu            sync.Mutex
-	hosts         map[string]*registeredHost
-	pending       map[string]*relayPair
-	connections   int
-	registering   int
-	closed        bool
-	registrations map[string]registrationRecord
-	tokenIndex    map[string]string
+	opts           ServerOptions
+	mu             sync.Mutex
+	hosts          map[string]*registeredHost
+	pending        map[string]*relayPair
+	connections    int
+	registering    int
+	closed         bool
+	registrations  map[string]registrationRecord
+	tokenIndex     map[string]string
+	trustedProxies []netip.Prefix
 }
 type registeredHost struct {
 	id, token      string
+	publicKey      ed25519.PublicKey
+	webOrigin      string // Signed host opt-in, valid only for this connection.
 	registrationID string
 	control        *websocket.Conn
 	ctx            context.Context
@@ -64,12 +68,12 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if strings.TrimSpace(opts.DataDir) == "" {
 		return nil, errors.New("relay data directory is required")
 	}
-	for _, prefix := range opts.TrustedProxies {
-		if !prefix.IsValid() {
-			return nil, errors.New("invalid trusted proxy CIDR")
+	opts.TrustedProxies = append([]string(nil), opts.TrustedProxies...)
+	for _, value := range opts.TrustedProxies {
+		if strings.TrimSpace(value) == "" || strings.Contains(value, ",") {
+			return nil, errors.New("trusted proxies must be IP CIDR ranges")
 		}
 	}
-	opts.TrustedProxies = append([]netip.Prefix(nil), opts.TrustedProxies...)
 	if opts.MaxHosts <= 0 {
 		opts.MaxHosts = 100
 	}
@@ -80,6 +84,11 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		opts.MaxConnectionsPerHost = 128
 	}
 	s := &Server{opts: opts, hosts: make(map[string]*registeredHost), pending: make(map[string]*relayPair), registrations: make(map[string]registrationRecord), tokenIndex: make(map[string]string)}
+	var err error
+	s.trustedProxies, err = ParseTrustedProxies(strings.Join(opts.TrustedProxies, ","))
+	if err != nil {
+		return nil, err
+	}
 	if err := s.loadRegistrations(); err != nil {
 		return nil, err
 	}
@@ -91,6 +100,10 @@ func authorized(r *http.Request, token string) bool {
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if strings.HasPrefix(r.URL.Path, "/web/") {
+		s.serveWeb(w, r)
+		return
+	}
 	if r.Method == http.MethodGet && r.URL.Path == "/healthz" {
 		w.Write([]byte("ok\n"))
 		return
@@ -163,7 +176,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 	m, err := readControl(authCtx, c)
 	authCancel()
 	if err != nil || m.Type != "register" || len(m.PublicKey) != ed25519.PublicKeySize || !validToken(m.AccessToken) ||
-		!ed25519.Verify(m.PublicKey, registrationProof(challenge, m.AccessToken, m.Name), m.Signature) {
+		!ed25519.Verify(m.PublicKey, namedRegistrationProof(challenge, m.AccessToken, m.WebOrigin, m.Name), m.Signature) {
 		return
 	}
 	name := strings.TrimSpace(m.Name)
@@ -171,8 +184,13 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 		writeControl(ctx, c, controlMessage{Type: "invalid_registration"})
 		return
 	}
-	metadata := registrationMetadata{name: name, ip: s.registrationIP(r), enrollment: registrationOnly}
-	h := &registeredHost{id: ServerID(m.PublicKey), token: m.AccessToken, registrationID: registration.ID, control: c, ctx: ctx, cancel: cancel, open: make(chan controlMessage, 32), pairs: make(map[string]*relayPair)}
+	if m.WebOrigin != "" {
+		if u, e := ParseRelayURL(m.WebOrigin); e != nil || u.String() != m.WebOrigin {
+			return
+		}
+	}
+	metadata := registrationMetadata{name: name, ip: s.clientIP(r), enrollment: registrationOnly}
+	h := &registeredHost{id: ServerID(m.PublicKey), token: m.AccessToken, publicKey: append(ed25519.PublicKey(nil), m.PublicKey...), webOrigin: m.WebOrigin, registrationID: registration.ID, control: c, ctx: ctx, cancel: cancel, open: make(chan controlMessage, 32), pairs: make(map[string]*relayPair)}
 	s.mu.Lock()
 	current, allowed := s.registrationForRequestLocked(r)
 	if !withoutToken && (!allowed || current.ID != registration.ID) {
@@ -218,7 +236,11 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 		}
 		s.mu.Unlock()
 	}()
-	if writeControl(ctx, c, controlMessage{Type: "ready", RegistrationToken: issuedToken}) != nil {
+	webURL := ""
+	if h.webOrigin != "" {
+		webURL = h.webOrigin + WebPath(h.id)
+	}
+	if writeControl(ctx, c, controlMessage{Type: "ready", RegistrationToken: issuedToken, WebURL: webURL}) != nil {
 		return
 	}
 	go keepAlive(ctx, c)
@@ -277,7 +299,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	defer client.CloseNow()
 	select {
-	case h.open <- controlMessage{Type: "open", ID: p.id, Secret: p.secret}:
+	case h.open <- controlMessage{Type: "open", ID: p.id, Secret: p.secret, ClientIP: s.clientIP(r)}:
 	default:
 		return
 	}

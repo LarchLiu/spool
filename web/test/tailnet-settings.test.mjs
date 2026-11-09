@@ -94,7 +94,7 @@ test("tailnet shows enrollment errors and the explicit restart action without st
   assert.doesNotMatch(html, /Clear pending key/);
   assert.match(html, /Tailscale unavailable/);
   assert.match(html, /Key rejected \[redacted\]/);
-  assert.match(html, /data-restart-service="true"/);
+  assert.doesNotMatch(html, /data-restart-service/);
   assert.doesNotMatch(html, /Sign in to Tailscale/);
 });
 
@@ -107,7 +107,7 @@ test("registered identity asks for explicit activation and does not expose a log
     html,
     /Registered\. Restart the service to activate Tailscale HTTPS\./,
   );
-  assert.match(html, /data-restart-service="true"/);
+  assert.doesNotMatch(html, /data-restart-service/);
   assert.doesNotMatch(
     html,
     /Sign in to Tailscale|Clear pending key|Copy address/,
@@ -168,7 +168,7 @@ test("system proxy is an application Network setting, not a Tailscale option", a
   );
   assert.match(html, /Leave blank to inherit environment proxies/);
   assert.match(html, /Leave blank to inherit NO_PROXY/);
-  assert.match(html, /Restart service/);
+  assert.doesNotMatch(html, /Restart service/);
   assert.doesNotMatch(renderService(), /Use system proxy/);
   const app = await readFile(
     new URL("../src/settings-app.tsx", import.meta.url),

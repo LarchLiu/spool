@@ -29,6 +29,9 @@ type controlMessage struct {
 	Secret            string `json:"secret,omitempty"`
 	RegistrationToken string `json:"registration_token,omitempty"`
 	Name              string `json:"name,omitempty"`
+	WebOrigin         string `json:"web_origin,omitempty"`
+	WebURL            string `json:"web_url,omitempty"`
+	ClientIP          string `json:"client_ip,omitempty"`
 }
 
 func randomID() string {
@@ -45,14 +48,21 @@ func validToken(value string) bool {
 func proof(challenge, token string) []byte {
 	return []byte("spool-relay-v1\x00" + challenge + "\x00" + token)
 }
-func registrationProof(challenge, token, name string) []byte {
+func namedRegistrationProof(challenge, token, webOrigin, name string) []byte {
 	if name == "" {
-		return proof(challenge, token)
+		return registrationProof(challenge, token, webOrigin)
 	}
-	return []byte("spool-relay-register-v1\x00" + challenge + "\x00" + token + "\x00" + name)
+	return []byte("spool-relay-register-v1\x00" + challenge + "\x00" + token + "\x00" + webOrigin + "\x00" + name)
 }
 func unregisterProof(challenge, token string) []byte {
 	return []byte("spool-relay-unregister-v1\x00" + challenge + "\x00" + token)
+}
+
+func registrationProof(challenge, token, webOrigin string) []byte {
+	if webOrigin == "" {
+		return proof(challenge, token)
+	}
+	return []byte("spool-relay-web-v1\x00" + challenge + "\x00" + token + "\x00" + webOrigin)
 }
 func writeControl(ctx context.Context, c *websocket.Conn, m controlMessage) error {
 	ctx, cancel := context.WithTimeout(ctx, handshakeTimeout)

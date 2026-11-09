@@ -8,6 +8,11 @@
 Android 现可通过独立部署在 VPS 上的 Go 中继连接家里的 Spool，自动优先使用
 经过身份验证的局域网连接。Spool Desktop 提供配对二维码，手机可直接扫码确认。
 部署与配对步骤见 [中继说明](relay/README.md)。
+Web/PWA 也可通过中继现有 HTTPS 地址的 `/web/<服务器 ID>/` 访问，无需为每台
+服务器配置域名，也无需在浏览器设备上安装 Tailscale。在 Spool 开启后，可信中继
+会在连接时自动添加路由，无需配置服务器 ID 列表或重启中继。中继会解密 Web 流量，
+Android 仍使用端到端加密。配置步骤见
+[公网 Web 访问](relay/README.md#public-web--pwa-access)。
 
 > Spool 是一个面向多端和多人协作的本地 AI 编程工作区。它把 Desktop、
 Web/PWA 和 Android 客户端接入同一个项目与聊天空间，让团队成员可以从不同

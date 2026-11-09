@@ -8,6 +8,11 @@
 Android can connect to a home Spool server through an independent Go relay, with
 verified LAN connections preferred automatically. Spool Desktop supplies a pairing
 QR code. See [relay deployment and pairing](relay/README.md).
+The relay can also publish Web/PWA access at `/web/<server-id>/` on its existing
+HTTPS address. Enable it on the home server; the trusted relay adds the route
+when Spool connects, with no Server ID list or relay restart. No per-server
+domains or Tailscale client are required. See
+[public Web access](relay/README.md#public-web--pwa-access).
 
 > Spool is a multi-platform, multi-user workspace for local AI coding. It brings
 Desktop, Web/PWA, and Android clients into one shared project and chat space,
@@ -28,7 +33,7 @@ on the service host before use.
 
 - Use one Spool service from the Desktop app, a browser/PWA, or the native Android client.
 - Continue the same projects and chats across devices without copying the working directory or provider sessions.
-- Use embedded Tailscale HTTPS or a trusted reverse proxy when the service needs to be reached remotely.
+- Use embedded Tailscale HTTPS, a trusted reverse proxy, or the opt-in relay Web gateway when the service needs to be reached remotely.
 
 ### Multi-user collaboration
 

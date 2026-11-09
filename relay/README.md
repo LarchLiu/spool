@@ -4,6 +4,8 @@ An independent Go relay for Spool servers behind a home router or CGNAT. Deploy
 this directory on a VPS. It does not run Spool, agents, a database, or voxl.
 Both the home server and Android make outbound connections to the VPS; there
 is no hole punching, Internet P2P, or port forwarding at home.
+An optional Web gateway also serves browsers and installed PWAs at
+`https://relay.example.com/web/<server-id>/` through the same outbound connection.
 
 ## Docker Compose
 
@@ -28,7 +30,7 @@ The local `.env` is excluded from Git and the image build context.
 | --- | --- | --- |
 | `SPOOL_RELAY_ADMIN_TOKEN` | Required | Management API credential, 32–512 characters. |
 | `RELAY_REQUIRE_REGISTRATION_TOKEN` | `true` | Set `false` to allow signed automatic server registration. |
-| `RELAY_TRUSTED_PROXIES` | Empty | Comma-separated trusted proxy CIDRs for registration source IPs. |
+| `RELAY_TRUSTED_PROXIES` | Empty | Comma-separated proxy IP CIDRs allowed to supply client addresses in `X-Forwarded-For`. |
 | `RELAY_BIND_ADDRESS` | `127.0.0.1` | Host interface for the HTTP relay backend. |
 | `RELAY_PORT` | `28080` | Host port for the HTTP relay backend. |
 | `RELAY_ADMIN_PORT` | `28081` | Host loopback port for the management API. |
@@ -57,6 +59,14 @@ enter that HTTPS origin in Spool Desktop. Android pairing requires an HTTPS
 origin with a certificate trusted by the app; a LAN HTTP address does not work.
 The default loopback mapping is accessible only from the Docker host. Running
 the container at home does not itself create a publicly reachable endpoint.
+
+When using an HTTPS reverse proxy, set `RELAY_TRUSTED_PROXIES` to its source
+address as seen by the relay. For Docker this is the bridge gateway or proxy
+container address, which may differ from the host's loopback address. Prefer
+fixed proxy addresses and narrow CIDRs such as `172.20.0.2/32`. The proxy must
+replace `X-Forwarded-For` or append the actual client address. Do not trust all
+client networks. Without this setting, clients behind the proxy share its
+login rate limit. Direct TLS deployments can leave it empty.
 
 Registrations and revocations persist in the `relay-data` named volume. The
 container uses the image's non-root user, a read-only root filesystem and a
@@ -108,7 +118,8 @@ go build -trimpath -o spool-relay ./cmd/spool-relay
 openssl rand -hex 32
 # Save that random value as SPOOL_RELAY_ADMIN_TOKEN in your service manager.
 export SPOOL_RELAY_ADMIN_TOKEN='the-generated-value'
-./spool-relay -listen 127.0.0.1:28080 -data-dir ./relay-data
+./spool-relay -listen 127.0.0.1:28080 -data-dir ./relay-data \
+  -trusted-proxies 127.0.0.1/32
 ```
 
 Point `relay.example.com` at the VPS and put a TLS reverse proxy in front.
@@ -116,7 +127,9 @@ For example, a Caddyfile:
 
 ```caddyfile
 relay.example.com {
-    reverse_proxy 127.0.0.1:28080
+    reverse_proxy 127.0.0.1:28080 {
+        flush_interval -1
+    }
 }
 ```
 
@@ -124,6 +137,11 @@ Clients use TCP 443. Let the proxy manage its certificate and HTTP challenge as
 usual. WebSocket upgrades must work, with no short maximum connection lifetime.
 Heartbeat pings run every 20 seconds; the home server reconnects automatically.
 For direct TLS, pass `-listen :443 -tls-cert fullchain.pem -tls-key privkey.pem`.
+Omit `-trusted-proxies` for direct TLS. For the loopback Caddy example above,
+`127.0.0.1/32` trusts only that proxy's IPv4 connection. The flag overrides
+`RELAY_TRUSTED_PROXIES`; an invalid CIDR prevents startup. Forwarded chains are
+read from right to left, stopping at the first untrusted address. Other
+forwarding headers and client cookies cannot choose the login rate-limit key.
 
 Container build context is this directory:
 
@@ -334,7 +352,7 @@ the home server, `SPOOL_RELAY_REGISTRATION_TOKEN` still names its own issued tok
 
 ## Desktop and Android pairing
 
-1. In **Spool Desktop → Service → LAN / Relay**, enter the relay HTTPS origin
+1. In **Spool Desktop → Service → Spool Relay**, enter the relay HTTPS origin
    and a free secure LAN port (default 28082). The enable switch stays at the top
    and is disabled until registration succeeds.
 2. The relay address box includes **Relay registration token** with one **Register**
@@ -354,10 +372,10 @@ the home server, `SPOOL_RELAY_REGISTRATION_TOKEN` still names its own issued tok
    **Unregister** contacts that relay first, then removes only its local
    credential and switches relay off. A network failure preserves the credential
    for retry. The local Spool service keeps running.
-3. Enable LAN and relay, then restart the Spool service. Connection status appears
+3. Enable Spool Relay, then restart the Spool service. Connection status appears
    immediately to the left of the enable switch, without a separate status row.
 4. Click **Show pairing QR code**. In Android, add/select a server, open its
-   settings, then click **Scan pairing QR code** under **LAN / Relay**.
+   settings, then click **Scan pairing QR code** under **Spool Relay**.
 5. Compare the address and SHA-256 identity fingerprint on both devices. Confirm,
    then log in with an ordinary Spool account. The bundled scanner requests camera
    permission; camera frames stay on the device. Manual code entry also works.
@@ -390,6 +408,87 @@ confirmation; an explicit relay rejection makes registration available again.
 The stable TLS identity and admission capability are in `data-dir/relay/identity.json`.
 Back up that file with your private Spool data. Replacing it requires re-pairing.
 
+## Public Web / PWA access
+
+The relay can publish each connected Spool server that enables Web access under
+its stable Server ID:
+
+```text
+https://relay.example.com/web/<server-id>/
+```
+
+The ID is part of the URL path. One relay HTTPS address and certificate serve
+all connected servers; no per-server domain, wildcard DNS, browser extension or
+Tailscale client is needed. The existing HTTPS reverse proxy must preserve the
+Host header and the complete `/web/<server-id>/` path, support WebSocket upgrades,
+and stream SSE without buffering. The Caddy configuration above already forwards
+all paths this way. Do not strip `/web/` with a path-rewriting proxy rule.
+
+1. Upgrade both the relay and the home Spool server, then register and enable
+   Spool Relay as described above.
+2. In **Spool Desktop → Service → Spool Relay**, enable **Public Web / PWA access**.
+3. Restart the Spool service to apply its Web setting. On connection, the relay
+   verifies the registration and signed Web opt-in, then automatically adds the
+   route and returns its URL. **Public Web address** appears inside the Web access
+   section, with a copy icon beside it. Sign in with an
+   existing Spool user account. An HTTPS browser can then install the PWA.
+
+Web routes are runtime state in the relay's authenticated host registry. There
+is no static Server ID list to configure. A new server can join while the relay
+keeps running; stopping a host or revoking its registration removes its route
+and closes its active tunnels. Reconnecting restores the same path if Web access
+is still enabled. Relay restarts rebuild routes as hosts reconnect; enrollment
+records remain persistent. Registering a server without connecting it does not
+publish Web access.
+
+For a headless Spool installation, `-relay-web` persists the same setting:
+
+```sh
+spool-server -data-dir /path/to/spool-data -relay -relay-web
+# Disable public Web access while retaining native relay access:
+spool-server -data-dir /path/to/spool-data -relay-web=false
+```
+
+Use the actual name of your compiled server binary. The saved relay URL and
+registration are reused. Public Web access defaults to off on Spool.
+Changing the home Web setting requires a Spool service restart, with no relay
+configuration change or restart. A disconnected or disabled server
+returns an unavailable response. An already installed PWA displays its cached
+offline page, without caching account or chat data.
+
+**Trust model:** the relay terminates browser HTTPS and can read Web requests,
+login cookies, files and messages. It connects to the home server over a tunnel
+with the registered server's TLS key pinned. Only enable Web access on a relay
+you trust. Native Android connections retain their end-to-end pinned TLS.
+
+All Web mounts on one relay share a browser origin. Path-scoped cookies, PWA
+registrations, caches and preferences let multiple servers work in separate
+tabs, but paths are **not a security boundary between untrusted server operators**.
+The manifest keeps a shared PWA identity for the relay origin, with each server's
+own start URL and service-worker scope. A shared identity does not add a server
+switcher to the Web interface; server links can be opened in separate browser tabs.
+Only co-host mutually trusted server operators. The existing relay registration
+policy controls who may connect and publish Web: with required tokens, issue
+credentials only to trusted operators. With automatic registration, any server
+that can enroll may also opt into Web access. Its host must explicitly enable
+Web and sign that choice; native-only hosts do not publish Web routes.
+
+The Server ID is a routing identifier, not a password. Spool still enforces login,
+CSRF, project membership and remote desktop permissions. The relay does not
+create user accounts or expose desktop management APIs. Logout revokes the
+current application session; registration revocation closes the server's native
+and Web tunnels. Cookies, uploads, downloads, chat SSE, workspace WebSockets and
+remote desktop viewers all use the same server prefix. Push notifications return
+to that server's PWA scope.
+
+Login limits use the client's IP address reported by the relay over the host's
+authenticated control channel, for both Web and native connections. Different
+source ports or forged HTTP forwarding headers do not reset a client's limit;
+clients sharing a public IP share the limit. Upgrade both the relay and the
+home server to apply this behavior. Older components remain compatible, but
+retain the shared tunnel-address limit until both are upgraded. The home
+server's separate Public HTTPS endpoint keeps its existing behavior.
+
 ## Routing and security
 
 ```text
@@ -406,7 +505,8 @@ Android ── pinned TLS ──────────────────
   credentials. Both paths use one stable HTTPS origin and private login session.
 - Login, CSRF, workspace hello, project permissions and separate desktop grants
   use the original Spool handlers. Logout/revocation closes authorized streams.
-  The relay sees none of the inner URLs, cookies, messages, files or video.
+  On native Android connections, the relay sees none of the inner URLs, cookies,
+  messages, files or video. The opt-in Web gateway has the trust model above.
 - Every HTTP connection, SSE subscription and WebSocket has an independent data
   channel. Multiple clients and concurrent chat/events/files/desktop do not share
   a byte queue. Large binary frames use bounded buffers, without base64 encoding.
@@ -438,10 +538,17 @@ headers, never URL parameters. Compression is disabled.
   registration is enabled, a missing Authorization header starts identity-based
   enrollment; `ready.registration_token` contains the newly issued credential.
 - `/v1/connect/<server-id>`: requires the server's admission token. The relay
-  sends the host `open` with a random connection ID and one-time data secret.
+  sends the host `open` with a random connection ID, one-time data secret and
+  `client_ip` metadata resolved from the connection and configured trusted proxies.
 - `/v1/data/<connection-id>`: the host supplies the one-time secret; the relay
   joins the sockets. Pending joins expire after 10 seconds. Control loss closes
   that host's data connections.
+- `/web/<server-id>/...`: proxies HTTP, SSE and WebSocket requests only for a
+  connected, authenticated server that opts into Web. Host registration signs
+  `web_origin` using a separate proof domain; the relay dynamically publishes the
+  route and `ready.web_url` confirms the public URL.
+  Web-disabled hosts retain the original native registration protocol. Upgrade
+  both components before enabling Web; older relays cannot verify the Web proof.
 
 Binary messages carry fragments of the inner TLS byte stream, at most 64 KiB
 each; they are not application-message boundaries. Control messages are at most
@@ -451,3 +558,8 @@ Standalone verification: `go test -race ./...` and `go vet ./...` in this module
 with the repository's cache/scratch wrapper. Integration coverage is in
 `internal/workspace/relay_test.go`, `android/transport/spoolnet/relay_test.go`, and
 Android's `RelayPairingTest`.
+Web coverage is in `web_test.go`, `internal/workspace/relay_web_test.go`, and
+`web/test/app-path.test.mjs` / `web/test/web-push.test.mjs`. After building the
+frontend, set `CHROME_BIN` to a standalone Chromium binary and run
+`go test ./internal/workspace -run '^TestRelayWebBrowser$'` from the main repository
+using its cache/scratch wrapper to check two concurrent Web/PWA mounts.

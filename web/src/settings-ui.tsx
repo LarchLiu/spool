@@ -5,7 +5,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { Check, FolderOpen } from "lucide-react";
+import { Check, CircleAlert, Copy, FolderOpen } from "lucide-react";
 import en from "../../locales/en.json";
 import type { MessageKey, Translator } from "./i18n";
 import { settingsCall, type SettingsSnapshot } from "./settings-client";
@@ -69,7 +69,15 @@ export function Hint({ children }: { children: ReactNode }) {
 
 // Copy/reveal actions are not settings mutations. Feedback belongs to this
 // button, not to the page-wide queue, disabled state, or snapshot refresh.
-export function CopyAddressButton({ t }: { t: Translator }) {
+export function CopyAddressButton({
+  t,
+  kind = "copy-tsnet-url",
+  iconOnly = false,
+}: {
+  t: Translator;
+  kind?: "copy-tsnet-url" | "copy-relay-web-url";
+  iconOnly?: boolean;
+}) {
   const [state, setState] = useState<"idle" | "pending" | "copied" | "failed">(
     "idle",
   );
@@ -91,7 +99,7 @@ export function CopyAddressButton({ t }: { t: Translator }) {
     pending.current = true;
     setState("pending");
     try {
-      await settingsCall<boolean>("Action", { kind: "copy-tsnet-url" });
+      await settingsCall<boolean>("Action", { kind });
       if (mounted.current) setState("copied");
     } catch {
       if (mounted.current) setState("failed");
@@ -105,23 +113,29 @@ export function CopyAddressButton({ t }: { t: Translator }) {
       : state === "failed"
         ? t("Could not copy address. Try again.")
         : "";
+  const Icon =
+    state === "copied" ? Check : state === "failed" ? CircleAlert : Copy;
   return (
     <button
       type="button"
-      className="settings-copy-address"
+      className={`settings-copy-address${iconOnly ? " icon" : ""}`}
       onClick={() => void copy()}
       aria-label={t("Copy address")}
       aria-busy={state === "pending"}
       title={message || t("Copy address")}
     >
-      <span className="settings-copy-labels" aria-hidden="true">
-        <span className={state === "copied" ? "" : "active"}>
-          {t("Copy address")}
+      {iconOnly ? (
+        <Icon size={16} aria-hidden="true" />
+      ) : (
+        <span className="settings-copy-labels" aria-hidden="true">
+          <span className={state === "copied" ? "" : "active"}>
+            {t("Copy address")}
+          </span>
+          <span className={state === "copied" ? "active" : ""}>
+            {t("Copied")}
+          </span>
         </span>
-        <span className={state === "copied" ? "active" : ""}>
-          {t("Copied")}
-        </span>
-      </span>
+      )}
       <span className="settings-sr-only" role="status">
         {message}
       </span>

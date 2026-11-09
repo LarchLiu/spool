@@ -1,3 +1,4 @@
+import { appURL } from "./app-path";
 import { getCSRF } from "./api";
 import type { Translator } from "./i18n";
 import { setupVoxlZoom } from "./voxl-zoom";
@@ -38,7 +39,7 @@ export function configureVoxlFrame(
       if (
         method.toUpperCase() === "PUT" &&
         target.origin === view.location.origin &&
-        target.pathname === "/api/desktop/view/files/upload"
+        target.pathname === appURL("/api/desktop/view/files/upload")
       ) {
         uploads.add(this);
       } else uploads.delete(this);

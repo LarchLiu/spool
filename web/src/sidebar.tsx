@@ -1,3 +1,4 @@
+import { appURL } from "./app-path";
 import { useEffect, useMemo, useState } from "react";
 import {
   Folder,
@@ -137,7 +138,7 @@ export function Sidebar(props: Props) {
       <div className="brand">
         {!isMacDesktop() && (
           <>
-            <img className="brand-mark" src="/logo.png" alt="" />
+            <img className="brand-mark" src={appURL("/logo.png")} alt="" />
             Spool
           </>
         )}

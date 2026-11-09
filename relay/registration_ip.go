@@ -2,8 +2,6 @@ package relay
 
 import (
 	"fmt"
-	"net"
-	"net/http"
 	"net/netip"
 	"strings"
 )
@@ -23,45 +21,4 @@ func ParseTrustedProxies(value string) ([]netip.Prefix, error) {
 		prefixes = append(prefixes, prefix.Masked())
 	}
 	return prefixes, nil
-}
-
-func (s *Server) trustedProxy(address netip.Addr) bool {
-	for _, prefix := range s.opts.TrustedProxies {
-		if prefix.Contains(address) {
-			return true
-		}
-	}
-	return false
-}
-
-// Walk the chain from the socket peer toward the client, stopping at the first
-// untrusted address. Headers before that boundary cannot identify the caller.
-// Malformed chains fall back to the socket peer; CF-Connecting-IP is not trusted.
-func (s *Server) registrationIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	peer, err := netip.ParseAddr(host)
-	if err != nil {
-		return ""
-	}
-	peer = peer.Unmap().WithZone("")
-	address := peer
-	forwarded := strings.Join(r.Header.Values("X-Forwarded-For"), ",")
-	if forwarded == "" {
-		return peer.String()
-	}
-	chain := strings.Split(forwarded, ",")
-	if len(chain) > 64 {
-		return peer.String()
-	}
-	for i := len(chain) - 1; i >= 0 && s.trustedProxy(address); i-- {
-		next, err := netip.ParseAddr(strings.TrimSpace(chain[i]))
-		if err != nil || next.Zone() != "" {
-			return peer.String()
-		}
-		address = next.Unmap()
-	}
-	return address.String()
 }

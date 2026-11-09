@@ -1,3 +1,4 @@
+import { appURL } from "./app-path";
 import { useEffect, useRef, useState } from "react";
 import { MonitorUp, X } from "lucide-react";
 import { api } from "./api";
@@ -103,7 +104,7 @@ export function RemoteDesktopDialog({
         <iframe
           className="remote-desktop-frame"
           title={t("Remote desktop")}
-          src={`/api/desktop/view/?token=${encodeURIComponent(token)}`}
+          src={appURL(`/api/desktop/view/?token=${encodeURIComponent(token)}`)}
           referrerPolicy="no-referrer"
           allow="fullscreen"
           allowFullScreen

@@ -1,3 +1,4 @@
+import { appURL } from "./app-path";
 import { api } from "./api";
 import type { MessageKey } from "./i18n";
 import type { Locale } from "./preferences";
@@ -52,7 +53,7 @@ async function saveSubscription(
 
 export async function currentPushSubscription() {
   if (pushSupport() !== "supported") return null;
-  const registration = await navigator.serviceWorker.getRegistration("/");
+  const registration = await navigator.serviceWorker.getRegistration(appURL("/"));
   return registration?.pushManager.getSubscription() ?? null;
 }
 
@@ -120,7 +121,7 @@ export async function enablePush(language: Locale) {
       "Notifications are blocked. Allow them in your browser or system settings.",
     );
   const config = await api<{ public_key: string }>("/push/config");
-  const registration = await navigator.serviceWorker.register("/sw.js");
+  const registration = await navigator.serviceWorker.register(appURL("/sw.js"), { scope: appURL("/") });
   const worker =
     registration.installing || registration.waiting || registration.active;
   if (!worker) throw new PushError("Could not start notification service");
@@ -162,7 +163,7 @@ export async function testPush() {
 
 export async function clearDevicePush() {
   if (pushSupport() !== "supported") return;
-  const registration = await navigator.serviceWorker.getRegistration("/");
+  const registration = await navigator.serviceWorker.getRegistration(appURL("/"));
   const subscription = await registration?.pushManager.getSubscription();
   await subscription?.unsubscribe();
   for (const notification of (await registration?.getNotifications()) ?? [])

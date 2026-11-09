@@ -32,7 +32,7 @@ func (s *Service) SaveSettings(settings Settings) error {
 	if err != nil {
 		return err
 	}
-	if s.relayRegistering && (settings.RelayURL != previous.RelayURL || settings.RelayEnabled != previous.RelayEnabled || settings.RelayLANPort != previous.RelayLANPort) {
+	if s.relayRegistering && (settings.RelayURL != previous.RelayURL || settings.RelayEnabled != previous.RelayEnabled || settings.RelayLANPort != previous.RelayLANPort || settings.RelayWebEnabled != previous.RelayWebEnabled) {
 		return fmt.Errorf("Relay registration is unavailable or already in progress.")
 	}
 	if settings.RelayEnabled && (!previous.RelayEnabled || relayOrigin(previous.RelayURL) != relayOrigin(settings.RelayURL)) && !s.relayRegisteredLocked(settings.RelayURL) {

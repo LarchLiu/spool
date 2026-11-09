@@ -343,7 +343,7 @@ func (s *desktopSettings) TSNetRegister(ctx context.Context, key string) (bool, 
 
 func settingsActionAllowed(kind string) bool {
 	switch kind {
-	case "navigate", "open-chat", "open-browser", "show-file", "copy-tsnet-url":
+	case "navigate", "open-chat", "open-browser", "show-file", "copy-tsnet-url", "copy-relay-web-url":
 		return true
 	}
 	return false
@@ -368,6 +368,12 @@ func (s *desktopSettings) Action(ctx context.Context, command settingsCommand) (
 			address := p.service.Status().TSNet.URL
 			if address == "" {
 				return false, errors.New("Tailscale HTTPS address is unavailable")
+			}
+			mygo.Clipboard.WriteText(address)
+		case "copy-relay-web-url":
+			address := p.service.Status().Relay.WebURL
+			if address == "" {
+				return false, errors.New("Public Web address is unavailable")
 			}
 			mygo.Clipboard.WriteText(address)
 		case "show-file":

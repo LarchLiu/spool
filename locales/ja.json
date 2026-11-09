@@ -436,6 +436,7 @@
   "Keep the database and its sidecar files intact. Check the error and logs before restoring a backup or changing the data directory.": "データベースと関連ファイルをそのまま保持してください。バックアップの復元やデータディレクトリの変更前に、エラーとログを確認してください。",
   "Data directory": "データディレクトリ",
   "Application log": "アプリケーションログ",
+  "Update log": "更新ログ",
   "File logging is unavailable. Diagnostic output is sent to stderr.": "ログファイルに書き込めません。診断情報は標準エラー出力に送信されます。",
   "Retry startup": "起動を再試行",
   "Show data directory": "データディレクトリを表示",
@@ -662,6 +663,7 @@
   "Could not show system notification": "システム通知を表示できませんでした",
   "System notifications are working on this desktop.": "このデスクトップでシステム通知を受信できています。",
   "Connected to tailnet": "Tailnet に接続済み",
+  "Registered": "登録済み",
   "Waiting for Tailscale login": "Tailscale へのログイン待ち",
   "Waiting for device approval": "デバイスの承認待ち",
   "Tailscale unavailable": "Tailscale を利用できません",
@@ -918,7 +920,7 @@
   "Could not open the system installer.": "システムのインストーラーを開けませんでした。",
   "Download v{version}": "ダウンロード v{version}",
   "Update v{version}": "更新 v{version}",
-  "LAN / Relay": "LAN / Relay",
+  "Spool Relay": "Spool リレー",
   "Pair Android phone": "Pair Android phone",
   "Relay registration token": "Relay registration token",
   "Registration token saved locally.": "Registration token saved locally.",
@@ -935,7 +937,7 @@
   "Pairing code": "Pairing code",
   "Relay HTTPS address": "Relay HTTPS address",
   "Secure LAN port": "Secure LAN port",
-  "Enable LAN and relay connections": "Enable LAN and relay connections",
+  "Enable Spool Relay": "Spool リレーを有効にする",
   "Phones prefer a verified LAN connection and use the relay when away. Restart the service after changing these settings.": "Phones prefer a verified LAN connection and use the relay when away. Restart the service after changing these settings.",
   "Relay status": "Relay status",
   "Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity.": "Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity.",
@@ -971,5 +973,8 @@
   "Unregistering…": "登録解除中…",
   "Relay name must be at most 128 bytes and contain no control characters.": "サーバー名は128バイト以内で、制御文字を含めることはできません。",
   "No saved registration for this relay.": "このリレーの登録情報がありません。",
-  "Could not unregister from the relay. Check its address and network connection, then retry.": "リレーの登録を解除できませんでした。アドレスとネットワーク接続を確認して再試行してください。"
+  "Could not unregister from the relay. Check its address and network connection, then retry.": "リレーの登録を解除できませんでした。アドレスとネットワーク接続を確認して再試行してください。",
+  "Public Web / PWA access": "公開 Web / PWA アクセス",
+  "Open this workspace at the relay HTTPS address without Tailscale. The relay can read Web traffic. Restart the service after changing this setting.": "Tailscale なしで中継 HTTPS アドレスからアクセスできます。中継は Web 通信を読み取れます。変更後はサービスを再起動してください。",
+  "Public Web address": "公開 Web アドレス"
 }

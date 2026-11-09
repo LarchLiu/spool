@@ -56,7 +56,7 @@ func TestEnrollmentPersistsNameAndSpoolSourceIP(t *testing.T) {
 				}
 				// Ordinary host reconnects cannot rename or overwrite registration IP.
 				h, _ := NewHost(t.Context(), public.URL, credential, id, nil)
-				c, _, err := h.handshake("/v1/host", "")
+				c, _, err := h.handshake("/v1/host")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -93,7 +93,7 @@ func TestInvalidEnrollmentNameDoesNotClaimToken(t *testing.T) {
 		}
 		// Bypass client validation and exercise the authenticated server parser.
 		h, _ := NewHost(t.Context(), public.URL, token, id, nil)
-		if c, _, err := h.handshake("/v1/register", name); err == nil {
+		if c, _, err := h.handshakeNamed("/v1/register", name); err == nil {
 			c.CloseNow()
 			t.Fatal("server accepted invalid name")
 		}
@@ -131,7 +131,7 @@ func TestFirstHostConnectionRecordsSpoolIP(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer h.Close()
-			c, _, err := h.handshake("/v1/host", "")
+			c, _, err := h.handshake("/v1/host")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -162,10 +162,7 @@ func TestRegistrationIPBehindTrustedProxyAndLegacyUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := s.opts
-	opts.TrustedProxies, err = ParseTrustedProxies("10.0.0.0/24")
-	if err != nil {
-		t.Fatal(err)
-	}
+	opts.TrustedProxies = []string{"10.0.0.0/24"}
 	upgraded, err := NewServer(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +176,7 @@ func TestRegistrationIPBehindTrustedProxyAndLegacyUpgrade(t *testing.T) {
 	}))
 	defer public.Close()
 	h, _ := NewHost(t.Context(), public.URL, token, id, nil)
-	c, _, err := h.handshake("/v1/host", "")
+	c, _, err := h.handshake("/v1/host")
 	if err != nil {
 		h.Close()
 		t.Fatal(err)

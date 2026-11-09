@@ -90,7 +90,7 @@ test("desktop skips PWA registration and install UI without changing browser beh
   const source = await readFile(new URL("../src/main.tsx", import.meta.url), "utf8");
   assert.match(source, /if \(isDesktopChat\(\)\) return;\s*const handler =/);
   assert.match(source, /setInstall\(e as BeforeInstallPromptEvent\)/);
-  assert.match(source, /\.register\("\/sw\.js"\)/);
+  assert.match(source, /\.register\(appURL\("\/sw\.js"\), \{ scope: appURL\("\/"\) \}\)/);
 });
 
 test("native settings link is desktop-only, localized, and stays in the same page", (t) => {

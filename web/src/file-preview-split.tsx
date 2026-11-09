@@ -1,3 +1,4 @@
+import { appBasePath } from "./app-path";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { Translator } from "./i18n";
 import {
@@ -23,7 +24,7 @@ export function FilePreviewSplit({
   const [height, setHeight] = useState(0);
   const [preferredFraction, setPreferredFraction] = useState(() => {
     try {
-      return parsePreviewSplit(localStorage.getItem(previewSplitStorageKey));
+      return parsePreviewSplit(localStorage.getItem((appBasePath() === "/" ? "" : appBasePath()) + previewSplitStorageKey));
     } catch {
       return defaultFileTreeFraction;
     }
@@ -45,7 +46,7 @@ export function FilePreviewSplit({
   useEffect(() => {
     try {
       localStorage.setItem(
-        previewSplitStorageKey,
+        (appBasePath() === "/" ? "" : appBasePath()) + previewSplitStorageKey,
         JSON.stringify(preferredFraction),
       );
     } catch {

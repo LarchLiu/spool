@@ -15,14 +15,14 @@ sampling is for hotspot attribution, not an uninstrumented frame-rate baseline.
 
 ## Interface And Transport
 
-**LAN / Relay** is also available in each server's connection settings. Deploy the
+**Spool Relay** is also available in each server's connection settings. Deploy the
 independent Go module on a VPS, enable it in Spool Desktop, then use **Scan pairing
 QR code** in the app. The confirmation screen shows the relay address and pinned
 server identity. Sign in with the ordinary Spool account after confirming.
 See [deployment, pairing, routing and protocol](../relay/README.md).
 
 Connection settings use three compact tabs: **Public HTTPS**, **Tailscale**,
-and **LAN / Relay**. They share the sidebar server tabs' rounded style through
+and **Spool Relay**. They share the sidebar server tabs' rounded style through
 `NativeTabs` (`REGULAR` uses 40dp buttons; `COMPACT` uses 32dp buttons). Browsing a
 tab preserves all three inputs and the active connection until **Connect** is
 pressed. Status dots appear before the connection-mode tab names.
@@ -103,7 +103,7 @@ Use **+** at the end of the sidebar server tabs to add a named server. Tabs
 include disconnected/disabled servers so their settings and sign-in remain
 accessible. The selected tab's footer Settings edits only that server, including
 its name and whether it may connect. Each server can have a **Public HTTPS**
-address, a **Tailscale (tsnet)** address, and **LAN / Relay** pairing. Click
+address, a **Tailscale (tsnet)** address, and **Spool Relay** pairing. Click
 **Connect** in the desired tab. The choice is saved separately for each server
 and restored on restart. The tabs share one card, with centered Connect/Disconnect
 actions and Tailscale sign-in or relay scanning icons at the right. Delete server is at the

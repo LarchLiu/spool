@@ -10,7 +10,7 @@ func TestRegistrationIPTrustBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{opts: ServerOptions{TrustedProxies: trusted}}
+	s := &Server{trustedProxies: trusted}
 	for _, test := range []struct{ name, peer, forwarded, want string }{
 		{"direct", "198.51.100.1:1234", "", "198.51.100.1"},
 		{"untrusted spoof", "198.51.100.1:1234", "192.0.2.2", "198.51.100.1"},
@@ -29,7 +29,7 @@ func TestRegistrationIPTrustBoundary(t *testing.T) {
 			r.RemoteAddr = test.peer
 			r.Header.Set("X-Forwarded-For", test.forwarded)
 			r.Header.Set("CF-Connecting-IP", "192.0.2.99")
-			if got := s.registrationIP(r); got != test.want {
+			if got := s.clientIP(r); got != test.want {
 				t.Fatalf("IP = %s, want %s", got, test.want)
 			}
 		})
