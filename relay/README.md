@@ -378,8 +378,8 @@ the home server, `SPOOL_RELAY_REGISTRATION_TOKEN` still names its own issued tok
    settings, then click **Scan pairing QR code** under **Spool Relay**.
 5. Compare the address and server fingerprint, then confirm on the phone. The
    app creates its own private device key and shows its device fingerprint.
-6. In Desktop's **Pair Android phone** section, compare the pending phone's name
-   and device fingerprint, then choose **Allow device** or **Reject device**.
+6. Desktop opens a **Device approval** dialog. Compare the phone's name and
+   device fingerprint, then choose **Allow device** or **Reject device**.
    Only an approved phone can reach Spool's login. Sign in with an ordinary Spool
    account. The scanner keeps camera frames on the phone; manual code entry uses
    the same approval flow.

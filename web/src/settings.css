@@ -652,6 +652,113 @@
 .settings-relay-help {
   margin: 0 19px 12px;
 }
+.settings-relay-pairing-content {
+  padding: 8px 19px 20px;
+  overflow-wrap: anywhere;
+}
+.settings-relay-pairing-qr {
+  width: 320px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.settings-relay-pairing-qr img {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+}
+.settings-relay-pairing-qr[data-inactive="true"] img {
+  filter: grayscale(1);
+  opacity: 0.2;
+}
+.settings-relay-pairing-status {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.settings-relay-devices-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.settings-relay-devices-help {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--muted);
+  cursor: help;
+}
+.settings-relay-device {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 19px;
+}
+.settings-relay-device + .settings-relay-device {
+  border-top: 1px solid var(--settings-divider);
+}
+.settings-relay-device-info {
+  flex: 1;
+  min-width: 0;
+}
+.settings-relay-device-info > strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.settings-relay-device > button {
+  flex-shrink: 0;
+}
+.settings-relay-fingerprint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.settings-relay-approval-dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: 0 18px 60px #0003;
+}
+.settings-relay-approval-dialog::backdrop {
+  background: #0007;
+}
+.settings-relay-approval-dialog h2 {
+  margin: 0 0 20px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.settings-relay-approval-name {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.settings-relay-approval-dialog p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.settings-relay-approval-dialog .settings-relay-fingerprint {
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--surface);
+}
+.settings-relay-approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
 .settings-pairing-code {
   width: 100%;
   margin-top: 24px;

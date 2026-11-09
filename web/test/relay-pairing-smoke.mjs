@@ -37,19 +37,33 @@ const pairing = ${JSON.stringify(pairing)};
 const calls = [];
 const registrations = new Set();
 const copied = [];
+const realNow = Date.now.bind(Date);
+let clockOffset = 0;
+Date.now = () => realNow() + clockOffset;
+let holdDevices = false;
+let resumeDevices;
 let rejectCopy = false;
 let completeRegistration, rejectRegistration;
 let failUnregister = false;
+let failDecision = false;
 let unregisterCalls = 0;
 let checks = 0;
 let devices = { devices: [], pending: [] };
 window.mygo = { on: () => () => {}, call: async (method, ...args) => {
   calls.push({ method, args });
   if (method === 'DesktopSettings.RegisterRelay') return new Promise((resolve, reject) => { completeRegistration = resolve; rejectRegistration = reject; });
-  if (method === 'DesktopSettings.RelayPairing') return pairing;
-  if (method === 'DesktopSettings.RelayDevices') return devices;
+  if (method === 'DesktopSettings.RelayPairing') {
+    pairing.expires_at = Math.floor(Date.now() / 1000) + 300;
+    devices = { ...devices, pending: [] };
+    return { ...pairing };
+  }
+  if (method === 'DesktopSettings.RelayDevices') {
+    if (holdDevices) return new Promise(resolve => { resumeDevices = () => resolve(devices); });
+    return devices;
+  }
   if (method === 'DesktopSettings.CancelRelayPairing') { devices = { ...devices, pending: [] }; return true; }
   if (method === 'DesktopSettings.DecideRelayDevice') {
+    if (failDecision) throw new Error('synthetic decision failure');
     const request = devices.pending.find(device => device.request_id === args[0]);
     if (!request) throw new Error('Unknown request');
     devices = { devices: args[1] ? [...devices.devices, request] : devices.devices, pending: [] };
@@ -215,6 +229,20 @@ const check = (value, label) => { checks++; if (!value) throw new Error(label); 
   check(document.body.textContent.includes(pairing.fingerprint), 'fingerprint is shown');
   check(document.body.textContent.includes(pairing.relay_url), 'relay address is shown');
   check(image.getBoundingClientRect().right <= innerWidth, 'QR stays in viewport');
+  const qr = () => document.querySelector('.settings-relay-pairing-qr');
+  const pairingStatus = () => document.querySelector('.settings-relay-pairing-status');
+  const remainingSeconds = () => {
+    const time = pairingStatus().textContent.trim().split(' ').at(-1).split(':').map(Number);
+    return time[0] * 60 + time[1];
+  };
+  check(getComputedStyle(qr()).borderRadius === '14px' && getComputedStyle(qr()).overflow === 'hidden', 'QR clips to rounded corners');
+  const remainingBeforeTick = remainingSeconds();
+  check(pairingStatus().getAttribute('role') === 'timer' && remainingBeforeTick > 295 && remainingBeforeTick <= 300, 'fresh code shows a five-minute countdown');
+  await pause(1100);
+  check(remainingSeconds() < remainingBeforeTick && remainingSeconds() >= remainingBeforeTick - 2, 'countdown updates every second');
+  const deviceHelp = devicesToggle().querySelector('.settings-relay-devices-help');
+  check(deviceHelp?.querySelector('svg.lucide-info') && deviceHelp.title === '撤销设备会断开它的局域网和中继连接，需要重新配对才能恢复访问。' && devicesToggle().getAttribute('aria-describedby') === deviceHelp.id, 'device explanation lives in the title info icon with an accessible description');
+  check(!devicesToggle().closest('.settings-relay-section').querySelector('.settings-relay-help'), 'device explanation no longer occupies its own row');
   check(document.querySelector('textarea').value === pairing.code, 'manual code matches QR payload');
   const manual = document.querySelector('.settings-pairing-code');
   const manualCopy = manual.querySelector('.settings-copy-address');
@@ -250,14 +278,56 @@ const check = (value, label) => { checks++; if (!value) throw new Error(label); 
   devices = { devices: [], pending: [requested] };
   for (let i = 0; i < 40 && !button('允许配对'); i++) await pause(50);
   check(!!button('允许配对') && document.body.textContent.includes('Synthetic phone') && document.body.textContent.includes(requested.id.match(/.{1,8}/g).join(' ')), 'pending device shows name and fingerprint');
-  document.querySelector('[aria-label="设备配对确认"]').scrollIntoView({ block: 'center' });
+  const approvalDialog = () => document.querySelector('dialog[aria-label="设备配对确认"]');
+  check(approvalDialog()?.open && approvalDialog().matches(':modal'), 'incoming pairing opens a modal confirmation');
+  check(approvalDialog().contains(button('允许配对')) && approvalDialog().contains(button('拒绝配对')) && document.activeElement === button('拒绝配对'), 'modal owns both decisions and starts on reject');
   await fetch('/capture-approval');
   button('拒绝配对').click(); await pause(100);
-  check(!button('允许配对') && devices.devices.length === 0, 'rejection never authorizes device');
+  check(!approvalDialog() && !button('允许配对') && devices.devices.length === 0, 'rejection closes the modal without authorizing a device');
+  check(qr().dataset.inactive === 'true' && pairingStatus().textContent.includes('已取消'), 'rejection marks the consumed invitation inactive');
+  button('刷新配对码').click(); await pause(100);
+  check(qr().dataset.inactive === 'false' && pairingStatus().getAttribute('role') === 'timer', 'refreshing after rejection starts a new countdown');
+  devices = { devices: [], pending: [{ ...requested, request_id: 'escape-request' }] };
+  for (let i = 0; i < 40 && !approvalDialog(); i++) await pause(50);
+  approvalDialog().dispatchEvent(new Event('cancel', { cancelable: true })); await pause(100);
+  check(!approvalDialog() && devices.devices.length === 0 && calls.some(call => call.method === 'DesktopSettings.DecideRelayDevice' && call.args[0] === 'escape-request' && call.args[1] === false), 'Escape rejects the request without accepting it');
+  button('刷新配对码').click(); await pause(100);
   devices = { devices: [], pending: [requested] };
   for (let i = 0; i < 40 && !button('允许配对'); i++) await pause(50);
+  failDecision = true;
   button('允许配对').click(); await pause(100);
-  check(!button('允许配对') && !!button('撤销设备') && devices.devices.length === 1, 'approval lists paired device');
+  check(approvalDialog()?.open && !!approvalDialog().querySelector('[role="alert"]') && devices.devices.length === 0 && !button('允许配对').disabled, 'decision failure stays in the dialog and permits retry');
+  check(qr().dataset.inactive === 'false', 'failed approval does not gray an active code');
+  failDecision = false;
+  const acceptedQR = qr().querySelector('img');
+  button('允许配对').click(); await pause(100);
+  check(!approvalDialog() && !button('允许配对') && !!button('撤销设备') && devices.devices.length === 1, 'approval lists paired device');
+  check(qr().querySelector('img') === acceptedQR && getComputedStyle(acceptedQR).opacity === '0.2' && pairingStatus().textContent.includes('配对已完成'), 'accepting a device immediately grays the existing QR and replaces its countdown');
+  check(document.querySelector('.settings-pairing-code .settings-copy-address').disabled && document.querySelector('textarea').disabled, 'consumed manual code is disabled');
+  qr().scrollIntoView({ block: 'center', behavior: 'instant' });
+  await fetch('/capture-complete');
+  button('刷新配对码').click(); await pause(100);
+  check(qr().dataset.inactive === 'false' && getComputedStyle(qr().querySelector('img')).opacity === '1' && !document.querySelector('.settings-pairing-code .settings-copy-address').disabled, 'refreshing an approved invitation restores the QR and manual code');
+  devices = { ...devices, pending: [{ ...requested, request_id: 'expiring-request', expires_at: pairing.expires_at }] };
+  for (let i = 0; i < 40 && !approvalDialog(); i++) await pause(50);
+  check(approvalDialog()?.open, 'new invitation can receive another pairing request');
+  const expiringQR = qr().querySelector('img');
+  holdDevices = true;
+  for (let i = 0; i < 40 && !resumeDevices; i++) await pause(50);
+  check(!!resumeDevices, 'device polling is blocked during expiry check');
+  clockOffset = pairing.expires_at * 1000 - realNow() + 2000;
+  await pause(1100);
+  check(!approvalDialog() && qr().querySelector('img') === expiringQR && getComputedStyle(expiringQR).opacity === '0.2' && pairingStatus().textContent.includes('已过期'), 'expiry closes approval and grays QR even while device polling is blocked');
+  check(Math.abs(pairingStatus().getBoundingClientRect().left - qr().getBoundingClientRect().left) < 1 && Math.abs(pairingStatus().getBoundingClientRect().left - document.querySelector('.settings-relay-help').getBoundingClientRect().left) < 1, 'expired notice aligns with QR and section help');
+  const copiedBeforeExpiry = copied.length;
+  document.querySelector('.settings-pairing-code .settings-copy-address').click();
+  check(copied.length === copiedBeforeExpiry && document.querySelector('textarea').disabled, 'expired invitation cannot be copied');
+  qr().scrollIntoView({ block: 'center', behavior: 'instant' });
+  await fetch('/capture-expired');
+  holdDevices = false; resumeDevices(); resumeDevices = undefined;
+  clockOffset = 0;
+  button('刷新配对码').click(); await pause(100);
+  check(qr().dataset.inactive === 'false' && remainingSeconds() > 295 && !approvalDialog(), 'refresh after expiry creates a fresh countdown without reopening an expired request');
   devicesToggle().click(); await pause(100);
   check(devicesToggle().getAttribute('aria-expanded') === 'false' && !button('撤销设备') && devices.devices.length === 1 && devicesToggle().textContent.includes('1'), 'collapsing paired devices hides details and retains the count and authorization');
   pairToggle().click(); await pause(100);
@@ -265,7 +335,14 @@ const check = (value, label) => { checks++; if (!value) throw new Error(label); 
   await fetch('/capture-controls');
   devicesToggle().click(); await pause(100);
   check(devicesToggle().getAttribute('aria-expanded') === 'true' && !!button('撤销设备'), 'paired devices expand independently of pairing');
-  button('撤销设备').click(); await pause(100);
+  const revoke = button('撤销设备');
+  const deviceRow = revoke.closest('.settings-relay-device');
+  const deviceInfo = deviceRow.querySelector('.settings-relay-device-info').getBoundingClientRect();
+  const revokeBox = revoke.getBoundingClientRect();
+  check(revokeBox.left >= deviceInfo.right && revokeBox.top < deviceInfo.bottom && revokeBox.bottom > deviceInfo.top, 'revoke sits to the right of device details on the same row');
+  deviceRow.scrollIntoView({ block: 'center' });
+  await fetch('/capture-devices');
+  revoke.click(); await pause(100);
   check(!button('撤销设备') && devices.devices.length === 0, 'revoke removes paired device');
   check(calls.some(call => call.method === 'DesktopSettings.CancelRelayPairing' && call.args[0] === pairing.code), 'hiding code invalidates invitation through private bridge');
   check(calls.every(call => ['DesktopSettings.RelayPairing', 'DesktopSettings.RelayDevices', 'DesktopSettings.CancelRelayPairing', 'DesktopSettings.DecideRelayDevice', 'DesktopSettings.RevokeRelayDevice', 'DesktopSettings.RegisterRelay', 'DesktopSettings.Action'].includes(call.method)), 'registration and pairing use only the private bridge');
@@ -297,6 +374,14 @@ const server = createServer(async (req, res) => {
   }
   if (req.url === "/capture-controls") {
     captureRequest = { response: res, name: "relay-controls" };
+    return;
+  }
+  if (req.url === "/capture-complete" || req.url === "/capture-expired") {
+    captureRequest = { response: res, name: req.url === "/capture-complete" ? "pairing-complete" : "pairing-expired" };
+    return;
+  }
+  if (req.url === "/capture-devices") {
+    captureRequest = { response: res, name: "paired-devices" };
     return;
   }
   if (req.url === "/report") {
@@ -433,12 +518,13 @@ try {
   await send("Page.navigate", {
     url: `http://127.0.0.1:${server.address().port}/`,
   });
-  for (let i = 0; i < 400 && !report; i++) {
+  for (let i = 0; i < 700 && !report; i++) {
     if (captureRequest) {
       for (const theme of ["light", "dark"]) {
         await send("Runtime.evaluate", {
           expression: `document.documentElement.dataset.theme = '${theme}'`,
         });
+        await pause(200);
         const capture = await send("Page.captureScreenshot", { format: "png" });
         await writeFile(
           join(output, `${captureRequest.name}-${theme}.png`),
@@ -475,7 +561,7 @@ try {
     JSON.stringify(report, null, 2),
   );
   console.log(
-    "PASS: remembered registrations, named enrollment, unregister and retry, Web/Tailnet copying, inline status and pairing controls",
+    "PASS: remembered registrations, named enrollment, unregister and retry, Web/Tailnet copying, modal device approval, inline revoke controls, countdown and inactive rounded QR",
   );
 } finally {
   socket?.close();

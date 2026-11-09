@@ -73,11 +73,13 @@ export function CopyAddressButton({
   t,
   kind = "copy-tsnet-url",
   iconOnly = false,
+  disabled = false,
   text,
 }: {
   t: Translator;
   kind?: "copy-tsnet-url" | "copy-relay-web-url" | "copy-relay-pairing-code";
   iconOnly?: boolean;
+  disabled?: boolean;
   text?: string;
 }) {
   const pairing = kind === "copy-relay-pairing-code";
@@ -98,7 +100,7 @@ export function CopyAddressButton({
     return () => clearTimeout(timer);
   }, [state]);
   const copy = async () => {
-    if (pending.current) return;
+    if (disabled || pending.current) return;
     pending.current = true;
     setState("pending");
     try {
@@ -130,6 +132,7 @@ export function CopyAddressButton({
     <button
       type="button"
       className={`settings-copy-address${iconOnly ? " icon" : ""}`}
+      disabled={disabled}
       onClick={(event) => {
         event.preventDefault();
         void copy();
