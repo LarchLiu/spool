@@ -139,6 +139,14 @@ const check = (value, label) => { checks++; if (!value) throw new Error(label); 
   check(status && status.textContent.includes('已连接') && status.closest('.settings-row') === toggle().closest('.settings-row'), 'enabled status belongs beside switch');
   check(status.getBoundingClientRect().right <= toggle().getBoundingClientRect().left, 'status is left of switch');
   check(card.firstElementChild.contains(toggle()) && address().closest('.settings-card') === card, 'registration success preserves top switch and address');
+  for (const state of ['connecting', 'reconnecting', 'connected']) {
+    data = { ...data, status: { ...data.status, Relay: { ...data.status.Relay, State: state } } };
+    render(); await pause(50);
+    check(!button('注销') && !registration(), state + ' hides unregister without reopening registration');
+  }
+  data = { ...data, status: { ...data.status, Relay: { ...data.status.Relay, State: 'connected' } } };
+  render(); await pause(50);
+  check(!button('注销'), 'connected relay keeps unregister hidden');
   const webGroup = document.querySelector('[role="group"][aria-label="公网 Web / PWA 访问"]');
   const webToggle = webGroup.querySelector('[role="switch"]');
   check(!webGroup.querySelector('.settings-copy-address') && !webGroup.textContent.includes('公网 Web 地址'), 'disabled Web hides address and copy control');
@@ -191,9 +199,11 @@ const check = (value, label) => { checks++; if (!value) throw new Error(label); 
   check(!document.querySelector('img') && !document.querySelector('textarea'), 'hide removes code and image');
   button('显示配对二维码').click(); await pause(250); await document.querySelector('img').decode();
   check(calls.every(call => ['DesktopSettings.RelayPairing', 'DesktopSettings.RegisterRelay', 'DesktopSettings.Action'].includes(call.method)), 'registration and pairing use only the private bridge');
+  toggle().click(); await pause(100);
+  check(!!button('注销') && !registration() && !document.querySelector('img'), 'disabled relay shows unregister and clears pairing display');
   failUnregister = true;
   button('注销').click(); await pause(100);
-  check(!!button('注销') && !registration() && toggle().getAttribute('aria-checked') === 'true' && !!document.querySelector('[role="alert"]'), 'failed unregister preserves registration and connection');
+  check(!!button('注销') && !registration() && toggle().getAttribute('aria-checked') === 'false' && !!document.querySelector('[role="alert"]'), 'failed unregister preserves saved registration for retry');
   failUnregister = false;
   button('注销').click(); await pause(100);
   check(!!registration() && !button('注销') && toggle().disabled && toggle().getAttribute('aria-checked') === 'false', 'unregister disables relay and restores form');

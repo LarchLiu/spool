@@ -171,6 +171,11 @@ export function ServicePage({ data, run, t }: PageProps) {
     draft.relay_url === data.settings.relay_url &&
     (data.status.Relay?.Registered || registeredRelayURL === draft.relay_url);
   const relayRegistering = registeringRelay || data.status.Relay?.Registering;
+  const relayActive =
+    draft.relay_enabled ||
+    data.status.Relay?.State === "connecting" ||
+    data.status.Relay?.State === "reconnecting" ||
+    data.status.Relay?.State === "connected";
   const relayAddress = (
     <div
       className="settings-relay-section"
@@ -193,37 +198,38 @@ export function ServicePage({ data, run, t }: PageProps) {
           onBusyChange={setRegisteringRelay}
         />
       )}
-      {(relayRegistered ||
-        (draft.relay_url === data.settings.relay_url &&
-          data.status.Relay?.RegistrationTokenSet)) && (
-        <div className="settings-card-actions">
-          <button
-            type="button"
-            disabled={
-              relayRegistering || draft.relay_url !== data.settings.relay_url
-            }
-            onClick={async () => {
-              setRegisteringRelay(true);
-              setUnregisterError("");
-              try {
-                const result = await run({
-                  kind: "unregister-relay",
-                  target: data.settings.relay_url ?? "",
-                });
-                if (result) setRegisteredRelayURL(undefined);
-              } catch (error) {
-                setUnregisterError(
-                  error instanceof Error ? error.message : String(error),
-                );
-              } finally {
-                setRegisteringRelay(false);
+      {!relayActive &&
+        (relayRegistered ||
+          (draft.relay_url === data.settings.relay_url &&
+            data.status.Relay?.RegistrationTokenSet)) && (
+          <div className="settings-card-actions">
+            <button
+              type="button"
+              disabled={
+                relayRegistering || draft.relay_url !== data.settings.relay_url
               }
-            }}
-          >
-            {t(relayRegistering ? "Unregistering…" : "Unregister")}
-          </button>
-        </div>
-      )}
+              onClick={async () => {
+                setRegisteringRelay(true);
+                setUnregisterError("");
+                try {
+                  const result = await run({
+                    kind: "unregister-relay",
+                    target: data.settings.relay_url ?? "",
+                  });
+                  if (result) setRegisteredRelayURL(undefined);
+                } catch (error) {
+                  setUnregisterError(
+                    error instanceof Error ? error.message : String(error),
+                  );
+                } finally {
+                  setRegisteringRelay(false);
+                }
+              }}
+            >
+              {t(relayRegistering ? "Unregistering…" : "Unregister")}
+            </button>
+          </div>
+        )}
       {unregisterError && (
         <div className="settings-error" role="alert">
           {knownMessage(unregisterError, t)}
