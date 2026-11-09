@@ -172,6 +172,8 @@ export function ServicePage({ data, run, t }: PageProps) {
   const draft = autosave.draft;
   const [registeredRelayURL, setRegisteredRelayURL] = useState<string>();
   const [registeringRelay, setRegisteringRelay] = useState(false);
+  const [unregisterError, setUnregisterError] = useState("");
+  useEffect(() => setUnregisterError(""), [data.settings.relay_url]);
   useEffect(() => {
     if (
       data.status.Relay?.Registered ||
@@ -208,6 +210,42 @@ export function ServicePage({ data, run, t }: PageProps) {
           onRegistered={() => setRegisteredRelayURL(data.settings.relay_url)}
           onBusyChange={setRegisteringRelay}
         />
+      )}
+      {(relayRegistered ||
+        (draft.relay_url === data.settings.relay_url &&
+          data.status.Relay?.RegistrationTokenSet)) && (
+        <div className="settings-card-actions">
+          <button
+            type="button"
+            disabled={
+              relayRegistering || draft.relay_url !== data.settings.relay_url
+            }
+            onClick={async () => {
+              setRegisteringRelay(true);
+              setUnregisterError("");
+              try {
+                const result = await run({
+                  kind: "unregister-relay",
+                  target: data.settings.relay_url ?? "",
+                });
+                if (result) setRegisteredRelayURL(undefined);
+              } catch (error) {
+                setUnregisterError(
+                  error instanceof Error ? error.message : String(error),
+                );
+              } finally {
+                setRegisteringRelay(false);
+              }
+            }}
+          >
+            {t(relayRegistering ? "Unregistering…" : "Unregister")}
+          </button>
+        </div>
+      )}
+      {unregisterError && (
+        <div className="settings-error" role="alert">
+          {knownMessage(unregisterError, t)}
+        </div>
       )}
     </div>
   );

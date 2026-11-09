@@ -91,12 +91,22 @@ func (h *Host) Run() {
 // Register verifies and persists enrollment without opening an ingress listener
 // or replacing a running host. The returned credential must be stored locally.
 func Register(ctx context.Context, url, token string, id *Identity, client *http.Client) (string, error) {
+	return RegisterNamed(ctx, url, token, "", id, client)
+}
+
+// RegisterNamed optionally labels the server in the relay's management records.
+// An empty name preserves the existing label or uses an automatic default.
+func RegisterNamed(ctx context.Context, url, token, name string, id *Identity, client *http.Client) (string, error) {
+	name = strings.TrimSpace(name)
+	if name != "" && !validRegistrationName(name) {
+		return "", ErrInvalidRegistration
+	}
 	h, err := NewHost(ctx, url, token, id, client)
 	if err != nil {
 		return "", err
 	}
 	defer h.Close()
-	c, credential, err := h.handshake("/v1/register")
+	c, credential, err := h.handshake("/v1/register", name)
 	if err != nil {
 		return "", err
 	}
@@ -104,7 +114,7 @@ func Register(ctx context.Context, url, token string, id *Identity, client *http
 	return credential, nil
 }
 
-func (h *Host) handshake(path string) (_ *websocket.Conn, credential string, result error) {
+func (h *Host) handshake(path, name string) (_ *websocket.Conn, credential string, result error) {
 	dialCtx, cancel := context.WithTimeout(h.ctx, handshakeTimeout)
 	token := h.RegistrationToken()
 	c, err := dialWebsocket(dialCtx, h.HTTPClient, h.URL, path, token)
@@ -123,13 +133,16 @@ func (h *Host) handshake(path string) (_ *websocket.Conn, credential string, res
 	if err != nil || m.Type != "challenge" || !validToken(m.Challenge) {
 		return nil, "", fmt.Errorf("relay challenge failed: %w", errors.Join(err, errors.New("invalid registration challenge")))
 	}
-	if err := writeControl(authCtx, c, controlMessage{Type: "register", PublicKey: h.Identity.PublicKey(), AccessToken: h.Identity.AccessToken,
-		Signature: ed25519.Sign(h.Identity.PrivateKey(), proof(m.Challenge, h.Identity.AccessToken))}); err != nil {
+	if err := writeControl(authCtx, c, controlMessage{Type: "register", PublicKey: h.Identity.PublicKey(), AccessToken: h.Identity.AccessToken, Name: name,
+		Signature: ed25519.Sign(h.Identity.PrivateKey(), registrationProof(m.Challenge, h.Identity.AccessToken, name))}); err != nil {
 		return nil, "", err
 	}
 	m, err = readControl(authCtx, c)
 	if err == nil && m.Type == "registration_rejected" {
 		return nil, "", ErrRegistrationRejected
+	}
+	if err == nil && m.Type == "invalid_registration" {
+		return nil, "", ErrInvalidRegistration
 	}
 	if err != nil || m.Type != "ready" {
 		return nil, "", fmt.Errorf("relay did not confirm registration: %w", errors.Join(err, errors.New("registration failed")))
@@ -147,7 +160,7 @@ func (h *Host) handshake(path string) (_ *websocket.Conn, credential string, res
 }
 
 func (h *Host) session() error {
-	c, token, err := h.handshake("/v1/host")
+	c, token, err := h.handshake("/v1/host", "")
 	if err != nil {
 		return err
 	}

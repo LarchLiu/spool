@@ -184,14 +184,14 @@ func TestPairingCodeKeepsRegistrationCredentialLocal(t *testing.T) {
 	if strings.Contains(string(encoded), secret) || strings.Contains(string(saved), secret) {
 		t.Fatal("registration credential escaped local secret storage")
 	}
-	if service.relayRegistrationToken() != secret {
+	if service.relayRegistrationToken(settings.RelayURL) != secret {
 		t.Fatal("registration credential did not persist")
 	}
 	t.Setenv("SPOOL_RELAY_REGISTRATION_TOKEN", "environment-token-that-must-be-overridden")
 	if err := service.SetRelayRegistrationToken(""); err != nil {
 		t.Fatal(err)
 	}
-	if service.relayRegistrationToken() != "" {
+	if service.relayRegistrationToken(settings.RelayURL) != "" {
 		t.Fatal("automatic registration did not clear environment credential")
 	}
 }
@@ -237,7 +237,7 @@ func TestRelayRegistrationGatesEnablementAndPersistsConfirmation(t *testing.T) {
 			t.Fatal("relay accepted invalid registration")
 		}
 		assertLocked()
-		if service.relayRegistrationToken() != token {
+		if service.relayRegistrationToken(settings.RelayURL) != token {
 			t.Fatal("failed registration replaced the saved credential")
 		}
 	}
@@ -362,13 +362,13 @@ func testRelayServiceLifecycle(t *testing.T, automatic bool) {
 	if status.RestartRequired || status.Error != "" {
 		t.Fatal(status)
 	}
-	if !status.Relay.RegistrationTokenSet || service.relayRegistrationToken() == "" {
+	if !status.Relay.RegistrationTokenSet || service.relayRegistrationToken(settings.RelayURL) == "" {
 		t.Fatal("issued token was not saved locally")
 	}
-	if info, err := os.Stat(filepath.Join(service.Store.Root(), "relay", "registration-token")); err != nil || info.Mode().Perm() != 0600 {
+	if info, err := os.Stat(filepath.Join(service.Store.Root(), "relay", "registrations.json")); err != nil || info.Mode().Perm() != 0600 {
 		t.Fatal("registration token storage is not private", err)
 	}
-	token = service.relayRegistrationToken()
+	token = service.relayRegistrationToken(settings.RelayURL)
 	code, err := service.RelayPairingCode()
 	if err != nil {
 		t.Fatal(err)
@@ -400,7 +400,7 @@ func testRelayServiceLifecycle(t *testing.T, automatic bool) {
 	if status.Relay.ServerID != p.ID() {
 		t.Fatal("identity changed across restart")
 	}
-	if service.relayRegistrationToken() != token || status.RestartRequired {
+	if service.relayRegistrationToken(settings.RelayURL) != token || status.RestartRequired {
 		t.Fatal("restart did not reuse saved registration token")
 	}
 	response, err = client.Get(relay.Origin(p.ID()) + "/healthz")

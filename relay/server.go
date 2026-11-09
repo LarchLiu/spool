@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ type ServerOptions struct {
 	MaxHosts               int
 	MaxConnections         int
 	MaxConnectionsPerHost  int
+	TrustedProxies         []netip.Prefix
 }
 
 // Server is an opaque byte forwarder. It has no Spool database, user accounts,
@@ -62,6 +64,12 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if strings.TrimSpace(opts.DataDir) == "" {
 		return nil, errors.New("relay data directory is required")
 	}
+	for _, prefix := range opts.TrustedProxies {
+		if !prefix.IsValid() {
+			return nil, errors.New("invalid trusted proxy CIDR")
+		}
+	}
+	opts.TrustedProxies = append([]netip.Prefix(nil), opts.TrustedProxies...)
 	if opts.MaxHosts <= 0 {
 		opts.MaxHosts = 100
 	}
@@ -98,6 +106,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.register(w, r, true)
 	case r.URL.Path == "/v1/host":
 		s.register(w, r, false)
+	case r.URL.Path == "/v1/unregister":
+		s.unregister(w, r)
 	case strings.HasPrefix(r.URL.Path, "/v1/connect/"):
 		s.connect(w, r, strings.TrimPrefix(r.URL.Path, "/v1/connect/"))
 	case strings.HasPrefix(r.URL.Path, "/v1/data/"):
@@ -153,9 +163,15 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 	m, err := readControl(authCtx, c)
 	authCancel()
 	if err != nil || m.Type != "register" || len(m.PublicKey) != ed25519.PublicKeySize || !validToken(m.AccessToken) ||
-		!ed25519.Verify(m.PublicKey, proof(challenge, m.AccessToken), m.Signature) {
+		!ed25519.Verify(m.PublicKey, registrationProof(challenge, m.AccessToken, m.Name), m.Signature) {
 		return
 	}
+	name := strings.TrimSpace(m.Name)
+	if name != "" && (!registrationOnly || !validRegistrationName(name)) {
+		writeControl(ctx, c, controlMessage{Type: "invalid_registration"})
+		return
+	}
+	metadata := registrationMetadata{name: name, ip: s.registrationIP(r), enrollment: registrationOnly}
 	h := &registeredHost{id: ServerID(m.PublicKey), token: m.AccessToken, registrationID: registration.ID, control: c, ctx: ctx, cancel: cancel, open: make(chan controlMessage, 32), pairs: make(map[string]*relayPair)}
 	s.mu.Lock()
 	current, allowed := s.registrationForRequestLocked(r)
@@ -170,9 +186,9 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 	}
 	var issuedToken string
 	if withoutToken {
-		current, issuedToken, err = s.claimIdentityLocked(h.id)
+		current, issuedToken, err = s.claimIdentityLocked(h.id, metadata)
 	} else {
-		err = s.claimRegistrationLocked(current, h.id)
+		err = s.claimRegistrationLocked(current, h.id, metadata)
 	}
 	if err != nil {
 		s.mu.Unlock()

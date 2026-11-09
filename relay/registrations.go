@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
@@ -28,17 +29,35 @@ var (
 // Registration contains public administrative metadata. Tokens are returned
 // once at creation; only their SHA-256 digests are persisted on the relay.
 type Registration struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	ServerID  string     `json:"server_id,omitempty"`
-	Automatic bool       `json:"automatic,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-	RevokedAt *time.Time `json:"revoked_at,omitempty"`
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	ServerID       string     `json:"server_id,omitempty"`
+	Automatic      bool       `json:"automatic,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	RevokedAt      *time.Time `json:"revoked_at,omitempty"`
+	UnregisteredAt *time.Time `json:"unregistered_at,omitempty"`
+	RegistrationIP string     `json:"registration_ip,omitempty"`
 }
 
 type registrationRecord struct {
 	Registration
 	TokenHash string `json:"token_hash"`
+}
+
+func (r registrationRecord) active() bool { return r.RevokedAt == nil && r.UnregisteredAt == nil }
+
+type registrationMetadata struct {
+	name, ip   string
+	enrollment bool
+}
+
+func (r *registrationRecord) applyMetadata(metadata registrationMetadata, first bool) {
+	if metadata.name != "" {
+		r.Name = metadata.name
+	}
+	if r.RegistrationIP == "" && (first || metadata.enrollment) {
+		r.RegistrationIP = metadata.ip
+	}
 }
 
 type registrationStatus struct {
@@ -88,17 +107,22 @@ func (s *Server) loadRegistrations() error {
 		Version       int                  `json:"version"`
 		Registrations []registrationRecord `json:"registrations"`
 	}
-	if len(data) > maxRegistryBytes || json.Unmarshal(data, &saved) != nil || saved.Version != 1 || len(saved.Registrations) > maxRegistrations {
+	if len(data) > maxRegistryBytes || json.Unmarshal(data, &saved) != nil || (saved.Version != 1 && saved.Version != 2) || len(saved.Registrations) > maxRegistrations {
 		return errors.New("invalid relay registration store")
 	}
 	active := make(map[string]bool)
 	for _, record := range saved.Registrations {
 		digest, err := hex.DecodeString(record.TokenHash)
+		if record.RegistrationIP != "" {
+			if _, err := netip.ParseAddr(record.RegistrationIP); err != nil {
+				return errors.New("invalid relay registration IP")
+			}
+		}
 		if !validToken(record.ID) || !validRegistrationName(record.Name) || (record.ServerID != "" && !validServerID(record.ServerID)) || record.CreatedAt.IsZero() ||
 			err != nil || len(digest) != sha256.Size || hex.EncodeToString(digest) != record.TokenHash || s.registrations[record.ID].ID != "" || s.tokenIndex[record.TokenHash] != "" {
 			return errors.New("invalid relay registration record")
 		}
-		if record.RevokedAt == nil && record.ServerID != "" {
+		if record.active() && record.ServerID != "" {
 			if active[record.ServerID] {
 				return errors.New("duplicate active relay registration")
 			}
@@ -121,7 +145,7 @@ func (s *Server) saveRegistrations(records map[string]registrationRecord) error 
 	data, err := json.MarshalIndent(struct {
 		Version       int                  `json:"version"`
 		Registrations []registrationRecord `json:"registrations"`
-	}{1, list}, "", "  ")
+	}{2, list}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -147,12 +171,19 @@ func (s *Server) saveRegistrations(records map[string]registrationRecord) error 
 }
 
 func (s *Server) registrationForRequestLocked(r *http.Request) (registrationRecord, bool) {
+	record, ok := s.credentialForRequestLocked(r)
+	return record, ok && record.active()
+}
+
+// Inactive credentials are accepted only by the signed unregister endpoint,
+// so a lost acknowledgement can be retried without reactivating a token.
+func (s *Server) credentialForRequestLocked(r *http.Request) (registrationRecord, bool) {
 	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || !validToken(token) {
 		return registrationRecord{}, false
 	}
 	record, ok := s.registrations[s.tokenIndex[tokenDigest(token)]]
-	return record, ok && record.RevokedAt == nil
+	return record, ok
 }
 
 // CreateRegistration issues an unused credential. Its first authenticated
@@ -187,19 +218,21 @@ func (s *Server) CreateRegistration(name string) (Registration, string, error) {
 
 // Caller holds Server.mu and has verified the signed challenge. Persist the
 // first identity before making the host available, including after a restart.
-func (s *Server) claimRegistrationLocked(record registrationRecord, serverID string) error {
-	if record.ServerID == serverID {
-		return nil
-	}
-	if record.ServerID != "" {
+func (s *Server) claimRegistrationLocked(record registrationRecord, serverID string, metadata registrationMetadata) error {
+	if record.ServerID != "" && record.ServerID != serverID {
 		return ErrRegistrationExists
 	}
 	for _, other := range s.registrations {
-		if other.ServerID == serverID && other.RevokedAt == nil {
+		if other.ID != record.ID && other.ServerID == serverID && other.active() {
 			return ErrRegistrationExists
 		}
 	}
+	previous := record
+	record.applyMetadata(metadata, record.ServerID == "")
 	record.ServerID = serverID
+	if record == previous {
+		return nil
+	}
 	next := make(map[string]registrationRecord, len(s.registrations))
 	for id, value := range s.registrations {
 		next[id] = value
@@ -216,7 +249,7 @@ func (s *Server) claimRegistrationLocked(record registrationRecord, serverID str
 // Retrying without a saved credential rotates the existing active record rather
 // than adding another. A revoked identity cannot silently enroll again; an
 // administrator must issue a replacement token for it.
-func (s *Server) claimIdentityLocked(serverID string) (registrationRecord, string, error) {
+func (s *Server) claimIdentityLocked(serverID string, metadata registrationMetadata) (registrationRecord, string, error) {
 	var record registrationRecord
 	var revoked bool
 	for _, other := range s.registrations {
@@ -225,7 +258,7 @@ func (s *Server) claimIdentityLocked(serverID string) (registrationRecord, strin
 		}
 		if other.RevokedAt != nil {
 			revoked = true
-		} else {
+		} else if other.active() {
 			record = other
 		}
 	}
@@ -238,6 +271,7 @@ func (s *Server) claimIdentityLocked(serverID string) (registrationRecord, strin
 		}
 		record.Registration = Registration{ID: randomID(), Name: "Spool-" + serverID[:12], ServerID: serverID, Automatic: true, CreatedAt: time.Now().UTC()}
 	}
+	record.applyMetadata(metadata, record.TokenHash == "")
 	token, oldHash := randomID(), record.TokenHash
 	record.TokenHash = tokenDigest(token)
 	next := make(map[string]registrationRecord, len(s.registrations)+1)
@@ -278,6 +312,12 @@ func (s *Server) RevokeRegistration(id string) error {
 		return fmt.Errorf("save relay revocation: %w", err)
 	}
 	s.registrations = next
+	s.disconnectRegistrationLocked(record)
+	return nil
+}
+
+func (s *Server) disconnectRegistrationLocked(record registrationRecord) {
+	id := record.ID
 	if host := s.hosts[record.ServerID]; host != nil && host.registrationID == id {
 		delete(s.hosts, host.id)
 		host.cancel()
@@ -286,6 +326,26 @@ func (s *Server) RevokeRegistration(id string) error {
 		}
 		host.control.CloseNow()
 	}
+}
+
+// Self-unregistration disables this credential but permits a future enrollment.
+// Administrative revocations remain intact and still block open enrollment.
+func (s *Server) unregisterLocked(record registrationRecord) error {
+	if !record.active() {
+		return nil
+	}
+	when := time.Now().UTC()
+	record.UnregisteredAt = &when
+	next := make(map[string]registrationRecord, len(s.registrations))
+	for id, value := range s.registrations {
+		next[id] = value
+	}
+	next[record.ID] = record
+	if err := s.saveRegistrations(next); err != nil {
+		return err
+	}
+	s.registrations = next
+	s.disconnectRegistrationLocked(record)
 	return nil
 }
 

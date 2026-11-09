@@ -33,7 +33,11 @@ import './src/style.css';
 import './src/settings.css';
 const pairing = ${JSON.stringify(pairing)};
 const calls = [];
+const registrations = new Set();
 let completeRegistration, rejectRegistration;
+let failUnregister = false;
+let unregisterCalls = 0;
+let checks = 0;
 window.mygo = { on: () => () => {}, call: async (method, ...args) => {
   calls.push({ method, args });
   if (method === 'DesktopSettings.RegisterRelay') return new Promise((resolve, reject) => { completeRegistration = resolve; rejectRegistration = reject; });
@@ -49,15 +53,23 @@ const t = translator('zh-CN');
 const root = createRoot(document.getElementById('root'));
 const run = async operation => {
   const command = typeof operation === 'function' ? operation(data) : operation;
+  if (command.kind === 'unregister-relay') {
+    unregisterCalls++;
+    if (failUnregister) throw new Error('Could not unregister from the relay. Check its address and network connection, then retry.');
+    registrations.delete(command.target);
+    data = { ...data, settings: { ...data.settings, relay_enabled: false }, status: { ...data.status, Relay: { State: 'disabled', Registered: false, RegistrationTokenSet: false } } };
+    render(); return data;
+  }
   if (command.kind !== 'save-settings') throw new Error('unexpected command');
-  data = { ...data, settings: command.settings, status: { ...data.status, Relay: { ...data.status.Relay, State: command.settings.relay_enabled ? 'connected' : 'disabled' } } };
+  const registered = registrations.has(command.settings.relay_url);
+  data = { ...data, settings: command.settings, status: { ...data.status, Relay: { ...data.status.Relay, Registered: registered, RegistrationTokenSet: registered, State: command.settings.relay_enabled ? 'connected' : 'disabled' } } };
   render(); return data;
 };
 const render = () => root.render(<ServicePage data={data} run={run} t={t} />);
 render();
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const button = text => [...document.querySelectorAll('button')].find(b => b.textContent.includes(text));
-const check = (value, label) => { if (!value) throw new Error(label); };
+const check = (value, label) => { checks++; if (!value) throw new Error(label); };
 (async () => {
   for (let i = 0; i < 100 && !button('显示配对二维码'); i++) await pause(50);
   check(calls.length === 0 && !document.querySelector('img'), 'QR stays private until requested');
@@ -77,15 +89,44 @@ const check = (value, label) => { if (!value) throw new Error(label); };
   rejectRegistration(new Error('Relay registration was rejected. Check the token or whether automatic registration is allowed.'));
   await pause(100);
   check(toggle().disabled && !!registration() && !!document.querySelector('[role="alert"]'), 'registration failure preserves form and locked switch');
+  const name = document.querySelector('input[aria-label="服务器名称（可选）"]');
+  check(name && registration().closest('[role="group"]').contains(name), 'optional name grouped with token');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(name, '家里的 Mac');
+  name.dispatchEvent(new Event('input', { bubbles: true })); await pause(50);
   const token = 'synthetic-registration-token-0000000000000001';
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(registration(), token);
   registration().dispatchEvent(new Event('input', { bubbles: true })); await pause(50);
   button('注册').click(); await pause(50);
-  check(calls.at(-1).args[1] === token, 'supplied token registers through the same action');
+  check(calls.at(-1).args[1] === token && calls.at(-1).args[2] === '家里的 Mac', 'supplied name and token register through the same action');
   completeRegistration({ Registered: true }); await pause(100);
   check(!registration() && !toggle().disabled && toggle().getAttribute('aria-checked') === 'false', 'success hides registration and unlocks without enabling');
+  registrations.add(pairing.relay_url);
   data = { ...data, status: { ...data.status, Relay: { ...data.status.Relay, Registered: true, RegistrationTokenSet: true } } };
   render(); await pause(50);
+  const setAddress = async value => {
+    address().focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(address(), value);
+    address().dispatchEvent(new Event('input', { bubbles: true }));
+    await pause(50);
+    address().blur();
+    await pause(100);
+    check(data.settings.relay_url === value, 'address commits on blur: ' + JSON.stringify({ saved: data.settings.relay_url, input: address().value, focused: document.activeElement?.outerHTML, focus: document.hasFocus() }));
+  };
+  const secondRelay = 'https://second-relay.example.com';
+  await setAddress(secondRelay);
+  check(!!registration() && registration().value === '' && toggle().disabled, 'new relay shows empty registration and locks enablement');
+  button('注册').click(); await pause(50);
+  check(calls.at(-1).args[0] === secondRelay && calls.at(-1).args[1] === '', 'new relay does not inherit another relay token');
+  completeRegistration({ Registered: true }); await pause(100);
+  registrations.add(secondRelay);
+  data = { ...data, status: { ...data.status, Relay: { ...data.status.Relay, Registered: true, RegistrationTokenSet: true } } };
+  render(); await pause(50);
+  const registrationCalls = calls.filter(call => call.method === 'DesktopSettings.RegisterRelay').length;
+  for (const value of [pairing.relay_url, secondRelay, pairing.relay_url]) {
+    await setAddress(value);
+    check(!registration() && !!button('注销') && !toggle().disabled, 'remembered relay shows unregister and unlocks enablement');
+  }
+  check(calls.filter(call => call.method === 'DesktopSettings.RegisterRelay').length === registrationCalls, 'switching remembered relays never registers again');
   toggle().click(); await pause(100);
   const status = card.querySelector('[aria-label="中继状态"]');
   check(status && status.textContent.includes('已连接') && status.closest('.settings-row') === toggle().closest('.settings-row'), 'enabled status belongs beside switch');
@@ -102,7 +143,18 @@ const check = (value, label) => { if (!value) throw new Error(label); };
   check(!document.querySelector('img') && !document.querySelector('textarea'), 'hide removes code and image');
   button('显示配对二维码').click(); await pause(250); await document.querySelector('img').decode();
   check(calls.every(call => ['DesktopSettings.RelayPairing', 'DesktopSettings.RegisterRelay'].includes(call.method)), 'registration and pairing use only the private bridge');
-  await fetch('/report', { method: 'POST', body: JSON.stringify({ ok: true, checks: 23 }) });
+  failUnregister = true;
+  button('注销').click(); await pause(100);
+  check(!!button('注销') && !registration() && toggle().getAttribute('aria-checked') === 'true' && !!document.querySelector('[role="alert"]'), 'failed unregister preserves registration and connection');
+  failUnregister = false;
+  button('注销').click(); await pause(100);
+  check(!!registration() && !button('注销') && toggle().disabled && toggle().getAttribute('aria-checked') === 'false', 'unregister disables relay and restores form');
+  check(!document.querySelector('img') && unregisterCalls === 2, 'unregister clears pairing display and supports retry');
+  await setAddress(secondRelay);
+  check(!!button('注销') && !registration(), 'unregister preserves other origin');
+  await setAddress(pairing.relay_url);
+  check(!!registration() && !button('注销'), 'unregistered origin stays unregistered');
+  await fetch('/report', { method: 'POST', body: JSON.stringify({ ok: true, checks }) });
 })().catch(async error => { await fetch('/report', { method: 'POST', body: JSON.stringify({ error: String(error) }) }); });
 `;
 const server = createServer(async (req, res) => {
@@ -229,6 +281,7 @@ try {
       socket.send(JSON.stringify({ id, method, params }));
     });
   await send("Runtime.enable");
+  await send("Emulation.setFocusEmulationEnabled", { enabled: true });
   await send("Page.navigate", {
     url: `http://127.0.0.1:${server.address().port}/`,
   });
@@ -244,7 +297,7 @@ try {
     JSON.stringify(report, null, 2),
   );
   console.log(
-    "PASS: registration gating and errors, single action, address grouping, inline status, QR and hide controls",
+    "PASS: per-origin registration restoration, registration gating and errors, address grouping, inline status, QR and hide controls",
   );
 } finally {
   socket?.close();

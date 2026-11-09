@@ -28,6 +28,7 @@ The local `.env` is excluded from Git and the image build context.
 | --- | --- | --- |
 | `SPOOL_RELAY_ADMIN_TOKEN` | Required | Management API credential, 32–512 characters. |
 | `RELAY_REQUIRE_REGISTRATION_TOKEN` | `true` | Set `false` to allow signed automatic server registration. |
+| `RELAY_TRUSTED_PROXIES` | Empty | Comma-separated trusted proxy CIDRs for registration source IPs. |
 | `RELAY_BIND_ADDRESS` | `127.0.0.1` | Host interface for the HTTP relay backend. |
 | `RELAY_PORT` | `28080` | Host port for the HTTP relay backend. |
 | `RELAY_ADMIN_PORT` | `28081` | Host loopback port for the management API. |
@@ -262,6 +263,48 @@ management instead of putting the secret token in a URL. Responses never include
 token hashes or previously issued token values.
 `DELETE /v1/registrations/{id}` returns HTTP 204 and is idempotent.
 
+Spool may supply an optional name during registration (up to 128 UTF-8 bytes,
+without control characters). A blank name preserves the pre-issued token's name;
+new automatic registrations default to `Spool-<first 12 characters of Server ID>`.
+The relay records `registration_ip` from the **Spool Server's successful
+registration request**, never from the administrator creating a token, a phone,
+or a client-supplied JSON field. It persists this IP and returns it through both
+management GET endpoints. Ordinary reconnections and token recovery preserve it.
+Older records have no IP until an explicit registration succeeds; an ordinary
+reconnect cannot reconstruct their historical registration IP.
+
+For example, inspect names and registration IPs through the management listener:
+
+```sh
+curl -fsS https://relay-admin.example.com/v1/registrations \
+  -H "Authorization: Bearer $SPOOL_RELAY_ADMIN_TOKEN" \
+  | jq '.registrations[] | {id, name, server_id, registration_ip}'
+```
+
+By default the IP comes from the socket peer. Behind Coolify, Caddy, or another
+reverse proxy, set `RELAY_TRUSTED_PROXIES` (or `-trusted-proxies`) to the actual
+proxy addresses/networks, using CIDR notation, for example `127.0.0.1/32,::1/128`
+for a local proxy. Container deployments must use their actual proxy network;
+do not copy unrelated private ranges or trust all addresses. The relay follows
+`X-Forwarded-For` from right to left through trusted hops, stopping at the first
+untrusted address. A Cloudflare + Coolify chain requires both trusted proxy hops
+and correctly preserved forwarding headers to reach Spool's public egress IP.
+Otherwise the recorded address is the nearest untrusted proxy. Configure the
+reverse proxy to sanitize incoming forwarding headers. `CF-Connecting-IP` and
+`X-Real-IP` alone are not accepted as proof of a client's address.
+
+Desktop's **Unregister** action authenticates with the saved registration token
+and a fresh signature by the server identity. It disconnects that server, marks
+the record with `unregistered_at`, and disables the old token. Repeating the
+same operation is safe even after a relay restart or a lost response. Other
+registrations remain active. A self-unregistered server may register again
+(with a new token when tokens are required); administrative revocations still
+block automatic enrollment. Inactive records remain in the management list.
+The relay reads version 1 stores and writes version 2 on the next mutation.
+Older relay binaries reject version 2, preventing a downgrade from accidentally
+reactivating self-unregistered credentials. Keep the updated relay when reusing
+this volume.
+
 Revocation closes that server's control connection and all its current relay
 data connections, and prevents reconnection. Other servers keep working. The
 revocation is persisted before success is returned; storage failures return
@@ -276,7 +319,7 @@ the same. Before first registration, a token can be claimed by whoever possesses
 it, so deliver each newly issued token to its intended server. If an automatic
 enrollment reply was lost before Spool saved its token, retrying the same signed
 identity rotates the credential on the same active record. Revoked records cannot
-use this recovery path. The state file retains revoked records (up to 10,000
+use this recovery path. The state file retains revoked and unregistered records (up to 10,000
 registrations / 8 MiB in this version).
 
 Automatic registration admits any new signed server identity up to the configured
@@ -299,7 +342,18 @@ the home server, `SPOOL_RELAY_REGISTRATION_TOKEN` still names its own issued tok
    empty for automatic registration. Clicking **Register** contacts the relay,
    verifies the server identity, and saves the credential after confirmation.
    Failed or canceled attempts leave the switch disabled. Successful registration
-   hides the registration form; the relay address stays visible.
+   hides the registration form and shows **Unregister**; the relay address stays
+   visible. An optional server name can be entered with the registration token.
+   Spool remembers the token and confirmed registration separately for each relay
+   origin (scheme, hostname and port), including after an app restart. Disable the
+   relay before editing its address. Switching back to a registered origin restores
+   its credential and hides the registration form without enrolling again. Old
+   single-relay credentials are imported automatically for their original address.
+   A rejected or revoked token requires registration again only for that relay;
+   temporary network failures preserve the saved registration.
+   **Unregister** contacts that relay first, then removes only its local
+   credential and switches relay off. A network failure preserves the credential
+   for retry. The local Spool service keeps running.
 3. Enable LAN and relay, then restart the Spool service. Connection status appears
    immediately to the left of the enable switch, without a separate status row.
 4. Click **Show pairing QR code**. In Android, add/select a server, open its
@@ -318,20 +372,21 @@ Headless configuration, from the main Spool repository while the service is stop
 # Set this server's SPOOL_RELAY_REGISTRATION_TOKEN, or leave it empty for automatic enrollment.
 # Register, configure and print a pairing code without starting relay ingress.
 go run ./cmd/server -data-dir /path/to/spool-data \
-  -relay -relay-register -relay-url https://relay.example.com -relay-lan-port 28082 -relay-pair
+  -relay -relay-register -relay-name 'Home Mac' -relay-url https://relay.example.com -relay-lan-port 28082 -relay-pair
 # Start using the saved credential.
 go run ./cmd/server -data-dir /path/to/spool-data
 ```
 
 Development commands must use the repository cache/scratch environment described
 in `../AGENTS.md`. Compiled release binaries do not need Go at runtime.
-Desktop stores the registration token in `data-dir/relay/registration-token`
-with owner-only permissions; this overrides the environment value. The
-registration confirmation in `data-dir/relay/registration.json` binds the relay
-origin, server identity and token digest. A stored token alone does not unlock the
-switch. Registration survives restart; changing the origin or identity requires
-registration again. A network outage preserves confirmation; an explicit relay
-rejection makes registration available again.
+Desktop stores each origin's token and confirmed server identity in
+`data-dir/relay/registrations.json` with owner-only permissions. It migrates the
+previous `registration-token` and `registration.json` files once, associating them
+with the original relay. An unconfirmed legacy/environment token belongs only to
+the origin configured at migration. A stored token alone does not unlock the
+switch. Registration survives restart and switching between saved origins;
+changing identity requires registration again. A network outage preserves
+confirmation; an explicit relay rejection makes registration available again.
 The stable TLS identity and admission capability are in `data-dir/relay/identity.json`.
 Back up that file with your private Spool data. Replacing it requires re-pairing.
 
@@ -371,6 +426,9 @@ headers, never URL parameters. Compression is disabled.
 - `/v1/register`: performs the signed registration handshake and returns `ready`
   after saving the token/identity association. It does not publish the home server
   as connected or accept client traffic, and does not replace an existing host.
+- `/v1/unregister`: requires the registration token and a challenge signature
+  specific to unregistration. Invalidates that credential, closes its connections,
+  and returns `unregistered` only after persisting the result.
 - `/v1/host`: requires an active per-server registration token by default. The relay sends
   a random challenge; the host signs a domain-separated challenge plus its
   admission token using its identity key. The first valid use associates the

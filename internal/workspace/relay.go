@@ -2,12 +2,10 @@ package workspace
 
 import (
 	"context"
-	"crypto/ed25519"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -47,6 +45,10 @@ func sameRelaySettings(a, b Settings) bool {
 }
 
 func (s *Service) startRelayLocked(settings Settings) error {
+	registrations, err := s.loadRelayRegistrationsLocked()
+	if err != nil {
+		return err
+	}
 	id, err := relay.LoadIdentity(filepath.Join(s.Store.Root(), "relay"))
 	if err != nil {
 		return err
@@ -59,7 +61,7 @@ func (s *Service) startRelayLocked(settings Settings) error {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = netproxy.Proxy
 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("relay redirects are disabled") }}
-	token := s.relayRegistrationToken()
+	token := registrations[relayOrigin(settings.RelayURL)].Token
 	host, err := relay.NewHost(ctx, settings.RelayURL, token, id, client)
 	if err != nil {
 		cancel()
@@ -81,10 +83,10 @@ func (s *Service) startRelayLocked(settings Settings) error {
 		runtime.mu.Lock()
 		runtime.status.State = state
 		runtime.mu.Unlock()
-		if state == "registration_required" && s.relayRegistrationToken() == host.RegistrationToken() && s.relayRegisteredLocked(settings.RelayURL) {
+		if state == "registration_required" && !s.relayRegistering && s.relayRegistrationToken(settings.RelayURL) == host.RegistrationToken() && s.relayRegisteredLocked(settings.RelayURL) {
 			// A network outage preserves registration. An explicit rejection
 			// requires enrollment again, including after an app restart.
-			if err := os.Remove(filepath.Join(s.Store.Root(), "relay", "registration.json")); err != nil && !os.IsNotExist(err) {
+			if err := s.invalidateRelayRegistrationLocked(settings.RelayURL); err != nil {
 				log.Printf("event=relay_registration_invalidation_failed error=%q", err)
 			}
 		}
@@ -94,15 +96,15 @@ func (s *Service) startRelayLocked(settings Settings) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		// Do not overwrite a manual update or a replacement service runtime.
-		if s.relay != runtime || ctx.Err() != nil || s.relayRegistrationToken() != token {
+		if s.relay != runtime || ctx.Err() != nil || s.relayRegistrationToken(settings.RelayURL) != token {
 			return fmt.Errorf("relay registration settings changed")
 		}
-		return s.saveRelayRegistrationTokenLocked(issued)
+		return s.saveRelayRegistrationTokenLocked(settings.RelayURL, issued)
 	}
 	host.OnRegistered = func(credential string) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.relay != runtime || ctx.Err() != nil || s.relayRegistrationToken() != credential {
+		if s.relay != runtime || ctx.Err() != nil || s.relayRegistrationToken(settings.RelayURL) != credential {
 			return fmt.Errorf("relay registration settings changed")
 		}
 		return s.confirmRelayRegistrationLocked(settings.RelayURL, id, credential)
@@ -193,71 +195,13 @@ func (s *Service) RelayPairingCode() (string, error) {
 	return (relay.Pairing{Version: 1, RelayURL: settings.RelayURL, PublicKey: id.PublicKey(), AccessToken: id.AccessToken, LAN: relayLANAddresses(settings.RelayLANPort)}).Encode()
 }
 
-func (s *Service) relayRegistrationToken() string {
-	data, err := os.ReadFile(filepath.Join(s.Store.Root(), "relay", "registration-token"))
-	if err == nil {
-		return strings.TrimSpace(string(data))
-	}
-	return strings.TrimSpace(os.Getenv("SPOOL_RELAY_REGISTRATION_TOKEN"))
-}
-
-type relayRegistration struct {
-	URL       string `json:"url"`
-	ServerID  string `json:"server_id"`
-	TokenHash string `json:"token_hash"`
-}
-
-func relayOrigin(address string) string {
-	u, err := relay.ParseRelayURL(strings.TrimSpace(address))
-	if err != nil {
-		return ""
-	}
-	return u.String()
-}
-
-// A stored token alone is not proof of enrollment. Bind the successful relay
-// response to this origin, identity and credential, so changing any invalidates it.
-func (s *Service) relayRegisteredLocked(address string) bool {
-	origin := relayOrigin(address)
-	if origin == "" {
-		return false
-	}
-	data, err := os.ReadFile(filepath.Join(s.Store.Root(), "relay", "registration.json"))
-	var confirmed relayRegistration
-	if err != nil || json.Unmarshal(data, &confirmed) != nil || confirmed.URL != origin {
-		return false
-	}
-	data, err = os.ReadFile(filepath.Join(s.Store.Root(), "relay", "identity.json"))
-	var id relay.Identity
-	if err != nil || json.Unmarshal(data, &id) != nil || len(id.Seed) != ed25519.SeedSize || id.ID() != confirmed.ServerID {
-		return false
-	}
-	token := s.relayRegistrationToken()
-	hash := sha256.Sum256([]byte(token))
-	return token != "" && confirmed.TokenHash == hex.EncodeToString(hash[:])
-}
-
-func (s *Service) confirmRelayRegistrationLocked(address string, id *relay.Identity, token string) error {
-	saved, err := os.ReadFile(filepath.Join(s.Store.Root(), "relay", "registration-token"))
-	if err != nil || strings.TrimSpace(string(saved)) != token {
-		if err := s.saveRelayRegistrationTokenLocked(token); err != nil {
-			return err
-		}
-	}
-	if s.relayRegisteredLocked(address) {
-		return nil
-	}
-	hash := sha256.Sum256([]byte(token))
-	data, err := json.Marshal(relayRegistration{URL: relayOrigin(address), ServerID: id.ID(), TokenHash: hex.EncodeToString(hash[:])})
-	if err != nil {
-		return err
-	}
-	return s.saveRelaySecretLocked("registration.json", string(data))
-}
-
 // RegisterRelay enrolls while the relay switch remains off. Only a confirmed
 // remote registration is saved; errors never unlock the enable switch.
 func (s *Service) RegisterRelay(ctx context.Context, address, token string) error {
+	return s.RegisterRelayNamed(ctx, address, token, "")
+}
+
+func (s *Service) RegisterRelayNamed(ctx context.Context, address, token, name string) error {
 	address, token = strings.TrimSpace(address), strings.TrimSpace(token)
 	if relayOrigin(address) == "" {
 		return fmt.Errorf("Enter a valid relay HTTPS address before registering.")
@@ -271,6 +215,16 @@ func (s *Service) RegisterRelay(ctx context.Context, address, token string) erro
 	if err != nil || relayOrigin(settings.RelayURL) != relayOrigin(address) {
 		s.mu.Unlock()
 		return fmt.Errorf("Save the relay address before registering.")
+	}
+	registrations, err := s.loadRelayRegistrationsLocked()
+	if err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	saved := registrations[relayOrigin(address)]
+	if (token == "" || token == saved.Token) && s.relayRegisteredLocked(address) {
+		s.mu.Unlock()
+		return nil
 	}
 	id, err := relay.LoadIdentity(filepath.Join(s.Store.Root(), "relay"))
 	if err != nil {
@@ -294,8 +248,11 @@ func (s *Service) RegisterRelay(ctx context.Context, address, token string) erro
 	transport.Proxy = netproxy.Proxy
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("relay redirects are disabled") }}
-	credential, err := relay.Register(ctx, address, token, id, client)
+	credential, err := relay.RegisterNamed(ctx, address, token, name, id, client)
 	if err != nil {
+		if errors.Is(err, relay.ErrInvalidRegistration) {
+			return fmt.Errorf("Relay name must be at most 128 bytes and contain no control characters.")
+		}
 		if errors.Is(err, relay.ErrRegistrationRejected) {
 			return fmt.Errorf("Relay registration was rejected. Check the token or whether automatic registration is allowed.")
 		}
@@ -313,20 +270,75 @@ func (s *Service) RegisterRelay(ctx context.Context, address, token string) erro
 	return s.confirmRelayRegistrationLocked(address, id, credential)
 }
 
-// SetRelayRegistrationToken imports a credential without confirming enrollment.
-// Desktop uses RegisterRelay to verify and save it in one operation.
-func (s *Service) SetRelayRegistrationToken(token string) error {
-	token = strings.TrimSpace(token)
-	if token != "" && (len(token) < 32 || len(token) > 512 || strings.ContainsAny(token, "\r\n")) {
-		return fmt.Errorf("relay registration token must be empty or contain 32–512 characters")
+// UnregisterRelay clears only the selected origin after a signed remote
+// acknowledgement. A failure preserves its credential so the user can retry.
+func (s *Service) UnregisterRelay(ctx context.Context, address string) error {
+	origin := relayOrigin(address)
+	s.mu.Lock()
+	if s.closed || s.relayRegistering {
+		s.mu.Unlock()
+		return fmt.Errorf("Relay registration is unavailable or already in progress.")
+	}
+	settings, err := s.Store.Settings()
+	if err != nil || origin == "" || relayOrigin(settings.RelayURL) != origin {
+		s.mu.Unlock()
+		return fmt.Errorf("Save the relay address before registering.")
+	}
+	registrations, err := s.loadRelayRegistrationsLocked()
+	if err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	token := registrations[origin].Token
+	if token == "" {
+		s.mu.Unlock()
+		return fmt.Errorf("No saved registration for this relay.")
+	}
+	id, err := relay.LoadIdentity(filepath.Join(s.Store.Root(), "relay"))
+	if err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	s.relayRegistering = true
+	s.workers.Add(1)
+	s.mu.Unlock()
+	defer func() { s.mu.Lock(); s.relayRegistering = false; s.mu.Unlock(); s.workers.Done() }()
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	stop := context.AfterFunc(s.ctx, cancel)
+	defer stop()
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = netproxy.Proxy
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("relay redirects are disabled") }}
+	if err := relay.Unregister(ctx, address, token, id, client); err != nil {
+		return fmt.Errorf("Could not unregister from the relay. Check its address and network connection, then retry.")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.saveRelayRegistrationTokenLocked(token)
-}
-
-func (s *Service) saveRelayRegistrationTokenLocked(token string) error {
-	return s.saveRelaySecretLocked("registration-token", token)
+	if s.closed {
+		return fmt.Errorf("service is closed")
+	}
+	if s.relay != nil && relayOrigin(s.relay.host.URL) == origin {
+		s.relay.close()
+		s.relay = nil
+	}
+	current, err := s.Store.Settings()
+	if err != nil {
+		return err
+	}
+	if relayOrigin(current.RelayURL) == origin {
+		current.RelayEnabled = false
+		if err := s.Store.SaveSettings(current); err != nil {
+			return err
+		}
+	}
+	registrations, err = s.loadRelayRegistrationsLocked()
+	if err != nil {
+		return err
+	}
+	delete(registrations, origin)
+	return s.saveRelayRegistrationsLocked(registrations)
 }
 
 func (s *Service) saveRelaySecretLocked(name, value string) error {

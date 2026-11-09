@@ -22,6 +22,7 @@ func main() {
 	adminListen := flag.String("admin-listen", "127.0.0.1:28081", "private administrative HTTP listen address")
 	dataDir := flag.String("data-dir", "relay-data", "persistent registration and revocation directory")
 	requireTokenFlag := flag.Bool("require-registration-token", true, "require a per-server token (defaults to RELAY_REQUIRE_REGISTRATION_TOKEN, or true when unset)")
+	trustedProxies := flag.String("trusted-proxies", os.Getenv("RELAY_TRUSTED_PROXIES"), "comma-separated trusted proxy CIDRs for registration IPs (defaults to RELAY_TRUSTED_PROXIES)")
 	cert := flag.String("tls-cert", "", "optional public TLS certificate PEM")
 	key := flag.String("tls-key", "", "optional public TLS key PEM")
 	hosts := flag.Int("max-hosts", 100, "maximum registered Spool servers")
@@ -32,7 +33,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	broker, err := relay.NewServer(relay.ServerOptions{AdminToken: os.Getenv("SPOOL_RELAY_ADMIN_TOKEN"), DataDir: *dataDir, AllowUnregisteredHosts: !requireToken, MaxHosts: *hosts, MaxConnections: *connections, MaxConnectionsPerHost: *perHost})
+	proxyPrefixes, err := relay.ParseTrustedProxies(*trustedProxies)
+	if err != nil {
+		log.Fatal(err)
+	}
+	broker, err := relay.NewServer(relay.ServerOptions{AdminToken: os.Getenv("SPOOL_RELAY_ADMIN_TOKEN"), DataDir: *dataDir, AllowUnregisteredHosts: !requireToken, MaxHosts: *hosts, MaxConnections: *connections, MaxConnectionsPerHost: *perHost, TrustedProxies: proxyPrefixes})
 	if err != nil {
 		log.Fatal(err)
 	}

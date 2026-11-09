@@ -315,11 +315,11 @@ func (s *desktopSettings) RelayPairing(ctx context.Context) (workspace.RelayPair
 	return s.panel.service.RelayPairingInfo()
 }
 
-func (s *desktopSettings) RegisterRelay(ctx context.Context, address, token string) (workspace.RelayStatus, error) {
+func (s *desktopSettings) RegisterRelay(ctx context.Context, address, token, name string) (workspace.RelayStatus, error) {
 	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
 		return workspace.RelayStatus{}, err
 	}
-	if err := s.panel.service.RegisterRelay(ctx, address, token); err != nil {
+	if err := s.panel.service.RegisterRelayNamed(ctx, address, token, name); err != nil {
 		return workspace.RelayStatus{}, err
 	}
 	return s.panel.service.Status().Relay, nil
@@ -448,6 +448,8 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 		err = p.service.Restart()
 	case "save-settings":
 		err = p.service.SaveSettings(command.Settings)
+	case "unregister-relay":
+		err = p.service.UnregisterRelay(ctx, command.Target)
 	case "save-tsnet-auth-key":
 		err = p.service.SetTSNetAuthKey(command.AuthKey)
 	case "save-appearance":

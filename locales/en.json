@@ -964,5 +964,12 @@
   "Could not register with the relay. Check its address and network connection.": "Could not register with the relay. Check its address and network connection.",
   "Relay settings changed during registration. Try again.": "Relay settings changed during registration. Try again.",
   "Relay registration was not confirmed. Try again.": "Relay registration was not confirmed. Try again.",
-  "registration_required": "registration_required"
+  "registration_required": "registration_required",
+  "Relay server name (optional)": "Relay server name (optional)",
+  "For example, Home Mac": "For example, Home Mac",
+  "Unregister": "Unregister",
+  "Unregistering…": "Unregistering…",
+  "Relay name must be at most 128 bytes and contain no control characters.": "Relay name must be at most 128 bytes and contain no control characters.",
+  "No saved registration for this relay.": "No saved registration for this relay.",
+  "Could not unregister from the relay. Check its address and network connection, then retry.": "Could not unregister from the relay. Check its address and network connection, then retry."
 }

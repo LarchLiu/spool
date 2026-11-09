@@ -964,5 +964,12 @@
   "Could not register with the relay. Check its address and network connection.": "リレーに登録できませんでした。アドレスとネットワーク接続を確認してください。",
   "Relay settings changed during registration. Try again.": "登録中にリレー設定が変更されました。もう一度お試しください。",
   "Relay registration was not confirmed. Try again.": "リレー登録の成功を確認できませんでした。もう一度お試しください。",
-  "registration_required": "再登録が必要です"
+  "registration_required": "再登録が必要です",
+  "Relay server name (optional)": "サーバー名（任意）",
+  "For example, Home Mac": "例：自宅の Mac",
+  "Unregister": "登録解除",
+  "Unregistering…": "登録解除中…",
+  "Relay name must be at most 128 bytes and contain no control characters.": "サーバー名は128バイト以内で、制御文字を含めることはできません。",
+  "No saved registration for this relay.": "このリレーの登録情報がありません。",
+  "Could not unregister from the relay. Check its address and network connection, then retry.": "リレーの登録を解除できませんでした。アドレスとネットワーク接続を確認して再試行してください。"
 }

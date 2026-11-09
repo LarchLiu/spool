@@ -82,6 +82,9 @@ func OpenService(root string) (*Service, error) {
 	s.desktop = voxl.New(filepath.Join(store.Root(), "voxl"), func() { store.changes.publish(changeRemoteDesktop) })
 	settings, err := store.Settings()
 	if err == nil {
+		_, err = s.loadRelayRegistrationsLocked()
+	}
+	if err == nil {
 		err = s.applyNetworkSettingsLocked(settings)
 	}
 	if err != nil {
@@ -307,6 +310,7 @@ func (s *Service) Status() ServiceStatus {
 			restartRequired = active.Host != settings.Host || active.Port != settings.Port ||
 				s.app.publicURL() != settings.PublicURL || active.IdleMinutes != settings.IdleMinutes ||
 				!sameTailnetSettings(active, settings) || active.TSNetEnabled && active.proxyOptions() != settings.proxyOptions()
+			active.RelayEnabled = s.relay != nil
 			restartRequired = restartRequired || !sameRelaySettings(active, settings)
 		}
 	}
@@ -328,9 +332,9 @@ func (s *Service) Status() ServiceStatus {
 	}
 	if s.relay != nil {
 		relayStatus = s.relay.snapshot()
-		restartRequired = restartRequired || s.relay.host.RegistrationToken() != s.relayRegistrationToken()
+		restartRequired = restartRequired || s.relay.host.RegistrationToken() != s.relayRegistrationToken(s.relay.host.URL)
 	}
-	relayStatus.RegistrationTokenSet = s.relayRegistrationToken() != ""
+	relayStatus.RegistrationTokenSet = s.relayRegistrationToken(settings.RelayURL) != ""
 	relayStatus.Registered = s.relayRegisteredLocked(settings.RelayURL)
 	relayStatus.Registering = s.relayRegistering
 	return ServiceStatus{Running: s.server != nil, RestartRequired: restartRequired, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != "", Voxl: desktopStatus, RemoteDesktopConnections: connections, Relay: relayStatus}

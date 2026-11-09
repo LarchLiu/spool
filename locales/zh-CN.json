@@ -964,5 +964,12 @@
   "Could not register with the relay. Check its address and network connection.": "无法向中继注册，请检查中继地址和网络连接。",
   "Relay settings changed during registration. Try again.": "注册过程中中继设置已更改，请重试。",
   "Relay registration was not confirmed. Try again.": "未收到中继注册成功确认，请重试。",
-  "registration_required": "需要重新注册"
+  "registration_required": "需要重新注册",
+  "Relay server name (optional)": "服务器名称（可选）",
+  "For example, Home Mac": "例如：家里的 Mac",
+  "Unregister": "注销",
+  "Unregistering…": "正在注销…",
+  "Relay name must be at most 128 bytes and contain no control characters.": "服务器名称最多 128 字节，不能包含控制字符。",
+  "No saved registration for this relay.": "没有此中继的注册记录。",
+  "Could not unregister from the relay. Check its address and network connection, then retry.": "无法从中继注销。请检查地址和网络连接后重试。"
 }

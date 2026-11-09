@@ -25,10 +25,12 @@ export function RelayRegistration({
   onBusyChange: (busy: boolean) => void;
 }) {
   const [token, setToken] = useState("");
+  const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     setToken("");
+    setName("");
     setError("");
   }, [data.settings.relay_url]);
   const registering = busy || data.status.Relay?.Registering;
@@ -38,6 +40,13 @@ export function RelayRegistration({
       role="group"
       aria-label={t("Relay registration token")}
     >
+      <TextField
+        title={t("Relay server name (optional)")}
+        value={name}
+        onChange={setName}
+        disabled={registering}
+        placeholder={t("For example, Home Mac")}
+      />
       <TextField
         title={t("Relay registration token")}
         type="password"
@@ -65,7 +74,7 @@ export function RelayRegistration({
             try {
               const status = await settingsCall<
                 NonNullable<SettingsSnapshot["status"]["Relay"]>
-              >("RegisterRelay", data.settings.relay_url, token);
+              >("RegisterRelay", data.settings.relay_url, token, name);
               if (!status.Registered)
                 throw new Error(
                   "Relay registration was not confirmed. Try again.",

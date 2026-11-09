@@ -46,6 +46,7 @@ func run() (runErr error) {
 	relayLANPort := flag.Int("relay-lan-port", 28082, "secure LAN listener and discovery port")
 	relayPair := flag.Bool("relay-pair", false, "print an Android pairing code locally and exit (service must be stopped)")
 	relayRegister := flag.Bool("relay-register", false, "register with the relay using SPOOL_RELAY_REGISTRATION_TOKEN (empty for automatic registration), save the credential, and exit")
+	relayName := flag.String("relay-name", "", "optional server name used with -relay-register")
 	systemProxy := flag.Bool("system-proxy", false, "persist use of system HTTP/HTTPS proxy settings for Spool (macOS)")
 	proxyEnabled := flag.Bool("proxy-enabled", true, "persist whether Spool uses outbound proxies (false forces direct connections)")
 	proxyURL := flag.String("proxy-url", "", "persist a custom outbound proxy URL (used when proxies are enabled and system proxy is off; blank inherits environment)")
@@ -259,7 +260,7 @@ func run() (runErr error) {
 		return err
 	}
 	if *relayRegister {
-		if err = service.RegisterRelay(ctx, settings.RelayURL, os.Getenv("SPOOL_RELAY_REGISTRATION_TOKEN")); err != nil {
+		if err = service.RegisterRelayNamed(ctx, settings.RelayURL, os.Getenv("SPOOL_RELAY_REGISTRATION_TOKEN"), *relayName); err != nil {
 			return err
 		}
 		settings.RelayEnabled = wantRelayEnabled
