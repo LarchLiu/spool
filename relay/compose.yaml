@@ -10,12 +10,12 @@ services:
       SPOOL_RELAY_ADMIN_TOKEN: ${SPOOL_RELAY_ADMIN_TOKEN:?Set SPOOL_RELAY_ADMIN_TOKEN in .env}
       RELAY_REQUIRE_REGISTRATION_TOKEN: "${RELAY_REQUIRE_REGISTRATION_TOKEN:-true}"
     command:
-      - -listen=0.0.0.0:18788
-      - -admin-listen=0.0.0.0:18787
+      - -listen=0.0.0.0:28080
+      - -admin-listen=0.0.0.0:28081
       - -data-dir=/data
     ports:
-      - "${RELAY_BIND_ADDRESS:-127.0.0.1}:${RELAY_PORT:-18788}:18788"
-      - "127.0.0.1:${RELAY_ADMIN_PORT:-18787}:18787"
+      - "${RELAY_BIND_ADDRESS:-127.0.0.1}:${RELAY_PORT:-28080}:28080"
+      - "127.0.0.1:${RELAY_ADMIN_PORT:-28081}:28081"
     volumes:
       - relay-data:/data
     read_only: true
@@ -24,7 +24,7 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:18788/healthz"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:28080/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

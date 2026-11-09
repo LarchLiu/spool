@@ -268,7 +268,7 @@ func TestIdentityPairingAndRegistrationSecurity(t *testing.T) {
 	if err != nil || id.ID() != again.ID() {
 		t.Fatal("identity did not persist", err)
 	}
-	p := Pairing{Version: 1, RelayURL: "https://relay.example.com", PublicKey: id.PublicKey(), AccessToken: id.AccessToken, LAN: []string{"192.168.1.20:18789"}}
+	p := Pairing{Version: 1, RelayURL: "https://relay.example.com", PublicKey: id.PublicKey(), AccessToken: id.AccessToken, LAN: []string{"192.168.1.20:28082"}}
 	code, err := p.Encode()
 	if err != nil {
 		t.Fatal(err)

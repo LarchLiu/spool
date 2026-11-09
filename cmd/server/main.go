@@ -43,7 +43,7 @@ func run() (runErr error) {
 	tailnetPort := flag.Int("tsnet-port", 443, "HTTPS port on the embedded Tailscale node (does not bind a host TCP port)")
 	relayEnabled := flag.Bool("relay", false, "persist outbound Spool relay and secure LAN listener enablement")
 	relayURL := flag.String("relay-url", "", "public HTTPS origin of the independent Spool relay")
-	relayLANPort := flag.Int("relay-lan-port", 18789, "secure LAN listener and discovery port")
+	relayLANPort := flag.Int("relay-lan-port", 28082, "secure LAN listener and discovery port")
 	relayPair := flag.Bool("relay-pair", false, "print an Android pairing code locally and exit (service must be stopped)")
 	relayRegister := flag.Bool("relay-register", false, "register with the relay using SPOOL_RELAY_REGISTRATION_TOKEN (empty for automatic registration), save the credential, and exit")
 	systemProxy := flag.Bool("system-proxy", false, "persist use of system HTTP/HTTPS proxy settings for Spool (macOS)")
