@@ -105,6 +105,32 @@ func request(t *testing.T, c *http.Client, p Pairing, path string) string {
 	return string(data)
 }
 
+func TestNativeClientAddressIgnoresInnerForwardingHeaders(t *testing.T) {
+	n := setup(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, r.RemoteAddr)
+	}))
+	client, _ := n.client(t, n.pair)
+	for _, forwarded := range []string{"198.51.100.1", "203.0.113.2"} {
+		r, err := http.NewRequest(http.MethodGet, Origin(n.pair.ID())+"/api/me", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Close = true
+		r.Header.Set("X-Forwarded-For", forwarded)
+		r.Header.Set("X-Real-IP", forwarded)
+		r.Header.Set("X-Spool-Relay-Client", forwarded)
+		response, err := client.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(response.Body)
+		response.Body.Close()
+		if err != nil || string(data) != "relay-client/127.0.0.1" {
+			t.Fatalf("native peer = %q, error = %v; want the relay's TCP client address", data, err)
+		}
+	}
+}
+
 func TestConcurrentClientsStreamsAndBinary(t *testing.T) {
 	var active atomic.Int32
 	mux := http.NewServeMux()

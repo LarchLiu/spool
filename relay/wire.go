@@ -30,6 +30,7 @@ type controlMessage struct {
 	RegistrationToken string `json:"registration_token,omitempty"`
 	WebOrigin         string `json:"web_origin,omitempty"`
 	WebURL            string `json:"web_url,omitempty"`
+	ClientIP          string `json:"client_ip,omitempty"`
 }
 
 func randomID() string {

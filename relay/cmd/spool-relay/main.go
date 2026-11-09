@@ -27,12 +27,22 @@ func main() {
 	hosts := flag.Int("max-hosts", 100, "maximum registered Spool servers")
 	connections := flag.Int("max-connections", 4096, "maximum active data connections")
 	perHost := flag.Int("max-connections-per-host", 128, "maximum data connections per Spool server")
+	trustedProxies := flag.String("trusted-proxies", os.Getenv("RELAY_TRUSTED_PROXIES"), "comma-separated proxy CIDRs allowed to supply X-Forwarded-For (default: RELAY_TRUSTED_PROXIES, or none)")
 	flag.Parse()
 	requireToken, err := registrationTokenRequired(flag.CommandLine, *requireTokenFlag, os.Getenv("RELAY_REQUIRE_REGISTRATION_TOKEN"))
 	if err != nil {
 		log.Fatal(err)
 	}
-	broker, err := relay.NewServer(relay.ServerOptions{AdminToken: os.Getenv("SPOOL_RELAY_ADMIN_TOKEN"), DataDir: *dataDir, AllowUnregisteredHosts: !requireToken, MaxHosts: *hosts, MaxConnections: *connections, MaxConnectionsPerHost: *perHost})
+	var proxies []string
+	if strings.TrimSpace(*trustedProxies) != "" {
+		proxies = strings.Split(*trustedProxies, ",")
+	}
+	broker, err := relay.NewServer(relay.ServerOptions{
+		AdminToken: os.Getenv("SPOOL_RELAY_ADMIN_TOKEN"), DataDir: *dataDir,
+		AllowUnregisteredHosts: !requireToken, MaxHosts: *hosts,
+		MaxConnections: *connections, MaxConnectionsPerHost: *perHost,
+		TrustedProxies: proxies,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}

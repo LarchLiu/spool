@@ -35,7 +35,7 @@ type relayWebNode struct {
 
 // Two real Spool applications share a broker origin, with separate identities,
 // databases, cookies and PWA mounts. All host traffic uses outbound TLS tunnels.
-func relayWebFixture(t *testing.T, count int) (*relay.Server, *httptest.Server, []*relayWebNode) {
+func relayWebFixture(t *testing.T, count int, trustedProxies ...string) (*relay.Server, *httptest.Server, []*relayWebNode) {
 	t.Helper()
 	localSessionHomes(t)
 	nodes := make([]*relayWebNode, count)
@@ -49,7 +49,7 @@ func relayWebFixture(t *testing.T, count int) (*relay.Server, *httptest.Server, 
 		nodes[i] = &relayWebNode{store: store, id: id, user: user, project: testProject(t, store, user)}
 		testAgent(t, store)
 	}
-	broker, err := relay.NewServer(relay.ServerOptions{AdminToken: strings.Repeat("a", 32), DataDir: t.TempDir()})
+	broker, err := relay.NewServer(relay.ServerOptions{AdminToken: strings.Repeat("a", 32), DataDir: t.TempDir(), TrustedProxies: trustedProxies})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,6 +215,70 @@ func TestRelayWebAuthenticationPathsAndLiveTraffic(t *testing.T) {
 	}
 	request(node, "GET", "api/me", "", "", "", 401)
 	request(nodes[1], "GET", "api/me", "", "", "", 200)
+}
+
+func TestRelayWebLoginLimitsSeparateClientsAndRejectSpoofing(t *testing.T) {
+	for _, proxied := range []bool{false, true} {
+		t.Run(fmt.Sprintf("proxied=%t", proxied), func(t *testing.T) {
+			var proxies []string
+			if proxied {
+				proxies = []string{"127.0.0.1/32"}
+			}
+			broker, public, nodes := relayWebFixture(t, 1, proxies...)
+			node := nodes[0]
+			login := func(ip, port, spoof, body string, want int) {
+				t.Helper()
+				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+				defer cancel()
+				r := httptest.NewRequest(http.MethodPost, node.url+"api/login", strings.NewReader(body)).WithContext(ctx)
+				r.RemoteAddr = net.JoinHostPort(ip, port)
+				r.Header.Set("X-Forwarded-For", spoof)
+				if proxied {
+					r.RemoteAddr = "127.0.0.1:" + port
+					// The trusted proxy appends the actual client after any
+					// attacker-supplied entries.
+					r.Header.Add("X-Forwarded-For", ip)
+				}
+				r.Header.Set("X-Real-IP", spoof)
+				r.Header.Set("Forwarded", "for="+spoof)
+				r.Header.Set("X-Spool-Relay-Client", spoof)
+				r.AddCookie(&http.Cookie{Name: "spool_relay_client", Value: spoof})
+				r.Header.Set("Origin", public.URL)
+				r.Header.Set("Content-Type", "application/json")
+				w := httptest.NewRecorder()
+				broker.ServeHTTP(w, r)
+				if w.Code != want {
+					t.Fatalf("login from %s: %d, want %d: %s", ip, w.Code, want, w.Body)
+				}
+			}
+			// Malformed JSON still consumes login quota, without bcrypt work.
+			for i := 0; i < 20; i++ {
+				login("198.51.100.1", fmt.Sprint(10000+i), fmt.Sprintf("203.0.113.%d", i+1), "{", http.StatusBadRequest)
+			}
+			valid := `{"username":"alice","password":"test-password-2026"}`
+			login("198.51.100.1", "20000", "203.0.113.99", valid, http.StatusTooManyRequests)
+			login("203.0.113.2", "20001", "198.51.100.1", valid, http.StatusOK)
+			login("2001:db8::2", "20002", "198.51.100.1", valid, http.StatusOK)
+
+			// Native relay traffic must not share the public attacker's bucket.
+			dialer, err := relay.NewDialer(t.Context(), relay.Pairing{Version: 1, RelayURL: public.URL, PublicKey: node.id.PublicKey(), AccessToken: node.id.AccessToken}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer dialer.Close()
+			transport := &http.Transport{DialTLSContext: dialer.DialTLSContext}
+			defer transport.CloseIdleConnections()
+			client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+			response, err := client.Post(relay.Origin(node.id.ID())+"/api/login", "application/json", strings.NewReader(valid))
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatal("public login attempts blocked the native client", response.StatusCode)
+			}
+		})
+	}
 }
 
 func TestRelayWebStaticAssetsAndHostValidation(t *testing.T) {

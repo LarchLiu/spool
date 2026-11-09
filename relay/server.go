@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -21,20 +22,23 @@ type ServerOptions struct {
 	MaxHosts               int
 	MaxConnections         int
 	MaxConnectionsPerHost  int
+	// Only these proxy peers may supply X-Forwarded-For client addresses.
+	TrustedProxies []string
 }
 
 // Server forwards opaque native streams and optional public Web requests.
 // It has no Spool database, user accounts or home-server private keys.
 type Server struct {
-	opts          ServerOptions
-	mu            sync.Mutex
-	hosts         map[string]*registeredHost
-	pending       map[string]*relayPair
-	connections   int
-	registering   int
-	closed        bool
-	registrations map[string]registrationRecord
-	tokenIndex    map[string]string
+	opts           ServerOptions
+	mu             sync.Mutex
+	hosts          map[string]*registeredHost
+	pending        map[string]*relayPair
+	connections    int
+	registering    int
+	closed         bool
+	registrations  map[string]registrationRecord
+	tokenIndex     map[string]string
+	trustedProxies []netip.Prefix
 }
 type registeredHost struct {
 	id, token      string
@@ -74,6 +78,13 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		opts.MaxConnectionsPerHost = 128
 	}
 	s := &Server{opts: opts, hosts: make(map[string]*registeredHost), pending: make(map[string]*relayPair), registrations: make(map[string]registrationRecord), tokenIndex: make(map[string]string)}
+	for _, value := range opts.TrustedProxies {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(value))
+		if err != nil {
+			return nil, errors.New("trusted proxies must be IP CIDR ranges")
+		}
+		s.trustedProxies = append(s.trustedProxies, prefix.Masked())
+	}
 	if err := s.loadRegistrations(); err != nil {
 		return nil, err
 	}
@@ -276,7 +287,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	defer client.CloseNow()
 	select {
-	case h.open <- controlMessage{Type: "open", ID: p.id, Secret: p.secret}:
+	case h.open <- controlMessage{Type: "open", ID: p.id, Secret: p.secret, ClientIP: s.clientIP(r)}:
 	default:
 		return
 	}

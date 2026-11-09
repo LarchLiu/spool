@@ -30,6 +30,7 @@ The local `.env` is excluded from Git and the image build context.
 | --- | --- | --- |
 | `SPOOL_RELAY_ADMIN_TOKEN` | Required | Management API credential, 32–512 characters. |
 | `RELAY_REQUIRE_REGISTRATION_TOKEN` | `true` | Set `false` to allow signed automatic server registration. |
+| `RELAY_TRUSTED_PROXIES` | Empty | Comma-separated proxy IP CIDRs allowed to supply client addresses in `X-Forwarded-For`. |
 | `RELAY_BIND_ADDRESS` | `127.0.0.1` | Host interface for the HTTP relay backend. |
 | `RELAY_PORT` | `28080` | Host port for the HTTP relay backend. |
 | `RELAY_ADMIN_PORT` | `28081` | Host loopback port for the management API. |
@@ -58,6 +59,14 @@ enter that HTTPS origin in Spool Desktop. Android pairing requires an HTTPS
 origin with a certificate trusted by the app; a LAN HTTP address does not work.
 The default loopback mapping is accessible only from the Docker host. Running
 the container at home does not itself create a publicly reachable endpoint.
+
+When using an HTTPS reverse proxy, set `RELAY_TRUSTED_PROXIES` to its source
+address as seen by the relay. For Docker this is the bridge gateway or proxy
+container address, which may differ from the host's loopback address. Prefer
+fixed proxy addresses and narrow CIDRs such as `172.20.0.2/32`. The proxy must
+replace `X-Forwarded-For` or append the actual client address. Do not trust all
+client networks. Without this setting, clients behind the proxy share its
+login rate limit. Direct TLS deployments can leave it empty.
 
 Registrations and revocations persist in the `relay-data` named volume. The
 container uses the image's non-root user, a read-only root filesystem and a
@@ -109,7 +118,8 @@ go build -trimpath -o spool-relay ./cmd/spool-relay
 openssl rand -hex 32
 # Save that random value as SPOOL_RELAY_ADMIN_TOKEN in your service manager.
 export SPOOL_RELAY_ADMIN_TOKEN='the-generated-value'
-./spool-relay -listen 127.0.0.1:28080 -data-dir ./relay-data
+./spool-relay -listen 127.0.0.1:28080 -data-dir ./relay-data \
+  -trusted-proxies 127.0.0.1/32
 ```
 
 Point `relay.example.com` at the VPS and put a TLS reverse proxy in front.
@@ -127,6 +137,11 @@ Clients use TCP 443. Let the proxy manage its certificate and HTTP challenge as
 usual. WebSocket upgrades must work, with no short maximum connection lifetime.
 Heartbeat pings run every 20 seconds; the home server reconnects automatically.
 For direct TLS, pass `-listen :443 -tls-cert fullchain.pem -tls-key privkey.pem`.
+Omit `-trusted-proxies` for direct TLS. For the loopback Caddy example above,
+`127.0.0.1/32` trusts only that proxy's IPv4 connection. The flag overrides
+`RELAY_TRUSTED_PROXIES`; an invalid CIDR prevents startup. Forwarded chains are
+read from right to left, stopping at the first untrusted address. Other
+forwarding headers and client cookies cannot choose the login rate-limit key.
 
 Container build context is this directory:
 
@@ -395,6 +410,9 @@ you trust. Native Android connections retain their end-to-end pinned TLS.
 All Web mounts on one relay share a browser origin. Path-scoped cookies, PWA
 registrations, caches and preferences let multiple servers work in separate
 tabs, but paths are **not a security boundary between untrusted server operators**.
+The manifest keeps a shared PWA identity for the relay origin, with each server's
+own start URL and service-worker scope. A shared identity does not add a server
+switcher to the Web interface; server links can be opened in separate browser tabs.
 Only co-host mutually trusted server operators. The existing relay registration
 policy controls who may connect and publish Web: with required tokens, issue
 credentials only to trusted operators. With automatic registration, any server
@@ -408,6 +426,14 @@ current application session; registration revocation closes the server's native
 and Web tunnels. Cookies, uploads, downloads, chat SSE, workspace WebSockets and
 remote desktop viewers all use the same server prefix. Push notifications return
 to that server's PWA scope.
+
+Login limits use the client's IP address reported by the relay over the host's
+authenticated control channel, for both Web and native connections. Different
+source ports or forged HTTP forwarding headers do not reset a client's limit;
+clients sharing a public IP share the limit. Upgrade both the relay and the
+home server to apply this behavior. Older components remain compatible, but
+retain the shared tunnel-address limit until both are upgraded. The home
+server's separate Public HTTPS endpoint keeps its existing behavior.
 
 ## Routing and security
 
@@ -455,7 +481,8 @@ headers, never URL parameters. Compression is disabled.
   registration is enabled, a missing Authorization header starts identity-based
   enrollment; `ready.registration_token` contains the newly issued credential.
 - `/v1/connect/<server-id>`: requires the server's admission token. The relay
-  sends the host `open` with a random connection ID and one-time data secret.
+  sends the host `open` with a random connection ID, one-time data secret and
+  `client_ip` metadata resolved from the connection and configured trusted proxies.
 - `/v1/data/<connection-id>`: the host supplies the one-time secret; the relay
   joins the sockets. Pending joins expire after 10 seconds. Control loss closes
   that host's data connections.

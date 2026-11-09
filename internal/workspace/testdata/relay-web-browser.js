@@ -31,9 +31,10 @@ async function (expectedUser) {
   window.relayStep = 'manifest';
   const manifestURL = document.querySelector('link[rel="manifest"]').href;
   const manifest = await (await fetch(manifestURL)).json();
-  for (const property of ['id', 'scope', 'start_url']) {
-    assert(new URL(manifest[property], manifestURL).pathname === base, "wrong manifest " + property);
-  }
+  // The Go driver checks the browser's processed ID with Page.getAppManifest.
+  // Unlike scope/start_url, an explicit relative id resolves from the origin.
+  assert(new URL(manifest.scope, manifestURL).pathname === base, "wrong manifest scope");
+  assert(new URL(manifest.start_url, manifestURL).pathname === base, "wrong manifest start URL");
   assert(window.relayProbe.sockets.every(url => new URL(url, location.href).pathname.startsWith(base)), "WebSocket escaped path");
   window.relayStep = 'chat';
   const projects = await (await fetch('./api/projects')).json();

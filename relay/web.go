@@ -90,7 +90,7 @@ func (s *Server) serveWeb(w http.ResponseWriter, r *http.Request) {
 		Proxy: nil, DisableKeepAlives: true, DisableCompression: true,
 		ResponseHeaderTimeout: 30 * time.Second, MaxResponseHeaderBytes: 1 << 20,
 		DialTLSContext: func(dialCtx context.Context, _, _ string) (net.Conn, error) {
-			return s.dialWeb(dialCtx, h)
+			return s.dialWeb(dialCtx, h, s.clientIP(r))
 		},
 	}
 	defer transport.CloseIdleConnections()
@@ -139,7 +139,7 @@ func (s *Server) serveWeb(w http.ResponseWriter, r *http.Request) {
 
 // dialWeb consumes the same bounded one-time data channels as native clients.
 // TLS pins the key authenticated during registration before any HTTP is sent.
-func (s *Server) dialWeb(ctx context.Context, h *registeredHost) (net.Conn, error) {
+func (s *Server) dialWeb(ctx context.Context, h *registeredHost, clientIP string) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
 	s.mu.Lock()
@@ -172,7 +172,7 @@ func (s *Server) dialWeb(ctx context.Context, h *registeredHost) (net.Conn, erro
 		}
 	}()
 	select {
-	case h.open <- controlMessage{Type: "open", ID: p.id, Secret: p.secret}:
+	case h.open <- controlMessage{Type: "open", ID: p.id, Secret: p.secret, ClientIP: clientIP}:
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-pairCtx.Done():

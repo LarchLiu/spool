@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -18,7 +19,7 @@ func TestRelayWebBrowser(t *testing.T) {
 	if chrome == "" {
 		t.Skip("set CHROME_BIN to check two relay Web/PWA mounts in a real browser")
 	}
-	_, _, nodes := relayWebFixture(t, 2)
+	_, public, nodes := relayWebFixture(t, 2)
 	output := filepath.Join("..", "..", "build", "artifacts", "relay-web")
 	if err := os.MkdirAll(output, 0755); err != nil {
 		t.Fatal(err)
@@ -133,6 +134,17 @@ window.EventSource = class extends EventSource {
 			t.Fatal("browser probe was not installed before navigation")
 		}
 		result := evaluate(driver, fmt.Sprintf("(%s)(%q)", probe, nodes[i].user.ID))
+		// The app identity is shared by this origin. Unlike scope/start_url,
+		// an explicit relative id resolves from the origin, not the manifest URL.
+		var processed struct {
+			Manifest struct{ ID, Scope, StartURL string }
+		}
+		if err := json.Unmarshal(run(driver, browserCommand{Method: "Page.getAppManifest"}), &processed); err != nil {
+			t.Fatal("could not read browser manifest", err)
+		}
+		if processed.Manifest.ID != strings.TrimSuffix(public.URL, "/")+"/" || processed.Manifest.Scope != nodes[i].url || processed.Manifest.StartURL != nodes[i].url {
+			t.Fatalf("unexpected shared PWA identity or server scope for server %d: %+v", i+1, processed.Manifest)
+		}
 		if err := os.WriteFile(filepath.Join(output, fmt.Sprintf("browser-server-%d.json", i+1)), result, 0644); err != nil {
 			t.Fatal(err)
 		}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -216,13 +217,23 @@ func (h *Host) session() error {
 }
 
 func (h *Host) open(ctx context.Context, m controlMessage) {
+	var remote net.Addr
+	if m.ClientIP != "" {
+		ip, err := netip.ParseAddr(m.ClientIP)
+		if err != nil || ip.Zone() != "" {
+			return
+		}
+		// The authenticated control channel supplies this address. HTTP headers
+		// inside native or Web streams cannot change the login limiter's key.
+		remote = relayAddr("relay-client/" + ip.Unmap().String())
+	}
 	dialCtx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	c, err := dialWebsocket(dialCtx, h.HTTPClient, h.URL, "/v1/data/"+m.ID, m.Secret)
 	cancel()
 	if err != nil {
 		return
 	}
-	stream := &ownedConn{Conn: byteStream(ctx, c)}
+	stream := &ownedConn{Conn: byteStream(ctx, c), remote: remote}
 	stream.release = func() { h.mu.Lock(); delete(h.connections, stream); h.mu.Unlock() }
 	h.mu.Lock()
 	if h.ctx.Err() != nil || len(h.connections) >= 128 {
@@ -241,8 +252,16 @@ func (h *Host) open(ctx context.Context, m controlMessage) {
 
 type ownedConn struct {
 	net.Conn
+	remote  net.Addr
 	once    sync.Once
 	release func()
+}
+
+func (c *ownedConn) RemoteAddr() net.Addr {
+	if c.remote != nil {
+		return c.remote
+	}
+	return c.Conn.RemoteAddr()
 }
 
 func (c *ownedConn) Close() error { err := c.Conn.Close(); c.once.Do(c.release); return err }
