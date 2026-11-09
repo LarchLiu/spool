@@ -170,6 +170,9 @@ One-time migration prefers the selected route's existing login, then the other
 configured route. Logout persists an empty shared session so old route-specific
 cookies cannot restore it. A retired transport cannot overwrite newer session
 state. Tailscale node enrollment remains independent of the shared Spool login.
+Before enrollment, the embedded node is named `Spool-<model>` using Android's
+`Build.MODEL` (for example, `Spool-Pixel-8-Pro`). Separators become hyphens and
+the name is limited to 63 characters; an unavailable model uses `Spool-Android`.
 Server enablement and automatic network switching use native switches on the right.
 
 Each server tab retains its own projects, recent chats, profile directory,

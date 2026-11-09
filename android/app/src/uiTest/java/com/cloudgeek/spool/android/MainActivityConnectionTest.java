@@ -3,6 +3,7 @@ package com.cloudgeek.spool.android;
 import static org.junit.Assert.*;
 
 import android.app.Activity;
+import android.os.Build;
 import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
@@ -35,7 +36,7 @@ import spoolnet.Spoolnet;
 public class MainActivityConnectionTest {
     @Implements(value = Spoolnet.class, isInAndroidSdk = false)
     public static class ShadowSpoolnet {
-        static String mode, directory, origin;
+        static String mode, directory, origin, deviceModel;
         static boolean failDirect;
         static String tailnetHealth;
         @Implementation protected static void __staticInitializer__() {}
@@ -45,8 +46,8 @@ public class MainActivityConnectionTest {
             if (failDirect) throw new java.io.IOException("Direct connection unavailable");
             return new Client("unused", address);
         }
-        @Implementation protected static Client newClient(String data, String address) {
-            mode = "tailscale"; directory = data; origin = address;
+        @Implementation protected static Client newClientForDevice(String data, String address, String model) {
+            mode = "tailscale"; directory = data; origin = address; deviceModel = model;
             Client client = new Client("unused", address);
             if (tailnetHealth != null) {
                 MainActivityGoalTest.ShadowClient shadow = org.robolectric.shadow.api.Shadow.extract(client);
@@ -642,6 +643,7 @@ public class MainActivityConnectionTest {
                 drain(connections);
                 assertEquals("tailscale", ShadowSpoolnet.mode);
                 assertSame(ConnectionMode.TAILSCALE, profiles.active().plan.selected);
+                assertEquals(Build.MODEL, ShadowSpoolnet.deviceModel);
                 assertTrue(ShadowSpoolnet.directory.endsWith("/tsnet"));
                 MainActivityGoalTest.ShadowClient privateClient = org.robolectric.shadow.api.Shadow.extract(h.<Client>get("client"));
                 assertEquals(publicClient.sessionDirectory, privateClient.sessionDirectory);

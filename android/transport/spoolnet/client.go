@@ -69,6 +69,11 @@ func NewDirectClient(dataDir, serverURL string) (*Client, error) {
 
 // NewClient starts one app-private userspace node. No WebView or local proxy is used.
 func NewClient(dataDir, serverURL string) (*Client, error) {
+	return NewClientForDevice(dataDir, serverURL, "")
+}
+
+// NewClientForDevice starts a node named Spool-<device model> before enrollment.
+func NewClientForDevice(dataDir, serverURL, deviceModel string) (*Client, error) {
 	origin, authority, err := parseEndpoint(serverURL)
 	if err != nil {
 		return nil, err
@@ -82,7 +87,7 @@ func NewClient(dataDir, serverURL string) (*Client, error) {
 	if err := prepareLogStorage(dataDir); err != nil {
 		return nil, fmt.Errorf("prepare tsnet logs: %w", err)
 	}
-	server := &tsnet.Server{Dir: dataDir, Hostname: "spool-android", UserLogf: func(string, ...any) {}}
+	server := &tsnet.Server{Dir: dataDir, Hostname: deviceHostname(deviceModel), UserLogf: func(string, ...any) {}}
 	if err := server.Start(); err != nil {
 		server.Close()
 		return nil, fmt.Errorf("start tsnet: %w", err)
@@ -107,6 +112,20 @@ func NewClient(dataDir, serverURL string) (*Client, error) {
 		return lc.WatchIPNBus(ctx, ipn.NotifyInitialState)
 	})
 	return &Client{server: server, local: lc, node: state, origin: origin, ctx: ctx, cancel: cancel, transport: transport, http: httpClient}, nil
+}
+
+func deviceHostname(model string) string {
+	model = strings.Join(strings.FieldsFunc(model, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9')
+	}), "-")
+	if model == "" || strings.EqualFold(model, "unknown") {
+		model = "Android"
+	}
+	// Keep the complete name within a DNS label, including the Spool- prefix.
+	if len(model) > 57 {
+		model = strings.TrimRight(model[:57], "-")
+	}
+	return "Spool-" + model
 }
 
 func nativeHTTPClient(dial func(context.Context, string, string) (net.Conn, error)) (*http.Client, *http.Transport) {

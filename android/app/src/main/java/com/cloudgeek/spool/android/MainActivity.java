@@ -953,7 +953,7 @@ public final class MainActivity extends Activity {
                 }
                 else {
                     Spoolnet.updateInterfaces(NetworkSnapshot.read(connectivity));
-                    candidate = Spoolnet.newClient(directory, endpoint.origin);
+                    candidate = Spoolnet.newClientForDevice(directory, endpoint.origin, Build.MODEL);
                 }
                 try {
                     if (owner.plan.relay.isEmpty()) candidate.useServerSession(owner.sessionDirectory(getNoBackupFilesDir()), owner.plan.direct, owner.plan.tailscale);
