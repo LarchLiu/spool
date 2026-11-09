@@ -2,7 +2,8 @@ package workspace
 
 import (
 	"context"
-	"crypto/tls"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -47,6 +48,11 @@ func TestRelayPreservesSpoolAuthorizationAndDesktopRevocation(t *testing.T) {
 	broker, token := testRelayBroker(t)
 	public := httptest.NewServer(broker)
 	id, _ := relay.NewIdentity()
+	devices, err := relay.OpenDevices(filepath.Join(store.Root(), "relay"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &Service{Store: store, relayDevices: devices}
 	host, _ := relay.NewHost(t.Context(), public.URL, token, id, nil)
 	ready := make(chan struct{}, 1)
 	host.OnStatus = func(s string) {
@@ -58,13 +64,14 @@ func TestRelayPreservesSpoolAuthorizationAndDesktopRevocation(t *testing.T) {
 		}
 	}
 	cfg, _ := id.TLSConfig()
-	server := &http.Server{Handler: app, ReadHeaderTimeout: time.Second}
-	go server.Serve(tls.NewListener(host, cfg))
+	server := &http.Server{Handler: devices.Handler(app, id.ID(), func() bool { return false }), ReadHeaderTimeout: time.Second}
+	go server.Serve(devices.Listener(host, cfg, id.ID(), func() bool { return false }, true))
 	done := make(chan struct{})
 	go func() { host.Run(); host.Wait(); close(done) }()
 	t.Cleanup(func() {
 		host.Close()
 		server.Close()
+		devices.CloseConnections()
 		broker.Close()
 		public.Close()
 		select {
@@ -78,8 +85,9 @@ func TestRelayPreservesSpoolAuthorizationAndDesktopRevocation(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("host registration timed out")
 	}
-	p := relay.Pairing{Version: 1, RelayURL: public.URL, PublicKey: id.PublicKey(), AccessToken: id.AccessToken}
-	dialer, _ := relay.NewDialer(t.Context(), p, nil)
+	p := relay.Pairing{Version: 2, RelayURL: public.URL, PublicKey: id.PublicKey(), AccessToken: id.AccessToken}
+	p.Invitation, p.ExpiresAt = devices.Invite()
+	dialer := pairServiceDevice(t, service, p)
 	defer dialer.Close()
 	transport := &http.Transport{DialTLSContext: dialer.DialTLSContext}
 	defer transport.CloseIdleConnections()
@@ -149,19 +157,40 @@ func TestRelayPreservesSpoolAuthorizationAndDesktopRevocation(t *testing.T) {
 	if status, _ := request("/api/me", "", cookie, ""); status != 401 {
 		t.Fatal("revoked session survived relay", status)
 	}
+	snapshot, err := service.RelayDevices()
+	if err != nil || len(snapshot.Devices) != 1 {
+		t.Fatal(snapshot, err)
+	}
+	if err := service.RevokeRelayDevice(snapshot.Devices[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if response, err := client.Get(origin + "/healthz"); err == nil {
+		response.Body.Close()
+		t.Fatal("revoked device reached Spool")
+	}
 }
 
 func TestPairingCodeKeepsRegistrationCredentialLocal(t *testing.T) {
-	store := testStore(t)
-	settings := DefaultSettings()
-	settings.RelayEnabled = true
-	settings.RelayURL = "https://relay.example.com"
-	if err := store.SaveSettings(settings); err != nil {
+	service, settings := settingsService(t)
+	broker, secret := testRelayBroker(t)
+	public := httptest.NewServer(broker)
+	defer public.Close()
+	defer service.Stop()
+	settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
+	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
-	service := &Service{Store: store, ctx: context.Background()}
-	secret := strings.Repeat("private-registration-", 3)
-	if err := service.SetRelayRegistrationToken(secret); err != nil {
+	if _, err := service.RelayPairingCode(); err == nil {
+		t.Fatal("pairing allowed before relay starts")
+	}
+	if err := service.RegisterRelay(t.Context(), public.URL, secret); err != nil {
+		t.Fatal(err)
+	}
+	settings.RelayEnabled = true
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ApplyServiceChanges("relay"); err != nil {
 		t.Fatal(err)
 	}
 	info, err := service.RelayPairingInfo()
@@ -375,7 +404,7 @@ func testRelayServiceLifecycle(t *testing.T, automatic bool) {
 	}
 	p, _ := relay.ParsePairing(code)
 	p.LAN = nil
-	dialer, _ := relay.NewDialer(t.Context(), p, nil)
+	dialer := pairServiceDevice(t, service, p)
 	defer dialer.Close()
 	transport := &http.Transport{DialTLSContext: dialer.DialTLSContext}
 	defer transport.CloseIdleConnections()
@@ -411,4 +440,43 @@ func testRelayServiceLifecycle(t *testing.T, automatic bool) {
 	if err := service.Stop(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func pairServiceDevice(t *testing.T, service *Service, p relay.Pairing) *relay.Dialer {
+	t.Helper()
+	_, key, _ := ed25519.GenerateKey(rand.Reader)
+	dialer, err := relay.NewDialer(t.Context(), p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dialer.TLSConfig, err = relay.DeviceTLSConfig(p, key.Seed(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := &http.Transport{DialTLSContext: dialer.DialTLSContext}
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+	if state, err := relay.PairDevice(t.Context(), client, p, "Test phone"); err != nil || state != "pending" {
+		t.Fatal(state, err)
+	}
+	snapshot, err := service.RelayDevices()
+	if err != nil || len(snapshot.Pending) != 1 {
+		t.Fatal(snapshot, err)
+	}
+	if err := service.DecideRelayDevice(snapshot.Pending[0].RequestID, true); err != nil {
+		t.Fatal(err)
+	}
+	if state, err := relay.PairDevice(t.Context(), client, p, "Test phone"); err != nil || state != "approved" {
+		t.Fatal(state, err)
+	}
+	dialer.Close()
+	transport.CloseIdleConnections()
+	dialer, err = relay.NewDialer(t.Context(), p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dialer.TLSConfig, err = relay.DeviceTLSConfig(p, key.Seed(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dialer
 }

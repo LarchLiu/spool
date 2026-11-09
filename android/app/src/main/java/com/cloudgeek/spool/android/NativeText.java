@@ -35,6 +35,7 @@ final class NativeText {
             case "Approval required": value = "等待你的审批"; break;
             case "Approve additional usage": value = "批准额外用量"; break;
             case "Approve for me": value = "代我审批"; break;
+            case "Approve this phone in Spool Desktop. Compare the device fingerprint on both screens.": value = "请在 Spool Desktop 中确认这台手机，并对比两边显示的设备指纹。"; break;
             case "Approved by {name}": value = "{name} 批准了操作"; break;
             case "Ask for approval": value = "询问审批"; break;
             case "Ask your desktop administrator to create a project and grant you access.": value = "请在桌面控制台创建项目，并将你的账号加入项目成员。"; break;
@@ -127,6 +128,7 @@ final class NativeText {
             case "Deny operations that are not already permitted.": value = "不再询问，直接拒绝未获允许的操作。"; break;
             case "Describe your idea. Your agent takes it from here.": value = "描述你的想法，剩下的交给 agent。"; break;
             case "Detached HEAD · {commit}": value = "游离 HEAD · {commit}"; break;
+            case "Device approval": value = "设备配对确认"; break;
             case "Directory": value = "目录"; break;
             case "Disable plugin suggestions": value = "关闭插件推荐"; break;
             case "Disabled": value = "已停用"; break;
@@ -238,6 +240,8 @@ final class NativeText {
             case "PDF page {page} of {count}": value = "PDF 第 {page} 页，共 {count} 页"; break;
             case "PDF preview": value = "PDF 预览"; break;
             case "Pairing code": value = "配对码"; break;
+            case "Pairing code expired. Generate a new code.": value = "配对码已过期，请生成新配对码。"; break;
+            case "Pairing failed. Check the connection or scan a new code.": value = "配对失败，请检查连接或扫描新的配对码。"; break;
             case "Password": value = "密码"; break;
             case "People & groups": value = "成员与群聊"; break;
             case "People chat": value = "成员聊天"; break;
@@ -251,6 +255,7 @@ final class NativeText {
             case "Plugin recommendation": value = "插件推荐"; break;
             case "Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity.": value = "优先通过局域网连接已配对的服务器，外出时使用中继，两种方式都验证同一服务器身份。"; break;
             case "Prepare a project first.": value = "先准备一个项目。"; break;
+            case "Preparing device identity…": value = "正在生成设备身份…"; break;
             case "Preview": value = "预览"; break;
             case "Preview truncated. Download the full file to see all content.": value = "预览内容已截断，下载文件可查看完整内容。"; break;
             case "Preview {name}": value = "预览 {name}"; break;
@@ -275,6 +280,7 @@ final class NativeText {
             case "Recents": value = "最近聊天"; break;
             case "Reconnecting…": value = "正在重连…"; break;
             case "Refresh files": value = "刷新文件"; break;
+            case "Relay": value = "中继"; break;
             case "Relay HTTPS address": value = "中继 HTTPS 地址"; break;
             case "Remote connection": value = "远程连接"; break;
             case "Remote desktop": value = "远程桌面"; break;
@@ -353,6 +359,7 @@ final class NativeText {
             case "Stopping…": value = "正在停止…"; break;
             case "Switch directory": value = "切换目录"; break;
             case "Switch to default model": value = "切换为默认模型"; break;
+            case "Tailscale": value = "Tailscale"; break;
             case "Tailscale HTTPS address": value = "Tailscale HTTPS 地址"; break;
             case "The agent reviews approval requests automatically.": value = "由 agent 的原生自动审批机制评估请求。"; break;
             case "The next message creates a new chat with the selected agent and converted context.": value = "下一条消息将在新聊天中由所选 Agent 继续，并携带转换后的上下文。"; break;
@@ -459,6 +466,7 @@ final class NativeText {
             case "Approval required": value = "承認が必要です"; break;
             case "Approve additional usage": value = "追加の利用を承認"; break;
             case "Approve for me": value = "承認を任せる"; break;
+            case "Approve this phone in Spool Desktop. Compare the device fingerprint on both screens.": value = "Spool Desktop でこのスマートフォンを承認してください。両画面の端末の指紋を比較してください。"; break;
             case "Approved by {name}": value = "{name} が操作を承認しました"; break;
             case "Ask for approval": value = "承認を求める"; break;
             case "Ask your desktop administrator to create a project and grant you access.": value = "デスクトップ管理者にプロジェクトの作成とアクセス許可を依頼してください。"; break;
@@ -551,6 +559,7 @@ final class NativeText {
             case "Deny operations that are not already permitted.": value = "許可されていない操作は確認せずに拒否します。"; break;
             case "Describe your idea. Your agent takes it from here.": value = "アイデアを伝えて、あとはエージェントに任せましょう。"; break;
             case "Detached HEAD · {commit}": value = "分離 HEAD · {commit}"; break;
+            case "Device approval": value = "端末の承認"; break;
             case "Directory": value = "ディレクトリ"; break;
             case "Disable plugin suggestions": value = "プラグインの提案を無効化"; break;
             case "Disabled": value = "無効"; break;
@@ -662,6 +671,8 @@ final class NativeText {
             case "PDF page {page} of {count}": value = "PDF {count} ページ中 {page} ページ"; break;
             case "PDF preview": value = "PDF プレビュー"; break;
             case "Pairing code": value = "Pairing code"; break;
+            case "Pairing code expired. Generate a new code.": value = "ペアリングコードの期限が切れました。新しいコードを生成してください。"; break;
+            case "Pairing failed. Check the connection or scan a new code.": value = "ペアリングに失敗しました。接続を確認するか、新しいコードを読み取ってください。"; break;
             case "Password": value = "パスワード"; break;
             case "People & groups": value = "メンバーとグループ"; break;
             case "People chat": value = "ユーザーチャット"; break;
@@ -675,6 +686,7 @@ final class NativeText {
             case "Plugin recommendation": value = "プラグインの提案"; break;
             case "Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity.": value = "Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity."; break;
             case "Prepare a project first.": value = "まずプロジェクトを準備しましょう。"; break;
+            case "Preparing device identity…": value = "端末の識別情報を準備中…"; break;
             case "Preview": value = "プレビュー"; break;
             case "Preview truncated. Download the full file to see all content.": value = "プレビューは省略されています。全体はダウンロードして確認してください。"; break;
             case "Preview {name}": value = "{name}をプレビュー"; break;
@@ -699,6 +711,7 @@ final class NativeText {
             case "Recents": value = "最近のチャット"; break;
             case "Reconnecting…": value = "再接続中…"; break;
             case "Refresh files": value = "ファイルを更新"; break;
+            case "Relay": value = "リレー"; break;
             case "Relay HTTPS address": value = "Relay HTTPS address"; break;
             case "Remote connection": value = "リモート接続"; break;
             case "Remote desktop": value = "リモートデスクトップ"; break;
@@ -777,6 +790,7 @@ final class NativeText {
             case "Stopping…": value = "停止しています…"; break;
             case "Switch directory": value = "ディレクトリを切り替え"; break;
             case "Switch to default model": value = "既定のモデルに切り替え"; break;
+            case "Tailscale": value = "Tailscale"; break;
             case "Tailscale HTTPS address": value = "Tailscale HTTPSアドレス"; break;
             case "The agent reviews approval requests automatically.": value = "エージェントの自動承認機能でリクエストを審査します。"; break;
             case "The next message creates a new chat with the selected agent and converted context.": value = "次のメッセージで、変換したコンテキストを引き継ぐ新しいチャットを作成します。"; break;

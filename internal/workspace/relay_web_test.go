@@ -261,7 +261,7 @@ func TestRelayWebLoginLimitsSeparateClientsAndRejectSpoofing(t *testing.T) {
 			login("2001:db8::2", "20002", "198.51.100.1", valid, http.StatusOK)
 
 			// Native relay traffic must not share the public attacker's bucket.
-			dialer, err := relay.NewDialer(t.Context(), relay.Pairing{Version: 1, RelayURL: public.URL, PublicKey: node.id.PublicKey(), AccessToken: node.id.AccessToken}, nil)
+			dialer, err := relay.NewDialer(t.Context(), relay.Pairing{Version: 2, RelayURL: public.URL, PublicKey: node.id.PublicKey(), AccessToken: node.id.AccessToken}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -397,10 +397,7 @@ func TestRelayWebServiceEnableDisable(t *testing.T) {
 	}
 	pairing, _ := relay.ParsePairing(code)
 	pairing.LAN = nil
-	dialer, err := relay.NewDialer(t.Context(), pairing, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	dialer := pairServiceDevice(t, service, pairing)
 	defer dialer.Close()
 	transport := &http.Transport{DialTLSContext: dialer.DialTLSContext}
 	defer transport.CloseIdleConnections()

@@ -189,7 +189,7 @@ func startAdminTestHost(t *testing.T, public *httptest.Server, token string, id 
 	case <-time.After(5 * time.Second):
 		t.Fatal("host did not register")
 	}
-	return &testNetwork{host: host, app: app, hostDone: done, pair: Pairing{Version: 1, RelayURL: public.URL, PublicKey: id.PublicKey(), AccessToken: id.AccessToken}}
+	return &testNetwork{host: host, app: app, hostDone: done, pair: Pairing{Version: 2, RelayURL: public.URL, PublicKey: id.PublicKey(), AccessToken: id.AccessToken}}
 }
 
 func TestRevocationDisconnectsOnlyItsServerAndAllowsReplacement(t *testing.T) {

@@ -3,7 +3,6 @@ package workspace
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -33,16 +32,23 @@ type RelayStatus struct {
 	Registered, Registering                     bool
 }
 type relayRuntime struct {
-	ingress *httpIngress
 	cancel  context.CancelFunc
 	host    *relay.Host
 	lan     net.Listener
+	ingress *httpIngress
+	devices *relay.Devices
 	mu      sync.Mutex
 	status  RelayStatus
 }
 
 func (r *relayRuntime) snapshot() RelayStatus { r.mu.Lock(); defer r.mu.Unlock(); return r.status }
-func (r *relayRuntime) close()                { r.cancel(); r.ingress.close(); r.host.Close(); r.lan.Close() }
+func (r *relayRuntime) close() {
+	r.cancel()
+	r.host.Close()
+	r.lan.Close()
+	r.ingress.close()
+	r.devices.CloseConnections()
+}
 func sameRelaySettings(a, b Settings) bool {
 	return a.RelayEnabled == b.RelayEnabled && (!a.RelayEnabled || a.RelayURL == b.RelayURL && a.RelayLANPort == b.RelayLANPort && a.RelayWebEnabled == b.RelayWebEnabled)
 }
@@ -57,6 +63,10 @@ func (s *Service) startRelayLocked(settings Settings) error {
 		return err
 	}
 	tlsConfig, err := id.TLSConfig()
+	if err != nil {
+		return err
+	}
+	devices, err := s.relayDevicesLocked()
 	if err != nil {
 		return err
 	}
@@ -76,7 +86,12 @@ func (s *Service) startRelayLocked(settings Settings) error {
 		host.Close()
 		return fmt.Errorf("listen for secure LAN connections: %w", err)
 	}
-	runtime := &relayRuntime{ingress: s.newIngressLocked(), cancel: cancel, host: host, lan: listener, status: RelayStatus{State: "connecting", ServerID: id.ID(), LANAddress: listener.Addr().String(), RegistrationTokenSet: token != ""}}
+	// Admission follows this applied ingress. Saved pending settings take effect
+	// only when ApplyServiceChanges replaces it, including rollback on failure.
+	webAllowed := func() bool { return ctx.Err() == nil && settings.RelayEnabled && settings.RelayWebEnabled }
+	ingress := s.newIngressLocked()
+	ingress.server.Handler = devices.Handler(s.app, id.ID(), webAllowed)
+	runtime := &relayRuntime{ingress: ingress, cancel: cancel, host: host, lan: listener, devices: devices, status: RelayStatus{State: "connecting", ServerID: id.ID(), LANAddress: listener.Addr().String(), RegistrationTokenSet: token != ""}}
 	host.WebEnabled = settings.RelayWebEnabled
 	host.OnWebURL = func(address string) {
 		runtime.mu.Lock()
@@ -124,8 +139,8 @@ func (s *Service) startRelayLocked(settings Settings) error {
 		}
 		return s.confirmRelayRegistrationLocked(settings.RelayURL, id, credential)
 	}
-	s.serveLocked(runtime.ingress.server, tls.NewListener(host, tlsConfig))
-	s.serveLocked(runtime.ingress.server, tls.NewListener(listener, tlsConfig))
+	s.serveLocked(runtime.ingress.server, devices.Listener(host, tlsConfig, id.ID(), webAllowed, true))
+	s.serveLocked(runtime.ingress.server, devices.Listener(listener, tlsConfig, id.ID(), webAllowed, false))
 	s.workers.Add(2)
 	go func() { defer s.workers.Done(); defer transport.CloseIdleConnections(); host.Run(); host.Wait() }()
 	go func() {
@@ -192,22 +207,24 @@ func relayLANAddresses(port int) []string {
 }
 
 // RelayPairingCode is a local management operation. It is deliberately absent
-// from the web API: knowledge of the code permits relay admission, not login.
+// from the web API. The invitation is short-lived, single-device and requires
+// a separate local approval before any application request is admitted.
 func (s *Service) RelayPairingCode() (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	settings, err := s.Store.Settings()
+	if s.relay == nil {
+		return "", fmt.Errorf("Start Spool Relay before pairing a phone.")
+	}
+	// Use the running host and listener, even if another address is saved but
+	// still waiting to be applied. A code must describe a reachable ingress.
+	id := s.relay.host.Identity
+	port := s.relay.lan.Addr().(*net.TCPAddr).Port
+	devices, err := s.relayDevicesLocked()
 	if err != nil {
 		return "", err
 	}
-	if !settings.RelayEnabled {
-		return "", fmt.Errorf("enable relay and configure its URL first")
-	}
-	id, err := relay.LoadIdentity(filepath.Join(s.Store.Root(), "relay"))
-	if err != nil {
-		return "", err
-	}
-	return (relay.Pairing{Version: 1, RelayURL: settings.RelayURL, PublicKey: id.PublicKey(), AccessToken: id.AccessToken, LAN: relayLANAddresses(settings.RelayLANPort)}).Encode()
+	invitation, expires := devices.Invite()
+	return (relay.Pairing{Version: 2, RelayURL: s.relay.host.URL, PublicKey: id.PublicKey(), AccessToken: id.AccessToken, LAN: relayLANAddresses(port), Invitation: invitation, ExpiresAt: expires}).Encode()
 }
 
 // RegisterRelay enrolls while the relay switch remains off. Only a confirmed
@@ -392,6 +409,7 @@ type RelayPairingInfo struct {
 	RelayURL    string `json:"relay_url"`
 	ServerID    string `json:"server_id"`
 	Fingerprint string `json:"fingerprint"`
+	ExpiresAt   int64  `json:"expires_at"`
 }
 
 func (s *Service) RelayPairingInfo() (RelayPairingInfo, error) {
@@ -413,5 +431,61 @@ func (s *Service) RelayPairingInfo() (RelayPairingInfo, error) {
 	for i := 0; i < len(hexValue); i += 8 {
 		parts = append(parts, hexValue[i:i+8])
 	}
-	return RelayPairingInfo{Code: code, QR: "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), RelayURL: p.RelayURL, ServerID: p.ID(), Fingerprint: strings.Join(parts, " ")}, nil
+	return RelayPairingInfo{Code: code, QR: "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), RelayURL: p.RelayURL, ServerID: p.ID(), Fingerprint: strings.Join(parts, " "), ExpiresAt: p.ExpiresAt}, nil
+}
+
+func (s *Service) relayDevicesLocked() (*relay.Devices, error) {
+	if s.relayDevices == nil {
+		devices, err := relay.OpenDevices(filepath.Join(s.Store.Root(), "relay"))
+		if err != nil {
+			return nil, err
+		}
+		s.relayDevices = devices
+	}
+	return s.relayDevices, nil
+}
+
+func (s *Service) RelayDevices() (relay.DeviceSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.relayDevicesLocked()
+	if err != nil {
+		return relay.DeviceSnapshot{}, err
+	}
+	return d.Snapshot(), nil
+}
+func (s *Service) DecideRelayDevice(requestID string, approve bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.relayDevicesLocked()
+	if err != nil {
+		return err
+	}
+	return d.Decide(requestID, approve)
+}
+func (s *Service) RevokeRelayDevice(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.relayDevicesLocked()
+	if err != nil {
+		return err
+	}
+	return d.Revoke(id)
+}
+func (s *Service) CancelRelayPairing(code string) error {
+	p, err := relay.ParsePairing(code)
+	if err != nil {
+		return err
+	}
+	if p.Invitation == "" {
+		return fmt.Errorf("pairing invitation required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, err := s.relayDevicesLocked()
+	if err != nil {
+		return err
+	}
+	d.CancelInvitation(p.Invitation)
+	return nil
 }

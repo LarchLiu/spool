@@ -106,6 +106,8 @@ type Pairing struct {
 	PublicKey   []byte   `json:"key"`
 	AccessToken string   `json:"token"`
 	LAN         []string `json:"lan,omitempty"`
+	Invitation  string   `json:"invite,omitempty"`
+	ExpiresAt   int64    `json:"expires_at,omitempty"`
 }
 
 func (p Pairing) ID() string { return ServerID(p.PublicKey) }
@@ -129,8 +131,11 @@ func ParsePairing(code string) (Pairing, error) {
 	return p, p.Validate()
 }
 func (p Pairing) Validate() error {
-	if p.Version != 1 || len(p.PublicKey) != ed25519.PublicKeySize || !validToken(p.AccessToken) || len(p.LAN) > 16 {
+	if p.Version != 2 || len(p.PublicKey) != ed25519.PublicKeySize || !validToken(p.AccessToken) || len(p.LAN) > 16 {
 		return errors.New("invalid or unsupported Spool pairing code")
+	}
+	if (p.Invitation != "" && (!validToken(p.Invitation) || p.ExpiresAt <= 0)) || (p.Invitation == "" && p.ExpiresAt != 0) {
+		return errors.New("invalid Spool pairing invitation")
 	}
 	if _, err := ParseRelayURL(p.RelayURL); err != nil {
 		return err

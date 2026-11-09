@@ -245,6 +245,10 @@ export function settingsCall<T>(
     | "TSNetLogin"
     | "TSNetRegister"
     | "RelayPairing"
+    | "RelayDevices"
+    | "DecideRelayDevice"
+    | "RevokeRelayDevice"
+    | "CancelRelayPairing"
     | "AddressQRCode"
     | "RegisterRelay",
   ...args: unknown[]

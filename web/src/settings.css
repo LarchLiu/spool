@@ -610,6 +610,48 @@
 .settings-relay-section > .settings-error {
   margin: 0 19px 17px;
 }
+.desktop-settings-shell button.settings-relay-disclosure {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 66px;
+  padding: 17px 19px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+.desktop-settings-shell button.settings-relay-disclosure:hover:not(:disabled) {
+  background: var(--surface);
+}
+.settings-relay-disclosure-copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+}
+.settings-relay-disclosure-copy strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.settings-relay-disclosure-copy small,
+.settings-relay-device-count,
+.settings-relay-help {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.settings-relay-disclosure > svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.settings-relay-disclosure[aria-expanded="true"] > svg {
+  transform: rotate(90deg);
+}
+.settings-relay-help {
+  margin: 0 19px 12px;
+}
 .settings-pairing-code {
   width: 100%;
   margin-top: 24px;

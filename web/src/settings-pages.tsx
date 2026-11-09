@@ -559,16 +559,16 @@ export function ServicePage({ data, run, t }: PageProps) {
                 title={t("Public Web address")}
                 help={data.status.Relay.WebURL}
               >
+                <AddressQRButton
+                  address={data.status.Relay.WebURL}
+                  title={t("Public Web address")}
+                  t={t}
+                />
                 <CopyAddressButton
                   key={data.status.Relay.WebURL}
                   t={t}
                   kind="copy-relay-web-url"
                   iconOnly
-                />
-                <AddressQRButton
-                  address={data.status.Relay.WebURL}
-                  title={t("Public Web address")}
-                  t={t}
                 />
               </Row>
             )}
@@ -578,7 +578,7 @@ export function ServicePage({ data, run, t }: PageProps) {
               {data.status.Relay.Error}
             </div>
           )}
-          <RelayPairing data={data} t={t} />
+          <RelayPairing data={data} t={t} active={activeTab === "relay"} />
         </Card>
       </ServiceTabPanel>
       <ServiceTabPanel id={tabsID} tab="tsnet" active={activeTab}>

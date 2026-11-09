@@ -61,7 +61,7 @@ func setup(t *testing.T, handler http.Handler) *testNetwork {
 	go app.Serve(tls.NewListener(host, cfg))
 	done := make(chan struct{})
 	go func() { host.Run(); host.Wait(); close(done) }()
-	n := &testNetwork{pair: Pairing{Version: 1, RelayURL: public.URL, PublicKey: id.PublicKey(), AccessToken: id.AccessToken}, host: host, relay: broker, app: app, lan: lan, hostDone: done}
+	n := &testNetwork{pair: Pairing{Version: 2, RelayURL: public.URL, PublicKey: id.PublicKey(), AccessToken: id.AccessToken}, host: host, relay: broker, app: app, lan: lan, hostDone: done}
 	t.Cleanup(func() {
 		host.Close()
 		app.Close()
@@ -294,7 +294,7 @@ func TestIdentityPairingAndRegistrationSecurity(t *testing.T) {
 	if err != nil || id.ID() != again.ID() {
 		t.Fatal("identity did not persist", err)
 	}
-	p := Pairing{Version: 1, RelayURL: "https://relay.example.com", PublicKey: id.PublicKey(), AccessToken: id.AccessToken, LAN: []string{"192.168.1.20:28082"}}
+	p := Pairing{Version: 2, RelayURL: "https://relay.example.com", PublicKey: id.PublicKey(), AccessToken: id.AccessToken, LAN: []string{"192.168.1.20:28082"}}
 	code, err := p.Encode()
 	if err != nil {
 		t.Fatal(err)

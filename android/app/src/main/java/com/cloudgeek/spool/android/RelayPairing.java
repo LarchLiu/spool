@@ -9,16 +9,23 @@ import org.json.JSONObject;
 /** Untrusted QR payload. Acceptance pins an identity; it never grants a login. */
 final class RelayPairing {
     final String code, relay, id, fingerprint;
+    final boolean invitation;
+    final long expiresAt;
 
     RelayPairing(String input) {
         try {
             code = input.trim();
             if (!code.startsWith("spool-pair:") || code.length() > 8192) throw new IllegalArgumentException();
             JSONObject value = new JSONObject(new String(Base64.getUrlDecoder().decode(code.substring(11)), StandardCharsets.UTF_8));
-            if (value.getInt("v") != 1) throw new IllegalArgumentException();
+            if (value.getInt("v") != 2) throw new IllegalArgumentException("Pair again using a new Spool Desktop code");
             byte[] key = Base64.getDecoder().decode(value.getString("key"));
             byte[] token = Base64.getUrlDecoder().decode(value.getString("token"));
             if (key.length != 32 || token.length != 32) throw new IllegalArgumentException();
+            String invite = value.optString("invite");
+            invitation = !invite.isEmpty();
+            expiresAt = value.optLong("expires_at");
+            if (invitation && (Base64.getUrlDecoder().decode(invite).length != 32 || expiresAt <= 0)
+                    || !invitation && expiresAt != 0) throw new IllegalArgumentException();
             relay = value.getString("relay");
             URI uri = new URI(relay);
             if (!"https".equals(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null

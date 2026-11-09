@@ -2,7 +2,6 @@ package spoolnet
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"io"
 	"net"
@@ -19,6 +18,10 @@ import (
 
 func TestPairedAndroidSessionsStreamsDesktopAndLANFallback(t *testing.T) {
 	id, err := relay.NewIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	devices, err := relay.OpenDevices(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,17 +108,19 @@ func TestPairedAndroidSessionsStreamsDesktopAndLANFallback(t *testing.T) {
 		}
 	})}
 	cfg, _ := id.TLSConfig()
-	lan, err := tls.Listen("tcp", "127.0.0.1:0", cfg)
+	app.Handler = devices.Handler(app.Handler, id.ID(), func() bool { return false })
+	lan, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	go app.Serve(lan)
-	go app.Serve(tls.NewListener(host, cfg))
+	go app.Serve(devices.Listener(lan, cfg, id.ID(), func() bool { return false }, false))
+	go app.Serve(devices.Listener(host, cfg, id.ID(), func() bool { return false }, true))
 	done := make(chan struct{})
 	go func() { host.Run(); host.Wait(); close(done) }()
 	t.Cleanup(func() {
 		host.Close()
 		app.Close()
+		devices.CloseConnections()
 		broker.Close()
 		public.Close()
 		select {
@@ -129,9 +134,54 @@ func TestPairedAndroidSessionsStreamsDesktopAndLANFallback(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("relay host did not register")
 	}
-	p := relay.Pairing{Version: 1, RelayURL: public.URL, PublicKey: id.PublicKey(), AccessToken: id.AccessToken, LAN: []string{lan.Addr().String()}}
+	p := relay.Pairing{Version: 2, RelayURL: public.URL, PublicKey: id.PublicKey(), AccessToken: id.AccessToken, LAN: []string{lan.Addr().String()}}
+	p.Invitation, p.ExpiresAt = devices.Invite()
 	code, _ := p.Encode()
 	root := t.TempDir()
+	if c, err := NewRelayClient(filepath.Join(root, "relay"), code); err == nil {
+		c.Close()
+		t.Fatal("unpaired client accepted")
+	}
+	pending, err := BeginRelayPairing(filepath.Join(root, "relay"), code, "Android test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pending.Close)
+	if state, err := pending.Poll(); err != nil || state != "pending" {
+		t.Fatal(state, err)
+	}
+	if c, err := NewRelayClient(filepath.Join(root, "relay"), code); err == nil {
+		c.Close()
+		t.Fatal("unapproved client accepted")
+	}
+	// Process death before approval reuses the private pending key.
+	fingerprint := pending.Fingerprint()
+	pending.Close()
+	pending, err = BeginRelayPairing(filepath.Join(root, "relay"), code, "Android test")
+	if err != nil || pending.Fingerprint() != fingerprint {
+		t.Fatal("lost pending identity", err)
+	}
+	t.Cleanup(pending.Close)
+	request := devices.Snapshot().Pending[0]
+	if err := devices.Decide(request.RequestID, true); err != nil {
+		t.Fatal(err)
+	}
+	if state, err := pending.Poll(); err != nil || state != "approved" {
+		t.Fatal(state, err)
+	}
+	code, err = pending.Code()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := relay.ParsePairing(code)
+	if err != nil || parsed.Invitation != "" || parsed.ExpiresAt != 0 {
+		t.Fatal("invitation retained in saved code", err)
+	}
+	pending.Close()
+	if c, err := NewRelayClient(filepath.Join(root, "reinstall"), code); err == nil {
+		c.Close()
+		t.Fatal("code paired a fresh installation without a private key")
+	}
 	open := func() *Client {
 		c, e := NewRelayClient(filepath.Join(root, "relay"), code)
 		if e != nil {
@@ -213,6 +263,26 @@ func TestPairedAndroidSessionsStreamsDesktopAndLANFallback(t *testing.T) {
 	loggedOut := open()
 	if len(loggedOut.http.Jar.Cookies(loggedOut.origin)) != 0 {
 		t.Fatal("logout revived old paired cookie")
+	}
+	// A canceled replacement invitation must leave the approved key usable.
+	replacement := p
+	replacement.Invitation, replacement.ExpiresAt = devices.Invite()
+	replacementCode, _ := replacement.Encode()
+	replacementSession, err := BeginRelayPairing(filepath.Join(root, "relay"), replacementCode, "Replacement phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacementSession.Close()
+	devices.CancelInvitation(replacement.Invitation)
+	retained := open()
+	if health, err := retained.Health(); err != nil || !strings.Contains(health, `"https":"Verified"`) {
+		t.Fatal("failed replacement discarded the approved key", health, err)
+	}
+	if err := devices.Revoke(fingerprint); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := retained.Request("GET", "/api/me", "", "", "en"); err == nil {
+		t.Fatal("revoked Android identity still connected")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

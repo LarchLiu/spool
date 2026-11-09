@@ -12,7 +12,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 assert.ok(process.env.CHROME_BIN, "Set CHROME_BIN");
 assert.ok(process.env.TMPDIR && /\/build\/tmp\//.test(process.env.TMPDIR));
 const scratch = await mkdtemp(join(process.env.TMPDIR, "relay-browser-"));
-const output = join(root, "build/artifacts/relay");
+const output =
+  process.env.SPOOL_PAIRING_ARTIFACTS || join(root, "build/artifacts/relay");
 const code = await readFile(join(output, "pairing-synthetic.txt"), "utf8");
 const png = await readFile(join(output, "pairing-synthetic.png"));
 const pairing = {
@@ -22,8 +23,9 @@ const pairing = {
   server_id: "a".repeat(52),
   fingerprint:
     "66687aad f862bd77 6c8fc18b 8e9f8e20 08971485 6ee233b3 902a591d 0d5f2925",
+  expires_at: Math.floor(Date.now() / 1000) + 300,
 };
-let report, child, socket, javascript, css, capturePairing;
+let report, child, socket, javascript, css, capturePairing, captureRequest;
 const source = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -40,10 +42,20 @@ let completeRegistration, rejectRegistration;
 let failUnregister = false;
 let unregisterCalls = 0;
 let checks = 0;
+let devices = { devices: [], pending: [] };
 window.mygo = { on: () => () => {}, call: async (method, ...args) => {
   calls.push({ method, args });
   if (method === 'DesktopSettings.RegisterRelay') return new Promise((resolve, reject) => { completeRegistration = resolve; rejectRegistration = reject; });
   if (method === 'DesktopSettings.RelayPairing') return pairing;
+  if (method === 'DesktopSettings.RelayDevices') return devices;
+  if (method === 'DesktopSettings.CancelRelayPairing') { devices = { ...devices, pending: [] }; return true; }
+  if (method === 'DesktopSettings.DecideRelayDevice') {
+    const request = devices.pending.find(device => device.request_id === args[0]);
+    if (!request) throw new Error('Unknown request');
+    devices = { devices: args[1] ? [...devices.devices, request] : devices.devices, pending: [] };
+    return true;
+  }
+  if (method === 'DesktopSettings.RevokeRelayDevice') { devices = { ...devices, devices: devices.devices.filter(device => device.id !== args[0]) }; return true; }
   if (method === 'DesktopSettings.Action' && ['copy-relay-web-url', 'copy-tsnet-url', 'copy-relay-pairing-code'].includes(args[0]?.kind)) {
     if (rejectCopy) throw new Error('synthetic copy failure');
     copied.push(args[0].kind === 'copy-relay-pairing-code' ? args[0].text : args[0].kind === 'copy-tsnet-url' ? data.status.TSNet.URL : data.status.Relay.WebURL);
@@ -76,11 +88,13 @@ const render = () => root.render(<ServicePage data={data} run={run} t={t} />);
 render();
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const button = text => [...document.querySelectorAll('button')].find(b => b.textContent.includes(text));
+const pairToggle = () => document.querySelector('button.settings-relay-disclosure[aria-label="配对 Android 手机"]');
+const devicesToggle = () => document.querySelector('button.settings-relay-disclosure[aria-label="已配对设备"]');
 const check = (value, label) => { checks++; if (!value) throw new Error(label); };
 (async () => {
-  for (let i = 0; i < 100 && !button('显示配对二维码'); i++) await pause(50);
+  for (let i = 0; i < 100 && !pairToggle(); i++) await pause(50);
   document.querySelector('[data-service-tab="relay"]').click(); await pause(50);
-  check(calls.length === 0 && !document.querySelector('img'), 'QR stays private until requested');
+  check(calls.every(call => call.method === 'DesktopSettings.RelayDevices') && !document.querySelector('img'), 'QR stays private until requested');
   const toggle = () => document.querySelector('[role="switch"][aria-label="启用 Spool 中继"]');
   const address = () => document.querySelector('input[aria-label="中继 HTTPS 地址"]');
   const registration = () => document.querySelector('input[aria-label="中继注册令牌"]');
@@ -191,7 +205,11 @@ const check = (value, label) => { checks++; if (!value) throw new Error(label); 
   rejectCopy = false; tailnetCopy.click(); await pause(100);
   check(copied.at(-1) === data.status.TSNet.URL && !!tailnetCopy.querySelector('svg.lucide-check'), 'Tailnet copy can retry');
   document.querySelector('[data-service-tab="relay"]').click(); await pause(50);
-  button('显示配对二维码').click(); await pause(250);
+  check(pairToggle().getAttribute('aria-expanded') === 'false' && devicesToggle().getAttribute('aria-expanded') === 'false' && !button('显示配对二维码'), 'pairing and devices start collapsed without a separate show button');
+  const chevron = pairToggle().querySelector('svg.lucide-chevron-right');
+  check(!!chevron && Math.abs(chevron.getBoundingClientRect().right - (pairToggle().getBoundingClientRect().right - 19)) < 2, 'pairing chevron sits at the far right of the row');
+  pairToggle().click(); await pause(250);
+  check(pairToggle().getAttribute('aria-expanded') === 'true', 'pairing row expands and generates its code');
   const image = document.querySelector('img'); await image.decode();
   check(image.naturalWidth === 512 && image.naturalHeight === 512, 'actual Go QR image loaded');
   check(document.body.textContent.includes(pairing.fingerprint), 'fingerprint is shown');
@@ -212,10 +230,45 @@ const check = (value, label) => { checks++; if (!value) throw new Error(label); 
   check(manual.open && Math.abs(manual.querySelector('textarea').getBoundingClientRect().width - manual.getBoundingClientRect().width) < 2, 'manual code expands across the full row');
   manual.scrollIntoView({block: 'end', behavior: 'instant'});
   await fetch('/capture-pairing', {method: 'POST'});
-  button('隐藏配对码').click(); await pause(100);
+  pairToggle().click(); await pause(100);
   check(!document.querySelector('img') && !document.querySelector('textarea'), 'hide removes code and image');
-  button('显示配对二维码').click(); await pause(250); await document.querySelector('img').decode();
-  check(calls.every(call => ['DesktopSettings.RelayPairing', 'DesktopSettings.RegisterRelay', 'DesktopSettings.Action'].includes(call.method)), 'registration and pairing use only the private bridge');
+  pairToggle().click(); await pause(100);
+  const cancellations = calls.filter(call => call.method === 'DesktopSettings.CancelRelayPairing').length;
+  document.querySelector('[data-service-tab="web"]').click(); await pause(100);
+  check(!document.querySelector('img') && calls.filter(call => call.method === 'DesktopSettings.CancelRelayPairing').length === cancellations + 1, 'leaving Relay tab cancels its invitation');
+  document.querySelector('[data-service-tab="relay"]').click(); await pause(100);
+  check(!!pairToggle() && !document.querySelector('img'), 'returning to Relay tab requires a fresh invitation');
+  data = { ...data, status: { ...data.status, PendingChanges: ['relay'] } }; render(); await pause(100);
+  check(pairToggle().disabled, 'pending relay changes block pairing until applied');
+  data = { ...data, status: { ...data.status, PendingChanges: ['web'] } }; render(); await pause(100);
+  check(!pairToggle().disabled, 'pending changes to another entry do not block pairing');
+  data = { ...data, status: { ...data.status, Running: false } }; render(); await pause(100);
+  check(pairToggle().disabled, 'stopped service cannot generate an unusable invitation');
+  data = { ...data, status: { ...data.status, Running: true, PendingChanges: [] } }; render(); await pause(100);
+  pairToggle().click(); await pause(250); await document.querySelector('img').decode();
+  const requested = { id: 'abcd1234'.repeat(8), name: 'Synthetic phone', request_id: 'synthetic-request', created_at: 1, expires_at: pairing.expires_at };
+  devices = { devices: [], pending: [requested] };
+  for (let i = 0; i < 40 && !button('允许配对'); i++) await pause(50);
+  check(!!button('允许配对') && document.body.textContent.includes('Synthetic phone') && document.body.textContent.includes(requested.id.match(/.{1,8}/g).join(' ')), 'pending device shows name and fingerprint');
+  document.querySelector('[aria-label="设备配对确认"]').scrollIntoView({ block: 'center' });
+  await fetch('/capture-approval');
+  button('拒绝配对').click(); await pause(100);
+  check(!button('允许配对') && devices.devices.length === 0, 'rejection never authorizes device');
+  devices = { devices: [], pending: [requested] };
+  for (let i = 0; i < 40 && !button('允许配对'); i++) await pause(50);
+  button('允许配对').click(); await pause(100);
+  check(!button('允许配对') && !!button('撤销设备') && devices.devices.length === 1, 'approval lists paired device');
+  devicesToggle().click(); await pause(100);
+  check(devicesToggle().getAttribute('aria-expanded') === 'false' && !button('撤销设备') && devices.devices.length === 1 && devicesToggle().textContent.includes('1'), 'collapsing paired devices hides details and retains the count and authorization');
+  pairToggle().click(); await pause(100);
+  pairToggle().scrollIntoView({ block: 'center' });
+  await fetch('/capture-controls');
+  devicesToggle().click(); await pause(100);
+  check(devicesToggle().getAttribute('aria-expanded') === 'true' && !!button('撤销设备'), 'paired devices expand independently of pairing');
+  button('撤销设备').click(); await pause(100);
+  check(!button('撤销设备') && devices.devices.length === 0, 'revoke removes paired device');
+  check(calls.some(call => call.method === 'DesktopSettings.CancelRelayPairing' && call.args[0] === pairing.code), 'hiding code invalidates invitation through private bridge');
+  check(calls.every(call => ['DesktopSettings.RelayPairing', 'DesktopSettings.RelayDevices', 'DesktopSettings.CancelRelayPairing', 'DesktopSettings.DecideRelayDevice', 'DesktopSettings.RevokeRelayDevice', 'DesktopSettings.RegisterRelay', 'DesktopSettings.Action'].includes(call.method)), 'registration and pairing use only the private bridge');
   toggle().click(); await pause(100);
   check(!!button('注销') && !registration() && !document.querySelector('img'), 'disabled relay shows unregister and clears pairing display');
   failUnregister = true;
@@ -236,6 +289,14 @@ const server = createServer(async (req, res) => {
   if (req.url === "/capture-pairing") {
     await capturePairing();
     res.writeHead(204).end();
+    return;
+  }
+  if (req.url === "/capture-approval") {
+    captureRequest = { response: res, name: "device-approval" };
+    return;
+  }
+  if (req.url === "/capture-controls") {
+    captureRequest = { response: res, name: "relay-controls" };
     return;
   }
   if (req.url === "/report") {
@@ -363,13 +424,35 @@ try {
   await send("Runtime.enable");
   capturePairing = async () => {
     const image = await send("Page.captureScreenshot", { format: "png" });
-    await writeFile(join(output, "manual-pairing.png"), Buffer.from(image.data, "base64"));
+    await writeFile(
+      join(output, "manual-pairing.png"),
+      Buffer.from(image.data, "base64"),
+    );
   };
   await send("Emulation.setFocusEmulationEnabled", { enabled: true });
   await send("Page.navigate", {
     url: `http://127.0.0.1:${server.address().port}/`,
   });
-  for (let i = 0; i < 200 && !report; i++) await pause(50);
+  for (let i = 0; i < 400 && !report; i++) {
+    if (captureRequest) {
+      for (const theme of ["light", "dark"]) {
+        await send("Runtime.evaluate", {
+          expression: `document.documentElement.dataset.theme = '${theme}'`,
+        });
+        const capture = await send("Page.captureScreenshot", { format: "png" });
+        await writeFile(
+          join(output, `${captureRequest.name}-${theme}.png`),
+          Buffer.from(capture.data, "base64"),
+        );
+      }
+      await send("Runtime.evaluate", {
+        expression: "document.documentElement.dataset.theme = 'light'",
+      });
+      captureRequest.response.end("ok");
+      captureRequest = undefined;
+    }
+    await pause(50);
+  }
   const screenshot = await send("Page.captureScreenshot", { format: "png" });
   await writeFile(
     join(output, "desktop-pairing.png"),

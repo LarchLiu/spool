@@ -18,7 +18,7 @@ import org.robolectric.annotation.Config;
 @Config(sdk = {26, 35})
 public class RelayPairingTest {
     static String code(String address) throws Exception {
-        String value = new JSONObject().put("v", 1).put("relay", address)
+        String value = new JSONObject().put("v", 2).put("relay", address)
                 .put("key", Base64.getEncoder().encodeToString(new byte[32]))
                 .put("token", Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[32])).toString();
         return "spool-pair:" + Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
@@ -56,5 +56,22 @@ public class RelayPairingTest {
         for (String invalid : new String[]{"https://relay.example.com", "spool-pair:broken", code("http://relay.example.com"), code("https://user:password@relay.example.com"), code("https://relay.example.com/path")}) {
             try { new RelayPairing(invalid); fail("accepted invalid pairing"); } catch (IllegalArgumentException expected) {}
         }
+    }
+
+    @Test public void invitationsCarryExpiryAndLegacyCodesCannotConnect() throws Exception {
+        JSONObject payload = new JSONObject(new String(Base64.getUrlDecoder().decode(code("https://relay.example.com").substring(11)), StandardCharsets.UTF_8));
+        payload.put("invite", Base64.getUrlEncoder().withoutPadding().encodeToString(new byte[32])).put("expires_at", 2000000000L);
+        String invitation = "spool-pair:" + Base64.getUrlEncoder().withoutPadding().encodeToString(payload.toString().getBytes(StandardCharsets.UTF_8));
+        RelayPairing parsed = new RelayPairing(invitation);
+        assertTrue(parsed.invitation); assertEquals(2000000000L, parsed.expiresAt);
+        assertFalse(new RelayPairing(code("https://relay.example.com")).invitation);
+        for (int version : new int[]{1, 3}) {
+            payload.put("v", version);
+            String invalid = "spool-pair:" + Base64.getUrlEncoder().withoutPadding().encodeToString(payload.toString().getBytes(StandardCharsets.UTF_8));
+            try { new RelayPairing(invalid); fail("accepted legacy/unknown version"); } catch (IllegalArgumentException expected) {}
+        }
+        payload.put("v", 2).remove("expires_at");
+        String invalid = "spool-pair:" + Base64.getUrlEncoder().withoutPadding().encodeToString(payload.toString().getBytes(StandardCharsets.UTF_8));
+        try { new RelayPairing(invalid); fail("accepted invitation without expiry"); } catch (IllegalArgumentException expected) {}
     }
 }

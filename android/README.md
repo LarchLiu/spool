@@ -18,7 +18,10 @@ sampling is for hotspot attribution, not an uninstrumented frame-rate baseline.
 **Spool Relay** is also available in each server's connection settings. Deploy the
 independent Go module on a VPS, enable it in Spool Desktop, then use **Scan pairing
 QR code** in the app. The confirmation screen shows the relay address and pinned
-server identity. Sign in with the ordinary Spool account after confirming.
+server identity. Confirm on the phone, then compare its device fingerprint in
+Spool Desktop and approve the pending device. Sign in with the ordinary Spool
+account after approval. QR and manual pairing use the same five-minute,
+single-device invitation; a second phone needs its own invitation and approval.
 See [deployment, pairing, routing and protocol](../relay/README.md).
 
 Connection settings use three compact tabs: **Public HTTPS**, **Tailscale**,
@@ -32,7 +35,8 @@ puts its scanner icon at the far right of that row.
 
 This mode uses native Android DNS-SD discovery and bounded probes of paired LAN
 addresses, then an outbound WebSocket tunnel through the relay. Both paths use
-TLS 1.3 with the same pinned server identity and shared private session. LAN
+mutual TLS 1.3 with the same pinned server identity, a per-phone private key,
+and shared private session. LAN
 discovery only suggests addresses; it cannot authenticate a server. Active streams
 finish on their current path; new connections prefer LAN. Network changes close
 stale connections and the existing subscriptions recover without replaying writes.
@@ -2373,7 +2377,17 @@ New servers keep each network entry's private state under
 `noBackupFilesDir/servers/<server-id>/{tsnet,https,relay}/`. The migrated original server
 retains `noBackupFilesDir/{tsnet,https,relay}/`. Cookies are scoped to the exact origin and connection
 mode; backup and device transfer are disabled. Preferences retain the server
-origins, paired relay admission code, connection mode and appearance/language choices. Disconnect closes
+origins, paired relay admission code, connection mode and appearance/language choices.
+The device key is stored separately under that server's relay directory in
+`noBackupFilesDir`, with private file permissions. Pending pairing keeps a
+separate key file so a failed replacement does not discard an approved key.
+Restarting or updating the app preserves it; uninstalling or clearing app data
+requires a new invitation and Desktop approval. Remove the old entry from
+Desktop's **Paired devices** when appropriate. Server revocation terminates this
+device's LAN and relay streams immediately. Public HTTPS, Tailscale, and the
+browser Web/PWA gateway retain their existing authentication policies.
+Version 1 relay codes must be replaced by pairing again with an updated Spool
+server; legacy clients have no device-authentication fallback. Disconnect closes
 the selected server's clients/nodes but does not sign out of Spool; use **Sign out** to revoke the
 session. Clearing Android app storage also forgets the node identity; remove the
 old node in the Tailscale console when appropriate. Server-side agent tasks keep

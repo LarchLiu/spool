@@ -37,6 +37,14 @@ func NewRelayClient(dataDir, code string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	device, err := loadDevice(dataDir, p.ID())
+	if err != nil || !device.Approved {
+		return nil, errors.New("This phone is not paired. Scan a new code in Spool Desktop.")
+	}
+	cfg, err := relay.DeviceTLSConfig(p, device.Seed, false)
+	if err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	outerTransport := http.DefaultTransport.(*http.Transport).Clone()
 	outerTransport.Proxy = nil
@@ -46,6 +54,7 @@ func NewRelayClient(dataDir, code string) (*Client, error) {
 		cancel()
 		return nil, err
 	}
+	dialer.TLSConfig = cfg
 	httpClient, transport := nativeHTTPClient(nil)
 	transport.DialTLSContext = dialer.DialTLSContext
 	origin, _ := url.Parse(relay.Origin(p.ID()))

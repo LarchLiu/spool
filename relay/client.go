@@ -14,8 +14,11 @@ import (
 // relay stream. It never retries HTTP requests: only connection establishment
 // is retried, before any application bytes have been written.
 type Dialer struct {
-	Pairing     Pairing
-	HTTPClient  *http.Client
+	Pairing    Pairing
+	HTTPClient *http.Client
+	// Configure before dialing. Device and invitation transports use distinct
+	// TLS names; the public Web gateway retains the original server name.
+	TLSConfig   *tls.Config
 	ctx         context.Context
 	cancel      context.CancelFunc
 	mu          sync.Mutex
@@ -76,7 +79,7 @@ func (d *Dialer) DialTLSContext(ctx context.Context, network, address string) (n
 	}
 	streamCtx, streamCancel := context.WithCancel(d.ctx)
 	stream := byteStream(streamCtx, c)
-	tlsConn := tls.Client(stream, d.Pairing.TLSConfig())
+	tlsConn := tls.Client(stream, d.tlsConfig())
 	if err = tlsConn.HandshakeContext(ctx); err != nil {
 		streamCancel()
 		c.CloseNow()
@@ -94,7 +97,7 @@ func (d *Dialer) tryLAN(ctx context.Context, addresses []string) net.Conn {
 		workers.Add(1)
 		go func(address string) {
 			defer workers.Done()
-			conn, err := (&tls.Dialer{NetDialer: &net.Dialer{KeepAlive: 30 * time.Second}, Config: d.Pairing.TLSConfig()}).DialContext(ctx, "tcp", address)
+			conn, err := (&tls.Dialer{NetDialer: &net.Dialer{KeepAlive: 30 * time.Second}, Config: d.tlsConfig()}).DialContext(ctx, "tcp", address)
 			if err != nil {
 				return
 			}
@@ -115,6 +118,13 @@ func (d *Dialer) tryLAN(ctx context.Context, addresses []string) net.Conn {
 	case <-ctx.Done():
 		return nil
 	}
+}
+
+func (d *Dialer) tlsConfig() *tls.Config {
+	if d.TLSConfig != nil {
+		return d.TLSConfig
+	}
+	return d.Pairing.TLSConfig()
 }
 
 type cancelConn struct {

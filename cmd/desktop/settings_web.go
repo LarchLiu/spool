@@ -18,6 +18,7 @@ import (
 	chatmodel "spool/internal/model"
 	"spool/internal/tailnet"
 	"spool/internal/workspace"
+	"spool/relay"
 )
 
 const settingsPageURL = "mygo://localhost/desktop.html"
@@ -321,6 +322,34 @@ func (s *desktopSettings) AddressQRCode(ctx context.Context, address string) (st
 		return "", err
 	}
 	return workspace.AddressQRCode(address)
+}
+
+func (s *desktopSettings) RelayDevices(ctx context.Context) (relay.DeviceSnapshot, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return relay.DeviceSnapshot{}, err
+	}
+	return s.panel.service.RelayDevices()
+}
+func (s *desktopSettings) DecideRelayDevice(ctx context.Context, requestID string, approve bool) (bool, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return false, err
+	}
+	err := s.panel.service.DecideRelayDevice(requestID, approve)
+	return err == nil, err
+}
+func (s *desktopSettings) RevokeRelayDevice(ctx context.Context, id string) (bool, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return false, err
+	}
+	err := s.panel.service.RevokeRelayDevice(id)
+	return err == nil, err
+}
+func (s *desktopSettings) CancelRelayPairing(ctx context.Context, code string) (bool, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return false, err
+	}
+	err := s.panel.service.CancelRelayPairing(code)
+	return err == nil, err
 }
 
 func (s *desktopSettings) RegisterRelay(ctx context.Context, address, token, name string) (workspace.RelayStatus, error) {

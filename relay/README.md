@@ -374,11 +374,32 @@ the home server, `SPOOL_RELAY_REGISTRATION_TOKEN` still names its own issued tok
    for retry. The local Spool service keeps running.
 3. Enable Spool Relay, then restart the Spool service. Connection status appears
    immediately to the left of the enable switch, without a separate status row.
-4. Click **Show pairing QR code**. In Android, add/select a server, open its
+4. Expand **Pair Android phone** using the chevron on its right to generate a QR code. In Android, add/select a server, open its
    settings, then click **Scan pairing QR code** under **Spool Relay**.
-5. Compare the address and SHA-256 identity fingerprint on both devices. Confirm,
-   then log in with an ordinary Spool account. The bundled scanner requests camera
-   permission; camera frames stay on the device. Manual code entry also works.
+5. Compare the address and server fingerprint, then confirm on the phone. The
+   app creates its own private device key and shows its device fingerprint.
+6. In Desktop's **Pair Android phone** section, compare the pending phone's name
+   and device fingerprint, then choose **Allow device** or **Reject device**.
+   Only an approved phone can reach Spool's login. Sign in with an ordinary Spool
+   account. The scanner keeps camera frames on the phone; manual code entry uses
+   the same approval flow.
+
+Each invitation expires after five minutes and is bound to the first requesting
+device key. Refreshing or collapsing the code invalidates it, as does leaving the
+pairing settings or stopping the service. Another phone needs a new invitation
+and separate approval. A device can retry an interrupted request using the same
+private key until the invitation expires. Copying a saved connection code alone
+cannot authorize a different phone.
+
+Expand **Paired devices** to see each authorized phone and its full fingerprint;
+the collapsed row shows the device count.
+**Revoke device** immediately closes its LAN and native relay connections,
+including HTTP, chat SSE, workspace WebSocket and remote desktop streams, and
+rejects reconnects. Other paired devices remain authorized. Approval and
+revocation persist in `data-dir/relay/devices.json` with owner-only permissions.
+Only public device keys are stored on Spool; neither the Relay VPS nor Desktop
+receives a phone's private key. These management operations are available only
+through the private Desktop bridge or local server command, never the Web API.
 
 Allow the secure LAN TCP port and mDNS UDP 5353 on the home computer's local
 firewall. Do not forward those ports on the router. Guest Wi-Fi isolation can
@@ -388,11 +409,15 @@ Headless configuration, from the main Spool repository while the service is stop
 
 ```sh
 # Set this server's SPOOL_RELAY_REGISTRATION_TOKEN, or leave it empty for automatic enrollment.
-# Register, configure and print a pairing code without starting relay ingress.
+# Register, start Spool, print a five-minute invitation, and approve locally.
 go run ./cmd/server -data-dir /path/to/spool-data \
   -relay -relay-register -relay-name 'Home Mac' -relay-url https://relay.example.com -relay-lan-port 28082 -relay-pair
-# Start using the saved credential.
+# Compare the displayed phone fingerprint and type yes to approve.
+# Spool keeps running after approval. On later launches, reuse saved credentials:
 go run ./cmd/server -data-dir /path/to/spool-data
+# While the service is stopped, list/revoke devices using the compiled binary:
+spool-server -data-dir /path/to/spool-data -relay-devices
+spool-server -data-dir /path/to/spool-data -relay-revoke <device-fingerprint>
 ```
 
 Development commands must use the repository cache/scratch environment described
@@ -460,6 +485,14 @@ offline page, without caching account or chat data.
 login cookies, files and messages. It connects to the home server over a tunnel
 with the registered server's TLS key pinned. Only enable Web access on a relay
 you trust. Native Android connections retain their end-to-end pinned TLS.
+Web/PWA does not participate in phone pairing or require a device private key.
+The home server uses separate TLS admission modes: native connections require an
+approved client certificate, pairing connections can access only the invitation
+endpoint, and gateway connections can access only the locally enabled
+`/web/<server-id>/` mount. The Web exception is unavailable on the secure LAN
+listener. Disabling Web blocks new gateway requests, including on an existing
+HTTP connection; restarting applies the routing change and closes old streams.
+Native device revocation does not revoke a separate browser login.
 
 All Web mounts on one relay share a browser origin. Path-scoped cookies, PWA
 registrations, caches and preferences let multiple servers work in separate
@@ -492,7 +525,7 @@ server's separate Public HTTPS endpoint keeps its existing behavior.
 ## Routing and security
 
 ```text
-Android ── pinned TLS ─────────────────────────────── home Spool LAN listener
+Android ── pinned mutual TLS ────────────────────── home Spool LAN listener
    │                                                       ▲
    └── WSS to VPS ── opaque TLS bytes ── WSS from home ──────┘
 ```
@@ -503,6 +536,12 @@ Android ── pinned TLS ──────────────────
 - Advertisements, IPs, names and SSIDs do not prove identity. TLS 1.3 verifies the
   paired Ed25519 key, hostname, signature and certificate validity before sending
   credentials. Both paths use one stable HTTPS origin and private login session.
+- Every native connection also proves possession of the paired phone's Ed25519
+  private key using TLS 1.3 client authentication. Authorization is checked at
+  the handshake and on every request; TLS session tickets are disabled. A relay
+  operator who knows the Server ID and admission token cannot impersonate an
+  authorized phone. Enabling Web intentionally retains the trusted-gateway
+  access described above.
 - Login, CSRF, workspace hello, project permissions and separate desktop grants
   use the original Spool handlers. Logout/revocation closes authorized streams.
   On native Android connections, the relay sees none of the inner URLs, cookies,
@@ -514,9 +553,15 @@ Android ── pinned TLS ──────────────────
   current path. Recovery reconnects and resubscribes; it does not migrate an
   in-flight upload or replay an uncertain mutation. A disconnected desktop view
   retains the existing explicit-open behavior.
-- Pairing grants relay admission, not application login. Registration tokens and
-  server private keys are never in the QR. Share codes with intended clients.
-  A retained code cannot restore a revoked Spool login.
+- Version 2 QR codes contain the relay URL, pinned server key, relay admission
+  token, LAN hints and a short-lived invitation. No server/device private key or
+  relay registration token appears in them. Once approved, the saved phone code
+  drops the invitation and requires its separately stored private device key.
+  Pairing does not replace Spool account login or restore a revoked account.
+- Upgrade Spool and Android together. Old version 1 codes and clients must pair
+  again; there is no legacy device-authentication bypass. The standalone relay's
+  opaque native tunnel and Web gateway protocol do not require an update for
+  this device-authentication change.
 
 ## Protocol
 

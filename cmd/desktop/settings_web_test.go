@@ -74,6 +74,18 @@ func TestSettingsBridgeRejectsCallsWithoutDesktopPage(t *testing.T) {
 		if _, err := bridge.AddressQRCode(context.Background(), "https://spool.example.test"); err == nil {
 			t.Fatal("address QR code allowed without private desktop page")
 		}
+		if _, err := bridge.RelayDevices(context.Background()); err == nil {
+			t.Fatal("devices exposed without private desktop page")
+		}
+		if _, err := bridge.DecideRelayDevice(context.Background(), "request", true); err == nil {
+			t.Fatal("device approved without private desktop page")
+		}
+		if _, err := bridge.RevokeRelayDevice(context.Background(), "device"); err == nil {
+			t.Fatal("device revoked without private desktop page")
+		}
+		if _, err := bridge.CancelRelayPairing(context.Background(), "code"); err == nil {
+			t.Fatal("invitation canceled without private desktop page")
+		}
 		if _, err := bridge.RegisterRelay(context.Background(), "https://relay.example.com", strings.Repeat("r", 32), "home"); err == nil {
 			t.Fatal("relay credential changed without private desktop page")
 		}

@@ -126,6 +126,7 @@ public final class MainActivity extends Activity {
     private ConnectivityManager.NetworkCallback networkCallback;
     private RelayDiscovery relayDiscovery;
     private String pairingOwner = "";
+    private NativeDevicePairingDialog devicePairingDialog;
     private static final int SCAN_PAIRING = 49371;
     private NativeUi ui;
     private FrameLayout root, drawer;
@@ -998,11 +999,34 @@ public final class MainActivity extends Activity {
             if (validated.ordered(preferred).isEmpty()) throw new IllegalArgumentException(tr("Enter at least one HTTPS address.", "请至少填写一个 HTTPS 地址。"));
             if (preferred != null && validated.origin(preferred).isEmpty()) return;
         } catch (Exception error) { connectionMessage = error.getMessage(); updateConnectionSettings(); return; }
+        if ((preferred == ConnectionMode.RELAY || preferred == null && validated.selected == ConnectionMode.RELAY)
+                && !validated.relay.isEmpty() && new RelayPairing(validated.relay).invitation) {
+            confirmDevicePairing(validated);
+            return;
+        }
         connectionPlan = connectionDraft = validated;
         serverProfiles.active().plan = validated; serverProfiles.active().enabled = true; saveServers();
         getPreferences(MODE_PRIVATE).edit().putString("directOrigin", validated.direct).putString("tailscaleOrigin", validated.tailscale)
                 .putString("selectedNetwork", validated.selected.value).putBoolean("automaticConnections", validated.autoSwitch).apply();
         selectConnections(validated.selected, true);
+    }
+
+    private void confirmDevicePairing(ConnectionPlan plan) {
+        if (devicePairingDialog != null && devicePairingDialog.isShowing()) return;
+        ServerProfiles.Server owner = serverProfiles.active();
+        if (owner == null) return;
+        RelayPairing pairing = new RelayPairing(plan.relay);
+        new NativePairingDialog(ui, pairing, () -> {
+            if (destroyed || !owner.id.equals(serverProfiles.selected)) return;
+            devicePairingDialog = new NativeDevicePairingDialog(ui, owner.directory(getNoBackupFilesDir(), ConnectionMode.RELAY), pairing, io, code -> {
+                if (destroyed || !owner.id.equals(serverProfiles.selected)) return;
+                ConnectionPlan approved = new ConnectionPlan(plan.direct, plan.tailscale, code, ConnectionMode.RELAY, plan.autoSwitch);
+                if (connectionSettings != null) connectionSettings.input(ConnectionMode.RELAY).setText(code);
+                applyConnectionPlan(approved, ConnectionMode.RELAY);
+                if (relayDiscovery != null) relayDiscovery.refresh();
+            });
+            devicePairingDialog.show();
+        }).show();
     }
 
     private void selectConnections(ConnectionMode preferred, boolean manual) {
@@ -3219,13 +3243,9 @@ public final class MainActivity extends Activity {
             if (resultCode != RESULT_OK || result == null || result.getContents() == null || !owner.equals(serverProfiles.selected)) return;
             try {
                 RelayPairing pairing = new RelayPairing(result.getContents());
-                new NativePairingDialog(ui, pairing, () -> {
-                    if (!owner.equals(serverProfiles.selected)) return;
-                    ConnectionPlan plan = new ConnectionPlan(connectionPlan.direct, connectionPlan.tailscale, pairing.code, ConnectionMode.RELAY, connectionPlan.autoSwitch);
-                    if (connectionSettings != null) connectionSettings.input(ConnectionMode.RELAY).setText(pairing.code);
-                    applyConnectionPlan(plan, ConnectionMode.RELAY);
-                    if (relayDiscovery != null) relayDiscovery.refresh();
-                }).show();
+                if (!pairing.invitation) throw new IllegalArgumentException(tr("Scan a new code in Spool Desktop.", "请扫描 Spool Desktop 新生成的二维码。"));
+                ConnectionPlan plan = new ConnectionPlan(connectionPlan.direct, connectionPlan.tailscale, pairing.code, ConnectionMode.RELAY, connectionPlan.autoSwitch);
+                applyConnectionPlan(plan, ConnectionMode.RELAY);
             } catch (IllegalArgumentException error) { toast(error); }
             return;
         }
@@ -4159,6 +4179,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (devicePairingDialog != null) devicePairingDialog.dismiss();
         if (appUpdates != null) appUpdates.close();
         closeDesktop();
         setDesktopAvailable(false);

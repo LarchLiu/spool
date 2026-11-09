@@ -46,7 +46,9 @@ func run() (runErr error) {
 	relayWeb := flag.Bool("relay-web", false, "persist public Web/PWA access through the registered relay")
 	relayURL := flag.String("relay-url", "", "public HTTPS origin of the independent Spool relay")
 	relayLANPort := flag.Int("relay-lan-port", 28082, "secure LAN listener and discovery port")
-	relayPair := flag.Bool("relay-pair", false, "print an Android pairing code locally and exit (service must be stopped)")
+	relayPair := flag.Bool("relay-pair", false, "start the service, print a five-minute invitation and approve one phone interactively")
+	relayDevices := flag.Bool("relay-devices", false, "list paired devices locally and exit (service must be stopped)")
+	relayRevoke := flag.String("relay-revoke", "", "revoke a paired device fingerprint locally and exit (service must be stopped)")
 	relayRegister := flag.Bool("relay-register", false, "register with the relay using SPOOL_RELAY_REGISTRATION_TOKEN (empty for automatic registration), save the credential, and exit")
 	relayName := flag.String("relay-name", "", "optional server name used with -relay-register")
 	systemProxy := flag.Bool("system-proxy", false, "persist use of system HTTP/HTTPS proxy settings for Spool (macOS)")
@@ -277,16 +279,24 @@ func run() (runErr error) {
 			return nil
 		}
 	}
-	if *relayPair {
-		code, err := service.RelayPairingCode()
+	if *relayDevices {
+		devices, err := service.RelayDevices()
 		if err != nil {
 			return err
 		}
-		fmt.Println(code)
-		return nil
+		return json.NewEncoder(os.Stdout).Encode(devices.Devices)
+	}
+	if *relayRevoke != "" {
+		return service.RevokeRelayDevice(*relayRevoke)
 	}
 	if err = service.Start(); err != nil {
 		return err
+	}
+	if *relayPair {
+		if err := approveRelayPhone(ctx, service); err != nil {
+			return err
+		}
+		log.Print("Phone paired. Service remains running until interrupted.")
 	}
 	if settings.TSNetEnabled {
 		log.Print("Embedded Tailscale is starting; follow its login URL and approve the node if required")

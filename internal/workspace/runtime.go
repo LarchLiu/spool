@@ -16,6 +16,7 @@ import (
 	"spool/internal/netproxy"
 	"spool/internal/tailnet"
 	"spool/internal/voxl"
+	"spool/relay"
 )
 
 type Service struct {
@@ -49,6 +50,7 @@ type Service struct {
 	desktop             *voxl.Manager
 	relay               *relayRuntime
 	relayRegistering    bool
+	relayDevices        *relay.Devices
 }
 type ServiceStatus struct {
 	Running                  bool

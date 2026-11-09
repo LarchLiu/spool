@@ -17,8 +17,8 @@ import (
 
 var ErrRegistrationRejected = errors.New("relay registration rejected")
 
-// Host is a listener fed by outbound relay connections. Wrap it in a TLS
-// listener using Identity.TLSConfig and serve the ordinary Spool HTTP handler.
+// Host is a listener fed by outbound relay connections. Spool wraps it with
+// Devices.Listener and Devices.Handler to enforce device and Web admission.
 type Host struct {
 	URL        string
 	Identity   *Identity
