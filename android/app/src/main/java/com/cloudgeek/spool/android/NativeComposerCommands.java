@@ -14,6 +14,7 @@ final class NativeComposerCommands {
     final NativeSlashCommandMenu option;
     NativeCommandNotice notice;
     TextView error;
+    private LinearLayout errorRow;
     private final NativeUi ui;
     private final NativeUi.Composer composer;
     private boolean writable, posting, running, dismissed, hiding;
@@ -96,17 +97,23 @@ final class NativeComposerCommands {
         }
     }
 
-    void error(String value) {
+    void error(String value, Runnable dismiss) {
         if (errorText.equals(value)) return;
         errorText = value;
-        if (error != null) { composer.removeView(error); error = null; }
+        if (errorRow != null) { composer.removeView(errorRow); errorRow = null; error = null; }
         if (!value.isEmpty()) {
+            errorRow = ui.row(); errorRow.setGravity(android.view.Gravity.TOP);
+            errorRow.setPadding(ui.dp(15), ui.dp(12), ui.dp(15), ui.dp(12));
+            errorRow.setBackground(ui.shape(ui.errorBg, 10, ui.errorBorder));
             error = ui.text(value, 12, ui.error); ui.fixedLineHeight(error, 1.7f);
-            error.setPadding(ui.dp(15), ui.dp(12), ui.dp(15), ui.dp(12));
-            error.setBackground(ui.shape(ui.errorBg, 10, ui.errorBorder));
             error.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_ASSERTIVE);
+            errorRow.addView(error, new LinearLayout.LayoutParams(0, -2, 1));
+            NativeUi.IconButton close = ui.icon("close", 15, ui.t("Dismiss"), dismiss);
+            close.setTranslationX(ui.dp(12)); close.setTranslationY(-ui.dp(6));
+            LinearLayout.LayoutParams button = new LinearLayout.LayoutParams(ui.dp(32), ui.dp(32));
+            button.leftMargin = ui.dp(10); errorRow.addView(close, button);
             LinearLayout.LayoutParams position = new LinearLayout.LayoutParams(-1, -2); position.topMargin = position.bottomMargin = ui.dp(10);
-            composer.addView(error, 0, position);
+            composer.addView(errorRow, 0, position);
         }
     }
 }

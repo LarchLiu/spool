@@ -2202,7 +2202,7 @@ public final class MainActivity extends Activity {
                 || activeSubmission(activeTurn) != null && pendingSend.stopRequested);
         composerView.commands.bind(writable(), busy, running);
         composerView.commands.notice(goalNotice, () -> { goalNotice = ""; updateComposer(); });
-        composerView.commands.error(goalError);
+        composerView.commands.error(goalError, () -> { goalError = ""; updateComposer(); });
         composer.setEnabled(writable());
         String hint = composerHint();
         if (!TextUtils.equals(composer.getHint(), hint)) composer.setHint(hint);

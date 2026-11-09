@@ -1931,8 +1931,17 @@ function App() {
             </button>
           )}
           {error && (
-            <div className="error" role="alert">
-              {error}
+            <div className="error dismissible-error" role="alert">
+              <span>{error}</span>
+              <button
+                type="button"
+                className="icon"
+                onClick={() => setError("")}
+                aria-label={t("Dismiss")}
+                title={t("Dismiss")}
+              >
+                <X size={15} />
+              </button>
             </div>
           )}
           {composerWritable && selectedAvailable && !activeTurn && (

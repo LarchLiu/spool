@@ -2920,6 +2920,19 @@ a.attachment-open {
   max-width: 900px;
   margin: 10px auto;
 }
+.dismissible-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.dismissible-error > span {
+  flex: 1;
+  min-width: 0;
+}
+.dismissible-error > .icon {
+  flex: 0 0 32px;
+  transform: translate(12px, -6px);
+}
 .connection {
   display: flex;
   gap: 8px;

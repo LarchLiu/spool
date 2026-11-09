@@ -83,7 +83,7 @@ const sendScene=h('section',{className:'send-button-scene',style:{padding:24,bac
 const commandNotice=commandCase.noticeKey?t(commandCase.noticeKey):commandCase.notice||'';
 const commandScene=h('main',{className:'workspace command-scene',style:{height:800,justifyContent:'flex-end'}},
  h('footer',{className:'composer-wrap'},
- commandCase.errorKey&&h('div',{className:'error',role:'alert'},t(commandCase.errorKey)),
+ commandCase.errorKey&&h('div',{className:'error dismissible-error',role:'alert'},h('span',null,t(commandCase.errorKey)),h('button',{type:'button',className:'icon','aria-label':t('Dismiss')},h(X,{size:15}))),
  commandNotice&&h('div',{className:'goal-command-notice',role:'status'},h('pre',null,commandNotice),h('button',{className:'icon','aria-label':t('Dismiss')},h(X,{size:15}))),
  React.cloneElement(baseComposer,{},commandCase.id==='menu'&&h(SlashCommandMenu,{t,onSelect:()=>{}}),
  React.cloneElement(baseComposer.props.children[0],{value:commandCase.draft}),

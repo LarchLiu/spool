@@ -70,9 +70,25 @@ public class MainActivityChatEventsTest {
             assertEquals("chat-two", h.<String>get("chatID")); assertNull(h.get("chat")); assertNotNull(h.get("user"));
             assertEquals("Cannot load selected chat", h.<String>get("goalError")); assertNotNull(h.composer().commands.error);
             assertEquals(1, reads("/api/chats/chat-two")); assertFalse(h.composer().input.isEnabled());
+            View visibleError = h.composer().commands.error;
+            retry(); error(0); run(h, 0);
+            assertSame(visibleError, h.composer().commands.error);
+            android.view.ViewGroup errorRow = (android.view.ViewGroup) h.composer().commands.error.getParent();
+            View dismiss = errorRow.getChildAt(1);
+            assertEquals("Dismiss", dismiss.getContentDescription()); assertTrue(dismiss.performClick());
+            assertEquals("", h.<String>get("goalError")); assertNull(h.composer().commands.error);
+            h.call("updateComposer"); h.call("render");
+            assertNull(h.composer().commands.error);
+            retry(); error(0); run(h, 0);
+            assertEquals("Cannot load selected chat", h.<String>get("goalError")); assertNotNull(h.composer().commands.error);
+            ((android.view.ViewGroup) h.composer().commands.error.getParent()).getChildAt(1).performClick();
+            retry(); error(0);
+            MainActivityGoalTest.ShadowClient.response = envelope(status, new JSONObject().put("error", "A different failure")); run(h, 0);
+            assertEquals("A different failure", h.<String>get("goalError")); assertNotNull(h.composer().commands.error);
+            ((android.view.ViewGroup) h.composer().commands.error.getParent()).getChildAt(1).performClick();
             retry(); error(0); MainActivityGoalTest.ShadowClient.response = envelope(200, chat("chat-two", 20)); run(h, 0);
             assertEquals("chat-two", h.<JSONObject>get("chat").getString("id")); assertTrue(h.composer().input.isEnabled());
-            assertEquals(2, reads("/api/chats/chat-two"));
+            assertNull(h.composer().commands.error); assertEquals(5, reads("/api/chats/chat-two"));
         }
     }
 

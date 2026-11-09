@@ -157,7 +157,7 @@ public class NativeComposerCommandsTest {
                 AtomicInteger dismissals = new AtomicInteger();
                 String result = String.join("\n", java.util.Collections.nCopies(24, "Keep the original native session."));
                 composer.commands.notice(result, dismissals::incrementAndGet);
-                composer.commands.error(ui.t("Goal commands do not accept attachments"));
+                composer.commands.error(ui.t("Goal commands do not accept attachments"), () -> {});
                 layout(page, 360, 800);
                 assertEquals(ui.dp(180), composer.commands.notice.getHeight());
                 assertTrue(composer.commands.notice.text.isTextSelectable());
@@ -165,7 +165,7 @@ public class NativeComposerCommandsTest {
                 assertEquals(ui.t("Dismiss"), composer.commands.notice.close.getContentDescription());
                 composer.commands.notice.close.performClick(); assertEquals(1, dismissals.get());
                 assertEquals(View.ACCESSIBILITY_LIVE_REGION_ASSERTIVE, composer.commands.error.getAccessibilityLiveRegion());
-                composer.commands.notice("", () -> {}); composer.commands.error("");
+                composer.commands.notice("", () -> {}); composer.commands.error("", () -> {});
                 assertNull(composer.commands.notice); assertNull(composer.commands.error);
                 assertSame(composer.box, composer.getChildAt(0));
                 composer.input.setText("ordinary draft"); assertEquals(View.GONE, composer.commands.hint.getVisibility());
@@ -236,7 +236,7 @@ public class NativeComposerCommandsTest {
                         composer.input.setText(item.getString("draft")); composer.commands.bind(true, false, false);
                         String notice = item.has("noticeKey") ? ui.t(item.getString("noticeKey")) : item.optString("notice");
                         composer.commands.notice(notice, () -> {});
-                        composer.commands.error(item.has("errorKey") ? ui.t(item.getString("errorKey")) : "");
+                        composer.commands.error(item.has("errorKey") ? ui.t(item.getString("errorKey")) : "", () -> {});
                         layout(page, width, 800);
                         if (id.equals("menu")) composer.input.requestFocus();
                         idle(); layout(page, width, 800);
