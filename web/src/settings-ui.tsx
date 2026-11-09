@@ -73,11 +73,14 @@ export function CopyAddressButton({
   t,
   kind = "copy-tsnet-url",
   iconOnly = false,
+  text,
 }: {
   t: Translator;
-  kind?: "copy-tsnet-url" | "copy-relay-web-url";
+  kind?: "copy-tsnet-url" | "copy-relay-web-url" | "copy-relay-pairing-code";
   iconOnly?: boolean;
+  text?: string;
 }) {
+  const pairing = kind === "copy-relay-pairing-code";
   const [state, setState] = useState<"idle" | "pending" | "copied" | "failed">(
     "idle",
   );
@@ -99,7 +102,10 @@ export function CopyAddressButton({
     pending.current = true;
     setState("pending");
     try {
-      await settingsCall<boolean>("Action", { kind });
+      await settingsCall<boolean>("Action", {
+        kind,
+        ...(text ? { text } : {}),
+      });
       if (mounted.current) setState("copied");
     } catch {
       if (mounted.current) setState("failed");
@@ -109,30 +115,36 @@ export function CopyAddressButton({
   };
   const message =
     state === "copied"
-      ? t("Copied")
+      ? t(pairing ? "Code copied" : "Copied")
       : state === "failed"
-        ? t("Could not copy address. Try again.")
+        ? t(
+            pairing
+              ? "Could not copy code"
+              : "Could not copy address. Try again.",
+          )
         : "";
+  const label = t(pairing ? "Copy code" : "Copy address");
   const Icon =
     state === "copied" ? Check : state === "failed" ? CircleAlert : Copy;
   return (
     <button
       type="button"
       className={`settings-copy-address${iconOnly ? " icon" : ""}`}
-      onClick={() => void copy()}
-      aria-label={t("Copy address")}
+      onClick={(event) => {
+        event.preventDefault();
+        void copy();
+      }}
+      aria-label={label}
       aria-busy={state === "pending"}
-      title={message || t("Copy address")}
+      title={message || label}
     >
       {iconOnly ? (
         <Icon size={16} aria-hidden="true" />
       ) : (
         <span className="settings-copy-labels" aria-hidden="true">
-          <span className={state === "copied" ? "" : "active"}>
-            {t("Copy address")}
-          </span>
+          <span className={state === "copied" ? "" : "active"}>{label}</span>
           <span className={state === "copied" ? "active" : ""}>
-            {t("Copied")}
+            {t(pairing ? "Code copied" : "Copied")}
           </span>
         </span>
       )}

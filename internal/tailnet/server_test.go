@@ -498,6 +498,32 @@ func TestTailnetLoginURLDoesNotReturnUntrustedLinksOrWaitForever(t *testing.T) {
 	}
 }
 
+func TestTailnetReauthenticateURLCanSwitchRegisteredAccountsWithoutListener(t *testing.T) {
+	const address = "https://login.tailscale.com/a/another-account"
+	var status atomic.Pointer[ipnstate.Status]
+	status.Store(&ipnstate.Status{BackendState: "Running"})
+	node := &fakeTailnet{
+		statusProbe: func(context.Context) (*ipnstate.Status, error) { return status.Load(), nil },
+		login: func(context.Context) error {
+			status.Store(&ipnstate.Status{BackendState: "Running", AuthURL: address})
+			return nil
+		},
+	}
+	endpoint, err := startTailnet(context.Background(), node, 443, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer endpoint.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if got, err := endpoint.ReauthenticateURL(ctx); err != nil || got != address || node.logins.Load() != 1 {
+		t.Fatal("account switch did not request an interactive login", got, err)
+	}
+	if endpoint.Listener() != nil || endpoint.Origin() != "" || node.address != "" {
+		t.Fatal("account switch published an HTTPS entry")
+	}
+}
+
 func TestTailnetEndpointUsesTLSAndRestrictsServerName(t *testing.T) {
 	seed := httptest.NewTLSServer(http.NotFoundHandler())
 	certificate := seed.TLS.Certificates[0]

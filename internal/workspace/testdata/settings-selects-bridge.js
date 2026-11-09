@@ -9,7 +9,7 @@ const snapshot = {
   settings: { web_enabled: true, host: "127.0.0.1", port: 8787, public_url: "https://chat.example.com", idle_minutes: 10, history_cache_mib: 256, auto_start: false, tsnet_enabled: false, tsnet_hostname: "spool-server", tsnet_port: 443, proxy_enabled: true, use_system_proxy: false, proxy_url: "", no_proxy: "" },
   preferences: { theme: "system", language: "system" },
   update_preferences: { automatic_checks: false, automatic_installs: false, check_interval_minutes: 60 },
-  status: { Running: true, RestartRequired: false, PendingChanges: [], Address: "127.0.0.1:8787", Error: "", Online: [], TSNet: { State: "Disabled", AuthURL: "", URL: "", Error: "" }, TSNetAuthKeySet: false },
+  status: { Running: true, RestartRequired: false, PendingChanges: [], Address: "127.0.0.1:8787", Error: "", Online: [], TSNet: { State: "Disabled", AuthURL: "", URL: "", Error: "" }, TSNetAuthKeySet: false, Voxl: { installed: true, installing: false, running: false, directory: "/fixture/voxl" } },
   updates: { Enabled: false, Checking: false, Installing: false, Installed: false, Version: "", Notes: "", Error: "", ErrorPhase: "", LastCheck: "", Downloaded: 0, Total: 0 },
   users: [],
   projects: [{
@@ -97,6 +97,7 @@ window.mygo = {
     }
     if (method === "DesktopSettings.TSNetLogin") {
       window.smokeSettings.commands.push({ kind: "tsnet-login" });
+      if (!snapshot.settings.tsnet_enabled) snapshot.status.TSNet = { State: "NeedsLogin", AuthURL: "", URL: "", Error: "" };
       const node = snapshot.status.TSNet;
       if (window.smokeSettings.holdNextLogin) {
         window.smokeSettings.holdNextLogin = false;
@@ -115,6 +116,10 @@ window.mygo = {
     if (method !== "DesktopSettings.Execute") throw new Error("Unexpected bridge call: " + method);
     window.smokeSettings.executes++;
     window.smokeSettings.commands.push(structuredClone(command));
+    if (window.smokeSettings.holdNextCommand === command.kind) {
+      window.smokeSettings.holdNextCommand = "";
+      await new Promise(resolve => { window.smokeSettings.releaseCommand = resolve; });
+    }
     if (command.kind === "save-appearance") snapshot.preferences = command.preferences;
     if (command.kind === "navigate") snapshot.section = command.section;
     if (window.smokeSettings.failNextCommand === command.kind) {
@@ -154,7 +159,9 @@ window.mygo = {
         WebURL: activeSettings.relay_enabled && activeSettings.relay_web_enabled ? "https://relay.example.test/web/browser-server/" : "",
       };
       if (command.target === "tsnet") {
-        snapshot.status.TSNet = window.smokeSettings.registered || snapshot.status.TSNetAuthKeySet
+        snapshot.status.TSNet = !activeSettings.tsnet_enabled
+          ? { State: "Disabled", AuthURL: "", URL: "", Error: "" }
+          : window.smokeSettings.registered || snapshot.status.TSNetAuthKeySet
           ? { State: "Running", AuthURL: "", URL: "https://spool.example.ts.net", Error: "" }
           : { State: "NeedsLogin", AuthURL: "", URL: "", Error: "" };
         snapshot.status.TSNetAuthKeySet = false;

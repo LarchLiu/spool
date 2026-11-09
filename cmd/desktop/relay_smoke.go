@@ -44,6 +44,8 @@ func (p *panel) probeRelaySettings(ctx context.Context, view *mygo.WebView, repo
 		return err
 	}
 	if _, err := page.EvalContext(ctx, `
+		document.querySelector('[data-service-tab="relay"]').click();
+		await new Promise(resolve => setTimeout(resolve, 0));
 		const input = document.querySelector('input[aria-label="中继 HTTPS 地址"]');
 		input.focus();
 		Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'https://relay.example.com');
@@ -158,6 +160,6 @@ func (p *panel) probeRelaySettings(ctx context.Context, view *mygo.WebView, repo
 	if err := p.smokePresentation(ctx, preferences); err != nil {
 		return err
 	}
-	_, err = page.EvalContext(ctx, `document.querySelector('.settings-main').scrollTo(0, 0);`)
+	_, err = page.EvalContext(ctx, `document.querySelector('[data-service-tab="web"]').click(); document.querySelector('.settings-main').scrollTo(0, 0);`)
 	return err
 }

@@ -68,7 +68,6 @@ func (p *panel) trayMenu() *mygo.Menu {
 }
 
 func (p *panel) appearanceView(c *ui.Context) {
-	ui.Text(c, p.tr("Changes apply immediately and are saved in SQLite.")).Wrap().FontSize(12)
 	ui.Text(c, p.tr("Theme")).Bold()
 	themes := []string{p.tr("Light"), p.tr("Dark"), p.tr("Follow system")}
 	values := []string{"light", "dark", "system"}

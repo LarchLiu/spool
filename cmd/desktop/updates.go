@@ -57,7 +57,7 @@ func (p *panel) showUpdates() {
 func (p *panel) updatesView(c *ui.Context) {
 	state := p.updates.State()
 	ui.Text(c, p.tr("Current version: {version}", "version", desktopVersion())).Bold()
-	ui.Text(c, p.tr("Updates are signed and downloaded from GitHub Releases. Running chats always block installation and restart.")).Wrap().FontSize(12)
+	p.runtimeSettingsView(c)
 	if p.updateDiagnostics != nil {
 		ui.Text(c, p.tr("Update log: {path}", "path", p.updateDiagnostics.Path)).Wrap().FontSize(11)
 		if ui.Button(c, p.tr("Show update log")).Clicked() {
@@ -141,7 +141,6 @@ func (p *panel) updatesView(c *ui.Context) {
 			p.message = err.Error()
 		}
 	}
-	ui.Text(c, p.tr("Automatic updates install and restart the app when no chats are running. Busy updates are retried after chats finish.")).Wrap().FontSize(12)
 	if state.Notes != "" {
 		ui.Text(c, p.tr("Release notes")).Bold()
 		ui.Text(c, state.Notes).Wrap().FontSize(13)

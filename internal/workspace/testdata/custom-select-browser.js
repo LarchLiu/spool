@@ -89,6 +89,12 @@ async function checkCustomSelects(report) {
 
     doc.querySelector('[data-section="Service"]').click();
     await waitFor(() => doc.querySelector('[role="switch"][aria-label="Enable embedded Tailscale"]'), "tailnet service controls");
+    const serviceTab = async key => {
+      const tab = doc.querySelector(`[data-service-tab="${key}"]`);
+      tab.click();
+      await waitFor(() => tab.getAttribute('aria-selected') === 'true', key + ' service tab');
+    };
+    await serviceTab('tsnet');
     const fixture = frame.contentWindow.smokeSettings;
     const button = (label) => [...doc.querySelectorAll('button')].find((item) => item.textContent.trim() === label);
     const idle = () => !doc.querySelector('.settings-content').disabled && !doc.querySelector('[data-page="Service"] fieldset').disabled;
@@ -179,6 +185,7 @@ async function checkCustomSelects(report) {
     doc.querySelector('[data-apply-service-change="tsnet"]').click();
     await waitFor(() => [...doc.querySelectorAll('code')].some(node => node.textContent === "https://spool.example.ts.net") && idle(), "assigned HTTPS origin");
     report.tailnetConnected = !fixture.snapshot.status.TSNetAuthKeySet && !button("Clear pending key") && !button("Sign in to Tailscale") && !doc.querySelector('[data-apply-service-change="tsnet"]') && fixture.snapshot.settings.public_url === "https://chat.example.com" && publicOriginInput.value === "https://chat.example.com" && !publicOriginInput.disabled;
+    await serviceTab('web');
     const nextPublicOrigin = "https://pwa.example.com";
     Object.getOwnPropertyDescriptor(frame.contentWindow.HTMLInputElement.prototype, "value").set.call(publicOriginInput, nextPublicOrigin);
     publicOriginInput.dispatchEvent(new frame.contentWindow.Event("input", { bubbles: true }));
@@ -186,6 +193,7 @@ async function checkCustomSelects(report) {
     publicOriginInput.blur();
     await waitFor(() => fixture.snapshot.settings.public_url === nextPublicOrigin && doc.querySelector('[data-apply-service-change="web"]') && fixture.snapshot.status.TSNet.URL === "https://spool.example.ts.net", "public origin saved independently");
     assertRestartBar();
+    await serviceTab('tsnet');
     doc.querySelector('[role="switch"][aria-label="Enable embedded Tailscale"]').scrollIntoView({ block: "center", behavior: "instant" });
     await browser([{ method: "Page.captureScreenshot", params: { format: "png" } }], "settings");
     doc.querySelector('[data-apply-service-change="web"]').click();
@@ -225,7 +233,7 @@ async function checkCustomSelects(report) {
         throw new Error("Settings escaped its content scroller: " + JSON.stringify({ height: view.innerHeight, scrollHeight: root.scrollHeight, scrollTop: root.scrollTop, shellTop: shell.top, shellHeight: shell.height, mainTop: mainBounds.top, mainBottom: mainBounds.bottom, mainHeight: mainBounds.height, mainScrollHeight: main.scrollHeight, footerBottom: footer.bottom }));
     };
     assertSettingsViewport();
-    const copy = doc.querySelector('.settings-copy-address');
+    const copy = doc.querySelector('.settings-service-panel:not([hidden]) .settings-copy-address');
     copy.scrollIntoView({ block: "center", behavior: "instant" });
     copy.focus({ preventScroll: true });
     await pause(180);

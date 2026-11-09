@@ -55,6 +55,25 @@ func testSettingsChangesBrowser(t *testing.T, name, setup string) {
 			reports := make(chan map[string]any, 1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
+				case "/smoke/browser":
+					var commands []browserCommand
+					if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&commands); err != nil {
+						http.Error(w, "invalid browser command", 400)
+						return
+					}
+					for _, command := range commands {
+						if command.Method != "Input.dispatchMouseEvent" {
+							http.Error(w, "unsupported browser command", 400)
+							return
+						}
+					}
+					ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+					defer cancel()
+					if _, err := driver.run(ctx, commands); err != nil {
+						http.Error(w, err.Error(), 500)
+						return
+					}
+					w.WriteHeader(204)
 				case "/bridge.js":
 					w.Header().Set("Content-Type", "text/javascript")
 					w.Write(bridge)
@@ -95,8 +114,9 @@ func testSettingsChangesBrowser(t *testing.T, name, setup string) {
 							data, err = base64.StdEncoding.DecodeString(image.Data)
 							if err == nil {
 								suffix := ""
-								if r.URL.Query().Get("variant") == "qr" {
-									suffix = "-qr"
+								switch variant := r.URL.Query().Get("variant"); variant {
+								case "qr", "web", "relay", "tsnet", "desktop", "about":
+									suffix = "-" + variant
 								}
 								err = os.WriteFile(filepath.Join(output, fmt.Sprintf("settings-%d-%s%s.png", scenario.width, scenario.theme, suffix)), data, 0644)
 							}

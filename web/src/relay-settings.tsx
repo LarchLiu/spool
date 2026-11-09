@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { settingsCall, type SettingsSnapshot } from "./settings-client";
-import { knownMessage, Row, TextField } from "./settings-ui";
+import { CopyAddressButton, knownMessage, Row, TextField } from "./settings-ui";
 import type { Translator } from "./i18n";
 
 type Pairing = {
@@ -197,13 +197,21 @@ export function RelayPairing({
           >
             {pairing.fingerprint}
           </code>
-          <details>
-            <summary>{t("Manual pairing code")}</summary>
+          <details className="settings-pairing-code">
+            <summary>
+              {t("Manual pairing code")}
+              <CopyAddressButton
+                key={pairing.code}
+                t={t}
+                kind="copy-relay-pairing-code"
+                text={pairing.code}
+                iconOnly
+              />
+            </summary>
             <textarea
               readOnly
               aria-label={t("Pairing code")}
               value={pairing.code}
-              style={{ width: "100%", minHeight: 96 }}
             />
           </details>
         </div>

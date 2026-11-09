@@ -186,6 +186,7 @@ export type SettingsCommand =
   | { kind: "set-remote-desktop"; enabled: boolean }
   | { kind: "disconnect-remote-desktop"; target: string }
   | { kind: "unregister-relay"; target: string }
+  | { kind: "copy-relay-pairing-code"; text: string }
   | { kind: "test-notification" }
   | { kind: "save-updates"; update_preferences: UpdatePreferences }
   | { kind: "save-person"; person: PersonDraft }

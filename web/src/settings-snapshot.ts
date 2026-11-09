@@ -83,6 +83,8 @@ export function settingsPageDataEqual(
       );
     case "About":
       return (
+        a.settings.idle_minutes === b.settings.idle_minutes &&
+        a.settings.history_cache_mib === b.settings.history_cache_mib &&
         a.updates === b.updates &&
         a.update_preferences === b.update_preferences &&
         a.version === b.version &&
@@ -102,6 +104,7 @@ export function isSettingsAction(command: SettingsCommand): boolean {
     "show-file",
     "copy-tsnet-url",
     "copy-relay-web-url",
+    "copy-relay-pairing-code",
   ].includes(command.kind);
 }
 

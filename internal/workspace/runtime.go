@@ -41,6 +41,7 @@ type Service struct {
 	tailnet             *tailnetRuntime
 	tailnetMu           sync.Mutex
 	openTailnet         tailnetOpener
+	openTailnetLogin    func(context.Context, string, tailnet.Options, func(tailnet.Status)) (tailnetLoginConnection, error)
 	enrollTailnet       func(context.Context, string, tailnet.Options, func(tailnet.Status)) error
 	tailnetAuthKey      string
 	tailnetAuthRevision uint64

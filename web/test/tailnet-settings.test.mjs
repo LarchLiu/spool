@@ -219,7 +219,8 @@ test("connected tailnet displays the assigned HTTPS address and leaves Spool log
     { TSNet: { State: "Running", URL: "https://spool.example.ts.net" } },
     { public_url: "https://chat.example.com" },
   );
-  assert.match(html, /Connected to tailnet/);
+  assert.match(html, />Connected</);
+  assert.doesNotMatch(html, /Connected to tailnet|Tailscale \(tsnet\)/);
   assert.match(html, /<code>https:\/\/spool.example.ts.net<\/code>/);
   assert.match(html, /Copy address/);
   assert.match(html, /class="icon settings-address-qr"[^>]*aria-label="Show address QR code"/);
@@ -242,6 +243,16 @@ test("disabled tailnet does not lock a custom reverse-proxy origin", () => {
     /aria-label="Enable embedded Tailscale" aria-checked="false"/,
   );
   assert.doesNotMatch(html, /aria-label="Public URL[^>]+disabled/);
+});
+
+test("disabled Tailscale keeps browser login available for another account", () => {
+  for (const State of ["Disabled", "Stopped", "Registered", "Running"]) {
+    const html = renderService({ TSNet: { State } }, { tsnet_enabled: false });
+    assert.match(html, />Sign in to Tailscale</);
+    assert.match(html, /Enable embedded Tailscale<\/span><p>Enable MagicDNS and HTTPS certificates/);
+    assert.equal((html.match(/Enable MagicDNS/g) ?? []).length, 1);
+    assert.doesNotMatch(html, /Connect this workspace to your tailnet without a system VPN/);
+  }
 });
 
 test("local Web access uses enablement and LAN switches instead of a listen IP input", () => {

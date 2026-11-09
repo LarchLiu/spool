@@ -23,7 +23,7 @@ const pairing = {
   fingerprint:
     "66687aad f862bd77 6c8fc18b 8e9f8e20 08971485 6ee233b3 902a591d 0d5f2925",
 };
-let report, child, socket, javascript, css;
+let report, child, socket, javascript, css, capturePairing;
 const source = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -44,9 +44,9 @@ window.mygo = { on: () => () => {}, call: async (method, ...args) => {
   calls.push({ method, args });
   if (method === 'DesktopSettings.RegisterRelay') return new Promise((resolve, reject) => { completeRegistration = resolve; rejectRegistration = reject; });
   if (method === 'DesktopSettings.RelayPairing') return pairing;
-  if (method === 'DesktopSettings.Action' && ['copy-relay-web-url', 'copy-tsnet-url'].includes(args[0]?.kind)) {
+  if (method === 'DesktopSettings.Action' && ['copy-relay-web-url', 'copy-tsnet-url', 'copy-relay-pairing-code'].includes(args[0]?.kind)) {
     if (rejectCopy) throw new Error('synthetic copy failure');
-    copied.push(args[0].kind === 'copy-tsnet-url' ? data.status.TSNet.URL : data.status.Relay.WebURL);
+    copied.push(args[0].kind === 'copy-relay-pairing-code' ? args[0].text : args[0].kind === 'copy-tsnet-url' ? data.status.TSNet.URL : data.status.Relay.WebURL);
     return true;
   }
   throw new Error('unexpected bridge method: ' + method);
@@ -79,6 +79,7 @@ const button = text => [...document.querySelectorAll('button')].find(b => b.text
 const check = (value, label) => { checks++; if (!value) throw new Error(label); };
 (async () => {
   for (let i = 0; i < 100 && !button('显示配对二维码'); i++) await pause(50);
+  document.querySelector('[data-service-tab="relay"]').click(); await pause(50);
   check(calls.length === 0 && !document.querySelector('img'), 'QR stays private until requested');
   const toggle = () => document.querySelector('[role="switch"][aria-label="启用 Spool 中继"]');
   const address = () => document.querySelector('input[aria-label="中继 HTTPS 地址"]');
@@ -169,10 +170,11 @@ const check = (value, label) => { checks++; if (!value) throw new Error(label); 
   check(!webGroup.querySelector('.settings-copy-address') && !webGroup.textContent.includes(publicURL), 'disabling Web hides address');
   webToggle.click(); await pause(100);
   check(!!webGroup.querySelector('svg.lucide-copy'), 're-enabling shows an idle copy icon');
+  document.querySelector('[data-service-tab="tsnet"]').click(); await pause(50);
   const tailnetToggle = document.querySelector('[role="switch"][aria-label="启用内嵌 Tailscale"]');
   const tailnetCard = tailnetToggle.closest('.settings-card');
   const tailnetStatus = tailnetCard.querySelector('[aria-label="Tailnet 状态"]');
-  check(tailnetStatus?.textContent.includes('已连接 Tailnet') && tailnetStatus.closest('.settings-row') === tailnetToggle.closest('.settings-row') && tailnetStatus.getBoundingClientRect().right <= tailnetToggle.getBoundingClientRect().left, 'Tailnet status is left of its toggle');
+  check(tailnetStatus?.textContent.trim() === '已连接' && tailnetStatus.closest('.settings-row') === tailnetToggle.closest('.settings-row') && tailnetStatus.getBoundingClientRect().right <= tailnetToggle.getBoundingClientRect().left, 'Tailnet status is left of its toggle');
   check(![...tailnetCard.querySelectorAll('.settings-row-label > span')].some(label => label.textContent === 'Tailnet 状态'), 'standalone Tailnet status row is removed');
   const key = tailnetCard.querySelector('input[type="password"]');
   const keyGroup = key.closest('[role="group"]');
@@ -188,6 +190,7 @@ const check = (value, label) => { checks++; if (!value) throw new Error(label); 
   check(!!tailnetCopy.querySelector('svg.lucide-circle-alert'), 'Tailnet copy failure has local feedback');
   rejectCopy = false; tailnetCopy.click(); await pause(100);
   check(copied.at(-1) === data.status.TSNet.URL && !!tailnetCopy.querySelector('svg.lucide-check'), 'Tailnet copy can retry');
+  document.querySelector('[data-service-tab="relay"]').click(); await pause(50);
   button('显示配对二维码').click(); await pause(250);
   const image = document.querySelector('img'); await image.decode();
   check(image.naturalWidth === 512 && image.naturalHeight === 512, 'actual Go QR image loaded');
@@ -195,6 +198,20 @@ const check = (value, label) => { checks++; if (!value) throw new Error(label); 
   check(document.body.textContent.includes(pairing.relay_url), 'relay address is shown');
   check(image.getBoundingClientRect().right <= innerWidth, 'QR stays in viewport');
   check(document.querySelector('textarea').value === pairing.code, 'manual code matches QR payload');
+  const manual = document.querySelector('.settings-pairing-code');
+  const manualCopy = manual.querySelector('.settings-copy-address');
+  check(!manual.open && manualCopy.getAttribute('aria-label') === '复制代码' && manualCopy.querySelector('svg.lucide-copy'), 'manual pairing has a copy icon on its closed row');
+  check(parseFloat(getComputedStyle(manual).marginTop) >= 24 && Math.abs(manualCopy.getBoundingClientRect().right - manual.getBoundingClientRect().right) < 2, 'manual pairing row has more spacing and a right-aligned copy icon');
+  manualCopy.click(); await pause(100);
+  check(copied.at(-1) === pairing.code && manualCopy.querySelector('svg.lucide-check') && !manual.open, 'manual copy uses the exact displayed code without expanding the row');
+  rejectCopy = true; manualCopy.click(); await pause(100);
+  check(manualCopy.querySelector('svg.lucide-circle-alert') && !manual.open, 'manual copy failure preserves disclosure state');
+  rejectCopy = false; manualCopy.click(); await pause(100);
+  check(copied.at(-1) === pairing.code && manualCopy.querySelector('svg.lucide-check'), 'manual copy can retry');
+  manual.querySelector('summary').click(); await pause(50);
+  check(manual.open && Math.abs(manual.querySelector('textarea').getBoundingClientRect().width - manual.getBoundingClientRect().width) < 2, 'manual code expands across the full row');
+  manual.scrollIntoView({block: 'end', behavior: 'instant'});
+  await fetch('/capture-pairing', {method: 'POST'});
   button('隐藏配对码').click(); await pause(100);
   check(!document.querySelector('img') && !document.querySelector('textarea'), 'hide removes code and image');
   button('显示配对二维码').click(); await pause(250); await document.querySelector('img').decode();
@@ -216,6 +233,11 @@ const check = (value, label) => { checks++; if (!value) throw new Error(label); 
 })().catch(async error => { await fetch('/report', { method: 'POST', body: JSON.stringify({ error: String(error) }) }); });
 `;
 const server = createServer(async (req, res) => {
+  if (req.url === "/capture-pairing") {
+    await capturePairing();
+    res.writeHead(204).end();
+    return;
+  }
   if (req.url === "/report") {
     let body = "";
     for await (const part of req) body += part;
@@ -235,7 +257,7 @@ const server = createServer(async (req, res) => {
   }
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.end(
-    `<!doctype html><html lang="zh-CN" data-theme="light"><head><meta charset="utf-8"><link rel="stylesheet" href="/app.css"><style>#root > :not(.settings-group:has(input[aria-label="中继 HTTPS 地址"]),.settings-group:has([aria-label="启用内嵌 Tailscale"])) { display: none; }</style></head><body><main class="desktop-settings-shell" style="display:block;overflow:auto"><div id="root" class="settings-content" style="max-width:740px;margin:24px auto;padding:16px"></div></main><script src="/app.js"></script></body></html>`,
+    `<!doctype html><html lang="zh-CN" data-theme="light"><head><meta charset="utf-8"><link rel="stylesheet" href="/app.css"><style>#root > :not(.settings-service-tabs,.settings-service-panel) { display: none; }</style></head><body><main class="desktop-settings-shell" style="display:block;overflow:auto"><div id="root" class="settings-content" style="max-width:740px;margin:24px auto;padding:16px"></div></main><script src="/app.js"></script></body></html>`,
   );
 });
 try {
@@ -339,6 +361,10 @@ try {
       socket.send(JSON.stringify({ id, method, params }));
     });
   await send("Runtime.enable");
+  capturePairing = async () => {
+    const image = await send("Page.captureScreenshot", { format: "png" });
+    await writeFile(join(output, "manual-pairing.png"), Buffer.from(image.data, "base64"));
+  };
   await send("Emulation.setFocusEmulationEnabled", { enabled: true });
   await send("Page.navigate", {
     url: `http://127.0.0.1:${server.address().port}/`,
@@ -351,7 +377,8 @@ try {
   );
   assert.equal(report?.ok, true, JSON.stringify(report) + diagnostic);
   await send("Runtime.evaluate", {
-    expression: `document.querySelector('[aria-label="启用内嵌 Tailscale"]').closest('.settings-group').scrollIntoView({ block: 'start', behavior: 'instant' })`,
+    expression: `(async () => { document.querySelector('[data-service-tab="tsnet"]').click(); await new Promise(resolve => setTimeout(resolve, 50)); document.querySelector('[aria-label="启用内嵌 Tailscale"]').closest('.settings-group').scrollIntoView({ block: 'start', behavior: 'instant' }); })()`,
+    awaitPromise: true,
   });
   const tailnetScreenshot = await send("Page.captureScreenshot", {
     format: "png",

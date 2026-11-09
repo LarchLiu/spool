@@ -414,6 +414,109 @@ func TestTailnetLoginRequestValidatesLinksAndReportsTimeout(t *testing.T) {
 	}
 }
 
+type testTailnetLoginConnection struct {
+	login func(context.Context) (string, error)
+	close func()
+}
+
+func (c *testTailnetLoginConnection) ReauthenticateURL(ctx context.Context) (string, error) {
+	return c.login(ctx)
+}
+func (c *testTailnetLoginConnection) Close() error { c.close(); return nil }
+
+func TestTailnetDisabledLoginPreservesOffStateAndActivatesExplicitly(t *testing.T) {
+	service, settings := settingsService(t)
+	app, runner, web := service.app, service.runner, service.web
+	closed := make(chan struct{})
+	reports := make(chan func(tailnet.Status), 1)
+	var opens, logins atomic.Int32
+	const address = "https://login.tailscale.com/a/another-account"
+	service.openTailnetLogin = func(ctx context.Context, root string, options tailnet.Options, report func(tailnet.Status)) (tailnetLoginConnection, error) {
+		opens.Add(1)
+		if root != service.Store.Root() || options.AuthKey != "" {
+			t.Error("login did not use the existing node state")
+		}
+		reports <- report
+		return &testTailnetLoginConnection{login: func(context.Context) (string, error) {
+			logins.Add(1)
+			return address, nil
+		}, close: func() { close(closed) }}, nil
+	}
+	if got, err := service.TSNetLoginURL(context.Background()); err != nil || got != address {
+		t.Fatal("disabled entry could not log in", got, err)
+	}
+	report := <-reports
+	report(tailnet.Status{State: "Running", URL: "https://old.example.ts.net"})
+	if status := service.Status(); status.TSNet.State != "Registered" || status.TSNet.URL != "" || status.RestartRequired {
+		t.Fatal("login published an entry or staged unwanted changes", status)
+	}
+	saved, _ := service.Store.Settings()
+	if saved.TSNetEnabled || service.tailnet.ingress != nil || service.app != app || service.runner != runner || service.web != web {
+		t.Fatal("login enabled Tailscale or replaced the running service")
+	}
+	if got, err := service.TSNetLoginURL(context.Background()); err != nil || got != address || opens.Load() != 1 || logins.Load() != 2 {
+		t.Fatal("registered node could not request another account", got, err)
+	}
+	connection := newTestTailnetConnection(t)
+	service.openTailnet = func(context.Context, string, tailnet.Options, func(tailnet.Status)) (tailnetConnection, error) {
+		return connection, nil
+	}
+	settings.TSNetEnabled = true
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if service.Status().TSNet.URL != "" || !service.Status().RestartRequired {
+		t.Fatal("saving enablement automatically published the entry")
+	}
+	if err := service.ApplyServiceChanges("tsnet"); err != nil {
+		t.Fatal(err)
+	}
+	waitTailnet(t, service, func(status ServiceStatus) bool { return status.TSNet.State == "Running" })
+	select {
+	case <-closed:
+	default:
+		t.Fatal("activation opened a second node before closing the login node")
+	}
+	if service.app != app || service.runner != runner || service.web != web {
+		t.Fatal("activation replaced unrelated service state")
+	}
+}
+
+func TestTailnetDisabledLoginIsCanceledOnStop(t *testing.T) {
+	service, _ := settingsService(t)
+	started, closed := make(chan struct{}), make(chan struct{})
+	service.openTailnetLogin = func(context.Context, string, tailnet.Options, func(tailnet.Status)) (tailnetLoginConnection, error) {
+		return &testTailnetLoginConnection{login: func(ctx context.Context) (string, error) {
+			close(started)
+			<-ctx.Done()
+			return "", ctx.Err()
+		}, close: func() { close(closed) }}, nil
+	}
+	done := make(chan error, 1)
+	go func() { _, err := service.TSNetLoginURL(context.Background()); done <- err }()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("disabled login did not start")
+	}
+	if err := service.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "stopped") {
+			t.Fatal("stopped login was not canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("login blocked service shutdown")
+	}
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("stopped login node was not closed")
+	}
+}
+
 func TestTailnetAuthKeyRegistersImmediatelyWithoutRestartingLocalService(t *testing.T) {
 	service, settings := settingsService(t)
 	settings.TSNetEnabled = true

@@ -347,7 +347,7 @@ export function SettingsApp() {
             data={data}
             run={run}
             t={t}
-            disabled={busy || saving}
+            disabled={busy}
           />
         )}
       </div>

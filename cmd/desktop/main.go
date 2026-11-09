@@ -471,6 +471,10 @@ func (p *panel) serviceView(c *ui.Context) {
 		status = "Running"
 	}
 	ui.Text(c, p.tr(status)).Bold()
+	if ui.Checkbox(c, &p.settings.AutoStart, p.tr("Start Spool service on application launch")).Disabled(p.busy).Changed() {
+		autoStart := p.settings.AutoStart
+		p.saveServiceSetting(func(settings *workspace.Settings) error { settings.AutoStart = autoStart; return nil })
+	}
 	if p.status.Error != "" {
 		ui.Text(c, p.status.Error).Wrap()
 	}
@@ -514,20 +518,6 @@ func (p *panel) serviceView(c *ui.Context) {
 	if p.settings.PublicURL != "" && ui.Button(c, p.tr("Open address")).Disabled(!p.settings.WebEnabled).Clicked() {
 		p.openChatLink(p.settings.PublicURL)
 	}
-	p.serviceSettingField(c, "Release completed agents after idle minutes", &p.idle, func(settings *workspace.Settings, value string) (err error) {
-		settings.IdleMinutes, err = strconv.Atoi(value)
-		return err
-	})
-	p.serviceSettingField(c, "History cache size (MiB)", &p.historyCache, func(settings *workspace.Settings, value string) (err error) {
-		settings.HistoryCacheMiB, err = strconv.Atoi(value)
-		return err
-	})
-	ui.Text(c, p.tr("Shared by all chats. Changes are saved automatically and apply immediately. A larger session is kept whole; history is never truncated.")).Wrap().FontSize(12)
-	if ui.Checkbox(c, &p.settings.AutoStart, p.tr("Start Spool service on application launch")).Disabled(p.busy).Changed() {
-		autoStart := p.settings.AutoStart
-		p.saveServiceSetting(func(settings *workspace.Settings) error { settings.AutoStart = autoStart; return nil })
-	}
-	ui.Text(c, p.tr("Changes are saved on blur or Enter; switches save immediately. The service never restarts automatically. Closing this window keeps it in the tray; Quit stops it.")).Wrap().FontSize(12)
 	ui.Text(c, p.tr("Remote desktop")).Bold()
 	ui.Text(c, p.status.Voxl.Directory).Selectable().Wrap().FontSize(12)
 	if p.status.Voxl.Application != "" {
@@ -574,7 +564,20 @@ func (p *panel) serviceView(c *ui.Context) {
 			}
 		}
 	}
-	ui.Text(c, p.tr("Users can execute agent tools in granted projects. Only grant access to trusted people. HTTPS is required for remote PWA installation.")).Wrap().FontSize(12)
+}
+
+func (p *panel) runtimeSettingsView(c *ui.Context) {
+	ui.Text(c, p.tr("Runtime")).Bold()
+	p.serviceSettingField(c, "Release completed agents after idle minutes", &p.idle, func(settings *workspace.Settings, value string) (err error) {
+		settings.IdleMinutes, err = strconv.Atoi(value)
+		return err
+	})
+	p.serviceSettingField(c, "History cache size (MiB)", &p.historyCache, func(settings *workspace.Settings, value string) (err error) {
+		settings.HistoryCacheMiB, err = strconv.Atoi(value)
+		return err
+	})
+	ui.Text(c, p.tr("Shared by all chats. Changes are saved automatically and apply immediately. A larger session is kept whole; history is never truncated.")).Wrap().FontSize(12)
+	p.pendingServiceChanges(c)
 }
 
 func (p *panel) networkView(c *ui.Context) {
@@ -593,7 +596,6 @@ func (p *panel) networkView(c *ui.Context) {
 	ui.Text(c, p.tr("Custom HTTP(S) or SOCKS5 proxy for Spool's built-in requests. Used when proxy is enabled and system proxy is off. Leave blank to inherit environment proxies.")).Wrap().FontSize(12)
 	p.serviceSettingFieldWithDisabled(c, "No proxy", &p.settings.NoProxy, customDisabled, func(settings *workspace.Settings, value string) error { settings.NoProxy = value; return nil })
 	ui.Text(c, p.tr("Comma-separated hosts or IP ranges that should bypass the proxy. Leave blank to inherit NO_PROXY. Loopback always connects directly.")).Wrap().FontSize(12)
-	ui.Text(c, p.tr("New built-in HTTP requests use this setting immediately. Local loopback access, push security checks and external agent tools keep their own network rules.")).Wrap().FontSize(12)
 	p.pendingServiceChanges(c)
 }
 
@@ -709,7 +711,6 @@ func (p *panel) peopleView(c *ui.Context) {
 		p.user.Password = ""
 		p.action(func() error { _, err := p.service.Store.SaveUser(input); return err })
 	}
-	ui.Text(c, p.tr("Passwords are bcrypt-hashed in SQLite. Editing an account revokes its Web logins. Disabling keeps its chat history.")).Wrap().FontSize(12)
 }
 func (p *panel) projectView(c *ui.Context) {
 	ui.Row(c).Gap(8).Children(func() {
@@ -858,12 +859,10 @@ func (p *panel) agentView(c *ui.Context) {
 			}
 		})
 	}
-	ui.Text(c, p.tr("Discovery runs at launch and every 5 minutes, without submitting a model prompt. Failed discovery retains the last successful catalog.")).Wrap().FontSize(12)
 }
 func (p *panel) onlineView(c *ui.Context) {
 	ui.Text(c, p.tr("{count} people connected", "count", strconv.Itoa(len(p.status.Online)))).Bold()
 	for _, u := range p.status.Online {
 		ui.Text(c, u.Nickname+" · "+p.tr(map[string]string{"online": "Online", "away": "Away"}[u.State])+" · "+p.tr("{count} connections", "count", strconv.Itoa(u.Devices)))
 	}
-	ui.Text(c, p.tr("Heartbeat timeout: 90 seconds. A backgrounded mobile PWA may appear away or offline; its agent task continues.")).Wrap().FontSize(12)
 }

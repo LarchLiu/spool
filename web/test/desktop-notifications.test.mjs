@@ -21,9 +21,5 @@ test("desktop settings wire opt-in and test controls with an unsupported fallbac
     /!data\.notifications_enabled \|\| !data\.notifications_supported/,
   );
   assert.match(appearance, /Spool must keep running/);
-  assert.match(appearance, /skipped while the desktop window has focus/);
-  assert.match(appearance, /not replayed later/);
-  assert.match(appearance, /Test notifications still appear/);
-  assert.match(appearance, /never message contents/);
   assert.match(appearance, /System notifications are unavailable/);
 });

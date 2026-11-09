@@ -50,7 +50,16 @@
   background: var(--input);
   color: var(--text);
 }
-.desktop-settings-shell :is(button, a, input, select, summary):focus-visible {
+.desktop-settings-shell
+  :is(
+    button,
+    a,
+    input,
+    textarea,
+    select,
+    summary,
+    [role="tabpanel"]
+  ):focus-visible {
   outline: 2px solid var(--color-primary-focus);
   outline-offset: 3px;
 }
@@ -331,6 +340,35 @@
 .settings-content > div[hidden] {
   display: none;
 }
+.settings-service-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 22px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--settings-divider);
+}
+.desktop-settings-shell .settings-service-tabs > button {
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 9px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.desktop-settings-shell .settings-service-tabs > button[aria-selected="true"] {
+  border-bottom-color: var(--color-primary);
+  color: var(--text);
+  font-weight: 600;
+}
+.desktop-settings-shell .settings-service-tabs > button:focus-visible {
+  outline-offset: -3px;
+}
+.settings-service-panel[hidden] {
+  display: none;
+}
 .settings-group {
   margin: 0 0 22px;
 }
@@ -355,7 +393,8 @@
   border-bottom: 1px solid var(--settings-divider);
   min-height: 66px;
 }
-.settings-row:last-child {
+.settings-row:last-child,
+.settings-row:has(+ .settings-card-actions) {
   border-bottom: 0;
 }
 .settings-github-cli .settings-card > .settings-row:has(+ [hidden]) {
@@ -570,6 +609,34 @@
 }
 .settings-relay-section > .settings-error {
   margin: 0 19px 17px;
+}
+.settings-pairing-code {
+  width: 100%;
+  margin-top: 24px;
+}
+.settings-pairing-code > summary {
+  position: relative;
+  min-height: 32px;
+  padding-right: 40px;
+  line-height: 32px;
+  cursor: pointer;
+}
+.settings-pairing-code > summary .settings-copy-address {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+.settings-pairing-code textarea {
+  display: block;
+  width: 100%;
+  min-height: 96px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+  resize: vertical;
 }
 .settings-action-spacer {
   flex: 1;

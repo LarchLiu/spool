@@ -228,6 +228,16 @@ func (e *Endpoint) Up(ctx context.Context) error {
 // supplied a link. Never substitute the generic Tailscale website: that would
 // sign in to a browser account without authorizing this node.
 func (e *Endpoint) LoginURL(ctx context.Context) (string, error) {
+	return e.loginURL(ctx, false)
+}
+
+// ReauthenticateURL also permits switching an already registered node to a
+// different account. It never opens an HTTPS listener.
+func (e *Endpoint) ReauthenticateURL(ctx context.Context) (string, error) {
+	return e.loginURL(ctx, true)
+}
+
+func (e *Endpoint) loginURL(ctx context.Context, reauthenticate bool) (string, error) {
 	status, err := e.node.Status(ctx)
 	if err != nil {
 		return "", err
@@ -236,7 +246,7 @@ func (e *Endpoint) LoginURL(ctx context.Context) (string, error) {
 		if IsLoginURL(status.AuthURL) {
 			return status.AuthURL, nil
 		}
-		if status.BackendState == "Running" {
+		if status.BackendState == "Running" && !reauthenticate {
 			return "", fmt.Errorf("Tailscale is already connected. No login is required.")
 		}
 	}
@@ -260,7 +270,7 @@ func (e *Endpoint) LoginURL(ctx context.Context) (string, error) {
 			if IsLoginURL(status.AuthURL) {
 				return status.AuthURL, nil
 			}
-			if status.BackendState == "Running" {
+			if status.BackendState == "Running" && !reauthenticate {
 				return "", fmt.Errorf("Tailscale is already connected. No login is required.")
 			}
 		}

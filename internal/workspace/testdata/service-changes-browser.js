@@ -9,12 +9,83 @@
  const idle = () => !document.querySelector('.settings-page-controls[aria-busy="true"]');
  const refresh = () => fixture.sectionListeners.forEach(listener => listener("Service"));
  const field = label => document.querySelector(`[aria-label="${label}"]`);
+ const tab = key => document.querySelector(`[data-service-tab="${key}"]`);
+ const panel = key => document.getElementById(tab(key).getAttribute('aria-controls'));
+ const assertTab = key => {
+  if (document.querySelectorAll('.settings-service-panel:not([hidden])').length !== 1 || panel(key).hidden || tab(key).getAttribute('aria-selected') !== 'true' || tab(key).tabIndex !== 0) throw new Error('Wrong active service tab: ' + key);
+  for (const item of ['web', 'relay', 'tsnet', 'desktop']) {
+   if (panel(item).getAttribute('aria-labelledby') !== tab(item).id || item !== key && (!panel(item).hidden || tab(item).tabIndex !== -1)) throw new Error('Service tab accessibility is out of sync');
+  }
+ };
+ const selectTab = async key => {
+  tab(key).focus();
+  tab(key).click();
+  await waitFor(() => !panel(key).hidden, key + ' tab');
+  assertTab(key);
+ };
  const set = (input, value) => {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
   input.dispatchEvent(new Event("input", {bubbles: true}));
  };
+ const pointerClick = async element => {
+  const bounds = element.getBoundingClientRect();
+  const params = {x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2, button: 'left', clickCount: 1};
+  const response = await fetch('/smoke/browser', {method: 'POST', body: JSON.stringify([
+   {method: 'Input.dispatchMouseEvent', params: {...params, type: 'mousePressed'}},
+   {method: 'Input.dispatchMouseEvent', params: {...params, type: 'mouseReleased'}},
+  ])});
+  if (!response.ok) throw new Error('Pointer click failed: ' + await response.text());
+ };
  await waitFor(() => document.querySelector('[aria-label="HTTP 端口"]'), "service settings");
  const original = structuredClone(fixture.snapshot.settings);
+ // Tabs keep all drafts mounted and support the standard keyboard controls.
+ assertTab('web');
+ if ([...document.querySelectorAll('[role="tab"]')].map(item => item.textContent).join('|') !== 'Web|中继|Tailscale|远程桌面') throw new Error('Unexpected service tabs');
+ const initialCommands = fixture.commands.length;
+ for (const [key, target] of [['End', 'desktop'], ['ArrowRight', 'web'], ['ArrowLeft', 'desktop'], ['Home', 'web'], ['ArrowRight', 'relay'], ['ArrowRight', 'tsnet']]) {
+  document.querySelector('[role="tab"][aria-selected="true"]').focus();
+  document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {key, bubbles: true}));
+  await waitFor(() => !panel(target).hidden, 'keyboard ' + key);
+  assertTab(target);
+  if (document.activeElement !== tab(target)) throw new Error('Keyboard navigation did not move focus');
+ }
+ const keyInput = document.querySelector('input[aria-label="Tailscale Auth Key（可选）"]');
+ set(keyInput, 'fixture-unsubmitted-key');
+ await pause(30);
+ await selectTab('desktop');
+ if (!panel('desktop').querySelector('[aria-label="启用远程桌面"]') || panel('desktop').textContent.includes('HTTP 端口')) throw new Error('Remote desktop settings are not isolated');
+ await selectTab('tsnet');
+ if (keyInput !== document.querySelector('input[aria-label="Tailscale Auth Key（可选）"]') || keyInput.value !== 'fixture-unsubmitted-key') throw new Error('Tab switch discarded the Auth Key draft');
+ set(keyInput, '');
+ await selectTab('web');
+ const portInput = field('HTTP 端口');
+ portInput.focus();
+ set(portInput, '');
+ await pause(30);
+ await selectTab('relay');
+ await selectTab('web');
+ if (portInput !== field('HTTP 端口') || portInput.value !== '' || fixture.commands.length !== initialCommands) throw new Error('Tab switch saved invalid data or discarded a draft');
+ set(portInput, String(original.port));
+ await pause(30);
+ // A real click blurs the input before activating the bottom button. The blur
+ // autosave must complete before Cancel/Apply without swallowing that click.
+ for (const action of ['cancel', 'apply']) {
+  portInput.focus(); set(portInput, '29875'); await pause(30); portInput.blur();
+  await waitFor(() => fixture.snapshot.settings.port === 29875 && document.querySelector('[data-service-change="web"]') && idle(), action + ' pointer baseline');
+  portInput.focus(); set(portInput, '29876'); await pause(30);
+  fixture.holdNextCommand = 'save-settings';
+  await pointerClick(document.querySelector(`[data-${action}-service-change="web"]`));
+  await waitFor(() => fixture.releaseCommand, action + ' blur autosave started');
+  fixture.releaseCommand(); fixture.releaseCommand = undefined;
+  await waitFor(() => !document.querySelector('[data-service-change="web"]') && idle(), action + ' survived blur autosave');
+  const expected = action === 'cancel' ? original.port : 29876;
+  if (fixture.snapshot.settings.port !== expected || portInput.value !== String(expected)) throw new Error(action + ' used stale settings after blur');
+ }
+ // Restore the active baseline for the independent-entry checks below.
+ portInput.focus(); set(portInput, String(original.port)); await pause(30); portInput.blur();
+ await waitFor(() => fixture.snapshot.settings.port === original.port && document.querySelector('[data-service-change="web"]') && idle(), 'restore pointer baseline');
+ document.querySelector('[data-apply-service-change="web"]').click();
+ await waitFor(() => !document.querySelector('[data-service-change="web"]') && idle(), 'restored pointer baseline');
  await mygo.call("DesktopSettings.Execute", { kind: "save-settings", settings: {
   ...original, port: 29876, tsnet_hostname: "pending-node", relay_enabled: true, relay_web_enabled: true, relay_url: "https://relay.example.test", relay_lan_port: 28082,
  }});
@@ -33,6 +104,7 @@
  if (!capture.ok) throw new Error("Capture failed");
  // Incomplete inputs never reach the backend, but Cancel must discard them.
  set(field("HTTP 端口"), "");
+ await selectTab('tsnet');
  set(field("Tailscale 节点名称"), "unfinished-node");
  set(field("代理 URL"), "http://unfinished-proxy");
  await pause(40);
@@ -52,6 +124,7 @@
  if (fixture.snapshot.settings.tsnet_hostname !== original.tsnet_hostname || fixture.commands.some(command => command.kind === "restart-service")) throw new Error("Apply restarted core or cancel failed");
  if (field("Tailscale 节点名称").value !== original.tsnet_hostname || field("代理 URL").value !== original.proxy_url) throw new Error("Tailscale cancel did not restore service and network drafts");
  // Web scope is a switch, and the Web listener can be disabled independently.
+ await selectTab('web');
  const web = () => field("启用 Web 入口");
  const lan = () => field("允许局域网访问");
  const webPending = () => document.querySelector('[data-service-change="web"]');
@@ -91,6 +164,8 @@
  if ([...document.querySelectorAll('[data-page="Service"] button')].some(button => ["打开聊天", "在浏览器中打开"].includes(button.textContent.trim()))) throw new Error("Old global browser/chat actions are still visible");
  if (qrButton(publicRow).nextElementSibling !== field("公网地址") || relayRow.querySelector('.settings-copy-address').nextElementSibling !== qrButton(relayRow) || qrButton(tailnetRow).nextElementSibling !== tailnetRow.querySelector('.settings-copy-address')) throw new Error("QR icons are in the wrong position");
  const showQR = async (row, address) => {
+  const owner = row.closest('[role="tabpanel"]');
+  await selectTab(document.getElementById(owner.getAttribute('aria-labelledby')).dataset.serviceTab);
   const count = fixture.commands.filter(command => command.kind === "address-qr").length;
   qrButton(row).click();
   await waitFor(() => document.querySelector('.settings-address-qr-dialog[open] img')?.naturalWidth > 0, "address QR image");
@@ -118,6 +193,7 @@
  dialog = await showQR(tailnetRow, fixture.snapshot.status.TSNet.URL);
  dialog.dispatchEvent(new Event('cancel', {cancelable: true}));
  await waitFor(() => !document.querySelector('.settings-address-qr-dialog'), "dismiss QR with Escape");
+ await selectTab('web');
  fixture.failNextQR = true;
  qrButton(publicRow).click();
  await waitFor(() => document.querySelector('.settings-address-qr-dialog [role="alert"]'), "QR failure feedback");
@@ -128,5 +204,60 @@
  if (!qrButton(publicRow).disabled) throw new Error("Invalid URL offered a QR code");
  set(field("公网地址"), original.public_url);
  await pause(30);
+ for (const key of ['web', 'relay', 'tsnet', 'desktop']) {
+  await selectTab(key);
+  document.querySelector('.settings-main').scrollTop = 0;
+  await pause(30);
+  if (document.scrollingElement.scrollWidth > innerWidth || panel(key).getBoundingClientRect().right > innerWidth) throw new Error('Service tabs overflow the viewport');
+  const capture = await fetch('/capture?variant=' + key, {method: 'POST'});
+  if (!capture.ok) throw new Error('Tab capture failed: ' + key);
+ }
+ await selectTab('tsnet');
+ const tsnet = document.querySelector('[role="switch"][aria-label="启用内嵌 Tailscale"]');
+ if (!tsnet.closest('.settings-row').textContent.includes('MagicDNS 和 HTTPS 证书')) throw new Error('Tailscale guide is not under the enable setting');
+ tsnet.click();
+ await waitFor(() => !fixture.snapshot.settings.tsnet_enabled && document.querySelector('[data-apply-service-change="tsnet"]') && idle(), 'disable Tailscale');
+ document.querySelector('[data-apply-service-change="tsnet"]').click();
+ await waitFor(() => fixture.snapshot.status.TSNet.State === 'Disabled' && idle(), 'apply Tailscale disable');
+ const signIn = () => [...panel('tsnet').querySelectorAll('button')].find(button => button.textContent.trim() === '登录 Tailscale');
+ await waitFor(() => signIn() && !signIn().disabled, 'login remains available while disabled');
+ fixture.holdNextLogin = true;
+ signIn().click();
+ await waitFor(() => fixture.releaseLogin, 'disabled login request');
+ await selectTab('web');
+ await selectTab('tsnet');
+ fixture.releaseLogin();
+ await waitFor(() => fixture.snapshot.status.TSNet.AuthURL && signIn() && !signIn().disabled, 'disabled login completed');
+ if (fixture.snapshot.settings.tsnet_enabled || fixture.snapshot.status.TSNet.URL || document.querySelector('[data-service-change="tsnet"]')) throw new Error('Login enabled Tailscale or lost the off state');
+ const service = document.querySelector('[data-page="Service"]');
+ const about = document.querySelector('[data-page="About"]');
+ const startup = field('应用启动时开启 Spool 服务');
+ if (startup.closest('.settings-group').querySelector('h2').textContent !== 'Spool 服务' || service.querySelector('[aria-label="任务完成后空闲释放时间（分钟）"]') || service.querySelector('[aria-label="历史缓存大小（MiB）"]')) throw new Error('Startup or runtime settings are on the wrong card');
+ startup.click();
+ await waitFor(() => fixture.snapshot.settings.auto_start === !original.auto_start && idle(), 'startup switch saved');
+ document.querySelector('[data-section="About"]').click();
+ await waitFor(() => !about.hidden && idle(), 'About runtime settings');
+ const idleInput = about.querySelector('[aria-label="任务完成后空闲释放时间（分钟）"]');
+ const historyInput = about.querySelector('[aria-label="历史缓存大小（MiB）"]');
+ if (!idleInput || !historyInput || idleInput.closest('.settings-group') !== historyInput.closest('.settings-group')) throw new Error('Runtime settings did not move together');
+ historyInput.focus(); set(historyInput, '128'); await pause(30); historyInput.blur();
+ await waitFor(() => fixture.snapshot.settings.history_cache_mib === 128 && idle(), 'About cache saved on blur');
+ idleInput.focus(); set(idleInput, ''); await pause(30);
+ document.querySelector('[data-section="Service"]').click();
+ await waitFor(() => !service.hidden, 'leave incomplete runtime draft');
+ document.querySelector('[data-section="About"]').click();
+ await waitFor(() => !about.hidden, 'return to incomplete runtime draft');
+ if (idleInput.value !== '' || fixture.snapshot.settings.idle_minutes !== original.idle_minutes) throw new Error('Runtime draft was discarded or saved before valid');
+ idleInput.focus(); set(idleInput, '30'); await pause(30); idleInput.blur();
+ await waitFor(() => fixture.snapshot.settings.idle_minutes === 30 && document.querySelector('[data-service-change="runtime"]') && idle(), 'About runtime pending apply');
+ document.querySelector('[data-section="Service"]').click();
+ await waitFor(() => !service.hidden, 'cancel runtime from another page');
+ document.querySelector('[data-cancel-service-change="runtime"]').click();
+ await waitFor(() => !document.querySelector('[data-service-change="runtime"]') && idle(), 'cancel About runtime');
+ if (idleInput.value !== String(original.idle_minutes) || fixture.snapshot.settings.history_cache_mib !== 128 || fixture.snapshot.settings.auto_start !== !original.auto_start) throw new Error('Runtime cancel lost its About draft or unrelated settings');
+ document.querySelector('[data-section="About"]').click();
+ await waitFor(() => !about.hidden, 'About after cancel');
+ idleInput.scrollIntoView({block: 'center', behavior: 'instant'});
+ await fetch('/capture?variant=about', {method: 'POST'});
  await fetch('/report', {method: 'POST', body: JSON.stringify({ok:true, width:innerWidth})});
 })().catch(async error => { await fetch('/report', {method:'POST', body:JSON.stringify({error:String(error)})}); });

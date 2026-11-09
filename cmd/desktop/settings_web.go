@@ -104,6 +104,7 @@ type settingsCommand struct {
 	Path              string                      `json:"path"`
 	Target            string                      `json:"target"`
 	AuthKey           string                      `json:"auth_key,omitempty"`
+	Text              string                      `json:"text,omitempty"`
 }
 
 func settingsDocumentAllowed(address string) bool {
@@ -350,7 +351,7 @@ func (s *desktopSettings) TSNetRegister(ctx context.Context, key string) (bool, 
 
 func settingsActionAllowed(kind string) bool {
 	switch kind {
-	case "navigate", "open-chat", "open-browser", "show-file", "copy-tsnet-url", "copy-relay-web-url":
+	case "navigate", "open-chat", "open-browser", "show-file", "copy-tsnet-url", "copy-relay-web-url", "copy-relay-pairing-code":
 		return true
 	}
 	return false
@@ -383,6 +384,11 @@ func (s *desktopSettings) Action(ctx context.Context, command settingsCommand) (
 				return false, errors.New("Public Web address is unavailable")
 			}
 			mygo.Clipboard.WriteText(address)
+		case "copy-relay-pairing-code":
+			if command.Text == "" {
+				return false, errors.New("Could not copy code")
+			}
+			mygo.Clipboard.WriteText(command.Text)
 		case "show-file":
 			path := ""
 			switch command.Target {

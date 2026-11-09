@@ -24,6 +24,11 @@ type tailnetConnection interface {
 
 type tailnetOpener func(context.Context, string, tailnet.Options, func(tailnet.Status)) (tailnetConnection, error)
 
+type tailnetLoginConnection interface {
+	ReauthenticateURL(context.Context) (string, error)
+	Close() error
+}
+
 type tailnetRuntime struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -32,6 +37,7 @@ type tailnetRuntime struct {
 	authRevision uint64
 	loginURL     func(context.Context) (string, error)
 	enrolling    bool
+	loginOnly    bool
 	settings     Settings
 	ingress      *httpIngress
 }
@@ -198,11 +204,69 @@ func (s *Service) RegisterTSNetAuthKey(ctx context.Context, key string) error {
 	return nil
 }
 
+// Keep the node alive for browser authorization while its HTTPS entry is off.
+// Activation still belongs to the normal explicit Apply action.
+func (s *Service) startTailnetLoginLocked(settings Settings) {
+	if s.tailnet != nil {
+		s.tailnet.cancel()
+		s.tailnet.ingress.close()
+	}
+	ctx, cancel := context.WithCancel(s.ctx)
+	runtime := &tailnetRuntime{ctx: ctx, cancel: cancel, loginOnly: true, settings: settings, authRevision: s.tailnetAuthRevision, status: tailnet.Status{State: "Starting"}}
+	s.tailnet = runtime
+	open := s.openTailnetLogin
+	if open == nil {
+		open = func(ctx context.Context, root string, options tailnet.Options, report func(tailnet.Status)) (tailnetLoginConnection, error) {
+			return tailnet.Start(ctx, root, options, report)
+		}
+	}
+	s.workers.Add(1)
+	go func() {
+		defer s.workers.Done()
+		s.tailnetMu.Lock()
+		defer s.tailnetMu.Unlock()
+		if ctx.Err() != nil {
+			return
+		}
+		node, err := open(ctx, s.Store.Root(), tailnet.Options{Hostname: settings.TSNetHostname, Port: settings.TSNetPort}, func(status tailnet.Status) {
+			if status.State == "Running" {
+				status.State = "Registered"
+			}
+			status.URL = ""
+			runtime.report(status)
+		})
+		if err != nil {
+			if ctx.Err() == nil {
+				runtime.report(tailnet.Status{State: "Error", Error: tailnet.RedactSecrets(err.Error(), "")})
+			}
+			return
+		}
+		defer node.Close()
+		runtime.setLogin(node.ReauthenticateURL)
+		<-ctx.Done()
+	}()
+}
+
 // TSNetLoginURL works while Up is still waiting for enrollment. The native
 // bridge calls it on a worker, never on the UI thread or under the service lock.
 func (s *Service) TSNetLoginURL(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	runtime, authKey := s.tailnet, s.tailnetAuthKey
+	if s.closed {
+		s.mu.Unlock()
+		return "", fmt.Errorf("service is closed")
+	}
+	if s.Store != nil {
+		settings, err := s.Store.Settings()
+		if err != nil {
+			s.mu.Unlock()
+			return "", err
+		}
+		if !settings.TSNetEnabled && (runtime == nil || !runtime.loginOnly || runtime.ctx.Err() != nil || runtime.snapshot().State == "Error") {
+			s.startTailnetLoginLocked(settings)
+			runtime = s.tailnet
+		}
+	}
 	s.mu.Unlock()
 	if runtime == nil {
 		return "", fmt.Errorf("Tailscale is not running. Start the service first.")

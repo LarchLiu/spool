@@ -77,7 +77,7 @@ func TestSettingsBridgeRejectsCallsWithoutDesktopPage(t *testing.T) {
 		if _, err := bridge.RegisterRelay(context.Background(), "https://relay.example.com", strings.Repeat("r", 32), "home"); err == nil {
 			t.Fatal("relay credential changed without private desktop page")
 		}
-		for _, kind := range []string{"copy-tsnet-url", "copy-relay-web-url"} {
+		for _, kind := range []string{"copy-tsnet-url", "copy-relay-web-url", "copy-relay-pairing-code"} {
 			if _, err := bridge.Action(context.Background(), settingsCommand{Kind: kind}); err == nil {
 				t.Fatal("clipboard action allowed without calling page", kind)
 			}
@@ -86,7 +86,7 @@ func TestSettingsBridgeRejectsCallsWithoutDesktopPage(t *testing.T) {
 }
 
 func TestSettingsActionIsSeparateFromMutationReloads(t *testing.T) {
-	for _, kind := range []string{"navigate", "open-chat", "open-browser", "show-file", "copy-tsnet-url", "copy-relay-web-url"} {
+	for _, kind := range []string{"navigate", "open-chat", "open-browser", "show-file", "copy-tsnet-url", "copy-relay-web-url", "copy-relay-pairing-code"} {
 		if !settingsActionAllowed(kind) {
 			t.Fatal("missing action", kind)
 		}

@@ -16,7 +16,7 @@ func (s *Service) pendingChangesLocked(next Settings) []string {
 	}
 	tsnetChanged := !sameTailnetSettings(active, next) || active.TSNetEnabled && active.proxyOptions() != next.proxyOptions()
 	if s.tailnet != nil {
-		tsnetChanged = tsnetChanged || s.tailnet.authRevision != s.tailnetAuthRevision || s.tailnet.snapshot().State == "Registered"
+		tsnetChanged = tsnetChanged || s.tailnet.authRevision != s.tailnetAuthRevision || s.tailnet.snapshot().State == "Registered" && (next.TSNetEnabled || !s.tailnet.loginOnly)
 	}
 	if tsnetChanged {
 		pending = append(pending, "tsnet")
