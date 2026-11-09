@@ -178,7 +178,6 @@ final class NativeText {
             case "Keep current mode": value = "保持当前模式"; break;
             case "Keep current model": value = "保持当前模型"; break;
             case "Keep current settings": value = "保持当前设置"; break;
-            case "LAN / Relay": value = "局域网 / 中继"; break;
             case "Language": value = "语言"; break;
             case "Language server recommendation": value = "语言服务器推荐"; break;
             case "Large directories show up to 2,000 entries.": value = "大型目录最多显示 2,000 项。"; break;
@@ -343,6 +342,7 @@ final class NativeText {
             case "Skip permission checks. Only use in trusted projects.": value = "不进行权限检查，仅用于可信项目。"; break;
             case "Some selected people went offline. Update your selection and try again.": value = "部分所选成员已离线，请调整选择后重试。"; break;
             case "Source": value = "源码"; break;
+            case "Spool Relay": value = "Spool 中继"; break;
             case "Start a fresh conversation": value = "新建会话继续"; break;
             case "Start planning": value = "开始规划"; break;
             case "Stay here": value = "留在当前会话"; break;
@@ -602,7 +602,6 @@ final class NativeText {
             case "Keep current mode": value = "現在のモードを維持"; break;
             case "Keep current model": value = "現在のモデルを維持"; break;
             case "Keep current settings": value = "現在の設定を維持"; break;
-            case "LAN / Relay": value = "LAN / Relay"; break;
             case "Language": value = "言語"; break;
             case "Language server recommendation": value = "言語サーバーの提案"; break;
             case "Large directories show up to 2,000 entries.": value = "大きなフォルダーは最大 2,000 件まで表示します。"; break;
@@ -767,6 +766,7 @@ final class NativeText {
             case "Skip permission checks. Only use in trusted projects.": value = "権限チェックを省略します。信頼できるプロジェクトでのみ使用してください。"; break;
             case "Some selected people went offline. Update your selection and try again.": value = "選択したメンバーの一部がオフラインになりました。選択し直してお試しください。"; break;
             case "Source": value = "ソース"; break;
+            case "Spool Relay": value = "Spool リレー"; break;
             case "Start a fresh conversation": value = "新しい会話を開始"; break;
             case "Start planning": value = "計画を開始"; break;
             case "Stay here": value = "ここに留まる"; break;

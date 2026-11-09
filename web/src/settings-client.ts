@@ -29,6 +29,7 @@ export type ServerSettings = {
   no_proxy: string;
   remote_desktop_enabled?: boolean;
   relay_enabled?: boolean;
+  relay_web_enabled?: boolean;
   relay_url?: string;
   relay_lan_port?: number;
 };
@@ -121,6 +122,7 @@ export type SettingsSnapshot = {
     Relay?: {
       State: string;
       ServerID: string;
+      WebURL?: string;
       LANAddress: string;
       DiscoveryError: string;
       RegistrationTokenSet: boolean;
@@ -190,6 +192,7 @@ export type SettingsCommand =
         | "open-browser"
         | "tsnet-login"
         | "copy-tsnet-url"
+        | "copy-relay-web-url"
         | "start-service"
         | "stop-service"
         | "restart-service"

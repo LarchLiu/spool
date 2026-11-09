@@ -436,6 +436,7 @@
   "Keep the database and its sidecar files intact. Check the error and logs before restoring a backup or changing the data directory.": "Keep the database and its sidecar files intact. Check the error and logs before restoring a backup or changing the data directory.",
   "Data directory": "Data directory",
   "Application log": "Application log",
+  "Update log": "Update log",
   "File logging is unavailable. Diagnostic output is sent to stderr.": "File logging is unavailable. Diagnostic output is sent to stderr.",
   "Retry startup": "Retry startup",
   "Show data directory": "Show data directory",
@@ -662,6 +663,7 @@
   "Could not show system notification": "Could not show system notification",
   "System notifications are working on this desktop.": "System notifications are working on this desktop.",
   "Connected to tailnet": "Connected to tailnet",
+  "Registered": "Registered",
   "Waiting for Tailscale login": "Waiting for Tailscale login",
   "Waiting for device approval": "Waiting for device approval",
   "Tailscale unavailable": "Tailscale unavailable",
@@ -918,7 +920,7 @@
   "Could not open the system installer.": "Could not open the system installer.",
   "Download v{version}": "Download v{version}",
   "Update v{version}": "Update v{version}",
-  "LAN / Relay": "LAN / Relay",
+  "Spool Relay": "Spool Relay",
   "Pair Android phone": "Pair Android phone",
   "Relay registration token": "Relay registration token",
   "Registration token saved locally.": "Registration token saved locally.",
@@ -935,7 +937,7 @@
   "Pairing code": "Pairing code",
   "Relay HTTPS address": "Relay HTTPS address",
   "Secure LAN port": "Secure LAN port",
-  "Enable LAN and relay connections": "Enable LAN and relay connections",
+  "Enable Spool Relay": "Enable Spool Relay",
   "Phones prefer a verified LAN connection and use the relay when away. Restart the service after changing these settings.": "Phones prefer a verified LAN connection and use the relay when away. Restart the service after changing these settings.",
   "Relay status": "Relay status",
   "Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity.": "Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity.",
@@ -964,5 +966,8 @@
   "Could not register with the relay. Check its address and network connection.": "Could not register with the relay. Check its address and network connection.",
   "Relay settings changed during registration. Try again.": "Relay settings changed during registration. Try again.",
   "Relay registration was not confirmed. Try again.": "Relay registration was not confirmed. Try again.",
-  "registration_required": "registration_required"
+  "registration_required": "registration_required",
+  "Public Web / PWA access": "Public Web / PWA access",
+  "Open this workspace at the relay HTTPS address without Tailscale. The relay can read Web traffic. Restart the service after changing this setting.": "Open this workspace at the relay HTTPS address without Tailscale. The relay can read Web traffic. Restart the service after changing this setting.",
+  "Public Web address": "Public Web address"
 }

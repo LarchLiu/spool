@@ -23,6 +23,9 @@ type Host struct {
 	Identity   *Identity
 	HTTPClient *http.Client
 	OnStatus   func(string)
+	// Set before Run. Opts into a public Web route for this host connection.
+	WebEnabled bool
+	OnWebURL   func(string)
 	// Set before Run. Automatically issued credentials must be saved before
 	// accepting traffic; returning an error causes enrollment to retry.
 	OnRegistrationToken func(string) error
@@ -34,6 +37,7 @@ type Host struct {
 	workers           sync.WaitGroup
 	mu                sync.Mutex
 	registrationToken string
+	webURL            string
 	connections       map[*ownedConn]struct{}
 }
 
@@ -123,8 +127,13 @@ func (h *Host) handshake(path string) (_ *websocket.Conn, credential string, res
 	if err != nil || m.Type != "challenge" || !validToken(m.Challenge) {
 		return nil, "", fmt.Errorf("relay challenge failed: %w", errors.Join(err, errors.New("invalid registration challenge")))
 	}
-	if err := writeControl(authCtx, c, controlMessage{Type: "register", PublicKey: h.Identity.PublicKey(), AccessToken: h.Identity.AccessToken,
-		Signature: ed25519.Sign(h.Identity.PrivateKey(), proof(m.Challenge, h.Identity.AccessToken))}); err != nil {
+	webOrigin := ""
+	if h.WebEnabled && path == "/v1/host" {
+		u, _ := ParseRelayURL(h.URL)
+		webOrigin = u.String()
+	}
+	if err := writeControl(authCtx, c, controlMessage{Type: "register", PublicKey: h.Identity.PublicKey(), AccessToken: h.Identity.AccessToken, WebOrigin: webOrigin,
+		Signature: ed25519.Sign(h.Identity.PrivateKey(), registrationProof(m.Challenge, h.Identity.AccessToken, webOrigin))}); err != nil {
 		return nil, "", err
 	}
 	m, err = readControl(authCtx, c)
@@ -143,6 +152,12 @@ func (h *Host) handshake(path string) (_ *websocket.Conn, credential string, res
 	if token == "" {
 		return nil, "", errors.New("relay did not issue a registration token")
 	}
+	if m.WebURL != "" && (webOrigin == "" || m.WebURL != webOrigin+WebPath(h.Identity.ID())) {
+		return nil, "", errors.New("invalid relay Web address")
+	}
+	h.mu.Lock()
+	h.webURL = m.WebURL
+	h.mu.Unlock()
 	return c, token, nil
 }
 
@@ -171,6 +186,12 @@ func (h *Host) session() error {
 	}
 	if h.OnStatus != nil {
 		h.OnStatus("connected")
+	}
+	if h.OnWebURL != nil {
+		h.mu.Lock()
+		webURL := h.webURL
+		h.mu.Unlock()
+		h.OnWebURL(webURL)
 	}
 	go keepAlive(ctx, c)
 	// The relay bounds outstanding requests. Also bound local dial/handshake

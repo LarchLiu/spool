@@ -20,6 +20,7 @@ type browserCommand struct {
 
 type browserDriver struct {
 	profile    string
+	targetID   string
 	mu         sync.Mutex
 	connection *websocket.Conn
 	nextID     int
@@ -33,7 +34,7 @@ func (driver *browserDriver) close() {
 	}
 }
 
-func browserPage(ctx context.Context, profile string) (string, error) {
+func browserPage(ctx context.Context, profile, targetID string) (string, error) {
 	port, err := os.ReadFile(filepath.Join(profile, "DevToolsActivePort"))
 	if err != nil {
 		return "", err
@@ -49,6 +50,7 @@ func browserPage(ctx context.Context, profile string) (string, error) {
 	}
 	defer response.Body.Close()
 	var targets []struct {
+		ID   string `json:"id"`
 		Type string `json:"type"`
 		URL  string `json:"webSocketDebuggerUrl"`
 	}
@@ -57,7 +59,7 @@ func browserPage(ctx context.Context, profile string) (string, error) {
 	}
 	var target string
 	for _, entry := range targets {
-		if entry.Type == "page" {
+		if entry.Type == "page" && (targetID == "" || entry.ID == targetID) {
 			target = entry.URL
 			break
 		}
@@ -74,7 +76,7 @@ func (driver *browserDriver) run(ctx context.Context, commands []browserCommand)
 	driver.mu.Lock()
 	defer driver.mu.Unlock()
 	if driver.connection == nil {
-		target, err := browserPage(ctx, driver.profile)
+		target, err := browserPage(ctx, driver.profile, driver.targetID)
 		if err != nil {
 			return nil, err
 		}

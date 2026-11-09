@@ -145,24 +145,6 @@ export function NetworkPage({ data, run, t }: PageProps) {
           )}
         </Hint>
       </Card>
-      {data.status.RestartRequired && (
-        <div className="settings-notice" role="status">
-          <RefreshCw size={18} />
-          <div>
-            <p>
-              {t(
-                "Restarting the service applies pending connection changes and interrupts active tasks.",
-              )}
-            </p>
-            <button
-              type="button"
-              onClick={() => void run({ kind: "restart-service" })}
-            >
-              {t("Restart service")}
-            </button>
-          </div>
-        </div>
-      )}
     </>
   );
 }
@@ -231,10 +213,10 @@ export function ServicePage({ data, run, t }: PageProps) {
   const tailnetState =
     tailnet?.State === "Running"
       ? t("Connected to tailnet")
-      : tailnet?.State === "Registered"
-        ? t("Registered. Restart the service to activate Tailscale HTTPS.")
-        : tailnet?.State === "Registering"
-          ? t("Registering with Auth Key...")
+      : authRegistered || tailnet?.State === "Registered"
+        ? t("Registered")
+        : registeringKey || tailnet?.State === "Registering"
+          ? t("Registering…")
           : tailnet?.State === "NeedsLogin"
             ? t("Waiting for Tailscale login")
             : tailnet?.State === "NeedsMachineAuth"
@@ -296,25 +278,6 @@ export function ServicePage({ data, run, t }: PageProps) {
           {knownMessage(data.status.Error, t)}
         </div>
       )}
-      {data.status.RestartRequired && (
-        <div className="settings-notice" role="status">
-          <RefreshCw size={18} />
-          <div>
-            <p>
-              {t(
-                "Settings saved. Restart the service to apply connection and idle changes. Restarting interrupts active tasks.",
-              )}
-            </p>
-            <button
-              type="button"
-              data-restart-service
-              onClick={() => void run({ kind: "restart-service" })}
-            >
-              {t("Restart service")}
-            </button>
-          </div>
-        </div>
-      )}
       <Card title={t("Connection")}>
         <TextField
           title={t("Listen IP (127.0.0.1 / 0.0.0.0)")}
@@ -343,9 +306,9 @@ export function ServicePage({ data, run, t }: PageProps) {
           onCommit={() => void autosave.commit("public_url")}
         />
       </Card>
-      <Card title={t("LAN / Relay")}>
+      <Card title={t("Spool Relay")}>
         <Row
-          title={t("Enable LAN and relay connections")}
+          title={t("Enable Spool Relay")}
           help={t(
             relayRegistered
               ? "Phones prefer a verified LAN connection and use the relay when away. Restart the service after changing these settings."
@@ -373,7 +336,7 @@ export function ServicePage({ data, run, t }: PageProps) {
             </span>
           )}
           <Toggle
-            label={t("Enable LAN and relay connections")}
+            label={t("Enable Spool Relay")}
             value={draft.relay_enabled}
             disabled={
               relayRegistering || (!draft.relay_enabled && !relayRegistered)
@@ -394,24 +357,81 @@ export function ServicePage({ data, run, t }: PageProps) {
           onChange={(v) => autosave.edit("relay_lan_port", v)}
           onCommit={() => void autosave.commit("relay_lan_port")}
         />
+        <div
+          className="settings-relay-section"
+          role="group"
+          aria-label={t("Public Web / PWA access")}
+        >
+          <Row
+            title={t("Public Web / PWA access")}
+            help={t(
+              "Open this workspace at the relay HTTPS address without Tailscale. The relay can read Web traffic. Restart the service after changing this setting.",
+            )}
+          >
+            <Toggle
+              label={t("Public Web / PWA access")}
+              value={draft.relay_web_enabled}
+              disabled={!draft.relay_enabled}
+              onChange={(value) => {
+                autosave.edit("relay_web_enabled", value);
+                void autosave.commit("relay_web_enabled");
+              }}
+            />
+          </Row>
+          {draft.relay_web_enabled && data.status.Relay?.WebURL && (
+            <Row
+              title={t("Public Web address")}
+              help={data.status.Relay.WebURL}
+            >
+              <CopyAddressButton
+                key={data.status.Relay.WebURL}
+                t={t}
+                kind="copy-relay-web-url"
+                iconOnly
+              />
+            </Row>
+          )}
+        </div>
         <RelayPairing data={data} t={t} />
       </Card>
       <Card title="Tailscale (tsnet)">
-        <Row
-          title={t("Enable embedded Tailscale")}
-          help={t(
-            "Connect this workspace to your tailnet without a system VPN or a separate Serve proxy.",
-          )}
+        <div
+          className="settings-relay-section"
+          role="group"
+          aria-label={t("Enable embedded Tailscale")}
         >
-          <Toggle
-            label={t("Enable embedded Tailscale")}
-            value={draft.tsnet_enabled}
-            onChange={(v) => {
-              autosave.edit("tsnet_enabled", v);
-              void autosave.commit("tsnet_enabled");
-            }}
-          />
-        </Row>
+          <Row
+            title={t("Enable embedded Tailscale")}
+            help={t(
+              "Connect this workspace to your tailnet without a system VPN or a separate Serve proxy.",
+            )}
+          >
+            <span
+              className={`settings-state${tailnet?.State === "Running" ? " online" : ""}`}
+              role="status"
+              aria-label={t("Tailnet status")}
+            >
+              <span className="settings-status-dot" />
+              {tailnetState}
+            </span>
+            <Toggle
+              label={t("Enable embedded Tailscale")}
+              value={draft.tsnet_enabled}
+              onChange={(v) => {
+                autosave.edit("tsnet_enabled", v);
+                void autosave.commit("tsnet_enabled");
+              }}
+            />
+          </Row>
+          {tailnet?.State === "Running" && tailnet.URL && (
+            <Row
+              title={t("Tailnet HTTPS address")}
+              help={<code>{tailnet.URL}</code>}
+            >
+              <CopyAddressButton key={tailnet.URL} t={t} iconOnly />
+            </Row>
+          )}
+        </div>
         <TextField
           title={t("Tailscale node name")}
           value={draft.tsnet_hostname}
@@ -432,50 +452,60 @@ export function ServicePage({ data, run, t }: PageProps) {
           )}
           required
         />
-        <TextField
-          title={t("Tailscale Auth Key (optional)")}
-          type="password"
-          value={authKey}
-          disabled={registeringKey}
-          onChange={setAuthKey}
-          help={t(
-            "Click Use Auth Key to register now without stopping the current service. After success, restart the service to activate the saved identity. The key is never saved in settings.",
-          )}
-        />
-        <div className="settings-card-actions">
-          <button
-            type="button"
-            disabled={registeringKey || !authKey.trim() || !draft.tsnet_enabled}
-            onClick={async () => {
-              loginAttempt.current++;
-              setRequestingLogin(false);
-              setLoginError("");
-              setRegistrationError("");
-              setAuthRegistered(false);
-              setRegisteringKey(true);
-              try {
-                await settingsCall<boolean>("TSNetRegister", authKey);
-                setAuthKey("");
-                setAuthRegistered(true);
-              } catch (error) {
-                setRegistrationError(
-                  error instanceof Error ? error.message : String(error),
-                );
-              } finally {
-                setRegisteringKey(false);
-              }
-            }}
-          >
-            {t(
-              registeringKey ? "Registering with Auth Key..." : "Use Auth Key",
+        <div
+          className="settings-relay-section"
+          role="group"
+          aria-label={t("Tailscale Auth Key (optional)")}
+        >
+          <TextField
+            title={t("Tailscale Auth Key (optional)")}
+            type="password"
+            value={authKey}
+            disabled={registeringKey}
+            onChange={setAuthKey}
+            help={t(
+              "Click Use Auth Key to register now without stopping the current service. After success, restart the service to activate the saved identity. The key is never saved in settings.",
             )}
-          </button>
-        </div>
-        {registrationError && (
-          <div className="settings-error" role="alert">
-            {knownMessage(registrationError, t)}
+          />
+          <div className="settings-card-actions">
+            <button
+              type="button"
+              disabled={
+                registeringKey || !authKey.trim() || !draft.tsnet_enabled
+              }
+              onClick={async () => {
+                loginAttempt.current++;
+                setRequestingLogin(false);
+                setLoginError("");
+                setRegistrationError("");
+                setAuthRegistered(false);
+                setRegisteringKey(true);
+                try {
+                  await settingsCall<boolean>("TSNetRegister", authKey);
+                  setAuthKey("");
+                  setAuthRegistered(true);
+                } catch (error) {
+                  setRegistrationError(
+                    error instanceof Error ? error.message : String(error),
+                  );
+                } finally {
+                  setRegisteringKey(false);
+                }
+              }}
+            >
+              {t(
+                registeringKey
+                  ? "Registering with Auth Key..."
+                  : "Use Auth Key",
+              )}
+            </button>
           </div>
-        )}
+          {registrationError && (
+            <div className="settings-error" role="alert">
+              {knownMessage(registrationError, t)}
+            </div>
+          )}
+        </div>
         {(authRegistered || tailnet?.State === "Registered") && (
           <div className="settings-notice" role="status">
             <div>
@@ -484,19 +514,11 @@ export function ServicePage({ data, run, t }: PageProps) {
                   "Registered. Restart the service to activate Tailscale HTTPS.",
                 )}
               </p>
-              {!data.status.RestartRequired && (
-                <button
-                  type="button"
-                  onClick={() => void run({ kind: "restart-service" })}
-                >
-                  {t("Restart service")}
-                </button>
-              )}
             </div>
           </div>
         )}
-        <Row title={t("Tailnet status")} help={tailnetState}>
-          {canLogin && (
+        {canLogin && (
+          <div className="settings-card-actions">
             <button
               type="button"
               disabled={requestingLogin}
@@ -524,8 +546,8 @@ export function ServicePage({ data, run, t }: PageProps) {
               )}
               <ArrowUpRight size={14} />
             </button>
-          )}
-        </Row>
+          </div>
+        )}
         {loginError && (
           <div className="settings-error" role="alert">
             {knownMessage(loginError, t)}
@@ -537,14 +559,6 @@ export function ServicePage({ data, run, t }: PageProps) {
               "This node is not signed in yet. Click Sign in to request its login link. If no link is available, check network access to Tailscale.",
             )}
           </Hint>
-        )}
-        {tailnet?.URL && (
-          <Row
-            title={t("Tailnet HTTPS address")}
-            help={<code>{tailnet.URL}</code>}
-          >
-            <CopyAddressButton t={t} />
-          </Row>
         )}
         {tailnet?.Error && (
           <div className="settings-error" role="alert">
@@ -602,40 +616,6 @@ export function ServicePage({ data, run, t }: PageProps) {
           "Changes are saved on blur or Enter; switches save immediately. The service never restarts automatically. Closing this window keeps it in the tray; Quit stops it.",
         )}
       </Hint>
-      <Card title={t("Data & diagnostics")}>
-        <Row title="SQLite" help={data.database}>
-          <button
-            type="button"
-            onClick={() => void run({ kind: "show-file", target: "database" })}
-          >
-            <FolderOpen size={15} />
-            {t("Show data directory")}
-          </button>
-        </Row>
-        {data.application_log && (
-          <Row title={t("Application log")} help={data.application_log}>
-            <button
-              type="button"
-              onClick={() =>
-                void run({ kind: "show-file", target: "application" })
-              }
-            >
-              {t("Show application log")}
-              <ArrowUpRight size={14} />
-            </button>
-          </Row>
-        )}
-        {data.crash_log && (
-          <Row title={t("A previous crash report is available.")}>
-            <button
-              type="button"
-              onClick={() => void run({ kind: "show-file", target: "crash" })}
-            >
-              {t("Show crash report")}
-            </button>
-          </Row>
-        )}
-      </Card>
       <VoxlSettings data={data} run={run} t={t} />
       <Hint>
         {t(
@@ -1196,9 +1176,41 @@ export function AboutPage({ data, run, t }: PageProps) {
           "Updates are signed and downloaded from GitHub Releases. Running chats always block installation and restart.",
         )}
       </Hint>
-      {data.update_log && (
-        <Card>
-          <Row title={t("Update log: {path}", { path: data.update_log })}>
+      <Card title={t("Data & diagnostics")}>
+        <Row title="SQLite" help={data.database}>
+          <button
+            type="button"
+            onClick={() => void run({ kind: "show-file", target: "database" })}
+          >
+            <FolderOpen size={15} />
+            {t("Show data directory")}
+          </button>
+        </Row>
+        {data.application_log && (
+          <Row title={t("Application log")} help={data.application_log}>
+            <button
+              type="button"
+              onClick={() =>
+                void run({ kind: "show-file", target: "application" })
+              }
+            >
+              {t("Show application log")}
+              <ArrowUpRight size={14} />
+            </button>
+          </Row>
+        )}
+        {data.crash_log && (
+          <Row title={t("A previous crash report is available.")}>
+            <button
+              type="button"
+              onClick={() => void run({ kind: "show-file", target: "crash" })}
+            >
+              {t("Show crash report")}
+            </button>
+          </Row>
+        )}
+        {data.update_log && (
+          <Row title={t("Update log")} help={data.update_log}>
             <button
               type="button"
               onClick={() => void run({ kind: "show-file", target: "update" })}
@@ -1207,8 +1219,8 @@ export function AboutPage({ data, run, t }: PageProps) {
               <ArrowUpRight size={14} />
             </button>
           </Row>
-        </Card>
-      )}
+        )}
+      </Card>
       <Card>
         <Row title={t("GitHub repository")} help="LarchLiu/spool">
           <a

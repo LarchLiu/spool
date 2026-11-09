@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -21,9 +22,11 @@ import (
 	"spool/internal/issues"
 	chatmodel "spool/internal/model"
 	"spool/internal/voxl"
+	"spool/relay"
 )
 
 type App struct {
+	relayWebPrefix  string
 	store           *Store
 	runner          agent.AgentRunner
 	settings        Settings
@@ -86,7 +89,13 @@ func sessionMetadata(chat chatmodel.Session) chatMetadata {
 func NewApp(store *Store, runner agent.AgentRunner, _, _ string) *App {
 	settings, _ := store.Settings()
 	assets, _ := fs.Sub(resources.Frontend(), "frontend")
-	return &App{store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, realtimePing: 15 * time.Second, realtimeTimeout: 45 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{changed: func() { store.changes.publish(changePresence) }}, assets: http.FileServer(http.FS(assets)), pushClient: newPushHTTPClient(), avatars: avatar.NewRenderer()}
+	prefix := ""
+	if settings.RelayEnabled && settings.RelayWebEnabled {
+		if id, err := relay.LoadIdentity(filepath.Join(store.Root(), "relay")); err == nil {
+			prefix = relay.WebPath(id.ID())
+		}
+	}
+	return &App{relayWebPrefix: prefix, store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, realtimePing: 15 * time.Second, realtimeTimeout: 45 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{changed: func() { store.changes.publish(changePresence) }}, assets: http.FileServer(http.FS(assets)), pushClient: newPushHTTPClient(), avatars: avatar.NewRenderer()}
 }
 
 func (a *App) publicURL() string { return a.settings.PublicURL }
@@ -102,6 +111,13 @@ func apiError(w http.ResponseWriter, status int, message string) {
 	apiJSON(w, status, map[string]string{"error": i18n.Translate(w.Header().Get("Content-Language"), message)})
 }
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/web/") {
+		var ok bool
+		r, ok = a.relayWebRequest(w, r)
+		if !ok {
+			return
+		}
+	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Frame-Options", "DENY")
@@ -132,7 +148,7 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/sw.js" {
-		w.Header().Set("Service-Worker-Allowed", "/")
+		w.Header().Set("Service-Worker-Allowed", requestWebPath(r))
 		w.Header().Set("Cache-Control", "no-cache")
 	} else if strings.HasPrefix(r.URL.Path, "/assets/") {
 		w.Header().Set("Cache-Control", "public,max-age=31536000,immutable")
@@ -172,7 +188,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 			apiError(w, 401, "用户名或密码不正确")
 			return
 		}
-		http.SetCookie(w, &http.Cookie{Name: authCookie, Value: token, Path: "/", HttpOnly: true, Secure: a.secureCookie(r), SameSite: http.SameSiteStrictMode, MaxAge: 7 * 24 * 3600})
+		http.SetCookie(w, &http.Cookie{Name: authCookie, Value: token, Path: requestWebPath(r), HttpOnly: true, Secure: a.secureCookie(r), SameSite: http.SameSiteStrictMode, MaxAge: 7 * 24 * 3600})
 		a.signedInResponse(w, id)
 		return
 	}
@@ -267,7 +283,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		}
 		a.presence.Remove(id.TokenHash)
 		a.store.changes.publish(changeAuth | changePresence)
-		http.SetCookie(w, &http.Cookie{Name: authCookie, Path: "/", MaxAge: -1, HttpOnly: true, Secure: a.secureCookie(r), SameSite: http.SameSiteStrictMode})
+		http.SetCookie(w, &http.Cookie{Name: authCookie, Path: requestWebPath(r), MaxAge: -1, HttpOnly: true, Secure: a.secureCookie(r), SameSite: http.SameSiteStrictMode})
 		apiJSON(w, 200, map[string]bool{"ok": true})
 	case path == "/api/projects" && r.Method == "GET":
 		projects, err := a.store.UserProjects(id.User.ID)

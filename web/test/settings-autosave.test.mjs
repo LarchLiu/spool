@@ -354,11 +354,6 @@ test("service UI commits on blur/Enter, removes save controls and restarts only 
     service,
     /autosave\.edit\("auto_start", v\);\s*void autosave\.commit\("auto_start"\)/,
   );
-  assert.match(service, /data\.status\.RestartRequired &&/);
-  assert.match(
-    service,
-    /onClick=\{\(\) => void run\(\{ kind: "restart-service" \}\)\}/,
-  );
   const fields = await readFile(
     new URL("../src/settings-ui.tsx", import.meta.url),
     "utf8",
@@ -371,6 +366,11 @@ test("service UI commits on blur/Enter, removes save controls and restarts only 
   );
   assert.match(app, /createSettingsCommandQueue/);
   assert.match(app, /setBusy\(command\.kind !== "save-settings"\)/);
+  assert.match(app, /data\?\.status\.RestartRequired &&/);
+  assert.match(
+    app,
+    /onClick=\{\(\) => void run\(\{ kind: "restart-service" \}\)\}/,
+  );
 });
 
 test("native smoke requires real page focus and blur before accepting autosave", async () => {

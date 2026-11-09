@@ -1,3 +1,4 @@
+import { appURL } from "./app-path";
 import type { Attachment } from "./types";
 
 export type DraftAttachment = Attachment & { file: File };
@@ -36,7 +37,7 @@ export function validateAttachments(files: { size: number }[]): string | null {
 }
 
 export function attachmentURL(chatID: string, file: Attachment): string {
-  return (
+  return appURL(
     file.preview_url ||
     `/api/chats/${encodeURIComponent(chatID)}/attachments?id=${encodeURIComponent(file.id)}`
   );

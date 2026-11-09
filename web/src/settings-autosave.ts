@@ -42,6 +42,7 @@ type ServiceDraft = {
   tsnet_hostname: string;
   tsnet_port: string;
   relay_enabled: boolean;
+  relay_web_enabled: boolean;
   relay_url: string;
   relay_lan_port: string;
 };
@@ -72,6 +73,7 @@ function toServiceDraft(settings: ServerSettings): ServiceDraft {
     tsnet_hostname: settings.tsnet_hostname ?? "spool-server",
     tsnet_port: String(settings.tsnet_port ?? 443),
     relay_enabled: settings.relay_enabled ?? false,
+    relay_web_enabled: settings.relay_web_enabled ?? false,
     relay_url: settings.relay_url ?? "",
     relay_lan_port: String(settings.relay_lan_port ?? 28082),
   };

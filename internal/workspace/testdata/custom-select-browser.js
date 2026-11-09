@@ -38,7 +38,8 @@ async function checkCustomSelects(report) {
   dialog.querySelector('.dialog-heading button').click();
 
   const frame = document.createElement("iframe");
-  frame.src = "/smoke/settings";
+  // Match the real desktop document's root directory for relative build assets.
+  frame.src = "/smoke-settings.html";
   frame.style.cssText = "position:fixed;inset:0;width:100%;height:100%;z-index:200;border:0";
   document.body.append(frame);
   try {
@@ -87,16 +88,33 @@ async function checkCustomSelects(report) {
     doc.querySelector('.settings-content').disabled = false;
 
     doc.querySelector('[data-section="Service"]').click();
-    await waitFor(() => doc.querySelector('[aria-label="Enable embedded Tailscale"]'), "tailnet service controls");
+    await waitFor(() => doc.querySelector('[role="switch"][aria-label="Enable embedded Tailscale"]'), "tailnet service controls");
     const fixture = frame.contentWindow.smokeSettings;
     const button = (label) => [...doc.querySelectorAll('button')].find((item) => item.textContent.trim() === label);
     const idle = () => !doc.querySelector('.settings-content').disabled && !doc.querySelector('[data-page="Service"] fieldset').disabled;
-    doc.querySelector('[aria-label="Enable embedded Tailscale"]').click();
+    doc.querySelector('[role="switch"][aria-label="Enable embedded Tailscale"]').click();
     await waitFor(() => fixture.snapshot.settings.tsnet_enabled && doc.querySelector('[data-restart-service]') && idle(), "tailnet enable saved");
     const publicOriginInput = doc.querySelector('[aria-label^="Public origin"]');
     report.tailnetExplicitRestart = !fixture.commands.some((command) => command.kind === "restart-service") && !publicOriginInput.disabled;
+    const restartBar = () => doc.querySelector('.settings-restart-bar');
+    const assertRestartBar = () => {
+      const bar = restartBar();
+      const bounds = bar?.getBoundingClientRect();
+      if (!bar?.contains(doc.querySelector('[data-restart-service]')) || bar.closest('.settings-main') || bounds.top < 0 || bounds.bottom > frame.contentWindow.innerHeight || frame.contentWindow.innerHeight - bounds.bottom > 24 || bounds.left < 0 || bounds.right > frame.contentWindow.innerWidth)
+        throw new Error("Restart action is not anchored inside the window bottom");
+    };
+    assertRestartBar();
+    const restartTop = restartBar().getBoundingClientRect().top;
+    doc.querySelector('.settings-main').scrollTop = 10000;
+    await pause(50);
+    if (restartBar().getBoundingClientRect().top !== restartTop) throw new Error("Restart action moved with page scrolling");
+    doc.querySelector('[data-section="Network"]').click();
+    await waitFor(() => !doc.querySelector('[data-page="Network"]').hidden, "restart action across pages");
+    assertRestartBar();
+    doc.querySelector('[data-section="Service"]').click();
+    await waitFor(() => !doc.querySelector('[data-page="Service"]').hidden, "return to service restart");
     doc.querySelector('[data-restart-service]').click();
-    await waitFor(() => button("Sign in to Tailscale") && idle(), "browser enrollment option");
+    await waitFor(() => button("Sign in to Tailscale") && !restartBar() && idle(), "browser enrollment option");
     report.tailnetMissingLoginLink = fixture.snapshot.status.TSNet.AuthURL === "" && !button("Sign in to Tailscale").disabled;
     fixture.failNextLogin = true;
     fixture.holdNextLogin = true;
@@ -139,7 +157,7 @@ async function checkCustomSelects(report) {
     await waitFor(() => fixture.snapshot.status.TSNet.AuthURL && idle(), "browser login command");
     report.tailnetBrowserLogin = fixture.snapshot.status.TSNet.State === "NeedsLogin" && fixture.commands.filter((command) => command.kind === "tsnet-login").length === 2;
 
-    const key = doc.querySelector('[aria-label="Tailscale Auth Key (optional)"]');
+    const key = doc.querySelector('input[aria-label="Tailscale Auth Key (optional)"]');
     const authKey = crypto.randomUUID();
     Object.getOwnPropertyDescriptor(frame.contentWindow.HTMLInputElement.prototype, "value").set.call(key, authKey);
     key.dispatchEvent(new frame.contentWindow.Event("input", { bubbles: true }));
@@ -167,6 +185,9 @@ async function checkCustomSelects(report) {
     publicOriginInput.focus();
     publicOriginInput.blur();
     await waitFor(() => fixture.snapshot.settings.public_url === nextPublicOrigin && doc.querySelector('[data-restart-service]') && fixture.snapshot.status.TSNet.URL === "https://spool.example.ts.net", "public origin saved independently");
+    assertRestartBar();
+    doc.querySelector('[role="switch"][aria-label="Enable embedded Tailscale"]').scrollIntoView({ block: "center", behavior: "instant" });
+    await browser([{ method: "Page.captureScreenshot", params: { format: "png" } }], "settings");
     doc.querySelector('[data-restart-service]').click();
     await waitFor(() => !doc.querySelector('[data-restart-service]') && fixture.snapshot.settings.public_url === nextPublicOrigin && fixture.snapshot.status.TSNet.URL === "https://spool.example.ts.net" && idle(), "restart retains both origins");
     report.tailnetPublicOriginIndependent = publicOriginInput.value === nextPublicOrigin && !publicOriginInput.disabled && fixture.snapshot.status.TSNet.URL === "https://spool.example.ts.net";
@@ -236,6 +257,10 @@ async function checkCustomSelects(report) {
     await waitFor(() => !doc.querySelector('[data-page="Projects"]').hidden, "project editor restored");
     report.settingsDraftRetained = projectInput === doc.querySelector('[data-page="Projects"] [aria-label="Project name"]') && projectInput.value === projectDraft;
     report.tailnetCopyURL = true;
+    doc.querySelector('[data-section="About"]').click();
+    await waitFor(() => !doc.querySelector('[data-page="About"]').hidden, "about page diagnostics");
+    button("Show data directory").scrollIntoView({ block: "center", behavior: "instant" });
+    await browser([{ method: "Page.captureScreenshot", params: { format: "png" } }], "settings-about");
   } finally {
     frame.remove();
   }

@@ -1,3 +1,4 @@
+import { appURL } from "./app-path";
 export type LocalFileTarget = { path: string; line?: number; column?: number };
 
 export function localFileTarget(
@@ -70,7 +71,7 @@ export function projectFileURL(
   const query = new URLSearchParams({ path });
   if (chatID && workspace) query.set("workspace", workspace);
   if (mode) query.set(mode, "1");
-  return `${fileAPIBase(project, chatID)}/file?${query}`;
+  return appURL(`${fileAPIBase(project, chatID)}/file?${query}`);
 }
 
 export function fileAPIBase(project: string, chatID?: string) {

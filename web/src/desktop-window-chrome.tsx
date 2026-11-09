@@ -1,3 +1,4 @@
+import { appURL } from "./app-path";
 import { isMacDesktop } from "./runtime.js";
 
 export function DesktopWindowChrome() {
@@ -6,7 +7,7 @@ export function DesktopWindowChrome() {
     <>
       <div className="desktop-window-drag-strip" aria-hidden="true" />
       <div className="desktop-window-brand" aria-hidden="true">
-        <img src="/logo.png" alt="" draggable={false} />
+        <img src={appURL("/logo.png")} alt="" draggable={false} />
       </div>
     </>
   );

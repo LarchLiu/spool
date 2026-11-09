@@ -84,6 +84,9 @@ test("page dependencies distinguish presence, membership, settings and appearanc
     ],
     [(next) => (next.preferences.theme = "dark"), ["Appearance"]],
     [(next) => (next.notifications_enabled = false), ["Appearance"]],
+    [(next) => (next.database = "/fixture/spool.db"), ["About"]],
+    [(next) => (next.application_log = "/fixture/application.log"), ["About"]],
+    [(next) => (next.crash_log = "/fixture/crash.log"), ["About"]],
     [(next) => (next.status.RestartRequired = true), ["Service", "Network"]],
     [
       (next) => next.agents[0].catalog.models.push({ model: "new" }),
@@ -125,6 +128,7 @@ test("clipboard, navigation and reveal actions bypass mutation scope while saves
   for (const kind of [
     "navigate",
     "copy-tsnet-url",
+    "copy-relay-web-url",
     "show-file",
     "open-browser",
     "open-chat",

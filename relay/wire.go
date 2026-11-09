@@ -28,6 +28,8 @@ type controlMessage struct {
 	ID                string `json:"id,omitempty"`
 	Secret            string `json:"secret,omitempty"`
 	RegistrationToken string `json:"registration_token,omitempty"`
+	WebOrigin         string `json:"web_origin,omitempty"`
+	WebURL            string `json:"web_url,omitempty"`
 }
 
 func randomID() string {
@@ -43,6 +45,13 @@ func validToken(value string) bool {
 }
 func proof(challenge, token string) []byte {
 	return []byte("spool-relay-v1\x00" + challenge + "\x00" + token)
+}
+
+func registrationProof(challenge, token, webOrigin string) []byte {
+	if webOrigin == "" {
+		return proof(challenge, token)
+	}
+	return []byte("spool-relay-web-v1\x00" + challenge + "\x00" + token + "\x00" + webOrigin)
 }
 func writeControl(ctx context.Context, c *websocket.Conn, m controlMessage) error {
 	ctx, cancel := context.WithTimeout(ctx, handshakeTimeout)

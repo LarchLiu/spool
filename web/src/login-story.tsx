@@ -1,10 +1,11 @@
+import { appURL } from "./app-path";
 import type { Translator } from "./i18n";
 
 export function LoginStory({ t }: { t: Translator }) {
   return (
     <section className="login-story">
       <div className="brand">
-        <img className="brand-mark" src="/logo.png" alt="" />
+        <img className="brand-mark" src={appURL("/logo.png")} alt="" />
         Spool
         <span className="tag">{t("Local agent workspace")}</span>
       </div>

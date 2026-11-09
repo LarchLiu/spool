@@ -42,6 +42,7 @@ func run() (runErr error) {
 	tailnetHostname := flag.String("tsnet-hostname", "spool-server", "embedded Tailscale node hostname (state persists in data-dir/tsnet)")
 	tailnetPort := flag.Int("tsnet-port", 443, "HTTPS port on the embedded Tailscale node (does not bind a host TCP port)")
 	relayEnabled := flag.Bool("relay", false, "persist outbound Spool relay and secure LAN listener enablement")
+	relayWeb := flag.Bool("relay-web", false, "persist public Web/PWA access through the registered relay")
 	relayURL := flag.String("relay-url", "", "public HTTPS origin of the independent Spool relay")
 	relayLANPort := flag.Int("relay-lan-port", 28082, "secure LAN listener and discovery port")
 	relayPair := flag.Bool("relay-pair", false, "print an Android pairing code locally and exit (service must be stopped)")
@@ -222,6 +223,8 @@ func run() (runErr error) {
 		switch f.Name {
 		case "relay":
 			settings.RelayEnabled = *relayEnabled
+		case "relay-web":
+			settings.RelayWebEnabled = *relayWeb
 		case "relay-url":
 			settings.RelayURL = *relayURL
 		case "relay-lan-port":

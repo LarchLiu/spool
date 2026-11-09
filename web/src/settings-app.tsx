@@ -267,75 +267,108 @@ export function SettingsApp() {
           </span>
         </div>
       </aside>
-      <main ref={content} className="settings-main" id="settings-content">
-        <div className="settings-page">
-          <header className="settings-page-header">
-            <h1>{t(section)}</h1>
-            <p>{t(descriptions[section])}</p>
-          </header>
-          {data?.message && (
-            <div role="alert" className="settings-error">
-              {knownMessage(data.message, t)}
-            </div>
-          )}
-          {!available ? (
-            <div className="settings-notice">
-              <ShieldCheck size={20} />
-              <p>
-                {t(
-                  "Desktop settings are only available in the Spool desktop app.",
-                )}
-              </p>
-            </div>
-          ) : (
-            <>
-              {(saveError || error) && (
-                <div role="alert" className="settings-error">
-                  {knownMessage(saveError || error, t)}
-                  {!data && (
-                    <button type="button" onClick={() => void refresh(true)}>
-                      {t("Retry")}
-                    </button>
+      <div className="settings-main-area">
+        <main ref={content} className="settings-main" id="settings-content">
+          <div className="settings-page">
+            <header className="settings-page-header">
+              <h1>{t(section)}</h1>
+              <p>{t(descriptions[section])}</p>
+            </header>
+            {data?.message && (
+              <div role="alert" className="settings-error">
+                {knownMessage(data.message, t)}
+              </div>
+            )}
+            {!available ? (
+              <div className="settings-notice">
+                <ShieldCheck size={20} />
+                <p>
+                  {t(
+                    "Desktop settings are only available in the Spool desktop app.",
                   )}
-                </div>
-              )}
-              {!props ? (
-                <Hint>{t("Working…")}</Hint>
-              ) : (
-                <fieldset className="settings-content">
-                  {settingsSections.map((key) => (
-                    <div key={key} data-page={key} hidden={section !== key}>
-                      <fieldset
-                        className="settings-page-controls"
-                        disabled={pendingScope === key}
-                        aria-busy={pendingScope === key}
-                      >
-                        <SettingsPageBody section={key} {...props} />
-                      </fieldset>
-                    </div>
-                  ))}
-                </fieldset>
-              )}
-            </>
-          )}
-          <div
-            role="status"
-            className={`settings-save-status${saved || busy || saving ? " visible" : ""}`}
-          >
-            {busy || saving ? (
-              <>
-                <RefreshCw size={14} className="settings-spinning" />
-                {t("Working…")}
-              </>
+                </p>
+              </div>
             ) : (
               <>
-                <Check size={14} />
-                {t("Saved")}
+                {(saveError || error) && (
+                  <div role="alert" className="settings-error">
+                    {knownMessage(saveError || error, t)}
+                    {!data && (
+                      <button type="button" onClick={() => void refresh(true)}>
+                        {t("Retry")}
+                      </button>
+                    )}
+                  </div>
+                )}
+                {!props ? (
+                  <Hint>{t("Working…")}</Hint>
+                ) : (
+                  <fieldset className="settings-content">
+                    {settingsSections.map((key) => (
+                      <div key={key} data-page={key} hidden={section !== key}>
+                        <fieldset
+                          className="settings-page-controls"
+                          disabled={pendingScope === key}
+                          aria-busy={pendingScope === key}
+                        >
+                          <SettingsPageBody section={key} {...props} />
+                        </fieldset>
+                      </div>
+                    ))}
+                  </fieldset>
+                )}
               </>
             )}
+            <div
+              role="status"
+              className={`settings-save-status${saved || busy || saving ? " visible" : ""}`}
+            >
+              {busy || saving ? (
+                <>
+                  <RefreshCw size={14} className="settings-spinning" />
+                  {t("Working…")}
+                </>
+              ) : (
+                <>
+                  <Check size={14} />
+                  {t("Saved")}
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+        {data?.status.RestartRequired && (
+          <div className="settings-restart-bar" role="status">
+            <p>
+              {t(
+                "Restarting the service applies pending connection changes and interrupts active tasks.",
+              )}
+            </p>
+            <button
+              type="button"
+              className="settings-primary"
+              data-restart-service
+              disabled={busy || saving}
+              onClick={() => void run({ kind: "restart-service" })}
+            >
+              <RefreshCw
+                size={15}
+                className={
+                  busy && pendingScope === "Service"
+                    ? "settings-spinning"
+                    : undefined
+                }
+                aria-hidden="true"
+              />
+              {t(
+                busy && pendingScope === "Service"
+                  ? "Working…"
+                  : "Restart service",
+              )}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

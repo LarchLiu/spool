@@ -1,3 +1,4 @@
+import { appURL } from "./app-path";
 import { Component, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDown,
@@ -409,7 +410,7 @@ function ViewedImage({ path = "", source, t }: { path?: string; source?: string;
   const { imageURL, previewImage, openFile } = useContext(LocalFileContext);
   const target = localFileTarget(path);
   const safeSource = source && (/^data:image\/(?:png|jpeg|gif|webp);base64,/.test(source) || /^\/api\/chats\/[^/?#]+\/tool-image\?ref=[a-zA-Z0-9_-]+&index=\d+$/.test(source)) ? source : undefined;
-  const url = safeSource || (target && imageURL?.(target)) || undefined;
+  const url = (safeSource && appURL(safeSource)) || (target && imageURL?.(target)) || undefined;
   const name = path.replaceAll("\\", "/").split("/").pop() || "image";
   const [failedURL, setFailedURL] = useState<string>();
   const available = url && failedURL !== url;

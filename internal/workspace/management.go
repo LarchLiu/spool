@@ -73,6 +73,7 @@ type Settings struct {
 	NoProxy              string `json:"no_proxy"`
 	RemoteDesktopEnabled bool   `json:"remote_desktop_enabled"`
 	RelayEnabled         bool   `json:"relay_enabled"`
+	RelayWebEnabled      bool   `json:"relay_web_enabled"`
 	RelayURL             string `json:"relay_url"`
 	RelayLANPort         int    `json:"relay_lan_port"`
 }

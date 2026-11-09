@@ -19,7 +19,7 @@ const pairing = {
   code,
   qr: "data:image/png;base64," + png.toString("base64"),
   relay_url: "https://relay.example.com",
-  server_id: "synthetic",
+  server_id: "a".repeat(52),
   fingerprint:
     "66687aad f862bd77 6c8fc18b 8e9f8e20 08971485 6ee233b3 902a591d 0d5f2925",
 };
@@ -33,16 +33,23 @@ import './src/style.css';
 import './src/settings.css';
 const pairing = ${JSON.stringify(pairing)};
 const calls = [];
+const copied = [];
+let rejectCopy = false;
 let completeRegistration, rejectRegistration;
 window.mygo = { on: () => () => {}, call: async (method, ...args) => {
   calls.push({ method, args });
   if (method === 'DesktopSettings.RegisterRelay') return new Promise((resolve, reject) => { completeRegistration = resolve; rejectRegistration = reject; });
   if (method === 'DesktopSettings.RelayPairing') return pairing;
+  if (method === 'DesktopSettings.Action' && ['copy-relay-web-url', 'copy-tsnet-url'].includes(args[0]?.kind)) {
+    if (rejectCopy) throw new Error('synthetic copy failure');
+    copied.push(args[0].kind === 'copy-tsnet-url' ? data.status.TSNet.URL : data.status.Relay.WebURL);
+    return true;
+  }
   throw new Error('unexpected bridge method: ' + method);
 } };
 let data = {
-  settings: { host: '127.0.0.1', port: 8787, public_url: '', idle_minutes: 15, history_cache_mib: 64, auto_start: false, relay_enabled: false, relay_url: pairing.relay_url, relay_lan_port: 28082 },
-  status: { Running: true, Relay: { State: 'disabled', RegistrationTokenSet: false, Registered: false, Registering: false } },
+  settings: { host: '127.0.0.1', port: 8787, public_url: '', idle_minutes: 15, history_cache_mib: 64, auto_start: false, relay_enabled: false, relay_web_enabled: false, relay_url: pairing.relay_url, relay_lan_port: 28082, tsnet_enabled: true, tsnet_hostname: 'spool-server', tsnet_port: 443 },
+  status: { Running: true, Relay: { State: 'disabled', RegistrationTokenSet: false, Registered: false, Registering: false }, TSNet: { State: 'Running', URL: 'https://spool.example.ts.net' } },
   database: 'fixture.sqlite',
 };
 const t = translator('zh-CN');
@@ -50,18 +57,19 @@ const root = createRoot(document.getElementById('root'));
 const run = async operation => {
   const command = typeof operation === 'function' ? operation(data) : operation;
   if (command.kind !== 'save-settings') throw new Error('unexpected command');
-  data = { ...data, settings: command.settings, status: { ...data.status, Relay: { ...data.status.Relay, State: command.settings.relay_enabled ? 'connected' : 'disabled' } } };
+  data = { ...data, settings: command.settings, status: { ...data.status, Relay: { ...data.status.Relay, State: command.settings.relay_enabled ? 'connected' : 'disabled', ServerID: pairing.server_id, WebURL: command.settings.relay_enabled && command.settings.relay_web_enabled ? pairing.relay_url + '/web/' + pairing.server_id + '/' : '' } } };
   render(); return data;
 };
 const render = () => root.render(<ServicePage data={data} run={run} t={t} />);
 render();
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const button = text => [...document.querySelectorAll('button')].find(b => b.textContent.includes(text));
-const check = (value, label) => { if (!value) throw new Error(label); };
+let checks = 0;
+const check = (value, label) => { if (!value) throw new Error(label); checks++; };
 (async () => {
   for (let i = 0; i < 100 && !button('显示配对二维码'); i++) await pause(50);
   check(calls.length === 0 && !document.querySelector('img'), 'QR stays private until requested');
-  const toggle = () => document.querySelector('[role="switch"][aria-label="启用局域网与中继连接"]');
+  const toggle = () => document.querySelector('[role="switch"][aria-label="启用 Spool 中继"]');
   const address = () => document.querySelector('input[aria-label="中继 HTTPS 地址"]');
   const registration = () => document.querySelector('input[aria-label="中继注册令牌"]');
   const card = address().closest('.settings-card');
@@ -91,6 +99,47 @@ const check = (value, label) => { if (!value) throw new Error(label); };
   check(status && status.textContent.includes('已连接') && status.closest('.settings-row') === toggle().closest('.settings-row'), 'enabled status belongs beside switch');
   check(status.getBoundingClientRect().right <= toggle().getBoundingClientRect().left, 'status is left of switch');
   check(card.firstElementChild.contains(toggle()) && address().closest('.settings-card') === card, 'registration success preserves top switch and address');
+  const webGroup = document.querySelector('[role="group"][aria-label="公网 Web / PWA 访问"]');
+  const webToggle = webGroup.querySelector('[role="switch"]');
+  check(!webGroup.querySelector('.settings-copy-address') && !webGroup.textContent.includes('公网 Web 地址'), 'disabled Web hides address and copy control');
+  webToggle.click(); await pause(100);
+  const publicURL = pairing.relay_url + '/web/' + pairing.server_id + '/';
+  const copy = webGroup.querySelector('.settings-copy-address');
+  check(webGroup.textContent.includes('公网 Web 地址') && webGroup.textContent.includes(publicURL), 'public address belongs to Web access group');
+  check(!card.textContent.includes('服务器 ID'), 'standalone server ID row is removed');
+  check(getComputedStyle(webToggle.closest('.settings-row')).borderBottomWidth === '0px', 'Web toggle and address share one box');
+  check(copy?.classList.contains('icon') && !!copy.querySelector('svg.lucide-copy') && copy.getAttribute('aria-label') === '复制地址', 'address has an accessible copy icon');
+  check(copy.getBoundingClientRect().left >= copy.closest('.settings-row').querySelector('.settings-row-heading').getBoundingClientRect().right, 'copy icon follows public address');
+  copy.click(); await pause(100);
+  check(copied.length === 1 && copied[0] === publicURL, 'copy action copies complete public URL');
+  check(!!copy.querySelector('svg.lucide-check') && copy.querySelector('[role="status"]').textContent === '已复制', 'successful copy shows check and live feedback');
+  rejectCopy = true; copy.click(); await pause(100);
+  check(!!copy.querySelector('svg.lucide-circle-alert') && copy.title.includes('复制地址失败'), 'copy failure has local feedback');
+  rejectCopy = false; copy.click(); await pause(100);
+  check(copied.length === 2 && !!copy.querySelector('svg.lucide-check'), 'copy can retry without saving settings');
+  webToggle.click(); await pause(100);
+  check(!webGroup.querySelector('.settings-copy-address') && !webGroup.textContent.includes(publicURL), 'disabling Web hides address');
+  webToggle.click(); await pause(100);
+  check(!!webGroup.querySelector('svg.lucide-copy'), 're-enabling shows an idle copy icon');
+  const tailnetToggle = document.querySelector('[role="switch"][aria-label="启用内嵌 Tailscale"]');
+  const tailnetCard = tailnetToggle.closest('.settings-card');
+  const tailnetStatus = tailnetCard.querySelector('[aria-label="Tailnet 状态"]');
+  check(tailnetStatus?.textContent.includes('已连接 Tailnet') && tailnetStatus.closest('.settings-row') === tailnetToggle.closest('.settings-row') && tailnetStatus.getBoundingClientRect().right <= tailnetToggle.getBoundingClientRect().left, 'Tailnet status is left of its toggle');
+  check(![...tailnetCard.querySelectorAll('.settings-row-label > span')].some(label => label.textContent === 'Tailnet 状态'), 'standalone Tailnet status row is removed');
+  const key = tailnetCard.querySelector('input[type="password"]');
+  const keyGroup = key.closest('[role="group"]');
+  check(keyGroup?.contains(button('使用 Auth Key')) && getComputedStyle(key.closest('.settings-row')).borderBottomWidth === '0px' && getComputedStyle(button('使用 Auth Key').parentElement).borderTopWidth === '0px', 'Auth Key field and action share one box');
+  const tailnetCopy = tailnetCard.querySelector('.settings-copy-address');
+  const tailnetGroup = tailnetToggle.closest('[role="group"]');
+  check(tailnetGroup.contains(tailnetCopy) && tailnetGroup.textContent.includes(data.status.TSNet.URL) && getComputedStyle(tailnetToggle.closest('.settings-row')).borderBottomWidth === '0px', 'connected Tailnet address belongs to its enable group');
+  check(tailnetCopy?.classList.contains('icon') && !!tailnetCopy.querySelector('svg.lucide-copy') && tailnetCopy.getAttribute('aria-label') === '复制地址', 'Tailnet address has an accessible copy icon');
+  check(tailnetCopy.getBoundingClientRect().left >= tailnetCopy.closest('.settings-row').querySelector('.settings-row-heading').getBoundingClientRect().right, 'Tailnet copy icon follows the address');
+  tailnetCopy.click(); await pause(100);
+  check(copied.at(-1) === data.status.TSNet.URL && !!tailnetCopy.querySelector('svg.lucide-check'), 'Tailnet copy uses its own address and shows success');
+  rejectCopy = true; tailnetCopy.click(); await pause(100);
+  check(!!tailnetCopy.querySelector('svg.lucide-circle-alert'), 'Tailnet copy failure has local feedback');
+  rejectCopy = false; tailnetCopy.click(); await pause(100);
+  check(copied.at(-1) === data.status.TSNet.URL && !!tailnetCopy.querySelector('svg.lucide-check'), 'Tailnet copy can retry');
   button('显示配对二维码').click(); await pause(250);
   const image = document.querySelector('img'); await image.decode();
   check(image.naturalWidth === 512 && image.naturalHeight === 512, 'actual Go QR image loaded');
@@ -101,8 +150,8 @@ const check = (value, label) => { if (!value) throw new Error(label); };
   button('隐藏配对码').click(); await pause(100);
   check(!document.querySelector('img') && !document.querySelector('textarea'), 'hide removes code and image');
   button('显示配对二维码').click(); await pause(250); await document.querySelector('img').decode();
-  check(calls.every(call => ['DesktopSettings.RelayPairing', 'DesktopSettings.RegisterRelay'].includes(call.method)), 'registration and pairing use only the private bridge');
-  await fetch('/report', { method: 'POST', body: JSON.stringify({ ok: true, checks: 23 }) });
+  check(calls.every(call => ['DesktopSettings.RelayPairing', 'DesktopSettings.RegisterRelay', 'DesktopSettings.Action'].includes(call.method)), 'registration, pairing and copying use only the private bridge');
+  await fetch('/report', { method: 'POST', body: JSON.stringify({ ok: true, checks }) });
 })().catch(async error => { await fetch('/report', { method: 'POST', body: JSON.stringify({ error: String(error) }) }); });
 `;
 const server = createServer(async (req, res) => {
@@ -125,7 +174,7 @@ const server = createServer(async (req, res) => {
   }
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.end(
-    `<!doctype html><html lang="zh-CN" data-theme="light"><head><meta charset="utf-8"><link rel="stylesheet" href="/app.css"><style>#root > :not(.settings-group:has(input[aria-label="中继 HTTPS 地址"])) { display: none; }</style></head><body><main class="desktop-settings-shell" style="display:block"><div id="root" class="settings-content" style="max-width:740px;margin:24px auto;padding:16px"></div></main><script src="/app.js"></script></body></html>`,
+    `<!doctype html><html lang="zh-CN" data-theme="light"><head><meta charset="utf-8"><link rel="stylesheet" href="/app.css"><style>#root > :not(.settings-group:has(input[aria-label="中继 HTTPS 地址"]),.settings-group:has([aria-label="启用内嵌 Tailscale"])) { display: none; }</style></head><body><main class="desktop-settings-shell" style="display:block;overflow:auto"><div id="root" class="settings-content" style="max-width:740px;margin:24px auto;padding:16px"></div></main><script src="/app.js"></script></body></html>`,
   );
 });
 try {
@@ -239,12 +288,22 @@ try {
     Buffer.from(screenshot.data, "base64"),
   );
   assert.equal(report?.ok, true, JSON.stringify(report) + diagnostic);
+  await send("Runtime.evaluate", {
+    expression: `document.querySelector('[aria-label="启用内嵌 Tailscale"]').closest('.settings-group').scrollIntoView({ block: 'start', behavior: 'instant' })`,
+  });
+  const tailnetScreenshot = await send("Page.captureScreenshot", {
+    format: "png",
+  });
+  await writeFile(
+    join(output, "desktop-tailnet.png"),
+    Buffer.from(tailnetScreenshot.data, "base64"),
+  );
   await writeFile(
     join(output, "desktop-pairing.json"),
     JSON.stringify(report, null, 2),
   );
   console.log(
-    "PASS: registration gating and errors, single action, address grouping, inline status, QR and hide controls",
+    "PASS: registration gating, grouped Web address and Auth Key, Web/Tailnet copy icon success/retry, inline status, QR and hide controls",
   );
 } finally {
   socket?.close();

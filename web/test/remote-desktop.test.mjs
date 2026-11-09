@@ -73,7 +73,7 @@ test("remote desktop opens its own dialog and creates a revocable view before em
   );
   assert.match(source, /\/desktop\/connect/);
   assert.match(source, /\/desktop\/disconnect\?token=/);
-  assert.match(source, /src=\{`\/api\/desktop\/view\/\?token=/);
+  assert.match(source, /src=\{appURL\(`\/api\/desktop\/view\/\?token=/);
   assert.match(source, /allow="fullscreen"/);
   assert.doesNotMatch(
     source,

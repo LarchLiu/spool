@@ -23,8 +23,8 @@ type ServerOptions struct {
 	MaxConnectionsPerHost  int
 }
 
-// Server is an opaque byte forwarder. It has no Spool database, user accounts,
-// HTTP routing, desktop helper or TLS identity belonging to a home server.
+// Server forwards opaque native streams and optional public Web requests.
+// It has no Spool database, user accounts or home-server private keys.
 type Server struct {
 	opts          ServerOptions
 	mu            sync.Mutex
@@ -38,6 +38,8 @@ type Server struct {
 }
 type registeredHost struct {
 	id, token      string
+	publicKey      ed25519.PublicKey
+	webOrigin      string // Signed host opt-in, valid only for this connection.
 	registrationID string
 	control        *websocket.Conn
 	ctx            context.Context
@@ -83,6 +85,10 @@ func authorized(r *http.Request, token string) bool {
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if strings.HasPrefix(r.URL.Path, "/web/") {
+		s.serveWeb(w, r)
+		return
+	}
 	if r.Method == http.MethodGet && r.URL.Path == "/healthz" {
 		w.Write([]byte("ok\n"))
 		return
@@ -153,10 +159,15 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 	m, err := readControl(authCtx, c)
 	authCancel()
 	if err != nil || m.Type != "register" || len(m.PublicKey) != ed25519.PublicKeySize || !validToken(m.AccessToken) ||
-		!ed25519.Verify(m.PublicKey, proof(challenge, m.AccessToken), m.Signature) {
+		!ed25519.Verify(m.PublicKey, registrationProof(challenge, m.AccessToken, m.WebOrigin), m.Signature) {
 		return
 	}
-	h := &registeredHost{id: ServerID(m.PublicKey), token: m.AccessToken, registrationID: registration.ID, control: c, ctx: ctx, cancel: cancel, open: make(chan controlMessage, 32), pairs: make(map[string]*relayPair)}
+	if m.WebOrigin != "" {
+		if u, e := ParseRelayURL(m.WebOrigin); e != nil || u.String() != m.WebOrigin {
+			return
+		}
+	}
+	h := &registeredHost{id: ServerID(m.PublicKey), token: m.AccessToken, publicKey: append(ed25519.PublicKey(nil), m.PublicKey...), webOrigin: m.WebOrigin, registrationID: registration.ID, control: c, ctx: ctx, cancel: cancel, open: make(chan controlMessage, 32), pairs: make(map[string]*relayPair)}
 	s.mu.Lock()
 	current, allowed := s.registrationForRequestLocked(r)
 	if !withoutToken && (!allowed || current.ID != registration.ID) {
@@ -202,7 +213,11 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 		}
 		s.mu.Unlock()
 	}()
-	if writeControl(ctx, c, controlMessage{Type: "ready", RegistrationToken: issuedToken}) != nil {
+	webURL := ""
+	if h.webOrigin != "" {
+		webURL = h.webOrigin + WebPath(h.id)
+	}
+	if writeControl(ctx, c, controlMessage{Type: "ready", RegistrationToken: issuedToken, WebURL: webURL}) != nil {
 		return
 	}
 	go keepAlive(ctx, c)

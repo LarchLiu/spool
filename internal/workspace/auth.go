@@ -134,6 +134,9 @@ func (a *App) sameOrigin(r *http.Request) bool {
 	if r.TLS != nil {
 		scheme = "https"
 	}
+	if web, ok := r.Context().Value(webRequestKey{}).(webRequest); ok {
+		return origin == web.origin
+	}
 	if origin == scheme+"://"+r.Host {
 		return true
 	}

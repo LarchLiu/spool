@@ -1,3 +1,4 @@
+import { appURL } from "./app-path";
 import { useMemo } from "react";
 import { avatarDataURI, type AvatarIdentity } from "./avatar.js";
 
@@ -9,7 +10,7 @@ export function UserAvatar({
   size?: number;
 }) {
   const src = useMemo(
-    () => (person.bot ? "/logo.png" : avatarDataURI(person)),
+    () => (person.bot ? appURL("/logo.png") : avatarDataURI(person)),
     [
       person.id,
       person.bot,

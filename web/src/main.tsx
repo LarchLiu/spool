@@ -1,3 +1,4 @@
+import { appURL, appBasePath } from "./app-path";
 import React, {
   useCallback,
   useEffect,
@@ -142,12 +143,12 @@ import type { MessageKey } from "./i18n";
 import "./style.css";
 function App() {
   const [preferences, setPreferences] = useState<UIPreferences>(() => {
-    try { return parsePreferences(localStorage.getItem(preferencesStorageKey)); }
+    try { return parsePreferences(localStorage.getItem((appBasePath() === "/" ? "" : appBasePath()) + preferencesStorageKey)); }
     catch { return parsePreferences(null); }
   });
   useEffect(() => {
     if (isDesktopChat()) return;
-    try { localStorage.setItem(preferencesStorageKey, JSON.stringify(preferences)); }
+    try { localStorage.setItem((appBasePath() === "/" ? "" : appBasePath()) + preferencesStorageKey, JSON.stringify(preferences)); }
     catch { /* Storage can be disabled. */ }
   }, [preferences]);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
@@ -276,7 +277,7 @@ function App() {
   }, [profiles, chats, chat, online]);
   const [panels, setPanels] = useState(() => {
     try {
-      return parsePanelLayout(localStorage.getItem(panelStorageKey));
+      return parsePanelLayout(localStorage.getItem((appBasePath() === "/" ? "" : appBasePath()) + panelStorageKey));
     } catch {
       return parsePanelLayout(null);
     }
@@ -313,7 +314,7 @@ function App() {
   );
   useEffect(() => {
     try {
-      localStorage.setItem(panelStorageKey, JSON.stringify(panels));
+      localStorage.setItem((appBasePath() === "/" ? "" : appBasePath()) + panelStorageKey, JSON.stringify(panels));
     } catch {
       /* Storage can be disabled. */
     }
@@ -591,7 +592,7 @@ function App() {
     window.addEventListener("beforeinstallprompt", handler);
     if ("serviceWorker" in navigator && window.isSecureContext) {
       navigator.serviceWorker
-        .register("/sw.js")
+        .register(appURL("/sw.js"), { scope: appURL("/") })
         .then((reg) => {
           serviceWorker.current = reg;
           if (reg.waiting) setUpdate(true);
@@ -759,7 +760,7 @@ function App() {
       },
       {
         open: () => {
-          const url = new URL("/api/events", window.location.href);
+          const url = new URL(appURL("/api/events"), window.location.href);
           url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
           return new WebSocket(url);
         },
@@ -902,7 +903,7 @@ function App() {
         error: fail,
       },
       {
-        open: (path) => new EventSource(path),
+        open: (path) => new EventSource(appURL(path)),
         snapshot: (signal) => api<Chat>("/chats/" + chatID, undefined, signal),
         checkAuth: (signal) => api("/me", undefined, signal),
       },
@@ -1492,7 +1493,7 @@ function App() {
   if (!ready)
     return (
       <main className="loading">
-        <img className="brand-mark" src="/logo.png" alt="Spool" />
+        <img className="brand-mark" src={appURL("/logo.png")} alt="Spool" />
         <p>{t("Connecting to your workspace…")}</p>
         <DesktopSettingsLink t={t} className="desktop-settings-corner" />
       </main>
@@ -1766,7 +1767,7 @@ function App() {
             )}
             {!chat?.turns.length ? (
               <section className="welcome">
-                <img className="welcome-mark" src="/logo.png" alt="Spool" />
+                <img className="welcome-mark" src={appURL("/logo.png")} alt="Spool" />
                 <span className="eyebrow">
                   {t("A little space for big ideas")}
                 </span>

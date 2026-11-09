@@ -40,9 +40,6 @@ export function settingsPageDataEqual(
     case "Service":
       return (
         a.settings === b.settings &&
-        a.database === b.database &&
-        a.application_log === b.application_log &&
-        a.crash_log === b.crash_log &&
         a.status.Running === b.status.Running &&
         a.status.RestartRequired === b.status.RestartRequired &&
         a.status.Address === b.status.Address &&
@@ -88,6 +85,9 @@ export function settingsPageDataEqual(
         a.updates === b.updates &&
         a.update_preferences === b.update_preferences &&
         a.version === b.version &&
+        a.database === b.database &&
+        a.application_log === b.application_log &&
+        a.crash_log === b.crash_log &&
         a.update_log === b.update_log
       );
   }
@@ -100,6 +100,7 @@ export function isSettingsAction(command: SettingsCommand): boolean {
     "open-browser",
     "show-file",
     "copy-tsnet-url",
+    "copy-relay-web-url",
   ].includes(command.kind);
 }
 

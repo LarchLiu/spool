@@ -74,7 +74,7 @@ final class NativeConnectionSettings extends LinearLayout {
     private boolean loginAllowed() { return login != null && login.isEnabled(); }
     private boolean scanAllowed() { return scan != null && scan.isEnabled(); }
     private static String title(ConnectionMode mode) {
-        return mode == ConnectionMode.DIRECT ? "Public HTTPS" : mode == ConnectionMode.TAILSCALE ? "Tailscale" : "LAN / Relay";
+        return mode == ConnectionMode.DIRECT ? "Public HTTPS" : mode == ConnectionMode.TAILSCALE ? "Tailscale" : "Spool Relay";
     }
 
     private void tabStatus(ConnectionMode mode, String state) {

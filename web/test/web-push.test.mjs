@@ -97,6 +97,7 @@ function device({
     module,
     exports: module.exports,
     require(name) {
+      if (name === "./app-path") return { appURL: (path) => path };
       assert.equal(name, "./api");
       return { api };
     },
@@ -279,7 +280,7 @@ test("people notification links require a valid peer and bind navigation to the 
   }
 });
 
-function serviceWorker(windows = []) {
+function serviceWorker(windows = [], base = "/", environment = {}) {
   const handlers = {};
   const shown = [],
     opened = [];
@@ -289,11 +290,13 @@ function serviceWorker(windows = []) {
       handlers[type] = handler;
     },
     registration: {
+      scope: "https://spool.test" + base,
       async showNotification(title, options) {
         shown.push({ title, options });
       },
     },
     clients: {
+      claim: async () => {},
       matchAll: async () => windows,
       openWindow: async (url) => opened.push(url),
     },
@@ -313,6 +316,7 @@ function serviceWorker(windows = []) {
       MessageChannel,
       setTimeout: (callback) => setTimeout(callback, 10),
       clearTimeout,
+      ...environment,
     },
   );
   async function dispatch(type, data) {
@@ -322,8 +326,11 @@ function serviceWorker(windows = []) {
       waitUntil(promise) {
         work = promise;
       },
+      respondWith(promise) {
+        work = promise;
+      },
     });
-    await work;
+    return await work;
   }
   return { dispatch, shown, opened };
 }
@@ -359,6 +366,56 @@ test("service worker renders push data, keeps navigation same-origin, and tolera
   });
   assert.equal(worker.shown[2].title, "Spool");
   assert.ok(worker.shown[2].options.body);
+});
+
+test("relay workers isolate cache lifecycle, offline responses and notification targets by server path", async () => {
+  const first = `/web/${"a".repeat(52)}/`;
+  const second = `/web/${"b".repeat(52)}/`;
+  const entries = new Map();
+  const fetched = [];
+  const offline = { offline: true };
+  const caches = {
+    async open(key) {
+      if (!entries.has(key)) entries.set(key, new Map());
+      const values = entries.get(key);
+      return {
+        async addAll(urls) { for (const url of urls) values.set(url, offline); },
+        async match(request) { return values.get(request.url ?? request); },
+        async put(request, response) { values.set(request.url ?? request, response); },
+      };
+    },
+    async keys() { return [...entries.keys()]; },
+    async delete(key) { return entries.delete(key); },
+  };
+  const environment = {
+    caches,
+    async fetch(request) { fetched.push(request.url); return { status: 503 }; },
+  };
+  const otherWindow = { url: "https://spool.test" + second, focus() { throw new Error("focused another server"); } };
+  const a = serviceWorker([otherWindow], first, environment);
+  const b = serviceWorker([], second, environment);
+  await a.dispatch("install");
+  await b.dispatch("install");
+  entries.set(`spool-chat-shell:${first}:v1`, new Map());
+  await a.dispatch("activate");
+  assert.deepEqual([...entries.keys()], [`spool-chat-shell:${first}:v3`, `spool-chat-shell:${second}:v3`]);
+  for (const [key, values] of entries) {
+    const base = key.includes(first) ? first : second;
+    assert.ok([...values.keys()].every((path) => path.startsWith(base)));
+  }
+  const request = (path, mode = "cors") => ({ url: "https://spool.test" + path, method: "GET", mode });
+  assert.equal(await a.dispatch("fetch", { request: request(first, "navigate") }), offline);
+  for (const path of [first + "api/me", first + "api/chats/chat/events", first + "sw.js", second + "assets/a.js"]) {
+    assert.equal(await a.dispatch("fetch", { request: request(path) }), undefined);
+  }
+  assert.equal(fetched.length, 1);
+  await a.dispatch("push", { data: { json: () => ({ url: "/?chat=12345678" }) } });
+  assert.equal(a.shown[0].options.data.url, "https://spool.test" + first + "?chat=12345678");
+  assert.equal(a.shown[0].options.icon, first + "icon-192.png");
+  await a.dispatch("notificationclick", { notification: { close() {}, data: a.shown[0].options.data } });
+  assert.deepEqual(a.opened, ["https://spool.test" + first + "?chat=12345678"]);
+  await a.dispatch("push", { data: { json: () => ({ url: second + "?chat=12345678" }) } });
+  assert.equal(a.shown[1].options.data.url, "https://spool.test" + first);
 });
 
 test("service worker displays session, sender and group details with a bounded fallback", async () => {
