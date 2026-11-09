@@ -2387,7 +2387,10 @@ Desktop's **Paired devices** when appropriate. Server revocation terminates this
 device's LAN and relay streams immediately. Public HTTPS, Tailscale, and the
 browser Web/PWA gateway retain their existing authentication policies.
 Version 1 relay codes must be replaced by pairing again with an updated Spool
-server; legacy clients have no device-authentication fallback. Disconnect closes
+server; legacy clients have no device-authentication fallback. An obsolete or
+invalid Relay code does not block Public HTTPS/Tailscale or their shared Spool
+login. Re-pairing replaces the active client so it immediately uses the newly
+approved device key. Disconnect closes
 the selected server's clients/nodes but does not sign out of Spool; use **Sign out** to revoke the
 session. Clearing Android app storage also forgets the node identity; remove the
 old node in the Tailscale console when appropriate. Server-side agent tasks keep

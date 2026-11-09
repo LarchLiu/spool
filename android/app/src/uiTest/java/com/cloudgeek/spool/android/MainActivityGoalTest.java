@@ -54,16 +54,20 @@ public class MainActivityGoalTest {
         static java.util.function.Supplier<spoolnet.EventStream> workspaceFactory = () -> null;
         String healthResponse = "{state:'Running',https:'Verified'}";
         long responseAge = -1;
-        String sessionDirectory, directOrigin, tailscaleOrigin;
+        String sessionDirectory, directOrigin, tailscaleOrigin, relayCode;
+        int closes;
         @Implementation protected static void __staticInitializer__() {}
         @Implementation protected void __constructor__(String data, String origin) {}
         @Implementation protected String request(String method, String path, String body, String auth, String locale) {
             List<String> call = java.util.Arrays.asList(method, path, body, auth, locale); calls.add(call);
             return responder == null ? response : responder.apply(call);
         }
-        @Implementation protected void close() {}
+        @Implementation protected void close() { closes++; }
         @Implementation protected void useServerSession(String directory, String direct, String tailscale) {
             sessionDirectory = directory; directOrigin = direct; tailscaleOrigin = tailscale;
+        }
+        @Implementation protected void usePairedServerSession(String directory, String direct, String tailscale, String code) {
+            useServerSession(directory, direct, tailscale); relayCode = code;
         }
         @Implementation protected String health() { return healthResponse; }
         @Implementation protected String status() { return "{state:'Running',authURL:''}"; }

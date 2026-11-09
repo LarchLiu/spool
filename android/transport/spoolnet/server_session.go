@@ -1,7 +1,9 @@
 package spoolnet
 
 import (
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -10,8 +12,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"spool/relay"
 )
 
 // Each profile has one session. A transport projects it only onto its own exact
@@ -36,6 +41,32 @@ type savedServerSession struct {
 func (c *Client) UseServerSession(directory, directURL, tailscaleURL string) error {
 	return c.useServerSession(directory, directURL, tailscaleURL)
 }
+
+// UsePairedServerSession includes the optional Relay identity in this profile's
+// shared login. Admission credentials are checked by NewRelayClient, never by
+// another transport's session binding. Older or invalid codes cannot disable
+// Public HTTPS/Tailscale, and a readable legacy identity preserves login handoff.
+func (c *Client) UsePairedServerSession(directory, directURL, tailscaleURL, code string) error {
+	return c.useServerSession(directory, directURL, tailscaleURL, relaySessionOrigin(code))
+}
+
+func relaySessionOrigin(code string) string {
+	code = strings.TrimSpace(code)
+	if len(code) > 8192 || !strings.HasPrefix(code, "spool-pair:") {
+		return ""
+	}
+	data, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(code, "spool-pair:"))
+	var identity struct {
+		Version   int    `json:"v"`
+		PublicKey []byte `json:"key"`
+	}
+	if err != nil || json.Unmarshal(data, &identity) != nil ||
+		(identity.Version != 1 && identity.Version != 2) || len(identity.PublicKey) != ed25519.PublicKeySize {
+		return ""
+	}
+	return relay.Origin(relay.ServerID(identity.PublicKey))
+}
+
 func (c *Client) useServerSession(directory, directURL, tailscaleURL string, extra ...string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -41,6 +41,7 @@ final class ConnectionRouter<T> {
     private final Consumer<Runnable> dispatch;
     private final Backend<T> backend;
     private Candidate<T> current;
+    private boolean invalidated;
     private volatile long generation;
 
     ConnectionRouter(Executor worker, Consumer<Runnable> dispatch, Backend<T> backend) {
@@ -80,11 +81,12 @@ final class ConnectionRouter<T> {
         Session session = null;
         boolean sessionChecked = false;
         try {
-            if (current != null && !current.endpoint.equals(endpoint)) {
+            if (current != null && (invalidated || !current.endpoint.equals(endpoint))) {
                 T previous = current.client;
                 publish(token, () -> listener.replacing(previous));
                 backend.close(previous); current = null;
             }
+            invalidated = false;
             if (generation != token) throw new java.io.IOException("Connection selection cancelled");
             client = current == null ? backend.open(endpoint) : current.client;
             current = new Candidate<>(endpoint, client, null, null);
@@ -110,6 +112,9 @@ final class ConnectionRouter<T> {
 
     private void publish(long token, Runnable task) { dispatch.accept(() -> { if (generation == token) task.run(); }); }
     void cancel() { ++generation; }
+    // A newly approved device key can retain exactly the same endpoint code.
+    // Retire the client through the normal handoff when selection resumes.
+    void invalidate() { cancel(); worker.execute(() -> invalidated = true); }
     void networkChanged() { worker.execute(() -> { if (current != null) backend.networkChanged(current.client); }); }
     void login(ConnectionPlan.Endpoint endpoint, Consumer<String> result, Consumer<Exception> failed) {
         long token = generation;

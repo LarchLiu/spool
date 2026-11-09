@@ -5,10 +5,12 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -118,6 +120,8 @@ func TestDevicePairingAdmissionRevocationAndWebIsolation(t *testing.T) {
 	if err := d.Decide(snap.Pending[0].RequestID, true); err != nil {
 		t.Fatal(err)
 	}
+	// The administrator can leave the pairing UI before the phone's next poll.
+	d.CancelInvitation(p.Invitation)
 	if state, err := PairDevice(t.Context(), bootstrap, p, "My phone"); err != nil || state != "approved" {
 		t.Fatal(state, err)
 	}
@@ -131,11 +135,17 @@ func TestDevicePairingAdmissionRevocationAndWebIsolation(t *testing.T) {
 	// A second phone gets independent authorization, not a shared secret.
 	otherPairing := p
 	otherPairing.Invitation, otherPairing.ExpiresAt = d.Invite()
+	if state, err := PairDevice(t.Context(), bootstrap, p, "My phone"); err != nil || state != "approved" {
+		t.Fatal("new invitation discarded a previous approval", state, err)
+	}
 	if state, err := PairDevice(t.Context(), second, otherPairing, "Second phone"); err != nil || state != "pending" {
 		t.Fatal(state, err)
 	}
 	if err := d.Decide(d.Snapshot().Pending[0].RequestID, true); err != nil {
 		t.Fatal(err)
+	}
+	if state, err := PairDevice(t.Context(), bootstrap, p, "My phone"); err != nil || state != "approved" {
+		t.Fatal("another device's approval discarded the first result", state, err)
 	}
 	otherClient := client(other.Seed(), false, base.Addr().String())
 	request(otherClient, "/healthz", 200)
@@ -183,10 +193,69 @@ func TestDevicePairingAdmissionRevocationAndWebIsolation(t *testing.T) {
 		t.Fatal("revoke did not close SSE")
 	}
 	request(unapproved, "/healthz", 0)
+	if _, err := PairDevice(t.Context(), bootstrap, p, "My phone"); err == nil {
+		t.Fatal("revoked device recovered an old approval")
+	}
 	request(otherClient, "/healthz", 200)
 	reopened, err = OpenDevices(directory)
 	if err != nil || len(reopened.Snapshot().Devices) != 1 || reopened.Snapshot().Devices[0].ID != DeviceFingerprint(other.Public().(ed25519.PublicKey)) {
 		t.Fatal("revocation did not persist", err)
+	}
+}
+
+func TestDeviceApprovalReceiptsExpireAndStopWithTheService(t *testing.T) {
+	for _, action := range []string{"expire", "restart"} {
+		t.Run(action, func(t *testing.T) {
+			d, err := OpenDevices(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, key, _ := ed25519.GenerateKey(rand.Reader)
+			id := DeviceFingerprint(key.Public().(ed25519.PublicKey))
+			host, _ := NewIdentity()
+			p := Pairing{Version: 2, PublicKey: host.PublicKey(), AccessToken: host.AccessToken, RelayURL: "https://relay.example.com"}
+			p.Invitation, p.ExpiresAt = d.Invite()
+			cfg, err := DeviceTLSConfig(p, key.Seed(), true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cert, err := x509.ParseCertificate(cfg.Certificates[0].Certificate[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			handler := d.Handler(http.NotFoundHandler(), p.ID(), func() bool { return false })
+			poll := func(wantStatus int, wantState string) {
+				t.Helper()
+				body, _ := json.Marshal(map[string]string{"invitation": p.Invitation, "name": "Phone"})
+				r := httptest.NewRequest(http.MethodPost, Origin(p.ID())+devicePairPath, strings.NewReader(string(body)))
+				r.TLS = &tls.ConnectionState{ServerName: cfg.ServerName, PeerCertificates: []*x509.Certificate{cert}}
+				w := httptest.NewRecorder()
+				handler.ServeHTTP(w, r)
+				var result map[string]string
+				_ = json.Unmarshal(w.Body.Bytes(), &result)
+				if w.Code != wantStatus || wantState != "" && result["state"] != wantState {
+					t.Fatalf("pairing response %d %s, want %d %s", w.Code, w.Body.String(), wantStatus, wantState)
+				}
+			}
+			poll(http.StatusOK, "pending")
+			if err := d.Decide(d.Snapshot().Pending[0].RequestID, true); err != nil {
+				t.Fatal(err)
+			}
+			d.CancelInvitation(p.Invitation)
+			poll(http.StatusOK, "approved")
+			switch action {
+			case "expire":
+				approval := d.approvals[id]
+				approval.expires = time.Now().Add(-time.Second)
+				d.approvals[id] = approval
+			case "restart":
+				d.CloseConnections()
+			}
+			poll(http.StatusForbidden, "")
+			if len(d.Snapshot().Devices) != 1 || len(d.Snapshot().Pending) != 0 {
+				t.Fatal("expired/stopped results must not revoke or re-enroll devices")
+			}
+		})
 	}
 }
 

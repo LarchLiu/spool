@@ -107,11 +107,3 @@ func (c *Client) SetLANAddresses(addresses string) error {
 	c.transport.CloseIdleConnections()
 	return nil
 }
-
-func (c *Client) UsePairedServerSession(directory, directURL, tailscaleURL, code string) error {
-	p, err := relay.ParsePairing(code)
-	if err != nil {
-		return err
-	}
-	return c.useServerSession(directory, directURL, tailscaleURL, relay.Origin(p.ID()))
-}

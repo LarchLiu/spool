@@ -66,6 +66,6 @@ final class ConnectionPlan {
     ConnectionPlan validated() {
         return new ConnectionPlan(direct.isEmpty() ? "" : new OriginPolicy(direct).origin,
                 tailscale.isEmpty() ? "" : new OriginPolicy(tailscale).origin,
-                relay.isEmpty() ? "" : new RelayPairing(relay).code, selected, autoSwitch);
+                relay.isEmpty() || selected != ConnectionMode.RELAY ? relay : new RelayPairing(relay).code, selected, autoSwitch);
     }
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"spool/relay"
 )
 
 func sessionOrigin(t *testing.T, address string) *url.URL {
@@ -121,6 +123,78 @@ func TestServerSessionDoesNotCrossProfilesOrEscapeTheCurrentExactHTTPSOrigin(t *
 	if _, err := newServerSessionJar(filepath.Join(t.TempDir(), "session"), sessionOrigin(t, "https://foreign.example.com"), direct, tail, true); err == nil {
 		t.Fatal("accepted a transport outside the configured server")
 	}
+}
+
+func TestServerSessionIsIndependentOfRelayAdmission(t *testing.T) {
+	id, err := relay.NewIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	encode := func(version int, token string) string {
+		data, err := json.Marshal(relay.Pairing{Version: version, PublicKey: id.PublicKey(), AccessToken: token, RelayURL: "https://relay.example.com"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return "spool-pair:" + base64.RawURLEncoding.EncodeToString(data)
+	}
+	for name, code := range map[string]string{
+		"legacy":            encode(1, id.AccessToken),
+		"invalid-admission": encode(2, "invalid-token"),
+		"malformed":         "spool-pair:broken",
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			direct, tail := "https://public.example.com", "https://private.example.ts.net"
+			savedLegacyLogin(t, root, "https", direct, "existing-login")
+			for _, address := range []string{direct, tail} {
+				// Session binding depends only on the client's selected HTTPS
+				// origin; no Tailscale node or live network is needed here.
+				client, err := NewDirectClient(filepath.Join(root, "transport"), address)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { client.direct = true; client.Close() })
+				client.direct = address == direct
+				if err := client.UsePairedServerSession(filepath.Join(root, "session"), direct, tail, code); err != nil {
+					t.Fatal("Relay metadata blocked an independent transport", err)
+				}
+				requireSession(t, client.http.Jar, client.origin, "existing-login")
+				requireSession(t, client.http.Jar, sessionOrigin(t, "https://foreign.example.com"), "")
+				client.direct = true // Close the synthetic client without a tsnet node.
+				client.Close()
+			}
+			if client, err := NewRelayClient(filepath.Join(root, "relay"), code); err == nil {
+				client.Close()
+				t.Fatal("shared session handling weakened Relay admission")
+			}
+		})
+	}
+}
+
+func TestLegacyRelayIdentityKeepsLoginWhenAddingAnotherNetwork(t *testing.T) {
+	id, err := relay.NewIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(relay.Pairing{Version: 1, PublicKey: id.PublicKey(), AccessToken: id.AccessToken, RelayURL: "https://relay.example.com"})
+	code := "spool-pair:" + base64.RawURLEncoding.EncodeToString(data)
+	root := t.TempDir()
+	origin := sessionOrigin(t, relay.Origin(id.ID()))
+	previous, err := newServerSessionJar(filepath.Join(root, "session"), origin, "", "", true, origin.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous.SetCookies(origin, []*http.Cookie{sessionCookie("relay-login")})
+	previous.close()
+	client, err := NewDirectClient(filepath.Join(root, "https"), "https://public.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if err := client.UsePairedServerSession(filepath.Join(root, "session"), client.origin.String(), "", code); err != nil {
+		t.Fatal(err)
+	}
+	requireSession(t, client.http.Jar, client.origin, "relay-login")
 }
 
 func TestServerSessionLogoutAndRetiredResponsesCannotReviveEitherLegacyLogin(t *testing.T) {

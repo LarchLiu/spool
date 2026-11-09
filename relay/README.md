@@ -385,11 +385,13 @@ the home server, `SPOOL_RELAY_REGISTRATION_TOKEN` still names its own issued tok
    the same approval flow.
 
 Each invitation expires after five minutes and is bound to the first requesting
-device key. Refreshing or collapsing the code invalidates it, as does leaving the
-pairing settings or stopping the service. Another phone needs a new invitation
-and separate approval. A device can retry an interrupted request using the same
-private key until the invitation expires. Copying a saved connection code alone
-cannot authorize a different phone.
+device key. Refreshing or collapsing the code, or leaving the pairing settings,
+cancels requests that have not been approved. An approved phone can still collect
+its result using the same private key until the original invitation expires,
+even after another invitation is generated. Stopping the service clears pending
+requests and uncollected results. Another phone needs a new invitation and
+separate approval. Copying a saved connection code alone cannot authorize a
+different phone.
 
 Expand **Paired devices** to see each authorized phone and its full fingerprint;
 the collapsed row shows the device count.

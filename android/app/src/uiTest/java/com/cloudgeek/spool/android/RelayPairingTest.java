@@ -74,4 +74,19 @@ public class RelayPairingTest {
         String invalid = "spool-pair:" + Base64.getUrlEncoder().withoutPadding().encodeToString(payload.toString().getBytes(StandardCharsets.UTF_8));
         try { new RelayPairing(invalid); fail("accepted invitation without expiry"); } catch (IllegalArgumentException expected) {}
     }
+
+    @Test public void otherNetworksCanBeSelectedWithAnObsoleteOrInvalidRelayCode() throws Exception {
+        JSONObject legacy = new JSONObject(new String(Base64.getUrlDecoder().decode(code("https://relay.example.com").substring(11)), StandardCharsets.UTF_8));
+        legacy.put("v", 1);
+        String legacyCode = "spool-pair:" + Base64.getUrlEncoder().withoutPadding().encodeToString(legacy.toString().getBytes(StandardCharsets.UTF_8));
+        for (String stored : new String[]{legacyCode, "spool-pair:broken"}) {
+            for (ConnectionMode mode : new ConnectionMode[]{ConnectionMode.DIRECT, ConnectionMode.TAILSCALE}) {
+                ConnectionPlan plan = new ConnectionPlan("https://public.example.com", "https://private.example.ts.net", stored, mode, true).validated();
+                assertEquals(stored, plan.relay);
+                assertEquals(mode, plan.candidates(mode).get(0).mode);
+                try { plan.select(ConnectionMode.RELAY).validated(); fail("invalid Relay connection accepted"); }
+                catch (IllegalArgumentException expected) {}
+            }
+        }
+    }
 }

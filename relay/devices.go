@@ -37,10 +37,13 @@ type DeviceSnapshot struct {
 	Pending []DeviceRequest `json:"pending"`
 }
 type deviceInvitation struct {
-	token    string
-	expires  time.Time
-	request  *DeviceRequest
-	approved bool
+	token   string
+	expires time.Time
+	request *DeviceRequest
+}
+type deviceApproval struct {
+	token   string
+	expires time.Time
 }
 
 // Devices belongs to the home server, never the VPS. Only approved public keys
@@ -50,6 +53,7 @@ type Devices struct {
 	path        string
 	keys        map[string]Device
 	invitation  *deviceInvitation
+	approvals   map[string]deviceApproval
 	connections map[*deviceConn]string
 }
 
@@ -57,7 +61,7 @@ func OpenDevices(directory string) (*Devices, error) {
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return nil, err
 	}
-	d := &Devices{path: filepath.Join(directory, "devices.json"), keys: map[string]Device{}, connections: map[*deviceConn]string{}}
+	d := &Devices{path: filepath.Join(directory, "devices.json"), keys: map[string]Device{}, approvals: map[string]deviceApproval{}, connections: map[*deviceConn]string{}}
 	b, err := os.ReadFile(d.path)
 	if os.IsNotExist(err) {
 		return d, nil
@@ -114,6 +118,11 @@ func (d *Devices) saveLocked() error {
 func (d *Devices) Invite() (string, int64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	for id, approval := range d.approvals {
+		if !time.Now().Before(approval.expires) {
+			delete(d.approvals, id)
+		}
+	}
 	d.invitation = &deviceInvitation{token: randomID(), expires: time.Now().Add(PairingLifetime)}
 	return d.invitation.token, d.invitation.expires.Unix()
 }
@@ -134,7 +143,7 @@ func (d *Devices) Snapshot() DeviceSnapshot {
 		s.Devices = append(s.Devices, device)
 	}
 	sort.Slice(s.Devices, func(i, j int) bool { return s.Devices[i].CreatedAt < s.Devices[j].CreatedAt })
-	if p := d.invitation; p != nil && time.Now().Before(p.expires) && p.request != nil && !p.approved {
+	if p := d.invitation; p != nil && time.Now().Before(p.expires) && p.request != nil {
 		s.Pending = append(s.Pending, *p.request)
 	}
 	return s
@@ -144,7 +153,7 @@ func (d *Devices) Decide(requestID string, approve bool) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	p := d.invitation
-	if p == nil || p.request == nil || p.request.RequestID != requestID || p.approved || !time.Now().Before(p.expires) {
+	if p == nil || p.request == nil || p.request.RequestID != requestID || !time.Now().Before(p.expires) {
 		return errors.New("Pairing request expired. Scan a new code.")
 	}
 	if !approve {
@@ -165,7 +174,10 @@ func (d *Devices) Decide(requestID string, approve bool) error {
 		}
 		return err
 	}
-	p.approved = true
+	// Keep the result bound to this key until the original expiry. Closing the
+	// pairing UI or inviting another phone must not discard an unread approval.
+	d.approvals[device.ID] = deviceApproval{token: p.token, expires: p.expires}
+	d.invitation = nil
 	return nil
 }
 
@@ -185,6 +197,7 @@ func (d *Devices) Revoke(id string) error {
 	if p := d.invitation; p != nil && p.request != nil && p.request.ID == id {
 		d.invitation = nil
 	}
+	delete(d.approvals, id)
 	var closeList []*deviceConn
 	for conn, key := range d.connections {
 		if key == id {
@@ -330,22 +343,30 @@ func (d *Devices) pair(w http.ResponseWriter, r *http.Request) {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	id := DeviceFingerprint(key)
+	if approval, ok := d.approvals[id]; ok {
+		if !time.Now().Before(approval.expires) {
+			delete(d.approvals, id)
+		} else if subtle.ConstantTimeCompare([]byte(input.Invitation), []byte(approval.token)) == 1 {
+			writePairingState(w, "approved", id)
+			return
+		}
+	}
 	p := d.invitation
 	if p == nil || !time.Now().Before(p.expires) || subtle.ConstantTimeCompare([]byte(input.Invitation), []byte(p.token)) != 1 {
 		http.Error(w, "Pairing invitation expired or canceled. Scan a new code.", 403)
 		return
 	}
-	id := DeviceFingerprint(key)
 	if p.request == nil {
 		p.request = &DeviceRequest{Device: Device{ID: id, Name: strings.TrimSpace(input.Name), PublicKey: append([]byte(nil), key...), CreatedAt: time.Now().Unix()}, RequestID: randomID(), ExpiresAt: p.expires.Unix()}
 	} else if p.request.ID != id {
 		http.Error(w, "Pairing invitation already used. Scan a new code.", 403)
 		return
 	}
-	state := "pending"
-	if p.approved {
-		state = "approved"
-	}
+	writePairingState(w, "pending", id)
+}
+
+func writePairingState(w http.ResponseWriter, state, id string) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"state": state, "device_id": id})
 }
@@ -357,6 +378,7 @@ func (d *Devices) CloseConnections() {
 		connections = append(connections, c)
 	}
 	d.invitation = nil
+	clear(d.approvals)
 	d.mu.Unlock()
 	for _, c := range connections {
 		c.Close()

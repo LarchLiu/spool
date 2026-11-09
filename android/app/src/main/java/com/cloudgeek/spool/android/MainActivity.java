@@ -988,7 +988,9 @@ public final class MainActivity extends Activity {
         if (serverProfiles.active() == null) return;
         ConnectionPlan validated;
         try {
+            ConnectionMode selected = preferred == null ? draft.selected : preferred;
             for (ConnectionMode mode : ConnectionMode.values()) if (!draft.origin(mode).isEmpty()) {
+                if (mode == ConnectionMode.RELAY && selected != ConnectionMode.RELAY) continue;
                 try { if (mode == ConnectionMode.RELAY) new RelayPairing(draft.origin(mode)); else new OriginPolicy(draft.origin(mode)); }
                 catch (Exception error) {
                     if (connectionSettings != null) connectionSettings.input(mode).setError(error.getMessage());
@@ -1019,14 +1021,20 @@ public final class MainActivity extends Activity {
         new NativePairingDialog(ui, pairing, () -> {
             if (destroyed || !owner.id.equals(serverProfiles.selected)) return;
             devicePairingDialog = new NativeDevicePairingDialog(ui, owner.directory(getNoBackupFilesDir(), ConnectionMode.RELAY), pairing, io, code -> {
-                if (destroyed || !owner.id.equals(serverProfiles.selected)) return;
-                ConnectionPlan approved = new ConnectionPlan(plan.direct, plan.tailscale, code, ConnectionMode.RELAY, plan.autoSwitch);
-                if (connectionSettings != null) connectionSettings.input(ConnectionMode.RELAY).setText(code);
-                applyConnectionPlan(approved, ConnectionMode.RELAY);
-                if (relayDiscovery != null) relayDiscovery.refresh();
+                applyApprovedRelayPairing(owner, plan, code);
             });
             devicePairingDialog.show();
         }).show();
+    }
+
+    private void applyApprovedRelayPairing(ServerProfiles.Server owner, ConnectionPlan plan, String code) {
+        if (destroyed || !owner.id.equals(serverProfiles.selected)) return;
+        ConnectionPlan approved = new ConnectionPlan(plan.direct, plan.tailscale, code, ConnectionMode.RELAY, plan.autoSwitch);
+        routes(owner).invalidate();
+        routeSelecting = false;
+        if (connectionSettings != null) connectionSettings.input(ConnectionMode.RELAY).setText(code);
+        applyConnectionPlan(approved, ConnectionMode.RELAY);
+        if (relayDiscovery != null) relayDiscovery.refresh();
     }
 
     private void selectConnections(ConnectionMode preferred, boolean manual) {

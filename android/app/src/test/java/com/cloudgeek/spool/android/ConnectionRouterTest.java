@@ -30,7 +30,7 @@ public class ConnectionRouterTest {
         public String login(String client) { calls.add("login " + client); return "https://login.tailscale.com/a/test"; }
         public void close(String client) { calls.add("close " + client); live.remove(client); }
     }
-    static final class Listener implements ConnectionRouter.Listener<String> {
+    static class Listener implements ConnectionRouter.Listener<String> {
         ConnectionRouter.Candidate<String> result;
         boolean unavailable;
         public void sampled(ConnectionPlan.Endpoint endpoint, ConnectionRecovery.Snapshot health, boolean signedIn) {}
@@ -105,6 +105,29 @@ public class ConnectionRouterTest {
         worker.drain(); router.stop(); ui.drain(); worker.drain();
         assertNull(stale.result); assertFalse(stale.unavailable);
         assertEquals(2, backend.calls.stream().filter(value -> value.startsWith("close ")).count());
+    }
+
+    @Test public void invalidationReopensTheSameEndpointAndDiscardsPendingSelections() {
+        backend.accounts.put(PUBLIC, "alice");
+        assertEquals(PUBLIC, select("alice", true).result.client);
+        Listener stale = new Listener();
+        router.select(plan.candidates(null), "alice", true, true, stale);
+        worker.drain();
+        router.invalidate();
+        backend.calls.clear();
+        List<String> replaced = new ArrayList<>();
+        Listener fresh = new Listener() {
+            @Override public void replacing(String client) { replaced.add(client); }
+        };
+        router.select(plan.candidates(null), "alice", true, true, fresh);
+        worker.drain(); ui.drain();
+        assertNull(stale.result);
+        assertEquals(List.of(PUBLIC), replaced);
+        assertEquals(List.of("close " + PUBLIC, "open DIRECT " + PUBLIC, "health " + PUBLIC, "session " + PUBLIC), backend.calls);
+        assertEquals(PUBLIC, fresh.result.client);
+        backend.calls.clear();
+        select("alice", true);
+        assertTrue(backend.calls.stream().noneMatch(call -> call.startsWith("open ") || call.startsWith("close ")));
     }
 
     @Test public void anotherServersRouterKeepsItsOwnClientsAndNeverReceivesFailover() {

@@ -46,6 +46,10 @@ public class MainActivityConnectionTest {
             if (failDirect) throw new java.io.IOException("Direct connection unavailable");
             return new Client("unused", address);
         }
+        @Implementation protected static Client newRelayClient(String data, String code) {
+            mode = "relay"; directory = data; origin = code;
+            return new Client("unused", "https://" + new RelayPairing(code).id + ".spool.invalid");
+        }
         @Implementation protected static Client newClientForDevice(String data, String address, String model) {
             mode = "tailscale"; directory = data; origin = address; deviceModel = model;
             Client client = new Client("unused", address);
@@ -90,6 +94,60 @@ public class MainActivityConnectionTest {
     private void directory(MainActivityGoalTest.Harness h, int revision, String name) throws Exception {
         ReflectionHelpers.callInstanceMethod(h.activity, "acceptProfiles", ReflectionHelpers.ClassParameter.from(JSONObject.class,
                 new JSONObject("{revision:" + revision + ",people:[{id:'alice',nickname:'" + name + "'}]}")));
+    }
+
+    @Test public void relayApprovalReplacesTheLiveClientEvenWhenItsCodeIsUnchanged() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(false)) {
+            MainActivityGoalTest.Queue connections = connectionQueue(h);
+            h.call("disconnect"); drain(connections);
+            try {
+                response(200, "{user:{id:'alice'},csrf:'paired-csrf'}");
+                String code = RelayPairingTest.code("https://relay.example.com");
+                NativeConnectionSettings settings = h.get("connectionSettings");
+                settings.input(ConnectionMode.RELAY).setText(code);
+                settings.rows.get(ConnectionMode.RELAY).use.performClick(); drain(connections);
+                Client previous = h.get("client");
+                assertNotNull(previous);
+                MainActivityGoalTest.ShadowClient old = org.robolectric.shadow.api.Shadow.extract(previous);
+                old.healthResponse = "{state:'Running',https:'Failed',problem:'network'}";
+                ServerProfiles.Server owner = h.<ServerProfiles>get("serverProfiles").active();
+                // Approval may race a recovery probe; it must cancel that probe
+                // and schedule a new client with the newly saved device key.
+                h.set("routeSelecting", true);
+                ReflectionHelpers.callInstanceMethod(h.activity, "applyApprovedRelayPairing",
+                        ReflectionHelpers.ClassParameter.from(ServerProfiles.Server.class, owner),
+                        ReflectionHelpers.ClassParameter.from(ConnectionPlan.class, owner.plan),
+                        ReflectionHelpers.ClassParameter.from(String.class, code));
+                drain(connections);
+                assertNotSame(previous, h.get("client"));
+                assertEquals(1, old.closes);
+                assertEquals(code, owner.plan.relay);
+                assertTrue(h.<Boolean>get("connected"));
+                assertFalse(h.<Boolean>get("routeSelecting"));
+                assertEquals("alice", h.<JSONObject>get("user").getString("id"));
+            } finally { h.activity.getPreferences(Activity.MODE_PRIVATE).edit().clear().commit(); }
+        }
+    }
+
+    @Test public void obsoleteRelayConfigurationDoesNotBlockChoosingOtherNetworks() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(false)) {
+            MainActivityGoalTest.Queue connections = connectionQueue(h);
+            h.call("disconnect"); drain(connections);
+            try {
+                response(200, "{user:{id:'alice'},csrf:'shared-csrf'}");
+                NativeConnectionSettings settings = h.get("connectionSettings");
+                settings.input(ConnectionMode.DIRECT).setText("https://public.example.com");
+                settings.input(ConnectionMode.TAILSCALE).setText("https://private.example.ts.net");
+                settings.input(ConnectionMode.RELAY).setText("spool-pair:obsolete");
+                for (ConnectionMode mode : new ConnectionMode[]{ConnectionMode.DIRECT, ConnectionMode.TAILSCALE}) {
+                    settings = h.get("connectionSettings");
+                    settings.rows.get(mode).use.performClick(); drain(connections);
+                    assertSame(mode, h.get("connectionMode"));
+                    assertTrue(h.<Boolean>get("connected"));
+                    assertEquals("spool-pair:obsolete", h.<ServerProfiles>get("serverProfiles").active().plan.relay);
+                }
+            } finally { h.activity.getPreferences(Activity.MODE_PRIVATE).edit().clear().commit(); }
+        }
     }
 
     @Test public void serverTabsRestoreTheirOwnWorkspaceBeforeAnyConnectionOrRefreshCompletes() throws Exception {

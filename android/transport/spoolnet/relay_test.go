@@ -166,6 +166,10 @@ func TestPairedAndroidSessionsStreamsDesktopAndLANFallback(t *testing.T) {
 	if err := devices.Decide(request.RequestID, true); err != nil {
 		t.Fatal(err)
 	}
+	// Closing Desktop's QR or starting another invitation before the next poll
+	// must still allow this phone to persist its approved private key.
+	devices.CancelInvitation(p.Invitation)
+	devices.Invite()
 	if state, err := pending.Poll(); err != nil || state != "approved" {
 		t.Fatal(state, err)
 	}
