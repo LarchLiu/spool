@@ -79,7 +79,7 @@ func (p *panel) probeRelaySettings(ctx context.Context, view *mygo.WebView, repo
 		if (!input.closest('[role="group"]').contains(registration)) throw new Error('registration must be inside relay address group');
 		const buttons = registration.closest('[role="group"]').querySelectorAll('button');
 		if (buttons.length !== 1 || buttons[0].textContent !== '注册') throw new Error('registration must have one action');
-		const pairingButton = [...document.querySelectorAll('button')].find(button => button.textContent.includes('显示配对二维码'));
+		const pairingButton = document.querySelector('button.settings-relay-disclosure[aria-label="配对 Android 手机"]');
 		if (pairingButton?.closest('.settings-group') !== group) throw new Error('phone pairing must belong to relay settings');
 	`); err != nil {
 		return err

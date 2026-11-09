@@ -300,7 +300,9 @@ func (p *panel) probeEmbeddedChat(ctx context.Context) error {
 		return ctx.Err()
 	}
 	page := view.Page()
-	if err := waitChatScript(ctx, page, `return window.spoolDesktop === true && window.isSecureContext && !!document.querySelector('input[name="password"]')`); err != nil {
+	// Settings change the service port. Wait for the new document so the old
+	// login page cannot accept the draft or settings click during navigation.
+	if err := waitChatScript(ctx, page, fmt.Sprintf(`return location.origin === new URL(%q).origin && window.spoolDesktop === true && window.isSecureContext && !!document.querySelector('input[name="password"]')`, address)); err != nil {
 		return err
 	}
 	if err := p.probeChatViewport(ctx, page); err != nil {
