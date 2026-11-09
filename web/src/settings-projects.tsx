@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   FolderCog,
   FolderOpen,
@@ -14,6 +14,7 @@ import {
   chooseAutomationModel,
 } from "./automation-model-selection";
 import { effortLabel } from "./i18n";
+import { usePendingSettingsSave } from "./settings-pending";
 import {
   newProject,
   projectDraft,
@@ -27,7 +28,6 @@ import {
   TextField,
   PathField,
   Hint,
-  Save,
   submit,
   knownMessage,
   type PageProps,
@@ -36,10 +36,31 @@ import {
 export function ProjectsPage({ data, run, t }: PageProps) {
   const [draft, setDraft] = useState<ManagedProject>(newProject);
   const [editing, setEditing] = useState(false);
+  const [original, setOriginal] = useState<ManagedProject>(newProject);
+  const form = useRef<HTMLFormElement>(null);
   const [label, setLabel] = useState("");
   const [repository, setRepository] = useState("");
   const [githubPath, setGitHubPath] = useState(data.github_path);
   const [githubPathOpen, setGitHubPathOpen] = useState(false);
+  const [savedGitHubPath, setSavedGitHubPath] = useState(data.github_path);
+  usePendingSettingsSave({
+    id: "github",
+    section: "Projects",
+    title: "GitHub CLI",
+    label: t("Save GitHub CLI path"),
+    dirty: githubPath !== savedGitHubPath,
+    save: async () => {
+      const next = await run({ kind: "save-github", path: githubPath });
+      if (next) {
+        setGitHubPath(next.github_path);
+        setSavedGitHubPath(next.github_path);
+      }
+    },
+    cancel: () => {
+      setGitHubPath(data.github_path);
+      setSavedGitHubPath(data.github_path);
+    },
+  });
   const people = data.users.filter((person) => !person.disabled);
   const issue = draft.issues;
   const automationAgent = data.agents.find(
@@ -52,7 +73,9 @@ export function ProjectsPage({ data, run, t }: PageProps) {
   const update = (value: Partial<typeof issue>) =>
     setDraft((old) => ({ ...old, issues: { ...old.issues, ...value } }));
   const select = (project: ManagedProject) => {
-    setDraft(projectDraft(project));
+    const value = projectDraft(project);
+    setDraft(value);
+    setOriginal(value);
     setLabel("");
     setRepository(project.issues.repository);
     setEditing(true);
@@ -71,8 +94,28 @@ export function ProjectsPage({ data, run, t }: PageProps) {
     const saved = next?.projects.find(
       (project) => project.id === next.saved_id,
     );
-    if (saved) setDraft(projectDraft(saved));
+    if (saved) select(saved);
   };
+  usePendingSettingsSave({
+    id: "project",
+    section: "Projects",
+    title: `${t("Projects")} · ${draft.name || t("New project")}`,
+    label: t("Save project"),
+    dirty:
+      editing &&
+      (!draft.id || JSON.stringify(draft) !== JSON.stringify(original)),
+    save: () => form.current?.requestSubmit(),
+    cancel: () => {
+      const project = data.projects.find((project) => project.id === draft.id);
+      if (project) select(project);
+      else {
+        setDraft(newProject());
+        setLabel("");
+        setRepository("");
+        setEditing(false);
+      }
+    },
+  });
   const live = data.projects.find((project) => project.id === draft.id);
   if (!editing)
     return (
@@ -134,17 +177,6 @@ export function ProjectsPage({ data, run, t }: PageProps) {
                 onChange={setGitHubPath}
                 t={t}
               />
-              <div className="settings-card-actions">
-                <button
-                  type="button"
-                  className="settings-primary"
-                  onClick={() =>
-                    void run({ kind: "save-github", path: githubPath })
-                  }
-                >
-                  {t("Save GitHub CLI path")}
-                </button>
-              </div>
             </div>
           </Card>
           {githubPathOpen && (
@@ -163,7 +195,7 @@ export function ProjectsPage({ data, run, t }: PageProps) {
         label={t("Back to list")}
         onClick={() => setEditing(false)}
       />
-      <form onSubmit={(e) => submit(e, () => void save())}>
+      <form ref={form} onSubmit={(e) => submit(e, () => void save())}>
         <Card title={t("Project")}>
           <TextField
             title={t("Project name")}
@@ -317,7 +349,9 @@ export function ProjectsPage({ data, run, t }: PageProps) {
         <Card>
           <Row
             title={t("Allow viewing external files referenced in sessions")}
-            help={t("Members can preview and download external files referenced by the agent in chats they can access. External directories are not browsable. Agent permissions are unchanged.")}
+            help={t(
+              "Members can preview and download external files referenced by the agent in chats they can access. External directories are not browsable. Agent permissions are unchanged.",
+            )}
           >
             <Toggle
               label={t("Allow viewing external files referenced in sessions")}
@@ -649,7 +683,7 @@ export function ProjectsPage({ data, run, t }: PageProps) {
             "Members share the actual directory and its filesystem permissions. A project's directory cannot change after chats exist.",
           )}
         </Hint>
-        <Save title={t("Save project")} />
+        <button type="submit" hidden />
       </form>
     </>
   );

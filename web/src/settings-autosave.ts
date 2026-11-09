@@ -1,5 +1,6 @@
 import type {
   ServerSettings,
+  ServiceChangeTarget,
   SettingsCommand,
   SettingsSnapshot,
 } from "./settings-client";
@@ -53,6 +54,23 @@ type NetworkDraft = {
   no_proxy: string;
 };
 type SettingsDraft = ServiceDraft & NetworkDraft;
+const serviceChangeFields: Record<
+  ServiceChangeTarget,
+  (keyof SettingsDraft)[]
+> = {
+  web: ["host", "port", "public_url"],
+  relay: ["relay_enabled", "relay_url", "relay_lan_port", "relay_web_enabled"],
+  tsnet: [
+    "tsnet_enabled",
+    "tsnet_hostname",
+    "tsnet_port",
+    "proxy_enabled",
+    "use_system_proxy",
+    "proxy_url",
+    "no_proxy",
+  ],
+  runtime: ["idle_minutes"],
+};
 type AutosaveArgs = [
   settings: ServerSettings,
   save: (
@@ -132,6 +150,32 @@ class SettingsAutosave<K extends keyof SettingsDraft> {
       this.draft = draft;
       this.changed();
     }
+  }
+
+  prepareCancel(target: ServiceChangeTarget) {
+    const edits = (Object.keys(this.draft) as K[])
+      .filter((key) => serviceChangeFields[target].includes(key))
+      .map((key) => [key, this.edits[key] ?? 0] as const);
+    return (settings: ServerSettings) => {
+      this.sync(settings);
+      const next = this.toDraft(settings);
+      const draft = { ...this.draft };
+      for (const [key, edit] of edits) {
+        // Discard this entry's incomplete/failed drafts after a successful
+        // cancellation, but keep edits made while the request was in flight.
+        if ((this.edits[key] ?? 0) !== edit) continue;
+        draft[key] = next[key];
+        this.edits[key] = edit + 1;
+      }
+      if (
+        (Object.keys(draft) as K[]).some(
+          (key) => draft[key] !== this.draft[key],
+        )
+      ) {
+        this.draft = draft;
+        this.changed();
+      }
+    };
   }
 
   async commit(key: K) {

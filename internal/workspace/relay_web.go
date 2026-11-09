@@ -22,15 +22,18 @@ func requestWebPath(r *http.Request) string {
 // Only a locally enabled, identity-matching route can mount the application
 // below a relay path. Forwarded headers cannot enable this route.
 func (a *App) relayWebRequest(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
+	a.configMu.RLock()
+	prefix, relayURL := a.relayWebPrefix, a.settings.RelayURL
+	a.configMu.RUnlock()
 	id, path, ok := relay.ParseWebPath(r.URL)
-	origin, err := url.Parse(relayOrigin(a.settings.RelayURL))
-	if !ok || path == "" || a.relayWebPrefix == "" || relay.WebPath(id) != a.relayWebPrefix ||
+	origin, err := url.Parse(relayOrigin(relayURL))
+	if !ok || path == "" || prefix == "" || relay.WebPath(id) != prefix ||
 		err != nil || origin.Host == "" || !strings.EqualFold(r.Host, origin.Host) {
 		http.NotFound(w, r)
 		return r, false
 	}
-	r = r.Clone(context.WithValue(r.Context(), webRequestKey{}, webRequest{a.relayWebPrefix, origin.String()}))
-	raw := strings.TrimPrefix(r.URL.EscapedPath(), strings.TrimSuffix(a.relayWebPrefix, "/"))
+	r = r.Clone(context.WithValue(r.Context(), webRequestKey{}, webRequest{prefix, origin.String()}))
+	raw := strings.TrimPrefix(r.URL.EscapedPath(), strings.TrimSuffix(prefix, "/"))
 	r.URL.Path = path
 	r.URL.RawPath = raw
 	return r, true

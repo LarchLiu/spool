@@ -24,6 +24,7 @@ import {
   type UpdatePreferences,
 } from "./settings-client";
 import { SettingsBack, SettingsList } from "./settings-list";
+import { usePendingSettings, usePendingSettingsSave } from "./settings-pending";
 import { ThemePicker } from "./theme-picker";
 import { VoxlSettings } from "./voxl-settings";
 import { RelayPairing, RelayRegistration } from "./relay-settings";
@@ -42,7 +43,6 @@ import {
   TextField,
   PathField,
   Hint,
-  Save,
   submit,
   knownMessage,
   type PageProps,
@@ -56,6 +56,7 @@ function useSettingsAutosave<
     ...args: ConstructorParameters<typeof ServiceSettingsAutosave>
   ) => T,
 ) {
+  const { registerServiceDraft } = usePendingSettings();
   const runRef = useRef(run);
   runRef.current = run;
   const [, redraw] = useState(0);
@@ -74,6 +75,10 @@ function useSettingsAutosave<
       ),
   );
   useEffect(() => autosave.sync(data.settings), [autosave, data.settings]);
+  useEffect(
+    () => registerServiceDraft(autosave),
+    [registerServiceDraft, autosave],
+  );
   return autosave;
 }
 
@@ -141,7 +146,7 @@ export function NetworkPage({ data, run, t }: PageProps) {
         />
         <Hint>
           {t(
-            "New built-in HTTP requests use this setting immediately. Restart the service to reconnect Tailscale. Local loopback access, push security checks and external agent tools keep their own network rules.",
+            "New built-in HTTP requests use this setting immediately. Apply the pending Tailscale changes below to reconnect it. Local loopback access, push security checks and external agent tools keep their own network rules.",
           )}
         </Hint>
       </Card>
@@ -246,8 +251,9 @@ export function ServicePage({ data, run, t }: PageProps) {
   const [authRegistered, setAuthRegistered] = useState(false);
   const tailnet = data.status.TSNet;
   useEffect(() => {
-    if (tailnet?.State === "Running") setAuthRegistered(false);
-  }, [tailnet?.State]);
+    if (tailnet?.State === "Running" || !data.settings.tsnet_enabled)
+      setAuthRegistered(false);
+  }, [tailnet?.State, data.settings.tsnet_enabled]);
   const canLogin =
     !registeringKey &&
     !authRegistered &&
@@ -272,12 +278,12 @@ export function ServicePage({ data, run, t }: PageProps) {
                   : t("Stopped");
   return (
     <>
-      <Card title={t("Web service")}>
+      <Card title={t("Spool service")}>
         <Row
-          title={t(data.status.Running ? "Running" : "Stopped")}
-          help={
-            data.status.Address || `${data.settings.host}:${data.settings.port}`
-          }
+          title={t("Service status")}
+          help={t(
+            "Start or stop local Web, Tailscale and relay access together.",
+          )}
         >
           <span
             className={`settings-state${data.status.Running ? " online" : ""}`}
@@ -322,7 +328,15 @@ export function ServicePage({ data, run, t }: PageProps) {
           {knownMessage(data.status.Error, t)}
         </div>
       )}
-      <Card title={t("Connection")}>
+      <Card title={t("Local Web access")}>
+        {data.status.Running && (
+          <Row title={t("Active listen address")}>
+            <code>
+              {data.status.Address ||
+                `${data.settings.host}:${data.settings.port}`}
+            </code>
+          </Row>
+        )}
         <TextField
           title={t("Listen IP (127.0.0.1 / 0.0.0.0)")}
           value={draft.host}
@@ -331,7 +345,7 @@ export function ServicePage({ data, run, t }: PageProps) {
           required
         />
         <TextField
-          title={t("Web port")}
+          title={t("HTTP port")}
           type="number"
           value={draft.port}
           min={1}
@@ -349,13 +363,18 @@ export function ServicePage({ data, run, t }: PageProps) {
           onChange={(v) => autosave.edit("public_url", v)}
           onCommit={() => void autosave.commit("public_url")}
         />
+        {data.status.WebError && (
+          <div className="settings-error" role="alert">
+            {data.status.WebError}
+          </div>
+        )}
       </Card>
       <Card title={t("Spool Relay")}>
         <Row
           title={t("Enable Spool Relay")}
           help={t(
             relayRegistered
-              ? "Phones prefer a verified LAN connection and use the relay when away. Restart the service after changing these settings."
+              ? "Phones prefer a verified LAN connection and use the relay when away. Apply pending relay changes in the bottom bar."
               : "Register this server with the relay before enabling it.",
           )}
         >
@@ -409,7 +428,7 @@ export function ServicePage({ data, run, t }: PageProps) {
           <Row
             title={t("Public Web / PWA access")}
             help={t(
-              "Open this workspace at the relay HTTPS address without Tailscale. The relay can read Web traffic. Restart the service after changing this setting.",
+              "Open this workspace at the relay HTTPS address without Tailscale. The relay can read Web traffic. Apply pending relay changes in the bottom bar.",
             )}
           >
             <Toggle
@@ -436,6 +455,11 @@ export function ServicePage({ data, run, t }: PageProps) {
             </Row>
           )}
         </div>
+        {data.status.Relay?.Error && (
+          <div className="settings-error" role="alert">
+            {data.status.Relay.Error}
+          </div>
+        )}
         <RelayPairing data={data} t={t} />
       </Card>
       <Card title="Tailscale (tsnet)">
@@ -508,7 +532,7 @@ export function ServicePage({ data, run, t }: PageProps) {
             disabled={registeringKey}
             onChange={setAuthKey}
             help={t(
-              "Click Use Auth Key to register now without stopping the current service. After success, restart the service to activate the saved identity. The key is never saved in settings.",
+              "Click Use Auth Key to register now without stopping Spool. After success, apply the pending Tailscale changes in the bottom bar. The key is never saved in settings.",
             )}
           />
           <div className="settings-card-actions">
@@ -555,7 +579,7 @@ export function ServicePage({ data, run, t }: PageProps) {
             <div>
               <p>
                 {t(
-                  "Registered. Restart the service to activate Tailscale HTTPS.",
+                  "Registered. Apply the pending Tailscale changes in the bottom bar to activate HTTPS.",
                 )}
               </p>
             </div>
@@ -609,9 +633,11 @@ export function ServicePage({ data, run, t }: PageProps) {
             <p>{tailnet.Error}</p>
             <button
               type="button"
-              onClick={() => void run({ kind: "restart-service" })}
+              onClick={() =>
+                void run({ kind: "apply-service-changes", target: "tsnet" })
+              }
             >
-              {t("Restart service")}
+              {t("Reconnect Tailscale")}
             </button>
           </div>
         )}
@@ -644,9 +670,9 @@ export function ServicePage({ data, run, t }: PageProps) {
           )}
           required
         />
-        <Row title={t("Start Web service on application launch")}>
+        <Row title={t("Start Spool service on application launch")}>
           <Toggle
-            label={t("Start Web service on application launch")}
+            label={t("Start Spool service on application launch")}
             value={draft.auto_start}
             onChange={(v) => {
               autosave.edit("auto_start", v);
@@ -673,11 +699,36 @@ export function ServicePage({ data, run, t }: PageProps) {
 export function PeoplePage({ data, run, t }: PageProps) {
   const [draft, setDraft] = useState<PersonDraft>(newPerson);
   const [editing, setEditing] = useState(false);
+  const [original, setOriginal] = useState<PersonDraft>(newPerson);
+  const form = useRef<HTMLFormElement>(null);
+  const edit = (person: PersonDraft) => {
+    setDraft(person);
+    setOriginal(person);
+    setEditing(true);
+  };
   const save = async () => {
     const next = await run({ kind: "save-person", person: draft });
-    if (next?.saved_id)
-      setDraft((value) => ({ ...value, id: next.saved_id!, password: "" }));
+    const person = next?.users.find((person) => person.id === next.saved_id);
+    if (person) edit({ ...person, password: "" });
   };
+  usePendingSettingsSave({
+    id: "person",
+    section: "People",
+    title: `${t("People")} · ${draft.nickname || draft.username || t("New person")}`,
+    label: t("Save person"),
+    dirty:
+      editing &&
+      (!draft.id || JSON.stringify(draft) !== JSON.stringify(original)),
+    save: () => form.current?.requestSubmit(),
+    cancel: () => {
+      const person = data.users.find((person) => person.id === draft.id);
+      if (person) edit({ ...person, password: "" });
+      else {
+        setDraft(newPerson());
+        setEditing(false);
+      }
+    },
+  });
   if (!editing)
     return (
       <SettingsList
@@ -732,8 +783,7 @@ export function PeoplePage({ data, run, t }: PageProps) {
         onSelect={(id) => {
           const person = data.users.find((person) => person.id === id);
           if (person) {
-            setDraft({ ...person, password: "" });
-            setEditing(true);
+            edit({ ...person, password: "" });
           }
         }}
         action={
@@ -741,10 +791,7 @@ export function PeoplePage({ data, run, t }: PageProps) {
             type="button"
             className="settings-primary"
             data-new-entity
-            onClick={() => {
-              setDraft(newPerson());
-              setEditing(true);
-            }}
+            onClick={() => edit(newPerson())}
           >
             <Plus size={15} />
             {t("New person")}
@@ -761,7 +808,7 @@ export function PeoplePage({ data, run, t }: PageProps) {
           setEditing(false);
         }}
       />
-      <form onSubmit={(e) => submit(e, () => void save())}>
+      <form ref={form} onSubmit={(e) => submit(e, () => void save())}>
         <Card title={draft.id ? t("Edit person") : t("New person")}>
           <TextField
             title={t("Username")}
@@ -810,7 +857,7 @@ export function PeoplePage({ data, run, t }: PageProps) {
             />
           </Row>
         </Card>
-        <Save title={t("Save person")} />
+        <button type="submit" hidden />
       </form>
       <Hint>
         {t(
@@ -878,21 +925,38 @@ export function AgentsPage(props: PageProps) {
 function AgentCard({ agent, run, t }: PageProps & { agent: ManagedAgent }) {
   const [path, setPath] = useState(agent.executable);
   const [enabled, setEnabled] = useState(agent.enabled);
+  const [original, setOriginal] = useState({
+    path: agent.executable,
+    enabled: agent.enabled,
+  });
+  const form = useRef<HTMLFormElement>(null);
+  const name = agent.backend === "codex" ? "Codex" : "Claude Code";
+  const reset = (value: ManagedAgent) => {
+    setPath(value.executable);
+    setEnabled(value.enabled);
+    setOriginal({ path: value.executable, enabled: value.enabled });
+  };
+  const save = async () => {
+    const next = await run({
+      kind: "save-agent",
+      backend: agent.backend,
+      enabled,
+      path,
+    });
+    const saved = next?.agents.find((value) => value.backend === agent.backend);
+    if (saved) reset(saved);
+  };
+  usePendingSettingsSave({
+    id: `agent-${agent.backend}`,
+    section: "Agents",
+    title: `${t("Agents")} · ${name}`,
+    label: t("Save {agent}", { agent: name }),
+    dirty: path !== original.path || enabled !== original.enabled,
+    save: () => form.current?.requestSubmit(),
+    cancel: () => reset(agent),
+  });
   return (
-    <form
-      onSubmit={(e) =>
-        submit(
-          e,
-          () =>
-            void run({
-              kind: "save-agent",
-              backend: agent.backend,
-              enabled,
-              path,
-            }),
-        )
-      }
-    >
+    <form ref={form} onSubmit={(e) => submit(e, () => void save())}>
       <Card title={agent.backend === "codex" ? "Codex" : "Claude Code"}>
         <Row
           title={t("Enabled")}
@@ -938,11 +1002,7 @@ function AgentCard({ agent, run, t }: PageProps & { agent: ManagedAgent }) {
           ))}
         </details>
       </Card>
-      <Save
-        title={t("Save {agent}", {
-          agent: agent.backend === "codex" ? "Codex" : "Claude Code",
-        })}
-      />
+      <button type="submit" hidden />
     </form>
   );
 }

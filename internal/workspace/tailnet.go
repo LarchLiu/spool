@@ -33,6 +33,7 @@ type tailnetRuntime struct {
 	loginURL     func(context.Context) (string, error)
 	enrolling    bool
 	settings     Settings
+	ingress      *httpIngress
 }
 
 func (r *tailnetRuntime) setLogin(login func(context.Context) (string, error)) {
@@ -63,9 +64,10 @@ func sameTailnetSettings(a, b Settings) bool {
 func (s *Service) startTailnetLocked(settings Settings) {
 	if s.tailnet != nil {
 		s.tailnet.cancel()
+		s.tailnet.ingress.close()
 	}
 	ctx, cancel := context.WithCancel(s.ctx)
-	runtime := &tailnetRuntime{ctx: ctx, cancel: cancel, status: tailnet.Status{State: "Starting"}, authRevision: s.tailnetAuthRevision}
+	runtime := &tailnetRuntime{ctx: ctx, cancel: cancel, status: tailnet.Status{State: "Starting"}, settings: settings, ingress: s.newIngressLocked(), authRevision: s.tailnetAuthRevision}
 	authKey := s.tailnetAuthKey
 	s.tailnet = runtime
 	server := s.server
@@ -87,6 +89,7 @@ func (s *Service) startTailnetLocked(settings Settings) {
 	s.workers.Add(1)
 	go func() {
 		defer s.workers.Done()
+		defer runtime.ingress.close()
 		// A restart may already have returned while the old node is closing.
 		// Never open two nodes against the same persistent state directory.
 		s.tailnetMu.Lock()
@@ -146,6 +149,7 @@ func (s *Service) RegisterTSNetAuthKey(ctx context.Context, key string) error {
 			return fmt.Errorf("Tailscale registration is already in progress.")
 		}
 		s.tailnet.cancel()
+		s.tailnet.ingress.close()
 	}
 	enrollCtx, cancel := context.WithCancel(s.ctx)
 	stop := context.AfterFunc(ctx, cancel)
@@ -262,7 +266,7 @@ func (s *Service) attachTailnet(runtime *tailnetRuntime, server *http.Server, co
 	if runtime.authRevision == s.tailnetAuthRevision {
 		s.tailnetAuthKey = ""
 	}
-	s.serveLocked(server, connection.Listener())
+	s.serveLocked(runtime.ingress.server, connection.Listener())
 	runtime.report(tailnet.Status{State: "Running", URL: origin})
 	log.Printf("Spool Tailnet HTTPS: %s (Spool account login is still required)", origin)
 	return true

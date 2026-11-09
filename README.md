@@ -219,6 +219,13 @@ reconnecting either server or constructing a hidden chat transcript.
 When available, a monitor icon immediately before Settings in the footer opens
 the selected server's remote desktop. Availability arrives through the workspace WebSocket.
 
+The Desktop Service settings separate the shared Spool service from its access
+entries. Connection changes are saved without interrupting work. The bottom bar
+lists pending changes for local Web, Spool Relay and Tailscale separately; **Apply
+changes** restarts only that entry, while **Cancel** restores its active settings.
+Other entries and running agent tasks stay active. Runtime changes that require
+restarting the whole Spool service are labelled separately.
+
 ### Tailscale and Android
 
 Enable embedded Tailscale in **Service > Tailscale (tsnet)** in Desktop, or run

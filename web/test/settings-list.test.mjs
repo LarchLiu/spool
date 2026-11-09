@@ -188,7 +188,7 @@ test("global GitHub CLI settings follow the project list and never appear in a p
     /<SettingsList[\s\S]*className="settings-github-cli"[\s\S]*<Card title="GitHub CLI">/,
   );
   assert.match(overview, /help=\{data.github_message\}/);
-  assert.match(overview, /kind: "save-github", path: githubPath/);
+  assert.match(projects, /kind: "save-github", path: githubPath/);
   assert.match(overview, /kind: "check-github"/);
   assert.doesNotMatch(
     editor,
@@ -223,7 +223,7 @@ test("GitHub CLI path settings start collapsed behind the status row's rightmost
   assert.match(status, /\{t\("Path settings"\)\}\s*<\/button>\s*$/);
   assert.match(
     github,
-    /<div id="github-cli-path-settings" hidden=\{!githubPathOpen\}>[\s\S]*<PathField[\s\S]*\{t\("Save GitHub CLI path"\)\}/,
+    /<div id="github-cli-path-settings" hidden=\{!githubPathOpen\}>[\s\S]*<PathField/,
   );
   assert.match(github, /\{githubPathOpen && \(\s*<Hint>/);
 });

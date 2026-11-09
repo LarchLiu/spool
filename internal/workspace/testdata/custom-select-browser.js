@@ -93,14 +93,14 @@ async function checkCustomSelects(report) {
     const button = (label) => [...doc.querySelectorAll('button')].find((item) => item.textContent.trim() === label);
     const idle = () => !doc.querySelector('.settings-content').disabled && !doc.querySelector('[data-page="Service"] fieldset').disabled;
     doc.querySelector('[role="switch"][aria-label="Enable embedded Tailscale"]').click();
-    await waitFor(() => fixture.snapshot.settings.tsnet_enabled && doc.querySelector('[data-restart-service]') && idle(), "tailnet enable saved");
+    await waitFor(() => fixture.snapshot.settings.tsnet_enabled && doc.querySelector('[data-apply-service-change="tsnet"]') && idle(), "tailnet enable saved");
     const publicOriginInput = doc.querySelector('[aria-label^="Public origin"]');
     report.tailnetExplicitRestart = !fixture.commands.some((command) => command.kind === "restart-service") && !publicOriginInput.disabled;
     const restartBar = () => doc.querySelector('.settings-restart-bar');
     const assertRestartBar = () => {
       const bar = restartBar();
       const bounds = bar?.getBoundingClientRect();
-      if (!bar?.contains(doc.querySelector('[data-restart-service]')) || bar.closest('.settings-main') || bounds.top < 0 || bounds.bottom > frame.contentWindow.innerHeight || frame.contentWindow.innerHeight - bounds.bottom > 24 || bounds.left < 0 || bounds.right > frame.contentWindow.innerWidth)
+      if (!bar?.contains(doc.querySelector('[data-apply-service-change]')) || bar.closest('.settings-main') || bounds.top < 0 || bounds.bottom > frame.contentWindow.innerHeight || frame.contentWindow.innerHeight - bounds.bottom > 24 || bounds.left < 0 || bounds.right > frame.contentWindow.innerWidth)
         throw new Error("Restart action is not anchored inside the window bottom");
     };
     assertRestartBar();
@@ -113,7 +113,7 @@ async function checkCustomSelects(report) {
     assertRestartBar();
     doc.querySelector('[data-section="Service"]').click();
     await waitFor(() => !doc.querySelector('[data-page="Service"]').hidden, "return to service restart");
-    doc.querySelector('[data-restart-service]').click();
+    doc.querySelector('[data-apply-service-change="tsnet"]').click();
     await waitFor(() => button("Sign in to Tailscale") && !restartBar() && idle(), "browser enrollment option");
     report.tailnetMissingLoginLink = fixture.snapshot.status.TSNet.AuthURL === "" && !button("Sign in to Tailscale").disabled;
     fixture.failNextLogin = true;
@@ -175,22 +175,45 @@ async function checkCustomSelects(report) {
     await waitFor(() => fixture.snapshot.status.TSNet.State === "Registered" && key.value === "" && button("Use Auth Key").disabled && idle(), "key registered without restart");
     report.tailnetKeyRegistration = fixture.commands.filter((command) => command.kind === "restart-service").length === restarts && fixture.snapshot.status.Running && fixture.snapshot.status.TSNet.URL === "";
     report.tailnetSecretInput = key.type === "password" && !JSON.stringify(fixture.snapshot).includes(authKey) && !button("Clear pending key");
-    await waitFor(() => doc.querySelector('[data-restart-service]') && idle(), "registered node restart action");
-    doc.querySelector('[data-restart-service]').click();
-    await waitFor(() => doc.querySelector('code')?.textContent === "https://spool.example.ts.net" && idle(), "assigned HTTPS origin");
-    report.tailnetConnected = !fixture.snapshot.status.TSNetAuthKeySet && !button("Clear pending key") && !button("Sign in to Tailscale") && !doc.querySelector('[data-restart-service]') && fixture.snapshot.settings.public_url === "https://chat.example.com" && publicOriginInput.value === "https://chat.example.com" && !publicOriginInput.disabled;
+    await waitFor(() => doc.querySelector('[data-apply-service-change="tsnet"]') && idle(), "registered node restart action");
+    doc.querySelector('[data-apply-service-change="tsnet"]').click();
+    await waitFor(() => [...doc.querySelectorAll('code')].some(node => node.textContent === "https://spool.example.ts.net") && idle(), "assigned HTTPS origin");
+    report.tailnetConnected = !fixture.snapshot.status.TSNetAuthKeySet && !button("Clear pending key") && !button("Sign in to Tailscale") && !doc.querySelector('[data-apply-service-change="tsnet"]') && fixture.snapshot.settings.public_url === "https://chat.example.com" && publicOriginInput.value === "https://chat.example.com" && !publicOriginInput.disabled;
     const nextPublicOrigin = "https://pwa.example.com";
     Object.getOwnPropertyDescriptor(frame.contentWindow.HTMLInputElement.prototype, "value").set.call(publicOriginInput, nextPublicOrigin);
     publicOriginInput.dispatchEvent(new frame.contentWindow.Event("input", { bubbles: true }));
     publicOriginInput.focus();
     publicOriginInput.blur();
-    await waitFor(() => fixture.snapshot.settings.public_url === nextPublicOrigin && doc.querySelector('[data-restart-service]') && fixture.snapshot.status.TSNet.URL === "https://spool.example.ts.net", "public origin saved independently");
+    await waitFor(() => fixture.snapshot.settings.public_url === nextPublicOrigin && doc.querySelector('[data-apply-service-change="web"]') && fixture.snapshot.status.TSNet.URL === "https://spool.example.ts.net", "public origin saved independently");
     assertRestartBar();
     doc.querySelector('[role="switch"][aria-label="Enable embedded Tailscale"]').scrollIntoView({ block: "center", behavior: "instant" });
     await browser([{ method: "Page.captureScreenshot", params: { format: "png" } }], "settings");
-    doc.querySelector('[data-restart-service]').click();
-    await waitFor(() => !doc.querySelector('[data-restart-service]') && fixture.snapshot.settings.public_url === nextPublicOrigin && fixture.snapshot.status.TSNet.URL === "https://spool.example.ts.net" && idle(), "restart retains both origins");
+    doc.querySelector('[data-apply-service-change="web"]').click();
+    await waitFor(() => !doc.querySelector('[data-apply-service-change="web"]') && fixture.snapshot.settings.public_url === nextPublicOrigin && fixture.snapshot.status.TSNet.URL === "https://spool.example.ts.net" && idle(), "restart retains both origins");
     report.tailnetPublicOriginIndependent = publicOriginInput.value === nextPublicOrigin && !publicOriginInput.disabled && fixture.snapshot.status.TSNet.URL === "https://spool.example.ts.net";
+    // Multiple independent entries share the bottom bar; cancelling one restores
+    // its fields, while applying another leaves the remaining entry pending.
+    const prior = structuredClone(fixture.snapshot.settings);
+    await frame.contentWindow.mygo.call("DesktopSettings.Execute", { kind: "save-settings", settings: {
+      ...prior, port: 29876, relay_enabled: true, relay_url: "https://relay.example.test", relay_lan_port: 28082, relay_web_enabled: false, tsnet_hostname: "pending-node",
+    }});
+    await waitFor(() => doc.querySelectorAll('[data-service-change]').length === 3, "three pending entries");
+    assertRestartBar();
+    const footer = restartBar();
+    if (!footer.textContent.includes("Local Web access") || !footer.textContent.includes("Spool Relay") || !footer.textContent.includes("Tailscale") || !footer.textContent.includes("active tasks continue")) throw new Error("Pending entries do not describe their own restart");
+    const topBeforeScroll = footer.getBoundingClientRect().top;
+    doc.querySelector('.settings-main').scrollTop = 0;
+    await pause(50);
+    if (restartBar().getBoundingClientRect().top !== topBeforeScroll) throw new Error("Multiple changes moved with content scrolling");
+    await browser([{ method: "Page.captureScreenshot", params: { format: "png" } }], "settings-changes");
+    doc.querySelector('[data-cancel-service-change="web"]').click();
+    await waitFor(() => !doc.querySelector('[data-service-change="web"]') && doc.querySelectorAll('[data-service-change]').length === 2 && idle(), "cancel only Web");
+    if (fixture.snapshot.settings.port !== prior.port || fixture.snapshot.settings.tsnet_hostname !== "pending-node") throw new Error("Cancel overwrote another pending entry");
+    doc.querySelector('[data-apply-service-change="relay"]').click();
+    await waitFor(() => !doc.querySelector('[data-service-change="relay"]') && doc.querySelector('[data-service-change="tsnet"]') && idle(), "apply only relay");
+    doc.querySelector('[data-cancel-service-change="tsnet"]').click();
+    await waitFor(() => !restartBar() && fixture.snapshot.settings.tsnet_hostname === prior.tsnet_hostname && idle(), "cancel remaining entry");
+    report.serviceChangesIndependent = !fixture.commands.some(command => command.kind === "restart-service");
     const assertSettingsViewport = () => {
       const view = frame.contentWindow;
       const root = doc.scrollingElement;

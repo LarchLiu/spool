@@ -81,7 +81,7 @@ test("service offers optional masked enrollment without storing a key in the set
   assert.match(pages, /setAuthRegistered\(true\)/);
   assert.match(
     pages,
-    /Click Use Auth Key to register now without stopping the current service/,
+    /Click Use Auth Key to register now without stopping Spool/,
   );
 });
 
@@ -105,7 +105,7 @@ test("registered identity asks for explicit activation and does not expose a log
   });
   assert.match(
     html,
-    /Registered\. Restart the service to activate Tailscale HTTPS\./,
+    /Registered\. Apply the pending Tailscale changes in the bottom bar to activate HTTPS\./,
   );
   assert.doesNotMatch(html, /data-restart-service/);
   assert.doesNotMatch(

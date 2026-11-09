@@ -103,6 +103,7 @@ export type ReleaseHistory = {
   target_version: string;
   releases: ReleaseNotes[];
 };
+export type ServiceChangeTarget = "web" | "relay" | "tsnet" | "runtime";
 export type SettingsSnapshot = {
   section: string;
   message: string;
@@ -114,6 +115,8 @@ export type SettingsSnapshot = {
   status: {
     Running: boolean;
     RestartRequired: boolean;
+    PendingChanges?: ServiceChangeTarget[];
+    WebError?: string;
     Address: string;
     Error: string;
     Online: (Online & Pick<User, "nickname" | "avatar">)[];
@@ -125,6 +128,7 @@ export type SettingsSnapshot = {
       WebURL?: string;
       LANAddress: string;
       DiscoveryError: string;
+      Error?: string;
       RegistrationTokenSet: boolean;
       Registered: boolean;
       Registering: boolean;
@@ -169,6 +173,10 @@ export type SettingsSnapshot = {
   repository?: string;
 };
 export type SettingsCommand =
+  | {
+      kind: "apply-service-changes" | "cancel-service-changes";
+      target: ServiceChangeTarget;
+    }
   | { kind: "navigate"; section: SettingsSection }
   | { kind: "save-settings"; settings: ServerSettings }
   | { kind: "save-tsnet-auth-key"; auth_key: string }

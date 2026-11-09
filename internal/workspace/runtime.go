@@ -23,6 +23,10 @@ type Service struct {
 	Registry            *Registry
 	mu                  sync.Mutex
 	server              *http.Server
+	web                 *httpIngress
+	activeSettings      Settings
+	webError            string
+	relayError          string
 	app                 *App
 	runner              *agent.CLIRunner
 	ctx                 context.Context
@@ -48,6 +52,8 @@ type Service struct {
 type ServiceStatus struct {
 	Running                  bool
 	RestartRequired          bool
+	PendingChanges           []string
+	WebError                 string
 	Address                  string
 	Error                    string
 	Online                   []PresenceUser
@@ -148,42 +154,33 @@ func (s *Service) startLocked() error {
 	if err != nil {
 		return err
 	}
-	if err = settings.Validate(); err != nil {
+	return s.startWithSettingsLocked(settings)
+}
+
+func (s *Service) startWithSettingsLocked(settings Settings) error {
+	if err := settings.Validate(); err != nil {
 		return err
 	}
-	if err = s.applyNetworkSettingsLocked(settings); err != nil {
+	if err := s.applyNetworkSettingsLocked(settings); err != nil {
 		return err
 	}
-	listener, err := net.Listen("tcp", settings.Address())
+	// The desktop keeps a stable private entry when other listeners restart.
+	localListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		s.lastError = err.Error()
 		return err
 	}
-	localAddress := loopbackAddress(listener.Addr().String())
-	var localListener net.Listener
-	if localAddress == "" {
-		// A LAN-only binding cannot serve a secure-context desktop page. Share
-		// this server and App through a loopback listener, not a second backend.
-		localListener, err = net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			listener.Close()
-			s.lastError = err.Error()
-			return err
-		}
-		localAddress = localListener.Addr().String()
-	}
 	agents, err := s.Store.Agents()
 	if err != nil {
-		listener.Close()
-		if localListener != nil {
-			localListener.Close()
-		}
+		localListener.Close()
 		return err
 	}
 	runner := agent.NewCLIRunner()
 	runner.ConfigureBinaries(agentBinaries(agents))
 	runner.IdleTimeout = time.Duration(settings.IdleMinutes) * time.Minute
 	app := NewApp(s.Store, runner, "", "")
+	app.settings = settings
+	app.configureRelayWeb(settings)
 	app.desktop = s.desktop
 	app.startLocalSessionSync()
 	app.startIssueScheduler(s.lease)
@@ -192,15 +189,15 @@ func (s *Service) startLocked() error {
 	s.app = app
 	s.runner = runner
 	s.lastError = ""
-	s.runningAddress = listener.Addr().String()
-	s.localAddress = localAddress
-	listeners := []net.Listener{listener}
-	if localListener != nil {
-		listeners = append(listeners, localListener)
+	s.activeSettings = settings
+	s.localAddress = localListener.Addr().String()
+	s.serveLocked(server, localListener)
+	if err := s.startWebLocked(settings); err != nil {
+		_ = s.stopLocked()
+		s.lastError = err.Error()
+		return err
 	}
-	for _, listener := range listeners {
-		s.serveLocked(server, listener)
-	}
+	s.webError, s.relayError = "", ""
 	if settings.RelayEnabled {
 		if err := s.startRelayLocked(settings); err != nil {
 			s.stopLocked()
@@ -274,11 +271,14 @@ func (s *Service) stopLocked() error {
 	}
 	if s.tailnet != nil {
 		s.tailnet.cancel()
+		s.tailnet.ingress.close()
 		s.tailnet = nil
 	}
 	if s.server == nil {
 		return nil
 	}
+	s.web.close()
+	s.web = nil
 	server, app := s.server, s.app
 	s.server = nil
 	s.app = nil
@@ -302,17 +302,9 @@ func (s *Service) Status() ServiceStatus {
 		connections = s.app.remoteDesktopConnections()
 	}
 	address := settings.Address()
-	restartRequired := false
+	pending := s.pendingChangesLocked(settings)
 	if s.server != nil {
 		address = s.runningAddress
-		if s.app != nil {
-			active := s.app.settings
-			restartRequired = active.Host != settings.Host || active.Port != settings.Port ||
-				s.app.publicURL() != settings.PublicURL || active.IdleMinutes != settings.IdleMinutes ||
-				!sameTailnetSettings(active, settings) || active.TSNetEnabled && active.proxyOptions() != settings.proxyOptions()
-			active.RelayEnabled = s.relay != nil
-			restartRequired = restartRequired || !sameRelaySettings(active, settings)
-		}
 	}
 	tailnetStatus := tailnet.Status{State: "Disabled"}
 	if settings.TSNetEnabled {
@@ -320,7 +312,6 @@ func (s *Service) Status() ServiceStatus {
 	}
 	if s.tailnet != nil {
 		tailnetStatus = s.tailnet.snapshot()
-		restartRequired = restartRequired || s.tailnet.authRevision != s.tailnetAuthRevision || tailnetStatus.State == "Registered"
 	}
 	var desktopStatus voxl.Status
 	if s.desktop != nil {
@@ -332,19 +323,24 @@ func (s *Service) Status() ServiceStatus {
 	}
 	if s.relay != nil {
 		relayStatus = s.relay.snapshot()
-		restartRequired = restartRequired || s.relay.host.RegistrationToken() != s.relayRegistrationToken(s.relay.host.URL)
+	}
+	if s.relayError != "" {
+		relayStatus.Error = s.relayError
+		if s.relay == nil {
+			relayStatus.State = "error"
+		}
 	}
 	relayStatus.RegistrationTokenSet = s.relayRegistrationToken(settings.RelayURL) != ""
 	relayStatus.Registered = s.relayRegisteredLocked(settings.RelayURL)
 	relayStatus.Registering = s.relayRegistering
-	return ServiceStatus{Running: s.server != nil, RestartRequired: restartRequired, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != "", Voxl: desktopStatus, RemoteDesktopConnections: connections, Relay: relayStatus}
+	return ServiceStatus{Running: s.server != nil, RestartRequired: len(pending) > 0, PendingChanges: pending, WebError: s.webError, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != "", Voxl: desktopStatus, RemoteDesktopConnections: connections, Relay: relayStatus}
 }
 func (s *Service) WebURL() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	settings, _ := s.Store.Settings()
 	if s.app != nil {
-		settings = s.app.settings
+		settings = s.app.activeSettings()
 	}
 	if settings.PublicURL != "" {
 		return settings.PublicURL

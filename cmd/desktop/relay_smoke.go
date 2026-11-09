@@ -129,7 +129,7 @@ func (p *panel) probeRelaySettings(ctx context.Context, view *mygo.WebView, repo
 	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).settings.relay_enabled && smokeSettingsReady('Service');`); err != nil {
 		return err
 	}
-	if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: "restart-service"}); err != nil {
+	if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: "apply-service-changes", Target: "relay"}); err != nil {
 		return err
 	}
 	if err := waitChatScript(ctx, page, `
@@ -152,7 +152,7 @@ func (p *panel) probeRelaySettings(ctx context.Context, view *mygo.WebView, repo
 	if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: "save-settings", Settings: settings}); err != nil {
 		return err
 	}
-	if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: "restart-service"}); err != nil {
+	if err := smokeSettingsCommand(ctx, page, settingsCommand{Kind: "apply-service-changes", Target: "relay"}); err != nil {
 		return err
 	}
 	if err := p.smokePresentation(ctx, preferences); err != nil {

@@ -35,6 +35,8 @@ import {
   AppearancePage,
   AboutPage,
 } from "./settings-pages";
+import { SettingsChanges } from "./settings-changes";
+import { PendingSettingsProvider } from "./settings-pending";
 import { ProjectsPage } from "./settings-projects";
 import { createSettingsCommandQueue } from "./settings-autosave";
 import { UpdateIndicator } from "./update-controls";
@@ -206,14 +208,17 @@ export function SettingsApp() {
       return queued(command);
     };
   });
-  const navigate = (next: SettingsSection) => {
-    setSection(next);
-    setSaved(false);
-    setError("");
-    void run({ kind: "navigate", section: next });
-  };
+  const navigate = useCallback(
+    (next: SettingsSection) => {
+      setSection(next);
+      setSaved(false);
+      setError("");
+      void run({ kind: "navigate", section: next });
+    },
+    [run],
+  );
   const props = data ? { data, run, t } : undefined;
-  return (
+  const shell = (
     <div className="desktop-settings-shell">
       <aside className="settings-sidebar">
         <div className="settings-sidebar-content">
@@ -337,38 +342,18 @@ export function SettingsApp() {
             </div>
           </div>
         </main>
-        {data?.status.RestartRequired && (
-          <div className="settings-restart-bar" role="status">
-            <p>
-              {t(
-                "Restarting the service applies pending connection changes and interrupts active tasks.",
-              )}
-            </p>
-            <button
-              type="button"
-              className="settings-primary"
-              data-restart-service
-              disabled={busy || saving}
-              onClick={() => void run({ kind: "restart-service" })}
-            >
-              <RefreshCw
-                size={15}
-                className={
-                  busy && pendingScope === "Service"
-                    ? "settings-spinning"
-                    : undefined
-                }
-                aria-hidden="true"
-              />
-              {t(
-                busy && pendingScope === "Service"
-                  ? "Working…"
-                  : "Restart service",
-              )}
-            </button>
-          </div>
+        {data && (
+          <SettingsChanges
+            data={data}
+            run={run}
+            t={t}
+            disabled={busy || saving}
+          />
         )}
       </div>
     </div>
+  );
+  return (
+    <PendingSettingsProvider reveal={navigate}>{shell}</PendingSettingsProvider>
   );
 }

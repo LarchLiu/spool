@@ -339,6 +339,93 @@ test("failed saves leave the draft retryable and do not poison the command queue
   });
 });
 
+test("cancelling Web discards incomplete and failed drafts while keeping other edits", async () => {
+  const { autosave, commands } = fixture(async () => undefined);
+  autosave.sync({ ...initial(), port: 9000 });
+  autosave.edit("port", "");
+  await autosave.commit("port");
+  autosave.edit("host", "invalid-host");
+  await autosave.commit("host");
+  autosave.edit("public_url", "https://unfinished.example.test");
+  autosave.edit("tsnet_port", "");
+  autosave.edit("relay_url", "https://relay.example.test");
+  autosave.edit("idle_minutes", "30");
+  autosave.edit("history_cache_mib", "128");
+  autosave.prepareCancel("web")(initial());
+  assert.equal(autosave.draft.port, "8787");
+  assert.equal(autosave.draft.host, initial().host);
+  assert.equal(autosave.draft.public_url, initial().public_url);
+  assert.equal(autosave.draft.tsnet_port, "");
+  assert.equal(autosave.draft.relay_url, "https://relay.example.test");
+  assert.equal(autosave.draft.idle_minutes, "30");
+  assert.equal(autosave.draft.history_cache_mib, "128");
+  assert.equal(commands.length, 1, "cancelling must not save the discarded drafts");
+});
+
+test("Relay and runtime cancellation reset only the selected fields", () => {
+  const { autosave } = fixture();
+  autosave.edit("relay_enabled", true);
+  autosave.edit("relay_web_enabled", true);
+  autosave.edit("relay_url", "https://relay.example.test");
+  autosave.edit("relay_lan_port", "");
+  autosave.edit("idle_minutes", "");
+  autosave.edit("port", "");
+  autosave.edit("auto_start", false);
+  autosave.prepareCancel("relay")(initial());
+  assert.equal(autosave.draft.relay_enabled, false);
+  assert.equal(autosave.draft.relay_web_enabled, false);
+  assert.equal(autosave.draft.relay_url, "");
+  assert.equal(autosave.draft.relay_lan_port, "28082");
+  assert.equal(autosave.draft.idle_minutes, "");
+  autosave.prepareCancel("runtime")(initial());
+  assert.equal(autosave.draft.idle_minutes, "15");
+  assert.equal(autosave.draft.port, "");
+  assert.equal(autosave.draft.auto_start, false);
+});
+
+test("Tailscale cancellation resets both service and network drafts", () => {
+  const { autosave: service } = fixture();
+  const { autosave: network } = fixture(undefined, NetworkSettingsAutosave);
+  service.edit("tsnet_enabled", true);
+  service.edit("tsnet_hostname", "unfinished-node");
+  service.edit("tsnet_port", "");
+  service.edit("port", "");
+  network.edit("proxy_enabled", false);
+  network.edit("use_system_proxy", true);
+  network.edit("proxy_url", "http://unfinished-proxy");
+  network.edit("no_proxy", "internal.example");
+  network.prepareCancel("web")(initial());
+  assert.equal(network.draft.proxy_url, "http://unfinished-proxy");
+  assert.equal(network.draft.no_proxy, "internal.example");
+  service.prepareCancel("tsnet")(initial());
+  network.prepareCancel("tsnet")(initial());
+  assert.equal(service.draft.tsnet_enabled, false);
+  assert.equal(service.draft.tsnet_hostname, "spool-server");
+  assert.equal(service.draft.tsnet_port, "443");
+  assert.equal(service.draft.port, "");
+  assert.deepEqual(network.draft, {
+    proxy_enabled: true,
+    use_system_proxy: false,
+    proxy_url: "",
+    no_proxy: "",
+  });
+});
+
+test("cancellation preserves edits made while the request is pending", async () => {
+  const { autosave } = fixture();
+  autosave.edit("port", "");
+  autosave.edit("host", "localhost");
+  const reset = autosave.prepareCancel("web");
+  autosave.edit("port", "9100");
+  reset(initial());
+  assert.equal(autosave.draft.port, "9100");
+  assert.equal(autosave.draft.host, initial().host);
+  autosave.sync(initial());
+  assert.equal(autosave.draft.port, "9100");
+  await autosave.commit("port");
+  assert.equal(autosave.draft.port, "9100");
+});
+
 test("service UI commits on blur/Enter, removes save controls and restarts only on click", async () => {
   const pages = await readFile(
     new URL("../src/settings-pages.tsx", import.meta.url),
@@ -366,11 +453,12 @@ test("service UI commits on blur/Enter, removes save controls and restarts only 
   );
   assert.match(app, /createSettingsCommandQueue/);
   assert.match(app, /setBusy\(command\.kind !== "save-settings"\)/);
-  assert.match(app, /data\?\.status\.RestartRequired &&/);
-  assert.match(
-    app,
-    /onClick=\{\(\) => void run\(\{ kind: "restart-service" \}\)\}/,
-  );
+  assert.match(app, /<SettingsChanges/);
+  const changes = await readFile(new URL("../src/settings-changes.tsx", import.meta.url), "utf8");
+  assert.match(changes, /data.status.PendingChanges/);
+  assert.match(changes, /kind: "apply-service-changes", target/);
+  assert.match(changes, /kind: "cancel-service-changes", target/);
+  assert.doesNotMatch(changes, /kind: "restart-service"/);
 });
 
 test("native smoke requires real page focus and blur before accepting autosave", async () => {

@@ -30,6 +30,7 @@ type App struct {
 	store           *Store
 	runner          agent.AgentRunner
 	settings        Settings
+	configMu        sync.RWMutex
 	streamHeartbeat time.Duration
 	realtimePing    time.Duration
 	realtimeTimeout time.Duration
@@ -98,7 +99,25 @@ func NewApp(store *Store, runner agent.AgentRunner, _, _ string) *App {
 	return &App{relayWebPrefix: prefix, store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, realtimePing: 15 * time.Second, realtimeTimeout: 45 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{changed: func() { store.changes.publish(changePresence) }}, assets: http.FileServer(http.FS(assets)), pushClient: newPushHTTPClient(), avatars: avatar.NewRenderer()}
 }
 
-func (a *App) publicURL() string { return a.settings.PublicURL }
+func (a *App) activeSettings() Settings {
+	a.configMu.RLock()
+	defer a.configMu.RUnlock()
+	return a.settings
+}
+func (a *App) publicURL() string { return a.activeSettings().PublicURL }
+
+func (a *App) configureRelayWeb(settings Settings) {
+	prefix := ""
+	if settings.RelayEnabled && settings.RelayWebEnabled {
+		if id, err := relay.LoadIdentity(filepath.Join(a.store.Root(), "relay")); err == nil {
+			prefix = relay.WebPath(id.ID())
+		}
+	}
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	a.settings.RelayURL, a.settings.RelayEnabled, a.settings.RelayWebEnabled = settings.RelayURL, settings.RelayEnabled, settings.RelayWebEnabled
+	a.relayWebPrefix = prefix
+}
 func apiJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)

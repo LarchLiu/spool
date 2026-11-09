@@ -452,6 +452,10 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 		err = p.service.Stop()
 	case "restart-service":
 		err = p.service.Restart()
+	case "apply-service-changes":
+		err = p.service.ApplyServiceChanges(command.Target)
+	case "cancel-service-changes":
+		err = p.service.CancelServiceChanges(command.Target)
 	case "save-settings":
 		err = p.service.SaveSettings(command.Settings)
 	case "unregister-relay":

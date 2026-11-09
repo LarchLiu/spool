@@ -31,6 +31,9 @@
 .desktop-settings-shell button:where(:not(.icon)):hover:not(:disabled) {
   background: var(--hover);
 }
+.desktop-settings-shell button[hidden] {
+  display: none;
+}
 .desktop-settings-shell button:disabled {
   opacity: 0.45;
 }
@@ -163,27 +166,47 @@
 }
 .settings-restart-bar {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   align-self: center;
   flex-shrink: 0;
-  gap: 18px;
   width: calc(100% - 48px);
   max-width: 826px;
+  max-height: 45%;
+  overflow-y: auto;
   margin: 0 24px 20px;
-  padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--elevated);
   box-shadow: 0 5px 20px var(--shadow);
 }
-.settings-restart-bar p {
+.settings-change-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 16px;
+}
+.settings-change-row + .settings-change-row {
+  border-top: 1px solid var(--line);
+}
+.settings-change-description {
   flex: 1;
-  margin: 0;
+  min-width: 0;
+}
+.settings-change-description strong {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 600;
+}
+.settings-change-description p {
+  margin: 4px 0 0;
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.5;
 }
-.settings-restart-bar button {
+.settings-change-actions {
+  display: flex;
   flex-shrink: 0;
+  gap: 8px;
 }
 .settings-main-area:has(.settings-restart-bar) .settings-save-status {
   display: none;
@@ -972,16 +995,18 @@
     font-size: 23px;
   }
   .settings-restart-bar {
-    flex-wrap: wrap;
-    gap: 10px;
     width: calc(100% - 24px);
     margin: 0 12px 12px;
+  }
+  .settings-change-row {
+    flex-wrap: wrap;
+    gap: 10px;
     padding: 12px;
   }
-  .settings-restart-bar p {
+  .settings-change-description {
     flex-basis: 100%;
   }
-  .settings-restart-bar button {
+  .settings-change-actions {
     margin-left: auto;
   }
   .settings-row {

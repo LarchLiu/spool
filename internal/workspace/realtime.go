@@ -81,7 +81,7 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 	}
 	defer conn.CloseNow()
 	conn.SetReadLimit(32 * 1024)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	// Hijacked connections are not closed by http.Server.Close.
 	go func() {
@@ -90,6 +90,7 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 			cancel()
 			conn.CloseNow()
 		case <-ctx.Done():
+			conn.CloseNow()
 		}
 	}()
 	helloCtx, helloCancel := context.WithTimeout(ctx, 5*time.Second)

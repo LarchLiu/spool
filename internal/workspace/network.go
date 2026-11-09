@@ -21,10 +21,14 @@ func (s Settings) proxyOptions() netproxy.Options {
 
 // SaveSettings applies the app-wide network policy after a successful save.
 // It never restarts the service or interrupts active tasks. Embedded Tailscale
-// connections pick up proxy changes on an explicit service restart.
+// connections pick up proxy changes when their own pending changes are applied.
 func (s *Service) SaveSettings(settings Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.saveSettingsLocked(settings)
+}
+
+func (s *Service) saveSettingsLocked(settings Settings) error {
 	if err := settings.Validate(); err != nil {
 		return err
 	}

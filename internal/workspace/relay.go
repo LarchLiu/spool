@@ -28,19 +28,21 @@ import (
 type RelayStatus struct {
 	State, ServerID, LANAddress, DiscoveryError string
 	WebURL                                      string
+	Error                                       string
 	RegistrationTokenSet                        bool
 	Registered, Registering                     bool
 }
 type relayRuntime struct {
-	cancel context.CancelFunc
-	host   *relay.Host
-	lan    net.Listener
-	mu     sync.Mutex
-	status RelayStatus
+	ingress *httpIngress
+	cancel  context.CancelFunc
+	host    *relay.Host
+	lan     net.Listener
+	mu      sync.Mutex
+	status  RelayStatus
 }
 
 func (r *relayRuntime) snapshot() RelayStatus { r.mu.Lock(); defer r.mu.Unlock(); return r.status }
-func (r *relayRuntime) close()                { r.cancel(); r.host.Close(); r.lan.Close() }
+func (r *relayRuntime) close()                { r.cancel(); r.ingress.close(); r.host.Close(); r.lan.Close() }
 func sameRelaySettings(a, b Settings) bool {
 	return a.RelayEnabled == b.RelayEnabled && (!a.RelayEnabled || a.RelayURL == b.RelayURL && a.RelayLANPort == b.RelayLANPort && a.RelayWebEnabled == b.RelayWebEnabled)
 }
@@ -74,7 +76,7 @@ func (s *Service) startRelayLocked(settings Settings) error {
 		host.Close()
 		return fmt.Errorf("listen for secure LAN connections: %w", err)
 	}
-	runtime := &relayRuntime{cancel: cancel, host: host, lan: listener, status: RelayStatus{State: "connecting", ServerID: id.ID(), LANAddress: listener.Addr().String(), RegistrationTokenSet: token != ""}}
+	runtime := &relayRuntime{ingress: s.newIngressLocked(), cancel: cancel, host: host, lan: listener, status: RelayStatus{State: "connecting", ServerID: id.ID(), LANAddress: listener.Addr().String(), RegistrationTokenSet: token != ""}}
 	host.WebEnabled = settings.RelayWebEnabled
 	host.OnWebURL = func(address string) {
 		runtime.mu.Lock()
@@ -122,8 +124,8 @@ func (s *Service) startRelayLocked(settings Settings) error {
 		}
 		return s.confirmRelayRegistrationLocked(settings.RelayURL, id, credential)
 	}
-	s.serveLocked(s.server, tls.NewListener(host, tlsConfig))
-	s.serveLocked(s.server, tls.NewListener(listener, tlsConfig))
+	s.serveLocked(runtime.ingress.server, tls.NewListener(host, tlsConfig))
+	s.serveLocked(runtime.ingress.server, tls.NewListener(listener, tlsConfig))
 	s.workers.Add(2)
 	go func() { defer s.workers.Done(); defer transport.CloseIdleConnections(); host.Run(); host.Wait() }()
 	go func() {
@@ -344,6 +346,12 @@ func (s *Service) UnregisterRelay(ctx context.Context, address string) error {
 		current.RelayEnabled = false
 		if err := s.Store.SaveSettings(current); err != nil {
 			return err
+		}
+		if relayOrigin(s.activeSettings.RelayURL) == origin {
+			s.activeSettings.RelayEnabled = false
+			if s.app != nil {
+				s.app.configureRelayWeb(s.activeSettings)
+			}
 		}
 	}
 	registrations, err = s.loadRelayRegistrationsLocked()

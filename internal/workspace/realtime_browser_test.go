@@ -121,6 +121,8 @@ func TestRealtimeBrowser(t *testing.T) {
 									name = "chat-unread"
 								} else if r.URL.Query().Get("capture") == "settings" {
 									name = "settings"
+								} else if r.URL.Query().Get("capture") == "settings-changes" {
+									name = "settings-changes"
 								} else if r.URL.Query().Get("capture") == "settings-about" {
 									name = "settings-about"
 								}
@@ -340,7 +342,7 @@ func TestRealtimeBrowser(t *testing.T) {
 						t.Errorf("%s failed: %s", check, data)
 					}
 				}
-				for _, check := range []string{"tailnetExplicitRestart", "tailnetMissingLoginLink", "tailnetLoginFeedback", "tailnetLoginNonBlocking", "networkProxySettings", "tailnetBrowserLogin", "tailnetSecretInput", "tailnetKeyRegistration", "tailnetKeyNonBlocking", "tailnetConnected", "tailnetPublicOriginIndependent", "tailnetCopyURL", "settingsCopyStable", "settingsPollingStable", "settingsDraftRetained"} {
+				for _, check := range []string{"serviceChangesIndependent", "tailnetExplicitRestart", "tailnetMissingLoginLink", "tailnetLoginFeedback", "tailnetLoginNonBlocking", "networkProxySettings", "tailnetBrowserLogin", "tailnetSecretInput", "tailnetKeyRegistration", "tailnetKeyNonBlocking", "tailnetConnected", "tailnetPublicOriginIndependent", "tailnetCopyURL", "settingsCopyStable", "settingsPollingStable", "settingsDraftRetained"} {
 					if report[check] != true {
 						t.Errorf("tailnet settings check failed: %s = %v", check, report[check])
 					}

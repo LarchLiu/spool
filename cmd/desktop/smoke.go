@@ -581,7 +581,7 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).settings.host === 'localhost' && smokeSettingsReady('Service');`); err != nil {
 		return fmt.Errorf("service field was not autosaved: %w", err)
 	}
-	if err := waitChatScript(ctx, page, `const section = document.querySelector('[data-page="Service"]'); return !section.querySelector('form, button[type="submit"]') && (await mygo.call('DesktopSettings.Snapshot')).status.RestartRequired && !!section.querySelector('[data-restart-service]');`); err != nil {
+	if err := waitChatScript(ctx, page, `const section = document.querySelector('[data-page="Service"]'); return !section.querySelector('form, button[type="submit"]') && (await mygo.call('DesktopSettings.Snapshot')).status.RestartRequired && !!document.querySelector('[data-apply-service-change="web"]');`); err != nil {
 		return fmt.Errorf("service autosave/restart notice: %w", err)
 	}
 	for _, theme := range []string{"dark", "light"} {
@@ -688,10 +688,10 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	if _, err := page.EvalContext(ctx, `document.querySelector('[data-restart-service]').click();`); err != nil {
+	if _, err := page.EvalContext(ctx, `document.querySelector('[data-apply-service-change="web"]').click();`); err != nil {
 		return err
 	}
-	if err := waitChatScript(ctx, page, `const snapshot = await mygo.call('DesktopSettings.Snapshot'); return snapshot.status.Running && !snapshot.status.RestartRequired && !document.querySelector('[data-restart-service]') && smokeSettingsReady('Service');`); err != nil {
+	if err := waitChatScript(ctx, page, `const snapshot = await mygo.call('DesktopSettings.Snapshot'); return snapshot.status.Running && !snapshot.status.RestartRequired && !document.querySelector('[data-apply-service-change]') && smokeSettingsReady('Service');`); err != nil {
 		return fmt.Errorf("explicit settings restart: %w", err)
 	}
 	// Restore the original listen address before chat's origin is established.

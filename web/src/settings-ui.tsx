@@ -230,16 +230,6 @@ export function TextField({
     </Row>
   );
 }
-export function Save({ title }: { title: string }) {
-  return (
-    <div className="settings-actions">
-      <button className="settings-primary" type="submit">
-        <Check size={15} />
-        {title}
-      </button>
-    </div>
-  );
-}
 export function submit(event: FormEvent, action: () => void) {
   event.preventDefault();
   action();

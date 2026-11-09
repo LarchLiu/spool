@@ -487,12 +487,7 @@ func (p *panel) serviceView(c *ui.Context) {
 			p.openBrowser()
 		}
 	})
-	if p.status.RestartRequired {
-		ui.Text(c, p.tr("Settings saved. Restart the service to apply connection and idle changes. Restarting interrupts active tasks.")).Wrap().FontSize(12)
-		if ui.Button(c, p.tr("Restart service")).Disabled(p.busy).Clicked() {
-			p.action(p.service.Restart)
-		}
-	}
+	p.pendingServiceChanges(c)
 	p.serviceSettingField(c, "Listen IP (127.0.0.1 / 0.0.0.0)", &p.settings.Host, func(settings *workspace.Settings, value string) error { settings.Host = value; return nil })
 	p.serviceSettingField(c, "Web port", &p.port, func(settings *workspace.Settings, value string) (err error) {
 		settings.Port, err = strconv.Atoi(value)
@@ -508,7 +503,7 @@ func (p *panel) serviceView(c *ui.Context) {
 		return err
 	})
 	ui.Text(c, p.tr("Shared by all chats. Changes are saved automatically and apply immediately. A larger session is kept whole; history is never truncated.")).Wrap().FontSize(12)
-	if ui.Checkbox(c, &p.settings.AutoStart, p.tr("Start Web service on application launch")).Disabled(p.busy).Changed() {
+	if ui.Checkbox(c, &p.settings.AutoStart, p.tr("Start Spool service on application launch")).Disabled(p.busy).Changed() {
 		autoStart := p.settings.AutoStart
 		p.saveServiceSetting(func(settings *workspace.Settings) error { settings.AutoStart = autoStart; return nil })
 	}
@@ -579,11 +574,21 @@ func (p *panel) networkView(c *ui.Context) {
 	p.serviceSettingFieldWithDisabled(c, "No proxy", &p.settings.NoProxy, customDisabled, func(settings *workspace.Settings, value string) error { settings.NoProxy = value; return nil })
 	ui.Text(c, p.tr("Comma-separated hosts or IP ranges that should bypass the proxy. Leave blank to inherit NO_PROXY. Loopback always connects directly.")).Wrap().FontSize(12)
 	ui.Text(c, p.tr("New built-in HTTP requests use this setting immediately. Restart the service to reconnect Tailscale. Local loopback access, push security checks and external agent tools keep their own network rules.")).Wrap().FontSize(12)
-	if p.status.RestartRequired {
-		ui.Text(c, p.tr("Restarting the service applies pending connection changes and interrupts active tasks.")).Wrap()
-		if ui.Button(c, p.tr("Restart service")).Disabled(p.busy).Clicked() {
-			p.action(p.service.Restart)
-		}
+	p.pendingServiceChanges(c)
+}
+
+func (p *panel) pendingServiceChanges(c *ui.Context) {
+	for _, target := range p.status.PendingChanges {
+		title := map[string]string{"web": "Local Web access", "relay": "Spool Relay", "tsnet": "Tailscale", "runtime": "Spool service"}[target]
+		ui.Text(c, p.tr(title)).Bold()
+		ui.Row(c).Gap(10).Children(func() {
+			if ui.Button(c, p.tr("Cancel")).Disabled(p.busy).Clicked() {
+				p.action(func() error { return p.service.CancelServiceChanges(target) })
+			}
+			if ui.Button(c, p.tr("Apply changes")).Disabled(p.busy).Clicked() {
+				p.action(func() error { return p.service.ApplyServiceChanges(target) })
+			}
+		})
 	}
 }
 
