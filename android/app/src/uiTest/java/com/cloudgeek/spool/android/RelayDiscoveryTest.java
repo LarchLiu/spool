@@ -42,7 +42,7 @@ public class RelayDiscoveryTest {
     private NsdServiceInfo service(String id, String ip) throws Exception {
         NsdServiceInfo service = new NsdServiceInfo();
         service.setServiceName("Spool-test"); service.setServiceType("_spool._tcp.");
-        service.setAttribute("id", id); service.setHost(InetAddress.getByName(ip)); service.setPort(8789);
+        service.setAttribute("id", id); service.setHost(InetAddress.getByName(ip)); service.setPort(18789);
         return service;
     }
     @Test public void resolvesPairedLocalCandidatesAndDropsCallbacksAfterStop() throws Exception {
@@ -53,8 +53,8 @@ public class RelayDiscoveryTest {
         NsdServiceInfo info = service(id, "192.168.1.20");
         ShadowNsd.discovery.onServiceFound(info); Shadows.shadowOf(Looper.getMainLooper()).idle();
         ShadowNsd.resolver.onServiceResolved(info); Shadows.shadowOf(Looper.getMainLooper()).idle();
-        assertEquals(List.of(id + "=192.168.1.20:8789"), found);
-        assertEquals("192.168.1.20:8789", discovery.addresses(id));
+        assertEquals(List.of(id + "=192.168.1.20:18789"), found);
+        assertEquals("192.168.1.20:18789", discovery.addresses(id));
         NsdManager.ResolveListener stale = ShadowNsd.resolver;
         discovery.close(); assertEquals("", discovery.addresses(id));
         stale.onServiceResolved(info); Shadows.shadowOf(Looper.getMainLooper()).idle();

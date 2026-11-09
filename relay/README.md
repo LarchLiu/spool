@@ -17,7 +17,7 @@ openssl rand -hex 32
 # Put the generated value in SPOOL_RELAY_ADMIN_TOKEN in .env.
 docker compose up -d --build
 docker compose ps
-curl --fail http://127.0.0.1:8788/healthz
+curl --fail http://127.0.0.1:18788/healthz
 ```
 
 Compose refuses to start if the administrative credential is missing. This is
@@ -29,7 +29,7 @@ The local `.env` is excluded from Git and the image build context.
 | `SPOOL_RELAY_ADMIN_TOKEN` | Required | Management API credential, 32–512 characters. |
 | `RELAY_REQUIRE_REGISTRATION_TOKEN` | `true` | Set `false` to allow signed automatic server registration. |
 | `RELAY_BIND_ADDRESS` | `127.0.0.1` | Host interface for the HTTP relay backend. |
-| `RELAY_PORT` | `8788` | Host port for the HTTP relay backend. |
+| `RELAY_PORT` | `18788` | Host port for the HTTP relay backend. |
 | `RELAY_ADMIN_PORT` | `18787` | Host loopback port for the management API, avoiding Spool's default port 8787. |
 
 For automatic registration, set `RELAY_REQUIRE_REGISTRATION_TOKEN=false` in
@@ -40,10 +40,18 @@ required. Leave the registration token empty in Spool Desktop and click
 With the default token requirement, issue server tokens through
 `http://127.0.0.1:18787/v1/registrations`, using the administrative credential
 from `.env`. The [administration examples below](#registration-administration)
-apply with port `18787` instead of `8787` when using this Compose configuration.
+use the same default port for Compose and standalone deployments.
+
+Container-based reverse proxies such as Coolify should target container port
+`18788` for relay traffic and `18787` for the administrative API. `RELAY_ADMIN_PORT`
+changes only the host port mapping; the container's administrative port stays
+`18787`. When updating an existing deployment, update proxy targets and explicit
+listener overrides to use the new ports. Existing `.env` values and saved Spool
+LAN settings retain their configured ports; use `18788` for `RELAY_PORT`, `18787`
+for `RELAY_ADMIN_PORT`, and `18789` for the secure LAN listener to adopt the defaults.
 
 The relay HTTP port and the administrative port are separate. Put an HTTPS
-reverse proxy in front of `127.0.0.1:8788`, as in the Caddy example below, and
+reverse proxy in front of `127.0.0.1:18788`, as in the Caddy example below, and
 enter that HTTPS origin in Spool Desktop. Android pairing requires an HTTPS
 origin with a certificate trusted by the app; a LAN HTTP address does not work.
 The default loopback mapping is accessible only from the Docker host. Running
@@ -79,7 +87,7 @@ The relay reads the registration setting itself at startup; it does not need to
 be available during the image build. An unset or empty value defaults to `true`;
 an invalid boolean prevents startup. An explicit `-require-registration-token`
 command-line flag takes precedence. Keep `/data` on persistent storage and route
-the public HTTPS endpoint to container port `8788`.
+the public HTTPS endpoint to container port `18788`.
 
 Build and deploy an image containing this runtime environment support before
 using the setting with direct Dockerfile deployments. Earlier images only
@@ -99,7 +107,7 @@ go build -trimpath -o spool-relay ./cmd/spool-relay
 openssl rand -hex 32
 # Save that random value as SPOOL_RELAY_ADMIN_TOKEN in your service manager.
 export SPOOL_RELAY_ADMIN_TOKEN='the-generated-value'
-./spool-relay -listen 127.0.0.1:8788 -data-dir ./relay-data
+./spool-relay -listen 127.0.0.1:18788 -data-dir ./relay-data
 ```
 
 Point `relay.example.com` at the VPS and put a TLS reverse proxy in front.
@@ -107,7 +115,7 @@ For example, a Caddyfile:
 
 ```caddyfile
 relay.example.com {
-    reverse_proxy 127.0.0.1:8788
+    reverse_proxy 127.0.0.1:18788
 }
 ```
 
@@ -122,8 +130,8 @@ Container build context is this directory:
 docker build -t spool-relay .
 docker run -d --name spool-relay --restart unless-stopped \
   --env-file relay.env -v spool-relay-data:/data \
-  -p 127.0.0.1:8788:8788 -p 127.0.0.1:8787:8787 spool-relay \
-  -listen 0.0.0.0:8788 -admin-listen 0.0.0.0:8787 -data-dir /data
+  -p 127.0.0.1:18788:18788 -p 127.0.0.1:18787:18787 spool-relay \
+  -listen 0.0.0.0:18788 -admin-listen 0.0.0.0:18787 -data-dir /data
 ```
 
 `relay.env` contains `SPOOL_RELAY_ADMIN_TOKEN=...`; restrict it to the service
@@ -176,7 +184,7 @@ To enable automatic registration, run `sudo systemctl edit spool-relay` and add:
 ```ini
 [Service]
 ExecStart=
-ExecStart=/usr/local/bin/spool-relay -listen 127.0.0.1:8788 -admin-listen 127.0.0.1:8787 -data-dir /var/lib/spool-relay -require-registration-token=false
+ExecStart=/usr/local/bin/spool-relay -listen 127.0.0.1:18788 -admin-listen 127.0.0.1:18787 -data-dir /var/lib/spool-relay -require-registration-token=false
 ```
 
 Then run `sudo systemctl daemon-reload` and `sudo systemctl restart spool-relay`.
@@ -210,7 +218,7 @@ mandatory in both modes.
 To allow automatic registration, start with:
 
 ```sh
-./spool-relay -listen 127.0.0.1:8788 -data-dir ./relay-data \
+./spool-relay -listen 127.0.0.1:18788 -data-dir ./relay-data \
   -require-registration-token=false
 ```
 
@@ -219,7 +227,7 @@ request automatic registration. Spool saves the returned token only after the
 relay confirms enrollment. Registration does not enable relay ingress. An explicitly supplied
 invalid or revoked token is rejected even when automatic registration is enabled.
 
-The administrative HTTP API listens on `127.0.0.1:8787` by default (set with
+The administrative HTTP API listens on `127.0.0.1:18787` by default (set with
 `-admin-listen`). It is separate from the public relay listener. Use it on the VPS
 or through an SSH tunnel. Every request requires the administrator credential,
 which stays on the VPS/operator machine and is never entered into Spool Desktop.
@@ -228,19 +236,19 @@ This is a JSON API; a browser management dashboard is not included.
 ```sh
 # Run on the VPS, with SPOOL_RELAY_ADMIN_TOKEN set to its configured value.
 # Create one credential for each server. The response returns its token once.
-curl --fail-with-body http://127.0.0.1:8787/v1/registrations \
+curl --fail-with-body http://127.0.0.1:18787/v1/registrations \
   -H "Authorization: Bearer $SPOOL_RELAY_ADMIN_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"name":"home-mac"}'
 
 # List names, registration IDs, associated Server IDs, connection counts,
 # and revocation times. Unused tokens have no associated Server ID yet.
-curl --fail-with-body http://127.0.0.1:8787/v1/registrations \
+curl --fail-with-body http://127.0.0.1:18787/v1/registrations \
   -H "Authorization: Bearer $SPOOL_RELAY_ADMIN_TOKEN"
 
 # Revoke by the registration.id returned above, not the server's identity.
 curl --fail-with-body -X DELETE \
-  http://127.0.0.1:8787/v1/registrations/REGISTRATION_ID \
+  http://127.0.0.1:18787/v1/registrations/REGISTRATION_ID \
   -H "Authorization: Bearer $SPOOL_RELAY_ADMIN_TOKEN"
 ```
 
@@ -284,7 +292,7 @@ the home server, `SPOOL_RELAY_REGISTRATION_TOKEN` still names its own issued tok
 ## Desktop and Android pairing
 
 1. In **Spool Desktop → Service → LAN / Relay**, enter the relay HTTPS origin
-   and a free secure LAN port (default 8789). The enable switch stays at the top
+   and a free secure LAN port (default 18789). The enable switch stays at the top
    and is disabled until registration succeeds.
 2. The relay address box includes **Relay registration token** with one **Register**
    button. Enter a token issued through the VPS administrative API, or leave it
@@ -310,7 +318,7 @@ Headless configuration, from the main Spool repository while the service is stop
 # Set this server's SPOOL_RELAY_REGISTRATION_TOKEN, or leave it empty for automatic enrollment.
 # Register, configure and print a pairing code without starting relay ingress.
 go run ./cmd/server -data-dir /path/to/spool-data \
-  -relay -relay-register -relay-url https://relay.example.com -relay-lan-port 8789 -relay-pair
+  -relay -relay-register -relay-url https://relay.example.com -relay-lan-port 18789 -relay-pair
 # Start using the saved credential.
 go run ./cmd/server -data-dir /path/to/spool-data
 ```

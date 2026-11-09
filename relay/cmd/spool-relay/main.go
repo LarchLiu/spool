@@ -18,8 +18,8 @@ import (
 )
 
 func main() {
-	listen := flag.String("listen", "127.0.0.1:8788", "HTTP listen address (put a TLS reverse proxy in front)")
-	adminListen := flag.String("admin-listen", "127.0.0.1:8787", "private administrative HTTP listen address")
+	listen := flag.String("listen", "127.0.0.1:18788", "HTTP listen address (put a TLS reverse proxy in front)")
+	adminListen := flag.String("admin-listen", "127.0.0.1:18787", "private administrative HTTP listen address")
 	dataDir := flag.String("data-dir", "relay-data", "persistent registration and revocation directory")
 	requireTokenFlag := flag.Bool("require-registration-token", true, "require a per-server token (defaults to RELAY_REQUIRE_REGISTRATION_TOKEN, or true when unset)")
 	cert := flag.String("tls-cert", "", "optional public TLS certificate PEM")

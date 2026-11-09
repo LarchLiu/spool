@@ -9,6 +9,6 @@ FROM alpine:3.23
 RUN apk add --no-cache ca-certificates && adduser -D -u 10001 relay && mkdir /data && chown relay:relay /data && chmod 700 /data
 USER relay
 COPY --from=build /spool-relay /usr/local/bin/spool-relay
-EXPOSE 8788
+EXPOSE 18788
 ENTRYPOINT ["spool-relay"]
-CMD ["-listen", "0.0.0.0:8788", "-data-dir", "/data"]
+CMD ["-listen", "0.0.0.0:18788", "-data-dir", "/data"]

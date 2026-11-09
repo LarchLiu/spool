@@ -73,7 +73,7 @@ function toServiceDraft(settings: ServerSettings): ServiceDraft {
     tsnet_port: String(settings.tsnet_port ?? 443),
     relay_enabled: settings.relay_enabled ?? false,
     relay_url: settings.relay_url ?? "",
-    relay_lan_port: String(settings.relay_lan_port ?? 8789),
+    relay_lan_port: String(settings.relay_lan_port ?? 18789),
   };
 }
 
