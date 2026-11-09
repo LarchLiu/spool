@@ -181,7 +181,7 @@ provide a default password, remote sign-up, or remote administration API.
 
 For local access, open `http://127.0.0.1:8787`. To use a browser on another
 device or install the PWA, access Spool through HTTPS and configure the exact
-same Public origin in Desktop settings or the server configuration. For example,
+same Public URL in Desktop settings or the server configuration. For example,
 with Caddy:
 
 ```caddyfile
@@ -195,6 +195,14 @@ chat.example.com {
 The reverse proxy must support WebSocket upgrades and long-lived SSE connections,
 and should disable response buffering. Spool still enforces login cookies, CSRF,
 Origin, and project permission checks.
+
+Desktop settings provides **Enable Web access** and **Allow LAN access**
+switches. LAN access uses all IPv4 interfaces; otherwise, Web access is limited
+to this computer. Turning off
+Web access also stops access through a reverse proxy pointing at that
+listener; desktop chat, Tailscale and Relay keep their independent connections.
+The listener stays enabled for existing installations. A headless server can
+persist the same setting with `-web=false` or `-web=true`.
 
 The native Android APK can use this same address: use **+** at the end of the sidebar server tabs to add a named server. Its footer
 **Settings** entry edits only that server. Enter its **Public HTTPS** address and
@@ -221,7 +229,7 @@ the selected server's remote desktop. Availability arrives through the workspace
 
 The Desktop Service settings separate the shared Spool service from its access
 entries. Connection changes are saved without interrupting work. The bottom bar
-lists pending changes for local Web, Spool Relay and Tailscale separately; **Apply
+lists pending changes for Web, Spool Relay and Tailscale separately; **Apply
 changes** restarts only that entry, while **Cancel** restores its active settings.
 Other entries and running agent tasks stay active. Runtime changes that require
 restarting the whole Spool service are labelled separately.

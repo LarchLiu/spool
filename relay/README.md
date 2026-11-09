@@ -408,7 +408,7 @@ confirmation; an explicit relay rejection makes registration available again.
 The stable TLS identity and admission capability are in `data-dir/relay/identity.json`.
 Back up that file with your private Spool data. Replacing it requires re-pairing.
 
-## Public Web / PWA access
+## Public internet access
 
 The relay can publish each connected Spool server that enables Web access under
 its stable Server ID:
@@ -426,7 +426,7 @@ all paths this way. Do not strip `/web/` with a path-rewriting proxy rule.
 
 1. Upgrade both the relay and the home Spool server, then register and enable
    Spool Relay as described above.
-2. In **Spool Desktop → Service → Spool Relay**, enable **Public Web / PWA access**.
+2. In **Spool Desktop → Service → Spool Relay**, enable **Public internet access**.
 3. Restart the Spool service to apply its Web setting. On connection, the relay
    verifies the registration and signed Web opt-in, then automatically adds the
    route and returns its URL. **Public Web address** appears inside the Web access

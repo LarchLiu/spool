@@ -485,11 +485,12 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 	if _, err := page.EvalContext(ctx, `
 		window.smokeSetInput = (input, value) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', {bubbles: true})); };
 		window.smokeServiceBlurred = false;
-		const input = document.querySelector('[data-page="Service"] input');
+		const input = document.querySelector('[data-page="Service"] input[type="number"]');
 		input.addEventListener('blur', () => { window.smokeServiceBlurred = true; }, {once: true});
 		input.focus();
 		if (document.activeElement !== input) throw new Error('service input did not receive focus');
-		smokeSetInput(input, 'localhost');
+		window.smokeWebPort = input.value === '29876' ? 29877 : 29876;
+		smokeSetInput(input, String(window.smokeWebPort));
 		await new Promise(resolve => setTimeout(resolve, 0));
 		input.blur();
 		document.querySelector('[data-section="People"]').click();
@@ -500,11 +501,11 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 		const snapshot = await mygo.call('DesktopSettings.Snapshot');
 		const checks = {
 			blur: window.smokeServiceBlurred === true,
-			saved: snapshot.settings.host === 'localhost',
+			saved: snapshot.settings.port === window.smokeWebPort,
 			navigated: snapshot.section === 'People' && !document.querySelector('[data-page="People"]').hidden,
 			idle: smokeSettingsReady('People')
 		};
-		return {ready: Object.values(checks).every(Boolean), checks, host: snapshot.settings.host, focused: document.hasFocus()};
+		return {ready: Object.values(checks).every(Boolean), checks, port: snapshot.settings.port, focused: document.hasFocus()};
 	`); err != nil {
 		return fmt.Errorf("service input blur autosave/navigation: %w", err)
 	}
@@ -575,10 +576,10 @@ func (p *panel) probeSettings(ctx context.Context, report string, history *appup
 	if _, err := page.EvalContext(ctx, `document.querySelector('[data-section="Service"]').click();`); err != nil {
 		return err
 	}
-	if err := waitChatScript(ctx, page, `return smokeSettingsReady('Service') && document.querySelector('[data-page="Service"] input').value === 'localhost'`); err != nil {
+	if err := waitChatScript(ctx, page, `return smokeSettingsReady('Service') && document.querySelector('[data-page="Service"] input[type="number"]').value === String(window.smokeWebPort)`); err != nil {
 		return fmt.Errorf("settings autosave lost: %w", err)
 	}
-	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).settings.host === 'localhost' && smokeSettingsReady('Service');`); err != nil {
+	if err := waitChatScript(ctx, page, `return (await mygo.call('DesktopSettings.Snapshot')).settings.port === window.smokeWebPort && smokeSettingsReady('Service');`); err != nil {
 		return fmt.Errorf("service field was not autosaved: %w", err)
 	}
 	if err := waitChatScript(ctx, page, `const section = document.querySelector('[data-page="Service"]'); return !section.querySelector('form, button[type="submit"]') && (await mygo.call('DesktopSettings.Snapshot')).status.RestartRequired && !!document.querySelector('[data-apply-service-change="web"]');`); err != nil {

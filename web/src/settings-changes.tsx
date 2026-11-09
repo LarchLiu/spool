@@ -21,13 +21,16 @@ export function SettingsChanges({
     (data.status.RestartRequired ? ["runtime" as const] : []);
   if (!pending.length && !saves.length) return null;
   const titles: Record<ServiceChangeTarget, MessageKey> = {
-    web: "Local Web access",
+    web: "Web access",
     relay: "Spool Relay",
     tsnet: "Tailscale",
     runtime: "Spool service",
   };
   const descriptions: Record<ServiceChangeTarget, MessageKey> = {
-    web: "Restart local Web access to apply its address, port and public origin. Web clients reconnect; active tasks continue.",
+    web:
+      data.settings.web_enabled !== false
+        ? "Restart Web access to apply its access scope, port and public URL. Web clients reconnect; active tasks continue."
+        : "Stop Web access. Desktop and other access entries stay available; active tasks continue.",
     relay: data.settings.relay_enabled
       ? "Restart Spool Relay and secure LAN access. Relay clients reconnect; active tasks continue."
       : "Stop Spool Relay and secure LAN access. Active tasks continue.",

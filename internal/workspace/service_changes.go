@@ -8,7 +8,7 @@ func (s *Service) pendingChangesLocked(next Settings) []string {
 		return pending
 	}
 	active := s.activeSettings
-	if active.Host != next.Host || active.Port != next.Port || active.PublicURL != next.PublicURL || s.web == nil {
+	if active.WebEnabled != next.WebEnabled || next.WebEnabled && (active.Host != next.Host || active.Port != next.Port || active.PublicURL != next.PublicURL || s.web == nil) {
 		pending = append(pending, "web")
 	}
 	if !sameRelaySettings(active, next) || next.RelayEnabled && s.relay == nil || s.relay != nil && s.relay.host.RegistrationToken() != s.relayRegistrationToken(s.relay.host.URL) {
@@ -30,6 +30,7 @@ func (s *Service) pendingChangesLocked(next Settings) []string {
 func copyServiceSettings(target string, destination *Settings, source Settings) error {
 	switch target {
 	case "web":
+		destination.WebEnabled = source.WebEnabled
 		destination.Host, destination.Port, destination.PublicURL = source.Host, source.Port, source.PublicURL
 	case "relay":
 		destination.RelayEnabled, destination.RelayURL, destination.RelayLANPort, destination.RelayWebEnabled = source.RelayEnabled, source.RelayURL, source.RelayLANPort, source.RelayWebEnabled

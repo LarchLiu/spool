@@ -6,7 +6,7 @@ const model = (id, levels) => ({
 const snapshot = {
   section: "Appearance", message: "", version: "test", database: "/fixture/spool.sqlite", application_log: "/fixture/application.log", crash_log: "/fixture/crash.log", update_log: "/fixture/update.log",
   github_path: "", github_state: "", github_message: "", github_login: "",
-  settings: { host: "127.0.0.1", port: 8787, public_url: "https://chat.example.com", idle_minutes: 10, history_cache_mib: 256, auto_start: false, tsnet_enabled: false, tsnet_hostname: "spool-server", tsnet_port: 443, proxy_enabled: true, use_system_proxy: false, proxy_url: "", no_proxy: "" },
+  settings: { web_enabled: true, host: "127.0.0.1", port: 8787, public_url: "https://chat.example.com", idle_minutes: 10, history_cache_mib: 256, auto_start: false, tsnet_enabled: false, tsnet_hostname: "spool-server", tsnet_port: 443, proxy_enabled: true, use_system_proxy: false, proxy_url: "", no_proxy: "" },
   preferences: { theme: "system", language: "system" },
   update_preferences: { automatic_checks: false, automatic_installs: false, check_interval_minutes: 60 },
   status: { Running: true, RestartRequired: false, PendingChanges: [], Address: "127.0.0.1:8787", Error: "", Online: [], TSNet: { State: "Disabled", AuthURL: "", URL: "", Error: "" }, TSNetAuthKeySet: false },
@@ -23,14 +23,16 @@ const snapshot = {
 };
 let activeSettings = structuredClone(snapshot.settings);
 const entryFields = {
-  web: ["host", "port", "public_url"],
+  web: ["web_enabled", "host", "port", "public_url"],
   relay: ["relay_enabled", "relay_url", "relay_lan_port", "relay_web_enabled"],
   tsnet: ["tsnet_enabled", "tsnet_hostname", "tsnet_port", "proxy_enabled", "use_system_proxy", "proxy_url", "no_proxy"],
   runtime: ["idle_minutes"],
 };
 const refreshPending = () => {
   snapshot.status.PendingChanges = Object.keys(entryFields).filter(target =>
-    entryFields[target].some(field => snapshot.settings[field] !== activeSettings[field]) ||
+    (target === "web"
+      ? snapshot.settings.web_enabled !== activeSettings.web_enabled || snapshot.settings.web_enabled && entryFields.web.some(field => snapshot.settings[field] !== activeSettings[field])
+      : entryFields[target].some(field => snapshot.settings[field] !== activeSettings[field])) ||
     target === "tsnet" && snapshot.status.TSNet.State === "Registered");
   snapshot.status.RestartRequired = snapshot.status.PendingChanges.length > 0;
 };
@@ -41,6 +43,20 @@ window.mygo = {
     return () => {};
   },
   async call(method, command) {
+    if (method === "DesktopSettings.AddressQRCode") {
+      window.smokeSettings.commands.push({ kind: "address-qr", address: command });
+      if (window.smokeSettings.failNextQR) {
+        window.smokeSettings.failNextQR = false;
+        throw new Error("Fixture QR failure");
+      }
+      if (window.smokeSettings.holdNextQR) {
+        window.smokeSettings.holdNextQR = false;
+        await new Promise(resolve => { window.smokeSettings.releaseQR = resolve; });
+      }
+      const response = await fetch("/address-qr", { method: "POST", body: JSON.stringify(command) });
+      if (!response.ok) throw new Error("Fixture QR generation failed");
+      return await response.json();
+    }
     if (method === "DesktopSettings.Snapshot") {
       window.smokeSettings.snapshots++;
       return structuredClone(snapshot);
@@ -131,6 +147,12 @@ window.mygo = {
     }
     if (command.kind === "apply-service-changes") {
       for (const field of entryFields[command.target]) activeSettings[field] = snapshot.settings[field];
+      if (command.target === "web") snapshot.status.Address = activeSettings.web_enabled ? `${activeSettings.host}:${activeSettings.port}` : "";
+      if (command.target === "relay") snapshot.status.Relay = {
+        ...snapshot.status.Relay,
+        State: activeSettings.relay_enabled ? "connected" : "disabled",
+        WebURL: activeSettings.relay_enabled && activeSettings.relay_web_enabled ? "https://relay.example.test/web/browser-server/" : "",
+      };
       if (command.target === "tsnet") {
         snapshot.status.TSNet = window.smokeSettings.registered || snapshot.status.TSNetAuthKeySet
           ? { State: "Running", AuthURL: "", URL: "https://spool.example.ts.net", Error: "" }

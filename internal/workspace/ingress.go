@@ -32,16 +32,25 @@ func (i *httpIngress) close() {
 }
 
 func (s *Service) startWebLocked(settings Settings) error {
-	listener, err := net.Listen("tcp", settings.Address())
-	if err != nil {
-		return err
+	var listener net.Listener
+	if settings.WebEnabled {
+		var err error
+		listener, err = net.Listen("tcp", settings.Address())
+		if err != nil {
+			return err
+		}
+		s.web = s.newIngressLocked()
+		s.runningAddress = listener.Addr().String()
+	} else {
+		s.runningAddress = ""
 	}
-	s.web = s.newIngressLocked()
-	s.runningAddress = listener.Addr().String()
 	s.app.configMu.Lock()
+	s.app.settings.WebEnabled = settings.WebEnabled
 	s.app.settings.Host, s.app.settings.Port, s.app.settings.PublicURL = settings.Host, settings.Port, settings.PublicURL
 	s.app.configMu.Unlock()
-	s.serveLocked(s.web.server, listener)
+	if listener != nil {
+		s.serveLocked(s.web.server, listener)
+	}
 	return nil
 }
 

@@ -36,6 +36,7 @@ func run() (runErr error) {
 	directory := flag.String("directory", "", "existing local project directory")
 	grant := flag.String("grant", "", "comma-separated usernames for new project")
 	port := flag.Int("port", 0, "persist a new Web port")
+	webEnabled := flag.Bool("web", true, "persist local Web listener enablement (desktop, Tailscale and relay access are independent)")
 	host := flag.String("host", "", "persist a listen IP (default 127.0.0.1)")
 	publicURL := flag.String("public-url", "", "persist reverse proxy public origin (HTTPS for remote PWA)")
 	tailnetEnabled := flag.Bool("tsnet", false, "persist embedded Tailscale HTTPS enablement (no system VPN or Funnel)")
@@ -222,6 +223,8 @@ func run() (runErr error) {
 	}
 	flag.Visit(func(f *flag.Flag) {
 		switch f.Name {
+		case "web":
+			settings.WebEnabled = *webEnabled
 		case "relay":
 			settings.RelayEnabled = *relayEnabled
 		case "relay-web":

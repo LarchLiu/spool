@@ -62,6 +62,26 @@ func TestSettingsUsersProjectsAndAgentsPersistInSQLite(t *testing.T) {
 	}
 }
 
+func TestWebEnablementDefaultsForExistingSettingsAndPersistsDisable(t *testing.T) {
+	store := testStore(t)
+	// Settings saved before the Web switch existed must retain their listener.
+	if _, err := store.db.Exec(`INSERT INTO settings VALUES('server',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, `{"host":"0.0.0.0","port":8787}`); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := store.Settings()
+	if err != nil || !settings.WebEnabled || settings.Host != "0.0.0.0" {
+		t.Fatal("legacy settings lost Web or LAN access", settings, err)
+	}
+	settings.WebEnabled = false
+	if err := store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := store.Settings()
+	if err != nil || saved.WebEnabled || saved.Host != settings.Host {
+		t.Fatal("Web disable was not persisted", saved, err)
+	}
+}
+
 func TestPublicOriginRemainsEditableAcrossTailnetSettings(t *testing.T) {
 	s := testStore(t)
 	settings := DefaultSettings()

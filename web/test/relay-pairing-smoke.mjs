@@ -147,7 +147,7 @@ const check = (value, label) => { checks++; if (!value) throw new Error(label); 
   data = { ...data, status: { ...data.status, Relay: { ...data.status.Relay, State: 'connected' } } };
   render(); await pause(50);
   check(!button('注销'), 'connected relay keeps unregister hidden');
-  const webGroup = document.querySelector('[role="group"][aria-label="公网 Web / PWA 访问"]');
+  const webGroup = document.querySelector('[role="group"][aria-label="公网访问"]');
   const webToggle = webGroup.querySelector('[role="switch"]');
   check(!webGroup.querySelector('.settings-copy-address') && !webGroup.textContent.includes('公网 Web 地址'), 'disabled Web hides address and copy control');
   webToggle.click(); await pause(100);

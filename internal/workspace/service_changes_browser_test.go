@@ -70,6 +70,19 @@ func testSettingsChangesBrowser(t *testing.T, name, setup string) {
 					}
 					reports <- report
 					w.WriteHeader(204)
+				case "/address-qr":
+					var address string
+					if err := json.NewDecoder(r.Body).Decode(&address); err != nil {
+						http.Error(w, "invalid address", 400)
+						return
+					}
+					image, err := AddressQRCode(address)
+					if err != nil {
+						http.Error(w, err.Error(), 400)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					json.NewEncoder(w).Encode(image)
 				case "/capture":
 					ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 					defer cancel()
@@ -81,7 +94,11 @@ func testSettingsChangesBrowser(t *testing.T, name, setup string) {
 							var data []byte
 							data, err = base64.StdEncoding.DecodeString(image.Data)
 							if err == nil {
-								err = os.WriteFile(filepath.Join(output, fmt.Sprintf("settings-%d-%s.png", scenario.width, scenario.theme)), data, 0644)
+								suffix := ""
+								if r.URL.Query().Get("variant") == "qr" {
+									suffix = "-qr"
+								}
+								err = os.WriteFile(filepath.Join(output, fmt.Sprintf("settings-%d-%s%s.png", scenario.width, scenario.theme, suffix)), data, 0644)
 							}
 						}
 					}

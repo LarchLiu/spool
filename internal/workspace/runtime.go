@@ -301,7 +301,10 @@ func (s *Service) Status() ServiceStatus {
 		online = s.app.presence.List(s.Store)
 		connections = s.app.remoteDesktopConnections()
 	}
-	address := settings.Address()
+	address := ""
+	if settings.WebEnabled {
+		address = settings.Address()
+	}
 	pending := s.pendingChangesLocked(settings)
 	if s.server != nil {
 		address = s.runningAddress
@@ -342,13 +345,24 @@ func (s *Service) WebURL() string {
 	if s.app != nil {
 		settings = s.app.activeSettings()
 	}
-	if settings.PublicURL != "" {
+	if settings.WebEnabled && settings.PublicURL != "" {
 		return settings.PublicURL
 	}
 	if s.tailnet != nil {
 		if origin := s.tailnet.snapshot().URL; origin != "" {
 			return origin
 		}
+	}
+	if !settings.WebEnabled {
+		if s.relay != nil {
+			if address := s.relay.snapshot().WebURL; address != "" {
+				return address
+			}
+		}
+		if s.server != nil {
+			return "http://" + s.localAddress
+		}
+		return ""
 	}
 	host := settings.Host
 	if host == "0.0.0.0" || host == "::" {

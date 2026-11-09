@@ -138,6 +138,106 @@ func TestCancelServiceChangesRestoresOnlySelectedFields(t *testing.T) {
 	}
 }
 
+func TestDisableWebEntryKeepsDesktopTailnetAndActiveWork(t *testing.T) {
+	service, settings := settingsService(t)
+	connection := newTestTailnetConnection(t)
+	settings = enableTestTailnet(t, service, settings, func(context.Context, string, tailnet.Options, func(tailnet.Status)) (tailnetConnection, error) {
+		return connection, nil
+	})
+	waitTailnet(t, service, func(status ServiceStatus) bool { return status.TSNet.URL != "" })
+	app, runner, node := service.app, service.runner, service.tailnet
+	desktop, _ := service.LocalWebURL()
+	address := service.Status().Address
+	app.turnMu.Lock()
+	work, control := app.registerTurn(context.Background(), "web-disable", "turn")
+	app.turnMu.Unlock()
+	defer app.releaseTurn("web-disable", control)
+	settings.WebEnabled = false
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(service.Status().PendingChanges, []string{"web"}) {
+		t.Fatal("Web disable was not pending", service.Status())
+	}
+	requireServiceHealth(t, "http://"+address)
+	if err := service.CancelServiceChanges("web"); err != nil {
+		t.Fatal(err)
+	}
+	if saved, err := service.Store.Settings(); err != nil || !saved.WebEnabled || service.Status().RestartRequired {
+		t.Fatal("cancel did not restore Web enablement", saved, err)
+	}
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ApplyServiceChanges("web"); err != nil {
+		t.Fatal(err)
+	}
+	if status := service.Status(); !status.Running || status.Address != "" || status.RestartRequired || service.web != nil {
+		t.Fatal("disabled Web entry is still active or pending", status)
+	}
+	if socket, err := net.DialTimeout("tcp", address, time.Second); err == nil {
+		socket.Close()
+		t.Fatal("disabled Web listener still accepts connections")
+	}
+	requireServiceHealth(t, desktop)
+	requireServiceHealth(t, "http://"+connection.Listener().Addr().String())
+	if service.app != app || service.runner != runner || service.tailnet != node || work.Err() != nil {
+		t.Fatal("disabling Web interrupted another entry or active work")
+	}
+	settings.WebEnabled = true
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ApplyServiceChanges("web"); err != nil {
+		t.Fatal(err)
+	}
+	requireServiceHealth(t, "http://"+service.Status().Address)
+	if service.Status().RestartRequired || service.app != app || service.tailnet != node || work.Err() != nil {
+		t.Fatal("re-enabling Web affected other entries or work")
+	}
+}
+
+func TestWebDisabledStartupAndFailedEnable(t *testing.T) {
+	service, settings := settingsService(t)
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer occupied.Close()
+	settings.WebEnabled = false
+	settings.Port = occupied.Addr().(*net.TCPAddr).Port
+	settings.PublicURL = "https://disabled.example.test"
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Restart(); err != nil {
+		t.Fatal("disabled Web tried to bind an occupied port", err)
+	}
+	desktop, _ := service.LocalWebURL()
+	app := service.app
+	requireServiceHealth(t, desktop)
+	if status := service.Status(); status.Address != "" || status.RestartRequired || service.WebURL() != desktop {
+		t.Fatal("disabled startup exposed a stale Web address", status, service.WebURL())
+	}
+	settings.WebEnabled = true
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ApplyServiceChanges("web"); err == nil {
+		t.Fatal("Web accepted an occupied port")
+	}
+	if service.web != nil || service.app != app || !slices.Equal(service.Status().PendingChanges, []string{"web"}) || service.WebURL() != desktop {
+		t.Fatal("failed Web enablement changed the disabled entry", service.Status())
+	}
+	requireServiceHealth(t, desktop)
+	if err := service.CancelServiceChanges("web"); err != nil {
+		t.Fatal(err)
+	}
+	if service.Status().RestartRequired || service.Status().WebError != "" {
+		t.Fatal("cancel left a disabled Web error", service.Status())
+	}
+}
+
 func TestFailedWebApplyRestoresOldListenerWithoutStoppingCore(t *testing.T) {
 	service, settings := settingsService(t)
 	app, runner := service.app, service.runner
@@ -308,6 +408,7 @@ func TestRuntimeApplyPreservesOtherPendingEntrySettings(t *testing.T) {
 	service, original := settingsService(t)
 	oldApp := service.app
 	next := original
+	next.WebEnabled = false
 	next.Port = availableServicePort(t)
 	next.PublicURL = "https://pending.example.test"
 	next.IdleMinutes++

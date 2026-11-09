@@ -60,10 +60,10 @@ test("service offers optional masked enrollment without storing a key in the set
   assert.match(html, /Sign in to Tailscale/);
   assert.match(html, /Waiting for Tailscale login/);
   assert.doesNotMatch(html, /Clear pending key/);
-  assert.doesNotMatch(html, /aria-label="Public origin[^>]+disabled=""/);
+  assert.doesNotMatch(html, /aria-label="Public URL[^>]+disabled=""/);
   assert.match(
     html,
-    /This reverse-proxy origin stays independent of the Tailscale HTTPS address\./,
+    /Optional HTTPS address of your reverse proxy for public internet access\. Configure the proxy separately\./,
   );
   const autosave = await readFile(
     new URL("../src/settings-autosave.ts", import.meta.url),
@@ -98,15 +98,13 @@ test("tailnet shows enrollment errors and the explicit restart action without st
   assert.doesNotMatch(html, /Sign in to Tailscale/);
 });
 
-test("registered identity asks for explicit activation and does not expose a login link", () => {
+test("registered identity shows its status without repeated apply instructions or a login link", () => {
   const html = renderService({
     RestartRequired: true,
     TSNet: { State: "Registered", URL: "" },
   });
-  assert.match(
-    html,
-    /Registered\. Apply the pending Tailscale changes in the bottom bar to activate HTTPS\./,
-  );
+  assert.match(html, />Registered</);
+  assert.doesNotMatch(html, /bottom bar|pending.*changes/);
   assert.doesNotMatch(html, /data-restart-service/);
   assert.doesNotMatch(
     html,
@@ -180,7 +178,7 @@ test("system proxy is an application Network setting, not a Tailscale option", a
     new URL("../src/settings-client.ts", import.meta.url),
     "utf8",
   );
-  assert.match(client, /"Online",\s*"Network",\s*"Appearance"/);
+  assert.match(client, /"Online",\s*"Appearance",\s*"Network"/);
   assert.doesNotMatch(client, /tsnet_use_system_proxy/);
 });
 
@@ -224,12 +222,13 @@ test("connected tailnet displays the assigned HTTPS address and leaves Spool log
   assert.match(html, /Connected to tailnet/);
   assert.match(html, /<code>https:\/\/spool.example.ts.net<\/code>/);
   assert.match(html, /Copy address/);
+  assert.match(html, /class="icon settings-address-qr"[^>]*aria-label="Show address QR code"/);
   assert.match(html, /Spool login is still required/);
   assert.match(
     html,
-    /aria-label="Public origin[^>]+value="https:\/\/chat\.example\.com"/,
+    /aria-label="Public URL[^>]+value="https:\/\/chat\.example\.com"/,
   );
-  assert.doesNotMatch(html, /aria-label="Public origin[^>]+disabled/);
+  assert.doesNotMatch(html, /aria-label="Public URL[^>]+disabled/);
   assert.doesNotMatch(html, /Sign in to Tailscale|Clear pending key/);
 });
 
@@ -242,5 +241,50 @@ test("disabled tailnet does not lock a custom reverse-proxy origin", () => {
     html,
     /aria-label="Enable embedded Tailscale" aria-checked="false"/,
   );
-  assert.doesNotMatch(html, /aria-label="Public origin[^>]+disabled/);
+  assert.doesNotMatch(html, /aria-label="Public URL[^>]+disabled/);
+});
+
+test("local Web access uses enablement and LAN switches instead of a listen IP input", () => {
+  const html = renderService({ Address: "127.0.0.1:8787" });
+  assert.match(html, /aria-label="Enable Web access" aria-checked="true"/);
+  assert.match(html, /aria-label="Allow LAN access" aria-checked="false"/);
+  assert.doesNotMatch(html, /Listen IP|value="127\.0\.0\.1"/);
+  assert.match(html, /aria-label="Public URL"/);
+  assert.doesNotMatch(html, /independent of Tailscale/);
+  const lan = renderService({}, { host: "0.0.0.0" });
+  assert.match(lan, /aria-label="Allow LAN access" aria-checked="true"/);
+  const disabled = renderService({ Address: "" }, { web_enabled: false, host: "0.0.0.0" });
+  assert.match(disabled, /aria-label="Enable Web access" aria-checked="false"/);
+  assert.match(disabled, /aria-label="Allow LAN access" aria-checked="true"[^>]*disabled/);
+  assert.match(disabled, /aria-label="HTTP port"[^>]*disabled/);
+  assert.match(disabled, /aria-label="Public URL"[^>]*disabled/);
+  assert.doesNotMatch(disabled, /Active listen address/);
+  assert.match(disabled, /aria-label="Enable embedded Tailscale" aria-checked="true"/);
+});
+
+test("address QR buttons use the public input and appear beside relay and Tailnet addresses", () => {
+  const html = renderService({
+    TSNet: { State: "Running", URL: "https://node.example.ts.net" },
+    Relay: { State: "connected", WebURL: "https://relay.example.test/web/server/" },
+  }, {
+    public_url: "https://spool.example.test",
+    relay_enabled: true,
+    relay_web_enabled: true,
+  });
+  assert.equal((html.match(/class="icon settings-address-qr"/g) ?? []).length, 3);
+  assert.match(html, /aria-label="Public internet access"/);
+  assert.doesNotMatch(html, /without Tailscale|bottom bar/);
+  const invalid = renderService({}, { public_url: "javascript:alert(1)" });
+  assert.match(invalid, /class="icon settings-address-qr"[^>]*disabled/);
+});
+
+test("Web address links open the correct browser URLs without the old global chat buttons", () => {
+  const html = renderService({ Address: "0.0.0.0:8787" }, { public_url: "https://spool.example.test" });
+  assert.doesNotMatch(html, /Open Chat|Open in Browser/);
+  assert.match(html, /class="icon settings-address-link" href="http:\/\/127\.0\.0\.1:8787" target="_blank" rel="noopener noreferrer"/);
+  assert.match(html, /class="icon settings-address-link" href="https:\/\/spool\.example\.test"/);
+  const ipv6 = renderService({ Address: "[::]:8787" });
+  assert.match(ipv6, /href="http:\/\/\[::1\]:8787"/);
+  const invalid = renderService({}, { public_url: "javascript:alert(1)" });
+  assert.doesNotMatch(invalid, /href="javascript:/);
 });

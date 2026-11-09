@@ -169,6 +169,7 @@ export function Toggle({
 }
 export function TextField({
   icon,
+  beforeInput,
   title,
   value,
   onChange,
@@ -182,6 +183,7 @@ export function TextField({
   placeholder,
 }: {
   icon?: ReactNode;
+  beforeInput?: ReactNode;
   title: string;
   value: string | number;
   onChange: (value: string) => void;
@@ -196,6 +198,7 @@ export function TextField({
 }) {
   return (
     <Row icon={icon} title={title} help={help}>
+      {beforeInput}
       <input
         aria-label={title}
         type={type}

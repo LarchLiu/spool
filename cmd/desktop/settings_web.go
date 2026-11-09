@@ -315,6 +315,13 @@ func (s *desktopSettings) RelayPairing(ctx context.Context) (workspace.RelayPair
 	return s.panel.service.RelayPairingInfo()
 }
 
+func (s *desktopSettings) AddressQRCode(ctx context.Context, address string) (string, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return "", err
+	}
+	return workspace.AddressQRCode(address)
+}
+
 func (s *desktopSettings) RegisterRelay(ctx context.Context, address, token, name string) (workspace.RelayStatus, error) {
 	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
 		return workspace.RelayStatus{}, err

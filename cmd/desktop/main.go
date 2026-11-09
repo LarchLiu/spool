@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -410,7 +411,7 @@ func (p *panel) view(c *ui.Context) {
 			}
 			ui.Text(c, "Spool").Bold().FontSize(16)
 			ui.Text(c, p.tr("Control Center")).FontSize(12)
-			for _, tab := range []string{"Chat", "Service", "People", "Projects", "Agents", "Online", "Network", "Appearance", "About"} {
+			for _, tab := range []string{"Chat", "Service", "People", "Projects", "Agents", "Online", "Appearance", "Network", "About"} {
 				c.Key("tab-" + tab)
 				button := ui.Button
 				if p.tab == tab {
@@ -469,7 +470,7 @@ func (p *panel) serviceView(c *ui.Context) {
 	if p.status.Running {
 		status = "Running"
 	}
-	ui.Text(c, p.tr(status)+" · "+p.status.Address).Bold()
+	ui.Text(c, p.tr(status)).Bold()
 	if p.status.Error != "" {
 		ui.Text(c, p.status.Error).Wrap()
 	}
@@ -480,20 +481,39 @@ func (p *panel) serviceView(c *ui.Context) {
 		if ui.Button(c, p.tr("Stop service")).Disabled(p.busy || !p.status.Running).Clicked() {
 			p.action(p.service.Stop)
 		}
-		if ui.Button(c, p.tr("Open Chat")).Disabled(p.chatStarting).Clicked() {
-			p.openChat()
-		}
-		if ui.Button(c, p.tr("Open in Browser")).Clicked() {
-			p.openBrowser()
-		}
 	})
 	p.pendingServiceChanges(c)
-	p.serviceSettingField(c, "Listen IP (127.0.0.1 / 0.0.0.0)", &p.settings.Host, func(settings *workspace.Settings, value string) error { settings.Host = value; return nil })
-	p.serviceSettingField(c, "Web port", &p.port, func(settings *workspace.Settings, value string) (err error) {
+	if p.status.Running && p.status.Address != "" {
+		ui.Row(c).Gap(8).Children(func() {
+			if ui.Button(c, p.tr("Open address")).Clicked() {
+				address := strings.Replace(p.status.Address, "0.0.0.0:", "127.0.0.1:", 1)
+				address = strings.Replace(address, "[::]:", "[::1]:", 1)
+				p.openChatLink("http://" + address)
+			}
+			ui.Text(c, p.status.Address).Selectable().Wrap()
+		})
+	}
+	if ui.Checkbox(c, &p.settings.WebEnabled, p.tr("Enable Web access")).Disabled(p.busy).Changed() {
+		enabled := p.settings.WebEnabled
+		p.saveServiceSetting(func(settings *workspace.Settings) error { settings.WebEnabled = enabled; return nil })
+	}
+	allowLAN := p.settings.Host != "localhost" && !net.ParseIP(p.settings.Host).IsLoopback()
+	if ui.Checkbox(c, &allowLAN, p.tr("Allow LAN access")).Disabled(p.busy || !p.settings.WebEnabled).Changed() {
+		host := "127.0.0.1"
+		if allowLAN {
+			host = "0.0.0.0"
+		}
+		p.settings.Host = host
+		p.saveServiceSetting(func(settings *workspace.Settings) error { settings.Host = host; return nil })
+	}
+	p.serviceSettingFieldWithDisabled(c, "Web port", &p.port, !p.settings.WebEnabled, func(settings *workspace.Settings, value string) (err error) {
 		settings.Port, err = strconv.Atoi(value)
 		return err
 	})
-	p.serviceSettingField(c, "Public origin (HTTPS reverse proxy for remote PWA)", &p.settings.PublicURL, func(settings *workspace.Settings, value string) error { settings.PublicURL = value; return nil })
+	p.serviceSettingFieldWithDisabled(c, "Public URL", &p.settings.PublicURL, !p.settings.WebEnabled, func(settings *workspace.Settings, value string) error { settings.PublicURL = value; return nil })
+	if p.settings.PublicURL != "" && ui.Button(c, p.tr("Open address")).Disabled(!p.settings.WebEnabled).Clicked() {
+		p.openChatLink(p.settings.PublicURL)
+	}
 	p.serviceSettingField(c, "Release completed agents after idle minutes", &p.idle, func(settings *workspace.Settings, value string) (err error) {
 		settings.IdleMinutes, err = strconv.Atoi(value)
 		return err
@@ -573,13 +593,13 @@ func (p *panel) networkView(c *ui.Context) {
 	ui.Text(c, p.tr("Custom HTTP(S) or SOCKS5 proxy for Spool's built-in requests. Used when proxy is enabled and system proxy is off. Leave blank to inherit environment proxies.")).Wrap().FontSize(12)
 	p.serviceSettingFieldWithDisabled(c, "No proxy", &p.settings.NoProxy, customDisabled, func(settings *workspace.Settings, value string) error { settings.NoProxy = value; return nil })
 	ui.Text(c, p.tr("Comma-separated hosts or IP ranges that should bypass the proxy. Leave blank to inherit NO_PROXY. Loopback always connects directly.")).Wrap().FontSize(12)
-	ui.Text(c, p.tr("New built-in HTTP requests use this setting immediately. Restart the service to reconnect Tailscale. Local loopback access, push security checks and external agent tools keep their own network rules.")).Wrap().FontSize(12)
+	ui.Text(c, p.tr("New built-in HTTP requests use this setting immediately. Local loopback access, push security checks and external agent tools keep their own network rules.")).Wrap().FontSize(12)
 	p.pendingServiceChanges(c)
 }
 
 func (p *panel) pendingServiceChanges(c *ui.Context) {
 	for _, target := range p.status.PendingChanges {
-		title := map[string]string{"web": "Local Web access", "relay": "Spool Relay", "tsnet": "Tailscale", "runtime": "Spool service"}[target]
+		title := map[string]string{"web": "Web access", "relay": "Spool Relay", "tsnet": "Tailscale", "runtime": "Spool service"}[target]
 		ui.Text(c, p.tr(title)).Bold()
 		ui.Row(c).Gap(10).Children(func() {
 			if ui.Button(c, p.tr("Cancel")).Disabled(p.busy).Clicked() {

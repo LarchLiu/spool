@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
-  ChevronRight,
   FolderOpen,
   Github,
   Globe2,
@@ -29,6 +28,7 @@ import { ThemePicker } from "./theme-picker";
 import { VoxlSettings } from "./voxl-settings";
 import { RelayPairing, RelayRegistration } from "./relay-settings";
 import { CustomSelect } from "./custom-select";
+import { AddressLink, AddressQRButton } from "./address-actions";
 import {
   NetworkSettingsAutosave,
   ServiceSettingsAutosave,
@@ -146,7 +146,7 @@ export function NetworkPage({ data, run, t }: PageProps) {
         />
         <Hint>
           {t(
-            "New built-in HTTP requests use this setting immediately. Apply the pending Tailscale changes below to reconnect it. Local loopback access, push security checks and external agent tools keep their own network rules.",
+            "New built-in HTTP requests use this setting immediately. Local loopback access, push security checks and external agent tools keep their own network rules.",
           )}
         </Hint>
       </Card>
@@ -281,9 +281,7 @@ export function ServicePage({ data, run, t }: PageProps) {
       <Card title={t("Spool service")}>
         <Row
           title={t("Service status")}
-          help={t(
-            "Start or stop local Web, Tailscale and relay access together.",
-          )}
+          help={t("Start or stop Web, Tailscale and relay access together.")}
         >
           <span
             className={`settings-state${data.status.Running ? " online" : ""}`}
@@ -308,19 +306,6 @@ export function ServicePage({ data, run, t }: PageProps) {
           >
             {t("Stop service")}
           </button>
-          <span className="settings-action-spacer" />
-          <button type="button" onClick={() => void run({ kind: "open-chat" })}>
-            {t("Open Chat")}
-            <ChevronRight size={14} />
-          </button>
-          <button
-            type="button"
-            disabled={!data.status.Running}
-            onClick={() => void run({ kind: "open-browser" })}
-          >
-            {t("Open in Browser")}
-            <ArrowUpRight size={14} />
-          </button>
         </div>
       </Card>
       {data.status.Error && (
@@ -328,37 +313,81 @@ export function ServicePage({ data, run, t }: PageProps) {
           {knownMessage(data.status.Error, t)}
         </div>
       )}
-      <Card title={t("Local Web access")}>
-        {data.status.Running && (
+      <Card title={t("Web access")}>
+        <Row
+          title={t("Enable Web access")}
+          help={t("Access Spool in your browser.")}
+        >
+          <Toggle
+            label={t("Enable Web access")}
+            value={draft.web_enabled}
+            onChange={(value) => {
+              autosave.edit("web_enabled", value);
+              void autosave.commit("web_enabled");
+            }}
+          />
+        </Row>
+        {data.status.Running && data.status.Address && (
           <Row title={t("Active listen address")}>
-            <code>
-              {data.status.Address ||
-                `${data.settings.host}:${data.settings.port}`}
-            </code>
+            <AddressLink
+              address={`http://${data.status.Address.replace(/^0\.0\.0\.0:/, "127.0.0.1:").replace(/^\[::\]:/, "[::1]:")}`}
+              t={t}
+            />
+            <code>{data.status.Address}</code>
           </Row>
         )}
-        <TextField
-          title={t("Listen IP (127.0.0.1 / 0.0.0.0)")}
-          value={draft.host}
-          onChange={(v) => autosave.edit("host", v)}
-          onCommit={() => void autosave.commit("host")}
-          required
-        />
+        <Row
+          title={t("Allow LAN access")}
+          help={t(
+            "Allow other devices on the same network to access Spool. When off, only this computer can connect.",
+          )}
+        >
+          <Toggle
+            label={t("Allow LAN access")}
+            value={
+              !["localhost", "::1", "0:0:0:0:0:0:0:1"].includes(draft.host) &&
+              !draft.host.startsWith("127.")
+            }
+            disabled={!draft.web_enabled}
+            onChange={(value) => {
+              autosave.edit("host", value ? "0.0.0.0" : "127.0.0.1");
+              void autosave.commit("host");
+            }}
+          />
+        </Row>
         <TextField
           title={t("HTTP port")}
           type="number"
           value={draft.port}
           min={1}
           max={65535}
+          disabled={!draft.web_enabled}
           onChange={(v) => autosave.edit("port", v)}
           onCommit={() => void autosave.commit("port")}
           required
         />
         <TextField
-          title={t("Public origin (HTTPS reverse proxy for remote PWA)")}
+          title={t("Public URL")}
+          beforeInput={
+            <>
+              <AddressLink
+                address={draft.public_url}
+                t={t}
+                disabled={!draft.web_enabled}
+              />
+              <AddressQRButton
+                address={draft.public_url}
+                title={t("Public URL")}
+                t={t}
+                disabled={!draft.web_enabled}
+              />
+            </>
+          }
           value={draft.public_url}
+          disabled={!draft.web_enabled}
+          placeholder="https://spool.example.com"
           help={t(
-            "This reverse-proxy origin stays independent of the Tailscale HTTPS address.",
+            "Optional HTTPS address of your reverse proxy for public internet access. Configure the proxy separately.",
           )}
           onChange={(v) => autosave.edit("public_url", v)}
           onCommit={() => void autosave.commit("public_url")}
@@ -374,7 +403,7 @@ export function ServicePage({ data, run, t }: PageProps) {
           title={t("Enable Spool Relay")}
           help={t(
             relayRegistered
-              ? "Phones prefer a verified LAN connection and use the relay when away. Apply pending relay changes in the bottom bar."
+              ? "Phones prefer a verified LAN connection and use the relay when away."
               : "Register this server with the relay before enabling it.",
           )}
         >
@@ -423,16 +452,16 @@ export function ServicePage({ data, run, t }: PageProps) {
         <div
           className="settings-relay-section"
           role="group"
-          aria-label={t("Public Web / PWA access")}
+          aria-label={t("Public internet access")}
         >
           <Row
-            title={t("Public Web / PWA access")}
+            title={t("Public internet access")}
             help={t(
-              "Open this workspace at the relay HTTPS address without Tailscale. The relay can read Web traffic. Apply pending relay changes in the bottom bar.",
+              "Access this workspace at the relay HTTPS address. The relay can read Web traffic.",
             )}
           >
             <Toggle
-              label={t("Public Web / PWA access")}
+              label={t("Public internet access")}
               value={draft.relay_web_enabled}
               disabled={!draft.relay_enabled}
               onChange={(value) => {
@@ -451,6 +480,11 @@ export function ServicePage({ data, run, t }: PageProps) {
                 t={t}
                 kind="copy-relay-web-url"
                 iconOnly
+              />
+              <AddressQRButton
+                address={data.status.Relay.WebURL}
+                title={t("Public Web address")}
+                t={t}
               />
             </Row>
           )}
@@ -496,6 +530,11 @@ export function ServicePage({ data, run, t }: PageProps) {
               title={t("Tailnet HTTPS address")}
               help={<code>{tailnet.URL}</code>}
             >
+              <AddressQRButton
+                address={tailnet.URL}
+                title={t("Tailnet HTTPS address")}
+                t={t}
+              />
               <CopyAddressButton key={tailnet.URL} t={t} iconOnly />
             </Row>
           )}
@@ -532,7 +571,7 @@ export function ServicePage({ data, run, t }: PageProps) {
             disabled={registeringKey}
             onChange={setAuthKey}
             help={t(
-              "Click Use Auth Key to register now without stopping Spool. After success, apply the pending Tailscale changes in the bottom bar. The key is never saved in settings.",
+              "Click Use Auth Key to register now without stopping Spool. The key is never saved in settings.",
             )}
           />
           <div className="settings-card-actions">
@@ -574,17 +613,6 @@ export function ServicePage({ data, run, t }: PageProps) {
             </div>
           )}
         </div>
-        {(authRegistered || tailnet?.State === "Registered") && (
-          <div className="settings-notice" role="status">
-            <div>
-              <p>
-                {t(
-                  "Registered. Apply the pending Tailscale changes in the bottom bar to activate HTTPS.",
-                )}
-              </p>
-            </div>
-          </div>
-        )}
         {canLogin && (
           <div className="settings-card-actions">
             <button

@@ -33,6 +33,7 @@ export function createSettingsCommandQueue(
 }
 
 type ServiceDraft = {
+  web_enabled: boolean;
   host: string;
   port: string;
   public_url: string;
@@ -58,7 +59,7 @@ const serviceChangeFields: Record<
   ServiceChangeTarget,
   (keyof SettingsDraft)[]
 > = {
-  web: ["host", "port", "public_url"],
+  web: ["web_enabled", "host", "port", "public_url"],
   relay: ["relay_enabled", "relay_url", "relay_lan_port", "relay_web_enabled"],
   tsnet: [
     "tsnet_enabled",
@@ -81,6 +82,7 @@ type AutosaveArgs = [
 
 function toServiceDraft(settings: ServerSettings): ServiceDraft {
   return {
+    web_enabled: settings.web_enabled ?? true,
     host: settings.host,
     public_url: settings.public_url,
     auto_start: settings.auto_start,

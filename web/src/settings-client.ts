@@ -7,13 +7,14 @@ export const settingsSections = [
   "Projects",
   "Agents",
   "Online",
-  "Network",
   "Appearance",
+  "Network",
   "About",
 ] as const;
 export type SettingsSection = (typeof settingsSections)[number];
 export type Backend = "codex" | "claude";
 export type ServerSettings = {
+  web_enabled?: boolean;
   host: string;
   port: number;
   public_url: string;
@@ -243,6 +244,7 @@ export function settingsCall<T>(
     | "TSNetLogin"
     | "TSNetRegister"
     | "RelayPairing"
+    | "AddressQRCode"
     | "RegisterRelay",
   ...args: unknown[]
 ): Promise<T> {

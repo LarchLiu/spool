@@ -1,4 +1,5 @@
 .desktop-settings-shell {
+  --settings-divider: var(--line);
   display: flex;
   width: 100%;
   height: 100dvh;
@@ -8,6 +9,9 @@
   font-size: 13px;
   line-height: 1.5;
   overflow: hidden;
+}
+:root[data-theme="dark"] .desktop-settings-shell {
+  --settings-divider: #3e3f3b;
 }
 .desktop-settings-shell button,
 .desktop-settings-shell input,
@@ -46,7 +50,7 @@
   background: var(--input);
   color: var(--text);
 }
-.desktop-settings-shell :is(button, input, select, summary):focus-visible {
+.desktop-settings-shell :is(button, a, input, select, summary):focus-visible {
   outline: 2px solid var(--color-primary-focus);
   outline-offset: 3px;
 }
@@ -54,7 +58,7 @@
   width: 244px;
   flex: 0 0 244px;
   background: var(--sidebar);
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--settings-divider);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -132,6 +136,9 @@
   font-size: 11px;
   white-space: nowrap;
 }
+.settings-sidebar-bottom {
+  border-top-color: var(--settings-divider);
+}
 .settings-status-dot {
   display: inline-block;
   width: 6px;
@@ -186,7 +193,7 @@
   padding: 14px 16px;
 }
 .settings-change-row + .settings-change-row {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--settings-divider);
 }
 .settings-change-description {
   flex: 1;
@@ -245,6 +252,61 @@
   /* Keep the absolute live region inside the content scroller. */
   position: relative;
 }
+.settings-address-qr {
+  flex-shrink: 0;
+}
+.settings-address-link[aria-disabled="true"] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.settings-address-qr-dialog {
+  width: min(360px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: 0 20px 100px #0004;
+}
+.settings-address-qr-dialog::backdrop {
+  background: #0007;
+}
+.settings-address-qr-dialog h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.settings-address-qr-image {
+  display: grid;
+  place-items: center;
+  width: min(256px, 100%);
+  aspect-ratio: 1;
+  margin: 18px auto;
+  border-radius: 8px;
+  background: #fff;
+  color: #222;
+  overflow: hidden;
+}
+.settings-address-qr-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+}
+.settings-address-qr-url {
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+  font-size: 12px;
+  user-select: text;
+}
+.settings-address-qr-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  text-align: center;
+  font-size: 12px;
+}
 .settings-copy-labels {
   display: grid;
 }
@@ -290,7 +352,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 17px 19px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--settings-divider);
   min-height: 66px;
 }
 .settings-row:last-child {
@@ -338,6 +400,14 @@
 .settings-row-control > input {
   width: 208px;
   max-width: 100%;
+}
+.settings-row-control > code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.settings-row-control:has(> .settings-address-qr) > input {
+  flex: 1;
+  min-width: 0;
 }
 .settings-theme-picker {
   display: flex;
@@ -483,11 +553,11 @@
   align-items: center;
   gap: 8px;
   padding: 13px 19px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--settings-divider);
   background: var(--surface);
 }
 .settings-relay-section {
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--settings-divider);
 }
 .settings-relay-section:last-child,
 .settings-relay-section > .settings-row {
@@ -607,7 +677,7 @@
   background: var(--elevated);
 }
 .settings-items > li + li {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--settings-divider);
 }
 .settings-items > li {
   display: flex;
@@ -772,7 +842,7 @@
   font-size: 10px;
 }
 .settings-models {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--settings-divider);
   padding: 14px 19px;
 }
 .settings-models summary {
@@ -845,7 +915,7 @@
   transform: rotate(180deg);
 }
 .settings-release-body {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--settings-divider);
   padding: 12px 19px 20px;
 }
 .settings-release-source,
@@ -867,7 +937,7 @@
 }
 .settings-release-version {
   padding: 20px 0;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--settings-divider);
 }
 .settings-release-version:last-child {
   padding-bottom: 0;

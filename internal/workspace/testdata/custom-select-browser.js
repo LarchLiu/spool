@@ -94,7 +94,7 @@ async function checkCustomSelects(report) {
     const idle = () => !doc.querySelector('.settings-content').disabled && !doc.querySelector('[data-page="Service"] fieldset').disabled;
     doc.querySelector('[role="switch"][aria-label="Enable embedded Tailscale"]').click();
     await waitFor(() => fixture.snapshot.settings.tsnet_enabled && doc.querySelector('[data-apply-service-change="tsnet"]') && idle(), "tailnet enable saved");
-    const publicOriginInput = doc.querySelector('[aria-label^="Public origin"]');
+    const publicOriginInput = doc.querySelector('[aria-label="Public URL"]');
     report.tailnetExplicitRestart = !fixture.commands.some((command) => command.kind === "restart-service") && !publicOriginInput.disabled;
     const restartBar = () => doc.querySelector('.settings-restart-bar');
     const assertRestartBar = () => {
@@ -200,7 +200,7 @@ async function checkCustomSelects(report) {
     await waitFor(() => doc.querySelectorAll('[data-service-change]').length === 3, "three pending entries");
     assertRestartBar();
     const footer = restartBar();
-    if (!footer.textContent.includes("Local Web access") || !footer.textContent.includes("Spool Relay") || !footer.textContent.includes("Tailscale") || !footer.textContent.includes("active tasks continue")) throw new Error("Pending entries do not describe their own restart");
+    if (!footer.textContent.includes("Web access") || !footer.textContent.includes("Spool Relay") || !footer.textContent.includes("Tailscale") || !footer.textContent.includes("active tasks continue")) throw new Error("Pending entries do not describe their own restart");
     const topBeforeScroll = footer.getBoundingClientRect().top;
     doc.querySelector('.settings-main').scrollTop = 0;
     await pause(50);

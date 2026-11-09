@@ -132,6 +132,21 @@ test("every connection/runtime setting saves without an explicit save action", a
   assert.ok(commands.every((command) => command.kind === "save-settings"));
 });
 
+test("local Web switches autosave and cancel restores enablement and access scope", async () => {
+  const { autosave, commands } = fixture();
+  assert.equal(autosave.draft.web_enabled, true, "legacy snapshots keep Web enabled");
+  autosave.edit("host", "0.0.0.0");
+  await autosave.commit("host");
+  autosave.edit("web_enabled", false);
+  await autosave.commit("web_enabled");
+  assert.equal(commands.at(-1).settings.web_enabled, false);
+  assert.equal(commands.at(-1).settings.host, "0.0.0.0");
+  assert.equal(commands.at(-1).settings.port, initial().port);
+  autosave.prepareCancel("web")({ ...initial(), web_enabled: true });
+  assert.equal(autosave.draft.web_enabled, true);
+  assert.equal(autosave.draft.host, "127.0.0.1");
+});
+
 test("rapid field commits merge in order before a queued manual restart", async () => {
   let release;
   const waiting = new Promise((resolve) => (release = resolve));
@@ -436,7 +451,7 @@ test("service UI commits on blur/Enter, removes save controls and restarts only 
     pages.indexOf("export function PeoplePage"),
   );
   assert.doesNotMatch(service, /<form|<Save|Save settings|submit\(/);
-  assert.equal((service.match(/onCommit=/g) ?? []).length, 9);
+  assert.equal((service.match(/onCommit=/g) ?? []).length, 8);
   assert.match(
     service,
     /autosave\.edit\("auto_start", v\);\s*void autosave\.commit\("auto_start"\)/,
@@ -473,11 +488,11 @@ test("native smoke requires real page focus and blur before accepting autosave",
   assert.match(probe, /p\.showMainWindow\(\)\s+view\.Focus\(\)/);
   const focus = probe.indexOf("return document.hasFocus();");
   assert.ok(
-    focus >= 0 && focus < probe.indexOf("smokeSetInput(input, 'localhost')"),
+    focus >= 0 && focus < probe.indexOf("smokeSetInput(input, String(window.smokeWebPort))"),
   );
   assert.match(probe, /input\.addEventListener\('blur'/);
   assert.match(probe, /blur: window\.smokeServiceBlurred === true/);
-  assert.match(probe, /saved: snapshot\.settings\.host === 'localhost'/);
+  assert.match(probe, /saved: snapshot\.settings\.port === window\.smokeWebPort/);
   assert.doesNotMatch(
     probe,
     /dispatchEvent\(new (?:FocusEvent|Event)\('(?:blur|focusout)'/,
