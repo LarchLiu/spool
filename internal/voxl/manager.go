@@ -25,13 +25,14 @@ import (
 const Version = "0.3.3"
 
 type Status struct {
-	Installed   bool   `json:"installed"`
-	Installing  bool   `json:"installing"`
-	Running     bool   `json:"running"`
-	Directory   string `json:"directory"`
-	Error       string `json:"error,omitempty"`
-	InstallStep string `json:"install_step,omitempty"`
-	Application string `json:"application,omitempty"`
+	Installed       bool   `json:"installed"`
+	UpgradeRequired bool   `json:"upgrade_required,omitempty"`
+	Installing      bool   `json:"installing"`
+	Running         bool   `json:"running"`
+	Directory       string `json:"directory"`
+	Error           string `json:"error,omitempty"`
+	InstallStep     string `json:"install_step,omitempty"`
+	Application     string `json:"application,omitempty"`
 }
 
 type Manager struct {
@@ -82,6 +83,7 @@ func (m *Manager) Status() Status {
 	if runtime.GOOS == "darwin" {
 		v.Application = macapp.Bundle(m.root)
 		v.Installed = macapp.Installed(m.root)
+		v.UpgradeRequired = !v.Installed && macapp.NeedsUpgrade(m.root)
 	}
 	return v
 }

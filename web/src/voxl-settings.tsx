@@ -9,14 +9,17 @@ export function VoxlSettings({ data, run, t }: PageProps) {
   const enabled = !!data.settings.remote_desktop_enabled;
   const working = pending || voxl.installing;
   const state = voxl.installing
-    ? voxl.install_step || "Installing voxl…"
+    ? voxl.install_step ||
+      (voxl.upgrade_required ? "Upgrading voxl…" : "Installing voxl…")
     : voxl.running
       ? "Running"
       : voxl.installed
         ? enabled && data.status.Running
           ? "Waiting for connection"
           : "Installed"
-        : "Not installed";
+        : voxl.upgrade_required
+          ? "Upgrade required"
+          : "Not installed";
   return (
     <Card title={t("Remote desktop")}>
       <Row title="voxl" help={voxl.directory}>
@@ -32,7 +35,7 @@ export function VoxlSettings({ data, run, t }: PageProps) {
               );
             }}
           >
-            {t("Install voxl")}
+            {t(voxl.upgrade_required ? "Upgrade voxl" : "Install voxl")}
           </button>
         )}
       </Row>

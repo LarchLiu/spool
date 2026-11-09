@@ -299,7 +299,7 @@ without downloading or rebuilding Rust. The old binary is retained; shared
 files remain outside the app in `voxl/shared/`. A complete helper app is reused
 unchanged across ordinary Spool upgrades, including its signature. Replacing
 or rebuilding the helper itself can require new macOS authorization. The
-original helper (installation format 1) also needs one local **Install voxl**
+original helper (installation format 1) needs one local **Upgrade voxl**
 action to apply the startup cleanup fix. This reuses its bundled engine and
 atomically replaces the app after verification; a failed upgrade keeps the old
 app intact. Grant the replacement helper access again if macOS requests it.

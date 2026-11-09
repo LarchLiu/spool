@@ -137,6 +137,7 @@ export type SettingsSnapshot = {
     RemoteDesktopConnections?: Record<string, number>;
     Voxl?: {
       installed: boolean;
+      upgrade_required?: boolean;
       installing: boolean;
       running: boolean;
       directory: string;

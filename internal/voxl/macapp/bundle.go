@@ -40,10 +40,11 @@ func Installed(root string) bool {
 	return installedFormat(root) == format
 }
 
-// NeedsUpgrade recognizes the original helper, whose startup handshake could
-// leave an unowned engine. Only an explicit local installation replaces it.
+// NeedsUpgrade distinguishes a complete helper with an incompatible installation
+// format from a missing installation. Only an explicit local action replaces it.
 func NeedsUpgrade(root string) bool {
-	return installedFormat(root) == "1\n"
+	installed := installedFormat(root)
+	return installed != "" && installed != format
 }
 
 func installedFormat(root string) string {
