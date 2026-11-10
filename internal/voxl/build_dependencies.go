@@ -34,7 +34,11 @@ func newBuildEnvironment(env []string, log io.Writer, step func(string)) *buildE
 		bunRoot = filepath.Join(home, ".bun")
 	}
 	b.addPaths("PATH", filepath.Join(bunRoot, "bin"))
-	b.addPaths("PATH", filepath.Join(home, ".cargo", "bin"))
+	cargoRoot := b.get("CARGO_HOME")
+	if cargoRoot == "" {
+		cargoRoot = filepath.Join(home, ".cargo")
+	}
+	b.addPaths("PATH", filepath.Join(cargoRoot, "bin"))
 	switch b.goos {
 	case "darwin":
 		b.addPaths("PATH", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")

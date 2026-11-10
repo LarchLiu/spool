@@ -1,5 +1,6 @@
 #!/bin/sh
-# Installs a signed Spool release for the current Linux user, without sudo.
+# Installs a signed Spool release for the current Linux user. Only system
+# dependency installation uses sudo/polkit; the app and Rust stay user-owned.
 # Requires Python 3, OpenSSL 3+ and curl (or wget). User data is never removed.
 set -eu
 repository='@REPOSITORY@'
@@ -7,16 +8,33 @@ public_key_der='@PUBLIC_KEY_DER@'
 app_dir="$HOME/.local/spool.app"
 desktop_file="${XDG_DATA_HOME:-$HOME/.local/share}/applications/spool.desktop"
 fail() { echo "install.sh: $*" >&2; exit 1; }
-case "${1:-}" in
-  --help|-h) echo 'Usage: sh install.sh [ARCHIVE | --uninstall]'; exit 0 ;;
+skip_dependencies=no
+skip_voxl_dependencies=no
+rendering=auto
+archive=''
+for argument do
+case "$argument" in
+  --help|-h)
+    echo 'Usage: sh install.sh [--skip-voxl-dependencies | --skip-dependencies] [ARCHIVE]'
+    echo '                     [--software-rendering | --hardware-rendering]'
+    echo '       sh install.sh --uninstall'
+    echo 'Installs WebKitGTK, desktop runtime libraries and voxl build dependencies by default.'
+    echo 'System packages require administrator authorization; Rust is installed for the current user.'
+    echo 'The menu launcher uses software rendering when no usable GPU is detected; rendering flags override detection.'
+    exit 0 ;;
   --uninstall)
     rm -rf "$app_dir"
     if [ -f "$desktop_file" ] && grep -qF "$app_dir/" "$desktop_file"; then rm -f "$desktop_file"; fi
     echo 'Uninstalled Spool; settings and chat data are unchanged.'
     exit 0 ;;
+  --skip-voxl-dependencies) skip_voxl_dependencies=yes ;;
+  --skip-dependencies) skip_dependencies=yes ;;
+  --software-rendering) rendering=software ;;
+  --hardware-rendering) rendering=hardware ;;
   -*) fail 'unknown option' ;;
+  *) [ -z "$archive" ] || fail 'pass at most one archive'; archive="$argument" ;;
 esac
-[ "$#" -le 1 ] || fail 'pass at most one archive'
+done
 [ "$(uname -s)" = Linux ] || fail 'this installer is for Linux'
 [ "$(id -u)" != 0 ] || fail 'run as your regular user, not root'
 for tool in python3 openssl; do command -v "$tool" >/dev/null 2>&1 || fail "install $tool first"; done
@@ -54,7 +72,7 @@ fetch() {
     wget --https-only --timeout=60 --tries=3 --retry-connrefused --retry-on-http-error=408,429,500,502,503,504 -qO "$2" "$1"
   fi
 }
-archive="${1:-}"
+@LINUX_DEPENDENCIES@
 if [ -n "$archive" ]; then
   cp "$(dirname "$archive")/update-$target.json" "$work/manifest.json"
   cp "$(dirname "$archive")/update-$target.json.sig" "$work/manifest.sig"
@@ -130,6 +148,10 @@ with tarfile.open(sys.argv[1], 'r:gz') as archive:
             os.chmod(dest, member.mode & 0o755)
 PY
 [ -x "$staging/spool" ] || fail 'archive does not contain the Spool executable'
+# Verify and stage the release before making any system changes. Failures leave
+# the old application in place. Only copy the app after dependency rechecks pass.
+spool_prepare_dependencies
+spool_configure_rendering
 backup="$(mktemp -d "$HOME/.local/.spool.backup.XXXXXX")"
 if [ -e "$app_dir" ]; then mv "$app_dir" "$backup/app"; fi
 mv "$staging" "$app_dir"
@@ -140,9 +162,13 @@ cat >"$desktop_file" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Spool
-Exec="$app_dir/spool"
+Exec=$desktop_exec
 Icon=$app_dir/spool.png
 Terminal=false
 Categories=Development;
 EOF
-echo "Installed Spool in $app_dir. Open it from your applications menu."
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database "$(dirname "$desktop_file")" || true
+fi
+echo "Installed Spool in $app_dir. Open Applications > Development > Spool."
+echo 'If Spool is already running, fully quit and reopen it to load the installed libraries.'

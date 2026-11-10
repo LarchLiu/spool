@@ -39,6 +39,14 @@ export function VoxlSettings({ data, run, t }: PageProps) {
           </button>
         )}
       </Row>
+      {voxl.error && (
+        <p className="settings-error" role="alert">
+          {voxl.error
+            .split("\n")
+            .map((line) => knownMessage(line, t))
+            .join("\n")}
+        </p>
+      )}
       <Row
         title={t("Enable remote desktop")}
         help={t(
@@ -84,6 +92,10 @@ export function VoxlSettings({ data, run, t }: PageProps) {
             <br />
             {t(
               "Spool first copies an existing local voxl. Otherwise it builds from crates.io: macOS installs missing dependencies with Homebrew; Linux checks system build libraries; Windows prepares native libraries with vcpkg. See the Spool README for prerequisites.",
+            )}
+            <br />
+            {t(
+              "On Linux, run install.sh to prepare WebKitGTK, voxl build libraries and a compatible Rust toolchain before installing voxl.",
             )}
             <br />
             <br />
@@ -136,14 +148,6 @@ export function VoxlSettings({ data, run, t }: PageProps) {
           </>
         }
       />
-      {voxl.error && (
-        <p className="settings-error" role="alert">
-          {voxl.error
-            .split("\n")
-            .map((line) => knownMessage(line, t))
-            .join("\n")}
-        </p>
-      )}
     </Card>
   );
 }

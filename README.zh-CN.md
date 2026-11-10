@@ -72,6 +72,104 @@ Spool 的任务和代码执行发生在服务所在的机器上，项目目录�
 
 ## 开发与编译
 
+### Linux 发布版安装
+
+从发布附件下载 `install.sh`，使用普通用户运行：
+
+```sh
+sh install.sh
+```
+
+脚本验证发布包后，会准备 WebKitGTK、桌面图形和托盘运行库，以及 voxl
+构建依赖（Clang/libclang、esbuild、pkg-config、x264、libyuv、Opus、
+PulseAudio 和 XCB）。支持 apt-get、dnf、pacman 和 zypper；缺失的系统包通过 sudo
+或 polkit 请求管理员授权。脚本先读取 `/etc/os-release`，刷新软件包元数据并
+检查所有候选包；缺包时统一列出缺项和软件源提示，不会先安装部分依赖。
+脚本不会自动添加编解码软件源或升级整个系统。Arch 用户应先自行执行
+`pacman -Syu`。依赖重新检查通过后才会替换已有 Spool 应用。
+已有 WebKitGTK 4.1 或 4.0 均可，托盘兼容 Ayatana AppIndicator 和旧版
+AppIndicator；新安装优先选择 4.1/Ayatana。
+
+自动依赖安装面向 Ubuntu 22.04+、Debian 12+、Fedora、Arch 系和 openSUSE。
+Debian/Ubuntu 衍生发行版通过 `ID_LIKE` 识别，不会把 Mint 等系统自己的版本号
+当成 Ubuntu 版本。RHEL 系 9+ 使用其已配置的软件源，可能需要额外的开发库和
+编解码软件源。Fedora、Arch、openSUSE、RHEL 及衍生系统在具体版本完成验证前
+均视为实验支持。Alpine、NixOS、未知发行版和不可变/OSTree 系统需要自行准备
+依赖；旧版 Ubuntu/Debian/RHEL 不做自动安装。自管环境可用
+`--skip-dependencies`，但跳过检查不代表二进制兼容。发布包仅提供 x86_64 和
+arm64，验证发布包需要 Python 3 和 OpenSSL 3+。
+
+如果 Rust 或 Cargo 缺失或版本低于 1.85，脚本会在必要时为当前用户安装 rustup，
+再执行：
+
+```sh
+rustup toolchain install stable --profile minimal
+rustup default stable
+```
+
+已有可用且兼容的工具链会保留，不修改 shell 配置文件。
+此步骤需要访问 `sh.rustup.rs` 和 Rust 工具链下载服务器。
+
+Debian/Ubuntu 也可以手动安装系统依赖：
+
+```sh
+sudo apt-get update
+sudo apt-get install --no-install-recommends \
+  libwebkit2gtk-4.1-0 libgl1 libegl1 libgl1-mesa-dri libxkbcommon0 \
+  libayatana-appindicator3-1 build-essential clang libclang-dev pkg-config \
+  esbuild libx264-dev libyuv-dev libopus-dev libpulse-dev libxcb1-dev
+```
+
+不需要 voxl 时使用 `sh install.sh --skip-voxl-dependencies`，仅安装桌面运行依赖；
+自行管理依赖时可用 `sh install.sh --skip-dependencies`。这些选项之后可以传入
+离线 Spool 压缩包；缺失依赖仍需要联网获取。voxl 本体稍后通过
+**设置 → 服务 → 远程桌面 → 安装 voxl** 编译安装。补齐系统库后需要完全退出
+并重新打开 Spool；Xfce 的菜单入口是 **Applications → Development → Spool**。
+
+安装脚本还会自动选择应用菜单启动时的渲染方式。X11 会话已有 `glxinfo` 时，
+通过 `glxinfo -B` 检查渲染器（最多等待 5 秒）；原生 Wayland 或没有检测工具时，
+检查当前用户能否访问 DRM render 或 NVIDIA 设备，避免用 XWayland 的 GLX
+结果判断原生 Wayland 的渲染器。没有可用加速时，会在桌面启动项中加入以下变量，
+避免无 GPU 的云桌面出现 WebKit 崩溃：
+
+```sh
+LIBGL_ALWAYS_SOFTWARE=1
+WEBKIT_DISABLE_COMPOSITING_MODE=1
+WEBKIT_SKIA_ENABLE_CPU_RENDERING=1
+```
+
+有 GPU 但驱动不稳定时，可用 `sh install.sh --software-rendering` 强制启用；
+使用 `sh install.sh --hardware-rendering` 则保留 WebKit 的默认渲染方式。
+这些选项也可以搭配 `--skip-dependencies`。完全退出 Spool 后，从应用菜单重新
+打开即可生效。终端直接执行 Spool 二进制时，使用的是终端自身的环境变量。
+设备可访问不代表驱动一定稳定，各 WebKit 版本对这些变量的处理也可能不同。
+voxl 屏幕采集仍然需要 X11/Xvfb，渲染参数不会增加原生 Wayland 采集支持。
+
+Docker 验证**仅供手动运行**，不会加入普通测试或发布自动化。在仓库根目录可选执行：
+
+```sh
+sh tools/check-linux-container.sh ubuntu:24.04 native
+```
+
+`native` 会安装并加载桌面/voxl 系统库，检查 libyuv 链接；`desktop` 仅检查桌面
+运行库；`voxl` 还会下载 Rust 并编译固定版本的 voxl。可复用缓存放在
+`build/cache/`，临时数据放在 `build/tmp/`，每种镜像/模式的最新日志保存在
+`build/artifacts/linux-compatibility/`。容器验证覆盖运行库和构建依赖，实际
+X11/Wayland 桌面启动和硬件 GPU 仍需实机检查。
+
+本次安装脚本改动的手动验证记录：
+
+| 系统 | 容器架构 | 已验证范围 |
+| --- | --- | --- |
+| Ubuntu 22.04 / 24.04 | arm64 | 桌面与 voxl 原生系统库安装、加载和链接检查通过 |
+| Debian 12 | arm64 | 桌面与 voxl 原生系统库安装、加载和链接检查通过 |
+| Fedora 43 | arm64 | 桌面库安装和加载检查通过；未验证 voxl 编解码软件源 |
+| openSUSE Tumbleweed | arm64 | 桌面库安装和加载检查通过；未验证 voxl 编解码软件源 |
+| Arch Linux | arm64 上仿真 x86_64 | 安装检查受仿真环境的 pacman 沙箱支持限制，尚未验证完成 |
+
+上述检查未编译 voxl，也未运行图形桌面/GPU 测试。Debian 13、RHEL 系、
+openSUSE Leap 和其他衍生发行版本次尚未做真实容器验证。
+
 ### 环境要求
 
 - Go **1.27.3** 或更高版本。
@@ -249,7 +347,8 @@ headless CLI 中安装并启用 voxl，并且管理员给某个用户授予远�
 如果不传 `-voxl-binary`，Spool 会先查找本机已有的可执行文件，找不到时从
 crates.io 构建 `voxl-server` **0.3.3**。各平台还需要 voxl 的原生依赖：macOS
 需要 Xcode Command Line Tools 和 Rust；Linux 需要 X11/Xvfb、Rust、x264、libyuv、
-Opus、PulseAudio 等库；Windows 需要 Rust MSVC、Visual Studio C++ Build Tools、
+Opus、PulseAudio 和 XCB 开发库（Debian/Ubuntu 对应 `libxcb1-dev`）；
+Windows 需要 Rust MSVC、Visual Studio C++ Build Tools、
 LLVM 和 vcpkg。
 
 macOS 安装时还会用 Xcode 命令行工具在本机编译一个小型原生启动器，并生成

@@ -45,6 +45,11 @@ test("only the final signing stage needs the key and signs both archive and meta
   }
   const installer = await readFile(join(directory, "install.sh"), "utf8");
   assert.ok(!installer.includes("@PUBLIC_KEY_DER@"));
+  assert.ok(!installer.includes("@LINUX_DEPENDENCIES@"));
+  assert.match(installer, /rustup toolchain install stable --profile minimal/);
+  assert.match(installer, /rustup default stable/);
+  assert.match(installer, /--software-rendering/);
+  assert.match(installer, /WEBKIT_SKIA_ENABLE_CPU_RENDERING=1/);
   assert.ok(!installer.includes(env.MYGO_UPDATER_PRIVATE_KEY));
   assert.match(installer, /openssl pkeyutl -verify/);
 });
@@ -90,7 +95,7 @@ test("installer verifies both signatures before replacing an app and preserves u
   })) {
     await writeFile(join(mocks, name), script, { mode: 0o755 });
   }
-  const run = (input = archive, extraEnv = {}) => spawnSync("sh", [join(directory, "install.sh"), input], {
+  const run = (input = archive, extraEnv = {}, options = ["--skip-dependencies"]) => spawnSync("sh", [join(directory, "install.sh"), ...options, input], {
     env: { ...process.env, HOME: home, XDG_DATA_HOME: join(home, ".local/share"), PATH: mocks + delimiter + process.env.PATH, ...extraEnv }, encoding: "utf8",
   });
   const manifestPath = join(directory, "update-linux-amd64.json");
@@ -148,6 +153,43 @@ with tarfile.open(sys.argv[1], 'w:gz') as archive:
   assert.equal(result.status, 0, result.stderr + result.stdout);
   assert.match(await readFile(join(app, "spool"), "utf8"), /new-app/);
   assert.equal(await readFile(join(home, ".spool", "settings"), "utf8"), "keep-data");
+
+  // Rendering overrides must work even when dependency installation is skipped,
+  // and each generated desktop entry must launch the verified application.
+  const desktopFile = join(home, ".local/share/applications/spool.desktop");
+  for (const mode of ["software", "hardware"]) {
+    result = run(archive, {}, ["--skip-dependencies", `--${mode}-rendering`]);
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    const desktop = await readFile(desktopFile, "utf8");
+    const exec = desktop.split("\n").find((line) => line.startsWith("Exec="));
+    if (mode === "software") {
+      assert.equal(exec, `Exec=/usr/bin/env LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_SKIA_ENABLE_CPU_RENDERING=1 "${app}/spool"`);
+    } else {
+      assert.equal(exec, `Exec="${app}/spool"`);
+    }
+  }
+
+  // Exercise the published, inlined dependency flow without touching the host's
+  // package manager. A declined system install must not replace the old app.
+  await writeFile(join(app, "spool"), "old-app");
+  await writeFile(join(mocks, "python3"), `#!/bin/sh
+if [ "$1" = -c ]; then exit 1; fi
+exec '${execFileSync("sh", ["-c", "command -v python3"], { encoding: "utf8" }).trim()}' "$@"
+`, { mode: 0o755 });
+  await writeFile(join(mocks, "apt-get"), '#!/bin/sh\nexit 99\n', { mode: 0o755 });
+  const denied = join(root, "authorization-denied");
+  await writeFile(join(mocks, "sudo"), `#!/bin/sh\nprintf denied > '${denied}'\nexit 1\n`, { mode: 0o755 });
+  // Isolate user tool directories too: the dependency helper prepends them.
+  const isolatedTools = { CARGO_HOME: join(root, "cargo"), BUN_INSTALL: join(root, "bun") };
+  const osRelease = join(root, "os-release");
+  await writeFile(osRelease, 'ID=ubuntu\nVERSION_ID="24.04"\n');
+  result = run(archive, { ...isolatedTools, spool_os_release_file: osRelease }, []);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /existing Spool app was not replaced/);
+  assert.equal(await readFile(denied, "utf8"), "denied");
+  assert.equal(await readFile(join(app, "spool"), "utf8"), "old-app");
+  assert.equal(await readFile(join(home, ".spool", "settings"), "utf8"), "keep-data");
+  await rm(join(mocks, "python3"));
 
   const replacement = join(root, "unsigned.tar.gz");
   await writeFile(join(payload, "spool"), "#!/bin/sh\necho unsigned-app\n");

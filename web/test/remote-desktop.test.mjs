@@ -259,4 +259,7 @@ test("local installer shows dependency progress and translates errors with a mis
   assert.match(html, /translated: voxl build dependencies are still unavailable after Homebrew installation\./);
   assert.match(html, /x264, opus/);
   assert.doesNotMatch(html, /translated: x264/);
+  assert.ok(html.indexOf('role="alert"') < html.indexOf("Enable remote desktop"));
+  assert.ok(html.indexOf('role="alert"') < html.indexOf("Component licenses"));
+  assert.match(html, /run install\.sh to prepare WebKitGTK/);
 });

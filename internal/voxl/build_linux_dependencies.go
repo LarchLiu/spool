@@ -2,6 +2,7 @@ package voxl
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -9,12 +10,12 @@ import (
 
 func (b *buildEnvironment) prepareLinux(ctx context.Context) (string, error) {
 	var missing []string
-	cargo, rustc := b.usable(ctx, "cargo"), b.usable(ctx, "rustc")
+	cargo, rustc := b.linuxRustTool(ctx, "cargo"), b.linuxRustTool(ctx, "rustc")
 	if cargo == "" {
-		missing = append(missing, "cargo")
+		missing = append(missing, "cargo >= 1.85")
 	}
 	if rustc == "" {
-		missing = append(missing, "rustc")
+		missing = append(missing, "rustc >= 1.85")
 	} else {
 		b.set("RUSTC", rustc)
 	}
@@ -42,7 +43,9 @@ func (b *buildEnvironment) prepareLinux(ctx context.Context) (string, error) {
 	} else {
 		b.set("PKG_CONFIG", pkg)
 	}
-	for _, lib := range []string{"x264", "opus", "libpulse-simple"} {
+	// x11rb's allow-unsafe-code feature links libxcb directly. Its runtime
+	// library alone is insufficient: the linker needs the development package.
+	for _, lib := range []string{"x264", "opus", "libpulse-simple", "xcb"} {
 		if pkg == "" {
 			missing = append(missing, lib)
 		} else if _, err := b.output(ctx, pkg, "--exists", lib); err != nil {
@@ -56,11 +59,28 @@ func (b *buildEnvironment) prepareLinux(ctx context.Context) (string, error) {
 		return "", ctx.Err()
 	}
 	if len(missing) > 0 {
-		return "", dependencyError("Install the missing Linux voxl build dependencies with your system package manager, then retry. See the Spool README for package names.", missing)
+		return "", dependencyError("Run the Linux install.sh again to prepare voxl dependencies, then retry. See the Spool README for manual installation.", missing)
 	}
 	// DISPLAY is needed when streaming, not when compiling; headless hosts can
 	// build before starting X11/Xvfb. Wayland alone is unsupported upstream.
 	return cargo, nil
+}
+
+// Desktop sessions can still have the distribution's older Rust first in PATH
+// after install.sh prepares rustup without modifying shell profiles. Continue
+// searching the user tool locations until a compatible version is found.
+func (b *buildEnvironment) linuxRustTool(ctx context.Context, name string) string {
+	for _, path := range b.find(name) {
+		version, err := b.output(ctx, path, "--version")
+		if err != nil {
+			continue
+		}
+		var major, minor int
+		if n, _ := fmt.Sscanf(version, name+" %d.%d", &major, &minor); n == 2 && (major > 1 || major == 1 && minor >= 85) {
+			return path
+		}
+	}
+	return ""
 }
 
 func (b *buildEnvironment) hasLibyuv(ctx context.Context, pkg, clang string) bool {

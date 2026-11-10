@@ -777,6 +777,8 @@
   "voxl supports macOS, Windows and Linux with X11.": "voxl 支持 macOS、Windows 和使用 X11 的 Linux。",
   "Checking local voxl…": "正在检查本机 voxl…",
   "Checking voxl build dependencies…": "正在检查 voxl 编译依赖…",
+  "Run the Linux install.sh again to prepare voxl dependencies, then retry. See the Spool README for manual installation.": "请重新运行 Linux 的 install.sh 补齐 voxl 依赖后重试。手动安装步骤请查看 Spool README。",
+  "On Linux, run install.sh to prepare WebKitGTK, voxl build libraries and a compatible Rust toolchain before installing voxl.": "Linux 用户请先运行 install.sh，准备 WebKitGTK、voxl 构建库和兼容的 Rust 工具链，再安装 voxl。",
   "Installing missing dependencies with Homebrew…": "正在通过 Homebrew 安装缺失依赖…",
   "Preparing Windows dependencies with vcpkg…": "正在通过 vcpkg 准备 Windows 依赖…",
   "Building voxl…": "正在编译 voxl…",

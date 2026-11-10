@@ -75,6 +75,123 @@ on the service host before use.
 
 ## Development and build
 
+### Linux release installation
+
+Download `install.sh` from the release assets and run it as your regular user:
+
+```sh
+sh install.sh
+```
+
+After verifying the release, the script prepares WebKitGTK, desktop graphics
+and tray libraries, and voxl build dependencies (Clang/libclang, esbuild,
+pkg-config, x264, libyuv, Opus, PulseAudio and XCB). It supports apt-get, dnf, pacman
+and zypper. Missing packages require administrator authorization through sudo or
+polkit; distributions may require additional repositories for codec packages.
+The script reads `/etc/os-release`, refreshes package metadata and checks all
+package candidates before installing any dependency packages. Missing packages
+are listed together with repository guidance. It never adds codec repositories
+or performs a full system upgrade. Arch users should run `pacman -Syu` themselves
+before installation. The script rechecks the libraries before replacing an
+existing Spool app. It accepts an already installed WebKitGTK 4.1 or 4.0 stack
+and either Ayatana AppIndicator or the older AppIndicator library; new installs
+prefer 4.1/Ayatana where available.
+
+The automatic dependency setup targets Ubuntu 22.04+, Debian 12+, Fedora,
+Arch-based systems and openSUSE. Debian/Ubuntu derivatives are identified by
+`ID_LIKE`; their own version numbers are never treated as Ubuntu versions.
+RHEL-family systems (9+) use their own configured repositories and may need
+additional development/codec repositories. Missing packages cause a clear stop,
+not a partially installed dependency set. Fedora/Arch/openSUSE/RHEL and
+derivatives remain experimental until verified on the specific release.
+Alpine, NixOS, unrecognized distributions and immutable/OSTree variants require
+manual dependency provisioning. Older Ubuntu/Debian/RHEL versions are excluded
+from automatic setup. `--skip-dependencies` is available for managed environments;
+it does not establish binary compatibility. Release archives target x86_64 and
+arm64 and require Python 3 and OpenSSL 3+ for verification.
+
+If Rust or Cargo is missing or older than 1.85, it installs rustup for the
+current user when needed, then runs:
+
+```sh
+rustup toolchain install stable --profile minimal
+rustup default stable
+```
+
+It leaves shell profiles unchanged and
+preserves a working, compatible toolchain. This step needs access to
+`sh.rustup.rs` and Rust's toolchain download servers.
+
+For manual setup on Debian/Ubuntu, install the system packages with:
+
+```sh
+sudo apt-get update
+sudo apt-get install --no-install-recommends \
+  libwebkit2gtk-4.1-0 libgl1 libegl1 libgl1-mesa-dri libxkbcommon0 \
+  libayatana-appindicator3-1 build-essential clang libclang-dev pkg-config \
+  esbuild libx264-dev libyuv-dev libopus-dev libpulse-dev libxcb1-dev
+```
+
+Use `sh install.sh --skip-voxl-dependencies` to install only the desktop runtime,
+or `sh install.sh --skip-dependencies` when dependencies are managed separately.
+An offline Spool archive can be passed after these options; dependencies still
+need network access unless already installed. voxl itself is built later with
+**Install voxl** in Settings → Service → Remote desktop. Fully quit and reopen
+Spool after installing libraries. Its menu entry is Applications → Development
+→ Spool on Xfce.
+
+The installer also selects rendering for the applications-menu launcher. It
+checks an X11 display with `glxinfo -B` when available (with a five-second
+timeout). Native Wayland and systems without `glxinfo` use accessible DRM render
+or NVIDIA device nodes instead; XWayland GLX results do not determine the native
+Wayland renderer.
+Without usable acceleration, it adds these environment variables to the desktop
+entry to avoid WebKit crashes on cloud desktops and machines without a GPU:
+
+```sh
+LIBGL_ALWAYS_SOFTWARE=1
+WEBKIT_DISABLE_COMPOSITING_MODE=1
+WEBKIT_SKIA_ENABLE_CPU_RENDERING=1
+```
+
+Use `sh install.sh --software-rendering` to force this mode if the graphics
+driver is unstable. Use `sh install.sh --hardware-rendering` to keep WebKit's
+default rendering instead. These options also work with `--skip-dependencies`.
+Fully quit Spool and reopen it from the applications menu for the choice to take
+effect. Directly executing the Spool binary uses the terminal's environment.
+Device access is a heuristic, not a driver health test. WebKit versions may
+handle these environment variables differently. voxl screen capture still needs
+X11/Xvfb; these rendering options do not add native Wayland capture support.
+
+Docker checks are **manual only** and are not part of normal tests or release
+automation. From the repository root, an optional disposable-container check is:
+
+```sh
+sh tools/check-linux-container.sh ubuntu:24.04 native
+```
+
+`native` installs and loads the desktop/voxl system libraries and links a libyuv
+probe. `desktop` only checks the desktop runtime; `voxl` also downloads Rust and
+builds the pinned voxl version. Reusable caches stay in `build/cache/`, disposable
+data in `build/tmp/`, and the latest log for each image/mode in
+`build/artifacts/linux-compatibility/`. Container checks verify libraries and
+build prerequisites; they do not replace graphical startup tests on real
+X11/Wayland desktops or hardware GPU tests.
+
+Manual validation for this installer change:
+
+| System | Container architecture | Verified scope |
+| --- | --- | --- |
+| Ubuntu 22.04 / 24.04 | arm64 | Desktop and voxl native libraries installed; runtime load and link probes passed |
+| Debian 12 | arm64 | Desktop and voxl native libraries installed; runtime load and link probes passed |
+| Fedora 43 | arm64 | Desktop libraries installed and runtime load probes passed; voxl codec repositories not verified |
+| openSUSE Tumbleweed | arm64 | Desktop libraries installed and runtime load probes passed; voxl codec repositories not verified |
+| Arch Linux | x86_64 under arm64 emulation | Installation check blocked by pacman sandbox support in the emulation environment |
+
+These checks did not compile voxl or run graphical desktop/GPU tests. Debian 13,
+RHEL-family systems, openSUSE Leap and other derivatives have not been tested in
+real containers for this change.
+
 ### Requirements
 
 - Go **1.27.3** or newer.
@@ -278,7 +395,8 @@ You can import an existing voxl binary or let Spool build a pinned
 Without `-voxl-binary`, Spool first searches for a local executable and then
 builds `voxl-server` **0.3.3** from crates.io when needed. The native prerequisites
 vary by platform: macOS needs Xcode Command Line Tools and Rust; Linux needs
-X11/Xvfb, Rust, x264, libyuv, Opus, and PulseAudio libraries; Windows needs Rust
+X11/Xvfb, Rust, x264, libyuv, Opus, PulseAudio and XCB development libraries
+(`libxcb1-dev` on Debian/Ubuntu); Windows needs Rust
 MSVC, Visual Studio C++ Build Tools, LLVM, and vcpkg.
 
 On macOS, local installation also compiles a small native launcher with Xcode

@@ -35,9 +35,11 @@ export async function signRelease(directory, env = process.env) {
   }
   const publicKeyDER = Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(config.updates.publicKey, "base64")]);
   const template = await readFile(new URL("./install.sh", import.meta.url), "utf8");
+  const dependencies = await readFile(new URL("./linux-dependencies.sh", import.meta.url), "utf8");
   await writeFile(join(directory, "install.sh"), template
     .replaceAll("@REPOSITORY@", env.GITHUB_REPOSITORY)
-    .replaceAll("@PUBLIC_KEY_DER@", publicKeyDER.toString("base64")), { mode: 0o755 });
+    .replaceAll("@PUBLIC_KEY_DER@", publicKeyDER.toString("base64"))
+    .replace("@LINUX_DEPENDENCIES@", () => dependencies), { mode: 0o755 });
   await verifyReleaseAssets(directory, {
     tag: env.RELEASE_TAG, repository: env.GITHUB_REPOSITORY,
     publicKey: config.updates.publicKey, notes,

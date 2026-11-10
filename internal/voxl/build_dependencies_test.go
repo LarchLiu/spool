@@ -26,6 +26,7 @@ type dependencyFixture struct {
 	steps                  []string
 	onInstall              func(*exec.Cmd) error
 	broken                 map[string]bool
+	versions               map[string]string
 	yuvLink                bool
 	host                   string
 }
@@ -33,7 +34,7 @@ type dependencyFixture struct {
 func newDependencyFixture(t *testing.T, goos string) *dependencyFixture {
 	t.Helper()
 	root := t.TempDir()
-	f := &dependencyFixture{t: t, root: root, bin: filepath.Join(root, "tools", "bin"), prefix: filepath.Join(root, "brew"), sdk: filepath.Join(root, "sdk"), libs: map[string]bool{}, broken: map[string]bool{}, host: "x86_64-pc-windows-msvc"}
+	f := &dependencyFixture{t: t, root: root, bin: filepath.Join(root, "tools", "bin"), prefix: filepath.Join(root, "brew"), sdk: filepath.Join(root, "sdk"), libs: map[string]bool{}, broken: map[string]bool{}, versions: map[string]string{}, host: "x86_64-pc-windows-msvc"}
 	for _, dir := range []string{f.bin, f.sdk, filepath.Join(root, "tmp")} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			t.Fatal(err)
@@ -80,7 +81,7 @@ func (f *dependencyFixture) ready() {
 		f.tool(f.bin, "vcpkg")
 		f.file(filepath.Join(f.bin, "libclang.dll"))
 	}
-	for _, lib := range []string{"x264", "opus", "libyuv", "libpulse-simple"} {
+	for _, lib := range []string{"x264", "opus", "libyuv", "libpulse-simple", "xcb"} {
 		f.libs[lib] = true
 	}
 }
@@ -111,6 +112,12 @@ func (f *dependencyFixture) run(cmd *exec.Cmd) error {
 		fmt.Fprint(cmd.Stdout, filepath.Join(f.bin, "clang"))
 	case name == "rustc" && slices.Equal(args, []string{"-vV"}):
 		fmt.Fprintln(cmd.Stdout, "host: "+f.host)
+	case (name == "rustc" || name == "cargo") && slices.Equal(args, []string{"--version"}):
+		version := f.versions[cmd.Path]
+		if version == "" {
+			version = "1.85.0"
+		}
+		fmt.Fprintln(cmd.Stdout, name+" "+version+" (fixture)")
 	case name == "pkg-config" && len(args) == 2 && args[0] == "--exists":
 		if !f.libs[args[1]] {
 			return errors.New("missing " + args[1])
@@ -289,6 +296,49 @@ func TestBuildLinuxChecksPulseAudioAndAcceptsLibyuvWithoutPC(t *testing.T) {
 	_, err = f.b.prepare(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "libpulse-simple") || !strings.Contains(err.Error(), "libyuv") {
 		t.Fatalf("missing dependency details: %v", err)
+	}
+}
+
+func TestBuildLinuxRejectsMissingXCBDevelopmentPackage(t *testing.T) {
+	f := newDependencyFixture(t, "linux")
+	f.ready()
+	f.libs["xcb"] = false
+	_, err := f.b.prepare(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "xcb") {
+		t.Fatalf("missing XCB development package was not reported: %v", err)
+	}
+	if len(f.installs()) != 0 {
+		t.Fatal("Linux must not invoke a system package manager")
+	}
+}
+
+func TestBuildLinuxSkipsOldDistributionRustForUserToolchain(t *testing.T) {
+	f := newDependencyFixture(t, "linux")
+	f.ready()
+	cargoHome := filepath.Join(f.root, "cargo")
+	userBin := filepath.Join(cargoHome, "bin")
+	for _, name := range []string{"cargo", "rustc"} {
+		f.versions[filepath.Join(f.bin, name)] = "1.75.0"
+		f.tool(userBin, name)
+	}
+	b := newBuildEnvironment([]string{"PATH=" + f.bin, "CARGO_HOME=" + cargoHome, "TMPDIR=" + f.b.get("TMPDIR")}, f.b.log, f.b.step)
+	b.goos, b.run = "linux", f.run
+	f.b = b
+	cargo, err := b.prepare(t.Context())
+	if err != nil || cargo != filepath.Join(userBin, "cargo") || b.get("RUSTC") != filepath.Join(userBin, "rustc") {
+		t.Fatalf("compatible user Rust was not selected: cargo=%q rustc=%q err=%v", cargo, b.get("RUSTC"), err)
+	}
+}
+
+func TestBuildLinuxRejectsRustOlderThanVoxlRequires(t *testing.T) {
+	f := newDependencyFixture(t, "linux")
+	f.ready()
+	for _, name := range []string{"cargo", "rustc"} {
+		f.versions[filepath.Join(f.bin, name)] = "1.75.0"
+	}
+	_, err := f.b.prepare(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "cargo >= 1.85") || !strings.Contains(err.Error(), "rustc >= 1.85") {
+		t.Fatalf("incompatible Rust was not reported before building: %v", err)
 	}
 }
 

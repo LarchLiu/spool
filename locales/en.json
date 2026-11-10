@@ -777,6 +777,8 @@
   "voxl supports macOS, Windows and Linux with X11.": "voxl supports macOS, Windows and Linux with X11.",
   "Checking local voxl…": "Checking local voxl…",
   "Checking voxl build dependencies…": "Checking voxl build dependencies…",
+  "Run the Linux install.sh again to prepare voxl dependencies, then retry. See the Spool README for manual installation.": "Run the Linux install.sh again to prepare voxl dependencies, then retry. See the Spool README for manual installation.",
+  "On Linux, run install.sh to prepare WebKitGTK, voxl build libraries and a compatible Rust toolchain before installing voxl.": "On Linux, run install.sh to prepare WebKitGTK, voxl build libraries and a compatible Rust toolchain before installing voxl.",
   "Installing missing dependencies with Homebrew…": "Installing missing dependencies with Homebrew…",
   "Preparing Windows dependencies with vcpkg…": "Preparing Windows dependencies with vcpkg…",
   "Building voxl…": "Building voxl…",
