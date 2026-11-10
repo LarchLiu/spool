@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { releaseVersion } from "./prepare-release.mjs";
+import { createScratch, removeScratch } from "./test-scratch.mjs";
 
 export function verifySmokeReport(result, version, target) {
   assert.deepEqual(result, { version, target, native: true, web: true, chat_webview: true, single_window: true, full_window_chat: true, shared_presentation: true, settings_webview: true, management_bridge: true });
@@ -21,9 +21,9 @@ export async function smokeRelease(directory, target, env = process.env) {
   const version = releaseVersion(env.RELEASE_TAG);
   const results = resolve("smoke-results");
   await mkdir(results, { recursive: true });
-  const app = await mkdtemp(join(tmpdir(), "spool-smoke-package-"));
   const report = join(results, "report.json");
   await rm(report, { force: true });
+  const app = await createScratch("smoke-package");
   let output = "";
   let timer;
   try {
@@ -44,12 +44,15 @@ export async function smokeRelease(directory, target, env = process.env) {
     assert.equal(code, 0, `packaged app failed: ${output}`);
     const result = JSON.parse(await readFile(report, "utf8"));
     verifySmokeReport(result, version, target);
-    console.log(`PASS ${target}: single native window, SQLite, Web health, full-window chat rendering/authentication/settings navigation, WebView management, isolated native bridge, shared theme/language and clean exit (${version})`);
   } finally {
     clearTimeout(timer);
-    await writeFile(join(results, "startup.log"), output);
-    await rm(app, { recursive: true, force: true });
+    try {
+      await writeFile(join(results, "startup.log"), output);
+    } finally {
+      await removeScratch(app);
+    }
   }
+  console.log(`PASS ${target}: single native window, SQLite, Web health, full-window chat rendering/authentication/settings navigation, WebView management, isolated native bridge, shared theme/language and clean exit (${version})`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -162,6 +162,8 @@ jobs:
         with:
           name: test-packages-${{ matrix.target }}
           path: smoke-assets
+      - name: Test smoke scratch cleanup
+        run: bun test tools/test-scratch.test.mjs
       - name: Run headless server without a display
         run: bun tools/smoke-server.mjs smoke-assets "${{ matrix.target }}"
       - name: Install Linux native runtime

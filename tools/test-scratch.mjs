@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { lstat, mkdtemp, mkdir, realpath } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, realpath, rm } from "node:fs/promises";
 import { tmpdir, userInfo } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 export function requireRunTemp(env = process.env) {
   const run = env.SPOOL_RUN_ROOT;
@@ -44,4 +45,20 @@ export async function createScratch(task) {
   const base = join(userTemp, "spool");
   await mkdir(base, { recursive: true });
   return realpath(await mkdtemp(join(base, task + ".")));
+}
+
+export async function removeScratch(path, { remove = rm, wait = delay } = {}) {
+  // Windows can briefly keep executable/file handles locked after child close.
+  // Retry here so cleanup does not depend on the runtime's fs.rm retry support.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await remove(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (attempt >= 10 || !["EPERM", "EBUSY", "ENOTEMPTY"].includes(error.code)) {
+        throw error;
+      }
+      await wait(100 * (attempt + 1));
+    }
+  }
 }

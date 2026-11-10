@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { releaseVersion } from "./prepare-release.mjs";
 import { serverArchiveName } from "./release-assets.mjs";
-import { createScratch } from "./test-scratch.mjs";
+import { createScratch, removeScratch } from "./test-scratch.mjs";
 
 export async function smokeServer(directory, target, env = process.env) {
   const native = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`;
@@ -71,17 +71,17 @@ export async function smokeServer(directory, target, env = process.env) {
     const code = await closed;
     if (process.platform !== "win32") assert.equal(code, 0, output);
     child = undefined;
-    await writeFile(join(artifacts, "report.json"), JSON.stringify({ target, version, gui: false, web: true, login: true, project: true }, null, 2));
-    console.log(`PASS ${target}: headless CLI, SQLite, embedded Web, login and project access (${version})`);
   } finally {
     clearTimeout(watchdog);
     if (child) { child.kill("SIGKILL"); await closed.catch(() => {}); }
     try {
       await writeFile(join(artifacts, "startup.log"), output);
     } finally {
-      await rm(run, { recursive: true, force: true });
+      await removeScratch(run);
     }
   }
+  await writeFile(join(artifacts, "report.json"), JSON.stringify({ target, version, gui: false, web: true, login: true, project: true }, null, 2));
+  console.log(`PASS ${target}: headless CLI, SQLite, embedded Web, login and project access (${version})`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
