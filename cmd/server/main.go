@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -23,62 +24,77 @@ func main() {
 	if diagnostics.RunCrashMonitor() {
 		return
 	}
-	if err := run(); err != nil {
-		log.Print(err)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	if err := runCLI(ctx, os.Args[1:], os.Stdout, os.Stderr); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return
+		}
+		fmt.Fprintln(os.Stderr, "spool-server:", err)
+		var usage *usageError
+		if errors.As(err, &usage) {
+			os.Exit(2)
+		}
 		os.Exit(1)
 	}
 }
-func run() (runErr error) {
-	root := flag.String("data-dir", workspace.DefaultDataDir(production != "1"), "Data directory (database in db/spool.sqlite)")
-	user := flag.String("add-user", "", "create a local user (password from SPOOL_NEW_PASSWORD)")
-	nickname := flag.String("nickname", "", "display name for the new user")
-	projectName := flag.String("add-project", "", "create a project and grant it to --grant username(s)")
-	directory := flag.String("directory", "", "existing local project directory")
-	grant := flag.String("grant", "", "comma-separated usernames for new project")
-	port := flag.Int("port", 0, "persist a new Web port")
-	webEnabled := flag.Bool("web", true, "persist local Web listener enablement (desktop, Tailscale and relay access are independent)")
-	host := flag.String("host", "", "persist a listen IP (default 127.0.0.1)")
-	publicURL := flag.String("public-url", "", "persist reverse proxy public origin (HTTPS for remote PWA)")
-	tailnetEnabled := flag.Bool("tsnet", false, "persist embedded Tailscale HTTPS enablement (no system VPN or Funnel)")
-	tailnetHostname := flag.String("tsnet-hostname", "spool-server", "embedded Tailscale node hostname (state persists in data-dir/tsnet)")
-	tailnetPort := flag.Int("tsnet-port", 443, "HTTPS port on the embedded Tailscale node (does not bind a host TCP port)")
-	relayEnabled := flag.Bool("relay", false, "persist outbound Spool relay and secure LAN listener enablement")
-	relayWeb := flag.Bool("relay-web", false, "persist public Web/PWA access through the registered relay")
-	relayURL := flag.String("relay-url", "", "public HTTPS origin of the independent Spool relay")
-	relayLANPort := flag.Int("relay-lan-port", 28082, "secure LAN listener and discovery port")
-	relayPair := flag.Bool("relay-pair", false, "start the service, print a five-minute invitation and approve one phone interactively")
-	relayDevices := flag.Bool("relay-devices", false, "list paired devices locally and exit (service must be stopped)")
-	relayRevoke := flag.String("relay-revoke", "", "revoke a paired device fingerprint locally and exit (service must be stopped)")
-	relayRegister := flag.Bool("relay-register", false, "register with the relay using SPOOL_RELAY_REGISTRATION_TOKEN (empty for automatic registration), save the credential, and exit")
-	relayName := flag.String("relay-name", "", "optional server name used with -relay-register")
-	systemProxy := flag.Bool("system-proxy", false, "persist use of system HTTP/HTTPS proxy settings for Spool (macOS)")
-	proxyEnabled := flag.Bool("proxy-enabled", true, "persist whether Spool uses outbound proxies (false forces direct connections)")
-	proxyURL := flag.String("proxy-url", "", "persist a custom outbound proxy URL (used when proxies are enabled and system proxy is off; blank inherits environment)")
-	noProxy := flag.String("no-proxy", "", "persist comma-separated proxy bypass hosts (blank inherits NO_PROXY)")
-	historyCache := flag.Int("history-cache-mib", 0, "persist shared history cache target in MiB (default 64)")
-	installVoxl := flag.Bool("install-voxl", false, "copy or build voxl locally in data-dir/voxl, then exit (macOS: Homebrew; Linux: system build libraries; Windows: MSVC, LLVM, esbuild and vcpkg)")
-	voxlBinary := flag.String("voxl-binary", "", "existing local voxl executable to copy with -install-voxl (defaults to ~/.cargo/bin/voxl or PATH)")
-	remoteDesktop := flag.Bool("remote-desktop", false, "persist local voxl enablement; no remote installation/configuration API")
-	remoteUser := flag.String("remote-desktop-user", "", "set remote desktop authorization for a local username, then exit (use -remote-desktop=true/false)")
-	issuesProject := flag.String("issues-project", "", "configure issue automation for an existing project ID (service must be stopped)")
-	listProjects := flag.Bool("list-projects", false, "list local project IDs/names as JSON while service is stopped")
-	issuesEnabled := flag.Bool("issues-enabled", true, "enable issue automation; false pauses future checks")
-	issuesRepo := flag.String("issues-repo", "", "GitHub owner/repo for issue automation")
-	issuesInterval := flag.Int("issues-interval", 60, "issue check interval in minutes (1-10080)")
+
+// runLegacy preserves scripts using the original flat flags.
+func runLegacy(ctx context.Context, args []string) (runErr error) {
+	flags := flag.NewFlagSet("spool-server legacy", flag.ContinueOnError)
+	root := flags.String("data-dir", workspace.DefaultDataDir(production != "1"), "Data directory (database in db/spool.sqlite)")
+	user := flags.String("add-user", "", "create a local user (password from SPOOL_NEW_PASSWORD)")
+	nickname := flags.String("nickname", "", "display name for the new user")
+	projectName := flags.String("add-project", "", "create a project and grant it to --grant username(s)")
+	directory := flags.String("directory", "", "existing local project directory")
+	grant := flags.String("grant", "", "comma-separated usernames for new project")
+	port := flags.Int("port", 0, "persist a new Web port")
+	webEnabled := flags.Bool("web", true, "persist local Web listener enablement (desktop, Tailscale and relay access are independent)")
+	host := flags.String("host", "", "persist a listen IP (default 127.0.0.1)")
+	publicURL := flags.String("public-url", "", "persist reverse proxy public origin (HTTPS for remote PWA)")
+	tailnetEnabled := flags.Bool("tsnet", false, "persist embedded Tailscale HTTPS enablement (no system VPN or Funnel)")
+	tailnetHostname := flags.String("tsnet-hostname", "spool-server", "embedded Tailscale node hostname (state persists in data-dir/tsnet)")
+	tailnetPort := flags.Int("tsnet-port", 443, "HTTPS port on the embedded Tailscale node (does not bind a host TCP port)")
+	relayEnabled := flags.Bool("relay", false, "persist outbound Spool relay and secure LAN listener enablement")
+	relayWeb := flags.Bool("relay-web", false, "persist public Web/PWA access through the registered relay")
+	relayURL := flags.String("relay-url", "", "public HTTPS origin of the independent Spool relay")
+	relayLANPort := flags.Int("relay-lan-port", 28082, "secure LAN listener and discovery port")
+	relayPair := flags.Bool("relay-pair", false, "start the service, print a five-minute invitation and approve one phone interactively")
+	relayDevices := flags.Bool("relay-devices", false, "list paired devices locally and exit (service must be stopped)")
+	relayRevoke := flags.String("relay-revoke", "", "revoke a paired device fingerprint locally and exit (service must be stopped)")
+	relayRegister := flags.Bool("relay-register", false, "register with the relay using SPOOL_RELAY_REGISTRATION_TOKEN (empty for automatic registration), save the credential, and exit")
+	relayName := flags.String("relay-name", "", "optional server name used with -relay-register")
+	systemProxy := flags.Bool("system-proxy", false, "persist use of system HTTP/HTTPS proxy settings for Spool (macOS)")
+	proxyEnabled := flags.Bool("proxy-enabled", true, "persist whether Spool uses outbound proxies (false forces direct connections)")
+	proxyURL := flags.String("proxy-url", "", "persist a custom outbound proxy URL (used when proxies are enabled and system proxy is off; blank inherits environment)")
+	noProxy := flags.String("no-proxy", "", "persist comma-separated proxy bypass hosts (blank inherits NO_PROXY)")
+	historyCache := flags.Int("history-cache-mib", 0, "persist shared history cache target in MiB (default 64)")
+	installVoxl := flags.Bool("install-voxl", false, "copy or build voxl locally in data-dir/voxl, then exit (macOS: Homebrew; Linux: system build libraries; Windows: MSVC, LLVM, esbuild and vcpkg)")
+	voxlBinary := flags.String("voxl-binary", "", "existing local voxl executable to copy with -install-voxl (defaults to ~/.cargo/bin/voxl or PATH)")
+	remoteDesktop := flags.Bool("remote-desktop", false, "persist local voxl enablement; no remote installation/configuration API")
+	remoteUser := flags.String("remote-desktop-user", "", "set remote desktop authorization for a local username, then exit (use -remote-desktop=true/false)")
+	issuesProject := flags.String("issues-project", "", "configure issue automation for an existing project ID (service must be stopped)")
+	listProjects := flags.Bool("list-projects", false, "list local project IDs/names as JSON while service is stopped")
+	issuesEnabled := flags.Bool("issues-enabled", true, "enable issue automation; false pauses future checks")
+	issuesRepo := flags.String("issues-repo", "", "GitHub owner/repo for issue automation")
+	issuesInterval := flags.Int("issues-interval", 60, "issue check interval in minutes (1-10080)")
 	var issueLabels []string
-	flag.Func("issues-label", "eligible issue label (repeat once per label; default: no filter, one task per project)", func(label string) error {
+	flags.Func("issues-label", "eligible issue label (repeat once per label; default: no filter, one task per project)", func(label string) error {
 		issueLabels = append(issueLabels, label)
 		return nil
 	})
-	issuesAgent := flag.String("issues-agent", "codex", "issue automation agent: codex or claude")
-	issuesOwner := flag.String("issues-owner", "", "project member username owning each new automation chat")
-	issuesAssignees := flag.String("issues-assignees", "", "comma-separated project member usernames allowed to control task chats")
-	issuesModel := flag.String("issues-model", "", "issue automation model (blank uses native default)")
-	issuesEffort := flag.String("issues-effort", "", "issue automation reasoning level")
-	issuesPermission := flag.String("issues-permission", "", "native permission mode for issue automation")
-	flag.Parse()
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
+	issuesAgent := flags.String("issues-agent", "codex", "issue automation agent: codex or claude")
+	issuesOwner := flags.String("issues-owner", "", "project member username owning each new automation chat")
+	issuesAssignees := flags.String("issues-assignees", "", "comma-separated project member usernames allowed to control task chats")
+	issuesModel := flags.String("issues-model", "", "issue automation model (blank uses native default)")
+	issuesEffort := flags.String("issues-effort", "", "issue automation reasoning level")
+	issuesPermission := flags.String("issues-permission", "", "native permission mode for issue automation")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " "))
+	}
 	logs, err := diagnostics.Start(*root, "server", "", production != "1")
 	if err != nil {
 		log.Printf("event=file_logging_unavailable error=%q", err)
@@ -223,7 +239,7 @@ func run() (runErr error) {
 	if *host != "" {
 		settings.Host = *host
 	}
-	flag.Visit(func(f *flag.Flag) {
+	flags.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "web":
 			settings.WebEnabled = *webEnabled

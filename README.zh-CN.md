@@ -250,16 +250,27 @@ GOCACHE="$PWD/build/cache/go-build" make test
 对应数据目录的 `db/spool.sqlite`。可以用 `-data-dir` 或 `SPOOL_HOME` 选择其他
 数据目录；同一个数据目录同时只能运行一个 Desktop 或 server 实例。
 
+Release 还会单独提供 `spool-server-VERSION-OS-ARCH.tar.gz`，覆盖 Linux、macOS、
+Windows 的 amd64/arm64。包内已有 Web/PWA 资源，不需要 GUI、GTK/WebKit 或 voxl，
+Linux 包附带 systemd 用户服务示例。安装与全部命令分组见
+[Server CLI 使用说明](docs/server-cli.md)。
+
+使用 `spool-server --help`、`spool-server help project` 或
+`spool-server project member set --help` 查看逐级帮助。无参数时显示帮助，启动服务
+使用 `serve`；原来的扁平参数继续兼容。管理命令包括用户修改与启停、项目归档与成员
+权限、Agent 路径与启停、服务和网络配置、Issue 自动化、GitHub CLI、Relay 和 Tailscale。
+管理操作需要先停止使用同一数据目录的服务，完成后再启动，不需要 Web 管理后台。
+
 启动 headless server 前，可以在服务停止时创建初始用户和项目：
 
 ```sh
 SPOOL_NEW_PASSWORD='replace-with-a-long-unique-password' \
-  ./build/spool-server -add-user alex -nickname Alex
+  ./build/spool-server user add --username alex --nickname Alex
 
-./build/spool-server -add-project Example \
-  -directory /absolute/project/path -grant alex
+./build/spool-server project add --name Example \
+  --directory /absolute/project/path --members alex
 
-./build/spool-server -host 127.0.0.1 -port 8787
+./build/spool-server serve --host 127.0.0.1 --port 8787
 ```
 
 聊天和管理 API 都要求登录账户；服务不会提供默认密码、远程注册或远程管理 API。

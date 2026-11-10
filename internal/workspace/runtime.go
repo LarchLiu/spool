@@ -68,6 +68,17 @@ type ServiceStatus struct {
 }
 
 func OpenService(root string) (*Service, error) {
+	return openService(root, true)
+}
+
+// OpenAdministration acquires the same exclusive runtime lease without probing
+// provider CLIs in the background. Local one-shot commands should not start
+// agents or scan native sessions just to edit saved configuration.
+func OpenAdministration(root string) (*Service, error) {
+	return openService(root, false)
+}
+
+func openService(root string, discoverAgents bool) (*Service, error) {
 	store, err := OpenStore(root)
 	if err != nil {
 		return nil, err
@@ -104,8 +115,11 @@ func OpenService(root string) (*Service, error) {
 		s.Close()
 		return nil, err
 	}
-	s.workers.Add(2)
-	go func() { defer s.workers.Done(); s.Registry.Run(ctx) }()
+	if discoverAgents {
+		s.workers.Add(1)
+		go func() { defer s.workers.Done(); s.Registry.Run(ctx) }()
+	}
+	s.workers.Add(1)
 	go func() {
 		defer s.workers.Done()
 		ticker := time.NewTicker(10 * time.Second)

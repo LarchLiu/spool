@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -14,6 +15,10 @@ import (
 
 // The command is local console administration, never a network approval route.
 func approveRelayPhone(ctx context.Context, service *workspace.Service) error {
+	return approveRelayPhoneIO(ctx, service, os.Stdin, os.Stdout)
+}
+
+func approveRelayPhoneIO(ctx context.Context, service *workspace.Service, input io.Reader, out io.Writer) error {
 	code, err := service.RelayPairingCode()
 	if err != nil {
 		return err
@@ -24,8 +29,8 @@ func approveRelayPhone(ctx context.Context, service *workspace.Service) error {
 			_ = service.CancelRelayPairing(code)
 		}
 	}()
-	fmt.Println("Paste this one-device invitation into Spool Android within five minutes:")
-	fmt.Println(code)
+	fmt.Fprintln(out, "Paste this one-device invitation into Spool Android within five minutes:")
+	fmt.Fprintln(out, code)
 	deadline := time.NewTimer(relay.PairingLifetime)
 	defer deadline.Stop()
 	ticker := time.NewTicker(time.Second)
@@ -35,7 +40,7 @@ func approveRelayPhone(ctx context.Context, service *workspace.Service) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return fmt.Errorf("pairing invitation expired; run -relay-pair again")
+			return fmt.Errorf("pairing invitation expired; run 'spool-server relay pair' again")
 		case <-ticker.C:
 			snapshot, err := service.RelayDevices()
 			if err != nil {
@@ -45,9 +50,9 @@ func approveRelayPhone(ctx context.Context, service *workspace.Service) error {
 				continue
 			}
 			device := snapshot.Pending[0]
-			fmt.Printf("Phone: %s\nDevice fingerprint: %s\nCompare with the phone. Type yes to approve: ", device.Name, device.ID)
+			fmt.Fprintf(out, "Phone: %s\nDevice fingerprint: %s\nCompare with the phone. Type yes to approve: ", device.Name, device.ID)
 			answer := make(chan string, 1)
-			go func() { line, _ := bufio.NewReader(os.Stdin).ReadString('\n'); answer <- strings.TrimSpace(line) }()
+			go func() { line, _ := bufio.NewReader(input).ReadString('\n'); answer <- strings.TrimSpace(line) }()
 			select {
 			case <-ctx.Done():
 				return ctx.Err()

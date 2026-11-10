@@ -278,17 +278,27 @@ The database is stored at `db/spool.sqlite` inside the selected data directory.
 Use `-data-dir` or `SPOOL_HOME` to select another data directory. Only one
 Desktop or server instance can own a data directory at a time.
 
+Releases also include separate `spool-server-VERSION-OS-ARCH.tar.gz` archives for
+all six desktop OS/architecture targets. These contain the headless CLI and
+embedded Web/PWA assets; no GUI, GTK/WebKit or voxl is needed. Linux archives
+include a systemd user service example. See the [Server CLI guide](docs/server-cli.md)
+for installation, local administration, all command groups and service setup.
+
+Use `spool-server --help`, `spool-server help project`, or
+`spool-server project member set --help` for nested help. Run `serve` explicitly;
+without a command the CLI prints help. Existing flat flags remain compatible.
+
 Before starting a headless server, create the initial user and project while the
 service is stopped:
 
 ```sh
 SPOOL_NEW_PASSWORD='replace-with-a-long-unique-password' \
-  ./build/spool-server -add-user alex -nickname Alex
+  ./build/spool-server user add --username alex --nickname Alex
 
-./build/spool-server -add-project Example \
-  -directory /absolute/project/path -grant alex
+./build/spool-server project add --name Example \
+  --directory /absolute/project/path --members alex
 
-./build/spool-server -host 127.0.0.1 -port 8787
+./build/spool-server serve --host 127.0.0.1 --port 8787
 ```
 
 Chat and management APIs require an enabled account. The service does not

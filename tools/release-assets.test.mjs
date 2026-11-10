@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { installerName, releaseTargets, verifyReleaseAssets } from "./release-assets.mjs";
+import { installerName, releaseTargets, serverArchiveName, verifyReleaseAssets } from "./release-assets.mjs";
 
 const key = generateKeyPairSync("ed25519");
 const options = {
@@ -19,6 +19,10 @@ async function fixture(t, { tag = options.tag, targets = releaseTargets } = {}) 
   t.after(() => rm(directory, { recursive: true, force: true }));
   const version = tag.slice(1);
   for (const target of targets) {
+    const server = serverArchiveName(version, target);
+    const serverContent = Buffer.from(`server archive for ${target}`);
+    await writeFile(join(directory, server), serverContent);
+    await writeFile(join(directory, `${server}.sig`), sign(null, createHash("sha256").update(serverContent).digest(), key.privateKey));
     const archive = `spool-${version}-${target}.tar.gz`;
     const content = Buffer.from(`archive for ${target}`);
     const manifest = {
@@ -39,20 +43,21 @@ async function fixture(t, { tag = options.tag, targets = releaseTargets } = {}) 
   return directory;
 }
 
-test("accepts exactly six signed targets, installers and the Linux installation script", async (t) => {
+test("accepts six signed desktop/server targets, installers and the Linux installation script", async (t) => {
   const directory = await fixture(t);
-  assert.equal((await verifyReleaseAssets(directory, options)).length, 25);
+  assert.equal((await verifyReleaseAssets(directory, options)).length, 37);
 });
 
 test("unsigned build checks need no keys or notes but still require the exact nonempty asset set", async (t) => {
   const directory = await fixture(t);
   for (const target of releaseTargets) {
+    await rm(join(directory, `${serverArchiveName("1.2.3", target)}.sig`));
     await rm(join(directory, `update-${target}.json`));
     await rm(join(directory, `update-${target}.json.sig`));
   }
   await rm(join(directory, "install.sh"));
   const unsigned = { tag: options.tag, unsigned: true };
-  assert.equal((await verifyReleaseAssets(directory, unsigned)).length, 12);
+  assert.equal((await verifyReleaseAssets(directory, unsigned)).length, 18);
   await assert.rejects(verifyReleaseAssets(directory, { tag: options.tag }), /public key/);
   const installer = join(directory, installerName("1.2.3", "darwin-arm64"));
   await writeFile(installer, "");
@@ -66,7 +71,7 @@ test("per-target checks work and prerelease Debian names follow MyGo's version c
   const targets = ["linux-arm64"];
   const directory = await fixture(t, { tag, targets });
   assert.equal(installerName(tag.slice(1), targets[0]), "spool_1.2.3~beta.test.1_arm64.deb");
-  assert.equal((await verifyReleaseAssets(directory, { ...options, tag, targets })).length, 4);
+  assert.equal((await verifyReleaseAssets(directory, { ...options, tag, targets })).length, 6);
 });
 
 test("rejects missing installers, empty assets and unexpected files", async (t) => {
@@ -126,6 +131,20 @@ test("rejects manifests for a different release, repository, signing key or chan
   }
   const directory = await fixture(t);
   await assert.rejects(verifyReleaseAssets(directory, { ...options, publicKey: "" }), /public key/);
-  await assert.rejects(verifyReleaseAssets(directory, { ...options, publicKey: Buffer.alloc(32).toString("base64") }), /invalid manifest signature/);
+  await assert.rejects(verifyReleaseAssets(directory, { ...options, publicKey: Buffer.alloc(32).toString("base64") }), /invalid .* signature/);
   await assert.rejects(verifyReleaseAssets(directory, { ...options, targets: ["unknown"] }), /Unsupported/);
+});
+
+
+test("server packages require independent signatures and reject modified or missing payloads", async (t) => {
+  const directory = await fixture(t);
+  const path = join(directory, serverArchiveName("1.2.3", "linux-amd64"));
+  const content = await readFile(path);
+  content[0] ^= 1;
+  await writeFile(path, content);
+  await assert.rejects(verifyReleaseAssets(directory, options), /invalid server archive signature/);
+  content[0] ^= 1;
+  await writeFile(path, content);
+  await rm(`${path}.sig`);
+  await assert.rejects(verifyReleaseAssets(directory, options), /ENOENT/);
 });

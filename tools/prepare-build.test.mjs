@@ -83,6 +83,7 @@ test("manual build workflow resolves a branch or commit once and cannot publish 
   assert.match(prepare, /go vet \.\/\.\.\./);
   assert.match(build, /run: bun tools\/prepare-build\.mjs/);
   assert.match(build, /-skip-build-command -sign - -skip-notarize/);
+  assert.match(build, /bun tools\/package-server.mjs/);
   assert.match(build, /name: test-packages-\$\{\{ matrix\.target \}\}/);
   assert.match(build, /bun tools\/release-assets\.mjs build-assets "\$\{\{ matrix\.target \}\}" --unsigned/);
   assert.match(build, /RELEASE_TAG: v\$\{\{ needs\.prepare\.outputs\.version \}\}/);
@@ -91,6 +92,7 @@ test("manual build workflow resolves a branch or commit once and cannot publish 
   assert.ok(smoke);
   assert.match(smoke, /needs: \[prepare, build\]/);
   assert.match(smoke, /bun tools\/smoke-release\.mjs smoke-assets/);
+  assert.match(smoke, /bun tools\/smoke-server.mjs smoke-assets/);
   assert.match(smoke, /ref: \$\{\{ needs\.prepare\.outputs\.commit \}\}/);
   assert.match(smoke, /RELEASE_TAG: v\$\{\{ needs\.prepare\.outputs\.version \}\}/);
   for (const runner of ["macos-15-intel", "windows-11-arm", "ubuntu-24.04-arm"]) assert.ok(smoke.includes(runner));

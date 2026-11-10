@@ -9,6 +9,10 @@ export const releaseTargets = [
   "darwin-arm64", "darwin-amd64", "windows-amd64", "windows-arm64", "linux-amd64", "linux-arm64",
 ];
 
+export function serverArchiveName(version, target) {
+  return `spool-server-${version}-${target}.tar.gz`;
+}
+
 export function installerName(version, target) {
   const [platform, arch] = target.split("-");
   if (platform === "darwin") return `Spool ${version} ${arch}.dmg`;
@@ -40,8 +44,13 @@ export async function verifyReleaseAssets(directory, { tag, repository, publicKe
     if (!releaseTargets.includes(target)) throw new Error(`Unsupported release target: ${target}`);
     const archive = `spool-${version}-${target}.tar.gz`;
     const manifestName = `update-${target}.json`;
-    expected.push(archive, installerName(version, target));
+    const serverArchive = serverArchiveName(version, target);
+    expected.push(archive, installerName(version, target), serverArchive);
     if (unsigned) continue;
+    expected.push(`${serverArchive}.sig`);
+    if (!verify(null, await digest(join(directory, serverArchive)), key, await readFile(join(directory, `${serverArchive}.sig`)))) {
+      throw new Error(`${serverArchive}: invalid server archive signature`);
+    }
     expected.push(manifestName, `${manifestName}.sig`);
     if (target === "linux-amd64") expected.push("install.sh");
     const data = await readFile(join(directory, manifestName));

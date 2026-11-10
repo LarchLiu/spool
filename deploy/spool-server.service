@@ -1,0 +1,21 @@
+# Install as ~/.config/systemd/user/spool-server.service after putting the
+# executable in ~/.local/bin/spool-server. Run as your normal development user
+# so the service can use that user's authenticated Codex/Claude installations.
+[Unit]
+Description=Spool headless workspace
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/spool-server serve --data-dir %h/.spool
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+# Optional environment file for provider paths and proxy configuration.
+EnvironmentFile=-%h/.config/spool/server.env
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=120
+UMask=0077
+
+[Install]
+WantedBy=default.target

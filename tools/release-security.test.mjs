@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import test from "node:test";
 import { signRelease } from "./sign-release.mjs";
-import { installerName, releaseTargets } from "./release-assets.mjs";
+import { installerName, releaseTargets, serverArchiveName } from "./release-assets.mjs";
 
 const key = generateKeyPairSync("ed25519");
 const pub = key.publicKey.export({ format: "der", type: "spki" }).subarray(-32);
@@ -25,6 +25,7 @@ async function fixture(t) {
     MYGO_UPDATER_PRIVATE_KEY: Buffer.concat([seed, pub]).toString("base64"),
   };
   for (const target of releaseTargets) {
+    await writeFile(join(directory, serverArchiveName("1.2.3", target)), `server-${target}`);
     await writeFile(join(directory, `spool-1.2.3-${target}.tar.gz`), `archive-${target}`);
     await writeFile(join(directory, installerName("1.2.3", target)), "installer");
   }
@@ -34,14 +35,16 @@ async function fixture(t) {
 test("only the final signing stage needs the key and signs both archive and metadata", async (t) => {
   const { directory, env } = await fixture(t);
   await assert.rejects(signRelease(directory, { ...env, MYGO_UPDATER_PRIVATE_KEY: "" }), /Configure/);
-  assert.equal((await readdir(directory)).length, 12);
+  assert.equal((await readdir(directory)).length, 18);
   await signRelease(directory, env);
-  assert.equal((await readdir(directory)).length, 25);
+  assert.equal((await readdir(directory)).length, 37);
   for (const target of releaseTargets) {
     const data = await readFile(join(directory, `update-${target}.json`));
     const signature = await readFile(join(directory, `update-${target}.json.sig`));
     assert.ok(verify(null, data, key.publicKey, signature));
     assert.equal(JSON.parse(data).target, target);
+    const server = join(directory, serverArchiveName("1.2.3", target));
+    assert.ok(verify(null, createHash("sha256").update(await readFile(server)).digest(), key.publicKey, await readFile(`${server}.sig`)));
   }
   const installer = await readFile(join(directory, "install.sh"), "utf8");
   assert.ok(!installer.includes("@PUBLIC_KEY_DER@"));
@@ -253,5 +256,7 @@ test("workflow pins actions, keeps private keys out of builds and uploads assets
   assert.doesNotMatch(publish, /^    if:/m);
   for (const runner of ["macos-15-intel", "windows-11-arm", "ubuntu-24.04-arm"]) assert.ok(beforePublish.includes(runner));
   assert.match(beforePublish, /bun tools\/smoke-release.mjs smoke-assets/);
+  assert.match(beforePublish, /bun tools\/package-server.mjs/);
+  assert.match(beforePublish, /bun tools\/smoke-server.mjs smoke-assets/);
   assert.doesNotMatch(publish, /sha256sum --check/);
 });

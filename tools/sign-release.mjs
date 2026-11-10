@@ -4,7 +4,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { releaseConfig, releaseSigningKey, updaterReleaseNotes } from "./prepare-release.mjs";
-import { releaseTargets, verifyReleaseAssets } from "./release-assets.mjs";
+import { releaseTargets, serverArchiveName, verifyReleaseAssets } from "./release-assets.mjs";
 
 export async function signRelease(directory, env = process.env) {
   const config = releaseConfig({}, env);
@@ -17,6 +17,10 @@ export async function signRelease(directory, env = process.env) {
     publicKey: config.updates.publicKey, notes, unsigned: true,
   });
   for (const target of releaseTargets) {
+    const serverArchive = serverArchiveName(config.version, target);
+    const serverHash = createHash("sha256");
+    for await (const chunk of createReadStream(join(directory, serverArchive))) serverHash.update(chunk);
+    await writeFile(join(directory, `${serverArchive}.sig`), sign(null, serverHash.digest(), key));
     const archive = `spool-${config.version}-${target}.tar.gz`;
     const path = join(directory, archive);
     const hash = createHash("sha256");

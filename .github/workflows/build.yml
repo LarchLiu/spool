@@ -114,6 +114,8 @@ jobs:
         run: go run github.com/egoist/mygo/cmd/mygo@v0.6.4 build -platform "${{ matrix.platform }}" -skip-build-command -sign - -skip-notarize
       - name: Package unsigned archive for native startup tests
         run: bun tools/package-release.mjs "${{ matrix.target }}"
+      - name: Build and package headless server (no GUI or CGO)
+        run: bun tools/package-server.mjs "${{ matrix.target }}"
       - name: Collect test packages
         env:
           TARGET: ${{ matrix.target }}
@@ -160,6 +162,8 @@ jobs:
         with:
           name: test-packages-${{ matrix.target }}
           path: smoke-assets
+      - name: Run headless server without a display
+        run: bun tools/smoke-server.mjs smoke-assets "${{ matrix.target }}"
       - name: Install Linux native runtime
         if: runner.os == 'Linux'
         timeout-minutes: 5
@@ -181,6 +185,8 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: test-smoke-${{ matrix.target }}
-          path: smoke-results/
+          path: |
+            smoke-results/
+            build/artifacts/server-smoke/
           if-no-files-found: warn
           retention-days: 7

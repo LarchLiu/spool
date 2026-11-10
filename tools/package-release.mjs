@@ -3,14 +3,15 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { releaseVersion } from "./prepare-release.mjs";
-import { releaseTargets, installerName } from "./release-assets.mjs";
+import { releaseTargets, installerName, serverArchiveName } from "./release-assets.mjs";
 
 export async function packageRelease(target, env = process.env) {
   if (!releaseTargets.includes(target)) throw new Error(`Unsupported release target: ${target}`);
   const version = releaseVersion(env.RELEASE_TAG);
   const directory = join("build", target);
   const archive = `spool-${version}-${target}.tar.gz`;
-  const excluded = new Set([archive, installerName(version, target), "install.sh"]);
+  const server = serverArchiveName(version, target);
+  const excluded = new Set([archive, installerName(version, target), server, `${server}.sig`, "install.sh"]);
   const entries = target.startsWith("darwin-") ? ["Spool.app"] :
     (await readdir(directory)).filter((name) => !excluded.has(name) && !name.startsWith("update-") && !name.endsWith(".delta"));
   if (!entries.includes(target.startsWith("darwin-") ? "Spool.app" : target.startsWith("windows-") ? "Spool.exe" : "spool")) {
