@@ -146,7 +146,7 @@ asking that user to sign in again. This cache carries no session token, CSRF or
 permissions and never authenticates workspace requests. Explicit logout or an
 authentication rejection clears it; network errors and failed/malformed session
 reads retain it. Once a starting tsnet route becomes HTTPS-ready, `/me` restores
-the shared login and reloads workspace metadata independently of network status.
+that route's login and reloads workspace metadata independently of network status.
 Network status dots reflect connectivity independently of Spool authentication.
 The tsnet information popup contains only node, path, latency and HTTPS details;
 Spool login and session recovery are handled separately in the footer.
@@ -166,14 +166,22 @@ only after the selected connection fails. Waiting for Tailscale login or device
 approval retains the explicit choice. A healthy selected route stays
 connected without opening a second route for probes. Routing never
 selects another server. Manual network
-selection is also available. Both routes in one server profile share one private
-Spool session, validated with `/me` after each handoff. Different profiles retain
-independent logins, even when their addresses match. Cookies stay in Go and are
-projected only onto the active transport's exact configured HTTPS origin.
-One-time migration prefers the selected route's existing login, then the other
-configured route. Logout persists an empty shared session so old route-specific
-cookies cannot restore it. A retired transport cannot overwrite newer session
-state. Tailscale node enrollment remains independent of the shared Spool login.
+selection is also available. Public HTTPS, Tailscale and Relay retain independent
+Spool sessions, each bound to its connection mode and exact HTTPS origin. Sign in
+on each entry before automatic switching can use it; `/me` checks the account
+after each handoff. Changing a domain, port or paired server identity requires a
+new login for that entry. Relay's verified LAN and relayed paths retain the same
+pinned server identity and session. Different profiles retain independent logins,
+even when their addresses match. Cookies stay in Go. Health checks neither send
+session cookies nor accept them from health responses.
+Upgrading from the former shared-session format requires signing in again because
+that record does not identify the issuing route. Older records that identify an
+exact route migrate only to that same mode and origin. Logout revokes the active
+server session and clears this profile's locally retained sessions for every route,
+so switching cannot restore a previous login. Other route sessions are not remotely
+revoked by that request and expire under the server's normal session policy.
+A retired transport cannot overwrite newer session state. Tailscale node enrollment
+remains independent of Spool login.
 Before enrollment, the embedded node is named `Spool-<model>` using Android's
 `Build.MODEL` (for example, `Spool-Pixel-8-Pro`). Separators become hyphens and
 the name is limited to 63 characters; an unavailable model uses `Spool-Android`.

@@ -159,9 +159,14 @@ the choice is saved for that server and restored on restart. Enabled servers kee
 top of the sidebar, with a colored connection-status dot before each name. The
 palette icon to the left of the sidebar close button opens device appearance and
 language preferences. Automatic network switching stays within one server; changing
-servers always requires selecting a tab. Each server shares one login between its
-public and Tailscale routes, while different servers keep independent logins.
-Existing route-specific logins migrate once, preferring the selected route.
+servers always requires selecting a tab. Public HTTPS, Tailscale and Relay keep
+separate logins, bound to each entry's exact HTTPS origin. Sign in on each entry
+before automatic switching can use it. Changing an address, port or paired server
+identity requires signing in there again. Relay's verified LAN and relayed paths
+share the same pinned identity and login. Upgrading from the former shared-session
+format requires signing in again. Signing out revokes the active session and clears
+all locally saved logins for that server; other route sessions expire under the
+server's normal policy. Different server profiles retain independent logins.
 Settings use switches on the right for server enablement and automatic switching.
 Startup and server selection open the sidebar. Each network entry contains its
 own Connect/Disconnect action; the bottom of Settings can delete that server.

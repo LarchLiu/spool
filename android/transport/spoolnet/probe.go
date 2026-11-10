@@ -109,7 +109,11 @@ func (c *Client) probeOnce(ctx context.Context) (runErr error) {
 	if err != nil {
 		return err
 	}
-	resp, err := c.http.Do(req)
+	// Health proves only endpoint availability. It neither needs a login nor
+	// may change one through Set-Cookie, including before /me checks an account.
+	healthClient := *c.http
+	healthClient.Jar = nil
+	resp, err := healthClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("Spool HTTPS health check failed (%s): %w", phase.Load(), err)
 	}

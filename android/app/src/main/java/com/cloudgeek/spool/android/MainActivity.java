@@ -1144,7 +1144,7 @@ public final class MainActivity extends Activity {
             restoringSession = false;
         } else if (retained) {
             // An unavailable network has not rejected the login. Keep API access
-            // blocked until health recovers and /me can validate the shared session.
+            // blocked until health recovers and /me validates this route's session.
             routeLoginRequired = true; restoringSession = !candidate.sessionChecked; csrf = "";
         }
         else {

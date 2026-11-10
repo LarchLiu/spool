@@ -1,5 +1,5 @@
 #!/bin/sh
-# Opt-in audit probes. A passing reproduction confirms the reported risk remains.
+# Opt-in audit probes. Unfixed findings reproduce risk; Android checks its fix.
 # Go overlays keep these probes out of normal tests and production source files.
 set -eu
 REPO_ROOT=$(git rev-parse --show-toplevel)
@@ -13,7 +13,7 @@ export AUDIT_RUN_ROOT
 
 case "${1:-repro}" in
   repro|android)
-    node <<'JS'
+    bun - <<'JS'
 const fs = require('node:fs');
 const path = require('node:path');
 const root = process.cwd();
