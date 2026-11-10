@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Original CSS + actual MarkdownMessage: record Blink decoration operations, not a painted imitation.
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -9,7 +10,7 @@ import {linkDecorationCases} from './link-decoration-fixtures.mjs';
 import {measureTextOrigins} from './text-origin-reference.mjs';
 import {measureTableOrigins} from './table-origin-reference.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-if(!path.resolve(process.env.TMPDIR||'').startsWith(path.join(root,'build/tmp')+path.sep))throw new Error('Run through android/tools/run.sh');
+requireRunTemp();
 const require=createRequire(path.join(process.env.SPOOL_NODE_MODULES||path.join(root,'web/node_modules'),'__decoration__.cjs'));
 const {chromium}=require('playwright');
 const output=path.join(root,'build/artifacts/android-native'),fonts=path.join(root,'build/cache/android-ui-fonts');

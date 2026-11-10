@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs a signed Spool release for the current Linux user. Only system
 # dependency installation uses sudo/polkit; the app and Rust stay user-owned.
-# Requires Python 3, OpenSSL 3+ and curl (or wget). User data is never removed.
+# Requires Bun, OpenSSL 3+ and curl (or wget). User data is never removed.
 set -eu
 repository='@REPOSITORY@'
 public_key_der='@PUBLIC_KEY_DER@'
@@ -32,7 +32,9 @@ esac
 done
 [ "$(uname -s)" = Linux ] || fail 'this installer is for Linux'
 [ "$(id -u)" != 0 ] || fail 'run as your regular user, not root'
-for tool in python3 openssl; do command -v "$tool" >/dev/null 2>&1 || fail "install $tool first"; done
+PATH="${BUN_INSTALL:-$HOME/.bun}/bin:$PATH"
+export PATH
+for tool in bun openssl; do command -v "$tool" >/dev/null 2>&1 || fail "install $tool first"; done
 case "$(openssl version)" in 'OpenSSL 3.'*|'OpenSSL 4.'*) ;; *) fail 'OpenSSL 3 or later is required for Ed25519 verification' ;; esac
 case "$(uname -m)" in
   x86_64|amd64) target=linux-amd64 ;;
@@ -77,28 +79,12 @@ else
   fetch "$base.sig" "$work/manifest.sig"
 fi
 openssl pkeyutl -verify -pubin -keyform DER -inkey "$work/key.der" -rawin -in "$work/manifest.json" -sigfile "$work/manifest.sig" >/dev/null 2>&1 || fail 'invalid manifest signature; nothing was installed'
-python3 - "$work" "$repository" "$target" <<'PY'
-import base64, json, pathlib, re, sys
-work, repo, target = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
-raw = (work / 'manifest.json').read_bytes()
-if len(raw) > 1048576:
-    raise SystemExit('manifest exceeds size limit')
-m = json.loads(raw)
-version = m.get('version', '')
-if not re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?', version):
-    raise SystemExit('invalid release version')
-url = f'https://github.com/{repo}/releases/download/v{version}/spool-{version}-{target}.tar.gz'
-if m.get('schema') != 'spool-update-v1' or m.get('repository') != repo or m.get('target') != target or m.get('url') != url:
-    raise SystemExit('manifest identity does not match this installer')
-if type(m.get('size')) is not int or not 0 < m['size'] <= 1073741824:
-    raise SystemExit('invalid archive size')
-signature = base64.b64decode(m['signature'], validate=True)
-if len(signature) != 64:
-    raise SystemExit('invalid archive signature')
-(work / 'archive.sig').write_bytes(signature)
-(work / 'url').write_text(url)
-print(f"Verified Spool {version} for {target}")
-PY
+spool_archive() {
+  bun - "$@" <<'JS'
+@INSTALLER_JS@
+JS
+}
+spool_archive manifest "$work" "$repository" "$target"
 # Hash, verify and extract the same private copy, never reopen an offline
 # caller-owned path after verification (including replaceable symlinks).
 if [ -n "$archive" ]; then
@@ -107,41 +93,11 @@ else
   fetch "$(cat "$work/url")" "$work/app.tar.gz"
 fi
 archive="$work/app.tar.gz"
-python3 - "$work" "$archive" <<'PY'
-import hashlib, json, pathlib, sys
-work, archive = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-if archive.stat().st_size != json.loads((work / 'manifest.json').read_text())['size']:
-    raise SystemExit('archive size mismatch')
-digest = hashlib.sha256()
-with archive.open('rb') as f:
-    for chunk in iter(lambda: f.read(1048576), b''):
-        digest.update(chunk)
-(work / 'digest').write_bytes(digest.digest())
-PY
+spool_archive digest "$work" "$archive"
 openssl pkeyutl -verify -pubin -keyform DER -inkey "$work/key.der" -rawin -in "$work/digest" -sigfile "$work/archive.sig" >/dev/null 2>&1 || fail 'invalid archive signature; nothing was installed'
 # Extract only ordinary files/directories into a fresh private staging folder.
 # Reject links, traversal, special files and excessive expanded size.
-python3 - "$archive" "$staging" <<'PY'
-import os, pathlib, shutil, sys, tarfile
-root = pathlib.Path(sys.argv[2])
-total = 0
-with tarfile.open(sys.argv[1], 'r:gz') as archive:
-    for member in archive:
-        name = pathlib.PurePosixPath(member.name)
-        if name.is_absolute() or '..' in name.parts or not (member.isfile() or member.isdir()):
-            raise SystemExit('unsafe entry in archive')
-        total += member.size
-        if total > 1073741824:
-            raise SystemExit('expanded archive exceeds size limit')
-        dest = root.joinpath(*name.parts)
-        if member.isdir():
-            dest.mkdir(parents=True, exist_ok=True)
-        else:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            with archive.extractfile(member) as src, dest.open('xb') as out:
-                shutil.copyfileobj(src, out)
-            os.chmod(dest, member.mode & 0o755)
-PY
+spool_archive extract "$archive" "$staging"
 [ -x "$staging/spool" ] || fail 'archive does not contain the Spool executable'
 # Verify and stage the release before making any system changes. Failures leave
 # the old application in place. Only copy the app after dependency rechecks pass.

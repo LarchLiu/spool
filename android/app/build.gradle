@@ -112,6 +112,19 @@ def nativeVerifyFixtures = tasks.register('prepareNativeVerifyFixtures', Copy) {
 }
 tasks.matching { it.name == 'preNativeVerifyBuild' }.configureEach { dependsOn nativeVerifyFixtures }
 
+// The standalone host-Java check compiles generated Go bindings itself. Reuse
+// Gradle's external app dependencies without building an Android AAR or APK.
+tasks.register('writeHostJavaClasspath') {
+    doLast {
+        def target = providers.gradleProperty('spoolHostJavaClasspath').get()
+        def artifacts = [configurations.debugCompileClasspath, configurations.debugRuntimeClasspath]
+            .collectMany { it.resolvedConfiguration.resolvedArtifacts as List }
+            .findAll { it.id.componentIdentifier instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier }
+            .collect { it.file.absolutePath }.unique().sort()
+        file(target).text = groovy.json.JsonOutput.toJson(artifacts)
+    }
+}
+
 dependencies {
     implementation project(':textmate')
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'

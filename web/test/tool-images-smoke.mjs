@@ -1,4 +1,5 @@
-// Run after the web build with TMPDIR inside build/tmp and CHROME_BIN set.
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
+// Run after the web build with an owned system-temp run and CHROME_BIN set.
 // Uses synthetic Codex/Claude history and an owned browser profile.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -9,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 assert.ok(process.env.CHROME_BIN, "Set CHROME_BIN to headless Chromium");
-assert.ok(process.env.TMPDIR?.startsWith(join(root, "build/tmp/")));
+requireRunTemp();
 const scratch = await mkdtemp(join(process.env.TMPDIR, "tool-images-browser-"));
 const output = join(root, "build/artifacts/tool-images");
 const image = await readFile(join(root, "assets/logo.png"));

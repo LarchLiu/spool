@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Original main.tsx user JSX, UserMessage and AttachmentCards through mounted updates.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -6,7 +7,7 @@ import path from 'node:path';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-if(!path.resolve(process.env.TMPDIR||'').startsWith(path.join(root,'build/tmp')+path.sep))throw new Error('Run through android/tools/run.sh');
+requireRunTemp();
 const require=createRequire(path.join(root,'web/package.json'));
 const {createServer}=await import(require.resolve('vite')),{default:react}=await import(require.resolve('@vitejs/plugin-react'));
 const {chromium}=createRequire(path.join(process.env.SPOOL_NODE_MODULES||path.join(root,'web/node_modules'),'__user_updates__.cjs'))('playwright');
@@ -56,7 +57,7 @@ const plugin={name:'user-update-reference',resolveId:id=>id==='/__user-updates.t
  if(req.url==='/__user-updates'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(await instance.transformIndexHtml(req.url,'<!doctype html><html lang="en" data-theme="light"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/__user-updates.tsx"></script>'));return;}next();
 });}};
 try{
- server=await createServer({configFile:false,root:path.join(root,'web'),plugins:[plugin,react()],server:{host:'127.0.0.1',port:0},logLevel:'error'});await server.listen();browser=await chromium.launch({channel:'chrome',headless:true});
+ server=await createServer({ cacheDir: path.join(requireRunTemp(), "vite-cache"),configFile:false,root:path.join(root,'web'),plugins:[plugin,react()],server:{host:'127.0.0.1',port:0},logLevel:'error'});await server.listen();browser=await chromium.launch({channel:'chrome',headless:true});
  const page=await browser.newPage({viewport:{width:360,height:1000},timezoneId:'UTC'});const errors=[];page.on('pageerror',e=>errors.push(String(e)));
  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__user-updates`);await page.waitForFunction(()=>window.bind);await page.addStyleTag({content:fontCSS});await page.evaluate(()=>document.fonts.ready);
  await page.evaluate(()=>{window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>window.copied.push(text)}});});

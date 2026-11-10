@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Diagnose borderline native/Web wraps from actual DOM styles and byte-matched fonts.
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -7,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {renderMarkdown} from './web-markdown-reference.mjs';
 import {tableOriginFixtures} from './table-origin-reference.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-if(!path.resolve(process.env.TMPDIR||'').startsWith(path.join(root,'build/tmp')+path.sep))throw new Error('Run through android/tools/run.sh');
+requireRunTemp();
 const require=createRequire(path.join(process.env.SPOOL_NODE_MODULES||path.join(root,'web/node_modules'),'__table_wrap__.cjs'));
 const {chromium}=require('playwright'),fonts=path.join(root,'build/cache/android-ui-fonts');
 const manifest=JSON.parse(await fs.readFile(path.join(fonts,'manifest.json'),'utf8'));

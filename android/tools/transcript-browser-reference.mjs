@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
+requireRunTemp();
 // Execute actual main.tsx keyed turn JSX, latest callback/scroll handler and original components.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -69,7 +71,7 @@ const plugin={name:'transcript-reference',resolveId(id){if(id==='/__transcript.t
   next();
 });}};
 try {
-  server=await createServer({configFile:false,root:path.join(root,'web'),plugins:[plugin,reactPlugin()],server:{host:'127.0.0.1',port:0,fs:{allow:[root]}},logLevel:'error'});
+  server=await createServer({cacheDir:path.join(requireRunTemp(),"vite-cache"),configFile:false,root:path.join(root,'web'),plugins:[plugin,reactPlugin()],server:{host:'127.0.0.1',port:0,fs:{allow:[root]}},logLevel:'error'});
   await server.listen(); browser=await chromium.launch({channel:'chrome',headless:true});
   const base=`http://127.0.0.1:${server.httpServer.address().port}/__transcript`,scenes=[];
   for(const density of [1,2.625,3])for(const locale of ['en','zh-CN','ja'])for(const theme of ['light','dark']){

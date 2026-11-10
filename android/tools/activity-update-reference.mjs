@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Original Web ToolActivityList conditional mounts, keys and source state through live updates.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -6,7 +7,7 @@ import path from 'node:path';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-if(!path.resolve(process.env.TMPDIR||'').startsWith(path.join(root,'build/tmp')+path.sep))throw new Error('Run through android/tools/run.sh');
+requireRunTemp();
 const require=createRequire(path.join(root,'web/package.json')),{createServer}=await import(require.resolve('vite')),{default:react}=await import(require.resolve('@vitejs/plugin-react'));
 const {chromium}=createRequire(path.join(process.env.SPOOL_NODE_MODULES||path.join(root,'web/node_modules'),'__activity_updates__.cjs'))('playwright');
 const output=path.join(root,'build/artifacts/android-native');await fs.mkdir(output,{recursive:true});
@@ -80,7 +81,7 @@ const plugin={name:'activity-update-reference',resolveId:id=>id==='/__activity-u
  if(req.url==='/__activity-updates'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(await instance.transformIndexHtml(req.url,'<!doctype html><meta charset="utf-8"><div id="root"></div><script type="module" src="/__activity-updates.tsx"></script>'));return;}next();
 });}};
 try{
- server=await createServer({configFile:false,root:path.join(root,'web'),plugins:[plugin,react()],server:{host:'127.0.0.1',port:0}});await server.listen();browser=await chromium.launch({channel:'chrome',headless:true});
+ server=await createServer({ cacheDir: path.join(requireRunTemp(), "vite-cache"),configFile:false,root:path.join(root,'web'),plugins:[plugin,react()],server:{host:'127.0.0.1',port:0}});await server.listen();browser=await chromium.launch({channel:'chrome',headless:true});
  const page=await browser.newPage({viewport:{width:360,height:1000}});await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__activity-updates`);await page.waitForFunction(()=>typeof window.bind==='function');
  const cases=[];
  for(const fixture of fixtures){

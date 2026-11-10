@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Observe the actual Web renderer's available font faces with font-synthesis:none.
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -7,7 +8,7 @@ import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 import {renderMarkdown} from './web-markdown-reference.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-if(!path.resolve(process.env.TMPDIR||'').startsWith(path.join(root,'build/tmp')+path.sep))throw new Error('Run through android/tools/run.sh');
+requireRunTemp();
 const require=createRequire(path.join(process.env.SPOOL_NODE_MODULES||path.join(root,'web/node_modules'),'__cjk_fonts__.cjs'));
 const {chromium}=require('playwright'),{PNG}=require('pngjs');
 const output=path.join(root,'build/artifacts/android-native'),fonts=path.join(root,'build/cache/android-ui-fonts');

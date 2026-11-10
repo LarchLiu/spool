@@ -6,7 +6,7 @@ SPDX-License-Identifier: EPL-2.0
 Original source: https://github.com/eclipse-tm4e/tm4e/tree/0.14.1
 Original binary: org.netbeans.external:org.eclipse.tm4e.core-0.14.1:RELEASE300
 Reproducible modifications and replacement sources: android/textmate/README.md,
-android/tools/prepare-textmate.py, and android/textmate/src/main/java/.
+android/tools/prepare-textmate.mjs, and android/textmate/src/main/java/.
 These modified TM4E components remain available under EPL-2.0.
 
 TM4E contains adaptations of atom/node-oniguruma and vscode-textmate:

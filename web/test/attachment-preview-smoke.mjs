@@ -1,3 +1,4 @@
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Run against TestUserAttachmentBrowser's isolated fixture server. Do not retain
 // native messages, document contents, browser profiles, or login data as reports.
 import assert from "node:assert/strict";
@@ -7,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-assert.ok(process.env.TMPDIR?.startsWith(path.join(root, "build/tmp/")));
+requireRunTemp();
 const { chromium } = createRequire(
   path.join(process.env.SPOOL_NODE_MODULES || path.join(root, "web/node_modules"), "__attachment__.cjs"),
 )("playwright");

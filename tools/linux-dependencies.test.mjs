@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 
 const helper = resolve("tools/linux-dependencies.sh");
-const python = execFileSync("sh", ["-c", "command -v python3"], { encoding: "utf8" }).trim();
+const bun = process.execPath;
 
 async function fixture(t, { manager = "apt-get", privilege = "sudo", rustup = true, oldCargo = false, distribution } = {}) {
   const root = await mkdtemp(join(tmpdir(), "linux-dependencies-"));
@@ -19,7 +19,7 @@ async function fixture(t, { manager = "apt-get", privilege = "sudo", rustup = tr
   const distributions = { "apt-get": 'ID=ubuntu\nVERSION_ID="24.04"', dnf: 'ID=fedora\nVERSION_ID=43', pacman: "ID=arch", zypper: "ID=opensuse-tumbleweed" };
   await writeFile(osRelease, distribution ?? distributions[manager]);
   // No host package manager, sudo, Rust, or user profile can leak into a test.
-  await symlink(python, join(bin, "python3"));
+  await symlink(bun, join(bin, "bun"));
   await symlink("/bin/sh", join(bin, "sh"));
   for (const name of ["cp", "chmod"]) {
     const path = execFileSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" }).trim();

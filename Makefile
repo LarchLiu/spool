@@ -1,7 +1,11 @@
 version ?= patch
 mode ?= debug
+GO_PACKAGES ?= ./...
+GO_TEST_FLAGS ?=
+TOOLS_TESTS ?= tools/*.test.mjs
+WEB_TESTS ?= ./test
 
-.PHONY: dev web desktop server test package auto-format branding build apk release
+.PHONY: dev web desktop server test test-tools test-web test-go test-race vet-go package auto-format branding build apk release
 web: branding
 	# Force dependency lifecycle scripts to use Bun as well.
 	bun run --bun --cwd web bun install --frozen-lockfile
@@ -19,11 +23,24 @@ desktop: web
 server: web
 	go build -ldflags "-X main.production=1" -o build/spool-server ./cmd/server
 
-test:
-	bun test tools/*.test.mjs
-	bun run --bun --cwd web test
-	go test -race ./...
-	go vet ./...
+# Full ordinary checks are explicit; use the scoped targets during development.
+test: test-tools test-web test-go vet-go
+
+test-tools:
+	sh tools/run.sh tools-test bun test $(TOOLS_TESTS)
+
+# WEB_TESTS paths are relative to web/. Always refresh compiled test fixtures.
+test-web:
+	sh tools/run.sh web-test sh -eu -c 'cd web; bun run --bun test:prepare; bun test --isolate "$$@"' web-tests $(WEB_TESTS)
+
+test-go:
+	sh tools/run.sh go-test go test $(GO_TEST_FLAGS) $(GO_PACKAGES)
+
+test-race:
+	sh tools/run.sh go-race go test -race $(GO_TEST_FLAGS) $(GO_PACKAGES)
+
+vet-go:
+	sh tools/run.sh go-vet go vet $(GO_PACKAGES)
 
 auto-format:
 	gofmt -w resources.go cmd internal tools

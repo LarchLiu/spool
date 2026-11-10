@@ -1,4 +1,5 @@
-// Run after `bun run --bun --cwd web build`, with TMPDIR inside an owned build/tmp run
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
+// Run after `bun run --bun --cwd web build`, with an owned system-temp run
 // and CHROME_BIN pointing to a standalone headless Chromium executable.
 // Uses only synthetic API data and an isolated Chrome profile; never a real home.
 import assert from "node:assert/strict";
@@ -15,10 +16,7 @@ assert.ok(
   chrome,
   "Set CHROME_BIN to a standalone headless Chromium executable",
 );
-assert.ok(
-  process.env.TMPDIR?.startsWith(join(root, "build/tmp/")),
-  "Set TMPDIR inside an owned build/tmp run",
-);
+requireRunTemp();
 const scratch = await mkdtemp(
   join(process.env.TMPDIR, "turn-identity-browser-"),
 );

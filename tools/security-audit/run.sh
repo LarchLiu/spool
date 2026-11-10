@@ -4,16 +4,10 @@
 set -eu
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
-export GOCACHE="$REPO_ROOT/build/cache/go-build"
-mkdir -p "$GOCACHE" "$REPO_ROOT/build/tmp"
-AUDIT_RUN_ROOT=$(mktemp -d "$REPO_ROOT/build/tmp/communication-security.XXXXXX")
-cleanup() { rm -rf -- "$AUDIT_RUN_ROOT"; }
-trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
-mkdir -p "$AUDIT_RUN_ROOT/tmp" "$AUDIT_RUN_ROOT/go"
-export TMPDIR="$AUDIT_RUN_ROOT/tmp" TMP="$AUDIT_RUN_ROOT/tmp" TEMP="$AUDIT_RUN_ROOT/tmp"
-export GOTMPDIR="$AUDIT_RUN_ROOT/go"
+if [ "${SPOOL_SECURITY_AUDIT_RUN:-}" != 1 ]; then
+  exec sh "$REPO_ROOT/tools/run.sh" communication-security env SPOOL_SECURITY_AUDIT_RUN=1 sh "$REPO_ROOT/tools/security-audit/run.sh" "$@"
+fi
+AUDIT_RUN_ROOT=$SPOOL_RUN_ROOT
 export GOPROXY=off
 export AUDIT_RUN_ROOT
 

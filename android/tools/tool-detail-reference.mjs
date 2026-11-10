@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Exercise the production React disclosure and live loader, without session data.
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -6,7 +7,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-if (!path.resolve(process.env.TMPDIR || "").startsWith(path.join(root, "build/tmp") + path.sep)) throw new Error("Run through android/tools/run.sh");
+requireRunTemp();
 const require = createRequire(path.join(root, "web/package.json"));
 const { createServer } = await import(require.resolve("vite"));
 const { default: react } = await import(require.resolve("@vitejs/plugin-react"));
@@ -49,7 +50,7 @@ try {
     resolveId(id) { if (id === "/tool-detail-fixture.jsx") return id; },
     load(id) { if (id === "/tool-detail-fixture.jsx") return fixture; },
   };
-  server = await createServer({ configFile: false, root: path.join(root, "web"), plugins: [plugin, react()], server: { host: "127.0.0.1", port: 0 } });
+  server = await createServer({ cacheDir: path.join(requireRunTemp(), "vite-cache"), configFile: false, root: path.join(root, "web"), plugins: [plugin, react()], server: { host: "127.0.0.1", port: 0 } });
   await server.listen(); browser = await chromium.launch({ channel: "chrome", headless: true });
   const page = await browser.newPage({ viewport: { width: 360, height: 800 } });
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__tool-detail`);

@@ -1,3 +1,4 @@
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Synthetic MCP approvals against the built app. All browser state is disposable.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -8,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 assert.ok(process.env.CHROME_BIN, "Set CHROME_BIN to headless Chromium");
-assert.ok(process.env.TMPDIR?.startsWith(join(root, "build/tmp/")));
+requireRunTemp();
 const scratch = await mkdtemp(join(process.env.TMPDIR, "approval-browser-"));
 const audit = process.argv.includes("--audit");
 const output = join(

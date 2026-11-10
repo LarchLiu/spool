@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
+requireRunTemp();
 // Execute the actual Web subscription with controlled asynchronous fallback races.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

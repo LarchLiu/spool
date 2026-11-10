@@ -1,6 +1,6 @@
 #!/bin/sh
 # Disposable-container check. Package-manager state stays in the container;
-# scratch, compiler output and retained diagnostics follow repository paths.
+# scratch is owned system-temp storage; retained diagnostics stay in the repo.
 set -eu
 mode="${1:-native}"
 case "$mode" in native|desktop|voxl) ;; *) echo 'Usage: sh tools/linux-compat-smoke.sh [native|desktop|voxl]' >&2; exit 1 ;; esac
@@ -10,15 +10,31 @@ case "$mode" in native|desktop|voxl) ;; *) echo 'Usage: sh tools/linux-compat-sm
 }
 REPO_ROOT="$(pwd)"
 [ -f "$REPO_ROOT/tools/linux-dependencies.sh" ] || { echo 'Run from the repository root.' >&2; exit 1; }
-mkdir -p "$REPO_ROOT/build/tmp"
-RUN_ROOT="$(mktemp -d "$REPO_ROOT/build/tmp/linux-compat.XXXXXX")"
-cleanup() { rm -rf -- "$RUN_ROOT"; }
-trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
-mkdir -p "$RUN_ROOT/tmp" "$RUN_ROOT/go"
-export TMPDIR="$RUN_ROOT/tmp" TMP="$RUN_ROOT/tmp" TEMP="$RUN_ROOT/tmp" GOTMPDIR="$RUN_ROOT/go"
-export GOCACHE="$REPO_ROOT/build/cache/go-build"
+if [ "${SPOOL_LINUX_COMPAT_RUN:-}" != 1 ]; then
+  if ! command -v bun >/dev/null 2>&1; then
+    case "$(sed -n 's/^ID=//p' /etc/os-release | tr -d '\"')" in
+      ubuntu|debian) apt-get update -qq; apt-get install -y -qq --no-install-recommends ca-certificates curl unzip ;;
+      fedora) dnf install -y --setopt=install_weak_deps=False ca-certificates curl-minimal unzip ;;
+      arch) pacman -Syu --needed --noconfirm ca-certificates curl unzip ;;
+      opensuse*) zypper --non-interactive refresh; zypper --non-interactive install --no-recommends ca-certificates curl unzip ;;
+      *) echo 'Unsupported bootstrap image.' >&2; exit 1 ;;
+    esac
+    case "$(uname -m)" in aarch64|arm64) bun_arch=aarch64 ;; x86_64|amd64) bun_arch=x64 ;; *) exit 1 ;; esac
+    mkdir -p "${TMPDIR:-/tmp}/spool"
+    bootstrap=$(mktemp -d "${TMPDIR:-/tmp}/spool/bun-bootstrap.XXXXXX")
+    trap 'rm -rf -- "$bootstrap"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    bun_version=$(cat "$REPO_ROOT/.bun-version")
+    curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' "https://github.com/oven-sh/bun/releases/download/bun-v$bun_version/bun-linux-$bun_arch.zip" -o "$bootstrap/bun.zip"
+    unzip -q "$bootstrap/bun.zip" -d "$bootstrap"
+    PATH="$bootstrap/bun-linux-$bun_arch:$PATH"
+    export PATH
+  fi
+  sh "$REPO_ROOT/tools/run.sh" linux-compat env SPOOL_LINUX_COMPAT_RUN=1 sh "$0" "$@"
+  exit $?
+fi
+RUN_ROOT=$SPOOL_RUN_ROOT
 export DEBIAN_FRONTEND=noninteractive
 export HOME="$RUN_ROOT/home"
 mkdir -p "$HOME"
@@ -26,11 +42,11 @@ image_id="$(sed -n 's/^ID=//p' /etc/os-release | tr -d '\"')"
 case "$image_id" in
   ubuntu|debian)
     apt-get update -qq
-    apt-get install -y -qq --no-install-recommends python3 ca-certificates curl openssl
+    apt-get install -y -qq --no-install-recommends ca-certificates curl openssl
     ;;
-  fedora) dnf install -y --setopt=install_weak_deps=False python3 ca-certificates curl-minimal openssl ;;
-  arch) pacman -Syu --needed --noconfirm python ca-certificates curl openssl ;;
-  opensuse*) zypper --non-interactive refresh; zypper --non-interactive install --no-recommends python3 ca-certificates curl openssl ;;
+  fedora) dnf install -y --setopt=install_weak_deps=False ca-certificates curl-minimal openssl ;;
+  arch) pacman -Syu --needed --noconfirm ca-certificates curl openssl ;;
+  opensuse*) zypper --non-interactive refresh; zypper --non-interactive install --no-recommends ca-certificates curl openssl ;;
   *) echo 'Add bootstrap packages for this test image first.' >&2; exit 1 ;;
 esac
 . "$REPO_ROOT/tools/linux-dependencies.sh"

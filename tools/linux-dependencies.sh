@@ -1,14 +1,35 @@
 # Inlined into the signed release installer by sign-release.mjs. Keep this file
 # sourceable so dependency installation can be tested with inert package tools.
 spool_load_libraries() {
-  python3 -c '
-import ctypes, sys
-try:
-    for name in sys.argv[1:]:
-        ctypes.CDLL(name)
-except OSError:
-    sys.exit(1)
-' "$@" >/dev/null 2>&1
+  bun -e '
+import { dlopen } from "bun:ffi";
+import { ptr } from "bun:ffi";
+import { existsSync, statSync } from "node:fs";
+// Bun requires a symbol table. Call the system loader to probe arbitrary libraries.
+const loader = dlopen(process.platform === "darwin" ? "/usr/lib/libSystem.B.dylib" : "libdl.so.2", {
+  dlopen: { args: ["ptr", "i32"], returns: "ptr" },
+  dlclose: { args: ["ptr"], returns: "i32" },
+});
+const clang = process.argv[1] === "--clang";
+let names = process.argv.slice(1);
+if (clang) {
+  const matches = (pattern) => {
+    try { return [...new Bun.Glob(pattern).scanSync({ followSymlinks: true })]; }
+    catch (error) { if (["ENOENT", "ENOTDIR"].includes(error.code)) return []; throw error; }
+  };
+  const custom = process.env.LIBCLANG_PATH || "";
+  names = custom && existsSync(custom) && statSync(custom).isFile() ? [custom] : custom ? matches(custom + "/libclang*.so*") : [];
+  names.push("libclang.so", ...["/usr/lib/llvm-*/lib/libclang.so*", "/usr/lib/*-linux-gnu/libclang-*.so*", "/usr/lib64/libclang*.so*", "/usr/lib/libclang*.so*"].flatMap(matches));
+}
+try {
+  for (const name of names) {
+    const encoded = Buffer.from(name + "\0"), handle = loader.symbols.dlopen(ptr(encoded), 2);
+    if (handle) { loader.symbols.dlclose(handle); if (clang) process.exit(0); }
+    else if (!clang) process.exit(1);
+  }
+  if (clang) process.exit(1);
+} finally { loader.close(); }
+' -- "$@" >/dev/null 2>&1
 }
 
 spool_runtime_ready() {
@@ -25,10 +46,9 @@ spool_rust_ready() {
   # voxl's locked dependencies need Rust 1.85; Ubuntu 24.04 starts at 1.75.
   for spool_tool in cargo rustc; do
     command -v "$spool_tool" >/dev/null 2>&1 || return 1
-    "$spool_tool" --version | python3 -c '
-import re, sys
-m = re.match(r"(?:rustc|cargo) (\d+)\.(\d+)", sys.stdin.read())
-sys.exit(0 if m and tuple(map(int, m.groups())) >= (1, 85) else 1)
+    "$spool_tool" --version | bun -e '
+const m = (await Bun.stdin.text()).match(/^(?:rustc|cargo) (\d+)\.(\d+)/);
+process.exit(m && (+m[1] > 1 || +m[1] === 1 && +m[2] >= 85) ? 0 : 1);
 ' || return 1
   done
 }
@@ -40,76 +60,61 @@ spool_voxl_native_ready() {
   pkg-config --exists x264 opus libpulse-simple xcb || return 1
   # Check libclang for bindgen, then link libyuv without running the result:
   # Debian/Ubuntu's libyuv package has no pkg-config file.
-  python3 -c '
-import ctypes, ctypes.util, glob, os, sys
-custom = os.environ.get("LIBCLANG_PATH", "")
-names = [custom] if os.path.isfile(custom) else glob.glob(os.path.join(custom, "libclang*.so*")) if custom else []
-names += [ctypes.util.find_library("clang")]
-for pattern in ("/usr/lib/llvm-*/lib/libclang.so*", "/usr/lib/*-linux-gnu/libclang-*.so*", "/usr/lib64/libclang*.so*", "/usr/lib/libclang*.so*"):
-    names += glob.glob(pattern)
-for name in filter(None, names):
-    try:
-        ctypes.CDLL(name)
-        sys.exit(0)
-    except OSError:
-        pass
-sys.exit(1)
-' >/dev/null 2>&1 || return 1
+  spool_load_libraries --clang || return 1
   printf '%s\n' 'int main(void) { return 0; }' | clang -x c - -o "$work/yuv-probe" -lyuv >/dev/null 2>&1
 }
 
 spool_distribution() {
   # os-release uses shell quoting, but parsing it must not execute shell code.
-  python3 - "${1:-${spool_os_release_file:-/etc/os-release}}" <<'PY'
-import pathlib, re, shlex, sys
-path = pathlib.Path(sys.argv[1])
-if not path.exists() and sys.argv[1] == "/etc/os-release":
-    path = pathlib.Path("/usr/lib/os-release")
-data = {}
-try:
-    for line in path.read_text().splitlines():
-        key, sep, value = line.partition("=")
-        if sep and key in ("ID", "ID_LIKE", "VERSION_ID", "PRETTY_NAME", "VARIANT_ID"):
-            words = shlex.split(value, comments=True)
-            if len(words) == 1:
-                data[key] = words[0]
-except (OSError, ValueError):
-    pass
-identity = data.get("ID", "unknown").lower()
-family = [identity] + data.get("ID_LIKE", "").lower().split()
-manager = "unsupported"
-if identity not in ("alpine", "nixos", "steamos", "opensuse-microos", "opensuse-aeon", "opensuse-kalpa") and data.get("VARIANT_ID") not in ("silverblue", "kinoite", "coreos", "sericea", "onyx"):
-    for item in family:
-        if item in ("ubuntu", "debian", "linuxmint", "pop", "neon", "zorin"):
-            manager = "apt-get"; break
-        if item in ("fedora", "rhel", "centos", "rocky", "almalinux", "ol"):
-            manager = "dnf"; break
-        if item in ("arch", "manjaro", "endeavouros"):
-            manager = "pacman"; break
-        if item in ("suse", "opensuse", "opensuse-leap", "opensuse-tumbleweed", "sles"):
-            manager = "zypper"; break
-label = data.get("PRETTY_NAME") or (identity + " " + data.get("VERSION_ID", "")).strip()
-label = re.sub(r"[\x00-\x1f\x7f]", " ", label)[:160]
-# These older releases lack the expected system/toolchain baseline. Derivative
-# VERSION_ID values belong to their own numbering schemes, so never compare
-# Mint's version, for example, against Ubuntu's version.
-minimums = {"ubuntu": (22, 4), "debian": (12,), "rhel": (9,), "centos": (9,), "rocky": (9,), "almalinux": (9,), "ol": (9,)}
-version = data.get("VERSION_ID", "")
-if identity in minimums and re.fullmatch(r"\d+(?:\.\d+)*", version):
-    current = tuple(map(int, version.split(".")))
-    if current < minimums[identity]:
-        manager = "unsupported"
-print(manager + ":" + label)
-PY
+  bun - "${1:-${spool_os_release_file:-/etc/os-release}}" <<'JS'
+import { existsSync, readFileSync } from 'node:fs';
+let path = process.argv[2]; if (!existsSync(path) && path === '/etc/os-release') path = '/usr/lib/os-release';
+const data = {};
+// Tokenize quoted os-release values without interpreting substitutions or escapes as code.
+function word(input) {
+  let value = '', quote = '', active = false, done = false;
+  for (let i = 0; i < input.length; i++) {
+    const c = input[i];
+    if (!quote && c === '#') break;
+    if (!quote && /\s/.test(c)) { if (active) done = true; continue; }
+    if (done) return undefined;
+    active = true;
+    if (c === quote) { quote = ''; continue; }
+    if (!quote && (c === '"' || c === "'")) { quote = c; continue; }
+    if (c === '\\' && quote !== "'") {
+      if (++i >= input.length) return undefined;
+      if (quote === '"' && !['$', String.fromCharCode(96), '"', '\\'].includes(input[i])) value += '\\';
+      value += input[i];
+    } else value += c;
+  }
+  return !quote && active ? value : undefined;
+}
+try { for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+  const at = line.indexOf('='), key = line.slice(0, at); if (at < 0 || !['ID', 'ID_LIKE', 'VERSION_ID', 'PRETTY_NAME', 'VARIANT_ID'].includes(key)) continue;
+  const value = word(line.slice(at + 1)); if (value !== undefined) data[key] = value;
+} } catch {}
+const identity = (data.ID || 'unknown').toLowerCase(), family = [identity, ...(data.ID_LIKE || '').toLowerCase().split(/\s+/)];
+let manager = 'unsupported';
+if (!['alpine', 'nixos', 'steamos', 'opensuse-microos', 'opensuse-aeon', 'opensuse-kalpa'].includes(identity) && !['silverblue', 'kinoite', 'coreos', 'sericea', 'onyx'].includes(data.VARIANT_ID)) {
+  const families = { 'apt-get': ['ubuntu', 'debian', 'linuxmint', 'pop', 'neon', 'zorin'], dnf: ['fedora', 'rhel', 'centos', 'rocky', 'almalinux', 'ol'], pacman: ['arch', 'manjaro', 'endeavouros'], zypper: ['suse', 'opensuse', 'opensuse-leap', 'opensuse-tumbleweed', 'sles'] };
+  outer: for (const item of family) for (const [tool, values] of Object.entries(families)) if (values.includes(item)) { manager = tool; break outer; }
+}
+const minimum = { ubuntu: [22, 4], debian: [12], rhel: [9], centos: [9], rocky: [9], almalinux: [9], ol: [9] }[identity];
+if (minimum && /^\d+(?:\.\d+)*$/.test(data.VERSION_ID || '')) {
+  const current = data.VERSION_ID.split('.').map(Number); let comparison = 0;
+  for (let i = 0; i < Math.max(current.length, minimum.length); i++) { const delta = (current[i] || 0) - (minimum[i] || 0); if (delta) { comparison = delta; break; } }
+  if (comparison < 0) manager = 'unsupported';
+}
+const label = (data.PRETTY_NAME || (identity + ' ' + (data.VERSION_ID || '')).trim()).replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 160);
+console.log(manager + ':' + label);
+JS
 }
 
 spool_package_available() {
   case "$spool_manager" in
     apt-get)
-      LC_ALL=C apt-cache policy "$1" 2>/dev/null | python3 -c '
-import re, sys
-m = re.search(r"^\s*Candidate:\s*(\S+)", sys.stdin.read(), re.M)
-sys.exit(0 if m and m[1] != "(none)" else 1)
+      LC_ALL=C apt-cache policy "$1" 2>/dev/null | bun -e '
+const match = (await Bun.stdin.text()).match(/^\s*Candidate:\s*(\S+)/m); process.exit(match && match[1] !== "(none)" ? 0 : 1);
 '
       ;;
     dnf) LC_ALL=C dnf -q info "$1" >/dev/null 2>&1 ;;

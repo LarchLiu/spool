@@ -1,20 +1,20 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { releaseVersion } from "./prepare-release.mjs";
 import { serverArchiveName } from "./release-assets.mjs";
+import { createScratch } from "./test-scratch.mjs";
 
 export async function smokeServer(directory, target, env = process.env) {
   const native = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`;
   assert.equal(target, native, "server smoke must run on the target OS and architecture");
   const version = releaseVersion(env.RELEASE_TAG);
-  const scratch = resolve("build/tmp");
   const artifacts = resolve("build/artifacts/server-smoke");
-  await Promise.all([mkdir(scratch, { recursive: true }), mkdir(artifacts, { recursive: true })]);
-  const run = await mkdtemp(join(scratch, "server-smoke."));
+  await mkdir(artifacts, { recursive: true });
+  const run = await createScratch("server-smoke");
   let child, closed, watchdog, output = "";
   try {
     await Promise.all(["tmp", "app", "home", "project"].map((name) => mkdir(join(run, name))));
@@ -76,8 +76,11 @@ export async function smokeServer(directory, target, env = process.env) {
   } finally {
     clearTimeout(watchdog);
     if (child) { child.kill("SIGKILL"); await closed.catch(() => {}); }
-    await writeFile(join(artifacts, "startup.log"), output);
-    await rm(run, { recursive: true, force: true });
+    try {
+      await writeFile(join(artifacts, "startup.log"), output);
+    } finally {
+      await rm(run, { recursive: true, force: true });
+    }
   }
 }
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Inspect actual Blink paint operations for original CSS, not a Canvas recreation.
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -6,8 +7,7 @@ import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-if(!path.resolve(process.env.TMPDIR||'').startsWith(path.join(root,'build/tmp')+path.sep))
- throw new Error('Run through sh android/tools/run.sh so the browser profile has an owned scratch directory.');
+requireRunTemp();
 const require=createRequire(path.join(process.env.SPOOL_NODE_MODULES||path.join(root,'web/node_modules'),'__surface__.cjs'));
 const {chromium}=require('playwright');
 const {PNG}=require('pngjs');

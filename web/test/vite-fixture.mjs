@@ -1,15 +1,14 @@
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
+import { createScratch } from "../../tools/test-scratch.mjs";
 
 // A test Vite server with different options invalidates the development
 // server's optimized modules if both use node_modules/.vite. Each fixture
-// owns its cache and closes Vite before removing it.
+// owns its cache and closes Vite before removing it. Honor the owning run's
+// TMPDIR so its cleanup also covers interrupted fixture teardown.
 export async function createTestViteServer(t, options) {
-  const base = fileURLToPath(new URL("../../build/tmp/", import.meta.url));
-  await mkdir(base, { recursive: true });
-  const scratch = await mkdtemp(join(base, "vite-test."));
+  const scratch = await createScratch("vite-test");
   let server;
   try {
     server = await createServer({

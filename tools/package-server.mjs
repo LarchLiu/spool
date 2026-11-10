@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { releaseVersion } from "./prepare-release.mjs";
 import { releaseTargets, serverArchiveName } from "./release-assets.mjs";
+import { createScratch } from "./test-scratch.mjs";
 
 export async function packageServer(target, env = process.env) {
   if (!releaseTargets.includes(target)) throw new Error(`Unsupported server target: ${target}`);
@@ -11,18 +12,16 @@ export async function packageServer(target, env = process.env) {
   const metadata = JSON.parse(await readFile("mygo.json", "utf8"));
   if (metadata.version !== version) throw new Error("Server version does not match the packaging metadata");
   const root = resolve(".");
-  const cache = join(root, "build/cache/go-build");
-  const scratch = join(root, "build/tmp");
   const output = join(root, "build", target);
-  await Promise.all([mkdir(cache, { recursive: true }), mkdir(scratch, { recursive: true }), mkdir(output, { recursive: true })]);
-  const run = await mkdtemp(join(scratch, "package-server."));
+  await mkdir(output, { recursive: true });
+  const run = await createScratch("package-server");
   try {
     const payload = join(run, "payload");
     await Promise.all(["tmp", "go", "payload"].map((name) => mkdir(join(run, name))));
     const [platform, arch] = target.split("-");
     const binary = platform === "windows" ? "spool-server.exe" : "spool-server";
     const buildEnv = {
-      ...env, GOOS: platform, GOARCH: arch, CGO_ENABLED: "0", GOCACHE: cache,
+      ...env, GOOS: platform, GOARCH: arch, CGO_ENABLED: "0",
       GOTMPDIR: join(run, "go"), TMPDIR: join(run, "tmp"), TMP: join(run, "tmp"), TEMP: join(run, "tmp"),
     };
     execFileSync("go", ["build", "-trimpath", "-ldflags", "-s -w -X main.production=1", "-o", join(payload, binary), "./cmd/server"], { env: buildEnv, stdio: "inherit" });

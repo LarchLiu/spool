@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
+requireRunTemp();
 // Browser WebCodecs supplies complete composited frames, not a second handwritten expected renderer.
 import fs from 'node:fs/promises';
 import http from 'node:http';

@@ -1,3 +1,4 @@
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Exercise the real approval/select components with pointer and keyboard input.
 // Run from the repository root through android/tools/run.sh; SPOOL_NODE_MODULES
 // may point to the bundled Playwright runtime. WEBKIT_BIN can select an existing
@@ -9,7 +10,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-assert.ok(process.env.TMPDIR?.startsWith(path.join(root, "build/tmp/")));
+requireRunTemp();
 const require = createRequire(path.join(root, "web/package.json"));
 const { createServer } = await import(require.resolve("vite"));
 const { default: react } = await import(require.resolve("@vitejs/plugin-react"));
@@ -67,7 +68,7 @@ let sequence = 0, server, browser;
 const reports = {};
 try {
   await fs.mkdir(output, { recursive: true });
-  server = await createServer({ configFile: false, root: path.join(root, "web"),
+  server = await createServer({ cacheDir: path.join(requireRunTemp(), "vite-cache"), configFile: false, root: path.join(root, "web"),
     plugins: [plugin, react()], server: { host: "127.0.0.1", port: 0, strictPort: true } });
   await server.listen();
   const origin = `http://127.0.0.1:${server.httpServer.address().port}`;

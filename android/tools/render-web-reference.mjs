@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
+requireRunTemp();
 // Original Web CSS/components with synthetic fixtures; never connects to a server.
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -19,7 +21,7 @@ const {createServer}=await import(require.resolve('vite'));
 const {chromium}=process.env.SPOOL_NODE_MODULES?createRequire(path.join(process.env.SPOOL_NODE_MODULES,'__reference__.cjs'))('playwright'):require('playwright');
 const output=path.join(root,'build/artifacts/android-native');
 await fs.mkdir(output,{recursive:true});
-execFileSync('python3',[path.join(root,'android/tools/prepare-ui-fonts.py')],{cwd:root,stdio:'inherit'});
+execFileSync('bun',[path.join(root,'android/tools/prepare-ui-fonts.mjs')],{cwd:root,stdio:'inherit'});
 const fontDirectory=path.join(root,'build/cache/android-ui-fonts');
 const fontManifest=JSON.parse(await fs.readFile(path.join(fontDirectory,'manifest.json'),'utf8'));
 await fs.writeFile(path.join(output,'font-reference.json'),JSON.stringify(fontManifest,null,2));
@@ -147,7 +149,7 @@ const referencePlugin={name:'android-reference',resolveId(id){if(id==='/__androi
  if(req.url?.startsWith('/__android-reference')){res.setHeader('Content-Type','text/html');res.end(await server.transformIndexHtml(req.url,'<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/__android-reference.mjs"></script>'));return;}
  next();
 });}};
-server=await createServer({configFile:false,root:path.join(root,'web'),plugins:[referencePlugin,reactPlugin()],optimizeDeps:{include:['react','react-dom/client','lucide-react']},server:{host:'127.0.0.1',port:0,fs:{allow:[root]}},logLevel:'error'});
+server=await createServer({cacheDir:path.join(requireRunTemp(),"vite-cache"),configFile:false,root:path.join(root,'web'),plugins:[referencePlugin,reactPlugin()],optimizeDeps:{include:['react','react-dom/client','lucide-react']},server:{host:'127.0.0.1',port:0,fs:{allow:[root]}},logLevel:'error'});
 let browser;
 try{
  await server.listen();

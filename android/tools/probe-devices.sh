@@ -13,7 +13,7 @@ if lsof -a -c adb -iTCP:"$DEFAULT_PORT" -sTCP:LISTEN -t >/dev/null 2>&1; then
     PORT=$DEFAULT_PORT
     OWN_SERVER=0
 else
-    PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
+    PORT=$(bun -e 'const server = Bun.listen({hostname:"127.0.0.1",port:0,socket:{data(){}}}); console.log(server.port); server.stop(true);')
     OWN_SERVER=1
 fi
 export ADB_SERVER_SOCKET="tcp:127.0.0.1:$PORT"

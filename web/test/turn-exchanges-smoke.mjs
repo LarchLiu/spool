@@ -1,3 +1,4 @@
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Actual main.tsx turn JSX with synthetic transcripts and an owned browser.
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -5,7 +6,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-assert.ok(path.resolve(process.env.TMPDIR || "").startsWith(path.join(root, "build/tmp") + path.sep));
+requireRunTemp();
 const require = createRequire(path.join(root, "web/package.json"));
 const { createServer } = await import(require.resolve("vite"));
 const { default: react } = await import(require.resolve("@vitejs/plugin-react"));
@@ -64,7 +65,7 @@ const plugin = { name: "turn-exchanges-smoke", resolveId: id => id === "/__turn-
   } };
 try {
   await fs.mkdir(output, { recursive: true });
-  server = await createServer({ configFile: false, root: path.join(root, "web"), plugins: [plugin, react()], server: { host: "127.0.0.1", port: 0 } });
+  server = await createServer({ cacheDir: path.join(requireRunTemp(), "vite-cache"), configFile: false, root: path.join(root, "web"), plugins: [plugin, react()], server: { host: "127.0.0.1", port: 0 } });
   await server.listen(); browser = await chromium.launch({ channel: "chrome", headless: true });
   const page = await browser.newPage({ viewport: { width: 1100, height: 1000 } });
   page.on("pageerror", error => errors.push(String(error)));

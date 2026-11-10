@@ -25,7 +25,7 @@ import (
 )
 
 // Opt-in real-browser smoke; run after building the embedded frontend, with a
-// standalone headless Chrome binary and repository-owned TMPDIR.
+// standalone headless Chrome binary and an owned system-temp TMPDIR.
 func TestRealtimeBrowser(t *testing.T) {
 	chrome := os.Getenv("CHROME_BIN")
 	if chrome == "" {

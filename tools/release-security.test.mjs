@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import test from "node:test";
+import { gzipSync } from "node:zlib";
 import { signRelease } from "./sign-release.mjs";
 import { installerName, releaseTargets, serverArchiveName } from "./release-assets.mjs";
 
@@ -126,17 +127,14 @@ test("installer verifies both signatures before replacing an app and preserves u
   // Even a genuinely signed archive must not escape the staging directory or
   // introduce links. Exercise extraction separately from signature rejection.
   for (const kind of ["traversal", "symlink"]) {
-    execFileSync("python3", ["-c", `
-import io, sys, tarfile
-with tarfile.open(sys.argv[1], 'w:gz') as archive:
-    member = tarfile.TarInfo('../escaped' if sys.argv[2] == 'traversal' else 'spool')
-    if sys.argv[2] == 'symlink':
-        member.type, member.linkname = tarfile.SYMTYPE, '/bin/sh'
-        archive.addfile(member)
-    else:
-        member.size = 3
-        archive.addfile(member, io.BytesIO(b'bad'))
-`, archive, kind]);
+    const header = Buffer.alloc(512);
+    header.write(kind === "traversal" ? "../escaped" : "spool");
+    const octal = (offset, width, value) => header.write(value.toString(8).padStart(width - 1, "0") + "\0", offset, width, "ascii");
+    octal(100, 8, 0o755); octal(124, 12, kind === "symlink" ? 0 : 3); header.fill(32, 148, 156);
+    header[156] = kind === "symlink" ? 50 : 48; if (kind === "symlink") header.write("/bin/sh", 157);
+    const checksum = [...header].reduce((sum, byte) => sum + byte, 0); header.write(checksum.toString(8).padStart(6, "0") + "\0 ", 148, 8, "ascii");
+    const payload = kind === "symlink" ? Buffer.alloc(0) : Buffer.concat([Buffer.from("bad"), Buffer.alloc(509)]);
+    await writeFile(archive, gzipSync(Buffer.concat([header, payload, Buffer.alloc(1024)])));
     const unsafe = await readFile(archive);
     const manifest = { ...JSON.parse(original), size: unsafe.length,
       signature: sign(null, createHash("sha256").update(unsafe).digest(), key.privateKey).toString("base64") };
@@ -166,9 +164,9 @@ with tarfile.open(sys.argv[1], 'w:gz') as archive:
   // Exercise the published, inlined dependency flow without touching the host's
   // package manager. A declined system install must not replace the old app.
   await writeFile(join(app, "spool"), "old-app");
-  await writeFile(join(mocks, "python3"), `#!/bin/sh
-if [ "$1" = -c ]; then exit 1; fi
-exec '${execFileSync("sh", ["-c", "command -v python3"], { encoding: "utf8" }).trim()}' "$@"
+  await writeFile(join(mocks, "bun"), `#!/bin/sh
+if [ "$1" = -e ]; then exit 1; fi
+exec '${process.execPath}' "$@"
 `, { mode: 0o755 });
   await writeFile(join(mocks, "apt-get"), '#!/bin/sh\nexit 99\n', { mode: 0o755 });
   const denied = join(root, "authorization-denied");
@@ -183,7 +181,7 @@ exec '${execFileSync("sh", ["-c", "command -v python3"], { encoding: "utf8" }).t
   assert.equal(await readFile(denied, "utf8"), "denied");
   assert.equal(await readFile(join(app, "spool"), "utf8"), "old-app");
   assert.equal(await readFile(join(home, ".spool", "settings"), "utf8"), "keep-data");
-  await rm(join(mocks, "python3"));
+  await rm(join(mocks, "bun"));
 
   const replacement = join(root, "unsigned.tar.gz");
   await writeFile(join(payload, "spool"), "#!/bin/sh\necho unsigned-app\n");

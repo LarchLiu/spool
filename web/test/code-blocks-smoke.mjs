@@ -1,3 +1,4 @@
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Real shared Markdown renderer: clipboard behavior, streamed source, and narrow layouts.
 // Run with android/tools/run.sh and SPOOL_NODE_MODULES pointing to Playwright.
 import assert from "node:assert/strict";
@@ -10,7 +11,7 @@ const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
-assert.ok(process.env.TMPDIR?.startsWith(path.join(root, "build/tmp/")));
+requireRunTemp();
 const require = createRequire(path.join(root, "web/package.json"));
 const { createServer } = await import(require.resolve("vite"));
 const { default: react } = await import(
@@ -48,7 +49,7 @@ const plugin = {
 };
 let server, browser;
 try {
-  server = await createServer({
+  server = await createServer({ cacheDir: path.join(requireRunTemp(), "vite-cache"),
     configFile: false,
     root: path.join(root, "web"),
     plugins: [plugin, react()],

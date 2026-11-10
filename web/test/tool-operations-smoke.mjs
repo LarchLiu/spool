@@ -1,3 +1,4 @@
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Run through android/tools/run.sh with SPOOL_NODE_MODULES pointing at Playwright.
 // Exercise the actual disclosure DOM through raw/lazy and live input changes.
 import assert from "node:assert/strict";
@@ -7,7 +8,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-assert.ok(path.resolve(process.env.TMPDIR || "").startsWith(path.join(root, "build/tmp") + path.sep));
+requireRunTemp();
 const require = createRequire(path.join(root, "web/package.json"));
 const { createServer } = await import(require.resolve("vite"));
 const { default: react } = await import(require.resolve("@vitejs/plugin-react"));
@@ -38,7 +39,7 @@ const plugin = {
 };
 try {
   await fs.mkdir(output, { recursive: true });
-  server = await createServer({ configFile: false, root: path.join(root, "web"), plugins: [plugin, react()], server: { host: "127.0.0.1", port: 0 } });
+  server = await createServer({ cacheDir: path.join(requireRunTemp(), "vite-cache"), configFile: false, root: path.join(root, "web"), plugins: [plugin, react()], server: { host: "127.0.0.1", port: 0 } });
   await server.listen();
   browser = await chromium.launch({ channel: "chrome", headless: true });
   const page = await browser.newPage({ viewport: { width: 1100, height: 700 } });

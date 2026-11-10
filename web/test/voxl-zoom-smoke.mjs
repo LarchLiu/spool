@@ -1,3 +1,4 @@
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Uses upstream's real viewer markup, layout and input handlers with a synthetic
 // desktop. No screen capture, Spool service, user data or remote connection.
 // Run from the repository root with CHROME_BIN, VOXL_SOURCE and isolated TMPDIR.
@@ -15,7 +16,7 @@ assert.ok(
   process.env.VOXL_SOURCE,
   "Set VOXL_SOURCE to the upstream voxl source directory",
 );
-assert.ok(process.env.TMPDIR?.startsWith(join(root, "build/tmp/")));
+requireRunTemp();
 const source = resolve(process.env.VOXL_SOURCE);
 const scratch = await mkdtemp(join(process.env.TMPDIR, "voxl-zoom-browser-"));
 const output = join(root, "build/artifacts/voxl-zoom");

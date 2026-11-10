@@ -1,4 +1,5 @@
-// Run against built frontend assets with CHROME_BIN and an owned build/tmp TMPDIR.
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
+// Run against built frontend assets with CHROME_BIN and an owned system-temp TMPDIR.
 // Exercises permission failures using synthetic data; no provider or real user data.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -9,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 assert.ok(process.env.CHROME_BIN, "Set CHROME_BIN to headless Chromium");
-assert.ok(process.env.TMPDIR?.startsWith(join(root, "build/tmp/")));
+requireRunTemp();
 const scratch = await mkdtemp(join(process.env.TMPDIR, "permission-browser-"));
 const output = join(root, "build/artifacts/permission-discovery");
 const reports = new Map();

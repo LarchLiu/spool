@@ -1,3 +1,4 @@
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Exercise the production Markdown actions and FileSidebar with synthetic files.
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -9,7 +10,7 @@ const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../..",
 );
-assert.ok(process.env.TMPDIR?.startsWith(path.join(root, "build/tmp/")));
+requireRunTemp();
 const require = createRequire(path.join(root, "web/package.json"));
 const { createServer } = await import(require.resolve("vite"));
 const { default: react } = await import(
@@ -112,7 +113,7 @@ const plugin = {
 let server, browser;
 try {
   await fs.mkdir(output, { recursive: true });
-  server = await createServer({
+  server = await createServer({ cacheDir: path.join(requireRunTemp(), "vite-cache"),
     configFile: false,
     root: path.join(root, "web"),
     plugins: [plugin, react()],

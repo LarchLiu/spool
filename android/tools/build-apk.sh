@@ -43,7 +43,7 @@ if [ "$MODE" = debug ]; then
 else
     APK="$APK_DIR/app-release-unsigned.apk"
 fi
-python3 android/tools/check-syntax-package.py --apk "$APK" --abis arm64-v8a
+bun android/tools/check-syntax-package.mjs --apk "$APK" --abis arm64-v8a
 
 if [ "$MODE" = release ]; then
     # Load signing secrets only after the build tools have exited.
@@ -61,7 +61,7 @@ if [ "$MODE" = release ]; then
         --v4-signing-enabled false --out "$TMPDIR/signed.apk" "$TMPDIR/aligned.apk"
     "$TOOLS/apksigner" verify --verbose "$TMPDIR/signed.apk"
     "$TOOLS/zipalign" -c -P 16 4 "$TMPDIR/signed.apk"
-    VERSION=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["elements"][0]["versionName"])' "$APK_DIR/output-metadata.json")
+    VERSION=$(bun -e 'console.log((await Bun.file(process.argv[1]).json()).elements[0].versionName)' "$APK_DIR/output-metadata.json")
     APK="$ROOT/build/android/spool-$VERSION-android-arm64.apk"
     mv "$TMPDIR/signed.apk" "$APK"
 fi

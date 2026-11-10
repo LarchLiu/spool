@@ -1,4 +1,5 @@
-// Run after the web build, with TMPDIR inside build/tmp and CHROME_BIN set.
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
+// Run after the web build, with an owned system-temp run and CHROME_BIN set.
 // Set SPOOL_SMOKE_DEV=1 to verify lazy highlighting through a real Vite server.
 // Uses synthetic sessions and an owned browser profile; no developer data.
 import assert from "node:assert/strict";
@@ -11,7 +12,7 @@ import { createTestViteServer } from "./vite-fixture.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 assert.ok(process.env.CHROME_BIN, "Set CHROME_BIN to headless Chromium");
-assert.ok(process.env.TMPDIR?.startsWith(join(root, "build/tmp/")));
+requireRunTemp();
 const scratch = await mkdtemp(
   join(process.env.TMPDIR, "session-files-browser-"),
 );

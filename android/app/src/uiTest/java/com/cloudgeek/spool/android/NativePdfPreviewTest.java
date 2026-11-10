@@ -27,7 +27,7 @@ import static org.robolectric.Shadows.shadowOf;
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 public class NativePdfPreviewTest {
     // Robolectric does not implement the system PDF backend on API 26/35.
-    // Host tests cover async UI/lifecycle; device-pdf-smoke.py exercises PdfRenderer itself.
+    // Host tests cover async UI/lifecycle; device-pdf-smoke.mjs exercises PdfRenderer itself.
     private static class Document extends NativePdfDocument {
         boolean closed;
         final List<Integer> renders = new ArrayList<>();

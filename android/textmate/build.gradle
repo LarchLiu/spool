@@ -8,24 +8,27 @@ configurations { upstream }
 def adapted = layout.buildDirectory.file('adapted/tm4e-core-0.14.1-android.jar')
 tasks.register('adaptTextMate', Exec) {
     inputs.files(configurations.upstream)
-    inputs.file('../tools/prepare-textmate.py')
+    inputs.file('../tools/prepare-textmate.mjs')
+    inputs.file('../../tools/archive.mjs')
     outputs.file(adapted)
     doFirst {
-        commandLine 'python3', rootProject.file('tools/prepare-textmate.py'), configurations.upstream.singleFile, adapted.get().asFile
+        commandLine 'bun', rootProject.file('tools/prepare-textmate.mjs'), configurations.upstream.singleFile, adapted.get().asFile
     }
 }
 
 tasks.register('buildAndroidSyntax', Exec) {
     inputs.dir('src/main/cpp')
-    inputs.file('../tools/build-syntax-native.py')
+    inputs.file('../tools/build-syntax-native.mjs')
+    inputs.files('../tools/common.mjs', '../../tools/tar.mjs')
     outputs.dir(rootProject.file('../build/android/syntax/jni'))
-    commandLine 'python3', rootProject.file('tools/build-syntax-native.py'), '--android'
+    commandLine 'bun', rootProject.file('tools/build-syntax-native.mjs'), '--android'
 }
 tasks.register('buildHostSyntax', Exec) {
     inputs.dir('src/main/cpp')
-    inputs.file('../tools/build-syntax-native.py')
+    inputs.file('../tools/build-syntax-native.mjs')
+    inputs.files('../tools/common.mjs', '../../tools/tar.mjs')
     outputs.file(rootProject.file('../build/android/syntax/host/libspool-textmate' + (System.getProperty('os.name').contains('Mac') ? '.dylib' : '.so')))
-    commandLine 'python3', rootProject.file('tools/build-syntax-native.py'), '--host'
+    commandLine 'bun', rootProject.file('tools/build-syntax-native.mjs'), '--host'
 }
 
 dependencies {

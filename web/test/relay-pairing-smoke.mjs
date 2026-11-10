@@ -1,5 +1,6 @@
+import { requireRunTemp } from "../../tools/test-scratch.mjs";
 // Production pairing UI with inert Go-generated QR data and a local bridge stub.
-// CHROME_BIN and a repository-owned TMPDIR are required. No real user state.
+// CHROME_BIN and an owned system-temp TMPDIR are required. No real user state.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -10,7 +11,7 @@ import { build } from "esbuild";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 assert.ok(process.env.CHROME_BIN, "Set CHROME_BIN");
-assert.ok(process.env.TMPDIR && /\/build\/tmp\//.test(process.env.TMPDIR));
+requireRunTemp();
 const scratch = await mkdtemp(join(process.env.TMPDIR, "relay-browser-"));
 const output =
   process.env.SPOOL_PAIRING_ARTIFACTS || join(root, "build/artifacts/relay");

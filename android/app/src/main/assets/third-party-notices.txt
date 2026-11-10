@@ -666,7 +666,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Eclipse TM4E core 0.14.1: EPL-2.0 with original MIT adaptations. Modified logging/regex adapters and rebuild recipe are distributed in android/textmate and android/tools/prepare-textmate.py. Original source: https://github.com/eclipse-tm4e/tm4e/tree/0.14.1
+Eclipse TM4E core 0.14.1: EPL-2.0 with original MIT adaptations. Modified logging/regex adapters and rebuild recipe are distributed in android/textmate and android/tools/prepare-textmate.mjs. Original source: https://github.com/eclipse-tm4e/tm4e/tree/0.14.1
 
 Eclipse TM4E core 0.14.1
 Copyright (c) 2015-2025 Angelo Zerr and Eclipse TM4E contributors.
@@ -676,7 +676,7 @@ SPDX-License-Identifier: EPL-2.0
 Original source: https://github.com/eclipse-tm4e/tm4e/tree/0.14.1
 Original binary: org.netbeans.external:org.eclipse.tm4e.core-0.14.1:RELEASE300
 Reproducible modifications and replacement sources: android/textmate/README.md,
-android/tools/prepare-textmate.py, and android/textmate/src/main/java/.
+android/tools/prepare-textmate.mjs, and android/textmate/src/main/java/.
 These modified TM4E components remain available under EPL-2.0.
 
 TM4E contains adaptations of atom/node-oniguruma and vscode-textmate:

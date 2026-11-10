@@ -4,10 +4,10 @@ Run from the repository root. Keep a fully hydrated long chat in the foreground;
 do not navigate or open Settings while a measurement is running.
 
 ```sh
-sh android/tools/run.sh python3 android/tools/device-performance.py \
+sh android/tools/run.sh bun android/tools/device-performance.mjs \
   --serial DEVICE_SERIAL --rounds 12
 
-sh android/tools/run.sh python3 android/tools/device-performance.py \
+sh android/tools/run.sh bun android/tools/device-performance.mjs \
   --serial DEVICE_SERIAL --rounds 8 --direction up --method-sampling-us 2000 \
   --output build/artifacts/android-native/device-scroll-methods.json
 ```
@@ -22,6 +22,12 @@ issuing any gesture (maximum 300 seconds); navigation/focus changes still abort.
 7000px/s fling decelerates for about two seconds, so the default cadence never
 lets the scroller rest; pauses of three seconds or more emulate reading between
 gestures, which is the only time offscreen row preparation can run.
+
+The host-side probe validation and ART parser tests run without a device:
+
+```sh
+sh android/tools/run.sh bun test android/tools/common.test.mjs android/tools/performance-probe.test.mjs android/tools/method-trace.test.mjs
+```
 
 ## Scope And Safety
 
@@ -52,7 +58,7 @@ gestures, which is the only time offscreen row preparation can run.
   storage output contexts for `am profile`. The sampler therefore owns a unique
   `/data/local/tmp/spool-scroll-<uuid>.trace` on the phone. It stops the profiler
   and deletes that exact file in `finally`; it never clears other device files.
-  Host raw traces stay inside the wrapper's owned `build/tmp/` run and disappear
+  Host raw traces stay inside the wrapper's owned system-temp run and disappear
   at exit. Only the content-free JSON summary is retained. Device disconnection
   can prevent cleanup; report its exact owned path rather than broad deletion.
 
@@ -248,7 +254,7 @@ visited a different interval from the first warm sample and does not establish
 an improvement ratio. The trace collector and branch summary run on the host;
 they do not change the installed APK.
 
-The package passes 677 Android tests, lint and assembly; the diagnostic Python
+The package passes 677 Android tests, lint and assembly; the diagnostic Bun
 suite passes 13 tests. Fresh API35 message/Markdown/composer fixtures pass 9,284
 Web geometry/semantic comparisons. The newly expanded API26 gate exposes 104
 message-bubble width/position differences; the Markdown and composer gates pass
@@ -539,7 +545,7 @@ is false and preserves the composer document/focus. The measurement tool also
 accepts `--min-parts 1000 --expect-renderer markwon-recycler` and aborts before
 gesturing when the wrong chat/renderer is selected.
 
-The latest 40 Markwon/history/origin tests and 14 Python probe tests pass;
+The latest 40 Markwon/history/origin tests and 14 probe tests pass;
 the preceding 94-test focused run, APK build and lint also passed. A broader
 1,036-test run retained five failures: one activity-classification fixture
 mismatch and four native-library classloader conflicts. The native syntax
@@ -662,7 +668,7 @@ review reproductions, cross-block references, insertion/deletion/reordering,
 400 expanded tools, mixed-type holder reuse, delayed tool body lifetimes, image
 preview ownership, and production Activity steering/files/status/composer flow.
 The 500-turn presentation test reads only the changed turn's two parts on an
-incremental update. The 14 Python probe tests, debug APK build and lint pass.
+incremental update. The 14 probe tests, debug APK build and lint pass.
 An additional broad behavior check still encounters the previously documented
 fixture mismatch: `rg -n foo src` is classified as `read`, while the fixture
 expects `search`. The classifier, activity model, test and fixture all match
@@ -765,7 +771,7 @@ the same interval if requested, resets before measurement, lets the final fling
 settle, and restores the original reuse mode when it exits. For example:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 sh android/tools/run.sh python3 android/tools/device-performance.py \
+sh android/tools/run.sh bun android/tools/device-performance.mjs \
   --serial DEVICE --expect-renderer markwon-recycler --min-parts 1000 \
   --start-position 240 --direction up --rounds 8 --warmup-rounds 8 \
   --pause-seconds 0.5 --activity-reuse on \
@@ -793,7 +799,7 @@ rows below that image group. This fixture has 19 turns, 3,247 parts, 887 entries
 388 groups, four image groups and one open detail; its start is row 638.
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 sh android/tools/run.sh python3 android/tools/device-performance.py \
+sh android/tools/run.sh bun android/tools/device-performance.mjs \
   --serial DEVICE --chat-title 'EXACT TITLE' --expand-tools --wait-history-seconds 180 \
   --expect-renderer markwon-recycler --min-parts 1000 --direction up \
   --rounds 8 --warmup-rounds 8 --pause-seconds 0.5 --activity-reuse on \
@@ -863,7 +869,7 @@ sampler. Reports are `full-{1,2,3}-{up,down,roundtrip}.json` in the current
 artifact directory.
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 sh android/tools/run.sh python3 android/tools/device-performance.py \
+sh android/tools/run.sh bun android/tools/device-performance.mjs \
   --serial DEVICE --traversal bottom-to-top --activity-reuse on \
   --verify-position 608 --verify-position 638 --pause-seconds 0.5 \
   --min-parts 1000 --expect-renderer markwon-recycler \
@@ -894,7 +900,7 @@ peaked at 211. Full traversal P99 ranged from 24–31ms; rapid reversal P99 was
 approximately 4% janky-frame threshold. The separate dense-tool single-direction
 interval remains 5.17% and is explicitly not hidden by the whole-chat average.
 
-The final build passed 198 targeted Android tests, 18 Python probe tests,
+The final build passed 198 targeted Android tests, 18 probe tests,
 assembleDebug and lintDebug. Device reports, exact frame counts and the APK
 SHA-256 are retained in `build/artifacts/android-chat-scroll-fix/standard-results.md`
 and `cross-turn-verification.json`.

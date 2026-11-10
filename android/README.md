@@ -115,7 +115,7 @@ bottom of the selected server's Settings, including when it is the last server.
 Public HTTPS accepts the same origin
 as the PWA (for example `https://chat.example.com`, with an optional port and no
 path). Its reverse proxy must support WebSocket and unbuffered SSE, as described
-in the [Web/PWA setup](../README.md#webpwa-and-https).
+in the [Web/PWA setup](../docs/deployment.md#webpwa-and-https).
 
 Enabled servers retain independent connections, sessions and embedded nodes.
 Each server has exactly one live network entry. A network handoff closes the old
@@ -514,7 +514,7 @@ exact transform, pinned checksums, licenses and reproducible build recipe.
 ```sh
 sh android/tools/run.sh bun android/tools/sync-web-syntax.mjs
 sh android/tools/run.sh bun android/tools/sync-web-syntax.mjs --check
-sh android/tools/run.sh python3 android/tools/check-syntax-package.py --report build/artifacts/android-native/syntax-package.json
+sh android/tools/run.sh bun android/tools/check-syntax-package.mjs --report build/artifacts/android-native/syntax-package.json
 ```
 
 The pure JVM/native conformance check compares every UTF-16 unit's foreground and
@@ -622,8 +622,10 @@ Playwright, pngjs and local Chrome; `SPOOL_NODE_MODULES` can point to a tool run
 containing those packages, as for the other Web-reference probes. Regenerate/test with:
 
 ```sh
-# Use a Python environment with Pillow only to regenerate the small synthetic fixtures.
-sh android/tools/run.sh python3 android/tools/image-animation-fixtures.py
+# Regenerate synthetic fixtures with Bun and cwebp (libwebp tools).
+sh android/tools/run.sh bun android/tools/image-animation-fixtures.mjs
+# Check regenerated fixtures against the existing browser oracle without replacing them.
+sh android/tools/run.sh bun test android/tools/image-fixtures.test.mjs
 sh android/tools/run.sh bun android/tools/check-image-animation.mjs
 # Add --write only when intentionally updating actual-browser golden frames.
 ```
@@ -1869,7 +1871,7 @@ variable Roboto. The same runtime's Noto CJK collection supplies its original
 Simplified Chinese (index 2) and Japanese (index 0) faces to the browser, selected
 by the fixture's language rather than the host Mac's fallback fonts. Repacking
 the collection as standalone OTF files preserves the glyph/metric/shaping tables.
-`prepare-ui-fonts.py` prepares these test-only files in
+`prepare-ui-fonts.mjs` prepares these test-only files in
 `build/cache/android-ui-fonts/`; no font is added to the APK. Hash checks compare
 all 13 Latin/mono resources and the source CJK collection against the native
 classpath, as well as the two repacked browser faces. Static Roboto's CSS weight
@@ -1962,7 +1964,7 @@ production API compatibility separately.
 
 ## Server Setup
 
-For Public HTTPS, use the [existing PWA reverse proxy](../README.md#webpwa-and-https)
+For Public HTTPS, use the [existing PWA reverse proxy](../docs/deployment.md#webpwa-and-https)
 and matching Public origin, enter that origin in the selected server's
 **Public HTTPS** entry in the APK settings. No server or Android Tailscale enrollment is needed.
 
@@ -2012,7 +2014,7 @@ Requirements:
 - Android SDK Platform **36.1**, Build Tools **36.1.0**, and accepted SDK licenses.
 - Android NDK **29.0.14206865**. Set `ANDROID_NDK_HOME` to use another compatible
   installed NDK. No NDK is installed implicitly by the build script.
-- Python 3.12+ and CMake 3.22+ for the pinned native syntax library build.
+- Bun 1.4.4 and CMake 3.22+ for the pinned native syntax library build.
 - Network access on the first build for pinned Go, Gradle and Maven dependencies.
 
 Set `ANDROID_HOME` if the SDK is not at `~/Library/Android/sdk`. The optional
@@ -2046,6 +2048,9 @@ sh android/tools/run.sh go -C android/transport vet ./...
 sh android/tools/check-java.sh
 ```
 
+The host Java check resolves the app's external compile/runtime dependencies
+through Gradle and extracts AAR classes inside its disposable run directory.
+
 The Gradle wrapper is pinned to 8.13 with distribution SHA-256 verification;
 AGP is 8.13.2. There is no AndroidX WebKit dependency. Go dependencies and checksums are
 in `transport/go.mod` and `transport/go.sum`.
@@ -2076,7 +2081,7 @@ For an optimized unsigned phone release APK:
 
 ```sh
 sh android/tools/build.sh :app:assembleRelease :app:lintRelease
-python3 android/tools/check-syntax-package.py \
+bun android/tools/check-syntax-package.mjs \
   --apk build/android/gradle/app/outputs/apk/release/app-release-unsigned.apk \
   --abis arm64-v8a
 ```
@@ -2108,7 +2113,7 @@ To smoke-test release startup without replacing an installed production app:
 
 ```sh
 sh android/gradlew --offline --no-daemon :app:assembleRelease :app:lintRelease :app:assembleReleaseVerify
-PYTHONDONTWRITEBYTECODE=1 sh android/tools/run.sh python3 android/tools/device-release-renderer-smoke.py --serial DEVICE_SERIAL
+sh android/tools/run.sh bun android/tools/device-release-renderer-smoke.mjs --serial DEVICE_SERIAL
 ```
 
 `releaseVerify` inherits release R8 optimization and resource shrinking, remains
@@ -2156,9 +2161,14 @@ The Go transport and Android syntax libraries also default to ARM64 builds.
 
 After generating the AAR, open `android/` in Android Studio, or use
 `sh android/gradlew :app:assembleDebug`. Do not run a bare Gradle command if it
-would bypass the repository's scratch/cache wrapper. Gradle and Go build caches
-live under `build/cache/`; every command wrapper owns and cleans a separate
-`build/tmp/android.XXXXXX/` run. `GOPATH` and `GOMODCACHE` are not changed.
+would bypass the repository's scratch/cache wrapper. Gradle uses its standard
+user cache (`~/.gradle/`) or an explicit `GRADLE_USER_HOME` override; Go likewise
+uses its standard user cache or an explicit caller override. Gradle's project
+state stays in `build/cache/gradle-project/android/`, and build outputs stay in
+`build/android/gradle/`. Every command wrapper owns and cleans a separate
+`<system-temp>/spool-<user>/spool/android.XXXXXX/` run, including handled
+SIGINT/SIGTERM.
+`GOPATH` and `GOMODCACHE` are not changed.
 
 ### APK Updates
 
@@ -2230,9 +2240,9 @@ sh android/gradlew :app:assembleDebug :app:lintDebug
 
 # ffmpeg/libx264 creates only synthetic images. The separate test package has no
 # network permission, never starts tsnet, and is uninstalled by the smoke helper.
-sh android/tools/run.sh python3 android/tools/prepare-desktop-fixture.py
+sh android/tools/run.sh bun android/tools/prepare-desktop-fixture.mjs
 sh android/gradlew :app:assembleNativeVerify
-sh android/tools/run.sh python3 android/tools/device-desktop-smoke.py --serial DEVICE_SERIAL
+sh android/tools/run.sh bun android/tools/device-desktop-smoke.mjs --serial DEVICE_SERIAL
 ```
 
 The device probe checks two real H.264 decoders, decoded red/blue fixture pixels,
@@ -2246,7 +2256,7 @@ For synthetic visual checks on a phone with an existing developer installation,
 build `sh android/gradlew :app:assembleNativeVerify` and run:
 
 ```sh
-sh android/tools/run.sh python3 android/tools/device-ui-smoke.py --serial DEVICE_SERIAL
+sh android/tools/run.sh bun android/tools/device-ui-smoke.mjs --serial DEVICE_SERIAL
 ```
 
 This uses only the separate `com.cloudgeek.spool.android.nativeverify` package.
@@ -2262,7 +2272,7 @@ reports and screenshots go to `build/artifacts/android-native/device-ui/`.
 
 Install `build/android/gradle/app/outputs/apk/debug/app-debug.apk` on a disposable
 emulator or test device. Keep emulator data and profiles in an owned
-`build/tmp/<run>/` directory; retain only useful screenshots/logs in
+system-temp `spool/<run>/` directory; retain only useful screenshots/logs in
 `build/artifacts/android-native/`. Do not use a real provider home/database.
 
 1. Launch at 320/360/412 dp widths. Compare the native login story, form,

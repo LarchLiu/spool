@@ -21,7 +21,7 @@ UI locales: Chinese, English and Japanese.
 
 ## Exact Changes To TM4E
 
-`android/tools/prepare-textmate.py` verifies the upstream binary checksum,
+`android/tools/prepare-textmate.mjs` verifies the upstream binary checksum,
 retains upstream resources, removes invalidated JAR signatures, and makes only
 these binary changes:
 
@@ -65,13 +65,13 @@ Run from the repository root, using the standard scratch/cache wrapper:
 
 ```sh
 sh android/tools/run.sh bun android/tools/sync-web-syntax.mjs --check
-sh android/tools/run.sh python3 android/tools/build-syntax-native.py --host --android
+sh android/tools/run.sh bun android/tools/build-syntax-native.mjs --host --android
 sh android/tools/check-java.sh
 sh android/tools/run.sh sh android/tools/gradle.sh :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
-sh android/tools/run.sh python3 android/tools/check-syntax-package.py --report build/artifacts/android-native/syntax-package.json
+sh android/tools/run.sh bun android/tools/check-syntax-package.mjs --report build/artifacts/android-native/syntax-package.json
 ```
 
-The native build requires Python 3.12+, CMake 3.22+ and the configured Android
+The native build requires Bun 1.4.4, CMake 3.22+ and the configured Android
 NDK. It reuses `build/cache/android-syntax` and writes ordinary host/ABI outputs
 under `build/android/syntax`. The host build uses JDK JNI headers, or the NDK's
 VM-neutral `jni.h` with `-idirafter` when Android Studio's JBR omits headers.

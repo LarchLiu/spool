@@ -7907,6 +7907,7 @@
           "kind": "thinking",
           "label": "Think",
           "detail": "## Native components\n\nKeep **shared spacing** and `vector icons`.\n\n- Read the current styles\n- Preserve the transport",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -7920,6 +7921,7 @@
           "kind": "thinking",
           "label": "Think",
           "detail": "Check the **mobile layout** before editing.",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -7933,6 +7935,7 @@
           "kind": "read",
           "label": "Read web/src/style.css",
           "detail": "{\"file_path\":\"web/src/style.css\"}",
+          "images": [],
           "stats": "",
           "result": {
             "role": "tool",
@@ -7951,6 +7954,7 @@
           "kind": "read",
           "label": "Read android/NativeUi.java",
           "detail": "{\"file_path\":\"android/NativeUi.java\"}",
+          "images": [],
           "stats": "",
           "result": {
             "role": "tool",
@@ -7981,6 +7985,7 @@
           "kind": "write",
           "label": "Edited src/mobile/NativeUi.java",
           "detail": "*** Begin Patch\n*** Update File: src/mobile/NativeUi.java\n@@\n-old spacing\n+shared spacing\n+shared icons\n*** End Patch",
+          "images": [],
           "stats": "",
           "result": {
             "role": "tool",
@@ -7999,6 +8004,7 @@
           "kind": "shell",
           "label": "Ran command",
           "detail": "{\"cmd\":\"go test ./...\"}",
+          "images": [],
           "stats": "",
           "result": {
             "role": "tool",
@@ -8050,6 +8056,7 @@
           "kind": "read",
           "label": "Read a.txt",
           "detail": "{\"file_path\":\"a.txt\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8126,6 +8133,7 @@
           "kind": "create",
           "label": "Created pong.html",
           "detail": "{\"file_path\":\"pong.html\",\"content\":\"controls.find cat rg websearch\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8139,6 +8147,7 @@
           "kind": "write",
           "label": "Edited …/c/d/file with spaces.txt",
           "detail": "{\"path\":\"/a/b/c/d/file with spaces.txt\",\"content\":\"find cat\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8152,6 +8161,7 @@
           "kind": "create",
           "label": "Created folder/new game.html",
           "detail": "*** Begin Patch\n*** Add File: folder/new game.html\n+first\n+second\n*** End Patch",
+          "images": [],
           "stats": "",
           "changeStats": "+2 -0"
         },
@@ -8165,6 +8175,7 @@
           "kind": "delete",
           "label": "Deleted folder/old game.html",
           "detail": "*** Begin Patch\n*** Delete File: folder/old game.html\n*** End Patch",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8178,6 +8189,7 @@
           "kind": "write",
           "label": "Edited files",
           "detail": "*** Begin Patch\n*** Add File: a.txt\n+first\n*** Update File: b.txt\n-old\n+new\n*** End Patch",
+          "images": [],
           "stats": "",
           "changeStats": "+2 -1"
         }
@@ -8255,6 +8267,7 @@
           "kind": "list",
           "label": "Listed files",
           "detail": "{\"cmd\":\"ls -la\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8265,9 +8278,10 @@
             "name": "exec_command",
             "text": "{\"cmd\":\"rg -n foo src\"}"
           },
-          "kind": "search",
-          "label": "Searched files",
+          "kind": "read",
+          "label": "Read files",
           "detail": "{\"cmd\":\"rg -n foo src\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8281,6 +8295,7 @@
           "kind": "read",
           "label": "Read files",
           "detail": "{\"cmd\":\"cat README.md\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8294,6 +8309,7 @@
           "kind": "shell",
           "label": "Ran command",
           "detail": "{\"cmd\":\"go test ./...\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8307,6 +8323,7 @@
           "kind": "search",
           "label": "Searched for native components in src",
           "detail": "{\"pattern\":\"native\\ncomponents\",\"path\":\"src\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8320,6 +8337,7 @@
           "kind": "web",
           "label": "Searched web for Android SVG geometry",
           "detail": "{\"query\":\"Android SVG geometry\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8333,6 +8351,7 @@
           "kind": "other",
           "label": "Used Custom tool",
           "detail": "result summary",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8346,6 +8365,7 @@
           "kind": "read",
           "label": "Read folder/file.txt",
           "detail": "{\"file_path\":42,\"filename\":\"folder/file.txt\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8359,6 +8379,7 @@
           "kind": "create",
           "label": "Created files",
           "detail": "changed file +12 -4",
+          "images": [],
           "stats": "+12 -4",
           "changeStats": "+12 -4"
         }
@@ -8393,6 +8414,7 @@
           "kind": "write",
           "label": "Edited a.txt",
           "detail": "{\"path\":\"a.txt\"}",
+          "images": [],
           "stats": "",
           "result": {
             "role": "tool",
@@ -8425,6 +8447,7 @@
           "kind": "thinking",
           "label": "Think",
           "detail": "**Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** \n\n[Link](https://example.com)\n\n```java\nNativeUi ui;\n```",
+          "images": [],
           "stats": "",
           "changeStats": ""
         }
@@ -8508,6 +8531,7 @@
           "kind": "thinking",
           "label": "思考",
           "detail": "## Native components\n\nKeep **shared spacing** and `vector icons`.\n\n- Read the current styles\n- Preserve the transport",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8521,6 +8545,7 @@
           "kind": "thinking",
           "label": "思考",
           "detail": "Check the **mobile layout** before editing.",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8534,6 +8559,7 @@
           "kind": "read",
           "label": "读取 web/src/style.css",
           "detail": "{\"file_path\":\"web/src/style.css\"}",
+          "images": [],
           "stats": "",
           "result": {
             "role": "tool",
@@ -8552,6 +8578,7 @@
           "kind": "read",
           "label": "读取 android/NativeUi.java",
           "detail": "{\"file_path\":\"android/NativeUi.java\"}",
+          "images": [],
           "stats": "",
           "result": {
             "role": "tool",
@@ -8582,6 +8609,7 @@
           "kind": "write",
           "label": "编辑 src/mobile/NativeUi.java",
           "detail": "*** Begin Patch\n*** Update File: src/mobile/NativeUi.java\n@@\n-old spacing\n+shared spacing\n+shared icons\n*** End Patch",
+          "images": [],
           "stats": "",
           "result": {
             "role": "tool",
@@ -8600,6 +8628,7 @@
           "kind": "shell",
           "label": "运行命令",
           "detail": "{\"cmd\":\"go test ./...\"}",
+          "images": [],
           "stats": "",
           "result": {
             "role": "tool",
@@ -8651,6 +8680,7 @@
           "kind": "read",
           "label": "读取 a.txt",
           "detail": "{\"file_path\":\"a.txt\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8727,6 +8757,7 @@
           "kind": "create",
           "label": "创建 pong.html",
           "detail": "{\"file_path\":\"pong.html\",\"content\":\"controls.find cat rg websearch\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8740,6 +8771,7 @@
           "kind": "write",
           "label": "编辑 …/c/d/file with spaces.txt",
           "detail": "{\"path\":\"/a/b/c/d/file with spaces.txt\",\"content\":\"find cat\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8753,6 +8785,7 @@
           "kind": "create",
           "label": "创建 folder/new game.html",
           "detail": "*** Begin Patch\n*** Add File: folder/new game.html\n+first\n+second\n*** End Patch",
+          "images": [],
           "stats": "",
           "changeStats": "+2 -0"
         },
@@ -8766,6 +8799,7 @@
           "kind": "delete",
           "label": "删除 folder/old game.html",
           "detail": "*** Begin Patch\n*** Delete File: folder/old game.html\n*** End Patch",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8779,6 +8813,7 @@
           "kind": "write",
           "label": "编辑文件",
           "detail": "*** Begin Patch\n*** Add File: a.txt\n+first\n*** Update File: b.txt\n-old\n+new\n*** End Patch",
+          "images": [],
           "stats": "",
           "changeStats": "+2 -1"
         }
@@ -8856,6 +8891,7 @@
           "kind": "list",
           "label": "列出文件",
           "detail": "{\"cmd\":\"ls -la\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8866,9 +8902,10 @@
             "name": "exec_command",
             "text": "{\"cmd\":\"rg -n foo src\"}"
           },
-          "kind": "search",
-          "label": "搜索文件",
+          "kind": "read",
+          "label": "读取文件",
           "detail": "{\"cmd\":\"rg -n foo src\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8882,6 +8919,7 @@
           "kind": "read",
           "label": "读取文件",
           "detail": "{\"cmd\":\"cat README.md\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8895,6 +8933,7 @@
           "kind": "shell",
           "label": "运行命令",
           "detail": "{\"cmd\":\"go test ./...\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8908,6 +8947,7 @@
           "kind": "search",
           "label": "在 src 中搜索 native components",
           "detail": "{\"pattern\":\"native\\ncomponents\",\"path\":\"src\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8921,6 +8961,7 @@
           "kind": "web",
           "label": "搜索网络：Android SVG geometry",
           "detail": "{\"query\":\"Android SVG geometry\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8934,6 +8975,7 @@
           "kind": "other",
           "label": "使用 Custom tool",
           "detail": "result summary",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8947,6 +8989,7 @@
           "kind": "read",
           "label": "读取 folder/file.txt",
           "detail": "{\"file_path\":42,\"filename\":\"folder/file.txt\"}",
+          "images": [],
           "stats": "",
           "changeStats": ""
         },
@@ -8960,6 +9003,7 @@
           "kind": "create",
           "label": "创建文件",
           "detail": "changed file +12 -4",
+          "images": [],
           "stats": "+12 -4",
           "changeStats": "+12 -4"
         }
@@ -8994,6 +9038,7 @@
           "kind": "write",
           "label": "编辑 a.txt",
           "detail": "{\"path\":\"a.txt\"}",
+          "images": [],
           "stats": "",
           "result": {
             "role": "tool",
@@ -9026,6 +9071,7 @@
           "kind": "thinking",
           "label": "思考",
           "detail": "**Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** **Full thought** \n\n[Link](https://example.com)\n\n```java\nNativeUi ui;\n```",
+          "images": [],
           "stats": "",
           "changeStats": ""
         }
