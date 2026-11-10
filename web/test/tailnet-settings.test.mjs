@@ -63,7 +63,7 @@ test("service offers optional masked enrollment without storing a key in the set
   assert.doesNotMatch(html, /aria-label="Public URL[^>]+disabled=""/);
   assert.match(
     html,
-    /Optional HTTPS address of your reverse proxy for public internet access\. Configure the proxy separately\./,
+    /Enter your public HTTPS address\. Spool checks it automatically when you finish editing and each time Web access starts\./,
   );
   const autosave = await readFile(
     new URL("../src/settings-autosave.ts", import.meta.url),
@@ -298,4 +298,27 @@ test("Web address links open the correct browser URLs without the old global cha
   assert.match(ipv6, /href="http:\/\/\[::1\]:8787"/);
   const invalid = renderService({}, { public_url: "javascript:alert(1)" });
   assert.doesNotMatch(invalid, /href="javascript:/);
+});
+
+test("public Web access offers Detect and keeps manual proxy configuration collapsed", () => {
+  const html = renderService({}, { public_url: "https://spool.example.test" });
+  assert.match(html, /<button[^>]*data-detect-web[^>]*>Detect<\/button>/);
+  assert.match(
+    html,
+    /<details[^>]*><summary>Advanced settings<\/summary>[\s\S]*aria-label="Web trusted proxies"/,
+  );
+  assert.doesNotMatch(html, /<details[^>]*open/);
+  for (const markup of [
+    renderService(),
+    renderService(
+      { Running: false },
+      { public_url: "https://spool.example.test" },
+    ),
+    renderService(
+      {},
+      { web_enabled: false, public_url: "https://spool.example.test" },
+    ),
+  ]) {
+    assert.match(markup, /<button[^>]*data-detect-web[^>]*disabled/);
+  }
 });

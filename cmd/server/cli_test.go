@@ -241,6 +241,25 @@ func TestLocalCommandsCanRunAndRepairUnavailableProxy(t *testing.T) {
 	cliOK(t, root, "user", "list")
 }
 
+func TestWebTrustedProxiesCanBeConfiguredAndCleared(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "data")
+	saved := decode[workspace.Settings](t, cliOK(t, root, "config", "set", "--web-trusted-proxies=192.0.2.10/32,::1/128"))
+	if saved.WebTrustedProxies != "192.0.2.10/32,::1/128" {
+		t.Fatal("Web proxy flag did not persist", saved)
+	}
+	saved = decode[workspace.Settings](t, cliOK(t, root, "config", "set", "--port=8989"))
+	if saved.WebTrustedProxies != "192.0.2.10/32,::1/128" {
+		t.Fatal("unrelated flag reset proxy trust", saved)
+	}
+	if _, err := invoke(t, root, "config", "set", "--web-trusted-proxies=0.0.0.0/99"); err == nil {
+		t.Fatal("invalid proxy CIDR was accepted")
+	}
+	saved = decode[workspace.Settings](t, cliOK(t, root, "config", "set", "--web-trusted-proxies="))
+	if saved.WebTrustedProxies != "" {
+		t.Fatal("explicit empty trust list did not persist", saved)
+	}
+}
+
 func TestLegacyUserCreationAndGlobalDataDir(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "data")
 	t.Setenv("SPOOL_NEW_PASSWORD", "legacy-password-long-enough")

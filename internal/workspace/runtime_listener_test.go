@@ -64,6 +64,10 @@ func TestAdditionalTLSListenerSharesAuthenticationStreamingAndShutdown(t *testin
 		}
 		r.Header.Set("Content-Type", "application/json")
 		r.Header.Set("Origin", requestOrigin)
+		if requestOrigin == publicOrigin {
+			r.Header.Set("X-Forwarded-Proto", "https")
+			r.Header.Set("X-Forwarded-Host", "chat.example.test")
+		}
 		r.Header.Set("X-CSRF-Token", csrf)
 		if cookie != nil {
 			r.AddCookie(cookie)
@@ -158,7 +162,7 @@ func TestAdditionalTLSListenerSharesAuthenticationStreamingAndShutdown(t *testin
 	realtimeReady(t, conn)
 	proxyConn, _, err := websocket.Dial(ctx, local+"/api/events", &websocket.DialOptions{
 		HTTPClient: client,
-		HTTPHeader: http.Header{"Origin": {publicOrigin}, "Cookie": {proxyCookies[0].String()}},
+		HTTPHeader: http.Header{"Origin": {publicOrigin}, "Cookie": {proxyCookies[0].String()}, "X-Forwarded-Proto": {"https"}, "X-Forwarded-Host": {"chat.example.test"}},
 	})
 	if err != nil {
 		t.Fatal("reverse-proxy WebSocket failed while TLS ingress was active", err)

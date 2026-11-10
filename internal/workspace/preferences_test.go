@@ -96,7 +96,7 @@ func TestGroupedNavigationOnlyContainsOwnedAuthorizedChats(t *testing.T) {
 func TestLocalizedRequestErrors(t *testing.T) {
 	a := NewApp(testStore(t), &fakeRunner{}, "", "")
 	for language, message := range map[string]string{"en": "Please sign in", "zh-CN": "请先登录", "ja": "サインインしてください"} {
-		r := httptest.NewRequest("GET", "/api/navigation", nil)
+		r := localRequest("GET", "/api/navigation", nil)
 		r.Header.Set("X-UI-Language", language)
 		w := httptest.NewRecorder()
 		a.ServeHTTP(w, r)

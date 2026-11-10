@@ -11,6 +11,7 @@ const initial = () => ({
   host: "127.0.0.1",
   port: 8787,
   public_url: "",
+  web_trusted_proxies: "127.0.0.0/8,::1/128",
   idle_minutes: 15,
   history_cache_mib: 64,
   auto_start: true,
@@ -101,6 +102,7 @@ test("every connection/runtime setting saves without an explicit save action", a
     ["host", "localhost"],
     ["port", "9000"],
     ["public_url", "https://chat.example.test"],
+    ["web_trusted_proxies", "192.0.2.10/32"],
     ["idle_minutes", "30"],
     ["history_cache_mib", "128"],
     ["auto_start", false],
@@ -111,11 +113,12 @@ test("every connection/runtime setting saves without an explicit save action", a
     autosave.edit(key, value);
     await autosave.commit(key);
   }
-  assert.equal(commands.length, 9);
+  assert.equal(commands.length, 10);
   assert.deepEqual(commands.at(-1).settings, {
     host: "localhost",
     port: 9000,
     public_url: "https://chat.example.test",
+    web_trusted_proxies: "192.0.2.10/32",
     idle_minutes: 30,
     history_cache_mib: 128,
     auto_start: false,
@@ -128,13 +131,17 @@ test("every connection/runtime setting saves without an explicit save action", a
     no_proxy: "",
   });
   await autosave.commit("auto_start");
-  assert.equal(commands.length, 9, "unchanged values must not be resaved");
+  assert.equal(commands.length, 10, "unchanged values must not be resaved");
   assert.ok(commands.every((command) => command.kind === "save-settings"));
 });
 
 test("local Web switches autosave and cancel restores enablement and access scope", async () => {
   const { autosave, commands } = fixture();
-  assert.equal(autosave.draft.web_enabled, true, "legacy snapshots keep Web enabled");
+  assert.equal(
+    autosave.draft.web_enabled,
+    true,
+    "legacy snapshots keep Web enabled",
+  );
   autosave.edit("host", "0.0.0.0");
   await autosave.commit("host");
   autosave.edit("web_enabled", false);
@@ -362,6 +369,7 @@ test("cancelling Web discards incomplete and failed drafts while keeping other e
   autosave.edit("host", "invalid-host");
   await autosave.commit("host");
   autosave.edit("public_url", "https://unfinished.example.test");
+  autosave.edit("web_trusted_proxies", "192.0.2.10/32");
   autosave.edit("tsnet_port", "");
   autosave.edit("relay_url", "https://relay.example.test");
   autosave.edit("idle_minutes", "30");
@@ -370,11 +378,19 @@ test("cancelling Web discards incomplete and failed drafts while keeping other e
   assert.equal(autosave.draft.port, "8787");
   assert.equal(autosave.draft.host, initial().host);
   assert.equal(autosave.draft.public_url, initial().public_url);
+  assert.equal(
+    autosave.draft.web_trusted_proxies,
+    initial().web_trusted_proxies,
+  );
   assert.equal(autosave.draft.tsnet_port, "");
   assert.equal(autosave.draft.relay_url, "https://relay.example.test");
   assert.equal(autosave.draft.idle_minutes, "30");
   assert.equal(autosave.draft.history_cache_mib, "128");
-  assert.equal(commands.length, 1, "cancelling must not save the discarded drafts");
+  assert.equal(
+    commands.length,
+    1,
+    "cancelling must not save the discarded drafts",
+  );
 });
 
 test("Relay and runtime cancellation reset only the selected fields", () => {
@@ -451,7 +467,7 @@ test("service UI commits on blur/Enter, removes save controls and restarts only 
     pages.indexOf("export function PeoplePage"),
   );
   assert.doesNotMatch(service, /<form|<Save|Save settings|submit\(/);
-  assert.equal((service.match(/onCommit=/g) ?? []).length, 6);
+  assert.equal((service.match(/onCommit=/g) ?? []).length, 7);
   assert.match(
     service,
     /autosave\.edit\("auto_start", v\);\s*void autosave\.commit\("auto_start"\)/,
@@ -469,7 +485,10 @@ test("service UI commits on blur/Enter, removes save controls and restarts only 
   assert.match(app, /createSettingsCommandQueue/);
   assert.match(app, /setBusy\(command\.kind !== "save-settings"\)/);
   assert.match(app, /<SettingsChanges/);
-  const changes = await readFile(new URL("../src/settings-changes.tsx", import.meta.url), "utf8");
+  const changes = await readFile(
+    new URL("../src/settings-changes.tsx", import.meta.url),
+    "utf8",
+  );
   assert.match(changes, /data.status.PendingChanges/);
   assert.match(changes, /kind: "apply-service-changes", target/);
   assert.match(changes, /kind: "cancel-service-changes", target/);
@@ -488,11 +507,16 @@ test("native smoke requires real page focus and blur before accepting autosave",
   assert.match(probe, /p\.showMainWindow\(\)\s+view\.Focus\(\)/);
   const focus = probe.indexOf("return document.hasFocus();");
   assert.ok(
-    focus >= 0 && focus < probe.indexOf("smokeSetInput(input, String(window.smokeWebPort))"),
+    focus >= 0 &&
+      focus <
+        probe.indexOf("smokeSetInput(input, String(window.smokeWebPort))"),
   );
   assert.match(probe, /input\.addEventListener\('blur'/);
   assert.match(probe, /blur: window\.smokeServiceBlurred === true/);
-  assert.match(probe, /saved: snapshot\.settings\.port === window\.smokeWebPort/);
+  assert.match(
+    probe,
+    /saved: snapshot\.settings\.port === window\.smokeWebPort/,
+  );
   assert.doesNotMatch(
     probe,
     /dispatchEvent\(new (?:FocusEvent|Event)\('(?:blur|focusout)'/,

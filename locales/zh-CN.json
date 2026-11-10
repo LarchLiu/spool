@@ -1035,5 +1035,22 @@
   "Remove an unused device before pairing another.": "请先撤销不再使用的设备，再配对新设备。",
   "Paired device not found.": "未找到已配对设备。",
   "Apply relay changes before pairing a phone.": "请先应用中继更改，再配对手机。",
-  "Start Spool Relay before pairing a phone.": "请先启动 Spool 中继，再配对手机。"
+  "Start Spool Relay before pairing a phone.": "请先启动 Spool 中继，再配对手机。",
+  "Listen on all network interfaces. Remote access requires HTTPS through a trusted reverse proxy; direct HTTP is blocked.": "监听所有网络接口。远程访问须通过可信反向代理使用 HTTPS；直接 HTTP 访问会被阻止。",
+  "Detect": "检测",
+  "Detecting…": "检测中…",
+  "Advanced settings": "高级设置",
+  "Enter your public HTTPS address. Spool checks it automatically when you finish editing and each time Web access starts.": "填写公网 HTTPS 地址，完成编辑后自动检测；每次启动 Web 访问时也会检测一次。",
+  "Detected addresses are managed automatically. Add entries here only for a custom proxy setup.": "检测到的地址由 Spool 自动管理；仅在自定义代理部署时补充填写。",
+  "Detected proxy address": "已检测的代理地址",
+  "Detection succeeded. Your public address is ready to use.": "检测成功，可通过公网地址访问。",
+  "Enter a public HTTPS address before detecting.": "请先填写公网 HTTPS 地址，再进行检测。",
+  "Start Web access before detecting.": "请先启动 Web 访问，再进行检测。",
+  "Detection is already in progress.": "正在检测，请稍候。",
+  "Web settings changed during detection. Try again.": "检测期间 Web 设置发生变化，请重新检测。",
+  "Could not verify this address. Check that your tunnel or reverse proxy points to this Spool server.": "无法验证此地址，请检查隧道或反向代理是否指向当前 Spool 服务。",
+  "The address reaches Spool, but its forwarding information is incomplete. Check your tunnel or reverse proxy settings.": "此地址已连接到 Spool，但转发信息不完整，请检查隧道或反向代理设置。",
+  "Web trusted proxies": "Web 可信代理",
+  "IP CIDRs of HTTPS reverse proxies. Use only their actual addresses; an empty list trusts none.": "HTTPS 反向代理的 IP CIDR。仅填写代理的实际地址；留空表示不信任任何代理。",
+  "Use HTTPS for remote access. HTTP is only available on this computer.": "远程访问请使用 HTTPS。HTTP 仅限本机访问。"
 }

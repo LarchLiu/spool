@@ -52,6 +52,7 @@ func runLegacy(ctx context.Context, args []string) (runErr error) {
 	webEnabled := flags.Bool("web", true, "persist local Web listener enablement (desktop, Tailscale and relay access are independent)")
 	host := flags.String("host", "", "persist a listen IP (default 127.0.0.1)")
 	publicURL := flags.String("public-url", "", "persist reverse proxy public origin (HTTPS for remote PWA)")
+	webTrustedProxies := flags.String("web-trusted-proxies", workspace.DefaultSettings().WebTrustedProxies, "persist additional HTTPS reverse proxy IP CIDRs (default loopback; empty clears manual entries)")
 	tailnetEnabled := flags.Bool("tsnet", false, "persist embedded Tailscale HTTPS enablement (no system VPN or Funnel)")
 	tailnetHostname := flags.String("tsnet-hostname", "spool-server", "embedded Tailscale node hostname (state persists in data-dir/tsnet)")
 	tailnetPort := flags.Int("tsnet-port", 443, "HTTPS port on the embedded Tailscale node (does not bind a host TCP port)")
@@ -253,6 +254,8 @@ func runLegacy(ctx context.Context, args []string) (runErr error) {
 			settings.RelayLANPort = *relayLANPort
 		case "public-url":
 			settings.PublicURL = *publicURL
+		case "web-trusted-proxies":
+			settings.WebTrustedProxies = *webTrustedProxies
 		case "tsnet":
 			settings.TSNetEnabled = *tailnetEnabled
 		case "tsnet-hostname":

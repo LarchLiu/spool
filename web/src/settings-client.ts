@@ -18,6 +18,9 @@ export type ServerSettings = {
   host: string;
   port: number;
   public_url: string;
+  web_trusted_proxies?: string;
+  web_detected_proxy?: string;
+  web_detected_origin?: string;
   idle_minutes: number;
   history_cache_mib: number;
   auto_start: boolean;
@@ -118,6 +121,7 @@ export type SettingsSnapshot = {
     RestartRequired: boolean;
     PendingChanges?: ServiceChangeTarget[];
     WebError?: string;
+    WebDetecting?: boolean;
     Address: string;
     Error: string;
     Online: (Online & Pick<User, "nickname" | "avatar">)[];
@@ -181,6 +185,7 @@ export type SettingsCommand =
     }
   | { kind: "navigate"; section: SettingsSection }
   | { kind: "save-settings"; settings: ServerSettings }
+  | { kind: "detect-web-proxy"; address: string }
   | { kind: "save-tsnet-auth-key"; auth_key: string }
   | { kind: "save-appearance"; preferences: UIPreferences }
   | { kind: "save-notifications"; enabled: boolean }

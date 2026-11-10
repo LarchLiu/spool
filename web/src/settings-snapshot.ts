@@ -45,6 +45,7 @@ export function settingsPageDataEqual(
         a.status.Address === b.status.Address &&
         a.status.Error === b.status.Error &&
         a.status.WebError === b.status.WebError &&
+        a.status.WebDetecting === b.status.WebDetecting &&
         a.status.Voxl === b.status.Voxl &&
         a.status.TSNet === b.status.TSNet &&
         a.status.Relay === b.status.Relay &&
@@ -119,6 +120,7 @@ export function settingsCommandScope(
     case "restart-service":
     case "apply-service-changes":
     case "cancel-service-changes":
+    case "detect-web-proxy":
     case "install-voxl":
     case "set-remote-desktop":
       return "Service";

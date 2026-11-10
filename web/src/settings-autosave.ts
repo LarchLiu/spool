@@ -37,6 +37,7 @@ type ServiceDraft = {
   host: string;
   port: string;
   public_url: string;
+  web_trusted_proxies: string;
   idle_minutes: string;
   history_cache_mib: string;
   auto_start: boolean;
@@ -59,7 +60,7 @@ const serviceChangeFields: Record<
   ServiceChangeTarget,
   (keyof SettingsDraft)[]
 > = {
-  web: ["web_enabled", "host", "port", "public_url"],
+  web: ["web_enabled", "host", "port", "public_url", "web_trusted_proxies"],
   relay: ["relay_enabled", "relay_url", "relay_lan_port", "relay_web_enabled"],
   tsnet: [
     "tsnet_enabled",
@@ -85,6 +86,7 @@ function toServiceDraft(settings: ServerSettings): ServiceDraft {
     web_enabled: settings.web_enabled ?? true,
     host: settings.host,
     public_url: settings.public_url,
+    web_trusted_proxies: settings.web_trusted_proxies ?? "127.0.0.0/8,::1/128",
     auto_start: settings.auto_start,
     port: String(settings.port),
     idle_minutes: String(settings.idle_minutes),

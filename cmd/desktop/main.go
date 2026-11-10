@@ -51,6 +51,7 @@ type panel struct {
 	historyCache           string
 	serviceFieldFocus      map[string]bool
 	serviceFieldCommit     func()
+	webAdvanced            bool
 	users                  []workspace.User
 	projects               []workspace.Project
 	agents                 []workspace.AgentInfo
@@ -515,6 +516,21 @@ func (p *panel) serviceView(c *ui.Context) {
 		return err
 	})
 	p.serviceSettingFieldWithDisabled(c, "Public URL", &p.settings.PublicURL, !p.settings.WebEnabled, func(settings *workspace.Settings, value string) error { settings.PublicURL = value; return nil })
+	ui.Text(c, p.tr("Enter your public HTTPS address. Spool checks it automatically when you finish editing and each time Web access starts.")).Wrap().FontSize(12)
+	detectLabel := "Detect"
+	if p.status.WebDetecting {
+		detectLabel = "Detecting…"
+	}
+	if ui.Button(c, p.tr(detectLabel)).Disabled(p.busy || p.status.WebDetecting || !p.settings.WebEnabled || !p.status.Running || strings.TrimSpace(p.settings.PublicURL) == "").Clicked() {
+		address := p.settings.PublicURL
+		p.action(func() error { return p.service.DetectWebProxy(context.Background(), address) })
+	}
+	ui.Collapsible(c, p.tr("Advanced settings"), &p.webAdvanced, func() {
+		if p.settings.WebDetectedOrigin == p.settings.PublicURL && p.settings.WebDetectedProxy != "" {
+			ui.Text(c, p.tr("Detected proxy address")+": "+p.settings.WebDetectedProxy).Selectable().Wrap().FontSize(12)
+		}
+		p.serviceSettingFieldWithDisabled(c, "Web trusted proxies", &p.settings.WebTrustedProxies, !p.settings.WebEnabled, func(settings *workspace.Settings, value string) error { settings.WebTrustedProxies = value; return nil })
+	})
 	if p.settings.PublicURL != "" && ui.Button(c, p.tr("Open address")).Disabled(!p.settings.WebEnabled).Clicked() {
 		p.openChatLink(p.settings.PublicURL)
 	}

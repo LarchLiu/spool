@@ -187,6 +187,15 @@ export function ServicePage({ data, run, t }: PageProps) {
   const draft = autosave.draft;
   const tabsID = useId();
   const [activeTab, setActiveTab] = useState<ServiceTab>("web");
+  const [detectingWeb, setDetectingWeb] = useState(false);
+  const [detectedWebURL, setDetectedWebURL] = useState<string>();
+  const webDetecting = detectingWeb || data.status.WebDetecting;
+  const verifiedWebURL = detectedWebURL ?? data.settings.web_detected_origin;
+  const webDetected =
+    !webDetecting &&
+    !data.status.WebError &&
+    verifiedWebURL &&
+    verifiedWebURL === draft.public_url;
   const [registeredRelayURL, setRegisteredRelayURL] = useState<string>();
   const [registeringRelay, setRegisteringRelay] = useState(false);
   const [unregisterError, setUnregisterError] = useState("");
@@ -421,7 +430,7 @@ export function ServicePage({ data, run, t }: PageProps) {
           <Row
             title={t("Allow LAN access")}
             help={t(
-              "Allow other devices on the same network to access Spool. When off, only this computer can connect.",
+              "Listen on all network interfaces. Remote access requires HTTPS through a trusted reverse proxy; direct HTTP is blocked.",
             )}
           >
             <Toggle
@@ -466,17 +475,74 @@ export function ServicePage({ data, run, t }: PageProps) {
               </>
             }
             value={draft.public_url}
-            disabled={!draft.web_enabled}
+            disabled={!draft.web_enabled || webDetecting}
             placeholder="https://spool.example.com"
             help={t(
-              "Optional HTTPS address of your reverse proxy for public internet access. Configure the proxy separately.",
+              "Enter your public HTTPS address. Spool checks it automatically when you finish editing and each time Web access starts.",
             )}
-            onChange={(v) => autosave.edit("public_url", v)}
+            onChange={(v) => {
+              setDetectedWebURL(undefined);
+              autosave.edit("public_url", v);
+            }}
             onCommit={() => void autosave.commit("public_url")}
           />
+          <div className="settings-card-actions">
+            <button
+              type="button"
+              data-detect-web
+              disabled={
+                webDetecting ||
+                !draft.web_enabled ||
+                !data.status.Running ||
+                draft.public_url !== data.settings.public_url ||
+                !draft.public_url.trim()
+              }
+              onClick={async () => {
+                setDetectingWeb(true);
+                setDetectedWebURL("");
+                try {
+                  const result = await run({
+                    kind: "detect-web-proxy",
+                    address: draft.public_url,
+                  });
+                  if (result) setDetectedWebURL(result.settings.public_url);
+                } finally {
+                  setDetectingWeb(false);
+                }
+              }}
+            >
+              {t(webDetecting ? "Detecting…" : "Detect")}
+            </button>
+          </div>
+          {webDetected && (
+            <p className="settings-hint" role="status">
+              {t("Detection succeeded. Your public address is ready to use.")}
+            </p>
+          )}
+          <details className="settings-advanced">
+            <summary>{t("Advanced settings")}</summary>
+            {data.settings.web_detected_origin === draft.public_url &&
+              data.settings.web_detected_proxy && (
+                <p className="settings-hint" data-detected-web-proxy>
+                  {t("Detected proxy address")}:{" "}
+                  <code>{data.settings.web_detected_proxy}</code>
+                </p>
+              )}
+            <TextField
+              title={t("Web trusted proxies")}
+              value={draft.web_trusted_proxies}
+              disabled={!draft.web_enabled || webDetecting}
+              placeholder="127.0.0.0/8,::1/128"
+              help={t(
+                "Detected addresses are managed automatically. Add entries here only for a custom proxy setup.",
+              )}
+              onChange={(v) => autosave.edit("web_trusted_proxies", v)}
+              onCommit={() => void autosave.commit("web_trusted_proxies")}
+            />
+          </details>
           {data.status.WebError && (
             <div className="settings-error" role="alert">
-              {data.status.WebError}
+              {knownMessage(data.status.WebError, t)}
             </div>
           )}
         </Card>

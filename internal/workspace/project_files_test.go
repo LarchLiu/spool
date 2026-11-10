@@ -138,7 +138,7 @@ func TestProjectFilesRequireMembershipAndStayInsideProject(t *testing.T) {
 	if w.Header().Get("X-Frame-Options") != "SAMEORIGIN" {
 		t.Fatal("PDF cannot be embedded by its own file sidebar")
 	}
-	rangeRequest := httptest.NewRequest("GET", endpoint("file", "report.pdf")+"&preview=1", nil)
+	rangeRequest := localRequest("GET", endpoint("file", "report.pdf")+"&preview=1", nil)
 	rangeRequest.AddCookie(cookie)
 	rangeRequest.Header.Set("Range", "bytes=0-7")
 	rangeResponse := httptest.NewRecorder()

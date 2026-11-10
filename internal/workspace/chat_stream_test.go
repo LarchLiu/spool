@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
-	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -86,7 +85,7 @@ func TestChatStreamIdleHistoryIsSentOnlyOnce(t *testing.T) {
 			// previous connection having received any particular event.
 			for range 2 {
 				ctx, cancel := context.WithCancel(context.Background())
-				request := httptest.NewRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
+				request := localRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
 				request.AddCookie(cookie)
 				stream := newStreamRecorder()
 				done := make(chan struct{})
@@ -130,7 +129,7 @@ func TestChatStreamIdleDoesNotPollDatabase(t *testing.T) {
 	}
 	store.db = db
 	ctx, cancel := context.WithCancel(context.Background())
-	request := httptest.NewRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
+	request := localRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
 	request.AddCookie(cookie)
 	stream := newStreamRecorder()
 	done := make(chan struct{})
@@ -165,7 +164,7 @@ func TestChatStreamIdleWakesForTurnAndAccessChanges(t *testing.T) {
 	t.Cleanup(func() { app.Close() })
 	cookie, _ := loginRequest(t, app, "viewer")
 	ctx, cancel := context.WithCancel(context.Background())
-	request := httptest.NewRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
+	request := localRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
 	request.AddCookie(cookie)
 	stream := newStreamRecorder()
 	done := make(chan struct{})
@@ -246,7 +245,7 @@ func TestChatStreamDoesNotLoseLiveChangesAroundInitialSnapshot(t *testing.T) {
 			}
 			cookie, _ := loginRequest(t, app, "viewer")
 			ctx, cancel := context.WithCancel(context.Background())
-			request := httptest.NewRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
+			request := localRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
 			request.AddCookie(cookie)
 			stream := newStreamRecorder()
 			writer := &snapshotHookWriter{streamRecorder: stream, hook: func() {

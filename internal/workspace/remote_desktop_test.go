@@ -145,7 +145,7 @@ func TestRemoteDesktopRequiresLocalEnablementAndSeparateUserGrant(t *testing.T) 
 	}
 	upload := func(csrfToken, origin string, grantHeader bool, want int) {
 		t.Helper()
-		r := httptest.NewRequest("PUT", remoteDesktopPrefix+"/files/upload?name=hello.txt&token="+token, strings.NewReader("fixture upload"))
+		r := localRequest("PUT", remoteDesktopPrefix+"/files/upload?name=hello.txt&token="+token, strings.NewReader("fixture upload"))
 		r.AddCookie(cookie)
 		r.Header.Set("X-CSRF-Token", csrfToken)
 		r.Header.Set("Origin", origin)
@@ -158,10 +158,10 @@ func TestRemoteDesktopRequiresLocalEnablementAndSeparateUserGrant(t *testing.T) 
 			t.Fatal("upload authorization/proxy failed", w.Code, w.Body)
 		}
 	}
-	upload("", "http://example.com", true, 403)
+	upload("", "http://127.0.0.1:8787", true, 403)
 	upload(csrf, "https://evil.example", true, 403)
-	upload(csrf, "http://example.com", false, 404)
-	upload(csrf, "http://example.com", true, 200)
+	upload(csrf, "http://127.0.0.1:8787", false, 404)
+	upload(csrf, "http://127.0.0.1:8787", true, 200)
 	if w := apiRequest(app, "GET", remoteDesktopPrefix+"/", "", nil, ""); w.Code != 401 {
 		t.Fatal("anonymous viewer allowed", w.Code)
 	}

@@ -1035,5 +1035,22 @@
   "Remove an unused device before pairing another.": "Remove an unused device before pairing another.",
   "Paired device not found.": "Paired device not found.",
   "Apply relay changes before pairing a phone.": "Apply relay changes before pairing a phone.",
-  "Start Spool Relay before pairing a phone.": "Start Spool Relay before pairing a phone."
+  "Start Spool Relay before pairing a phone.": "Start Spool Relay before pairing a phone.",
+  "Listen on all network interfaces. Remote access requires HTTPS through a trusted reverse proxy; direct HTTP is blocked.": "Listen on all network interfaces. Remote access requires HTTPS through a trusted reverse proxy; direct HTTP is blocked.",
+  "Detect": "Detect",
+  "Detecting…": "Detecting…",
+  "Advanced settings": "Advanced settings",
+  "Enter your public HTTPS address. Spool checks it automatically when you finish editing and each time Web access starts.": "Enter your public HTTPS address. Spool checks it automatically when you finish editing and each time Web access starts.",
+  "Detected addresses are managed automatically. Add entries here only for a custom proxy setup.": "Detected addresses are managed automatically. Add entries here only for a custom proxy setup.",
+  "Detected proxy address": "Detected proxy address",
+  "Detection succeeded. Your public address is ready to use.": "Detection succeeded. Your public address is ready to use.",
+  "Enter a public HTTPS address before detecting.": "Enter a public HTTPS address before detecting.",
+  "Start Web access before detecting.": "Start Web access before detecting.",
+  "Detection is already in progress.": "Detection is already in progress.",
+  "Web settings changed during detection. Try again.": "Web settings changed during detection. Try again.",
+  "Could not verify this address. Check that your tunnel or reverse proxy points to this Spool server.": "Could not verify this address. Check that your tunnel or reverse proxy points to this Spool server.",
+  "The address reaches Spool, but its forwarding information is incomplete. Check your tunnel or reverse proxy settings.": "The address reaches Spool, but its forwarding information is incomplete. Check your tunnel or reverse proxy settings.",
+  "Web trusted proxies": "Web trusted proxies",
+  "IP CIDRs of HTTPS reverse proxies. Use only their actual addresses; an empty list trusts none.": "IP CIDRs of HTTPS reverse proxies. Use only their actual addresses; an empty list trusts none.",
+  "Use HTTPS for remote access. HTTP is only available on this computer.": "Use HTTPS for remote access. HTTP is only available on this computer."
 }

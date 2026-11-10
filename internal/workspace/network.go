@@ -37,6 +37,9 @@ func (s *Service) saveSettingsLocked(settings Settings) error {
 	if err != nil {
 		return err
 	}
+	// Detection owns its verified peer independently of manual CIDRs. A stale
+	// settings form must not restore an old automatically detected address.
+	settings.WebDetectedProxy, settings.WebDetectedOrigin = previous.WebDetectedProxy, previous.WebDetectedOrigin
 	if s.relayRegistering && (settings.RelayURL != previous.RelayURL || settings.RelayEnabled != previous.RelayEnabled || settings.RelayLANPort != previous.RelayLANPort || settings.RelayWebEnabled != previous.RelayWebEnabled) {
 		return fmt.Errorf("Relay registration is unavailable or already in progress.")
 	}
@@ -59,6 +62,9 @@ func (s *Service) saveSettingsLocked(settings Settings) error {
 	}
 	if apply {
 		s.activateNetworkPolicyLocked(options, policy, proxyErr)
+	}
+	if settings.PublicURL != previous.PublicURL {
+		s.startWebProxyDetectionLocked(settings)
 	}
 	return nil
 }

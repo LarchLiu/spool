@@ -62,6 +62,9 @@ type Settings struct {
 	Host                 string `json:"host"`
 	Port                 int    `json:"port"`
 	PublicURL            string `json:"public_url"`
+	WebTrustedProxies    string `json:"web_trusted_proxies"`
+	WebDetectedProxy     string `json:"web_detected_proxy,omitempty"`
+	WebDetectedOrigin    string `json:"web_detected_origin,omitempty"`
 	IdleMinutes          int    `json:"idle_minutes"`
 	AutoStart            bool   `json:"auto_start"`
 	HistoryCacheMiB      int    `json:"history_cache_mib"`
@@ -80,7 +83,7 @@ type Settings struct {
 }
 
 func DefaultSettings() Settings {
-	return Settings{WebEnabled: true, Host: "127.0.0.1", Port: 8787, IdleMinutes: 15, AutoStart: true, HistoryCacheMiB: 64, TSNetHostname: "spool-server", TSNetPort: 443, ProxyEnabled: true, RelayLANPort: 28082}
+	return Settings{WebEnabled: true, Host: "127.0.0.1", Port: 8787, WebTrustedProxies: "127.0.0.0/8,::1/128", IdleMinutes: 15, AutoStart: true, HistoryCacheMiB: 64, TSNetHostname: "spool-server", TSNetPort: 443, ProxyEnabled: true, RelayLANPort: 28082}
 }
 func (s Settings) Address() string { return net.JoinHostPort(s.Host, fmt.Sprint(s.Port)) }
 func (s Settings) Validate() error {
@@ -93,6 +96,9 @@ func (s Settings) Validate() error {
 // An unavailable saved proxy must not prevent serving the local UI for repair.
 // New settings still validate the proxy through Validate before being saved.
 func (s Settings) validateLocal() error {
+	if _, err := parseWebTrustedProxies(s.WebTrustedProxies); err != nil {
+		return err
+	}
 	if s.RelayEnabled {
 		if _, err := relay.ParseRelayURL(s.RelayURL); err != nil {
 			return err

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -118,7 +117,7 @@ func TestIssueChatStreamPushesArtifactsAndAssignees(t *testing.T) {
 			}
 			cookie, _ := loginRequest(t, a, "automation")
 			ctx, cancel := context.WithCancel(context.Background())
-			request := httptest.NewRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
+			request := localRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
 			request.AddCookie(cookie)
 			stream := newStreamRecorder()
 			done := make(chan struct{})

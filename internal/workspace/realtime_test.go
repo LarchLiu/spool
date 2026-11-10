@@ -349,6 +349,7 @@ func TestRealtimeAllowsExactPublicProxyOriginAndCSP(t *testing.T) {
 	defer done()
 	conn, _, err := websocket.Dial(ctx, server.URL+"/api/events", &websocket.DialOptions{HTTPHeader: http.Header{
 		"Cookie": {cookie.String()}, "Origin": {a.settings.PublicURL},
+		"X-Forwarded-Proto": {"https"}, "X-Forwarded-Host": {"chat.example.test"},
 	}})
 	if err != nil {
 		t.Fatal(err)

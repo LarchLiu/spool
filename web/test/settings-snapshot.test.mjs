@@ -90,6 +90,7 @@ test("page dependencies distinguish presence, membership, settings and appearanc
     [(next) => (next.application_log = "/fixture/application.log"), ["About"]],
     [(next) => (next.crash_log = "/fixture/crash.log"), ["About"]],
     [(next) => (next.status.RestartRequired = true), ["Service", "Network"]],
+    [(next) => (next.status.WebDetecting = true), ["Service"]],
     [
       (next) => next.agents[0].catalog.models.push({ model: "new" }),
       ["Agents", "Projects"],
@@ -144,6 +145,7 @@ test("clipboard, navigation and reveal actions bypass mutation scope while saves
     ["save-appearance", undefined],
     ["save-updates", undefined],
     ["restart-service", "Service"],
+    ["detect-web-proxy", "Service"],
     ["save-person", "People"],
     ["disconnect-remote-desktop", "People"],
     ["save-project", "Projects"],

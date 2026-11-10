@@ -12,6 +12,7 @@ import (
 // BaseContext cancellation also reaches upgraded connections on this entry.
 type httpIngress struct {
 	server *http.Server
+	ctx    context.Context
 	cancel context.CancelFunc
 }
 
@@ -21,7 +22,7 @@ func (s *Service) newIngressLocked() *httpIngress {
 		Handler: s.app, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
 		IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20,
 		BaseContext: func(net.Listener) context.Context { return ctx },
-	}, cancel: cancel}
+	}, ctx: ctx, cancel: cancel}
 }
 
 func (i *httpIngress) close() {
@@ -40,6 +41,7 @@ func (s *Service) startWebLocked(settings Settings) error {
 			return err
 		}
 		s.web = s.newIngressLocked()
+		s.web.server.Handler = ordinaryWebHandler(s.app)
 		s.runningAddress = listener.Addr().String()
 	} else {
 		s.runningAddress = ""
@@ -47,6 +49,8 @@ func (s *Service) startWebLocked(settings Settings) error {
 	s.app.configMu.Lock()
 	s.app.settings.WebEnabled = settings.WebEnabled
 	s.app.settings.Host, s.app.settings.Port, s.app.settings.PublicURL = settings.Host, settings.Port, settings.PublicURL
+	s.app.settings.WebTrustedProxies = settings.WebTrustedProxies
+	s.app.settings.WebDetectedProxy, s.app.settings.WebDetectedOrigin = settings.WebDetectedProxy, settings.WebDetectedOrigin
 	s.app.configMu.Unlock()
 	if listener != nil {
 		s.serveLocked(s.web.server, listener)

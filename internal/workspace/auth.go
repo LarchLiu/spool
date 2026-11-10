@@ -102,21 +102,7 @@ func (a *App) identity(r *http.Request) (authIdentity, error) {
 	return a.store.authenticate(c.Value)
 }
 func (a *App) secureCookie(r *http.Request) bool {
-	if r.TLS != nil {
-		return true
-	}
-	// The desktop connects directly over loopback HTTP even when remote users
-	// use HTTPS. Do not relax Secure for a proxy's public Host or a remote peer.
-	host, _, _ := net.SplitHostPort(r.Host)
-	if host == "" {
-		host = r.Host
-	}
-	peer, _, _ := net.SplitHostPort(r.RemoteAddr)
-	localHost := strings.EqualFold(host, "localhost") || net.ParseIP(host).IsLoopback()
-	if localHost && net.ParseIP(peer).IsLoopback() && r.Header.Get("Origin") == "http://"+r.Host {
-		return false
-	}
-	return strings.HasPrefix(a.publicURL(), "https://")
+	return !directLoopbackRequest(r) || r.Header.Get("Origin") != "http://"+r.Host
 }
 func (a *App) sameOrigin(r *http.Request) bool {
 	if strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
@@ -136,6 +122,9 @@ func (a *App) sameOrigin(r *http.Request) bool {
 	}
 	if web, ok := r.Context().Value(webRequestKey{}).(webRequest); ok {
 		return origin == web.origin
+	}
+	if r.TLS == nil && !directLoopbackRequest(r) {
+		return a.publicURL() != "" && origin == a.publicURL()
 	}
 	if origin == scheme+"://"+r.Host {
 		return true

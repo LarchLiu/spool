@@ -17,6 +17,7 @@ func configFlags(c *command) func(*workspace.Settings) {
 	f.StringVar(&v.Host, "host", v.Host, "HTTP listen IP (use a reverse proxy or SSH for remote access)")
 	f.IntVar(&v.Port, "port", v.Port, "HTTP listen port (1-65535)")
 	f.StringVar(&v.PublicURL, "public-url", "", "Reverse proxy public origin, e.g. https://chat.example.com; empty clears it")
+	f.StringVar(&v.WebTrustedProxies, "web-trusted-proxies", v.WebTrustedProxies, "Additional HTTPS reverse proxy IP CIDRs; empty clears manual entries (default: loopback); public HTTPS addresses are also detected automatically")
 	f.IntVar(&v.IdleMinutes, "idle-minutes", v.IdleMinutes, "Release idle agent processes after this many minutes (1-10080)")
 	f.IntVar(&v.HistoryCacheMiB, "history-cache-mib", v.HistoryCacheMiB, "Shared transcript cache target in MiB")
 	f.BoolVar(&v.ProxyEnabled, "proxy-enabled", v.ProxyEnabled, "Enable outbound proxies; false forces direct connections")
@@ -42,6 +43,9 @@ func configFlags(c *command) func(*workspace.Settings) {
 		}
 		if changed(c, "public-url") {
 			s.PublicURL = v.PublicURL
+		}
+		if changed(c, "web-trusted-proxies") {
+			s.WebTrustedProxies = v.WebTrustedProxies
 		}
 		if changed(c, "idle-minutes") {
 			s.IdleMinutes = v.IdleMinutes

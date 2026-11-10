@@ -94,6 +94,28 @@ browser/PWA access should use an HTTPS reverse proxy with a matching
 Web gateway. The proxy must support WebSocket and streaming responses. Spool
 login and project permissions apply to all network entries.
 
+Direct remote HTTP requests are rejected before login or session use. With a
+public HTTPS URL, the shared backend detects the connecting reverse proxy once
+after each Web entry startup. For example:
+
+```sh
+spool-server serve --public-url https://chat.example.com
+```
+
+Start the tunnel/proxy first and point it at Spool's Web port. Detection checks
+TLS and a one-time callback before saving and applying one exact proxy IP. A
+successful recheck replaces the previous automatically detected address. Failure
+is logged and leaves the previous policy intact; local serving continues. There
+is no periodic detection. If the tunnel starts later, restart the service after
+it is ready. Offline `config set --public-url ...` only saves the address; the
+next `serve` performs detection. Saving a new address through a running Service
+also triggers detection, using the same backend path as Desktop.
+
+For HTTPS header requirements and additional manual `--web-trusted-proxies`
+entries (loopback by default), see [Web/PWA and HTTPS](deployment.md#webpwa-and-https).
+Only configure actual proxy IP CIDRs. An empty value clears manual entries;
+automatically verified trust is managed separately and bound to its public URL.
+
 `serve` accepts the same network/runtime options as `config set`. Explicit
 options persist; omitted options keep their saved values.
 

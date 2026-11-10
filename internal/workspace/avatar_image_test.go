@@ -33,7 +33,7 @@ func TestAvatarImageIsAuthenticatedPrivateAndCacheable(t *testing.T) {
 		!strings.Contains(got.Header().Get("Content-Security-Policy"), "sandbox") {
 		t.Fatalf("wrong image headers: %v", got.Header())
 	}
-	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request := localRequest(http.MethodGet, path, nil)
 	request.AddCookie(cookie)
 	request.Header.Set("If-None-Match", `"unrelated", W/`+want.ETag)
 	response := httptest.NewRecorder()

@@ -65,7 +65,7 @@ func uploadRequest(t *testing.T, a *App, chat string, cookie *http.Cookie, csrf 
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	r := httptest.NewRequest("POST", "/api/chats/"+chat+"/messages", &body)
+	r := localRequest("POST", "/api/chats/"+chat+"/messages", &body)
 	r.Header.Set("Content-Type", writer.FormDataContentType())
 	r.Header.Set("X-CSRF-Token", csrf)
 	if cookie != nil {
@@ -490,7 +490,7 @@ func TestSSEDoesNotCarryAttachmentsIntoFollowingTurn(t *testing.T) {
 	first := waitChat(t, s, chat.ID).Turns[0]
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	r := httptest.NewRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
+	r := localRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
 	r.AddCookie(cookie)
 	stream := newStreamRecorder()
 	go a.ServeHTTP(stream, r)

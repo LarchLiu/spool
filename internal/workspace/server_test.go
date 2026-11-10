@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -110,9 +111,17 @@ func testAgent(t *testing.T, s *Store) {
 		t.Fatal(err)
 	}
 }
+
+func localRequest(method, target string, body io.Reader) *http.Request {
+	r := httptest.NewRequest(method, target, body)
+	r.Host = "127.0.0.1:8787"
+	r.RemoteAddr = "127.0.0.1:50000"
+	return r
+}
+
 func loginRequest(t *testing.T, a *App, name string) (*http.Cookie, string) {
 	t.Helper()
-	r := httptest.NewRequest("POST", "/api/login", strings.NewReader(`{"username":"`+name+`","password":"test-password-2026"}`))
+	r := localRequest("POST", "/api/login", strings.NewReader(`{"username":"`+name+`","password":"test-password-2026"}`))
 	r.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	a.ServeHTTP(w, r)
@@ -126,7 +135,7 @@ func loginRequest(t *testing.T, a *App, name string) (*http.Cookie, string) {
 	return w.Result().Cookies()[0], v.CSRF
 }
 func apiRequest(a *App, method, path, body string, cookie *http.Cookie, csrf string) *httptest.ResponseRecorder {
-	r := httptest.NewRequest(method, path, strings.NewReader(body))
+	r := localRequest(method, path, strings.NewReader(body))
 	if cookie != nil {
 		r.AddCookie(cookie)
 	}
@@ -366,7 +375,7 @@ func TestSSEReconnectIncludesCompletedHistory(t *testing.T) {
 	waitChat(t, s, chat.ID)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	r := httptest.NewRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
+	r := localRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
 	r.AddCookie(cookie)
 	stream := newStreamRecorder()
 	go a.ServeHTTP(stream, r)
@@ -439,6 +448,7 @@ func TestOriginAllowsConfiguredProxyButRejectsForeignSite(t *testing.T) {
 	a := NewApp(s, &fakeRunner{}, "", "")
 	for origin, want := range map[string]bool{"https://chat.example.test": true, "https://evil.example": false, "http://127.0.0.1:8787": true} {
 		r := httptest.NewRequest("POST", "http://127.0.0.1:8787/api/login", nil)
+		r.RemoteAddr = "127.0.0.1:50000"
 		r.Header.Set("Origin", origin)
 		if a.sameOrigin(r) != want {
 			t.Fatalf("wrong origin decision: %s", origin)

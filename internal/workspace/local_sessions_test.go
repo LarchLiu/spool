@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -547,7 +546,7 @@ func TestLocalSessionAppendRefreshesOpenStreamWithUnchangedMtime(t *testing.T) {
 	t.Cleanup(func() { _ = a.Close() })
 	cookie, _ := loginRequest(t, a, u.Username)
 	ctx, cancel := context.WithCancel(context.Background())
-	request := httptest.NewRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
+	request := localRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
 	request.AddCookie(cookie)
 	stream := newStreamRecorder()
 	done := make(chan struct{})

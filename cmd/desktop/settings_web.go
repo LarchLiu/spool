@@ -106,6 +106,7 @@ type settingsCommand struct {
 	Target            string                      `json:"target"`
 	AuthKey           string                      `json:"auth_key,omitempty"`
 	Text              string                      `json:"text,omitempty"`
+	Address           string                      `json:"address,omitempty"`
 }
 
 func settingsDocumentAllowed(address string) bool {
@@ -500,6 +501,8 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 		err = p.service.CancelServiceChanges(command.Target)
 	case "save-settings":
 		err = p.service.SaveSettings(command.Settings)
+	case "detect-web-proxy":
+		err = p.service.DetectWebProxy(ctx, command.Address)
 	case "unregister-relay":
 		err = p.service.UnregisterRelay(ctx, command.Target)
 	case "save-tsnet-auth-key":

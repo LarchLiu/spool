@@ -69,7 +69,7 @@ func TestWebEnablementDefaultsForExistingSettingsAndPersistsDisable(t *testing.T
 		t.Fatal(err)
 	}
 	settings, err := store.Settings()
-	if err != nil || !settings.WebEnabled || settings.Host != "0.0.0.0" {
+	if err != nil || !settings.WebEnabled || settings.Host != "0.0.0.0" || settings.WebTrustedProxies != DefaultSettings().WebTrustedProxies {
 		t.Fatal("legacy settings lost Web or LAN access", settings, err)
 	}
 	settings.WebEnabled = false
@@ -79,6 +79,28 @@ func TestWebEnablementDefaultsForExistingSettingsAndPersistsDisable(t *testing.T
 	saved, err := store.Settings()
 	if err != nil || saved.WebEnabled || saved.Host != settings.Host {
 		t.Fatal("Web disable was not persisted", saved, err)
+	}
+}
+
+func TestWebTrustedProxySettingsValidateAndPersist(t *testing.T) {
+	store := testStore(t)
+	for _, value := range []string{"", "127.0.0.1/32, ::1/128", "192.0.2.10/32,2001:db8::10/128"} {
+		settings := DefaultSettings()
+		settings.WebTrustedProxies = value
+		if err := store.SaveSettings(settings); err != nil {
+			t.Fatal(err)
+		}
+		saved, err := store.Settings()
+		if err != nil || saved.WebTrustedProxies != value {
+			t.Fatal("trusted proxy policy was not preserved", saved.WebTrustedProxies, err)
+		}
+	}
+	for _, value := range []string{"invalid", "192.0.2.10", "127.0.0.1/33", "::1/129", "127.0.0.1/32,"} {
+		settings := DefaultSettings()
+		settings.WebTrustedProxies = value
+		if err := store.SaveSettings(settings); err == nil {
+			t.Fatalf("accepted invalid trusted proxy setting %q", value)
+		}
 	}
 }
 

@@ -3,7 +3,6 @@ package workspace
 import (
 	"context"
 	"encoding/json"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -156,7 +155,7 @@ func TestSessionNativeTitleMetadataDoesNotResendHistory(t *testing.T) {
 	app.streamHeartbeat = 250 * time.Millisecond
 	cookie, _ := loginRequest(t, app, user.Username)
 	ctx, cancel := context.WithCancel(context.Background())
-	request := httptest.NewRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
+	request := localRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
 	request.AddCookie(cookie)
 	stream := newStreamRecorder()
 	done := make(chan struct{})

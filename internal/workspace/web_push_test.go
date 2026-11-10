@@ -197,7 +197,7 @@ func TestPushSubscriptionAPIIsolationAndLogout(t *testing.T) {
 			t.Fatalf("mutation escaped auth/CSRF: %d", w.Code)
 		}
 	}
-	r := httptest.NewRequest("POST", "/api/push/subscribe", bytes.NewReader(body))
+	r := localRequest("POST", "/api/push/subscribe", bytes.NewReader(body))
 	r.AddCookie(cookie)
 	r.Header.Set("Origin", "https://evil.test")
 	r.Header.Set("Content-Type", "application/json")

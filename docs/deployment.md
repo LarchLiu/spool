@@ -143,9 +143,59 @@ The reverse proxy must support WebSocket upgrades and long-lived SSE connections
 and should disable response buffering. Spool still enforces login cookies, CSRF,
 Origin, and project permission checks.
 
+In Desktop, open **Settings > Service > Web**, enter the public HTTPS address
+provided by your tunnel or reverse proxy, then leave the field or press Enter.
+Spool detects automatically; **Detect** remains available for retries. Start the
+tunnel first and point it at this Spool server's Web port. Success saves and
+immediately applies the public origin and connecting proxy's address, without IP
+or CIDR entry or another Apply action. Failure adds no trust and applies no new
+origin; the saved input remains available. Spool also checks once whenever the
+ordinary Web entry starts or is re-enabled, without blocking local startup or
+polling periodically. Retry manually if the tunnel starts later or its address
+changes during operation. A successful recheck replaces the previous detected
+address. Manual **Web trusted proxies** under **Advanced settings** can supplement
+multiple hops or replicas. The shared backend also handles headless servers:
+`serve --public-url https://chat.example.com` detects after starting; offline
+`config set` saves the address for detection on the next `serve`. CLI logs report
+detection success or failure.
+
+The ordinary HTTP listener serves the application only to direct loopback clients
+or a trusted HTTPS reverse proxy. Remote HTTP requests receive 403 before the
+login page, password body or session is processed; `/healthz` remains public.
+Setting Public URL does not enable TLS on the backend listener.
+
+For proxy access, set Public URL to the exact external HTTPS origin. The proxy
+must overwrite `X-Forwarded-Proto` with a single `https` value and preserve the
+public Host, or set a single matching `X-Forwarded-Host` when rewriting Host.
+Caddy supplies these headers in the example above. Spool ignores claims from
+untrusted peers and rejects ambiguous forwarded values. HTTP frontend requests
+must be redirected or rejected by the proxy before they carry login data.
+
+Manual **Web trusted proxies** defaults to `127.0.0.0/8,::1/128`. Automatic
+detection manages one exact connecting IP bound to the verified public origin.
+For additional hops, configure only their actual IP CIDRs in Desktop advanced
+settings or with `spool-server config set --web-trusted-proxies '192.0.2.10/32'`.
+An empty value clears manual entries; verified addresses are managed separately.
+Keep the backend on loopback or a protected network, and restrict access to
+trusted proxies; this setting does not encrypt
+the proxy-to-backend connection. It is separate from outbound proxy settings.
+
+The ordinary Web backend also uses this trust list to resolve client IPs for
+login limits. The proxy must overwrite `X-Forwarded-For` with the actual client
+IP or append the address it connected from. Spool walks the chain from right to
+left through configured trusted proxies and stops at the first untrusted IP;
+client-supplied prefixes cannot select a different login bucket. For multiple
+proxy hops, configure each trusted hop's CIDR, never all client networks. Missing
+or malformed trusted-hop information falls back to the connection peer's quota.
+The limit remains 20 login attempts per IP per 10 minutes, including malformed
+requests. Users sharing a public IP through NAT still share that IP's quota.
+Relay and Tailscale retain their transport-supplied client identities.
+
 Desktop settings provides **Enable Web access** and **Allow LAN access**
-switches. LAN access uses all IPv4 interfaces; otherwise, Web access is limited
-to this computer. Turning off
+switches. LAN access binds all IPv4 interfaces so a configured reverse proxy can
+reach the backend; it does not permit direct HTTP login from another device.
+Use HTTPS, Tailscale or paired Relay/LAN for remote access. Otherwise, Web access
+is limited to this computer. Turning off
 Web access also stops access through a reverse proxy pointing at that
 listener; desktop chat, Tailscale and Relay keep their independent connections.
 The listener stays enabled for existing installations. A headless server can

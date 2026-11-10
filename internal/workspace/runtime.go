@@ -27,6 +27,8 @@ type Service struct {
 	web                 *httpIngress
 	activeSettings      Settings
 	webError            string
+	webProxyTransport   http.RoundTripper
+	webProxyJob         *webProxyDetectionJob
 	relayError          string
 	app                 *App
 	runner              *agent.CLIRunner
@@ -58,6 +60,7 @@ type ServiceStatus struct {
 	RestartRequired          bool
 	PendingChanges           []string
 	WebError                 string
+	WebDetecting             bool
 	Address                  string
 	Error                    string
 	Online                   []PresenceUser
@@ -233,6 +236,7 @@ func (s *Service) startWithSettingsLocked(settings Settings) error {
 	}
 	s.desktop.SetEnabled(s.ctx, settings.RemoteDesktopEnabled)
 	log.Printf("event=service_started address=%q", s.runningAddress)
+	s.startWebProxyDetectionLocked(settings)
 	return nil
 }
 
@@ -359,7 +363,13 @@ func (s *Service) Status() ServiceStatus {
 	relayStatus.RegistrationTokenSet = s.relayRegistrationToken(settings.RelayURL) != ""
 	relayStatus.Registered = s.relayRegisteredLocked(settings.RelayURL)
 	relayStatus.Registering = s.relayRegistering
-	return ServiceStatus{Running: s.server != nil, RestartRequired: len(pending) > 0, PendingChanges: pending, WebError: s.webError, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != "", Voxl: desktopStatus, RemoteDesktopConnections: connections, Relay: relayStatus}
+	webDetecting := s.webProxyJob != nil
+	if s.app != nil {
+		s.app.webProxyMu.Lock()
+		webDetecting = webDetecting || s.app.webProxyProbe != nil
+		s.app.webProxyMu.Unlock()
+	}
+	return ServiceStatus{Running: s.server != nil, RestartRequired: len(pending) > 0, PendingChanges: pending, WebError: s.webError, WebDetecting: webDetecting, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != "", Voxl: desktopStatus, RemoteDesktopConnections: connections, Relay: relayStatus}
 }
 func (s *Service) WebURL() string {
 	s.mu.Lock()

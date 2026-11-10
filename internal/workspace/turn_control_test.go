@@ -71,7 +71,7 @@ func TestStopResponseCancelsOnlyOwnedTurnAndPreservesResume(t *testing.T) {
 			if w := apiRequest(a, "POST", path, body, bobCookie, bobCSRF); w.Code != 404 {
 				t.Fatal("another project member stopped a private chat")
 			}
-			r := httptest.NewRequest("POST", path, strings.NewReader(body))
+			r := localRequest("POST", path, strings.NewReader(body))
 			r.Header.Set("Content-Type", "application/json")
 			r.Header.Set("Origin", "https://evil.example")
 			r.Header.Set("X-CSRF-Token", csrf)

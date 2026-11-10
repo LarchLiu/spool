@@ -196,7 +196,7 @@ func TestToolDetailHTTPChecksAccessAndLazyHistoryContract(t *testing.T) {
 	t.Cleanup(func() { _ = app.Close() })
 	cookie, _ := loginRequest(t, app, owner.Username)
 	get := func(path string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest("GET", "/api/chats/"+chat.ID+path, nil)
+		r := localRequest("GET", "/api/chats/"+chat.ID+path, nil)
 		r.AddCookie(cookie)
 		w := httptest.NewRecorder()
 		app.ServeHTTP(w, r)
@@ -249,7 +249,7 @@ func TestLazyToolStreamSendsVersionsNotBodies(t *testing.T) {
 	app.liveMu.Unlock()
 	_ = store.SaveRunningTurn(chat.ID, turn)
 	ctx, cancel := context.WithCancel(context.Background())
-	request := httptest.NewRequest("GET", "/api/chats/"+chat.ID+"/events?tool_details=lazy", nil).WithContext(ctx)
+	request := localRequest("GET", "/api/chats/"+chat.ID+"/events?tool_details=lazy", nil).WithContext(ctx)
 	request.AddCookie(cookie)
 	stream := newStreamRecorder()
 	done := make(chan struct{})

@@ -8,7 +8,7 @@ func (s *Service) pendingChangesLocked(next Settings) []string {
 		return pending
 	}
 	active := s.activeSettings
-	if active.WebEnabled != next.WebEnabled || next.WebEnabled && (active.Host != next.Host || active.Port != next.Port || active.PublicURL != next.PublicURL || s.web == nil) {
+	if active.WebEnabled != next.WebEnabled || next.WebEnabled && (active.Host != next.Host || active.Port != next.Port || active.PublicURL != next.PublicURL || active.WebTrustedProxies != next.WebTrustedProxies || s.web == nil) {
 		pending = append(pending, "web")
 	}
 	if !sameRelaySettings(active, next) || next.RelayEnabled && s.relay == nil || s.relay != nil && s.relay.host.RegistrationToken() != s.relayRegistrationToken(s.relay.host.URL) {
@@ -32,6 +32,8 @@ func copyServiceSettings(target string, destination *Settings, source Settings) 
 	case "web":
 		destination.WebEnabled = source.WebEnabled
 		destination.Host, destination.Port, destination.PublicURL = source.Host, source.Port, source.PublicURL
+		destination.WebTrustedProxies = source.WebTrustedProxies
+		destination.WebDetectedProxy, destination.WebDetectedOrigin = source.WebDetectedProxy, source.WebDetectedOrigin
 	case "relay":
 		destination.RelayEnabled, destination.RelayURL, destination.RelayLANPort, destination.RelayWebEnabled = source.RelayEnabled, source.RelayURL, source.RelayLANPort, source.RelayWebEnabled
 	case "tsnet":
@@ -122,7 +124,13 @@ func (s *Service) ApplyServiceChanges(target string) error {
 	if err != nil {
 		return err
 	}
-	return copyServiceSettings(target, &s.activeSettings, next)
+	if err := copyServiceSettings(target, &s.activeSettings, next); err != nil {
+		return err
+	}
+	if target == "web" {
+		s.startWebProxyDetectionLocked(next)
+	}
+	return nil
 }
 
 // Cancel restores only the selected entry's saved fields to the active values.

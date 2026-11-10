@@ -31,6 +31,8 @@ type App struct {
 	runner          agent.AgentRunner
 	settings        Settings
 	configMu        sync.RWMutex
+	webProxyMu      sync.Mutex
+	webProxyProbe   *webProxyProbe
 	streamHeartbeat time.Duration
 	realtimePing    time.Duration
 	realtimeTimeout time.Duration
@@ -141,6 +143,16 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src "+a.realtimeConnectSources(r)+"; worker-src 'self'; manifest-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+	if strings.HasPrefix(r.URL.Path, webProxyProbePath) {
+		a.serveWebProxyProbe(w, r)
+		return
+	}
+	if r.URL.Path != "/healthz" && !a.allowWebTransport(r) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Language", i18n.ResolveLanguage(r.Header.Get("X-UI-Language"), r.Header.Get("Accept-Language")))
+		apiError(w, http.StatusForbidden, remoteHTTPSRequired)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		w.Header().Set("Cache-Control", "no-store")
 		preferred := []string{}
@@ -187,7 +199,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 			apiError(w, 403, "跨域登录被拒绝")
 			return
 		}
-		if !a.limiter.allow(r.RemoteAddr) {
+		if !a.limiter.allow(a.loginClientIP(r)) {
 			apiError(w, 429, "登录尝试过多，请稍后重试")
 			return
 		}

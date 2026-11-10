@@ -63,6 +63,7 @@ func TestSavingServiceSettingsOnlyMarksChangesThatNeedRestart(t *testing.T) {
 		{"host", func(s *Settings) { s.Host = "0.0.0.0" }, true},
 		{"port", func(s *Settings) { s.Port = s.Port%65535 + 1 }, true},
 		{"public origin", func(s *Settings) { s.PublicURL = "https://chat.example.test" }, true},
+		{"trusted Web proxies", func(s *Settings) { s.WebTrustedProxies = "192.0.2.10/32" }, true},
 		{"idle timeout", func(s *Settings) { s.IdleMinutes++ }, true},
 		{"cache", func(s *Settings) { s.HistoryCacheMiB++ }, false},
 		{"auto-start", func(s *Settings) { s.AutoStart = false }, false},

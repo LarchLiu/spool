@@ -1,5 +1,5 @@
 #!/bin/sh
-# Opt-in audit probes. Unfixed findings reproduce risk; Android checks its fix.
+# Opt-in audit probes reproduce remaining risks and verify completed fixes.
 # Go overlays keep these probes out of normal tests and production source files.
 set -eu
 REPO_ROOT=$(git rev-parse --show-toplevel)
@@ -12,7 +12,7 @@ export GOPROXY=off
 export AUDIT_RUN_ROOT
 
 case "${1:-repro}" in
-  repro|android)
+  repro|android|web-ingress)
     bun - <<'JS'
 const fs = require('node:fs');
 const path = require('node:path');
@@ -27,8 +27,12 @@ JS
       : "${CHROME_BIN:?Set CHROME_BIN to a Chrome/Chromium executable for the isolated browser probe}"
       test -x "$CHROME_BIN"
       go test -overlay "$AUDIT_RUN_ROOT/overlay.json" -count=1 -v -timeout 2m ./internal/workspace -run '^TestAudit'
+    elif [ "$1" = web-ingress ]; then
+      go test -overlay "$AUDIT_RUN_ROOT/overlay.json" -count=1 -v -timeout 1m ./internal/workspace -run '^TestAudit(PlaintextRemoteLogin|ProxyLoginLimit)'
     fi
-    go -C android/transport test -overlay "$AUDIT_RUN_ROOT/overlay.json" -count=1 -v -timeout 1m ./spoolnet -run '^TestAudit'
+    if [ "${1:-repro}" != web-ingress ]; then
+      go -C android/transport test -overlay "$AUDIT_RUN_ROOT/overlay.json" -count=1 -v -timeout 1m ./spoolnet -run '^TestAudit'
+    fi
     ;;
   regression)
     go test -race -timeout 4m ./internal/workspace -run '^Test(HTTPSProxy|Origin|Realtime|Relay|RemoteDesktop|Push|WebPush|AdditionalTLS|Tailnet|LocalWebURL)'
@@ -63,7 +67,7 @@ JS
       com.cloudgeek.spool.android.ConnectionPlanTest
     ;;
   *)
-    echo 'Usage: sh tools/security-audit/run.sh [repro|android|regression|web|java]' >&2
+    echo 'Usage: sh tools/security-audit/run.sh [repro|android|web-ingress|regression|web|java]' >&2
     exit 2
     ;;
 esac

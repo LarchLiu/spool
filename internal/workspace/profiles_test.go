@@ -3,7 +3,6 @@ package workspace
 import (
 	"context"
 	"encoding/json"
-	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -148,7 +147,7 @@ func TestChatSSEParticipantsCarryOnlyIdentityIDs(t *testing.T) {
 	t.Cleanup(func() { app.Close() })
 	cookie, _ := loginRequest(t, app, alice.Username)
 	ctx, cancel := context.WithCancel(context.Background())
-	request := httptest.NewRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
+	request := localRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
 	request.AddCookie(cookie)
 	stream := newStreamRecorder()
 	done := make(chan struct{})

@@ -74,6 +74,7 @@ func TestApplyWebChangesKeepsDesktopTailnetAndActiveWork(t *testing.T) {
 
 	settings.Port = availableServicePort(t)
 	settings.PublicURL = "https://new-entry.example.test"
+	settings.WebTrustedProxies = "192.0.2.10/32"
 	settings.TSNetHostname = "pending-node"
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
@@ -95,6 +96,9 @@ func TestApplyWebChangesKeepsDesktopTailnetAndActiveWork(t *testing.T) {
 	}
 	if service.WebURL() != settings.PublicURL {
 		t.Fatal("public origin did not apply")
+	}
+	if service.app.activeSettings().WebTrustedProxies != settings.WebTrustedProxies {
+		t.Fatal("trusted proxy policy did not apply with Web entry")
 	}
 	requireServiceHealth(t, desktop)
 	requireServiceHealth(t, "http://"+service.Status().Address)

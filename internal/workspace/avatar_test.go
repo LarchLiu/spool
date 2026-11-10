@@ -50,7 +50,7 @@ func TestAvatarAPIIsAuthenticatedScopedAndPersists(t *testing.T) {
 	if w := apiRequest(a, "POST", "/api/me/avatar", body, cookie, "bad"); w.Code != 403 {
 		t.Fatal("avatar write bypassed CSRF")
 	}
-	r := httptest.NewRequest("POST", "/api/me/avatar", strings.NewReader(body))
+	r := localRequest("POST", "/api/me/avatar", strings.NewReader(body))
 	r.AddCookie(cookie)
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("X-CSRF-Token", csrf)

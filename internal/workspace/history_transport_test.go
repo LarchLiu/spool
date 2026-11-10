@@ -3,7 +3,6 @@ package workspace
 import (
 	"context"
 	"encoding/json"
-	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -97,7 +96,7 @@ func TestHistoryTransportSSEDoesNotBypassPagination(t *testing.T) {
 	cookie, _ := loginRequest(t, app, "viewer")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	request := httptest.NewRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
+	request := localRequest("GET", "/api/chats/"+chat.ID+"/events", nil).WithContext(ctx)
 	request.AddCookie(cookie)
 	stream := newStreamRecorder()
 	done := make(chan struct{})

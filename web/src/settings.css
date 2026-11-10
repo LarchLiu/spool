@@ -1057,14 +1057,20 @@
   color: var(--muted);
   font-size: 10px;
 }
+.settings-advanced,
 .settings-models {
   border-top: 1px solid var(--settings-divider);
   padding: 14px 19px;
 }
+.settings-advanced summary,
 .settings-models summary {
   color: var(--muted);
   font-size: 11px;
   cursor: pointer;
+}
+.settings-advanced > .settings-row {
+  padding: 16px 0 0;
+  border: 0;
 }
 .settings-models > div {
   display: flex;
