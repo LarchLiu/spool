@@ -51,8 +51,8 @@ test("only the final signing stage needs the key and signs both archive and meta
   assert.ok(!installer.includes("@LINUX_DEPENDENCIES@"));
   assert.match(installer, /rustup toolchain install stable --profile minimal/);
   assert.match(installer, /rustup default stable/);
-  assert.match(installer, /--software-rendering/);
-  assert.match(installer, /WEBKIT_SKIA_ENABLE_CPU_RENDERING=1/);
+  assert.doesNotMatch(installer, /spool_gpu_available|spool_configure_rendering|--(?:software|hardware)-rendering/);
+  assert.doesNotMatch(installer, /LIBGL_ALWAYS_SOFTWARE|WEBKIT_DISABLE_COMPOSITING_MODE|WEBKIT_SKIA_ENABLE_CPU_RENDERING/);
   assert.ok(!installer.includes(env.MYGO_UPDATER_PRIVATE_KEY));
   assert.match(installer, /openssl pkeyutl -verify/);
 });
@@ -157,20 +157,11 @@ with tarfile.open(sys.argv[1], 'w:gz') as archive:
   assert.match(await readFile(join(app, "spool"), "utf8"), /new-app/);
   assert.equal(await readFile(join(home, ".spool", "settings"), "utf8"), "keep-data");
 
-  // Rendering overrides must work even when dependency installation is skipped,
-  // and each generated desktop entry must launch the verified application.
+  // The generated desktop entry launches the verified application directly.
   const desktopFile = join(home, ".local/share/applications/spool.desktop");
-  for (const mode of ["software", "hardware"]) {
-    result = run(archive, {}, ["--skip-dependencies", `--${mode}-rendering`]);
-    assert.equal(result.status, 0, result.stderr + result.stdout);
-    const desktop = await readFile(desktopFile, "utf8");
-    const exec = desktop.split("\n").find((line) => line.startsWith("Exec="));
-    if (mode === "software") {
-      assert.equal(exec, `Exec=/usr/bin/env LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_SKIA_ENABLE_CPU_RENDERING=1 "${app}/spool"`);
-    } else {
-      assert.equal(exec, `Exec="${app}/spool"`);
-    }
-  }
+  const desktop = await readFile(desktopFile, "utf8");
+  const exec = desktop.split("\n").find((line) => line.startsWith("Exec="));
+  assert.equal(exec, `Exec="${app}/spool"`);
 
   // Exercise the published, inlined dependency flow without touching the host's
   // package manager. A declined system install must not replace the old app.

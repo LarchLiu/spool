@@ -140,28 +140,8 @@ need network access unless already installed. voxl itself is built later with
 Spool after installing libraries. Its menu entry is Applications → Development
 → Spool on Xfce.
 
-The installer also selects rendering for the applications-menu launcher. It
-checks an X11 display with `glxinfo -B` when available (with a five-second
-timeout). Native Wayland and systems without `glxinfo` use accessible DRM render
-or NVIDIA device nodes instead; XWayland GLX results do not determine the native
-Wayland renderer.
-Without usable acceleration, it adds these environment variables to the desktop
-entry to avoid WebKit crashes on cloud desktops and machines without a GPU:
-
-```sh
-LIBGL_ALWAYS_SOFTWARE=1
-WEBKIT_DISABLE_COMPOSITING_MODE=1
-WEBKIT_SKIA_ENABLE_CPU_RENDERING=1
-```
-
-Use `sh install.sh --software-rendering` to force this mode if the graphics
-driver is unstable. Use `sh install.sh --hardware-rendering` to keep WebKit's
-default rendering instead. These options also work with `--skip-dependencies`.
-Fully quit Spool and reopen it from the applications menu for the choice to take
-effect. Directly executing the Spool binary uses the terminal's environment.
-Device access is a heuristic, not a driver health test. WebKit versions may
-handle these environment variables differently. voxl screen capture still needs
-X11/Xvfb; these rendering options do not add native Wayland capture support.
+The applications-menu launcher starts Spool directly with WebKit's default
+rendering configuration. voxl screen capture requires X11/Xvfb.
 
 Docker checks are **manual only** and are not part of normal tests or release
 automation. From the repository root, an optional disposable-container check is:

@@ -10,17 +10,14 @@ desktop_file="${XDG_DATA_HOME:-$HOME/.local/share}/applications/spool.desktop"
 fail() { echo "install.sh: $*" >&2; exit 1; }
 skip_dependencies=no
 skip_voxl_dependencies=no
-rendering=auto
 archive=''
 for argument do
 case "$argument" in
   --help|-h)
     echo 'Usage: sh install.sh [--skip-voxl-dependencies | --skip-dependencies] [ARCHIVE]'
-    echo '                     [--software-rendering | --hardware-rendering]'
     echo '       sh install.sh --uninstall'
     echo 'Installs WebKitGTK, desktop runtime libraries and voxl build dependencies by default.'
     echo 'System packages require administrator authorization; Rust is installed for the current user.'
-    echo 'The menu launcher uses software rendering when no usable GPU is detected; rendering flags override detection.'
     exit 0 ;;
   --uninstall)
     rm -rf "$app_dir"
@@ -29,8 +26,6 @@ case "$argument" in
     exit 0 ;;
   --skip-voxl-dependencies) skip_voxl_dependencies=yes ;;
   --skip-dependencies) skip_dependencies=yes ;;
-  --software-rendering) rendering=software ;;
-  --hardware-rendering) rendering=hardware ;;
   -*) fail 'unknown option' ;;
   *) [ -z "$archive" ] || fail 'pass at most one archive'; archive="$argument" ;;
 esac
@@ -151,7 +146,6 @@ PY
 # Verify and stage the release before making any system changes. Failures leave
 # the old application in place. Only copy the app after dependency rechecks pass.
 spool_prepare_dependencies
-spool_configure_rendering
 backup="$(mktemp -d "$HOME/.local/.spool.backup.XXXXXX")"
 if [ -e "$app_dir" ]; then mv "$app_dir" "$backup/app"; fi
 mv "$staging" "$app_dir"
@@ -162,7 +156,7 @@ cat >"$desktop_file" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Spool
-Exec=$desktop_exec
+Exec="$app_dir/spool"
 Icon=$app_dir/spool.png
 Terminal=false
 Categories=Development;

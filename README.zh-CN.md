@@ -126,24 +126,8 @@ sudo apt-get install --no-install-recommends \
 **设置 → 服务 → 远程桌面 → 安装 voxl** 编译安装。补齐系统库后需要完全退出
 并重新打开 Spool；Xfce 的菜单入口是 **Applications → Development → Spool**。
 
-安装脚本还会自动选择应用菜单启动时的渲染方式。X11 会话已有 `glxinfo` 时，
-通过 `glxinfo -B` 检查渲染器（最多等待 5 秒）；原生 Wayland 或没有检测工具时，
-检查当前用户能否访问 DRM render 或 NVIDIA 设备，避免用 XWayland 的 GLX
-结果判断原生 Wayland 的渲染器。没有可用加速时，会在桌面启动项中加入以下变量，
-避免无 GPU 的云桌面出现 WebKit 崩溃：
-
-```sh
-LIBGL_ALWAYS_SOFTWARE=1
-WEBKIT_DISABLE_COMPOSITING_MODE=1
-WEBKIT_SKIA_ENABLE_CPU_RENDERING=1
-```
-
-有 GPU 但驱动不稳定时，可用 `sh install.sh --software-rendering` 强制启用；
-使用 `sh install.sh --hardware-rendering` 则保留 WebKit 的默认渲染方式。
-这些选项也可以搭配 `--skip-dependencies`。完全退出 Spool 后，从应用菜单重新
-打开即可生效。终端直接执行 Spool 二进制时，使用的是终端自身的环境变量。
-设备可访问不代表驱动一定稳定，各 WebKit 版本对这些变量的处理也可能不同。
-voxl 屏幕采集仍然需要 X11/Xvfb，渲染参数不会增加原生 Wayland 采集支持。
+应用菜单启动项直接运行 Spool，使用 WebKit 的默认渲染配置。
+voxl 屏幕采集需要 X11/Xvfb。
 
 Docker 验证**仅供手动运行**，不会加入普通测试或发布自动化。在仓库根目录可选执行：
 
