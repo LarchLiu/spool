@@ -84,6 +84,15 @@ func DefaultSettings() Settings {
 }
 func (s Settings) Address() string { return net.JoinHostPort(s.Host, fmt.Sprint(s.Port)) }
 func (s Settings) Validate() error {
+	if err := s.validateLocal(); err != nil {
+		return err
+	}
+	return (netproxy.Options{ProxyURL: s.ProxyURL, NoProxy: s.NoProxy}).Validate()
+}
+
+// An unavailable saved proxy must not prevent serving the local UI for repair.
+// New settings still validate the proxy through Validate before being saved.
+func (s Settings) validateLocal() error {
 	if s.RelayEnabled {
 		if _, err := relay.ParseRelayURL(s.RelayURL); err != nil {
 			return err
@@ -115,7 +124,7 @@ func (s Settings) Validate() error {
 			return fmt.Errorf("public URL must be an http(s) origin without a path")
 		}
 	}
-	return (netproxy.Options{ProxyURL: s.ProxyURL, NoProxy: s.NoProxy}).Validate()
+	return nil
 }
 
 func validateHistoryCacheMiB(size int) error {

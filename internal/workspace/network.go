@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"spool/internal/netproxy"
@@ -43,13 +44,11 @@ func (s *Service) saveSettingsLocked(settings Settings) error {
 		return fmt.Errorf("Register this server with the relay before enabling it.")
 	}
 	var policy *netproxy.Policy
+	var proxyErr error
 	options := settings.proxyOptions()
-	if options != s.networkProxy {
-		var err error
-		policy, err = netproxy.Prepare(s.ctx, options)
-		if err != nil {
-			return err
-		}
+	apply := !s.networkProxyReady || options != s.networkProxy
+	if apply {
+		policy, proxyErr = netproxy.Prepare(s.ctx, options)
 	}
 	if err := s.Store.SaveSettings(settings); err != nil {
 		return err
@@ -58,20 +57,25 @@ func (s *Service) saveSettingsLocked(settings Settings) error {
 		s.tailnet.cancel()
 		s.tailnet = nil
 	}
-	if policy != nil {
-		netproxy.Activate(policy)
-		s.networkProxy = options
+	if apply {
+		s.activateNetworkPolicyLocked(options, policy, proxyErr)
 	}
 	return nil
 }
 
-func (s *Service) applyNetworkSettingsLocked(settings Settings) error {
+func (s *Service) applyNetworkSettingsLocked(settings Settings) {
 	options := settings.proxyOptions()
 	policy, err := netproxy.Prepare(s.ctx, options)
+	s.activateNetworkPolicyLocked(options, policy, err)
+}
+
+func (s *Service) activateNetworkPolicyLocked(options netproxy.Options, policy *netproxy.Policy, err error) {
+	s.networkProxy = options
+	s.networkProxyReady = err == nil
 	if err != nil {
-		return err
+		netproxy.Reject(err)
+		log.Printf("event=proxy_settings_unavailable error=%q", err)
+		return
 	}
 	netproxy.Activate(policy)
-	s.networkProxy = options
-	return nil
 }

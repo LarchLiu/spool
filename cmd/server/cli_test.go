@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -156,6 +157,26 @@ func TestLocalAdministrationPreservesFieldsAndPermissions(t *testing.T) {
 	}
 }
 
+func TestUserIDTakesPrecedenceOverAnotherUsername(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "data")
+	t.Setenv("SPOOL_NEW_PASSWORD", "test-password-long-enough")
+	owner := decode[workspace.User](t, cliOK(t, root, "user", "add", "--username", "zz-owner"))
+	collision := decode[workspace.User](t, cliOK(t, root, "user", "add", "--username", owner.ID))
+	disabled := decode[workspace.User](t, cliOK(t, root, "user", "disable", "--user", owner.ID))
+	if disabled.ID != owner.ID || !disabled.Disabled {
+		t.Fatalf("ID selected the wrong account: %+v", disabled)
+	}
+	for _, u := range decode[[]workspace.User](t, cliOK(t, root, "user", "list")) {
+		if u.ID == collision.ID && u.Disabled {
+			t.Fatal("disabled the account whose username matched the target ID")
+		}
+	}
+	enabled := decode[workspace.User](t, cliOK(t, root, "user", "enable", "--user", "ZZ-OWNER"))
+	if enabled.ID != owner.ID || enabled.Disabled {
+		t.Fatalf("case-insensitive username lookup failed: %+v", enabled)
+	}
+}
+
 func TestConfigAgentAndLocking(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "data")
 	cliOK(t, root, "config", "set", "--port", "9797", "--idle-minutes", "30", "--web=false")
@@ -182,6 +203,42 @@ func TestConfigAgentAndLocking(t *testing.T) {
 		t.Fatalf("active lease not respected: %v", err)
 	}
 	cliOK(t, root, "user", "list", "--help")
+}
+
+func TestLocalCommandsCanRunAndRepairUnavailableProxy(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "data")
+	store, err := workspace.OpenStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := store.DatabasePath()
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO settings VALUES('server','{"proxy_url":"http://proxy.invalid:0"}')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	saved := decode[workspace.Settings](t, cliOK(t, root, "config", "show"))
+	if saved.ProxyURL != "http://proxy.invalid:0" {
+		t.Fatal("config show did not return the unavailable saved settings", saved)
+	}
+	cliOK(t, root, "user", "list")
+	cliOK(t, root, "agent", "list")
+	cliOK(t, root, "relay", "status")
+	cliOK(t, root, "config", "set", "--proxy-url=", "--system-proxy=false", "--proxy-enabled=false")
+	saved = decode[workspace.Settings](t, cliOK(t, root, "config", "show"))
+	if saved.ProxyURL != "" || saved.UseSystemProxy || saved.ProxyEnabled {
+		t.Fatal("config repair did not persist", saved)
+	}
+	cliOK(t, root, "user", "list")
 }
 
 func TestLegacyUserCreationAndGlobalDataDir(t *testing.T) {

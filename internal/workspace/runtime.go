@@ -47,6 +47,7 @@ type Service struct {
 	tailnetAuthKey      string
 	tailnetAuthRevision uint64
 	networkProxy        netproxy.Options
+	networkProxyReady   bool
 	desktop             *voxl.Manager
 	relay               *relayRuntime
 	relayRegistering    bool
@@ -68,17 +69,24 @@ type ServiceStatus struct {
 }
 
 func OpenService(root string) (*Service, error) {
-	return openService(root, true)
+	return openService(root, serviceRuntime)
 }
 
 // OpenAdministration acquires the same exclusive runtime lease without probing
 // provider CLIs in the background. Local one-shot commands should not start
 // agents or scan native sessions just to edit saved configuration.
 func OpenAdministration(root string) (*Service, error) {
-	return openService(root, false)
+	return openService(root, serviceAdministration)
 }
 
-func openService(root string, discoverAgents bool) (*Service, error) {
+type serviceMode int
+
+const (
+	serviceRuntime serviceMode = iota
+	serviceAdministration
+)
+
+func openService(root string, mode serviceMode) (*Service, error) {
 	store, err := OpenStore(root)
 	if err != nil {
 		return nil, err
@@ -105,7 +113,7 @@ func openService(root string, discoverAgents bool) (*Service, error) {
 		_, err = s.loadRelayRegistrationsLocked()
 	}
 	if err == nil {
-		err = s.applyNetworkSettingsLocked(settings)
+		s.applyNetworkSettingsLocked(settings)
 	}
 	if err != nil {
 		s.Close()
@@ -115,7 +123,7 @@ func openService(root string, discoverAgents bool) (*Service, error) {
 		s.Close()
 		return nil, err
 	}
-	if discoverAgents {
+	if mode == serviceRuntime {
 		s.workers.Add(1)
 		go func() { defer s.workers.Done(); s.Registry.Run(ctx) }()
 	}
@@ -175,12 +183,10 @@ func (s *Service) startLocked() error {
 }
 
 func (s *Service) startWithSettingsLocked(settings Settings) error {
-	if err := settings.Validate(); err != nil {
+	if err := settings.validateLocal(); err != nil {
 		return err
 	}
-	if err := s.applyNetworkSettingsLocked(settings); err != nil {
-		return err
-	}
+	s.applyNetworkSettingsLocked(settings)
 	// The desktop keeps a stable private entry when other listeners restart.
 	localListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

@@ -2,6 +2,7 @@ package netproxy
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -102,6 +103,52 @@ func TestSharedHTTPPolicyCanChangeWithoutReplacingDefaultClient(t *testing.T) {
 		if client != http.DefaultClient {
 			t.Fatal("replaced the signed update client")
 		}
+	}
+}
+
+func TestRejectedPolicyBlocksSharedClientsUntilRepaired(t *testing.T) {
+	previous := activeProxy.Load()
+	t.Cleanup(func() { Activate(previous) })
+	// A client which captured the transport before recovery (such as the
+	// signed updater) must observe the same unavailable policy as new clients.
+	captured := http.DefaultTransport.(*http.Transport).Clone()
+	t.Cleanup(captured.CloseIdleConnections)
+	unavailable := errors.New("system proxy configuration is unavailable")
+	Reject(unavailable)
+	for _, client := range []*http.Client{{}, {Transport: captured}} {
+		for _, target := range []string{
+			"https://github.com/example/spool/releases/latest/download/update-test.json",
+			"https://cdn.example/spool.tar.gz",
+		} {
+			response, err := client.Get(target)
+			if response != nil {
+				response.Body.Close()
+			}
+			if !errors.Is(err, unavailable) {
+				t.Fatal("shared client bypassed the unavailable policy", target, err)
+			}
+		}
+	}
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "local repair")
+	}))
+	t.Cleanup(local.Close)
+	response, err := http.Get(local.URL)
+	if err != nil {
+		t.Fatal("unavailable outbound policy blocked local access", err)
+	}
+	response.Body.Close()
+	target, _ := url.Parse("https://example.com")
+	if _, err := Resolve(target); !errors.Is(err, unavailable) {
+		t.Fatal("SDK proxy resolution bypassed the unavailable policy", err)
+	}
+	policy, err := Prepare(t.Context(), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	Activate(policy)
+	if proxy, err := Resolve(target); err != nil || proxy != nil {
+		t.Fatal("repair did not restore the shared policy", proxy, err)
 	}
 }
 

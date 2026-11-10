@@ -61,7 +61,7 @@ func (s *Service) ApplyServiceChanges(target string) error {
 	if err != nil {
 		return err
 	}
-	if err := next.Validate(); err != nil {
+	if err := next.validateLocal(); err != nil {
 		return err
 	}
 	switch target {

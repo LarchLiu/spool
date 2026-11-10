@@ -12,6 +12,7 @@ import (
 	"time"
 
 	chatmodel "spool/internal/model"
+	"spool/internal/netproxy"
 )
 
 const (
@@ -44,6 +45,7 @@ type chatProcess struct {
 	binary              string
 	directory           string
 	writableDirectories []string
+	proxyEnvironment    []string
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	process             *agentProcess
@@ -57,6 +59,10 @@ func NewCLIRunner() *CLIRunner {
 }
 
 func (r *CLIRunner) reserve(request AgentRequest) (*chatProcess, error) {
+	proxyEnvironment, err := netproxy.Environment([]string{})
+	if err != nil {
+		return nil, err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
@@ -90,14 +96,14 @@ func (r *CLIRunner) reserve(request AgentRequest) (*chatProcess, error) {
 			default:
 			}
 		}
-		if chat != nil && (dead || chat.ctx.Err() != nil || chat.backend != request.Backend || chat.binary != request.Binary || chat.directory != request.WorkingDirectory || !slices.Equal(chat.writableDirectories, request.WritableDirectories)) {
+		if chat != nil && (dead || chat.ctx.Err() != nil || chat.backend != request.Backend || chat.binary != request.Binary || chat.directory != request.WorkingDirectory || !slices.Equal(chat.writableDirectories, request.WritableDirectories) || !slices.Equal(chat.proxyEnvironment, proxyEnvironment)) {
 			chat.cancel()
 			chat = nil
 		}
 	}
 	if chat == nil {
 		ctx, cancel := context.WithCancel(context.Background())
-		chat = &chatProcess{backend: request.Backend, binary: request.Binary, directory: request.WorkingDirectory, writableDirectories: slices.Clone(request.WritableDirectories), ctx: ctx, cancel: cancel}
+		chat = &chatProcess{backend: request.Backend, binary: request.Binary, directory: request.WorkingDirectory, writableDirectories: slices.Clone(request.WritableDirectories), proxyEnvironment: proxyEnvironment, ctx: ctx, cancel: cancel}
 		r.chats[request.ChatID] = chat
 	}
 	chat.busy = true
@@ -320,6 +326,11 @@ func startAgentProcess(ctx context.Context, request AgentRequest) (*agentProcess
 	cmd := exec.CommandContext(ctx, request.Binary, args...)
 	cmd.Dir = request.WorkingDirectory
 	configureAgentCommand(cmd)
+	env, err := netproxy.Environment(cmd.Environ())
+	if err != nil {
+		return nil, err
+	}
+	cmd.Env = env
 	cmd.WaitDelay = agentExitGracePeriod
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

@@ -23,7 +23,10 @@ type systemProxy struct {
 }
 
 type Policy struct {
-	resolve func(*url.URL) (*url.URL, error)
+	resolve     func(*url.URL) (*url.URL, error)
+	config      httpproxy.Config
+	system      systemProxy
+	unavailable error
 }
 
 type Options struct {
@@ -121,7 +124,11 @@ func newPolicy(config *httpproxy.Config, proxy systemProxy) *Policy {
 		merged.HTTPSProxy = proxy.https
 	}
 	resolve := merged.ProxyFunc()
-	return &Policy{resolve: func(target *url.URL) (*url.URL, error) {
+	commandSystem := systemProxy{}
+	if config.HTTPProxy == "" && proxy.http != "" || config.HTTPSProxy == "" && proxy.https != "" {
+		commandSystem = proxy
+	}
+	return &Policy{config: merged, system: commandSystem, resolve: func(target *url.URL) (*url.URL, error) {
 		host := strings.ToLower(strings.TrimSuffix(target.Hostname(), "."))
 		ip := net.ParseIP(host)
 		if host == "localhost" || strings.HasSuffix(host, ".localhost") || ip != nil && ip.IsLoopback() {
@@ -156,11 +163,29 @@ func matchesException(host, exception string) bool {
 	return matched
 }
 
-// Activate applies a prepared policy to subsequent built-in HTTP requests.
-// Existing connections and independently configured subprocesses are untouched.
+// Activate applies a prepared policy to subsequent built-in HTTP requests and
+// Environment calls. Existing connections and subprocesses are untouched.
 func Activate(policy *Policy) {
 	activeProxy.Store(policy)
 	http.DefaultTransport.(*http.Transport).CloseIdleConnections()
+}
+
+// Reject keeps local operations available while shared HTTP clients and new
+// network-capable subprocesses report the unavailable policy. Activating a
+// successfully prepared policy restores normal request handling.
+func Reject(err error) {
+	Activate(&Policy{unavailable: err, resolve: func(target *url.URL) (*url.URL, error) {
+		if loopback(target.Hostname()) {
+			return nil, nil
+		}
+		return nil, err
+	}})
+}
+
+func loopback(host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	ip := net.ParseIP(host)
+	return host == "localhost" || strings.HasSuffix(host, ".localhost") || ip != nil && ip.IsLoopback()
 }
 
 func Proxy(req *http.Request) (*url.URL, error) {

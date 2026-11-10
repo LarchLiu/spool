@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,89 @@ import (
 	"spool/internal/netproxy"
 	"spool/internal/tailnet"
 )
+
+func TestLocalOperationsCanRepairInvalidProxySettings(t *testing.T) {
+	for name, open := range map[string]func(string) (*Service, error){"runtime": OpenService, "administration": OpenAdministration} {
+		for _, disable := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/disable=%t", name, disable), func(t *testing.T) {
+				store := testStore(t)
+				// Simulate a saved policy which can no longer be prepared at startup.
+				if _, err := store.db.Exec(`INSERT INTO settings VALUES('server','{"web_enabled":false,"proxy_url":"http://proxy.invalid:0"}')`); err != nil {
+					t.Fatal(err)
+				}
+				service, err := open(store.Root())
+				if err != nil {
+					t.Fatal("saved proxy blocked local operations", err)
+				}
+				t.Cleanup(func() { _ = service.Close() })
+				if err := service.Start(); err != nil {
+					t.Fatal("saved proxy blocked local service startup", err)
+				}
+				response, err := http.Get("http://" + service.localAddress + "/")
+				if err != nil {
+					t.Fatal("saved proxy blocked the local UI", err)
+				}
+				response.Body.Close()
+				target, _ := url.Parse("https://proxy-test.invalid")
+				if proxy, err := netproxy.Resolve(target); err == nil || proxy != nil {
+					t.Fatal("configuration recovery bypassed the failed proxy policy", proxy, err)
+				}
+				if _, err := netproxy.Environment(nil); err == nil {
+					t.Fatal("network subprocesses bypassed the failed proxy policy")
+				}
+				settings, err := service.Store.Settings()
+				if err != nil {
+					t.Fatal(err)
+				}
+				settings.ProxyURL = "http://proxy.example:8889"
+				settings.ProxyEnabled = !disable
+				settings.NoProxy = "internal.example"
+				if err := service.SaveSettings(settings); err != nil {
+					t.Fatal("could not repair saved proxy", err)
+				}
+				if saved, err := service.Store.Settings(); err != nil || saved != settings {
+					t.Fatal("proxy repair did not persist", saved, err)
+				}
+				proxy, err := netproxy.Resolve(target)
+				if err != nil || disable && proxy != nil || !disable && (proxy == nil || proxy.String() != settings.ProxyURL) {
+					t.Fatal("proxy repair did not restore the global policy", proxy, err)
+				}
+				if err := service.Close(); err != nil {
+					t.Fatal(err)
+				}
+				service, err = OpenAdministration(store.Root())
+				if err != nil {
+					t.Fatal("repaired policy still blocked normal administration", err)
+				}
+			})
+		}
+	}
+}
+
+func TestRuntimeAndAdministrationApplyValidProxy(t *testing.T) {
+	for _, open := range []func(string) (*Service, error){OpenService, OpenAdministration} {
+		store := testStore(t)
+		settings := DefaultSettings()
+		settings.ProxyURL = "http://proxy.example:8889"
+		settings.NoProxy = "internal.example"
+		if err := store.SaveSettings(settings); err != nil {
+			t.Fatal(err)
+		}
+		service, err := open(store.Root())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = service.Close() })
+		target, _ := url.Parse("https://proxy-test.invalid")
+		if proxy, err := netproxy.Resolve(target); err != nil || proxy == nil || proxy.String() != settings.ProxyURL {
+			t.Fatal("valid saved proxy was not applied globally", proxy, err)
+		}
+		target, _ = url.Parse("https://internal.example")
+		if proxy, err := netproxy.Resolve(target); err != nil || proxy != nil {
+			t.Fatal("saved proxy bypass rules did not apply", proxy, err)
+		}
+	}
+}
 
 func TestCustomProxySavesAndAppliesWithoutInterruptingService(t *testing.T) {
 	service, settings := settingsService(t)

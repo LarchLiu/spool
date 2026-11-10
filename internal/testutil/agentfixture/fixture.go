@@ -91,6 +91,9 @@ func Run(t *testing.T) {
 	}
 	log := func(value map[string]any) { value["pid"] = os.Getpid(); _ = json.NewEncoder(logFile).Encode(value) }
 	log(map[string]any{"method": "spawn", "args": os.Args})
+	if os.Getenv("SPOOL_TEST_PROXY_ENV") == "1" {
+		log(map[string]any{"method": "proxy-env", "http": os.Getenv("HTTP_PROXY"), "https": os.Getenv("HTTPS_PROXY"), "all": os.Getenv("ALL_PROXY"), "no": os.Getenv("NO_PROXY")})
+	}
 	for _, arg := range os.Args {
 		if arg == "--version" {
 			fmt.Println("fixture-agent 1.0.0")

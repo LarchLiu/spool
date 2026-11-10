@@ -7,10 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"spool/internal/netproxy"
 )
 
 type Command func(context.Context, string, string, ...string) ([]byte, error)
@@ -41,7 +42,11 @@ func run(ctx context.Context, directory, name, githubCLI string, args ...string)
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.WaitDelay = 5 * time.Second
 	cmd.Dir = directory
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")
+	env, err := netproxy.Environment(cmd.Environ())
+	if err != nil {
+		return nil, err
+	}
+	cmd.Env = append(env, "GIT_TERMINAL_PROMPT=0", "GH_PROMPT_DISABLED=1")
 	if name == "gh" {
 		cmd.Env = append(cmd.Env, "GH_HOST=github.com")
 	}

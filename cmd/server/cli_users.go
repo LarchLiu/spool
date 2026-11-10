@@ -15,7 +15,12 @@ func findUser(s *workspace.Store, ref string) (workspace.User, error) {
 		return workspace.User{}, err
 	}
 	for _, u := range users {
-		if u.ID == ref || strings.EqualFold(u.Username, ref) {
+		if u.ID == ref {
+			return u, nil
+		}
+	}
+	for _, u := range users {
+		if strings.EqualFold(u.Username, ref) {
 			return u, nil
 		}
 	}

@@ -55,6 +55,24 @@ may own a data directory at a time. **Stop the service before administration,
 then restart it.** After an unclean crash the lease can take 30 seconds to expire.
 One-shot management commands do not start background agent discovery.
 
+Saved proxy settings apply to Spool's shared HTTP clients and the proxy
+environment passed to external tools, including `gh`, agent CLIs and install
+tools. If that policy cannot be loaded, local administration and the local Web
+service remain available for inspection and repair. External HTTP requests and
+new network-capable tool launches fail until a valid policy is applied;
+loopback HTTP remains available. New proxy URLs are validated before saving.
+Saving an unavailable system-proxy mode keeps it selected and blocks outbound
+requests instead of falling back to direct access.
+
+Subprocesses receive an environment snapshot without changing the parent
+process or system proxy settings. Idle agent processes are replaced before
+their next turn when that snapshot changes; active turns are not interrupted.
+Tools must support standard proxy environment variables. System-specific
+hostname globs and simple-host exclusions have no portable `NO_PROXY`
+equivalent, so a tool's bypass matching can differ from Spool's HTTP clients.
+Future plugin hosts should use `netproxy.Environment` at their launch boundary
+and adapt runtime network APIs that do not honor these variables.
+
 Commands return JSON except help, version and foreground service output.
 Errors go to stderr. Exit codes are 0 for success/help, 2 for invalid command
 syntax/missing required options, and 1 for operational errors. Configuration

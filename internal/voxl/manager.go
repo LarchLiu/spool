@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"spool/internal/netproxy"
 	"spool/internal/voxl/macapp"
 )
 
@@ -445,6 +446,10 @@ func (m *Manager) Install(ctx context.Context, source ...string) (installErr err
 	defer log.Close()
 	env := withoutEnv(os.Environ(), "TMPDIR", "TMP", "TEMP")
 	env = append(env, "TMPDIR="+filepath.Join(stage, "tmp"), "TMP="+filepath.Join(stage, "tmp"), "TEMP="+filepath.Join(stage, "tmp"))
+	env, err = netproxy.Environment(env)
+	if err != nil {
+		return err
+	}
 	tools := newBuildEnvironment(env, log, m.installStep)
 	cargo, err := tools.prepare(ctx)
 	if err != nil {
