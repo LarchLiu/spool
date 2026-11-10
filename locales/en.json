@@ -1003,7 +1003,7 @@
   "Stop Spool Relay and secure LAN access. Active tasks continue.": "Stop Spool Relay and secure LAN access. Active tasks continue.",
   "Restart Tailscale to apply its node, HTTPS port and network settings. Tailscale clients reconnect; active tasks continue.": "Restart Tailscale to apply its node, HTTPS port and network settings. Tailscale clients reconnect; active tasks continue.",
   "Stop Tailscale access. Active tasks continue.": "Stop Tailscale access. Active tasks continue.",
-  "Restart Spool to apply runtime settings. All access entries restart and active tasks are interrupted.": "Restart Spool to apply runtime settings. All access entries restart and active tasks are interrupted.",
+  "Changes apply immediately without restarting services or interrupting active tasks.": "Changes apply immediately without restarting services or interrupting active tasks.",
   "New built-in HTTP requests use this setting immediately. Local loopback access, push security checks and external agent tools keep their own network rules.": "New built-in HTTP requests use this setting immediately. Local loopback access, push security checks and external agent tools keep their own network rules.",
   "Phones prefer a verified LAN connection and use the relay when away.": "Phones prefer a verified LAN connection and use the relay when away.",
   "Access this workspace at the relay HTTPS address. The relay can read Web data. Use caution when enabling this for an untrusted third-party service. The mobile app uses end-to-end encryption and is not affected.": "Access this workspace at the relay HTTPS address. The relay can read Web data. Use caution when enabling this for an untrusted third-party service. The mobile app uses end-to-end encryption and is not affected.",

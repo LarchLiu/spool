@@ -1003,7 +1003,7 @@
   "Stop Spool Relay and secure LAN access. Active tasks continue.": "Spool リレーと安全な LAN アクセスを停止します。実行中のタスクは継続します。",
   "Restart Tailscale to apply its node, HTTPS port and network settings. Tailscale clients reconnect; active tasks continue.": "ノード、HTTPS ポート、ネットワーク設定を適用するため Tailscale を再起動します。クライアントは再接続し、実行中のタスクは継続します。",
   "Stop Tailscale access. Active tasks continue.": "Tailscale アクセスを停止します。実行中のタスクは継続します。",
-  "Restart Spool to apply runtime settings. All access entries restart and active tasks are interrupted.": "実行設定を適用するため Spool 全体を再起動します。すべてのアクセスが再起動し、実行中のタスクは中断されます。",
+  "Changes apply immediately without restarting services or interrupting active tasks.": "変更はすぐに反映され、サービスの再起動や実行中のタスクの中断はありません。",
   "New built-in HTTP requests use this setting immediately. Local loopback access, push security checks and external agent tools keep their own network rules.": "新しい内蔵 HTTP リクエストにはすぐに適用されます。ローカルアクセス、プッシュの安全確認、外部エージェントツールは独自のネットワーク規則を使用します。",
   "Phones prefer a verified LAN connection and use the relay when away.": "スマートフォンは検証済み LAN 接続を優先し、外出時はリレーを使用します。",
   "Access this workspace at the relay HTTPS address. The relay can read Web data. Use caution when enabling this for an untrusted third-party service. The mobile app uses end-to-end encryption and is not affected.": "リレーの HTTPS アドレスからアクセスできます。リレーは Web データを読み取れるため、信頼できない第三者のサービスでは慎重に有効にしてください。モバイルアプリはエンドツーエンド暗号化を使用するため、この問題はありません。",

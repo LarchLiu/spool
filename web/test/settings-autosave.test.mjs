@@ -393,7 +393,7 @@ test("cancelling Web discards incomplete and failed drafts while keeping other e
   );
 });
 
-test("Relay and runtime cancellation reset only the selected fields", () => {
+test("Relay cancellation preserves runtime and unrelated drafts", () => {
   const { autosave } = fixture();
   autosave.edit("relay_enabled", true);
   autosave.edit("relay_web_enabled", true);
@@ -408,8 +408,6 @@ test("Relay and runtime cancellation reset only the selected fields", () => {
   assert.equal(autosave.draft.relay_url, "");
   assert.equal(autosave.draft.relay_lan_port, "28082");
   assert.equal(autosave.draft.idle_minutes, "");
-  autosave.prepareCancel("runtime")(initial());
-  assert.equal(autosave.draft.idle_minutes, "15");
   assert.equal(autosave.draft.port, "");
   assert.equal(autosave.draft.auto_start, false);
 });

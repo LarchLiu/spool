@@ -39,6 +39,10 @@ type Server struct {
 	registrations  map[string]registrationRecord
 	tokenIndex     map[string]string
 	trustedProxies []netip.Prefix
+	settings       relaySettings
+	proxyJob       *proxyDetectionJob
+	proxyError     string
+	proxyWorkers   sync.WaitGroup
 }
 type registeredHost struct {
 	id, token      string
@@ -92,6 +96,9 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if err := s.loadRegistrations(); err != nil {
 		return nil, err
 	}
+	if err := s.loadSettings(); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -100,6 +107,10 @@ func authorized(r *http.Request, token string) bool {
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if strings.HasPrefix(r.URL.Path, proxyProbePath) {
+		s.serveProxyProbe(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/web/") {
 		s.serveWeb(w, r)
 		return
@@ -367,8 +378,10 @@ func bridge(ctx context.Context, a, b *websocket.Conn) {
 
 func (s *Server) Close() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.closed = true
+	if s.proxyJob != nil {
+		s.proxyJob.cancel()
+	}
 	for _, h := range s.hosts {
 		h.cancel()
 		h.control.CloseNow()
@@ -376,5 +389,7 @@ func (s *Server) Close() error {
 			p.cancel()
 		}
 	}
+	s.mu.Unlock()
+	s.proxyWorkers.Wait()
 	return nil
 }

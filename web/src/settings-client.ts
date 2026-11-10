@@ -107,7 +107,7 @@ export type ReleaseHistory = {
   target_version: string;
   releases: ReleaseNotes[];
 };
-export type ServiceChangeTarget = "web" | "relay" | "tsnet" | "runtime";
+export type ServiceChangeTarget = "web" | "relay" | "tsnet";
 export type SettingsSnapshot = {
   section: string;
   message: string;

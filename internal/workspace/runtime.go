@@ -162,6 +162,17 @@ func openService(root string, mode serviceMode) (*Service, error) {
 	}()
 	return s, nil
 }
+func (s *Service) applyRuntimeSettingsLocked(settings Settings) {
+	if s.runner == nil || s.activeSettings.IdleMinutes == settings.IdleMinutes {
+		return
+	}
+	s.runner.SetIdleTimeout(time.Duration(settings.IdleMinutes) * time.Minute)
+	s.activeSettings.IdleMinutes = settings.IdleMinutes
+	s.app.configMu.Lock()
+	s.app.settings.IdleMinutes = settings.IdleMinutes
+	s.app.configMu.Unlock()
+}
+
 func (s *Service) Start() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

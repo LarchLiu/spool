@@ -588,6 +588,7 @@ func (p *panel) runtimeSettingsView(c *ui.Context) {
 		settings.IdleMinutes, err = strconv.Atoi(value)
 		return err
 	})
+	ui.Text(c, p.tr("Changes apply immediately without restarting services or interrupting active tasks.")).Wrap().FontSize(12)
 	p.serviceSettingField(c, "History cache size (MiB)", &p.historyCache, func(settings *workspace.Settings, value string) (err error) {
 		settings.HistoryCacheMiB, err = strconv.Atoi(value)
 		return err
@@ -617,7 +618,7 @@ func (p *panel) networkView(c *ui.Context) {
 
 func (p *panel) pendingServiceChanges(c *ui.Context) {
 	for _, target := range p.status.PendingChanges {
-		title := map[string]string{"web": "Web access", "relay": "Spool Relay", "tsnet": "Tailscale", "runtime": "Spool service"}[target]
+		title := map[string]string{"web": "Web access", "relay": "Spool Relay", "tsnet": "Tailscale"}[target]
 		ui.Text(c, p.tr(title)).Bold()
 		ui.Row(c).Gap(10).Children(func() {
 			if ui.Button(c, p.tr("Cancel")).Disabled(p.busy).Clicked() {

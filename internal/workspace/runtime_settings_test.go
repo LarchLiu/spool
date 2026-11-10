@@ -1,12 +1,16 @@
 package workspace
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"spool/internal/tailnet"
 )
 
 func TestRestartDuringUpdateDoesNotStopTheRunningService(t *testing.T) {
@@ -64,7 +68,7 @@ func TestSavingServiceSettingsOnlyMarksChangesThatNeedRestart(t *testing.T) {
 		{"port", func(s *Settings) { s.Port = s.Port%65535 + 1 }, true},
 		{"public origin", func(s *Settings) { s.PublicURL = "https://chat.example.test" }, true},
 		{"trusted Web proxies", func(s *Settings) { s.WebTrustedProxies = "192.0.2.10/32" }, true},
-		{"idle timeout", func(s *Settings) { s.IdleMinutes++ }, true},
+		{"idle timeout", func(s *Settings) { s.IdleMinutes++ }, false},
 		{"cache", func(s *Settings) { s.HistoryCacheMiB++ }, false},
 		{"auto-start", func(s *Settings) { s.AutoStart = false }, false},
 		{"enable tsnet", func(s *Settings) { s.TSNetEnabled = true }, true},
@@ -75,14 +79,14 @@ func TestSavingServiceSettingsOnlyMarksChangesThatNeedRestart(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			next := settings
 			tc.change(&next)
-			if err := service.Store.SaveSettings(next); err != nil {
+			if err := service.SaveSettings(next); err != nil {
 				t.Fatal(err)
 			}
 			if status := service.Status(); !status.Running || status.RestartRequired != tc.restart {
 				t.Fatalf("incorrect pending restart status: %+v", status)
 			}
-			if service.app != app || service.runner != runner || runner.IdleTimeout != time.Duration(settings.IdleMinutes)*time.Minute {
-				t.Fatal("saving settings restarted or mutated the running service")
+			if service.app != app || service.runner != runner || runner.IdleTimeout != time.Duration(next.IdleMinutes)*time.Minute {
+				t.Fatal("saving settings restarted the service or failed to apply the idle timeout")
 			}
 			select {
 			case <-app.shutdown:
@@ -98,13 +102,86 @@ func TestSavingServiceSettingsOnlyMarksChangesThatNeedRestart(t *testing.T) {
 			if limit != next.HistoryCacheMiB*1024*1024 {
 				t.Fatal("cache change did not apply immediately", limit)
 			}
-			if err := service.Store.SaveSettings(settings); err != nil {
+			if err := service.SaveSettings(settings); err != nil {
 				t.Fatal(err)
 			}
 			if service.Status().RestartRequired {
 				t.Fatal("reverting to the active settings did not clear the notice")
 			}
 		})
+	}
+}
+
+func TestSavingRuntimeSettingsAppliesImmediatelyWithoutRestart(t *testing.T) {
+	t.Setenv("SPOOL_RELAY_REGISTRATION_TOKEN", "")
+	service, settings := settingsService(t)
+	connection := newTestTailnetConnection(t)
+	settings = enableTestTailnet(t, service, settings, func(context.Context, string, tailnet.Options, func(tailnet.Status)) (tailnetConnection, error) {
+		return connection, nil
+	})
+	waitTailnet(t, service, func(status ServiceStatus) bool { return status.TSNet.URL != "" })
+	broker, token := testRelayBroker(t)
+	public := httptest.NewServer(broker)
+	defer public.Close()
+	defer service.Stop()
+	settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RegisterRelay(t.Context(), public.URL, token); err != nil {
+		t.Fatal(err)
+	}
+	settings.RelayEnabled = true
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ApplyServiceChanges("relay"); err != nil {
+		t.Fatal(err)
+	}
+	waitTailnet(t, service, func(status ServiceStatus) bool { return status.Relay.State == "connected" })
+	app, runner, server, web := service.app, service.runner, service.server, service.web
+	node, relayEntry := service.tailnet, service.relay
+	localURL, _ := service.LocalWebURL()
+	app.turnMu.Lock()
+	work, control := app.registerTurn(t.Context(), "runtime-save", "turn")
+	app.turnMu.Unlock()
+	defer app.releaseTurn("runtime-save", control)
+	for _, minutes := range []int{30, 1, settings.IdleMinutes} {
+		settings.IdleMinutes = minutes
+		settings.HistoryCacheMiB++
+		if err := service.SaveSettings(settings); err != nil {
+			t.Fatal(err)
+		}
+		if service.runner.IdleTimeout != time.Duration(minutes)*time.Minute || service.app.activeSettings().IdleMinutes != minutes {
+			t.Fatal("idle timeout did not apply when saved")
+		}
+		if status := service.Status(); status.RestartRequired || len(status.PendingChanges) != 0 {
+			t.Fatal("runtime save requires another apply action", status)
+		}
+		if service.app != app || service.runner != runner || service.server != server || service.web != web || service.tailnet != node || service.relay != relayEntry || work.Err() != nil {
+			t.Fatal("runtime save restarted a service or interrupted work")
+		}
+		if current, err := service.LocalWebURL(); err != nil || current != localURL {
+			t.Fatal("runtime save replaced the desktop endpoint", current, err)
+		}
+		service.Store.historyCache.mu.Lock()
+		limit := service.Store.historyCache.maxBytes
+		service.Store.historyCache.mu.Unlock()
+		if limit != settings.HistoryCacheMiB*1024*1024 {
+			t.Fatal("cache size did not apply when saved", limit)
+		}
+	}
+	requireServiceHealth(t, localURL)
+	requireServiceHealth(t, "http://"+service.Status().Address)
+	requireServiceHealth(t, "http://"+connection.Listener().Addr().String())
+	invalid := settings
+	invalid.IdleMinutes = 0
+	if err := service.SaveSettings(invalid); err == nil {
+		t.Fatal("invalid runtime setting was accepted")
+	}
+	saved, _ := service.Store.Settings()
+	if saved.IdleMinutes != settings.IdleMinutes || runner.IdleTimeout != time.Duration(settings.IdleMinutes)*time.Minute {
+		t.Fatal("failed save changed the active or saved idle timeout")
 	}
 }
 

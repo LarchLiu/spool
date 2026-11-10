@@ -10,7 +10,6 @@ import (
 	"net/http/httputil"
 	"net/netip"
 	"net/url"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -66,8 +65,8 @@ func TestDetectWebProxyVerifiesTLSAndAppliesWithoutRestart(t *testing.T) {
 	if service.app != app || service.runner != runner || service.web != ingress {
 		t.Fatal("detection restarted the service or Web listener")
 	}
-	if address, _ := service.LocalWebURL(); address != localURL || !slices.Equal(service.Status().PendingChanges, []string{"runtime"}) {
-		t.Fatal("detection applied unrelated pending changes", service.Status())
+	if address, _ := service.LocalWebURL(); address != localURL || service.Status().RestartRequired {
+		t.Fatal("detection changed the desktop endpoint or left pending runtime changes", service.Status())
 	}
 	if app.activeSettings().PublicURL != saved.PublicURL || app.activeSettings().WebDetectedProxy != saved.WebDetectedProxy {
 		t.Fatal("detection needs another Apply action")
@@ -470,8 +469,8 @@ func TestDetectWebProxyConcurrentSettingsAndLifecycle(t *testing.T) {
 			}
 			if change == "unrelated" {
 				saved, _ := service.Store.Settings()
-				if saved.IdleMinutes != settings.IdleMinutes || !slices.Equal(service.Status().PendingChanges, []string{"runtime"}) {
-					t.Fatal("detection discarded or applied an unrelated concurrent edit")
+				if saved.IdleMinutes != settings.IdleMinutes || service.runner.IdleTimeout != time.Duration(settings.IdleMinutes)*time.Minute || service.Status().RestartRequired {
+					t.Fatal("detection discarded an immediately applied concurrent edit")
 				}
 			}
 			if err != nil {

@@ -30,7 +30,7 @@ The local `.env` is excluded from Git and the image build context.
 | --- | --- | --- |
 | `SPOOL_RELAY_ADMIN_TOKEN` | Required | Management API credential, 32–512 characters. |
 | `RELAY_REQUIRE_REGISTRATION_TOKEN` | `true` | Set `false` to allow signed automatic server registration. |
-| `RELAY_TRUSTED_PROXIES` | Empty | Comma-separated proxy IP CIDRs allowed to supply client addresses in `X-Forwarded-For`. |
+| `RELAY_TRUSTED_PROXIES` | Empty | Initial proxy IP CIDRs; saved dashboard settings take precedence. Usually automatic detection is sufficient. |
 | `RELAY_BIND_ADDRESS` | `127.0.0.1` | Host interface for the HTTP relay backend. |
 | `RELAY_PORT` | `28080` | Host port for the HTTP relay backend. |
 | `RELAY_ADMIN_PORT` | `28081` | Host loopback port for the management API. |
@@ -40,9 +40,10 @@ For automatic registration, set `RELAY_REQUIRE_REGISTRATION_TOKEN=false` in
 required. Leave the registration token empty in Spool Desktop and click
 **Register**; Spool saves the server token returned by the relay.
 
-With the default token requirement, issue server tokens through
-`http://127.0.0.1:28081/v1/registrations`, using the administrative credential
-from `.env`. The [administration examples below](#registration-administration)
+Open `http://127.0.0.1:28081/` on the Docker host and enter the administrative
+credential from `.env`. The dashboard generates server tokens, lists server
+status and registration IPs, and revokes authorization. The
+[administration examples below](#registration-administration)
 use the same default port for Compose and standalone deployments.
 
 Container-based reverse proxies such as Coolify should target container port
@@ -52,6 +53,9 @@ changes only the host port mapping; the container's administrative port stays
 listener overrides to use the new ports. Existing `.env` values and saved Spool
 LAN settings retain their configured ports; use `28080` for `RELAY_PORT`, `28081`
 for `RELAY_ADMIN_PORT`, and `28082` for the secure LAN listener to adopt the defaults.
+Compose already binds both listeners inside the container. When deploying the
+Dockerfile directly, add `-admin-listen 0.0.0.0:28081` to the start command to
+let a separate proxy container reach management; keep its host mapping private.
 
 The relay HTTP port and the administrative port are separate. Put an HTTPS
 reverse proxy in front of `127.0.0.1:28080`, as in the Caddy example below, and
@@ -60,13 +64,12 @@ origin with a certificate trusted by the app; a LAN HTTP address does not work.
 The default loopback mapping is accessible only from the Docker host. Running
 the container at home does not itself create a publicly reachable endpoint.
 
-When using an HTTPS reverse proxy, set `RELAY_TRUSTED_PROXIES` to its source
-address as seen by the relay. For Docker this is the bridge gateway or proxy
-container address, which may differ from the host's loopback address. Prefer
-fixed proxy addresses and narrow CIDRs such as `172.20.0.2/32`. The proxy must
-replace `X-Forwarded-For` or append the actual client address. Do not trust all
-client networks. Without this setting, clients behind the proxy share its
-login rate limit. Direct TLS deployments can leave it empty.
+When opening the dashboard through its public HTTPS address, Relay uses that
+browser address automatically and detects the proxy's actual source IP, including
+a Docker bridge or proxy-container IP. No public-address field is needed. See
+[public management and proxy detection](#public-management-and-proxy-detection)
+for proxy routes. Local/SSH access can specify the public URL under **高级设置**.
+Detection runs after the address changes and once at startup; **检测** retries it.
 
 Registrations and revocations persist in the `relay-data` named volume. The
 container uses the image's non-root user, a read-only root filesystem and a
@@ -123,7 +126,7 @@ export SPOOL_RELAY_ADMIN_TOKEN='the-generated-value'
 ```
 
 Point `relay.example.com` at the VPS and put a TLS reverse proxy in front.
-For example, a Caddyfile:
+For a public relay without a public dashboard, a Caddyfile is:
 
 ```caddyfile
 relay.example.com {
@@ -139,8 +142,9 @@ Heartbeat pings run every 20 seconds; the home server reconnects automatically.
 For direct TLS, pass `-listen :443 -tls-cert fullchain.pem -tls-key privkey.pem`.
 Omit `-trusted-proxies` for direct TLS. For the loopback Caddy example above,
 `127.0.0.1/32` trusts only that proxy's IPv4 connection. The flag overrides
-`RELAY_TRUSTED_PROXIES`; an invalid CIDR prevents startup. Forwarded chains are
-read from right to left, stopping at the first untrusted address. Other
+`RELAY_TRUSTED_PROXIES` when initializing settings; saved dashboard settings
+take precedence on subsequent starts. An invalid CIDR prevents startup. Forwarded
+chains are read from right to left, stopping at the first untrusted address. Other
 forwarding headers and client cookies cannot choose the login rate-limit key.
 
 Container build context is this directory:
@@ -155,7 +159,8 @@ docker run -d --name spool-relay --restart unless-stopped \
 
 `relay.env` contains `SPOOL_RELAY_ADMIN_TOKEN=...`; restrict it to the service
 owner. Use TLS at the public proxy. The admin port remains bound to the VPS's
-loopback address, including in this Docker example; do not proxy it publicly.
+loopback address, including in this Docker example. To publish the dashboard,
+use the dedicated routes in the management section below.
 Keep the data volume: it holds server registrations, token hashes and revocations
 in `registrations.json`, with owner-only file permissions. The relay never logs
 application payloads or credentials. Exclude Authorization headers from logs.
@@ -246,11 +251,112 @@ request automatic registration. Spool saves the returned token only after the
 relay confirms enrollment. Registration does not enable relay ingress. An explicitly supplied
 invalid or revoked token is rejected even when automatic registration is enabled.
 
-The administrative HTTP API listens on `127.0.0.1:28081` by default (set with
-`-admin-listen`). It is separate from the public relay listener. Use it on the VPS
-or through an SSH tunnel. Every request requires the administrator credential,
-which stays on the VPS/operator machine and is never entered into Spool Desktop.
-This is a JSON API; a browser management dashboard is not included.
+The management dashboard and HTTP API listen on `127.0.0.1:28081` by default
+(set with `-admin-listen`), separately from the public relay listener. Open
+`http://127.0.0.1:28081/` on the VPS, or forward it to your own computer:
+
+```sh
+ssh -N -L 28081:127.0.0.1:28081 user@your-vps
+# Open http://127.0.0.1:28081/ on your computer.
+```
+
+Enter `SPOOL_RELAY_ADMIN_TOKEN` to sign in. It stays only in the current page's
+memory; refreshing or signing out requires entering it again. No browser cookies
+or persistent storage grant management access. Remote browser access requires
+HTTPS. This credential is never entered into Spool Desktop.
+
+Give each token a server name, select **生成 token**, then copy the once-only
+result into that Spool server's registration settings. The list shows online,
+offline, unused, unregistered and revoked entries, historical registration IPs,
+Server IDs and active connection counts. **撤销** asks for confirmation, then
+disconnects the selected server and disables its token. Inactive records remain
+visible. The list refreshes every ten seconds; proxy detection does not run on a
+timer.
+
+### Public management and proxy detection
+
+The dashboard can use the same public HTTPS address that native Relay clients
+connect to. Route management paths to port `28081`, and protocol/health/proxy
+callback paths to port `28080`. This origin must be reserved for Relay management
+and native protocol traffic. Host `/web/<server-id>/` applications on a separate
+HTTPS origin, because application JavaScript must not share the dashboard's
+browser origin. Block `/web` paths at the management proxy from the start; Relay
+also blocks them on the saved HTTPS management origin after dashboard setup.
+
+For example, publish management and native Relay at `https://relay.example.com`:
+
+```caddyfile
+relay.example.com {
+    @tenant path /web /web/*
+    handle @tenant {
+        respond "Use the separate Web application hostname" 403
+    }
+    @admin path / /admin.js /admin.css /v1/registrations /v1/registrations/* /v1/settings /v1/proxy-detection
+    handle @admin {
+        reverse_proxy 127.0.0.1:28081
+    }
+    handle {
+        reverse_proxy 127.0.0.1:28080 {
+            flush_interval -1
+        }
+    }
+}
+
+# Optional Web gateway; configure this origin in each Spool server's Web opt-in.
+relay-web.example.com {
+    reverse_proxy 127.0.0.1:28080 {
+        flush_interval -1
+    }
+}
+```
+
+For Docker-based proxies, replace the loopback targets with the relay container's
+address and the same container ports. Keep the host's management mapping private.
+For ngrok or Cloudflare Tunnel, use the same path routing: management paths above
+go to `28081`, and `/.well-known/spool-relay/proxy-check/*` plus native Relay
+paths go to `28080`. Forward the original Host, set `X-Forwarded-Proto: https`,
+and replace or safely append `X-Forwarded-For`. Forwarding the entire hostname
+only to the management port cannot verify the public Relay listener.
+
+After signing in through HTTPS, the dashboard saves `location.origin` and starts
+verification automatically. No public URL needs to be typed. It uses a one-time
+callback and independent response proof with normal TLS certificate validation,
+without credentials or redirects. On success it trusts only the observed TCP
+peer as an exact `/32` or `/128`, applies it immediately and persists it in
+`settings.json` alongside the saved address. Direct TLS needs no proxy entry.
+Relay repeats this once after binding the public listener on startup, replacing
+the previous automatic IP on success. It does not probe periodically. Failure
+is shown in the dashboard and **检测** retries it; a failed retry does not erase
+the previous verified result for the same address. Changing the address clears
+the previous automatic trust immediately.
+
+With local/SSH dashboard access, Relay cannot discover the public hostname from
+the local browser address. Under **高级设置**, set **公网地址覆盖** to the HTTPS
+origin that forwards the public callback to port `28080`. Saving a changed
+address starts detection. Clear the override when using the public dashboard
+address again.
+
+**额外可信代理** is for explicitly trusted extra hops in a multi-proxy chain.
+The detected peer remains separate and is replaced automatically after a
+successful startup check. Manual CIDRs persist and take precedence over initial
+`RELAY_TRUSTED_PROXIES` / `-trusted-proxies` values. These settings and server
+registrations use the same persistent data directory/volume; the administrator
+credential stays in the process environment. Back up this volume when migrating.
+
+### Administrative API
+
+The API remains available to scripts. Every API request requires a Bearer
+administrator credential; browser callers must be same-origin. Tokens and
+credentials are never accepted in URL query strings.
+
+`GET /v1/settings` returns the effective public URL, its optional override,
+manual CIDRs, the last verified peer/origin/time, and detection progress/error.
+`PUT /v1/settings` accepts only `public_url_override`, `browser_origin`, and
+`trusted_proxies` (an array of CIDRs); detection-owned fields are read-only.
+An empty override uses the supplied HTTPS browser origin.
+`POST /v1/proxy-detection` retries the saved URL and returns HTTP 202; poll
+`GET /v1/settings` for completion. Saving an address change also starts this
+backend verifier, so API clients do not need a second request.
 
 ```sh
 # Run on the VPS, with SPOOL_RELAY_ADMIN_TOKEN set to its configured value.
@@ -299,11 +405,11 @@ curl -fsS https://relay-admin.example.com/v1/registrations \
   | jq '.registrations[] | {id, name, server_id, registration_ip}'
 ```
 
-By default the IP comes from the socket peer. Behind Coolify, Caddy, or another
-reverse proxy, set `RELAY_TRUSTED_PROXIES` (or `-trusted-proxies`) to the actual
-proxy addresses/networks, using CIDR notation, for example `127.0.0.1/32,::1/128`
-for a local proxy. Container deployments must use their actual proxy network;
-do not copy unrelated private ranges or trust all addresses. The relay follows
+By default the IP comes from the socket peer. The dashboard can detect the
+nearest proxy automatically as described above. For manual initialization,
+set `RELAY_TRUSTED_PROXIES` (or `-trusted-proxies`) to actual proxy CIDRs, for
+example `127.0.0.1/32,::1/128` for a local proxy. Do not copy unrelated private
+ranges or trust all addresses. The relay follows
 `X-Forwarded-For` from right to left through trusted hops, stopping at the first
 untrusted address. A Cloudflare + Coolify chain requires both trusted proxy hops
 and correctly preserved forwarding headers to reach Spool's public egress IP.
@@ -605,6 +711,12 @@ Standalone verification: `go test -race ./...` and `go vet ./...` in this module
 with the repository's cache/scratch wrapper. Integration coverage is in
 `internal/workspace/relay_test.go`, `android/transport/spoolnet/relay_test.go`, and
 Android's `RelayPairingTest`.
+For the embedded dashboard, from the repository root run
+`sh tools/run.sh relay-admin-browser env CHROME_BIN=/path/to/chrome bun relay/test/admin-smoke.mjs`.
+It uses an isolated real Relay fixture, checks authentication, token issuance and
+revocation, automatic proxy verification and mobile layout, and retains screenshots
+under `build/artifacts/relay-admin/`. The fixture certificate bypass belongs only
+to that disposable browser; the production verifier still validates TLS normally.
 Web coverage is in `web_test.go`, `internal/workspace/relay_web_test.go`, and
 `web/test/app-path.test.mjs` / `web/test/web-push.test.mjs`. After building the
 frontend, set `CHROME_BIN` to a standalone Chromium binary and run

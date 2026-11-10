@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -279,6 +281,118 @@ func TestRelayWebLoginLimitsSeparateClientsAndRejectSpoofing(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRelayWebDetectedProxySeparatesLoginLimitsWithoutRestart(t *testing.T) {
+	// Start with no manually trusted proxies. The real reverse proxy connects
+	// to the real broker, which opens pinned TLS tunnels to a real Spool app.
+	broker, public, nodes := relayWebFixture(t, 1)
+	node := nodes[0]
+	target, _ := url.Parse(public.URL)
+	upstream := &http.Transport{}
+	t.Cleanup(upstream.CloseIdleConnections)
+	proxy := &httputil.ReverseProxy{Transport: upstream, Rewrite: func(p *httputil.ProxyRequest) {
+		p.SetURL(target)
+		p.Out.Header["X-Forwarded-For"] = p.In.Header.Values("X-Forwarded-For")
+		p.SetXForwarded()
+	}}
+	front := httptest.NewTLSServer(proxy)
+	t.Cleanup(front.Close)
+	// Trust only this fixture's certificate for the production HTTPS verifier.
+	// No TLS verification bypass is used for the automatic callback.
+	original := http.DefaultTransport
+	transport := original.(*http.Transport).Clone()
+	pool, _ := x509.SystemCertPool()
+	if pool == nil {
+		pool = x509.NewCertPool()
+	}
+	pool.AddCert(front.Certificate())
+	transport.TLSClientConfig = &tls.Config{RootCAs: pool}
+	http.DefaultTransport = transport
+	t.Cleanup(func() {
+		broker.Close()
+		http.DefaultTransport = original
+		transport.CloseIdleConnections()
+	})
+	login := func(ip, spoof, body string, want int) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+		r := httptest.NewRequest(http.MethodPost, node.url+"api/login", strings.NewReader(body)).WithContext(ctx)
+		// Only the frontend client IP is synthetic. The actual proxy-to-broker
+		// TCP peer and all Relay host/data streams are real local connections.
+		r.RemoteAddr = net.JoinHostPort(ip, "41000")
+		r.TLS = &tls.ConnectionState{}
+		r.Header.Set("Origin", public.URL)
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("X-Forwarded-For", spoof)
+		r.Header.Set("X-Real-IP", spoof)
+		r.Header.Set("Forwarded", "for="+spoof)
+		r.Header.Set("X-Spool-Relay-Client", spoof)
+		w := httptest.NewRecorder()
+		proxy.ServeHTTP(w, r)
+		if w.Code != want {
+			t.Fatalf("login from %s: %d, want %d: %s", ip, w.Code, want, w.Body)
+		}
+	}
+	valid := `{"username":"alice","password":"test-password-2026"}`
+	wrong := `{"username":"alice","password":"wrong-password"}`
+	for i := range 20 {
+		login("198.51.100.1", fmt.Sprintf("203.0.113.%d", i+1), wrong, http.StatusUnauthorized)
+	}
+	// Without trust, the proxy is the only known client: another person is
+	// blocked by the shared quota. This is the pre-detection control case.
+	login("203.0.113.2", "198.51.100.1", valid, http.StatusTooManyRequests)
+
+	admin := func(method, path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+strings.Repeat("a", 32))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		broker.AdminHandler().ServeHTTP(w, r)
+		return w
+	}
+	data, _ := json.Marshal(map[string]any{"browser_origin": front.URL, "public_url_override": "", "trusted_proxies": []string{}})
+	if w := admin(http.MethodPut, "/v1/settings", string(data)); w.Code != 200 {
+		t.Fatal("could not save browser origin", w.Code, w.Body)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var status struct {
+			Detecting      bool   `json:"detecting"`
+			DetectedProxy  string `json:"detected_proxy"`
+			DetectionError string `json:"detection_error"`
+		}
+		w := admin(http.MethodGet, "/v1/settings", "")
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &status) != nil {
+			t.Fatal("invalid detection status", w.Code, w.Body)
+		}
+		if !status.Detecting {
+			if status.DetectionError != "" || status.DetectedProxy != "127.0.0.1/32" {
+				t.Fatal("automatic proxy verification failed", w.Body)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("proxy detection timed out")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// The same running broker and app must now assign separate client quotas,
+	// despite the old shared proxy bucket still being exhausted.
+	for i := range 20 {
+		login("198.51.100.1", fmt.Sprintf("203.0.113.%d", i+1), wrong, http.StatusUnauthorized)
+	}
+	login("198.51.100.1", "203.0.113.99", valid, http.StatusTooManyRequests)
+	login("203.0.113.2", "198.51.100.1", valid, http.StatusOK)
+	login("2001:db8::2", "198.51.100.1", valid, http.StatusOK)
+	// A long attacker-supplied prefix must neither change an exhausted client's
+	// bucket nor put an unrelated client back into the shared proxy bucket.
+	longPrefix := strings.Repeat("203.0.113.99,", 100)
+	login("198.51.100.1", longPrefix, valid, http.StatusTooManyRequests)
+	login("203.0.113.3", longPrefix, valid, http.StatusOK)
 }
 
 func TestRelayWebStaticAssetsAndHostValidation(t *testing.T) {

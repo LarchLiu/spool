@@ -233,8 +233,10 @@ The Desktop Service settings separate the shared Spool service from its access
 entries. Connection changes are saved without interrupting work. The bottom bar
 lists pending changes for Web, Spool Relay and Tailscale separately; **Apply
 changes** restarts only that entry, while **Cancel** restores its active settings.
-Other entries and running agent tasks stay active. Runtime changes that require
-restarting the whole Spool service are labelled separately.
+Other entries and running agent tasks stay active. Runtime idle timeout and
+history cache size changes apply immediately when saved, without restarting
+services. Existing idle agents use the new timeout measured from their last
+completed turn; running tasks remain active.
 
 ### Tailscale and Android
 

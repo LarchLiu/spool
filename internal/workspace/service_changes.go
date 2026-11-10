@@ -21,9 +21,6 @@ func (s *Service) pendingChangesLocked(next Settings) []string {
 	if tsnetChanged {
 		pending = append(pending, "tsnet")
 	}
-	if active.IdleMinutes != next.IdleMinutes {
-		pending = append(pending, "runtime")
-	}
 	return pending
 }
 
@@ -38,8 +35,6 @@ func copyServiceSettings(target string, destination *Settings, source Settings) 
 		destination.RelayEnabled, destination.RelayURL, destination.RelayLANPort, destination.RelayWebEnabled = source.RelayEnabled, source.RelayURL, source.RelayLANPort, source.RelayWebEnabled
 	case "tsnet":
 		destination.TSNetEnabled, destination.TSNetHostname, destination.TSNetPort = source.TSNetEnabled, source.TSNetHostname, source.TSNetPort
-	case "runtime":
-		destination.IdleMinutes = source.IdleMinutes
 	default:
 		return fmt.Errorf("unknown service entry")
 	}
@@ -67,19 +62,6 @@ func (s *Service) ApplyServiceChanges(target string) error {
 		return err
 	}
 	switch target {
-	case "runtime":
-		// Keep immediately applied preferences current while leaving each entry's
-		// pending configuration for its own Apply action.
-		active := next
-		for _, entry := range []string{"web", "relay", "tsnet"} {
-			if err := copyServiceSettings(entry, &active, s.activeSettings); err != nil {
-				return err
-			}
-		}
-		if err := s.stopLocked(); err != nil {
-			return err
-		}
-		return s.startWithSettingsLocked(active)
 	case "web":
 		err = s.restartWebLocked(next)
 	case "relay":

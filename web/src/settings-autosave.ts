@@ -71,7 +71,6 @@ const serviceChangeFields: Record<
     "proxy_url",
     "no_proxy",
   ],
-  runtime: ["idle_minutes"],
 };
 type AutosaveArgs = [
   settings: ServerSettings,

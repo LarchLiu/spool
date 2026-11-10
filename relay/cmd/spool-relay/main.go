@@ -27,7 +27,7 @@ func main() {
 	hosts := flag.Int("max-hosts", 100, "maximum registered Spool servers")
 	connections := flag.Int("max-connections", 4096, "maximum active data connections")
 	perHost := flag.Int("max-connections-per-host", 128, "maximum data connections per Spool server")
-	trustedProxies := flag.String("trusted-proxies", os.Getenv("RELAY_TRUSTED_PROXIES"), "comma-separated proxy CIDRs allowed to supply X-Forwarded-For (default: RELAY_TRUSTED_PROXIES, or none)")
+	trustedProxies := flag.String("trusted-proxies", os.Getenv("RELAY_TRUSTED_PROXIES"), "initial proxy CIDRs (RELAY_TRUSTED_PROXIES); saved management settings take precedence")
 	flag.Parse()
 	requireToken, err := registrationTokenRequired(flag.CommandLine, *requireTokenFlag, os.Getenv("RELAY_REQUIRE_REGISTRATION_TOKEN"))
 	if err != nil {
@@ -53,6 +53,11 @@ func main() {
 	defer cancel()
 	server := &http.Server{Addr: *listen, Handler: broker, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 8192}
 	admin := &http.Server{Addr: *adminListen, Handler: broker.AdminHandler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 8192}
+	publicListener, err := net.Listen("tcp", *listen)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer publicListener.Close()
 	adminListener, err := net.Listen("tcp", *adminListen)
 	if err != nil {
 		log.Fatal(err)
@@ -69,10 +74,11 @@ func main() {
 	log.Printf("Spool relay registration: require_registration_token=%t", requireToken)
 	log.Printf("Spool relay administration listening on %s", adminListener.Addr())
 	log.Printf("Spool relay listening on %s", *listen)
+	broker.StartProxyDetection()
 	if *cert != "" {
-		err = server.ListenAndServeTLS(*cert, *key)
+		err = server.ServeTLS(publicListener, *cert, *key)
 	} else {
-		err = server.ListenAndServe()
+		err = server.Serve(publicListener)
 	}
 	if err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)

@@ -51,6 +51,12 @@ func (s *Server) serveWeb(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
+	adminOrigin, _ := url.Parse(s.settings.AdminOrigin)
+	if adminOrigin != nil && adminOrigin.Host != "" && strings.EqualFold(r.Host, adminOrigin.Host) {
+		s.mu.Unlock()
+		http.Error(w, "Web applications require a separate origin from Relay administration", http.StatusForbidden)
+		return
+	}
 	h := s.hosts[id]
 	// The live host registry owns Web routes. Only authenticated hosts whose
 	// signed connection handshake opts into Web access can publish a route.

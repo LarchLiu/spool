@@ -31,6 +31,101 @@ func waitProcessExit(t *testing.T, process *agentProcess) {
 	}
 }
 
+func TestSetIdleTimeoutReschedulesExistingIdleChats(t *testing.T) {
+	runner := newTestRunner(t)
+	runner.SetIdleTimeout(3 * time.Minute)
+	chat, err := runner.reserve(AgentRequest{ChatID: "idle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.release("idle", chat, true)
+	// Account for time already spent idle, without waiting minutes in the test.
+	idleSince := time.Now().Add(-2 * time.Minute)
+	runner.mu.Lock()
+	chat.idleSince = idleSince
+	runner.scheduleIdleLocked("idle", chat)
+	runner.mu.Unlock()
+	for _, idle := range []time.Duration{10 * time.Minute, 0, -time.Second, time.Minute} {
+		runner.SetIdleTimeout(idle)
+		want := idle
+		if want <= 0 {
+			want = defaultAgentIdleTimeout
+		}
+		runner.mu.Lock()
+		deadline := chat.deadline
+		runner.mu.Unlock()
+		if !deadline.Equal(idleSince.Add(want)) {
+			t.Fatalf("timeout %v reset the idle start: deadline=%v", idle, deadline)
+		}
+		if want > 2*time.Minute && chat.ctx.Err() != nil {
+			t.Fatal("extending the timeout stopped an idle chat")
+		}
+	}
+	select {
+	case <-chat.ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("shorter timeout did not reclaim an already expired idle chat")
+	}
+}
+
+func TestSetIdleTimeoutDoesNotInterruptRunningTurns(t *testing.T) {
+	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {
+		t.Run(string(backend), func(t *testing.T) {
+			request := newAgentFixture(t, backend)
+			request.Prompt = "block-task"
+			runner := newTestRunner(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			started, finished := make(chan struct{}, 1), make(chan error, 1)
+			go func() {
+				_, err := runner.Run(ctx, request, func(event AgentEvent) error {
+					if event.Type == "delta" {
+						select {
+						case started <- struct{}{}:
+						default:
+						}
+					}
+					return nil
+				})
+				finished <- err
+			}()
+			select {
+			case <-started:
+			case <-ctx.Done():
+				t.Fatal("turn did not start")
+			}
+			runner.SetIdleTimeout(time.Millisecond)
+			select {
+			case err := <-finished:
+				t.Fatal("changing the idle timeout stopped a running turn", err)
+			case <-time.After(30 * time.Millisecond):
+			}
+			cancel()
+			if err := <-finished; !errors.Is(err, context.Canceled) {
+				t.Fatal("turn did not remain available for cancellation", err)
+			}
+		})
+	}
+}
+
+func TestSetIdleTimeoutAppliesAfterRunningTurnCompletes(t *testing.T) {
+	runner := newTestRunner(t)
+	chat, err := runner.reserve(AgentRequest{ChatID: "busy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.SetIdleTimeout(time.Nanosecond)
+	if chat.ctx.Err() != nil || chat.timer != nil {
+		t.Fatal("a running turn was scheduled for idle reclamation")
+	}
+	runner.release("busy", chat, true)
+	select {
+	case <-chat.ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("completed turn did not use the updated timeout")
+	}
+}
+
 func TestRunningSilentTaskHasNoIdleOrTurnDeadline(t *testing.T) {
 	if defaultAgentIdleTimeout != 15*time.Minute {
 		t.Fatalf("default idle timeout = %s", defaultAgentIdleTimeout)

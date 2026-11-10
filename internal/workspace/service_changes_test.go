@@ -125,13 +125,10 @@ func TestCancelServiceChangesRestoresOnlySelectedFields(t *testing.T) {
 	if saved.Port != original.Port || saved.TSNetHostname != next.TSNetHostname || saved.IdleMinutes != next.IdleMinutes || saved.HistoryCacheMiB != next.HistoryCacheMiB || saved.AutoStart {
 		t.Fatal("cancel overwrote another entry", saved)
 	}
-	if !slices.Equal(service.Status().PendingChanges, []string{"tsnet", "runtime"}) {
+	if !slices.Equal(service.Status().PendingChanges, []string{"tsnet"}) {
 		t.Fatal(service.Status())
 	}
 	if err := service.CancelServiceChanges("tsnet"); err != nil {
-		t.Fatal(err)
-	}
-	if err := service.CancelServiceChanges("runtime"); err != nil {
 		t.Fatal(err)
 	}
 	if service.Status().RestartRequired {
@@ -385,7 +382,7 @@ func TestServiceChangeActionsRespectUpdateAndStoppedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, target := range []string{"web", "relay", "tsnet", "runtime"} {
+	for _, target := range []string{"web", "relay", "tsnet"} {
 		if err := service.ApplyServiceChanges(target); !errors.Is(err, ErrUpdateInProgress) {
 			t.Fatal(target, err)
 		}
@@ -408,9 +405,10 @@ func TestServiceChangeActionsRespectUpdateAndStoppedState(t *testing.T) {
 	}
 }
 
-func TestRuntimeApplyPreservesOtherPendingEntrySettings(t *testing.T) {
+func TestSavingRuntimePreservesOtherPendingEntrySettings(t *testing.T) {
 	service, original := settingsService(t)
 	oldApp := service.app
+	runner, server, web := service.runner, service.server, service.web
 	next := original
 	next.WebEnabled = false
 	next.Port = availableServicePort(t)
@@ -420,25 +418,22 @@ func TestRuntimeApplyPreservesOtherPendingEntrySettings(t *testing.T) {
 	if err := service.SaveSettings(next); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.ApplyServiceChanges("runtime"); err != nil {
-		t.Fatal(err)
-	}
-	if service.app == oldApp || service.runner.IdleTimeout != time.Duration(next.IdleMinutes)*time.Minute {
+	if service.app != oldApp || service.runner != runner || service.server != server || service.web != web || service.runner.IdleTimeout != time.Duration(next.IdleMinutes)*time.Minute {
 		t.Fatal("runtime settings did not apply")
 	}
 	if !slices.Equal(service.Status().PendingChanges, []string{"web"}) || service.app.publicURL() != original.PublicURL || service.WebURL() == next.PublicURL {
-		t.Fatal("core restart applied unrelated pending settings", service.Status())
+		t.Fatal("runtime update applied unrelated pending settings", service.Status())
 	}
 	if service.networkProxy.Enabled {
-		t.Fatal("runtime apply reverted the immediately active proxy policy")
+		t.Fatal("runtime save reverted the immediately active proxy policy")
 	}
 	saved, _ := service.Store.Settings()
 	if saved.Port != next.Port || saved.PublicURL != next.PublicURL {
-		t.Fatal("runtime apply discarded pending Web settings", saved)
+		t.Fatal("runtime save discarded pending Web settings", saved)
 	}
 }
 
-func TestRuntimeApplyPreservesRemoteDesktopEnablement(t *testing.T) {
+func TestSavingRuntimePreservesRemoteDesktopEnablement(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		name := "disabled"
 		if enabled {
@@ -468,15 +463,12 @@ func TestRuntimeApplyPreservesRemoteDesktopEnablement(t *testing.T) {
 			if err := service.SaveSettings(next); err != nil {
 				t.Fatal(err)
 			}
-			if err := service.ApplyServiceChanges("runtime"); err != nil {
-				t.Fatal(err)
-			}
 			saved, err := service.Store.Settings()
 			if err != nil {
 				t.Fatal(err)
 			}
 			if service.desktop.Available() != enabled || saved.RemoteDesktopEnabled != enabled {
-				t.Fatalf("runtime apply reverted remote desktop: available=%v saved=%v want=%v", service.desktop.Available(), saved.RemoteDesktopEnabled, enabled)
+				t.Fatalf("runtime save reverted remote desktop: available=%v saved=%v want=%v", service.desktop.Available(), saved.RemoteDesktopEnabled, enabled)
 			}
 		})
 	}

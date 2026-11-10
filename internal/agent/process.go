@@ -22,6 +22,7 @@ const (
 
 type CLIRunner struct {
 	// IdleTimeout only applies between completed turns, never to running tasks.
+	// Use SetIdleTimeout to change it once the runner is in use.
 	IdleTimeout      time.Duration
 	mu               sync.Mutex
 	chats            map[string]*chatProcess
@@ -51,11 +52,51 @@ type chatProcess struct {
 	process             *agentProcess
 	busy                bool
 	timer               *time.Timer
+	idleSince           time.Time
 	deadline            time.Time
 }
 
 func NewCLIRunner() *CLIRunner {
 	return &CLIRunner{IdleTimeout: defaultAgentIdleTimeout, chats: make(map[string]*chatProcess)}
+}
+
+// SetIdleTimeout updates idle reclamation without stopping running turns. Idle
+// chats keep their original idle start time; busy chats use it after completion.
+func (r *CLIRunner) SetIdleTimeout(idle time.Duration) {
+	if idle <= 0 {
+		idle = defaultAgentIdleTimeout
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.IdleTimeout == idle {
+		return
+	}
+	r.IdleTimeout = idle
+	for id, chat := range r.chats {
+		if !chat.busy && chat.timer != nil {
+			r.scheduleIdleLocked(id, chat)
+		}
+	}
+}
+
+func (r *CLIRunner) scheduleIdleLocked(chatID string, chat *chatProcess) {
+	if chat.timer != nil {
+		chat.timer.Stop()
+	}
+	idle := r.IdleTimeout
+	if idle <= 0 {
+		idle = defaultAgentIdleTimeout
+	}
+	chat.deadline = chat.idleSince.Add(idle)
+	chat.timer = time.AfterFunc(time.Until(chat.deadline), func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		// A stopped timer callback may already be waiting for the lock.
+		if r.chats[chatID] == chat && !chat.busy && !time.Now().Before(chat.deadline) {
+			delete(r.chats, chatID)
+			chat.cancel()
+		}
+	})
 }
 
 func (r *CLIRunner) reserve(request AgentRequest) (*chatProcess, error) {
@@ -139,20 +180,8 @@ func (r *CLIRunner) release(chatID string, chat *chatProcess, reusable bool) {
 		}
 		chat.cancel()
 	} else {
-		idle := r.IdleTimeout
-		if idle <= 0 {
-			idle = defaultAgentIdleTimeout
-		}
-		chat.deadline = time.Now().Add(idle)
-		chat.timer = time.AfterFunc(idle, func() {
-			r.mu.Lock()
-			defer r.mu.Unlock()
-			// A stopped timer callback may already be waiting for the lock.
-			if r.chats[chatID] == chat && !chat.busy && !time.Now().Before(chat.deadline) {
-				delete(r.chats, chatID)
-				chat.cancel()
-			}
-		})
+		chat.idleSince = time.Now()
+		r.scheduleIdleLocked(chatID, chat)
 	}
 	stopped := chat.ctx.Err() != nil
 	r.mu.Unlock()

@@ -25,6 +25,10 @@ func TestSettingsSavesBrowser(t *testing.T) {
 	testSettingsChangesBrowser(t, "settings-saves", `snapshot.section="People";`)
 }
 
+func TestRuntimeSettingsBrowser(t *testing.T) {
+	testSettingsChangesBrowser(t, "runtime-settings", `snapshot.section="About";`)
+}
+
 func testSettingsChangesBrowser(t *testing.T, name, setup string) {
 	t.Helper()
 	chrome := os.Getenv("CHROME_BIN")

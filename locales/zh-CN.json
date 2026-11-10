@@ -1003,7 +1003,7 @@
   "Stop Spool Relay and secure LAN access. Active tasks continue.": "停止 Spool 中继及安全局域网入口，正在执行的任务继续运行。",
   "Restart Tailscale to apply its node, HTTPS port and network settings. Tailscale clients reconnect; active tasks continue.": "重启 Tailscale 以应用节点、HTTPS 端口和网络设置。Tailscale 客户端会重新连接，正在执行的任务继续运行。",
   "Stop Tailscale access. Active tasks continue.": "停止 Tailscale 入口，正在执行的任务继续运行。",
-  "Restart Spool to apply runtime settings. All access entries restart and active tasks are interrupted.": "重启整个 Spool 以应用运行设置。所有入口会重启，正在执行的任务会中断。",
+  "Changes apply immediately without restarting services or interrupting active tasks.": "修改立即生效，无需重启服务，也不会中断正在执行的任务。",
   "New built-in HTTP requests use this setting immediately. Local loopback access, push security checks and external agent tools keep their own network rules.": "新的内置 HTTP 请求立即使用此设置。本机回环访问、推送安全检查和外部代理工具仍使用各自的网络规则。",
   "Phones prefer a verified LAN connection and use the relay when away.": "手机优先使用已验证的局域网连接，外出时使用中继。",
   "Access this workspace at the relay HTTPS address. The relay can read Web data. Use caution when enabling this for an untrusted third-party service. The mobile app uses end-to-end encryption and is not affected.": "通过中继 HTTPS 地址访问此工作区。中继可读取 Web 数据，非可信任第三方服务请谨慎开启。手机应用为端到端加密，不存在此问题。",

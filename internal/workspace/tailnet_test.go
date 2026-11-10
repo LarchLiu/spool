@@ -161,13 +161,13 @@ func TestTailnetAuthKeyIsMemoryOnlyAndConsumedAfterEnrollment(t *testing.T) {
 	}
 	// An unrelated autosave may finish while enrollment is still pending.
 	settings.IdleMinutes++
-	if err := service.Store.SaveSettings(settings); err != nil {
+	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
 	allowEnrollment <- struct{}{}
 	status = waitTailnet(t, service, func(s ServiceStatus) bool { return s.TSNet.URL != "" })
-	if status.TSNetAuthKeySet || !status.RestartRequired {
-		t.Fatal("enrollment did not consume the key or lost the pending idle change", status)
+	if status.TSNetAuthKeySet || status.RestartRequired || service.runner.IdleTimeout != time.Duration(settings.IdleMinutes)*time.Minute {
+		t.Fatal("enrollment did not consume the key or lost the immediately applied idle change", status)
 	}
 	saved, err := service.Store.Settings()
 	if err != nil || saved.PublicURL != publicOrigin || saved.IdleMinutes != settings.IdleMinutes || status.TSNet.URL != connection.Origin() || service.WebURL() != publicOrigin {

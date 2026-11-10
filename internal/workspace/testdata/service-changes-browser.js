@@ -162,7 +162,10 @@
  const activeRow = [...document.querySelectorAll('.settings-row')].find(row => row.querySelector('.settings-row-label > span')?.textContent === "当前监听地址");
  if (activeRow.querySelector('.settings-address-link').href !== "http://127.0.0.1:8787/" || publicRow.querySelector('.settings-address-link').href !== original.public_url + "/") throw new Error("Address link has the wrong URL");
  if ([...document.querySelectorAll('[data-page="Service"] button')].some(button => ["打开聊天", "在浏览器中打开"].includes(button.textContent.trim()))) throw new Error("Old global browser/chat actions are still visible");
- if (qrButton(publicRow).nextElementSibling !== field("公网地址") || relayRow.querySelector('.settings-copy-address').nextElementSibling !== qrButton(relayRow) || qrButton(tailnetRow).nextElementSibling !== tailnetRow.querySelector('.settings-copy-address')) throw new Error("QR icons are in the wrong position");
+ if (qrButton(publicRow).nextElementSibling !== field("公网地址")) throw new Error("Public Web QR button is not beside its address input");
+ for (const [name, row] of [['Relay', relayRow], ['Tailscale', tailnetRow]]) {
+  if (qrButton(row).nextElementSibling !== row.querySelector('.settings-copy-address')) throw new Error(name + " QR button is not before its copy button");
+ }
  const showQR = async (row, address) => {
   const owner = row.closest('[role="tabpanel"]');
   await selectTab(document.getElementById(owner.getAttribute('aria-labelledby')).dataset.serviceTab);
@@ -249,14 +252,14 @@
  await waitFor(() => !about.hidden, 'return to incomplete runtime draft');
  if (idleInput.value !== '' || fixture.snapshot.settings.idle_minutes !== original.idle_minutes) throw new Error('Runtime draft was discarded or saved before valid');
  idleInput.focus(); set(idleInput, '30'); await pause(30); idleInput.blur();
- await waitFor(() => fixture.snapshot.settings.idle_minutes === 30 && document.querySelector('[data-service-change="runtime"]') && idle(), 'About runtime pending apply');
+ await waitFor(() => fixture.snapshot.settings.idle_minutes === 30 && idle(), 'About runtime saved immediately');
+ if (document.querySelector('[data-service-change="runtime"]') || fixture.snapshot.status.RestartRequired) throw new Error('Runtime changes require an apply action');
  document.querySelector('[data-section="Service"]').click();
- await waitFor(() => !service.hidden, 'cancel runtime from another page');
- document.querySelector('[data-cancel-service-change="runtime"]').click();
- await waitFor(() => !document.querySelector('[data-service-change="runtime"]') && idle(), 'cancel About runtime');
- if (idleInput.value !== String(original.idle_minutes) || fixture.snapshot.settings.history_cache_mib !== 128 || fixture.snapshot.settings.auto_start !== !original.auto_start) throw new Error('Runtime cancel lost its About draft or unrelated settings');
+ await waitFor(() => !service.hidden, 'leave saved runtime settings');
+ if (document.querySelector('[data-service-change="runtime"]') || fixture.commands.some(command => command.kind === 'apply-service-changes' && command.target === 'runtime')) throw new Error('Runtime changes requested an apply action');
+ if (idleInput.value !== '30' || fixture.snapshot.settings.history_cache_mib !== 128 || fixture.snapshot.settings.auto_start !== !original.auto_start) throw new Error('Runtime save lost its About draft or unrelated settings');
  document.querySelector('[data-section="About"]').click();
- await waitFor(() => !about.hidden, 'About after cancel');
+ await waitFor(() => !about.hidden, 'About after runtime save');
  idleInput.scrollIntoView({block: 'center', behavior: 'instant'});
  await fetch('/capture?variant=about', {method: 'POST'});
  await fetch('/report', {method: 'POST', body: JSON.stringify({ok:true, width:innerWidth})});

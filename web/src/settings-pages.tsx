@@ -1381,6 +1381,9 @@ export function AboutPage({ data, run, t }: PageProps) {
           max={10080}
           onChange={(v) => autosave.edit("idle_minutes", v)}
           onCommit={() => void autosave.commit("idle_minutes")}
+          help={t(
+            "Changes apply immediately without restarting services or interrupting active tasks.",
+          )}
           required
         />
         <TextField

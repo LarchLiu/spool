@@ -16,15 +16,12 @@ export function SettingsChanges({
     const next = await run({ kind: "cancel-service-changes", target });
     if (next) reset(next.settings);
   };
-  const pending =
-    data.status.PendingChanges ??
-    (data.status.RestartRequired ? ["runtime" as const] : []);
+  const pending = data.status.PendingChanges ?? [];
   if (!pending.length && !saves.length) return null;
   const titles: Record<ServiceChangeTarget, MessageKey> = {
     web: "Web access",
     relay: "Spool Relay",
     tsnet: "Tailscale",
-    runtime: "Spool service",
   };
   const descriptions: Record<ServiceChangeTarget, MessageKey> = {
     web:
@@ -37,8 +34,6 @@ export function SettingsChanges({
     tsnet: data.settings.tsnet_enabled
       ? "Restart Tailscale to apply its node, HTTPS port and network settings. Tailscale clients reconnect; active tasks continue."
       : "Stop Tailscale access. Active tasks continue.",
-    runtime:
-      "Restart Spool to apply runtime settings. All access entries restart and active tasks are interrupted.",
   };
   return (
     <div

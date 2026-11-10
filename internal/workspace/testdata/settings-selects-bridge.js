@@ -26,7 +26,6 @@ const entryFields = {
   web: ["web_enabled", "host", "port", "public_url"],
   relay: ["relay_enabled", "relay_url", "relay_lan_port", "relay_web_enabled"],
   tsnet: ["tsnet_enabled", "tsnet_hostname", "tsnet_port", "proxy_enabled", "use_system_proxy", "proxy_url", "no_proxy"],
-  runtime: ["idle_minutes"],
 };
 const refreshPending = () => {
   snapshot.status.PendingChanges = Object.keys(entryFields).filter(target =>

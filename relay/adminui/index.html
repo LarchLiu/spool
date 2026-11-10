@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Spool Relay · 管理</title>
+  <link rel="stylesheet" href="/admin.css">
+  <script src="/admin.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar"><a class="brand" href="/" aria-label="Spool Relay 首页"><span class="brand-mark">S</span>Spool <span class="muted">Relay</span></a><button id="logout" class="quiet" hidden>退出管理</button></header>
+    <main>
+      <section id="login" class="login-card card">
+        <span class="eyebrow">RELAY CONSOLE</span>
+        <h1>管理你的 Relay</h1>
+        <p class="muted">为 Spool 服务器签发 token，查看连接状态与授权。</p>
+        <form id="login-form">
+          <label for="admin-token">管理员 token</label>
+          <input id="admin-token" type="password" autocomplete="off" spellcheck="false" required placeholder="SPOOL_RELAY_ADMIN_TOKEN">
+          <p class="hint">使用部署时设置的管理员 token。凭据仅保留在当前页面内存中，刷新后需重新输入。</p>
+          <button id="login-button" class="primary" type="submit">进入管理</button>
+        </form>
+      </section>
+      <p id="notice" role="status" aria-live="polite" hidden></p>
+      <div id="dashboard" hidden>
+        <div class="page-title"><div><span class="eyebrow">OVERVIEW</span><h1>Relay 管理</h1><p class="muted">连接你的设备，管理每一份授权。</p></div><button id="refresh" class="quiet">刷新</button></div>
+        <div class="metrics"><div class="metric"><span>在线服务器</span><strong id="online-count">0</strong></div><div class="metric"><span>有效授权</span><strong id="active-count">0</strong></div><div class="metric"><span>当前连接</span><strong id="connection-count">0</strong></div></div>
+        <section class="card proxy-card" aria-labelledby="proxy-title">
+          <div class="section-heading"><div><h2 id="proxy-title">公网连接</h2><p class="muted">自动使用当前管理页面的网址，验证实际连接到 Relay 的代理 IP。</p></div><button id="detect" class="quiet">检测</button></div>
+          <div class="address-row"><span id="detection-dot" class="dot"></span><span id="public-address" class="mono">尚未确定公网地址</span></div>
+          <p id="detection-status" class="hint" aria-live="polite"></p>
+          <details id="advanced"><summary>高级设置</summary>
+            <form id="settings-form">
+              <label for="public-override">公网地址覆盖</label><input id="public-override" type="url" placeholder="留空时使用当前管理网址" spellcheck="false">
+              <p class="hint">仅通过本机端口或 SSH 访问管理页时需要指定，例如 https://relay.example.com。</p>
+              <label for="trusted-proxies">额外可信代理</label><input id="trusted-proxies" placeholder="127.0.0.1/32, ::1/128" spellcheck="false">
+              <p class="hint">通常无需填写。多级代理可补充明确可信的 IP/CIDR；自动检测的单个 IP 会单独维护。</p>
+              <p class="hint">自动检测结果：<code id="detected-proxy">尚无</code></p>
+              <button id="save-settings" class="quiet" type="submit">保存设置</button>
+            </form>
+          </details>
+        </section>
+        <section class="card" aria-labelledby="servers-title">
+          <div class="section-heading"><div><h2 id="servers-title">服务器授权</h2><p id="registration-mode" class="muted">每个 token 只授权一台 Spool 服务器。</p></div></div>
+          <form id="create-form" class="create-row"><label class="sr-only" for="server-name">服务器名称</label><input id="server-name" required placeholder="服务器名称，例如 home-mac" autocomplete="off"><button id="create-token" class="primary" type="submit">生成 token</button></form>
+          <div id="token-result" class="token-result" hidden><div class="section-heading"><strong>token 已生成，仅显示这一次</strong><button id="dismiss-token" class="quiet" type="button">关闭</button></div><p class="hint">复制并保存到对应 Spool 服务器的 Relay 注册设置中。</p><div class="copy-row"><input id="issued-token" readonly aria-label="新生成的 token" spellcheck="false"><button id="copy-token" class="quiet">复制</button></div></div>
+          <div class="table-scroll"><table><thead><tr><th>服务器</th><th>状态</th><th>注册 IP</th><th>连接</th><th>操作</th></tr></thead><tbody id="servers"></tbody></table></div>
+          <p id="empty-state" class="empty">暂无服务器授权。输入名称，生成第一个 token。</p>
+        </section>
+        <p class="footer-note">撤销授权会断开该服务器的 Relay 连接。已撤销的记录会保留，防止旧凭据再次生效。</p>
+      </div>
+    </main>
+    <footer>Spool Relay <span>·</span> 私有管理入口</footer>
+  </div>
+  <dialog id="revoke-dialog"><form method="dialog"><h2>撤销服务器授权？</h2><p id="revoke-description"></p><p class="muted">当前 Relay 连接会断开，旧 token 将无法重新连接。</p><div class="dialog-actions"><button class="quiet" value="cancel">取消</button><button class="danger" value="revoke">撤销授权</button></div></form></dialog>
+</body>
+</html>
