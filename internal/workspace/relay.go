@@ -311,6 +311,9 @@ func (s *Service) RegisterRelayNamed(ctx context.Context, address, token, name s
 		if errors.Is(err, relay.ErrRegistrationRejected) {
 			return fmt.Errorf("Relay registration was rejected. Check the token or whether automatic registration is allowed.")
 		}
+		if errors.Is(err, relay.ErrRegistrationLimited) {
+			return fmt.Errorf("The relay is limiting new automatic registrations from this network. Try again later or use a registration token.")
+		}
 		if ctx.Err() != nil {
 			return fmt.Errorf("Relay registration timed out or was canceled. Try again.")
 		}

@@ -979,6 +979,7 @@
   "Relay registration is unavailable or already in progress.": "中继注册不可用，或正在注册中。",
   "Save the relay address before registering.": "请先保存中继地址，再注册。",
   "Relay registration was rejected. Check the token or whether automatic registration is allowed.": "中继拒绝注册。请检查令牌，或确认中继是否允许自动注册。",
+  "The relay is limiting new automatic registrations from this network. Try again later or use a registration token.": "中继限制了来自当前网络的新自动注册。请稍后重试，或使用注册令牌。",
   "Relay registration timed out or was canceled. Try again.": "中继注册超时或已取消，请重试。",
   "Could not register with the relay. Check its address and network connection.": "无法向中继注册，请检查中继地址和网络连接。",
   "Relay settings changed during registration. Try again.": "注册过程中中继设置已更改，请重试。",

@@ -28,6 +28,7 @@ func main() {
 	hosts := flag.Int("max-hosts", 100, "maximum registered Spool servers")
 	connections := flag.Int("max-connections", 4096, "maximum active data connections")
 	perHost := flag.Int("max-connections-per-host", 128, "maximum data connections per Spool server")
+	automatic := flag.Int("automatic-registrations-per-hour", 5, "new servers one client network may enroll per hour without a token")
 	flag.Parse()
 	requireToken, err := registrationTokenRequired(flag.CommandLine, *requireTokenFlag, os.Getenv("RELAY_REQUIRE_REGISTRATION_TOKEN"))
 	if err != nil {
@@ -37,8 +38,9 @@ func main() {
 		AdminToken: os.Getenv("SPOOL_RELAY_ADMIN_TOKEN"), DataDir: *dataDir,
 		AllowUnregisteredHosts: !requireToken, MaxHosts: *hosts,
 		MaxConnections: *connections, MaxConnectionsPerHost: *perHost,
-		PublicURL:    os.Getenv("RELAY_PUBLIC_URL"),
-		TraefikToken: os.Getenv("RELAY_TRAEFIK_TOKEN"), TraefikResolver: os.Getenv("RELAY_TRAEFIK_RESOLVER"),
+		AutomaticRegistrationsPerHour: *automatic,
+		PublicURL:                     os.Getenv("RELAY_PUBLIC_URL"),
+		TraefikToken:                  os.Getenv("RELAY_TRAEFIK_TOKEN"), TraefikResolver: os.Getenv("RELAY_TRAEFIK_RESOLVER"),
 		ProxyUpstream: os.Getenv("RELAY_PROXY_UPSTREAM"),
 	})
 	if err != nil {

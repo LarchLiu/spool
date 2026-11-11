@@ -979,6 +979,7 @@
   "Relay registration is unavailable or already in progress.": "Relay registration is unavailable or already in progress.",
   "Save the relay address before registering.": "Save the relay address before registering.",
   "Relay registration was rejected. Check the token or whether automatic registration is allowed.": "Relay registration was rejected. Check the token or whether automatic registration is allowed.",
+  "The relay is limiting new automatic registrations from this network. Try again later or use a registration token.": "The relay is limiting new automatic registrations from this network. Try again later or use a registration token.",
   "Relay registration timed out or was canceled. Try again.": "Relay registration timed out or was canceled. Try again.",
   "Could not register with the relay. Check its address and network connection.": "Could not register with the relay. Check its address and network connection.",
   "Relay settings changed during registration. Try again.": "Relay settings changed during registration. Try again.",

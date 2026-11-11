@@ -24,6 +24,9 @@ var (
 	ErrRegistrationExists   = errors.New("this server already has an active registration")
 	ErrRegistrationNotFound = errors.New("registration not found")
 	ErrRegistrationRevoked  = errors.New("server registration was revoked")
+	// Returned for a new identity enrolling without a token. Enrolling with an
+	// administrator-issued token is not limited.
+	ErrRegistrationLimited = errors.New("too many new automatic registrations from this network")
 )
 
 // Registration contains public administrative metadata. Tokens are returned
@@ -281,14 +284,19 @@ func (s *Server) claimIdentityLocked(serverID string, metadata registrationMetad
 			record = other
 		}
 	}
-	if record.ID == "" {
+	now := time.Now()
+	created := record.ID == ""
+	if created {
 		if revoked {
 			return registrationRecord{}, "", ErrRegistrationRevoked
 		}
-		if len(s.registrations) >= maxRegistrations {
+		if len(s.registrations) >= maxRegistrations-automaticRegistrationReserve {
 			return registrationRecord{}, "", errors.New("relay registration store is full")
 		}
-		record.Registration = Registration{ID: randomID(), Name: "Spool-" + serverID[:12], ServerID: serverID, Automatic: true, CreatedAt: time.Now().UTC()}
+		if !s.enrollments.allowed(metadata.ip, now) {
+			return registrationRecord{}, "", ErrRegistrationLimited
+		}
+		record.Registration = Registration{ID: randomID(), Name: "Spool-" + serverID[:12], ServerID: serverID, Automatic: true, CreatedAt: now.UTC()}
 	}
 	record.WebBlocked = s.webBlockedLocked(serverID)
 	record.applyMetadata(metadata, record.TokenHash == "")
@@ -305,7 +313,42 @@ func (s *Server) claimIdentityLocked(serverID string, metadata registrationMetad
 	s.registrations = next
 	delete(s.tokenIndex, oldHash)
 	s.tokenIndex[record.TokenHash] = record.ID
+	if created {
+		s.enrollments.add(metadata.ip, now)
+	}
 	return record, token, nil
+}
+
+// PurgeRegistrations permanently removes records and disconnects any that are
+// connected. Unlike revocation it leaves no tombstone: where automatic
+// registration is allowed the identity may enroll again, and a Web block held
+// only by these records is lifted. Unknown IDs are ignored.
+func (s *Server) PurgeRegistrations(ids []string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := make(map[string]registrationRecord, len(s.registrations))
+	for id, value := range s.registrations {
+		next[id] = value
+	}
+	var removed []registrationRecord
+	for _, id := range ids {
+		if record, ok := next[id]; ok {
+			delete(next, id)
+			removed = append(removed, record)
+		}
+	}
+	if len(removed) == 0 {
+		return 0, nil
+	}
+	if err := s.saveRegistrations(next); err != nil {
+		return 0, fmt.Errorf("save relay purge: %w", err)
+	}
+	s.registrations = next
+	for _, record := range removed {
+		delete(s.tokenIndex, record.TokenHash)
+		s.disconnectRegistrationLocked(record)
+	}
+	return len(removed), nil
 }
 
 // RevokeRegistration persists a tombstone and cancels only this registration's

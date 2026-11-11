@@ -393,6 +393,11 @@ associated `server_id`. The `id` is the public handle of a token record, used fo
 management instead of putting the secret token in a URL. Responses never include
 token hashes or previously issued token values.
 `DELETE /v1/registrations/{id}` returns HTTP 204 and is idempotent.
+`POST /v1/registrations/purge` with `{"ids":["..."]}` (1–256 IDs) permanently
+removes those records in one durable write, disconnecting any that are connected,
+and returns `{"purged":<count>}`. Unknown IDs are ignored. Unlike revocation it
+leaves no tombstone: where automatic registration is allowed that identity may
+enroll again, and a Web block recorded only on those records no longer applies.
 
 Spool may supply an optional name during registration (up to 128 UTF-8 bytes,
 without control characters). A blank name preserves the pre-issued token's name;
@@ -470,6 +475,18 @@ Automatic registration admits any new signed server identity up to the configure
 limits. Revocation blocks the associated identity; it is not a ban on someone
 creating an entirely new key. Use the default token requirement to control which
 new servers may enroll.
+
+Because anyone can generate an identity, automatic enrollment of a **new**
+identity is also limited to five per client network per hour
+(`-automatic-registrations-per-hour`), where an IPv6 network is its /64. Rotating
+the credential of an existing record is not counted. The limit is per client
+address as resolved for the registration request, so a reverse proxy that is not
+in the trusted chain makes all its clients share one budget. At least 1,000
+records stay reserved for administrator-issued tokens, so open enrollment cannot
+stop an operator from issuing them. Remove accepted records with
+`POST /v1/registrations/purge` (see
+[Administrative API](#administrative-api)); without it, the store fills to
+10,000 records.
 
 The previous shared relay registration secret is no longer accepted by the
 broker. For migration, configure `SPOOL_RELAY_ADMIN_TOKEN` and persistent storage
@@ -714,6 +731,8 @@ headers, never URL parameters. Compression is disabled.
   another identity using an already claimed token are rejected. When automatic
   registration is enabled, a missing Authorization header starts identity-based
   enrollment; `ready.registration_token` contains the newly issued credential.
+  A new identity over the automatic-enrollment budget is answered with
+  `registration_limited`.
 - `/v1/connect/<server-id>`: requires the server's admission token. The relay
   sends the host `open` with a random connection ID, one-time data secret and
   `client_ip` metadata resolved from the connection and configured trusted proxies.

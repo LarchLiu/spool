@@ -174,6 +174,9 @@ func (h *Host) handshakeNamed(path, name string) (_ *websocket.Conn, credential 
 	if err == nil && m.Type == "registration_rejected" {
 		return nil, "", ErrRegistrationRejected
 	}
+	if err == nil && m.Type == "registration_limited" {
+		return nil, "", ErrRegistrationLimited
+	}
 	if err == nil && m.Type == "invalid_registration" {
 		return nil, "", ErrInvalidRegistration
 	}

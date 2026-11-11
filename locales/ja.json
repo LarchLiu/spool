@@ -979,6 +979,7 @@
   "Relay registration is unavailable or already in progress.": "リレー登録を利用できないか、すでに登録中です。",
   "Save the relay address before registering.": "リレーアドレスを保存してから登録してください。",
   "Relay registration was rejected. Check the token or whether automatic registration is allowed.": "登録が拒否されました。トークンまたは自動登録の許可を確認してください。",
+  "The relay is limiting new automatic registrations from this network. Try again later or use a registration token.": "このネットワークからの新しい自動登録はリレーによって制限されています。しばらくしてから再試行するか、登録トークンを使用してください。",
   "Relay registration timed out or was canceled. Try again.": "登録がタイムアウトしたか、キャンセルされました。もう一度お試しください。",
   "Could not register with the relay. Check its address and network connection.": "リレーに登録できませんでした。アドレスとネットワーク接続を確認してください。",
   "Relay settings changed during registration. Try again.": "登録中にリレー設定が変更されました。もう一度お試しください。",

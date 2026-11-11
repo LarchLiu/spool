@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -96,6 +97,31 @@ func (s *Server) AdminHandler() http.Handler {
 				w.Header().Set("Allow", "GET, POST")
 				adminError(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
+			return
+		}
+		if r.URL.Path == "/v1/registrations/purge" {
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", "POST")
+				adminError(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var input struct {
+				IDs []string `json:"ids"`
+			}
+			if !decodeAdminJSON(w, r, &input) {
+				return
+			}
+			// The request body limit holds about this many IDs.
+			if len(input.IDs) == 0 || len(input.IDs) > 256 || slices.ContainsFunc(input.IDs, func(id string) bool { return !validToken(id) }) {
+				adminError(w, "ids must list 1–256 registration IDs", http.StatusBadRequest)
+				return
+			}
+			purged, err := s.PurgeRegistrations(input.IDs)
+			if err != nil {
+				registrationError(w, err)
+				return
+			}
+			adminJSON(w, http.StatusOK, map[string]int{"purged": purged})
 			return
 		}
 		id, ok := strings.CutPrefix(r.URL.Path, "/v1/registrations/")

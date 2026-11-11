@@ -17,12 +17,14 @@ import (
 )
 
 type ServerOptions struct {
-	AdminToken                                   string
-	DataDir                                      string
-	AllowUnregisteredHosts                       bool
-	MaxHosts                                     int
-	MaxConnections                               int
-	MaxConnectionsPerHost                        int
+	AdminToken             string
+	DataDir                string
+	AllowUnregisteredHosts bool
+	MaxHosts               int
+	MaxConnections         int
+	MaxConnectionsPerHost  int
+	// New identities one network may enroll per hour without a token.
+	AutomaticRegistrationsPerHour                int
 	PublicURL                                    string
 	TraefikToken, TraefikResolver, ProxyUpstream string
 }
@@ -39,6 +41,7 @@ type Server struct {
 	closed         bool
 	registrations  map[string]registrationRecord
 	tokenIndex     map[string]string
+	enrollments    enrollmentLimiter
 	trustedProxies []netip.Prefix
 	settings       relaySettings
 	proxyJob       *proxyDetectionJob
@@ -111,7 +114,11 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if opts.MaxConnectionsPerHost <= 0 {
 		opts.MaxConnectionsPerHost = 128
 	}
-	s := &Server{opts: opts, hosts: make(map[string]*registeredHost), pending: make(map[string]*relayPair), registrations: make(map[string]registrationRecord), tokenIndex: make(map[string]string), takeoverProbe: takeoverProbeTimeout}
+	if opts.AutomaticRegistrationsPerHour <= 0 {
+		opts.AutomaticRegistrationsPerHour = 5
+	}
+	s := &Server{opts: opts, hosts: make(map[string]*registeredHost), pending: make(map[string]*relayPair), registrations: make(map[string]registrationRecord), tokenIndex: make(map[string]string), takeoverProbe: takeoverProbeTimeout,
+		enrollments: enrollmentLimiter{limit: opts.AutomaticRegistrationsPerHour, recent: make(map[string][]time.Time)}}
 	if err := s.loadRegistrations(); err != nil {
 		return nil, err
 	}
@@ -266,6 +273,9 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 		s.mu.Unlock()
 		if errors.Is(err, ErrRegistrationExists) || errors.Is(err, ErrRegistrationRevoked) {
 			writeControl(ctx, c, controlMessage{Type: "registration_rejected"})
+		} else if errors.Is(err, ErrRegistrationLimited) {
+			// Not a rejection of this server's credential: it has none yet.
+			writeControl(ctx, c, controlMessage{Type: "registration_limited"})
 		}
 		return
 	}
