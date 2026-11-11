@@ -46,6 +46,7 @@ export function settingsPageDataEqual(
         a.status.Error === b.status.Error &&
         a.status.WebError === b.status.WebError &&
         a.status.WebDetecting === b.status.WebDetecting &&
+        a.status.WebProxyCheck === b.status.WebProxyCheck &&
         a.status.Voxl === b.status.Voxl &&
         a.status.TSNet === b.status.TSNet &&
         a.status.Relay === b.status.Relay &&

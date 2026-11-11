@@ -1052,5 +1052,10 @@
   "The address reaches Spool, but its forwarding information is incomplete. Check your tunnel or reverse proxy settings.": "此地址已连接到 Spool，但转发信息不完整，请检查隧道或反向代理设置。",
   "Web trusted proxies": "Web 可信代理",
   "IP CIDRs of HTTPS reverse proxies. Use only their actual addresses; an empty list trusts none.": "HTTPS 反向代理的 IP CIDR。仅填写代理的实际地址；留空表示不信任任何代理。",
-  "Use HTTPS for remote access. HTTP is only available on this computer.": "远程访问请使用 HTTPS。HTTP 仅限本机访问。"
+  "Use HTTPS for remote access. HTTP is only available on this computer.": "远程访问请使用 HTTPS。HTTP 仅限本机访问。",
+  "Changes to the public HTTPS address or HTTP port are checked automatically. Apply changes to activate them; Web access is checked again after starting.": "公网 HTTPS 地址或 HTTP 端口保存后会自动预检。点击应用更改后生效，Web 入口启动后会再次检测。",
+  "Preflight succeeded. Apply changes to activate this configuration.": "预检成功，点击应用更改后生效。",
+  "Preflight succeeded.": "预检成功。",
+  "The current Web listener was used. The new configuration will be checked again after applying.": "本次使用当前 Web 入口检测，应用后会按新配置再次检测。",
+  "Proxy address found by preflight": "预检发现的代理地址"
 }

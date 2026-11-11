@@ -63,7 +63,7 @@ test("service offers optional masked enrollment without storing a key in the set
   assert.doesNotMatch(html, /aria-label="Public URL[^>]+disabled=""/);
   assert.match(
     html,
-    /Enter your public HTTPS address\. Spool checks it automatically when you finish editing and each time Web access starts\./,
+    /Changes to the public HTTPS address or HTTP port are checked automatically\. Apply changes to activate them/,
   );
   const autosave = await readFile(
     new URL("../src/settings-autosave.ts", import.meta.url),
@@ -321,4 +321,28 @@ test("public Web access offers Detect and keeps manual proxy configuration colla
   ]) {
     assert.match(markup, /<button[^>]*data-detect-web[^>]*disabled/);
   }
+});
+
+test("Web preflight success keeps changes pending and URL editable", () => {
+  const html = renderService({
+    RestartRequired: true,
+    PendingChanges: ["web"],
+    WebProxyCheck: {
+      PublicURL: "https://spool.example.test", Host: "127.0.0.1", Port: 8787,
+      Preflight: true, Reused: true, Succeeded: true, Proxy: "172.18.0.3/32", Error: "",
+    },
+  }, { public_url: "https://spool.example.test" });
+  assert.match(html, /Preflight succeeded\. Apply changes/);
+  assert.match(html, /data-preflight-web-proxy/);
+  assert.doesNotMatch(html, /Your public address is ready to use/);
+  const detecting = renderService({ WebDetecting: true }, { public_url: "https://spool.example.test" });
+  assert.doesNotMatch(detecting, /<input[^>]*aria-label="Public URL"[^>]*disabled/);
+});
+
+test("a preflight result for an older port is not displayed as current success", () => {
+  const html = renderService({ WebProxyCheck: {
+    PublicURL: "https://spool.example.test", Host: "127.0.0.1", Port: 8786,
+    Preflight: true, Succeeded: true, Proxy: "172.18.0.3/32", Error: "",
+  } }, { public_url: "https://spool.example.test" });
+  assert.doesNotMatch(html, /Preflight succeeded/);
 });

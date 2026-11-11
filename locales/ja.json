@@ -1052,5 +1052,10 @@
   "The address reaches Spool, but its forwarding information is incomplete. Check your tunnel or reverse proxy settings.": "Spool に接続できましたが、転送情報が不足しています。トンネルまたはリバースプロキシの設定を確認してください。",
   "Web trusted proxies": "Web の信頼済みプロキシ",
   "IP CIDRs of HTTPS reverse proxies. Use only their actual addresses; an empty list trusts none.": "HTTPS リバースプロキシの IP CIDR。プロキシの実際のアドレスのみを指定してください。空欄の場合は信頼しません。",
-  "Use HTTPS for remote access. HTTP is only available on this computer.": "リモートアクセスには HTTPS を使用してください。HTTP はこのコンピューターからのみ利用できます。"
+  "Use HTTPS for remote access. HTTP is only available on this computer.": "リモートアクセスには HTTPS を使用してください。HTTP はこのコンピューターからのみ利用できます。",
+  "Changes to the public HTTPS address or HTTP port are checked automatically. Apply changes to activate them; Web access is checked again after starting.": "公開 HTTPS アドレスまたは HTTP ポートの保存後に事前確認します。変更を適用すると有効になり、Web の起動後に再確認します。",
+  "Preflight succeeded. Apply changes to activate this configuration.": "事前確認に成功しました。変更を適用すると有効になります。",
+  "Preflight succeeded.": "事前確認に成功しました。",
+  "The current Web listener was used. The new configuration will be checked again after applying.": "現在の Web リスナーで確認しました。適用後に新しい設定で再確認します。",
+  "Proxy address found by preflight": "事前確認で見つかったプロキシアドレス"
 }

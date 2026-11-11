@@ -1052,5 +1052,10 @@
   "The address reaches Spool, but its forwarding information is incomplete. Check your tunnel or reverse proxy settings.": "The address reaches Spool, but its forwarding information is incomplete. Check your tunnel or reverse proxy settings.",
   "Web trusted proxies": "Web trusted proxies",
   "IP CIDRs of HTTPS reverse proxies. Use only their actual addresses; an empty list trusts none.": "IP CIDRs of HTTPS reverse proxies. Use only their actual addresses; an empty list trusts none.",
-  "Use HTTPS for remote access. HTTP is only available on this computer.": "Use HTTPS for remote access. HTTP is only available on this computer."
+  "Use HTTPS for remote access. HTTP is only available on this computer.": "Use HTTPS for remote access. HTTP is only available on this computer.",
+  "Changes to the public HTTPS address or HTTP port are checked automatically. Apply changes to activate them; Web access is checked again after starting.": "Changes to the public HTTPS address or HTTP port are checked automatically. Apply changes to activate them; Web access is checked again after starting.",
+  "Preflight succeeded. Apply changes to activate this configuration.": "Preflight succeeded. Apply changes to activate this configuration.",
+  "Preflight succeeded.": "Preflight succeeded.",
+  "The current Web listener was used. The new configuration will be checked again after applying.": "The current Web listener was used. The new configuration will be checked again after applying.",
+  "Proxy address found by preflight": "Proxy address found by preflight"
 }

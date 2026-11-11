@@ -145,15 +145,22 @@ Origin, and project permission checks.
 
 In Desktop, open **Settings > Service > Web**, enter the public HTTPS address
 provided by your tunnel or reverse proxy, then leave the field or press Enter.
-Spool detects automatically; **Detect** remains available for retries. Start the
-tunnel first and point it at this Spool server's Web port. Success saves and
-immediately applies the public origin and connecting proxy's address, without IP
-or CIDR entry or another Apply action. Failure adds no trust and applies no new
-origin; the saved input remains available. Spool also checks once whenever the
-ordinary Web entry starts or is re-enabled, without blocking local startup or
-polling periodically. Retry manually if the tunnel starts later or its address
-changes during operation. A successful recheck replaces the previous detected
-address. Manual **Web trusted proxies** under **Advanced settings** can supplement
+Saving a public URL or HTTP port starts a preflight; **Detect** retries the check.
+When the candidate listen address is free, a temporary listener exposes only the
+one-time detection callback. When the current Web listener owns that address, the
+preflight uses its callback instead. A port occupied by another process fails
+preflight. Point the tunnel or reverse proxy at the candidate Web port before
+testing. Preflight never changes the running entry or its trusted proxies, and
+both successful and failed checks retain the saved input and pending changes.
+Click **Apply changes** to activate the configuration. Spool releases any temporary
+listener before starting the real entry, then checks again and updates automatic
+proxy trust only after verification. Detection failure keeps the applied URL and
+port; a listener bind failure leaves the saved changes pending. Editing again
+cancels the previous check, whose result cannot overwrite newer settings.
+Spool also checks on ordinary Web entry startup, without blocking local startup
+or polling periodically. Retry manually if the tunnel starts later or its address
+changes during operation. A successful real-entry recheck replaces the previous
+detected address. Manual **Web trusted proxies** under **Advanced settings** can supplement
 multiple hops or replicas. The shared backend also handles headless servers:
 `serve --public-url https://chat.example.com` detects after starting; offline
 `config set` saves the address for detection on the next `serve`. CLI logs report

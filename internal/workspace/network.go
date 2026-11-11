@@ -57,6 +57,12 @@ func (s *Service) saveSettingsLocked(settings Settings) error {
 	if err := s.Store.SaveSettings(settings); err != nil {
 		return err
 	}
+	// Probe exactly what was persisted, including Store normalization such as
+	// removing a trailing slash from the public origin.
+	settings, err = s.Store.Settings()
+	if err != nil {
+		return err
+	}
 	s.applyRuntimeSettingsLocked(settings)
 	if s.tailnet != nil && s.tailnet.enrolling && !sameTailnetSettings(s.tailnet.settings, settings) {
 		s.tailnet.cancel()
@@ -65,8 +71,8 @@ func (s *Service) saveSettingsLocked(settings Settings) error {
 	if apply {
 		s.activateNetworkPolicyLocked(options, policy, proxyErr)
 	}
-	if settings.PublicURL != previous.PublicURL {
-		s.startWebProxyDetectionLocked(settings)
+	if !sameWebProxySettings(settings, previous) {
+		s.startWebProxyPreflightLocked(settings)
 	}
 	return nil
 }

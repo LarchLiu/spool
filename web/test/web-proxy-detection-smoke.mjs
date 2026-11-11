@@ -30,20 +30,36 @@ let data = {
 const commands = [];
 let release;
 let fail = false;
-const applyDetected = address => {
-  data = {...data,settings:{...data.settings,public_url:address.replace(/\\/$/,''),web_detected_origin:address.replace(/\\/$/,''),web_detected_proxy:'172.18.0.3/32'},status:{...data.status,WebDetecting:false,RestartRequired:false,PendingChanges:[]}};
+let generation = 0;
+const startCheck = preflight => {
+  const current = ++generation;
+  const check = {ID:String(current),PublicURL:data.settings.public_url,Host:data.settings.host,Port:data.settings.port,Preflight:preflight,Reused:preflight,Succeeded:false,Proxy:'',Error:''};
+  data = {...data,status:{...data.status,WebDetecting:true,WebError:'',WebProxyCheck:check}};
+  release = () => {
+    if(current !== generation) return;
+    const error = fail ? 'Could not verify this address. Check that your tunnel or reverse proxy points to this Spool server.' : '';
+    data = {...data,status:{...data.status,WebDetecting:false,WebError:error,WebProxyCheck:{...check,Succeeded:!fail,Proxy:fail?'':'172.18.0.3/32',Error:error}}};
+    if(!preflight && !fail) data = {...data,settings:{...data.settings,web_detected_origin:check.PublicURL,web_detected_proxy:'172.18.0.3/32'}};
+  };
 };
 window.mygo = {locale:'zh-CN',on:()=>()=>{}, call:async(method,...args)=>{
   if(method === 'DesktopSettings.Snapshot') return structuredClone(data);
+  if(method === 'DesktopSettings.CancelWebProxyDetection') {
+    if(data.status.WebProxyCheck?.ID !== args[0]) return true;
+    generation++; release=undefined;
+    data = {...data,status:{...data.status,WebDetecting:false,WebProxyCheck:undefined,WebError:''}};
+    return true;
+  }
   if(method !== 'DesktopSettings.Execute') throw new Error('Unexpected bridge method: '+method);
   const command = args[0]; commands.push(command);
   if(command.kind === 'save-settings') {
-    data = {...data,settings:command.settings,status:{...data.status,WebDetecting:true,RestartRequired:true,PendingChanges:['web']}};
-    new Promise(resolve=>{release=resolve}).then(()=>applyDetected(command.settings.public_url));
+    data = {...data,settings:{...command.settings,public_url:command.settings.public_url.replace(/\\/$/,'')},status:{...data.status,RestartRequired:true,PendingChanges:['web']}};
+    startCheck(true);
   } else if(command.kind === 'detect-web-proxy') {
-    await new Promise(resolve=>{release=resolve});
-    if(fail) throw new Error('Could not verify this address. Check that your tunnel or reverse proxy points to this Spool server.');
-    applyDetected(command.address);
+    startCheck(data.status.PendingChanges.includes('web'));
+  } else if(command.kind === 'apply-service-changes') {
+    data = {...data,status:{...data.status,RestartRequired:false,PendingChanges:[],Address:data.settings.host+':'+data.settings.port}};
+    startCheck(false);
   } else throw new Error('Unexpected command: '+command.kind);
   return structuredClone(data);
 }};
@@ -66,20 +82,47 @@ createRoot(document.getElementById('root')).render(<SettingsApp/>);
   await until(()=>release);
   await until(()=>detect().textContent==='检测中…');
   check(commands.map(c=>c.kind).join(',')==='save-settings','Saving the address starts backend detection without a UI detect command');
-  check(detect().textContent==='检测中…' && detect().matches(':disabled') && address().matches(':disabled'),'Detection disables repeated clicks and edits');
+  check(detect().textContent==='检测中…' && detect().matches(':disabled') && !address().matches(':disabled'),'Detection disables repeat checks while allowing edits');
   release(); release=undefined;
-  await until(()=>document.body.textContent.includes('检测成功，可通过公网地址访问。'));
+  await until(()=>document.body.textContent.includes('预检成功，点击应用更改后生效。'));
   check(!detect().matches(':disabled'),'Detect becomes retryable after success');
   check(address().value==='https://spool.example.test','Normalized public address updates in place');
-  check(document.querySelector('[data-detected-web-proxy]').textContent.includes('172.18.0.3/32'),'Detected proxy appears in advanced settings');
+  check(document.querySelector('[data-preflight-web-proxy]').textContent.includes('172.18.0.3/32'),'Preflight proxy appears separately from formal trust');
   check(document.querySelector('input[aria-label="Web 可信代理"]').value==='','Detection preserves manual trust entries');
-  check(!document.querySelector('[data-apply-service-change="web"]'),'Success needs no extra Apply action');
+  check(document.querySelector('[data-apply-service-change="web"]'),'Preflight success retains Apply action');
+  check(!data.settings.web_detected_proxy && data.status.Address==='127.0.0.1:8787','Preflight does not apply trust or change the real entry');
   fail=true;detect().click();await until(()=>release);release();release=undefined;
   await until(()=>document.body.textContent.includes('无法验证此地址'));
   check(!document.body.textContent.includes('检测成功，可通过公网地址访问。'),'Failed retry clears old success');
-  check(document.querySelector('[data-detected-web-proxy]').textContent.includes('172.18.0.3/32'),'Failed retry preserves verified trust');
+  check(address().value==='https://spool.example.test' && document.querySelector('[data-apply-service-change="web"]'),'Failed preflight preserves user input and pending changes');
   check(!detect().matches(':disabled'),'Failure permits retry');
-  await fetch('/report',{method:'POST',body:JSON.stringify({ok:true,checks:13})});
+  document.querySelector('[data-apply-service-change="web"]').click();
+  await until(()=>release && data.status.WebProxyCheck?.Preflight===false);
+  release(); release=undefined;
+  await until(()=>!data.status.WebDetecting && document.body.textContent.includes('无法验证此地址'));
+  check(address().value==='https://spool.example.test' && !document.querySelector('[data-apply-service-change="web"]'),'Failed real-entry check keeps applied URL and clears pending changes');
+  fail=false;detect().click();await until(()=>release);release();release=undefined;
+  await until(()=>document.body.textContent.includes('检测成功，可通过公网地址访问。'));
+  check(document.querySelector('[data-detected-web-proxy]').textContent.includes('172.18.0.3/32'),'Real-entry success updates formal trust');
+  const port=()=>document.querySelector('input[aria-label="HTTP 端口"]');
+  port().focus();
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(port(),'8788');
+  port().dispatchEvent(new Event('input',{bubbles:true}));
+  await until(()=>port().value==='8788');
+  document.querySelector('[data-section="Service"]').focus();
+  await until(()=>release && data.status.WebProxyCheck?.Port===8788);
+  release();release=undefined;
+  await until(()=>document.body.textContent.includes('预检成功，点击应用更改后生效。'));
+  check(data.status.Address==='127.0.0.1:8787' && document.querySelector('[data-apply-service-change="web"]'),'Port preflight retains real listener and Apply action');
+  detect().click();await until(()=>release);
+  const oldRelease=release;
+  address().focus();
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(address(),'https://new.example.test');
+  address().dispatchEvent(new Event('input',{bubbles:true}));
+  await until(()=>!data.status.WebDetecting);
+  oldRelease();
+  check(data.settings.public_url==='https://spool.example.test' && !data.status.WebProxyCheck,'An edit cancels old detection without changing the saved input');
+  await fetch('/report',{method:'POST',body:JSON.stringify({ok:true,checks:21})});
 })().catch(async error=>{await fetch('/report',{method:'POST',body:JSON.stringify({error:String(error)})})});
 `;
 let javascript, css;
@@ -140,7 +183,7 @@ try {
   );
   const browserDone = once(browser, "close");
   try {
-    for (let i = 0; i < 300 && !report; i++)
+    for (let i = 0; i < 1200 && !report; i++)
       await new Promise((resolve) => setTimeout(resolve, 50));
     assert.ok(report, "Browser did not report a result");
     assert.equal(report.error, undefined, report.error);

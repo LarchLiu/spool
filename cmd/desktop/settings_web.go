@@ -325,6 +325,16 @@ func (s *desktopSettings) AddressQRCode(ctx context.Context, address string) (st
 	return workspace.AddressQRCode(address)
 }
 
+// Editing must cancel a probe immediately, without waiting behind a settings
+// command or returning a snapshot that could overwrite a newer draft.
+func (s *desktopSettings) CancelWebProxyDetection(ctx context.Context, id string) (bool, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return false, err
+	}
+	s.panel.service.CancelWebProxyDetection(id)
+	return true, nil
+}
+
 func (s *desktopSettings) RelayDevices(ctx context.Context) (relay.DeviceSnapshot, error) {
 	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
 		return relay.DeviceSnapshot{}, err
@@ -502,7 +512,7 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 	case "save-settings":
 		err = p.service.SaveSettings(command.Settings)
 	case "detect-web-proxy":
-		err = p.service.DetectWebProxy(ctx, command.Address)
+		err = p.service.BeginWebProxyDetection(command.Address)
 	case "unregister-relay":
 		err = p.service.UnregisterRelay(ctx, command.Target)
 	case "save-tsnet-auth-key":

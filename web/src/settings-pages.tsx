@@ -187,15 +187,42 @@ export function ServicePage({ data, run, t }: PageProps) {
   const draft = autosave.draft;
   const tabsID = useId();
   const [activeTab, setActiveTab] = useState<ServiceTab>("web");
-  const [detectingWeb, setDetectingWeb] = useState(false);
-  const [detectedWebURL, setDetectedWebURL] = useState<string>();
-  const webDetecting = detectingWeb || data.status.WebDetecting;
-  const verifiedWebURL = detectedWebURL ?? data.settings.web_detected_origin;
-  const webDetected =
-    !webDetecting &&
-    !data.status.WebError &&
-    verifiedWebURL &&
-    verifiedWebURL === draft.public_url;
+  const webCheck = data.status.WebProxyCheck;
+  const webCheckMatches =
+    webCheck?.PublicURL === draft.public_url.trim().replace(/\/$/, "") &&
+    webCheck?.Host === draft.host &&
+    webCheck?.Port === Number(draft.port);
+  const webDetecting = data.status.WebDetecting;
+  const webDetected = !webDetecting && webCheckMatches && webCheck?.Succeeded;
+  const webError = webCheck
+    ? webCheckMatches
+      ? webCheck.Error
+      : undefined
+    : data.status.WebError;
+  const webPending = data.status.PendingChanges?.includes("web");
+  const cancelWebCheck = () => {
+    if (!webCheck?.ID) return;
+    void settingsCall<boolean>("CancelWebProxyDetection", webCheck.ID).catch(
+      () => {},
+    );
+  };
+  // A preceding save can acknowledge after the user has already typed a newer
+  // draft. Cancel that newly visible old job as well as the one seen on input.
+  useEffect(() => {
+    if (!webCheck?.ID) return;
+    // The autosave synchronization effect above may already have normalized an
+    // acknowledged draft; inspect that value rather than the preceding render.
+    const current = autosave.draft;
+    if (
+      webCheck.PublicURL === current.public_url.trim().replace(/\/$/, "") &&
+      webCheck.Host === current.host &&
+      webCheck.Port === Number(current.port)
+    )
+      return;
+    void settingsCall<boolean>("CancelWebProxyDetection", webCheck.ID).catch(
+      () => {},
+    );
+  }, [autosave, webCheck, webCheckMatches]);
   const [registeredRelayURL, setRegisteredRelayURL] = useState<string>();
   const [registeringRelay, setRegisteringRelay] = useState(false);
   const [unregisterError, setUnregisterError] = useState("");
@@ -413,6 +440,7 @@ export function ServicePage({ data, run, t }: PageProps) {
               label={t("Enable Web access")}
               value={draft.web_enabled}
               onChange={(value) => {
+                cancelWebCheck();
                 autosave.edit("web_enabled", value);
                 void autosave.commit("web_enabled");
               }}
@@ -441,6 +469,7 @@ export function ServicePage({ data, run, t }: PageProps) {
               }
               disabled={!draft.web_enabled}
               onChange={(value) => {
+                cancelWebCheck();
                 autosave.edit("host", value ? "0.0.0.0" : "127.0.0.1");
                 void autosave.commit("host");
               }}
@@ -453,7 +482,10 @@ export function ServicePage({ data, run, t }: PageProps) {
             min={1}
             max={65535}
             disabled={!draft.web_enabled}
-            onChange={(v) => autosave.edit("port", v)}
+            onChange={(v) => {
+              cancelWebCheck();
+              autosave.edit("port", v);
+            }}
             onCommit={() => void autosave.commit("port")}
             required
           />
@@ -475,13 +507,13 @@ export function ServicePage({ data, run, t }: PageProps) {
               </>
             }
             value={draft.public_url}
-            disabled={!draft.web_enabled || webDetecting}
+            disabled={!draft.web_enabled}
             placeholder="https://spool.example.com"
             help={t(
-              "Enter your public HTTPS address. Spool checks it automatically when you finish editing and each time Web access starts.",
+              "Changes to the public HTTPS address or HTTP port are checked automatically. Apply changes to activate them; Web access is checked again after starting.",
             )}
             onChange={(v) => {
-              setDetectedWebURL(undefined);
+              cancelWebCheck();
               autosave.edit("public_url", v);
             }}
             onCommit={() => void autosave.commit("public_url")}
@@ -495,20 +527,15 @@ export function ServicePage({ data, run, t }: PageProps) {
                 !draft.web_enabled ||
                 !data.status.Running ||
                 draft.public_url !== data.settings.public_url ||
+                draft.host !== data.settings.host ||
+                Number(draft.port) !== data.settings.port ||
                 !draft.public_url.trim()
               }
-              onClick={async () => {
-                setDetectingWeb(true);
-                setDetectedWebURL("");
-                try {
-                  const result = await run({
-                    kind: "detect-web-proxy",
-                    address: draft.public_url,
-                  });
-                  if (result) setDetectedWebURL(result.settings.public_url);
-                } finally {
-                  setDetectingWeb(false);
-                }
+              onClick={() => {
+                void run({
+                  kind: "detect-web-proxy",
+                  address: draft.public_url,
+                });
               }}
             >
               {t(webDetecting ? "Detecting…" : "Detect")}
@@ -516,12 +543,33 @@ export function ServicePage({ data, run, t }: PageProps) {
           </div>
           {webDetected && (
             <p className="settings-hint" role="status">
-              {t("Detection succeeded. Your public address is ready to use.")}
+              {t(
+                webCheck?.Preflight
+                  ? webPending
+                    ? "Preflight succeeded. Apply changes to activate this configuration."
+                    : "Preflight succeeded."
+                  : "Detection succeeded. Your public address is ready to use.",
+              )}
+              {webCheck?.Preflight && webCheck.Reused && webPending && (
+                <>
+                  {" "}
+                  {t(
+                    "The current Web listener was used. The new configuration will be checked again after applying.",
+                  )}
+                </>
+              )}
             </p>
           )}
           <details className="settings-advanced">
             <summary>{t("Advanced settings")}</summary>
-            {data.settings.web_detected_origin === draft.public_url &&
+            {webDetected && webCheck?.Preflight && webCheck.Proxy && (
+              <p className="settings-hint" data-preflight-web-proxy>
+                {t("Proxy address found by preflight")}:{" "}
+                <code>{webCheck.Proxy}</code>
+              </p>
+            )}
+            {!webPending &&
+              data.settings.web_detected_origin === draft.public_url &&
               data.settings.web_detected_proxy && (
                 <p className="settings-hint" data-detected-web-proxy>
                   {t("Detected proxy address")}:{" "}
@@ -531,18 +579,21 @@ export function ServicePage({ data, run, t }: PageProps) {
             <TextField
               title={t("Web trusted proxies")}
               value={draft.web_trusted_proxies}
-              disabled={!draft.web_enabled || webDetecting}
+              disabled={!draft.web_enabled}
               placeholder="127.0.0.0/8,::1/128"
               help={t(
                 "Detected addresses are managed automatically. Add entries here only for a custom proxy setup.",
               )}
-              onChange={(v) => autosave.edit("web_trusted_proxies", v)}
+              onChange={(v) => {
+                cancelWebCheck();
+                autosave.edit("web_trusted_proxies", v);
+              }}
               onCommit={() => void autosave.commit("web_trusted_proxies")}
             />
           </details>
-          {data.status.WebError && (
+          {webError && (
             <div className="settings-error" role="alert">
-              {knownMessage(data.status.WebError, t)}
+              {knownMessage(webError, t)}
             </div>
           )}
         </Card>

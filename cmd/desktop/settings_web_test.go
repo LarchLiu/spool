@@ -74,6 +74,9 @@ func TestSettingsBridgeRejectsCallsWithoutDesktopPage(t *testing.T) {
 		if _, err := bridge.AddressQRCode(context.Background(), "https://spool.example.test"); err == nil {
 			t.Fatal("address QR code allowed without private desktop page")
 		}
+		if _, err := bridge.CancelWebProxyDetection(context.Background(), "old-job"); err == nil {
+			t.Fatal("probe cancellation allowed without private desktop page")
+		}
 		if _, err := bridge.RelayDevices(context.Background()); err == nil {
 			t.Fatal("devices exposed without private desktop page")
 		}

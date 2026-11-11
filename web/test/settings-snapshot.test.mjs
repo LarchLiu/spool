@@ -91,6 +91,7 @@ test("page dependencies distinguish presence, membership, settings and appearanc
     [(next) => (next.crash_log = "/fixture/crash.log"), ["About"]],
     [(next) => (next.status.RestartRequired = true), ["Service", "Network"]],
     [(next) => (next.status.WebDetecting = true), ["Service"]],
+    [(next) => (next.status.WebProxyCheck = { PublicURL: "https://spool.test", Port: 8788, Preflight: true, Succeeded: true }), ["Service"]],
     [
       (next) => next.agents[0].catalog.models.push({ model: "new" }),
       ["Agents", "Projects"],

@@ -63,6 +63,8 @@ func (s *Service) ApplyServiceChanges(target string) error {
 	}
 	switch target {
 	case "web":
+		s.stopWebProxyDetectionLocked()
+		s.webProxyCheck = nil
 		err = s.restartWebLocked(next)
 	case "relay":
 		if s.relayRegistering {

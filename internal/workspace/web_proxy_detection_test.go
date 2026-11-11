@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -19,7 +20,12 @@ import (
 
 func detectionProxy(t *testing.T, service *Service, rewrite func(*httputil.ProxyRequest)) *httptest.Server {
 	t.Helper()
-	target, _ := url.Parse("http://" + service.Status().Address)
+	return detectionProxyTo(t, service.Status().Address, rewrite)
+}
+
+func detectionProxyTo(t *testing.T, address string, rewrite func(*httputil.ProxyRequest)) *httptest.Server {
+	t.Helper()
+	target, _ := url.Parse("http://" + address)
 	transport := &http.Transport{}
 	t.Cleanup(transport.CloseIdleConnections)
 	proxy := &httputil.ReverseProxy{Transport: transport, Rewrite: func(p *httputil.ProxyRequest) {
@@ -34,7 +40,26 @@ func detectionProxy(t *testing.T, service *Service, rewrite func(*httputil.Proxy
 	return server
 }
 
-func TestDetectWebProxyVerifiesTLSAndAppliesWithoutRestart(t *testing.T) {
+// Set up an already applied address without starting an asynchronous probe.
+func appliedWebProxyOrigin(t *testing.T, service *Service, address string) {
+	t.Helper()
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	settings, err := service.Store.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.PublicURL = address
+	if err := service.Store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	service.activeSettings.PublicURL = address
+	service.app.configMu.Lock()
+	service.app.settings.PublicURL = address
+	service.app.configMu.Unlock()
+}
+
+func TestDetectWebProxyVerifiesTLSAndUpdatesAppliedTrustWithoutRestart(t *testing.T) {
 	service, settings := settingsService(t)
 	settings.WebTrustedProxies = ""
 	settings.IdleMinutes++
@@ -52,6 +77,7 @@ func TestDetectWebProxyVerifiesTLSAndAppliesWithoutRestart(t *testing.T) {
 		}
 	})
 	// The production client must reject a self-signed public certificate.
+	appliedWebProxyOrigin(t, service, proxy.URL)
 	if err := service.DetectWebProxy(t.Context(), proxy.URL); err == nil {
 		t.Fatal("detection disabled TLS certificate verification")
 	}
@@ -107,6 +133,8 @@ func TestDetectWebProxyFailuresKeepSettings(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			service, before := settingsService(t)
 			proxy := detectionProxy(t, service, tc.rewrite)
+			appliedWebProxyOrigin(t, service, proxy.URL)
+			before, _ = service.Store.Settings()
 			if err := service.detectWebProxy(t.Context(), proxy.URL, proxy.Client().Transport); err == nil || err.Error() != webProxyHeaders {
 				t.Fatal("detection accepted incomplete forwarding", err)
 			}
@@ -129,11 +157,14 @@ func TestDetectWebProxyAddsOnlyTheConnectingPeer(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			service, settings := settingsService(t)
-			activeManual := service.app.activeSettings().WebTrustedProxies
 			settings.WebTrustedProxies = tc.trusted
 			if err := service.SaveSettings(settings); err != nil {
 				t.Fatal(err)
 			}
+			if err := service.ApplyServiceChanges("web"); err != nil {
+				t.Fatal(err)
+			}
+			appliedWebProxyOrigin(t, service, "https://chat.example.test")
 			transport := probeRoundTripper(func(r *http.Request) (*http.Response, error) {
 				incoming := httptest.NewRequest("GET", "http://chat.example.test"+r.URL.Path, nil)
 				incoming.RemoteAddr = tc.remote
@@ -150,8 +181,8 @@ func TestDetectWebProxyAddsOnlyTheConnectingPeer(t *testing.T) {
 			if saved.WebTrustedProxies != tc.trusted || saved.WebDetectedProxy != tc.want || service.app.activeSettings().WebDetectedProxy != tc.want {
 				t.Fatal("detection changed the wrong proxy network", saved)
 			}
-			if service.app.activeSettings().WebTrustedProxies != activeManual {
-				t.Fatal("detection applied an unrelated pending manual trust edit")
+			if service.app.activeSettings().WebTrustedProxies != tc.trusted {
+				t.Fatal("detection changed manual trust")
 			}
 		})
 	}
@@ -314,15 +345,17 @@ func TestSavingPublicURLAutomaticallyDetectsAndCancelsOlderAddress(t *testing.T)
 	if !service.Status().WebDetecting {
 		t.Fatal("automatic detection does not report progress")
 	}
-	settings.PublicURL = "https://new.example.test"
+	settings.PublicURL = "https://new.example.test/"
 	if err := service.SaveSettings(settings); err != nil {
 		t.Fatal(err)
 	}
 	waitWebProxyDetection(t, service, func(s Settings, status ServiceStatus) bool {
-		return s.WebDetectedOrigin == settings.PublicURL && !status.WebDetecting
+		return status.WebProxyCheck != nil && status.WebProxyCheck.Succeeded && !status.WebDetecting
 	})
-	if service.app != app || service.web != ingress || calls.Load() != 2 || len(service.Status().PendingChanges) != 0 {
-		t.Fatal("address detection restarted the service or applied a stale result", service.Status())
+	saved, _ := service.Store.Settings()
+	if service.app != app || service.web != ingress || calls.Load() != 2 || len(service.Status().PendingChanges) != 1 ||
+		service.app.publicURL() != "" || saved.PublicURL != strings.TrimSuffix(settings.PublicURL, "/") || saved.WebDetectedOrigin != "" || !service.Status().WebProxyCheck.Preflight {
+		t.Fatal("preflight applied pending settings, trust or a stale result", service.Status(), saved)
 	}
 }
 
@@ -388,6 +421,8 @@ func TestDetectWebProxyRejectsRedirectReflectionAndWrongServer(t *testing.T) {
 				}
 			}))
 			t.Cleanup(proxy.Close)
+			appliedWebProxyOrigin(t, service, proxy.URL)
+			before, _ = service.Store.Settings()
 			if err := service.detectWebProxy(t.Context(), proxy.URL, proxy.Client().Transport); err == nil {
 				t.Fatal("unverified address accepted")
 			}
@@ -410,6 +445,7 @@ func TestDetectWebProxyConcurrentSettingsAndLifecycle(t *testing.T) {
 	for _, change := range []string{"public URL", "trust", "listener", "stop", "restart", "cancel", "concurrent", "unrelated"} {
 		t.Run(change, func(t *testing.T) {
 			service, _ := settingsService(t)
+			appliedWebProxyOrigin(t, service, "https://chat.example.test")
 			entered, release := make(chan struct{}), make(chan struct{})
 			var once sync.Once
 			unblock := func() { once.Do(func() { close(release) }) }
@@ -424,7 +460,11 @@ func TestDetectWebProxyConcurrentSettingsAndLifecycle(t *testing.T) {
 				out := httptest.NewRecorder()
 				ordinaryWebHandler(service.app).ServeHTTP(out, incoming)
 				close(entered)
-				<-release
+				select {
+				case <-release:
+				case <-r.Context().Done():
+					return nil, r.Context().Err()
+				}
 				return out.Result(), nil
 			})
 			done := make(chan error, 1)
@@ -533,5 +573,295 @@ func TestDetectWebProxyRequiresRunningWebAndHTTPSOrigin(t *testing.T) {
 	}
 	if err := service.DetectWebProxy(t.Context(), "https://chat.example.test"); err == nil || err.Error() != webProxyNeedsWeb {
 		t.Fatal("detection ran without Web access", err)
+	}
+}
+
+func TestWebProxyPreflightAndApplyRespectUserInput(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprintf("failed=%t", fail), func(t *testing.T) {
+			service, settings := settingsService(t)
+			appliedWebProxyOrigin(t, service, "https://old.example.test")
+			original := service.app.activeSettings()
+			proxy := detectionProxy(t, service, func(p *httputil.ProxyRequest) {
+				if fail {
+					p.Out.Header.Del("X-Forwarded-Proto")
+				}
+			})
+			service.webProxyTransport = proxy.Client().Transport
+			settings.PublicURL = proxy.URL
+			app, runner, web := service.app, service.runner, service.web
+			if err := service.SaveSettings(settings); err != nil {
+				t.Fatal(err)
+			}
+			waitWebProxyDetection(t, service, func(_ Settings, status ServiceStatus) bool {
+				return status.WebProxyCheck != nil && !status.WebDetecting
+			})
+			status := service.Status()
+			saved, _ := service.Store.Settings()
+			if status.WebProxyCheck.Succeeded == fail || !status.WebProxyCheck.Preflight || !status.WebProxyCheck.Reused ||
+				saved.PublicURL != proxy.URL || saved.WebDetectedProxy != "" || service.app.activeSettings() != original ||
+				len(status.PendingChanges) != 1 || service.WebURL() != original.PublicURL {
+				t.Fatal("preflight changed user input, active entry, trust or pending state", status, saved)
+			}
+			settings.IdleMinutes++
+			if err := service.SaveSettings(settings); err != nil {
+				t.Fatal(err)
+			}
+			if service.app != app || service.runner != runner || service.web != web || service.WebURL() != original.PublicURL {
+				t.Fatal("runtime save restarted or applied the pending Web entry")
+			}
+			if err := service.ApplyServiceChanges("web"); err != nil {
+				t.Fatal(err)
+			}
+			waitWebProxyDetection(t, service, func(_ Settings, status ServiceStatus) bool {
+				return status.WebProxyCheck != nil && !status.WebDetecting
+			})
+			status = service.Status()
+			saved, _ = service.Store.Settings()
+			if status.WebProxyCheck.Preflight || status.WebProxyCheck.Succeeded == fail || len(status.PendingChanges) != 0 ||
+				service.WebURL() != proxy.URL || saved.PublicURL != proxy.URL || service.app != app || service.runner != runner {
+				t.Fatal("real-entry detection restored the old address or left changes pending", status, saved)
+			}
+			if (saved.WebDetectedProxy != "") == fail {
+				t.Fatal("only successful real-entry detection may save trust", saved)
+			}
+		})
+	}
+}
+
+func TestWebProxyPortPreflightUsesTemporaryCallbackOnlyEntry(t *testing.T) {
+	service, settings := settingsService(t)
+	settings.Port = availableServicePort(t)
+	proxy := detectionProxyTo(t, settings.Address(), nil)
+	appliedWebProxyOrigin(t, service, proxy.URL)
+	settings.PublicURL = proxy.URL // Only the port changes.
+	transport := proxy.Client().Transport
+	entered := make(chan struct{})
+	var calls atomic.Int64
+	service.webProxyTransport = probeRoundTripper(func(r *http.Request) (*http.Response, error) {
+		if calls.Add(1) == 1 {
+			close(entered)
+			// The temporary server must not expose health or application APIs.
+			for _, path := range []string{"/healthz", "/api/me", "/"} {
+				response, err := http.Get("http://" + settings.Address() + path)
+				if err != nil {
+					return nil, err
+				}
+				response.Body.Close()
+				if response.StatusCode != http.StatusNotFound {
+					return nil, fmt.Errorf("temporary entry exposed %s: %d", path, response.StatusCode)
+				}
+			}
+		}
+		return transport.RoundTrip(r)
+	})
+	app, web := service.app, service.web
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("port-only save did not trigger preflight")
+	}
+	waitWebProxyDetection(t, service, func(_ Settings, status ServiceStatus) bool {
+		return status.WebProxyCheck != nil && !status.WebDetecting
+	})
+	status := service.Status()
+	if !status.WebProxyCheck.Succeeded || !status.WebProxyCheck.Preflight || status.WebProxyCheck.Reused || service.web != web || service.app != app || service.app.activeSettings().Port == settings.Port {
+		t.Fatal("port preflight did not use an isolated temporary entry", status)
+	}
+	listener, err := net.Listen("tcp", settings.Address())
+	if err != nil {
+		t.Fatal("preflight left its port occupied", err)
+	}
+	listener.Close()
+	local, _ := service.LocalWebURL()
+	requireServiceHealth(t, local)
+	if err := service.ApplyServiceChanges("web"); err != nil {
+		t.Fatal(err)
+	}
+	waitWebProxyDetection(t, service, func(_ Settings, status ServiceStatus) bool {
+		return status.WebProxyCheck != nil && !status.WebDetecting && !status.WebProxyCheck.Preflight
+	})
+	if calls.Load() != 2 || !service.Status().WebProxyCheck.Succeeded || service.app.activeSettings().Port != settings.Port {
+		t.Fatal("applied port was not checked through the real entry", service.Status(), calls.Load())
+	}
+}
+
+func TestWebProxyOccupiedCandidatePortDoesNotFallBackToCurrentEntry(t *testing.T) {
+	service, settings := settingsService(t)
+	appliedWebProxyOrigin(t, service, "https://chat.example.test")
+	settings.PublicURL = "https://chat.example.test"
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer occupied.Close()
+	settings.Port = occupied.Addr().(*net.TCPAddr).Port
+	var calls atomic.Int64
+	service.webProxyTransport = probeRoundTripper(func(r *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return nil, fmt.Errorf("should not probe through the old entry")
+	})
+	web := service.web
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	waitWebProxyDetection(t, service, func(_ Settings, status ServiceStatus) bool {
+		return status.WebProxyCheck != nil && !status.WebDetecting
+	})
+	status := service.Status()
+	if status.WebProxyCheck.Succeeded || status.WebProxyCheck.Reused || status.WebError == "" || calls.Load() != 0 || service.web != web {
+		t.Fatal("occupied candidate port fell back to the real entry", status)
+	}
+	if err := service.ApplyServiceChanges("web"); err == nil {
+		t.Fatal("application accepted an occupied port")
+	}
+	saved, _ := service.Store.Settings()
+	if saved.Port != settings.Port || service.app.activeSettings().Port == settings.Port || len(service.Status().PendingChanges) != 1 {
+		t.Fatal("bind failure discarded the saved candidate", service.Status())
+	}
+	local, _ := service.LocalWebURL()
+	requireServiceHealth(t, local)
+}
+
+func TestWebProxyApplyWaitsForPreflightPortCleanup(t *testing.T) {
+	for _, action := range []string{"apply", "edit", "stop"} {
+		t.Run(action, func(t *testing.T) {
+			service, settings := settingsService(t)
+			settings.PublicURL, settings.Port = "https://chat.example.test", availableServicePort(t)
+			entered := make(chan struct{})
+			var calls atomic.Int64
+			service.webProxyTransport = probeRoundTripper(func(r *http.Request) (*http.Response, error) {
+				if calls.Add(1) == 1 {
+					close(entered)
+					<-r.Context().Done()
+					return nil, r.Context().Err()
+				}
+				return nil, fmt.Errorf("real entry unreachable")
+			})
+			if err := service.SaveSettings(settings); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-entered:
+			case <-time.After(3 * time.Second):
+				t.Fatal("temporary preflight not started")
+			}
+			switch action {
+			case "apply":
+				if err := service.ApplyServiceChanges("web"); err != nil {
+					t.Fatal("application raced the temporary listener", err)
+				}
+				waitWebProxyDetection(t, service, func(_ Settings, status ServiceStatus) bool {
+					return status.WebProxyCheck != nil && !status.WebDetecting && !status.WebProxyCheck.Preflight
+				})
+				if service.app.activeSettings().Port != settings.Port || service.WebURL() != settings.PublicURL || service.Status().WebError != webProxyFailed {
+					t.Fatal("failed real-entry check reverted user input", service.Status())
+				}
+			case "edit":
+				service.CancelWebProxyDetection(service.Status().WebProxyCheck.ID)
+			case "stop":
+				if err := service.Stop(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if action != "apply" {
+				listener, err := net.Listen("tcp", settings.Address())
+				if err != nil {
+					t.Fatal("cancellation returned before releasing the candidate port", err)
+				}
+				listener.Close()
+				if status := service.Status(); status.WebDetecting || status.WebProxyCheck != nil {
+					t.Fatal("cancelled task retained or republished status", status)
+				}
+			}
+		})
+	}
+}
+
+func TestWebProxyPreflightReusesOwnListenerForLANScopeChange(t *testing.T) {
+	service, settings := settingsService(t)
+	proxy := detectionProxy(t, service, nil)
+	appliedWebProxyOrigin(t, service, proxy.URL)
+	settings.PublicURL, settings.Host = proxy.URL, "0.0.0.0"
+	service.webProxyTransport = proxy.Client().Transport
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	waitWebProxyDetection(t, service, func(_ Settings, status ServiceStatus) bool {
+		return status.WebProxyCheck != nil && !status.WebDetecting
+	})
+	check := service.Status().WebProxyCheck
+	if !check.Reused || !check.Succeeded || !check.Preflight || service.app.activeSettings().Host != "127.0.0.1" {
+		t.Fatal("scope preflight failed to recognize the Service's own bind conflict", service.Status())
+	}
+}
+
+func TestWebProxyDelayedCancellationCannotStopNewCheck(t *testing.T) {
+	service, settings := settingsService(t)
+	settings.PublicURL = "https://chat.example.test"
+	service.webProxyTransport = probeRoundTripper(func(r *http.Request) (*http.Response, error) {
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	})
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	old := service.Status().WebProxyCheck.ID
+	settings.Port = availableServicePort(t)
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	next := service.Status().WebProxyCheck.ID
+	service.CancelWebProxyDetection(old)
+	if status := service.Status(); !status.WebDetecting || status.WebProxyCheck.ID != next {
+		t.Fatal("a delayed cancellation stopped the newer check", status)
+	}
+	service.CancelWebProxyDetection(next)
+	if status := service.Status(); status.WebDetecting || status.WebProxyCheck != nil {
+		t.Fatal("current edit did not cancel its own check", status)
+	}
+}
+
+func TestWebProxyStartupCheckCannotOverwriteAlreadyPendingOrigin(t *testing.T) {
+	service, settings := settingsService(t)
+	appliedWebProxyOrigin(t, service, "https://active.example.test")
+	settings.PublicURL = "https://pending.example.test"
+	if err := service.Store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	service.webProxyTransport = probeRoundTripper(func(r *http.Request) (*http.Response, error) {
+		incoming := httptest.NewRequest("GET", "http://"+r.URL.Host+r.URL.Path, nil)
+		incoming.RemoteAddr = "192.0.2.10:1234"
+		incoming.Header.Set("X-Forwarded-Proto", "https")
+		incoming.Header.Set("X-Forwarded-For", "203.0.113.2")
+		out := httptest.NewRecorder()
+		ordinaryWebHandler(service.app).ServeHTTP(out, incoming)
+		return out.Result(), nil
+	})
+	service.mu.Lock()
+	service.startWebProxyDetectionLocked(service.activeSettings)
+	job := service.webProxyJob
+	service.mu.Unlock()
+	<-job.finished
+	saved, _ := service.Store.Settings()
+	if saved != settings || service.WebURL() != "https://active.example.test" || len(service.Status().PendingChanges) != 1 || service.Status().WebProxyCheck != nil {
+		t.Fatal("successful revalidation of the old entry overwrote a pending address", saved, service.Status())
+	}
+}
+
+func TestWebProxyTimeoutPublishesFailureAndKeepsInput(t *testing.T) {
+	service, _ := settingsService(t)
+	appliedWebProxyOrigin(t, service, "https://chat.example.test")
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	err := service.detectWebProxy(ctx, "https://chat.example.test", probeRoundTripper(func(r *http.Request) (*http.Response, error) {
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	}))
+	if err == nil || err.Error() != webProxyFailed || service.Status().WebError != webProxyFailed || service.Status().WebDetecting || service.WebURL() != "https://chat.example.test" {
+		t.Fatal("timeout did not report a failure while retaining the applied input", err, service.Status())
 	}
 }

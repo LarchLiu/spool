@@ -29,6 +29,7 @@ type Service struct {
 	webError            string
 	webProxyTransport   http.RoundTripper
 	webProxyJob         *webProxyDetectionJob
+	webProxyCheck       *WebProxyCheck
 	relayError          string
 	app                 *App
 	runner              *agent.CLIRunner
@@ -61,6 +62,7 @@ type ServiceStatus struct {
 	PendingChanges           []string
 	WebError                 string
 	WebDetecting             bool
+	WebProxyCheck            *WebProxyCheck
 	Address                  string
 	Error                    string
 	Online                   []PresenceUser
@@ -197,6 +199,7 @@ func (s *Service) startLocked() error {
 }
 
 func (s *Service) startWithSettingsLocked(settings Settings) error {
+	s.stopWebProxyDetectionLocked()
 	if err := settings.validateLocal(); err != nil {
 		return err
 	}
@@ -300,6 +303,8 @@ func (s *Service) Restart() error {
 }
 
 func (s *Service) stopLocked() error {
+	s.stopWebProxyDetectionLocked()
+	s.webProxyCheck = nil
 	if s.relay != nil {
 		s.relay.close()
 		s.relay = nil
@@ -380,7 +385,7 @@ func (s *Service) Status() ServiceStatus {
 		webDetecting = webDetecting || s.app.webProxyProbe != nil
 		s.app.webProxyMu.Unlock()
 	}
-	return ServiceStatus{Running: s.server != nil, RestartRequired: len(pending) > 0, PendingChanges: pending, WebError: s.webError, WebDetecting: webDetecting, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != "", Voxl: desktopStatus, RemoteDesktopConnections: connections, Relay: relayStatus}
+	return ServiceStatus{Running: s.server != nil, RestartRequired: len(pending) > 0, PendingChanges: pending, WebError: s.webError, WebDetecting: webDetecting, WebProxyCheck: s.webProxyCheck, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != "", Voxl: desktopStatus, RemoteDesktopConnections: connections, Relay: relayStatus}
 }
 func (s *Service) WebURL() string {
 	s.mu.Lock()

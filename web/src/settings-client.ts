@@ -122,6 +122,17 @@ export type SettingsSnapshot = {
     PendingChanges?: ServiceChangeTarget[];
     WebError?: string;
     WebDetecting?: boolean;
+    WebProxyCheck?: {
+      ID: string;
+      PublicURL: string;
+      Host: string;
+      Port: number;
+      Preflight: boolean;
+      Reused: boolean;
+      Succeeded: boolean;
+      Proxy: string;
+      Error: string;
+    };
     Address: string;
     Error: string;
     Online: (Online & Pick<User, "nickname" | "avatar">)[];
@@ -256,6 +267,7 @@ export function settingsCall<T>(
     | "RevokeRelayDevice"
     | "CancelRelayPairing"
     | "AddressQRCode"
+    | "CancelWebProxyDetection"
     | "RegisterRelay",
   ...args: unknown[]
 ): Promise<T> {

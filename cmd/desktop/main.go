@@ -516,14 +516,20 @@ func (p *panel) serviceView(c *ui.Context) {
 		return err
 	})
 	p.serviceSettingFieldWithDisabled(c, "Public URL", &p.settings.PublicURL, !p.settings.WebEnabled, func(settings *workspace.Settings, value string) error { settings.PublicURL = value; return nil })
-	ui.Text(c, p.tr("Enter your public HTTPS address. Spool checks it automatically when you finish editing and each time Web access starts.")).Wrap().FontSize(12)
+	ui.Text(c, p.tr("Changes to the public HTTPS address or HTTP port are checked automatically. Apply changes to activate them; Web access is checked again after starting.")).Wrap().FontSize(12)
 	detectLabel := "Detect"
 	if p.status.WebDetecting {
 		detectLabel = "Detecting…"
 	}
 	if ui.Button(c, p.tr(detectLabel)).Disabled(p.busy || p.status.WebDetecting || !p.settings.WebEnabled || !p.status.Running || strings.TrimSpace(p.settings.PublicURL) == "").Clicked() {
 		address := p.settings.PublicURL
-		p.action(func() error { return p.service.DetectWebProxy(context.Background(), address) })
+		p.action(func() error { return p.service.BeginWebProxyDetection(address) })
+	}
+	if check := p.status.WebProxyCheck; check != nil && check.Succeeded && check.Preflight && !p.status.WebDetecting && check.PublicURL == p.settings.PublicURL && check.Host == p.settings.Host && check.Port == p.settings.Port {
+		ui.Text(c, p.tr("Preflight succeeded. Apply changes to activate this configuration.")).Wrap().FontSize(12)
+	}
+	if p.status.WebError != "" {
+		ui.Text(c, p.tr(p.status.WebError)).Wrap().FontSize(12)
 	}
 	ui.Collapsible(c, p.tr("Advanced settings"), &p.webAdvanced, func() {
 		if p.settings.WebDetectedOrigin == p.settings.PublicURL && p.settings.WebDetectedProxy != "" {
@@ -667,7 +673,14 @@ func (p *panel) serviceSettingFieldWithDisabled(c *ui.Context, label string, val
 	}
 	ui.Column(c).FillWidth().Gap(5).Children(func() {
 		ui.Text(c, p.tr(label)).FontSize(12)
+		previous := *value
 		input := ui.TextInput(c, value).FillWidth().Label(p.tr(label)).Disabled(disabled)
+		if !disabled && previous != *value && (label == "Web port" || label == "Public URL" || label == "Web trusted proxies") {
+			if check := p.status.WebProxyCheck; check != nil {
+				p.service.CancelWebProxyDetection(check.ID)
+				p.status = p.service.Status()
+			}
+		}
 		submitted := input.Submitted()
 		wasFocused := p.serviceFieldFocus[label]
 		p.serviceFieldFocus[label] = input.Focused()
