@@ -28,7 +28,11 @@ type testNetwork struct {
 
 func setup(t *testing.T, handler http.Handler) *testNetwork {
 	t.Helper()
-	broker := testBroker(t)
+	return setupWith(t, testBroker(t), handler)
+}
+
+func setupWith(t *testing.T, broker *Server, handler http.Handler) *testNetwork {
+	t.Helper()
 	_, token, err := broker.CreateRegistration("test server")
 	if err != nil {
 		t.Fatal(err)

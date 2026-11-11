@@ -182,6 +182,8 @@ application payloads or credentials. Exclude Authorization headers from logs.
 
 Limits default to 100 home servers, 4,096 data connections total and 128 per home
 server. Flags: `-max-hosts`, `-max-connections`, `-max-connections-per-host`.
+The relay announces the per-server limit to each home server, which applies the
+same bound up to 1,024. A home server from before this announcement keeps 128.
 `/healthz` reports process health, not whether a particular home server is online.
 Deploy one relay process: arbitrary load balancing across replicas is not
 supported because control and data connections must reach the same process.
@@ -717,7 +719,9 @@ headers, never URL parameters. Compression is disabled.
   `client_ip` metadata resolved from the connection and configured trusted proxies.
 - `/v1/data/<connection-id>`: the host supplies the one-time secret; the relay
   joins the sockets. Pending joins expire after 10 seconds. Control loss closes
-  that host's data connections.
+  that host's data connections. `ready.max_connections` carries the per-server
+  limit; a host at its limit answers `open` with `reject` and the same ID, and
+  the relay closes that client at once.
 - `https://<server-id>.web.<public-hostname>/...`: proxies HTTP, SSE and WebSockets
   for an opted-in authenticated host. Registration signs `web_version=2`,
   `web_origin`, the challenge and admission token; `ready.web_url` returns the

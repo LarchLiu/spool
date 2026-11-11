@@ -33,6 +33,8 @@ type controlMessage struct {
 	WebVersion        int    `json:"web_version,omitempty"`
 	WebURL            string `json:"web_url,omitempty"`
 	ClientIP          string `json:"client_ip,omitempty"`
+	// Sent with ready: the relay's per-host data connection limit.
+	MaxConnections int `json:"max_connections,omitempty"`
 }
 
 func randomID() string {

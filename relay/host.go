@@ -17,6 +17,20 @@ import (
 
 var ErrRegistrationRejected = errors.New("relay registration rejected")
 
+// A relay that does not announce its per-host limit uses this default.
+const defaultHostConnections = 128
+
+// The relay bounds outstanding connections. This cap also bounds local dial
+// and handshake work if an operator runs a malicious or misconfigured relay.
+const maxHostConnections = 1024
+
+func hostConnectionLimit(announced int) int {
+	if announced <= 0 {
+		return defaultHostConnections
+	}
+	return min(announced, maxHostConnections)
+}
+
 // Host is a listener fed by outbound relay connections. Spool wraps it with
 // Devices.Listener and Devices.Handler to enforce device and Web admission.
 type Host struct {
@@ -40,6 +54,8 @@ type Host struct {
 	registrationToken string
 	webURL            string
 	connections       map[*ownedConn]struct{}
+	// Connections being opened or established, bounded by limit.
+	reserved, limit int
 }
 
 func NewHost(ctx context.Context, url, registrationToken string, id *Identity, client *http.Client) (*Host, error) {
@@ -53,7 +69,7 @@ func NewHost(ctx context.Context, url, registrationToken string, id *Identity, c
 		return nil, errors.New("relay registration token must be empty or contain 32–512 characters")
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	return &Host{URL: url, registrationToken: registrationToken, Identity: id, HTTPClient: client, ctx: ctx, cancel: cancel, accepted: make(chan net.Conn), connections: make(map[*ownedConn]struct{})}, nil
+	return &Host{URL: url, registrationToken: registrationToken, Identity: id, HTTPClient: client, ctx: ctx, cancel: cancel, accepted: make(chan net.Conn), connections: make(map[*ownedConn]struct{}), limit: defaultHostConnections}, nil
 }
 
 func (h *Host) RegistrationToken() string {
@@ -178,6 +194,7 @@ func (h *Host) handshakeNamed(path, name string) (_ *websocket.Conn, credential 
 	}
 	h.mu.Lock()
 	h.webURL = m.WebURL
+	h.limit = hostConnectionLimit(m.MaxConnections)
 	h.mu.Unlock()
 	return c, token, nil
 }
@@ -215,9 +232,6 @@ func (h *Host) session() error {
 		h.OnWebURL(webURL)
 	}
 	go keepAlive(ctx, c)
-	// The relay bounds outstanding requests. Also bound local dial/handshake
-	// work in case an operator runs a malicious or misconfigured relay.
-	slots := make(chan struct{}, 128)
 	for {
 		m, err := readControl(ctx, c)
 		if err != nil {
@@ -226,17 +240,40 @@ func (h *Host) session() error {
 		if m.Type != "open" || !validToken(m.ID) || !validToken(m.Secret) {
 			return errors.New("invalid relay connection request")
 		}
-		select {
-		case slots <- struct{}{}:
-		default:
+		if !h.reserve() {
+			// Refuse now; otherwise the client waits for the relay's join timeout.
+			if err := writeControl(ctx, c, controlMessage{Type: "reject", ID: m.ID}); err != nil {
+				return err
+			}
 			continue
 		}
 		h.workers.Add(1)
-		go func(m controlMessage) { defer h.workers.Done(); defer func() { <-slots }(); h.open(ctx, m) }(m)
+		go func(m controlMessage) { defer h.workers.Done(); h.open(ctx, m) }(m)
 	}
 }
 
+// reserve admits one connection before any dial or handshake work starts.
+func (h *Host) reserve() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.ctx.Err() != nil || h.reserved >= h.limit {
+		return false
+	}
+	h.reserved++
+	return true
+}
+
+// open joins one reserved connection. The reservation is returned when the
+// join fails or, once established, when the stream closes.
 func (h *Host) open(ctx context.Context, m controlMessage) {
+	established := false
+	defer func() {
+		if !established {
+			h.mu.Lock()
+			h.reserved--
+			h.mu.Unlock()
+		}
+	}()
 	var remote net.Addr
 	if m.ClientIP != "" {
 		ip, err := netip.ParseAddr(m.ClientIP)
@@ -254,15 +291,16 @@ func (h *Host) open(ctx context.Context, m controlMessage) {
 		return
 	}
 	stream := &ownedConn{Conn: byteStream(ctx, c), remote: remote}
-	stream.release = func() { h.mu.Lock(); delete(h.connections, stream); h.mu.Unlock() }
+	stream.release = func() { h.mu.Lock(); delete(h.connections, stream); h.reserved--; h.mu.Unlock() }
 	h.mu.Lock()
-	if h.ctx.Err() != nil || len(h.connections) >= 128 {
+	if h.ctx.Err() != nil {
 		h.mu.Unlock()
 		c.CloseNow()
 		return
 	}
 	h.connections[stream] = struct{}{}
 	h.mu.Unlock()
+	established = true
 	select {
 	case h.accepted <- stream:
 	case <-ctx.Done():

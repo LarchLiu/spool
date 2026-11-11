@@ -291,6 +291,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 	}
 	h.registrationID = current.ID
 	s.hosts[h.id] = h
+	limit := s.opts.MaxConnectionsPerHost
 	s.registering--
 	reserved = false
 	s.mu.Unlock()
@@ -310,17 +311,21 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 	if h.webOrigin != "" {
 		webURL = h.webOrigin + "/"
 	}
-	if writeControl(ctx, c, controlMessage{Type: "ready", RegistrationToken: issuedToken, WebURL: webURL}) != nil {
+	if writeControl(ctx, c, controlMessage{Type: "ready", RegistrationToken: issuedToken, WebURL: webURL, MaxConnections: limit}) != nil {
 		return
 	}
 	go keepAlive(ctx, c)
-	// Control is server-to-host after registration. A reader processes pongs
-	// and detects dead agents even when no client is currently connected.
+	// The host only sends refusals after registration. Reading also processes
+	// pongs and detects dead agents when no client is currently connected.
 	go func() {
 		defer cancel()
 		for {
-			if _, err := readControl(ctx, c); err != nil {
+			m, err := readControl(ctx, c)
+			if err != nil {
 				return
+			}
+			if m.Type == "reject" {
+				s.rejectPair(h, m.ID)
 			}
 		}
 	}()
@@ -407,6 +412,17 @@ func (s *Server) releasePair(p *relayPair) {
 	})
 }
 
+// rejectPair ends a connection the host refused to join, so its client fails
+// now instead of waiting for the join timeout. A joined connection is the
+// host's to close.
+func (s *Server) rejectPair(h *registeredHost, id string) {
+	s.mu.Lock()
+	if p := h.pairs[id]; p != nil && !p.claimed {
+		p.cancel()
+	}
+	s.mu.Unlock()
+}
+
 func (s *Server) connect(w http.ResponseWriter, r *http.Request, id string) {
 	s.mu.Lock()
 	h := s.hosts[id]
@@ -428,13 +444,16 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	defer client.CloseNow()
-	select {
-	case h.open <- controlMessage{Type: "open", ID: p.id, Secret: p.secret, ClientIP: s.clientIP(r)}:
-	default:
-		return
-	}
 	timer := time.NewTimer(handshakeTimeout)
 	defer timer.Stop()
+	// A burst waits its turn on the control connection instead of being dropped.
+	select {
+	case h.open <- controlMessage{Type: "open", ID: p.id, Secret: p.secret, ClientIP: s.clientIP(r)}:
+	case <-ctx.Done():
+		return
+	case <-timer.C:
+		return
+	}
 	select {
 	case agent := <-p.data:
 		defer agent.CloseNow()
