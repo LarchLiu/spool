@@ -11,10 +11,6 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
-	"sync"
-	"time"
-
-	"github.com/coder/websocket"
 )
 
 // WebPath is the internal gateway admission prefix, not a public URL or credential.
@@ -102,16 +98,11 @@ func (s *Server) serveWeb(w http.ResponseWriter, r *http.Request, id string) {
 	ctx, cancel := context.WithCancel(r.Context())
 	stop := context.AfterFunc(h.ctx, cancel)
 	defer func() { stop(); cancel() }()
-	// A fresh connection per request avoids replaying uncertain mutations and
-	// retains the broker's per-server connection limit for SSE and WebSockets.
-	transport := &http.Transport{
-		Proxy: nil, DisableKeepAlives: true, DisableCompression: true,
-		ResponseHeaderTimeout: 30 * time.Second, MaxResponseHeaderBytes: 1 << 20,
-		DialTLSContext: func(dialCtx context.Context, _, _ string) (net.Conn, error) {
-			return s.dialWeb(dialCtx, h, s.clientIP(r))
-		},
-	}
-	defer transport.CloseIdleConnections()
+	// Tunnels are reused per client address. net/http replays a request on a
+	// reused connection only when it is idempotent or nothing was written, so
+	// an uncertain mutation still fails instead of running twice.
+	transport, finished := h.web.acquire(s.clientIP(r))
+	defer finished()
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(p *httputil.ProxyRequest) {
 			p.Out.URL.Scheme = "https"
@@ -160,60 +151,43 @@ func (s *Server) serveWeb(w http.ResponseWriter, r *http.Request, id string) {
 
 // dialWeb consumes the same bounded one-time data channels as native clients.
 // TLS pins the key authenticated during registration before any HTTP is sent.
+// The tunnel keeps its reservation until the transport closes it, including
+// while it is idle for reuse.
 func (s *Server) dialWeb(ctx context.Context, h *registeredHost, clientIP string) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancel()
-	s.mu.Lock()
-	if s.closed || s.hosts[h.id] != h || h.ctx.Err() != nil || h.webOrigin == "" ||
-		s.connections >= s.opts.MaxConnections || len(h.pairs) >= s.opts.MaxConnectionsPerHost {
-		s.mu.Unlock()
+	p := s.reservePair(h, true)
+	if p == nil {
 		return nil, errors.New("Web tunnel unavailable")
-	}
-	pairCtx, pairCancel := context.WithCancel(h.ctx)
-	p := &relayPair{id: randomID(), secret: randomID(), host: h, ctx: pairCtx, cancel: pairCancel, data: make(chan *websocket.Conn, 1), done: make(chan struct{})}
-	s.pending[p.id], h.pairs[p.id] = p, p
-	s.connections++
-	s.mu.Unlock()
-	var once sync.Once
-	release := func() {
-		once.Do(func() {
-			pairCancel()
-			s.mu.Lock()
-			delete(s.pending, p.id)
-			delete(h.pairs, p.id)
-			s.connections--
-			s.mu.Unlock()
-			close(p.done)
-		})
 	}
 	success := false
 	defer func() {
 		if !success {
-			release()
+			s.releasePair(p)
 		}
 	}()
 	select {
 	case h.open <- controlMessage{Type: "open", ID: p.id, Secret: p.secret, ClientIP: clientIP}:
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case <-pairCtx.Done():
-		return nil, pairCtx.Err()
+	case <-p.ctx.Done():
+		return nil, p.ctx.Err()
 	}
 	select {
 	case socket := <-p.data:
-		stream := byteStream(pairCtx, socket)
-		go keepAlive(pairCtx, socket)
+		stream := byteStream(p.ctx, socket)
+		go keepAlive(p.ctx, socket)
 		conn := tls.Client(stream, (Pairing{PublicKey: h.publicKey}).TLSConfig())
 		if err := conn.HandshakeContext(ctx); err != nil {
 			stream.Close()
 			return nil, err
 		}
 		success = true
-		return &webConn{Conn: conn, release: release}, nil
+		return &webConn{Conn: conn, release: func() { s.releasePair(p) }}, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case <-pairCtx.Done():
-		return nil, pairCtx.Err()
+	case <-p.ctx.Done():
+		return nil, p.ctx.Err()
 	}
 }
 

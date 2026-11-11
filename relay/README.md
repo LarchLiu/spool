@@ -645,6 +645,11 @@ home server to apply this behavior. Older components remain compatible, but
 retain the shared tunnel-address limit until both are upgraded. The home
 server's separate Public HTTPS endpoint keeps its existing behavior.
 
+The gateway reuses a tunnel for consecutive requests from the same client
+address, keeping up to four idle for 30 seconds. Requests from different
+addresses never share one. Idle tunnels count toward the connection limits and
+are released first when a server reaches its limit.
+
 ## Routing and security
 
 ```text

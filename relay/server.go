@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -57,6 +58,7 @@ type registeredHost struct {
 	cancel         context.CancelFunc
 	open           chan controlMessage
 	pairs          map[string]*relayPair
+	web            *webPool
 }
 
 // A host that changed networks reconnects immediately, while this relay still
@@ -72,6 +74,7 @@ type relayPair struct {
 	data       chan *websocket.Conn
 	done       chan struct{}
 	claimed    bool // guarded by Server.mu
+	released   sync.Once
 }
 
 func NewServer(opts ServerOptions) (*Server, error) {
@@ -232,6 +235,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 	}
 	metadata := registrationMetadata{name: name, ip: s.clientIP(r), enrollment: registrationOnly}
 	h := &registeredHost{id: ServerID(m.PublicKey), token: m.AccessToken, publicKey: append(ed25519.PublicKey(nil), m.PublicKey...), webOrigin: m.WebOrigin, registrationID: registration.ID, control: c, ctx: ctx, cancel: cancel, open: make(chan controlMessage, 32), pairs: make(map[string]*relayPair)}
+	h.web = newWebPool(func(ctx context.Context, clientIP string) (net.Conn, error) { return s.dialWeb(ctx, h, clientIP) })
 	var unreachable *registeredHost
 	if reconnecting {
 		unreachable = s.unreachableHost(ctx, h.id, registration.ID)
@@ -300,6 +304,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 			p.cancel()
 		}
 		s.mu.Unlock()
+		h.web.close()
 	}()
 	webURL := ""
 	if h.webOrigin != "" {
@@ -363,6 +368,45 @@ func (s *Server) disconnectHostLocked(host *registeredHost) {
 	host.control.CloseNow()
 }
 
+// reservePair admits one data connection for h under the global and per-host
+// limits. Web tunnels that are only idle for reuse yield to new work before a
+// connection is refused. It returns nil when the host is gone or still full.
+func (s *Server) reservePair(h *registeredHost, web bool) *relayPair {
+	for reclaimed := false; ; reclaimed = true {
+		s.mu.Lock()
+		if s.closed || s.hosts[h.id] != h || h.ctx.Err() != nil || (web && h.webOrigin == "") {
+			s.mu.Unlock()
+			return nil
+		}
+		if s.connections < s.opts.MaxConnections && len(h.pairs) < s.opts.MaxConnectionsPerHost {
+			ctx, cancel := context.WithCancel(h.ctx)
+			p := &relayPair{id: randomID(), secret: randomID(), host: h, ctx: ctx, cancel: cancel, data: make(chan *websocket.Conn, 1), done: make(chan struct{})}
+			s.pending[p.id], h.pairs[p.id] = p, p
+			s.connections++
+			s.mu.Unlock()
+			return p
+		}
+		s.mu.Unlock()
+		if reclaimed {
+			return nil
+		}
+		h.web.closeIdle()
+	}
+}
+
+// releasePair returns a reservation exactly once, however its connection ends.
+func (s *Server) releasePair(p *relayPair) {
+	p.released.Do(func() {
+		p.cancel()
+		s.mu.Lock()
+		delete(s.pending, p.id)
+		delete(p.host.pairs, p.id)
+		s.connections--
+		s.mu.Unlock()
+		close(p.done)
+	})
+}
+
 func (s *Server) connect(w http.ResponseWriter, r *http.Request, id string) {
 	s.mu.Lock()
 	h := s.hosts[id]
@@ -371,26 +415,14 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request, id string) {
 		http.Error(w, "server unavailable", 404)
 		return
 	}
-	if s.closed || h.ctx.Err() != nil || s.connections >= s.opts.MaxConnections || len(h.pairs) >= s.opts.MaxConnectionsPerHost {
-		s.mu.Unlock()
+	s.mu.Unlock()
+	p := s.reservePair(h, false)
+	if p == nil {
 		http.Error(w, "relay busy", 503)
 		return
 	}
-	ctx, cancel := context.WithCancel(h.ctx)
-	p := &relayPair{id: randomID(), secret: randomID(), host: h, ctx: ctx, cancel: cancel, data: make(chan *websocket.Conn, 1), done: make(chan struct{})}
-	s.pending[p.id] = p
-	h.pairs[p.id] = p
-	s.connections++
-	s.mu.Unlock()
-	defer func() {
-		cancel()
-		close(p.done)
-		s.mu.Lock()
-		delete(s.pending, p.id)
-		delete(h.pairs, p.id)
-		s.connections--
-		s.mu.Unlock()
-	}()
+	defer s.releasePair(p)
+	ctx := p.ctx
 	client, err := accept(w, r)
 	if err != nil {
 		return
