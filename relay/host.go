@@ -93,8 +93,9 @@ func (h *Host) Run() {
 	h.Close()
 }
 
-// Register verifies and persists enrollment without opening an ingress listener
-// or replacing a running host. The returned credential must be stored locally.
+// Register verifies and persists enrollment without opening an ingress listener.
+// A new token retires this identity's previous credential and disconnects its
+// host; retrying the same token preserves it. Store the returned credential.
 func Register(ctx context.Context, url, token string, id *Identity, client *http.Client) (string, error) {
 	return RegisterNamed(ctx, url, token, "", id, client)
 }

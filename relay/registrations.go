@@ -216,15 +216,24 @@ func (s *Server) CreateRegistration(name string) (Registration, string, error) {
 	return record.Registration, token, nil
 }
 
-// Caller holds Server.mu and has verified the signed challenge. Persist the
-// first identity before making the host available, including after a restart.
+// Caller holds Server.mu and has verified the signed challenge. An explicit
+// enrollment with an unused token can replace this identity's active credential.
+// Persist both changes before disconnecting the previous host.
 func (s *Server) claimRegistrationLocked(record registrationRecord, serverID string, metadata registrationMetadata) error {
 	if record.ServerID != "" && record.ServerID != serverID {
 		return ErrRegistrationExists
 	}
+	var replaced []registrationRecord
 	for _, other := range s.registrations {
 		if other.ID != record.ID && other.ServerID == serverID && other.active() {
-			return ErrRegistrationExists
+			if !metadata.enrollment || record.ServerID != "" {
+				return ErrRegistrationExists
+			}
+			// Owner-initiated replacement retires the credential without an
+			// administrative revocation that would block future open enrollment.
+			when := time.Now().UTC()
+			other.UnregisteredAt = &when
+			replaced = append(replaced, other)
 		}
 	}
 	previous := record
@@ -237,11 +246,17 @@ func (s *Server) claimRegistrationLocked(record registrationRecord, serverID str
 	for id, value := range s.registrations {
 		next[id] = value
 	}
+	for _, previous := range replaced {
+		next[previous.ID] = previous
+	}
 	next[record.ID] = record
 	if err := s.saveRegistrations(next); err != nil {
 		return err
 	}
 	s.registrations = next
+	for _, previous := range replaced {
+		s.disconnectRegistrationLocked(previous)
+	}
 	return nil
 }
 

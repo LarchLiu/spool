@@ -438,11 +438,25 @@ permissions are managed by the home server and are unaffected by relay revocatio
 Clearing a revoked token does not let the same Server ID automatically enroll
 again, including after restart. The administrator must issue a replacement token.
 
-To replace a lost or leaked credential, revoke its registration, create another,
-and save the new token on that Spool server. Its identity and phone pairing stay
-the same. Before first registration, a token can be claimed by whoever possesses
-it, so deliver each newly issued token to its intended server. If an automatic
-enrollment reply was lost before Spool saved its token, retrying the same signed
+If Spool loses its local registration record but keeps its identity, registering
+again with the original active token restores enrollment without interrupting
+the existing host. To replace a lost or leaked credential, create a new token
+and register it on that same Spool server. The signed `/v1/register` request
+retires the identity's previous active credential and binds the new one in a
+single durable write, then disconnects the old host and its relay streams.
+The previous record is retained with `unregistered_at`; other servers remain
+connected. A failed write leaves the old credential and connections active.
+Retrying the new token preserves the recovered registration. The server identity
+and phone pairing stay the same; ordinary `/v1/host` connections cannot perform
+this replacement. For a leaked credential, administrators can still revoke it
+immediately before issuing a replacement.
+
+If the identity key is also lost, obtain a new token and pair phones again.
+An already claimed token cannot bind a different identity; the administrator
+must retire the old server's record separately. Before first registration, a
+token can be claimed by whoever possesses it, so deliver each newly issued
+token to its intended server. If an automatic enrollment reply was lost before
+Spool saved its token, retrying the same signed
 identity rotates the credential on the same active record. Revoked records cannot
 use this recovery path. The state file retains revoked and unregistered records (up to 10,000
 registrations / 8 MiB in this version).
@@ -679,7 +693,9 @@ headers, never URL parameters. Compression is disabled.
 
 - `/v1/register`: performs the signed registration handshake and returns `ready`
   after saving the token/identity association. It does not publish the home server
-  as connected or accept client traffic, and does not replace an existing host.
+  as connected or accept client traffic. Retrying the same token preserves an
+  existing host; an unused token retires that identity's previous active
+  credential and disconnects its host only after the replacement is persisted.
 - `/v1/unregister`: requires the registration token and a challenge signature
   specific to unregistration. Invalidates that credential, closes its connections,
   and returns `unregistered` only after persisting the result.
