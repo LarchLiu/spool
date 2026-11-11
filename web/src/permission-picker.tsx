@@ -122,25 +122,20 @@ export function PermissionStatus({
   t: Translator;
   onChoose: () => void;
 }) {
-  if (value.ready) return null;
+  if (value.ready || value.loading) return null;
   return (
-    <div
-      className="connection permission-status"
-      role={value.loading ? "status" : "alert"}
-    >
+    <div className="connection permission-status" role="alert">
       {t(
-        value.loading
-          ? "Checking project permissions…"
-          : value.failed
-            ? "Permission discovery is unavailable"
-            : "Permission mode is unavailable for this project",
+        value.failed
+          ? "Permission discovery is unavailable"
+          : "Permission mode is unavailable for this project",
       )}
       {value.failed && (
         <button type="button" onClick={value.retry}>
           {t("Retry")}
         </button>
       )}
-      {!value.loading && !value.failed && (
+      {!value.failed && (
         <button type="button" onClick={onChoose}>
           {t("Permissions")}
         </button>
