@@ -245,7 +245,7 @@ test("workflow pins actions, keeps private keys out of builds and uploads assets
   assert.doesNotMatch(publish, /^    if:/m);
   for (const runner of ["macos-15-intel", "windows-11-arm", "ubuntu-24.04-arm"]) assert.ok(beforePublish.includes(runner));
   assert.match(beforePublish, /bun tools\/smoke-release.mjs smoke-assets/);
-  assert.match(beforePublish.split("\n  smoke:\n")[1], /bun test tools\/test-scratch\.test\.mjs/);
+  assert.match(beforePublish.split("\n  smoke:\n")[1], /shell: bash\n        run: bun test tools\/test-scratch\.test\.mjs tools\/smoke-archive\.test\.mjs/);
   assert.match(beforePublish, /bun tools\/package-server.mjs/);
   assert.match(beforePublish, /bun tools\/smoke-server.mjs smoke-assets/);
   assert.doesNotMatch(publish, /sha256sum --check/);

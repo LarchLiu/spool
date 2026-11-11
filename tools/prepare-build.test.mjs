@@ -91,7 +91,7 @@ test("manual build workflow resolves a branch or commit once and cannot publish 
   const smoke = workflow.split("\n  smoke:\n")[1];
   assert.ok(smoke);
   assert.match(smoke, /needs: \[prepare, build\]/);
-  assert.match(smoke, /bun test tools\/test-scratch\.test\.mjs/);
+  assert.match(smoke, /shell: bash\n        run: bun test tools\/test-scratch\.test\.mjs tools\/smoke-archive\.test\.mjs/);
   assert.match(smoke, /bun tools\/smoke-release\.mjs smoke-assets/);
   assert.match(smoke, /bun tools\/smoke-server.mjs smoke-assets/);
   assert.match(smoke, /ref: \$\{\{ needs\.prepare\.outputs\.commit \}\}/);

@@ -4,15 +4,11 @@ import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { releaseVersion } from "./prepare-release.mjs";
+import { extractSmokeArchive } from "./smoke-archive.mjs";
 import { createScratch, removeScratch } from "./test-scratch.mjs";
 
 export function verifySmokeReport(result, version, target) {
   assert.deepEqual(result, { version, target, native: true, web: true, chat_webview: true, single_window: true, full_window_chat: true, shared_presentation: true, settings_webview: true, management_bridge: true });
-}
-
-export function extractSmokeArchive(directory, filename, destination, run = execFileSync) {
-  // GNU tar treats a Windows drive letter in the archive path as a remote host.
-  run("tar", ["-xzf", filename, "-C", resolve(destination)], { cwd: resolve(directory) });
 }
 
 export async function smokeRelease(directory, target, env = process.env) {
@@ -44,6 +40,9 @@ export async function smokeRelease(directory, target, env = process.env) {
     assert.equal(code, 0, `packaged app failed: ${output}`);
     const result = JSON.parse(await readFile(report, "utf8"));
     verifySmokeReport(result, version, target);
+  } catch (error) {
+    output = `${output}\n${error.stack ?? error}\n${error.stderr ?? ""}`.slice(-256 * 1024);
+    throw error;
   } finally {
     clearTimeout(timer);
     try {

@@ -40,3 +40,24 @@ test("server packaging rejects a mismatched embedded version before building", a
 test("server smoke rejects non-native targets before touching scratch or spawning", async () => {
   await assert.rejects(smokeServer("missing", "other-platform", {}), /target OS and architecture/);
 });
+
+test("server extraction failures retain diagnostics and discard a previous success report", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "spool-server-smoke-failure-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const directory = join(root, "assets");
+  const results = join(root, "build/artifacts/server-smoke");
+  await Promise.all([mkdir(directory), mkdir(results, { recursive: true })]);
+  await writeFile(join(results, "report.json"), '{"web":true}');
+  const target = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`;
+  const archive = `spool-server-1.2.3-${target}.tar.gz`;
+  await writeFile(join(directory, archive), "broken archive");
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL("./smoke-server.mjs", import.meta.url)), directory, target], {
+    cwd: root, env: { ...process.env, RELEASE_TAG: "v1.2.3" }, encoding: "utf8", timeout: 10_000,
+  });
+  assert.equal(result.error, undefined);
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  const log = await readFile(join(results, "startup.log"), "utf8");
+  assert.match(log, /Command failed:/);
+  assert.ok(log.includes(archive), log);
+  await assert.rejects(readFile(join(results, "report.json")), { code: "ENOENT" });
+});

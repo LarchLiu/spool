@@ -245,8 +245,9 @@ jobs:
         with:
           name: packages-${{ matrix.target }}
           path: smoke-assets
-      - name: Test smoke scratch cleanup
-        run: bun test tools/test-scratch.test.mjs
+      - name: Test smoke extraction and scratch cleanup
+        shell: bash
+        run: bun test tools/test-scratch.test.mjs tools/smoke-archive.test.mjs
       - name: Run headless server without a display
         env:
           RELEASE_TAG: ${{ env.RELEASE_TAG }}

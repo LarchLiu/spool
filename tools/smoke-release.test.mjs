@@ -1,44 +1,31 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
-import { extractSmokeArchive, smokeRelease, verifySmokeReport } from "./smoke-release.mjs";
+import { fileURLToPath } from "node:url";
+import { smokeRelease, verifySmokeReport } from "./smoke-release.mjs";
 
-test("Windows smoke extraction keeps drive letters out of tar's archive argument", async (t) => {
-  for (const [target, drive] of [["windows-amd64", "D"], ["windows-arm64", "C"]]) {
-    await t.test(target, () => {
-      const directory = `${drive}:\\a\\spool\\spool\\smoke assets`;
-      const filename = `spool-1.2.3-${target}.tar.gz`;
-      const destination = "C:\\Users\\Runner User\\AppData\\Local\\Temp\\spool-smoke-package";
-      const calls = [];
-      extractSmokeArchive(directory, filename, destination, (...args) => calls.push(args));
-      assert.deepEqual(calls, [["tar", ["-xzf", filename, "-C", resolve(destination)], { cwd: resolve(directory) }]]);
-    });
-  }
-});
-
-test("smoke extraction unpacks real archives from paths with spaces and colons", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "spool-smoke archive-"));
+test("desktop extraction failures retain diagnostics and discard a previous success report", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "spool-smoke-failure-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const directory = join(root, process.platform === "win32" ? "smoke assets" : "D: smoke assets");
-  const payload = join(root, "payload");
-  await mkdir(directory);
-  await mkdir(join(payload, "resources"), { recursive: true });
-  await writeFile(join(payload, "Spool.exe"), "packaged executable");
-  await writeFile(join(payload, "resources", "asset.txt"), "packaged resource");
-  for (const target of ["windows-amd64", "windows-arm64"]) {
-    await t.test(target, async () => {
-      const filename = `spool-1.2.3-${target}.tar.gz`;
-      execFileSync("tar", ["-czf", filename, "-C", payload, "Spool.exe", "resources"], { cwd: directory });
-      const destination = join(root, `extracted ${target}`);
-      await mkdir(destination);
-      extractSmokeArchive(directory, filename, destination);
-      assert.equal(await readFile(join(destination, "Spool.exe"), "utf8"), "packaged executable");
-      assert.equal(await readFile(join(destination, "resources", "asset.txt"), "utf8"), "packaged resource");
-    });
-  }
+  const directory = join(root, "assets");
+  const results = join(root, "smoke-results");
+  await Promise.all([mkdir(directory), mkdir(results)]);
+  await writeFile(join(results, "report.json"), '{"native":true}');
+  const target = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch === "x64" ? "amd64" : process.arch}`;
+  const archive = `spool-1.2.3-${target}.tar.gz`;
+  await writeFile(join(directory, archive), "broken archive");
+  const result = spawnSync(process.execPath, [fileURLToPath(new URL("./smoke-release.mjs", import.meta.url)), directory, target], {
+    cwd: root, env: { ...process.env, RELEASE_TAG: "v1.2.3" }, encoding: "utf8", timeout: 10_000,
+  });
+  assert.equal(result.error, undefined);
+  assert.notEqual(result.status, 0, result.stdout + result.stderr);
+  const log = await readFile(join(results, "startup.log"), "utf8");
+  assert.match(log, /Command failed:/);
+  assert.ok(log.includes(archive), log);
+  await assert.rejects(readFile(join(results, "report.json")), { code: "ENOENT" });
 });
 
 test("release smoke accepts only the expected version, target, native loop and Web probes", () => {

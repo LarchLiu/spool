@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { releaseVersion } from "./prepare-release.mjs";
 import { serverArchiveName } from "./release-assets.mjs";
+import { extractSmokeArchive } from "./smoke-archive.mjs";
 import { createScratch, removeScratch } from "./test-scratch.mjs";
 
 export async function smokeServer(directory, target, env = process.env) {
@@ -14,12 +15,13 @@ export async function smokeServer(directory, target, env = process.env) {
   const version = releaseVersion(env.RELEASE_TAG);
   const artifacts = resolve("build/artifacts/server-smoke");
   await mkdir(artifacts, { recursive: true });
+  await rm(join(artifacts, "report.json"), { force: true });
   const run = await createScratch("server-smoke");
   let child, closed, watchdog, output = "";
   try {
     await Promise.all(["tmp", "app", "home", "project"].map((name) => mkdir(join(run, name))));
     const app = join(run, "app");
-    execFileSync("tar", ["-xzf", serverArchiveName(version, target), "-C", app], { cwd: resolve(directory) });
+    extractSmokeArchive(directory, serverArchiveName(version, target), app);
     const binary = join(app, target.startsWith("windows-") ? "spool-server.exe" : "spool-server");
     const isolated = {
       ...env, DISPLAY: "", WAYLAND_DISPLAY: "", HOME: join(run, "home"), USERPROFILE: join(run, "home"),
@@ -71,6 +73,9 @@ export async function smokeServer(directory, target, env = process.env) {
     const code = await closed;
     if (process.platform !== "win32") assert.equal(code, 0, output);
     child = undefined;
+  } catch (error) {
+    output = `${output}\n${error.stack ?? error}\n${error.stderr ?? ""}`.slice(-65536);
+    throw error;
   } finally {
     clearTimeout(watchdog);
     if (child) { child.kill("SIGKILL"); await closed.catch(() => {}); }
