@@ -64,11 +64,12 @@ origin with a certificate trusted by the app; a LAN HTTP address does not work.
 The default loopback mapping is accessible only from the Docker host. Running
 the container at home does not itself create a publicly reachable endpoint.
 
-When opening the dashboard through its public HTTPS address, Relay uses that
-browser address automatically and detects the proxy's actual source IP, including
-a Docker bridge or proxy-container IP. No public-address field is needed. See
+In the dashboard, set **Relay 公网地址** to the HTTPS address that reaches the
+public Relay listener (`28080`). Saving a changed address automatically detects
+the proxy's actual source IP, including a Docker bridge or proxy-container IP. See
 [public management and proxy detection](#public-management-and-proxy-detection)
-for proxy routes. Local/SSH access can specify the public URL under **高级设置**.
+for proxy routes. The management page's URL is independent and is never used
+automatically as the detection target.
 Detection runs after the address changes and once at startup; **检测** retries it.
 
 Registrations and revocations persist in the `relay-data` named volume. The
@@ -275,35 +276,22 @@ timer.
 
 ### Public management and proxy detection
 
-The dashboard can use the same public HTTPS address that native Relay clients
-connect to. Route management paths to port `28081`, and protocol/health/proxy
-callback paths to port `28080`. This origin must be reserved for Relay management
-and native protocol traffic. Host `/web/<server-id>/` applications on a separate
-HTTPS origin, because application JavaScript must not share the dashboard's
-browser origin. Block `/web` paths at the management proxy from the start; Relay
-also blocks them on the saved HTTPS management origin after dashboard setup.
+Use separate HTTPS hostnames for the dashboard and public Relay traffic. The
+management hostname routes to port `28081`; the public Relay hostname routes
+to port `28080`, which serves native protocol traffic, the Web gateway and
+proxy-check callbacks. Application JavaScript must not share the dashboard's
+browser origin. Relay also blocks tenant Web content on the saved HTTPS
+management origin after dashboard setup.
 
-For example, publish management and native Relay at `https://relay.example.com`:
+For example, publish management at `https://relay-admin.example.com` and the
+public service at `https://relay.example.com`:
 
 ```caddyfile
-relay.example.com {
-    @tenant path /web /web/*
-    handle @tenant {
-        respond "Use the separate Web application hostname" 403
-    }
-    @admin path / /admin.js /admin.css /v1/registrations /v1/registrations/* /v1/settings /v1/proxy-detection
-    handle @admin {
-        reverse_proxy 127.0.0.1:28081
-    }
-    handle {
-        reverse_proxy 127.0.0.1:28080 {
-            flush_interval -1
-        }
-    }
+relay-admin.example.com {
+    reverse_proxy 127.0.0.1:28081
 }
 
-# Optional Web gateway; configure this origin in each Spool server's Web opt-in.
-relay-web.example.com {
+relay.example.com {
     reverse_proxy 127.0.0.1:28080 {
         flush_interval -1
     }
@@ -312,16 +300,18 @@ relay-web.example.com {
 
 For Docker-based proxies, replace the loopback targets with the relay container's
 address and the same container ports. Keep the host's management mapping private.
-For ngrok or Cloudflare Tunnel, use the same path routing: management paths above
-go to `28081`, and `/.well-known/spool-relay/proxy-check/*` plus native Relay
-paths go to `28080`. Forward the original Host, set `X-Forwarded-Proto: https`,
-and replace or safely append `X-Forwarded-For`. Forwarding the entire hostname
-only to the management port cannot verify the public Relay listener.
+For ngrok or Cloudflare Tunnel, configure the management hostname to forward to
+`28081` and the service hostname to forward to `28080`. Forward the original
+Host, set `X-Forwarded-Proto: https`, and replace or safely append
+`X-Forwarded-For`. Forwarding only to the management port cannot verify the
+public Relay listener.
 
-After signing in through HTTPS, the dashboard saves `location.origin` and starts
-verification automatically. No public URL needs to be typed. It uses a one-time
-callback and independent response proof with normal TLS certificate validation,
-without credentials or redirects. On success it trusts only the observed TCP
+Set **Relay 公网地址** to `https://relay.example.com`. Leaving the input or
+pressing Enter saves it and automatically starts verification against the
+public listener. The management hostname is recorded separately for isolation;
+it never determines the service URL, including when management uses HTTPS.
+Verification uses a one-time callback and independent response proof with normal
+TLS certificate validation, without credentials or redirects. On success it trusts only the observed TCP
 peer as an exact `/32` or `/128`, applies it immediately and persists it in
 `settings.json` alongside the saved address. Direct TLS needs no proxy entry.
 Relay repeats this once after binding the public listener on startup, replacing
@@ -330,11 +320,21 @@ is shown in the dashboard and **检测** retries it; a failed retry does not era
 the previous verified result for the same address. Changing the address clears
 the previous automatic trust immediately.
 
-With local/SSH dashboard access, Relay cannot discover the public hostname from
-the local browser address. Under **高级设置**, set **公网地址覆盖** to the HTTPS
-origin that forwards the public callback to port `28080`. Saving a changed
-address starts detection. Clear the override when using the public dashboard
-address again.
+The same setting is used for public, local and SSH dashboard access. Enter the
+service HTTPS origin without a path or wildcard. The callback
+`/.well-known/spool-relay/proxy-check/*` must reach `28080` on this Relay process.
+Clearing the address disables automatic detection and removes automatic trust;
+manual CIDRs remain. Version 1 settings that inferred a URL from the management
+page are cleared on load, while explicitly supplied old overrides are preserved.
+New writes use settings version 2; older binaries reject that settings file.
+
+If the Web gateway later routes individual servers by subdomain, those hostnames
+can share the same public IP and backend port `28080`. Configure the base
+hostname as the detection address and route its callback to that port too.
+One verified peer covers hostnames using the same proxy path and backend process;
+DNS alone does not prove that two hostnames use the same proxy. Extra ingress
+paths or different proxy peers need their own explicit trusted CIDRs. This
+setting does not itself enable subdomain routing in the Web gateway.
 
 **额外可信代理** is for explicitly trusted extra hops in a multi-proxy chain.
 The detected peer remains separate and is replaced automatically after a
@@ -349,11 +349,12 @@ The API remains available to scripts. Every API request requires a Bearer
 administrator credential; browser callers must be same-origin. Tokens and
 credentials are never accepted in URL query strings.
 
-`GET /v1/settings` returns the effective public URL, its optional override,
+`GET /v1/settings` returns the public service URL, the saved management origin,
 manual CIDRs, the last verified peer/origin/time, and detection progress/error.
-`PUT /v1/settings` accepts only `public_url_override`, `browser_origin`, and
+`PUT /v1/settings` accepts only `public_url`, `browser_origin`, and
 `trusted_proxies` (an array of CIDRs); detection-owned fields are read-only.
-An empty override uses the supplied HTTPS browser origin.
+An empty public URL disables automatic detection; `browser_origin` only records
+the management origin for tenant isolation.
 `POST /v1/proxy-detection` retries the saved URL and returns HTTP 202; poll
 `GET /v1/settings` for completion. Saving an address change also starts this
 backend verifier, so API clients do not need a second request.

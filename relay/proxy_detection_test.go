@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -51,7 +52,7 @@ func awaitDetection(t *testing.T, s *Server) settingsStatus {
 	return settingsStatus{}
 }
 
-func TestProxyDetectionFromBrowserOriginAndRestart(t *testing.T) {
+func TestProxyDetectionUsesServiceURLAndRestart(t *testing.T) {
 	s := testBroker(t)
 	broker := s
 	peer := "172.18.0.3:41000"
@@ -67,11 +68,11 @@ func TestProxyDetectionFromBrowserOriginAndRestart(t *testing.T) {
 		r.Header.Set("X-Forwarded-For", "203.0.113.9")
 		broker.ServeHTTP(w, r)
 	}))
-	if err := s.updateSettings(settingsInput{BrowserOrigin: public.URL, TrustedProxies: []string{"10.10.0.0/24"}}); err != nil {
+	if err := s.updateSettings(settingsInput{PublicURL: public.URL, BrowserOrigin: "https://relay-admin.example", TrustedProxies: []string{"10.10.0.0/24"}}); err != nil {
 		t.Fatal(err)
 	}
 	status := awaitDetection(t, s)
-	if status.PublicURL != public.URL || status.PublicURLOverride != "" || status.AdminOrigin != public.URL || status.DetectionError != "" || status.DetectedProxy != "172.18.0.3/32" || status.DetectedAt == nil {
+	if status.PublicURL != public.URL || status.AdminOrigin != "https://relay-admin.example" || status.DetectionError != "" || status.DetectedProxy != "172.18.0.3/32" || status.DetectedAt == nil {
 		t.Fatalf("automatic discovery failed: %+v", status)
 	}
 	r := httptest.NewRequest("GET", "/v1/host", nil)
@@ -106,7 +107,7 @@ func TestProxyDetectionFromBrowserOriginAndRestart(t *testing.T) {
 	if restored.clientIP(r) != "172.18.0.3" {
 		t.Fatal("old automatic proxy remained trusted")
 	}
-	r.Host = strings.TrimPrefix(public.URL, "https://")
+	r.Host = "relay-admin.example"
 	r.URL.Path = WebPath(strings.Repeat("a", 52))
 	w = httptest.NewRecorder()
 	restored.ServeHTTP(w, r)
@@ -155,7 +156,7 @@ func TestProxyDetectionRejectsUnverifiedResponses(t *testing.T) {
 				}
 				s.ServeHTTP(w, r)
 			}))
-			if err := s.updateSettings(settingsInput{BrowserOrigin: public.URL}); err != nil {
+			if err := s.updateSettings(settingsInput{PublicURL: public.URL}); err != nil {
 				t.Fatal(err)
 			}
 			status := awaitDetection(t, s)
@@ -170,14 +171,14 @@ func TestProxyDetectionRequiresTrustedTLSAndSupportsDirectTLS(t *testing.T) {
 	s := testBroker(t)
 	untrusted := httptest.NewTLSServer(s)
 	defer untrusted.Close()
-	if err := s.updateSettings(settingsInput{BrowserOrigin: untrusted.URL}); err != nil {
+	if err := s.updateSettings(settingsInput{PublicURL: untrusted.URL}); err != nil {
 		t.Fatal(err)
 	}
 	if status := awaitDetection(t, s); status.DetectionError == "" || status.DetectedAt != nil {
 		t.Fatal("untrusted certificate accepted")
 	}
 	public := trustedProbeServer(t, s)
-	if err := s.updateSettings(settingsInput{BrowserOrigin: public.URL}); err != nil {
+	if err := s.updateSettings(settingsInput{PublicURL: public.URL}); err != nil {
 		t.Fatal(err)
 	}
 	if status := awaitDetection(t, s); status.DetectionError != "" || status.DetectedAt == nil || status.DetectedProxy != "" {
@@ -195,7 +196,7 @@ func TestProxyDetectionCancellationAndConcurrentPolicy(t *testing.T) {
 		}
 		<-r.Context().Done()
 	}))
-	if err := s.updateSettings(settingsInput{BrowserOrigin: public.URL}); err != nil {
+	if err := s.updateSettings(settingsInput{PublicURL: public.URL}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -236,7 +237,7 @@ func TestProxyDetectionCancellationAndConcurrentPolicy(t *testing.T) {
 func TestSettingsValidationPersistenceAndFailures(t *testing.T) {
 	s := testBroker(t)
 	for _, address := range []string{"http://example.com", "https://user:pass@example.com", "https://example.com/path", "https://example.com?", "https://example.com#", "https://example.com:999999"} {
-		if err := s.updateSettings(settingsInput{PublicURLOverride: address}); err == nil {
+		if err := s.updateSettings(settingsInput{PublicURL: address}); err == nil {
 			t.Fatal("accepted unsafe origin", address)
 		}
 	}
@@ -272,6 +273,54 @@ func TestSettingsValidationPersistenceAndFailures(t *testing.T) {
 	if other, err := NewServer(s.opts); err == nil {
 		other.Close()
 		t.Fatal("invalid stored automatic trust accepted")
+	}
+}
+
+func TestManagementOriginNeverChoosesPublicURL(t *testing.T) {
+	s := testBroker(t)
+	if err := s.updateSettings(settingsInput{BrowserOrigin: "https://relay-admin.example"}); err != nil {
+		t.Fatal(err)
+	}
+	status := s.settingsStatus()
+	if status.PublicURL != "" || status.Detecting || status.AdminOrigin != "https://relay-admin.example" {
+		t.Fatal("management origin became public probe target", status)
+	}
+}
+
+func TestLegacyProxySettingsMigration(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		t.Run(fmt.Sprintf("explicit=%t", explicit), func(t *testing.T) {
+			s := testBroker(t)
+			origin := "https://relay.example"
+			saved := map[string]any{
+				"version": 1, "public_url": origin, "admin_origin": "https://relay-admin.example",
+				"trusted_proxies": []string{"10.0.0.1/32"}, "detected_origin": origin,
+				"detected_proxy": "172.18.0.3/32", "detected_at": time.Now().UTC(),
+				"public_url_override": "",
+			}
+			if explicit {
+				saved["public_url_override"] = origin
+			}
+			data, _ := json.Marshal(saved)
+			if err := os.WriteFile(filepath.Join(s.opts.DataDir, "settings.json"), data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			restored, err := NewServer(s.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer restored.Close()
+			status := restored.settingsStatus()
+			if explicit && (status.PublicURL != origin || status.DetectedProxy != "172.18.0.3/32" || status.DetectedAt == nil) {
+				t.Fatal("explicit legacy URL was lost", status)
+			}
+			if !explicit && (status.PublicURL != "" || status.DetectedProxy != "" || status.DetectedOrigin != "" || status.DetectedAt != nil) {
+				t.Fatal("legacy inferred management URL remained trusted", status)
+			}
+			if status.AdminOrigin != "https://relay-admin.example" || len(status.TrustedProxies) != 1 || status.TrustedProxies[0] != "10.0.0.1/32" {
+				t.Fatal("migration changed independent settings", status)
+			}
+		})
 	}
 }
 
@@ -347,7 +396,7 @@ func TestFailedRetryPreservesVerifiedPolicyAndManualEdits(t *testing.T) {
 		r.Header.Set("X-Forwarded-For", "203.0.113.9")
 		s.ServeHTTP(w, r)
 	}))
-	if err := s.updateSettings(settingsInput{BrowserOrigin: public.URL}); err != nil {
+	if err := s.updateSettings(settingsInput{PublicURL: public.URL}); err != nil {
 		t.Fatal(err)
 	}
 	before := awaitDetection(t, s)
@@ -355,7 +404,7 @@ func TestFailedRetryPreservesVerifiedPolicyAndManualEdits(t *testing.T) {
 	fail = true
 	mu.Unlock()
 	s.StartProxyDetection()
-	if err := s.updateSettings(settingsInput{BrowserOrigin: public.URL, TrustedProxies: []string{"10.10.0.0/24"}}); err != nil {
+	if err := s.updateSettings(settingsInput{PublicURL: public.URL, TrustedProxies: []string{"10.10.0.0/24"}}); err != nil {
 		t.Fatal(err)
 	}
 	after := awaitDetection(t, s)

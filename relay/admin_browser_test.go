@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -17,17 +17,15 @@ func TestAdminBrowserFixture(t *testing.T) {
 	}
 	s := testBroker(t)
 	public := trustedProbeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, proxyProbePath) || r.URL.Path == "/healthz" ||
-			r.URL.Path == "/v1/host" || r.URL.Path == "/v1/register" || r.URL.Path == "/v1/unregister" ||
-			strings.HasPrefix(r.URL.Path, "/v1/connect/") || strings.HasPrefix(r.URL.Path, "/v1/data/") {
-			r.TLS = nil
-			r.Header.Set("X-Forwarded-Proto", "https")
-			r.Header.Set("X-Forwarded-For", "203.0.113.9")
-			s.ServeHTTP(w, r)
-			return
-		}
-		s.AdminHandler().ServeHTTP(w, r)
+		r.TLS = nil
+		r.Header.Set("X-Forwarded-Proto", "https")
+		r.Header.Set("X-Forwarded-For", "203.0.113.9")
+		s.ServeHTTP(w, r)
 	}))
+	// Management and public traffic have independent listeners, matching the
+	// normal deployment instead of relying on per-path management URL routing.
+	admin := httptest.NewTLSServer(s.AdminHandler())
+	t.Cleanup(admin.Close)
 	// Exercise online server metadata against an actual native connection.
 	_, token := createViaAPI(t, s, "home-mac")
 	id, err := NewIdentity()
@@ -35,7 +33,7 @@ func TestAdminBrowserFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	startAdminTestHost(t, public, token, id, make(chan struct{}))
-	if err := json.NewEncoder(os.Stdout).Encode(map[string]string{"fixture_url": public.URL}); err != nil {
+	if err := json.NewEncoder(os.Stdout).Encode(map[string]string{"fixture_url": admin.URL, "public_url": public.URL}); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = io.Copy(io.Discard, os.Stdin)

@@ -353,9 +353,9 @@ func TestRelayWebDetectedProxySeparatesLoginLimitsWithoutRestart(t *testing.T) {
 		broker.AdminHandler().ServeHTTP(w, r)
 		return w
 	}
-	data, _ := json.Marshal(map[string]any{"browser_origin": front.URL, "public_url_override": "", "trusted_proxies": []string{}})
+	data, _ := json.Marshal(map[string]any{"browser_origin": "https://relay-admin.example", "public_url": front.URL, "trusted_proxies": []string{}})
 	if w := admin(http.MethodPut, "/v1/settings", string(data)); w.Code != 200 {
-		t.Fatal("could not save browser origin", w.Code, w.Body)
+		t.Fatal("could not save Relay public URL", w.Code, w.Body)
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {

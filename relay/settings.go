@@ -15,19 +15,18 @@ import (
 // Automatic trust is kept separate from operator-supplied CIDRs. Only the
 // callback verifier can write it; changing the public origin clears it.
 type relaySettings struct {
-	PublicURL         string     `json:"public_url"`
-	PublicURLOverride string     `json:"public_url_override"`
-	AdminOrigin       string     `json:"admin_origin"`
-	TrustedProxies    []string   `json:"trusted_proxies"`
-	DetectedProxy     string     `json:"detected_proxy"`
-	DetectedOrigin    string     `json:"detected_origin"`
-	DetectedAt        *time.Time `json:"detected_at,omitempty"`
+	PublicURL      string     `json:"public_url"`
+	AdminOrigin    string     `json:"admin_origin"`
+	TrustedProxies []string   `json:"trusted_proxies"`
+	DetectedProxy  string     `json:"detected_proxy"`
+	DetectedOrigin string     `json:"detected_origin"`
+	DetectedAt     *time.Time `json:"detected_at,omitempty"`
 }
 
 type settingsInput struct {
-	PublicURLOverride string   `json:"public_url_override"`
-	BrowserOrigin     string   `json:"browser_origin"`
-	TrustedProxies    []string `json:"trusted_proxies"`
+	PublicURL      string   `json:"public_url"`
+	BrowserOrigin  string   `json:"browser_origin"`
+	TrustedProxies []string `json:"trusted_proxies"`
 }
 
 type settingsStatus struct {
@@ -85,11 +84,14 @@ func (s *Server) loadSettings() error {
 	defer file.Close()
 	var saved struct {
 		Version int `json:"version"`
+		// Version 1 inferred the service URL from the management browser origin
+		// unless an override was provided. Preserve only explicitly chosen URLs.
+		LegacyOverride string `json:"public_url_override,omitempty"`
 		relaySettings
 	}
 	decoder := json.NewDecoder(io.LimitReader(file, 32769))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&saved) != nil || decoder.Decode(new(any)) != io.EOF || saved.Version != 1 {
+	if decoder.Decode(&saved) != nil || decoder.Decode(new(any)) != io.EOF || (saved.Version != 1 && saved.Version != 2) {
 		return errors.New("invalid relay settings store")
 	}
 	if saved.PublicURL != "" {
@@ -98,7 +100,7 @@ func (s *Server) loadSettings() error {
 			return errInvalidSettings
 		}
 	}
-	if saved.PublicURLOverride != "" && saved.PublicURLOverride != saved.PublicURL {
+	if saved.LegacyOverride != "" && (saved.Version != 1 || saved.LegacyOverride != saved.PublicURL) {
 		return errInvalidSettings
 	}
 	if saved.AdminOrigin != "" {
@@ -118,6 +120,9 @@ func (s *Server) loadSettings() error {
 			}
 		}
 	}
+	if saved.Version == 1 && saved.LegacyOverride == "" {
+		saved.PublicURL, saved.DetectedProxy, saved.DetectedOrigin, saved.DetectedAt = "", "", "", nil
+	}
 	proxies, err := normalizedProxies(saved.TrustedProxies)
 	if err != nil {
 		return err
@@ -133,7 +138,7 @@ func (s *Server) saveSettingsLocked(next relaySettings) error {
 	data, err := json.MarshalIndent(struct {
 		Version int `json:"version"`
 		relaySettings
-	}{1, next}, "", "  ")
+	}{2, next}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -176,23 +181,26 @@ func (s *Server) updateSettings(input settingsInput) error {
 	if err != nil {
 		return err
 	}
-	override := strings.TrimSpace(input.PublicURLOverride)
 	var origin string
-	if override != "" {
-		origin, err = publicOrigin(override)
-		override = origin
-	} else if strings.HasPrefix(input.BrowserOrigin, "https://") {
-		origin, err = publicOrigin(input.BrowserOrigin)
-	} else if input.BrowserOrigin != "" {
-		// Local HTTP/SSH access cannot reveal a public address. Preserve the last
-		// browser-discovered address, or let the operator override it explicitly.
-		u, parseErr := url.Parse(input.BrowserOrigin)
-		if parseErr != nil || u.Scheme != "http" || !loopbackHost(u.Hostname()) || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
-			return errInvalidSettings
+	if strings.TrimSpace(input.PublicURL) != "" {
+		origin, err = publicOrigin(input.PublicURL)
+		if err != nil {
+			return err
 		}
 	}
-	if err != nil {
-		return err
+	var adminOrigin string
+	if strings.HasPrefix(input.BrowserOrigin, "https://") {
+		adminOrigin, err = publicOrigin(input.BrowserOrigin)
+		if err != nil {
+			return err
+		}
+	} else if input.BrowserOrigin != "" {
+		// The browser origin protects the administrative host from tenant Web
+		// content. It never chooses the public service URL or proxy-check target.
+		u, parseErr := url.Parse(input.BrowserOrigin)
+		if parseErr != nil || u.Scheme != "http" || !loopbackHost(u.Hostname()) || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+			return errInvalidSettings
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -200,17 +208,10 @@ func (s *Server) updateSettings(input settingsInput) error {
 		return errors.New("relay is closed")
 	}
 	next := s.settings
-	if strings.HasPrefix(input.BrowserOrigin, "https://") {
-		adminOrigin, err := publicOrigin(input.BrowserOrigin)
-		if err != nil {
-			return err
-		}
+	if adminOrigin != "" {
 		next.AdminOrigin = adminOrigin
 	}
-	if origin == "" && input.BrowserOrigin != "" && override == "" {
-		origin = next.PublicURL
-	}
-	next.PublicURL, next.PublicURLOverride, next.TrustedProxies = origin, override, proxies
+	next.PublicURL, next.TrustedProxies = origin, proxies
 	changed := next.PublicURL != s.settings.PublicURL
 	if changed {
 		next.DetectedProxy, next.DetectedOrigin, next.DetectedAt = "", "", nil

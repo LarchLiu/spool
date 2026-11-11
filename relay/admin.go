@@ -64,7 +64,7 @@ func (s *Server) AdminHandler() http.Handler {
 				return
 			}
 			if s.settingsStatus().PublicURL == "" {
-				adminError(w, "请先通过公网 HTTPS 管理网址访问，或在高级设置中指定公网地址。", http.StatusBadRequest)
+				adminError(w, "请先设置 Relay 公网地址。", http.StatusBadRequest)
 				return
 			}
 			s.StartProxyDetection()

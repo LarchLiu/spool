@@ -7,6 +7,7 @@
   let generation = 0;
   let pending = false;
   let settingsDirty = false;
+  let savingSettings = false;
 
   const local = location.hostname === "localhost" || location.hostname === "[::1]" || /^127\.\d+\.\d+\.\d+$/.test(location.hostname);
   if (location.protocol !== "https:" && !local) {
@@ -55,15 +56,15 @@
   }
   function renderSettings(next, fill = false) {
     settings = next;
-    $("public-address").textContent = next.public_url || "本机管理入口，无法自动推断公网地址";
+    $("public-address").textContent = next.public_url || "尚未设置公网地址";
     $("detected-proxy").textContent = next.detected_proxy || (next.detected_at ? "直接 TLS 连接，无需代理 IP" : "尚无");
     $("detect").disabled = !next.public_url || next.detecting;
     $("detect").textContent = next.detecting ? "检测中…" : "检测";
     $("detection-dot").className = "dot" + (next.detecting ? " busy" : next.detected_at && !next.detection_error ? " success" : "");
-    $("detection-status").textContent = next.detecting ? "正在验证公网地址，成功后将自动保存并生效…" : next.detection_error || (next.detected_at ? "检测成功 · " + (next.detected_proxy ? "已信任代理 " + next.detected_proxy : "无需配置可信代理") + " · " + new Date(next.detected_at).toLocaleString() : next.public_url ? "尚未验证，点击检测重试。" : "通过公网 HTTPS 管理网址访问即可自动检测；使用 SSH 时可在高级设置中指定公网地址。");
+    $("detection-status").textContent = next.detecting ? "正在验证公网地址，成功后将自动保存并生效…" : next.detection_error || (next.detected_at ? "检测成功 · " + (next.detected_proxy ? "已信任代理 " + next.detected_proxy : "无需配置可信代理") + " · " + new Date(next.detected_at).toLocaleString() : next.public_url ? "尚未验证，点击检测重试。" : "填写 Relay 公网地址后，离开输入框或按回车即可保存并自动检测。");
     $("registration-mode").textContent = next.registration_required ? "每个 token 只授权一台 Spool 服务器。" : "已开启自动注册；新服务器也可凭签名身份自动注册。";
     if (fill && !settingsDirty) {
-      $("public-override").value = next.public_url_override;
+      $("public-url").value = next.public_url;
       $("trusted-proxies").value = (next.trusted_proxies || []).join(", ");
     }
   }
@@ -125,14 +126,24 @@
     }, settings?.detecting ? 800 : 10000);
   }
   async function saveSettings() {
-    const next = await api("/v1/settings", { method: "PUT", body: JSON.stringify({
-      public_url_override: $("public-override").value.trim(),
-      browser_origin: location.origin,
-      trusted_proxies: $("trusted-proxies").value.split(",").map((v) => v.trim()).filter(Boolean),
-    }) });
-    settingsDirty = false;
-    renderSettings(next, true);
-    poll();
+    if (savingSettings) return;
+    savingSettings = true;
+    $("public-url").disabled = $("trusted-proxies").disabled = $("save-settings").disabled = true;
+    $("detect").disabled = true;
+    try {
+      const next = await api("/v1/settings", { method: "PUT", body: JSON.stringify({
+        public_url: $("public-url").value.trim(),
+        browser_origin: location.origin,
+        trusted_proxies: $("trusted-proxies").value.split(",").map((v) => v.trim()).filter(Boolean),
+      }) });
+      settingsDirty = false;
+      renderSettings(next, true);
+      poll();
+    } finally {
+      savingSettings = false;
+      $("public-url").disabled = $("trusted-proxies").disabled = $("save-settings").disabled = false;
+      if (settings) renderSettings(settings);
+    }
   }
   $("login-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -146,9 +157,9 @@
       $("login").hidden = true;
       $("dashboard").hidden = false;
       $("logout").hidden = false;
-      // The browser knows the external HTTPS origin even when TLS terminates
-      // at a proxy. Saving it starts the shared backend verifier automatically.
-      if (location.protocol === "https:" && (settings.admin_origin !== location.origin || (!settings.public_url_override && settings.public_url !== location.origin))) await saveSettings();
+      // Remember the management origin for tenant isolation. Its listener can
+      // differ from the public Relay entry, so it never supplies the probe URL.
+      if (location.protocol === "https:" && settings.admin_origin !== location.origin) await saveSettings();
       poll();
     } catch (error) { showNotice(error.message); }
     finally { $("login-button").disabled = location.protocol !== "https:" && !local; }
@@ -158,9 +169,17 @@
   $("settings-form").addEventListener("input", () => { settingsDirty = true; });
   $("settings-form").addEventListener("submit", async (event) => {
     event.preventDefault();
-    $("save-settings").disabled = true;
     try { await saveSettings(); showNotice("设置已保存。", true); } catch (error) { showNotice(error.message); }
-    finally { $("save-settings").disabled = false; }
+  });
+  $("public-url").addEventListener("blur", async () => {
+    if (!settings || $("public-url").value.trim() === settings.public_url || !$("public-url").checkValidity()) return;
+    try { await saveSettings(); showNotice(""); } catch (error) { showNotice(error.message); }
+  });
+  $("public-url").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      $("settings-form").requestSubmit();
+    }
   });
   $("detect").addEventListener("click", async () => {
     $("detect").disabled = true;

@@ -28,19 +28,19 @@
         <div class="page-title"><div><span class="eyebrow">OVERVIEW</span><h1>Relay 管理</h1><p class="muted">连接你的设备，管理每一份授权。</p></div><button id="refresh" class="quiet">刷新</button></div>
         <div class="metrics"><div class="metric"><span>在线服务器</span><strong id="online-count">0</strong></div><div class="metric"><span>有效授权</span><strong id="active-count">0</strong></div><div class="metric"><span>当前连接</span><strong id="connection-count">0</strong></div></div>
         <section class="card proxy-card" aria-labelledby="proxy-title">
-          <div class="section-heading"><div><h2 id="proxy-title">公网连接</h2><p class="muted">自动使用当前管理页面的网址，验证实际连接到 Relay 的代理 IP。</p></div><button id="detect" class="quiet">检测</button></div>
-          <div class="address-row"><span id="detection-dot" class="dot"></span><span id="public-address" class="mono">尚未确定公网地址</span></div>
-          <p id="detection-status" class="hint" aria-live="polite"></p>
-          <details id="advanced"><summary>高级设置</summary>
-            <form id="settings-form">
-              <label for="public-override">公网地址覆盖</label><input id="public-override" type="url" placeholder="留空时使用当前管理网址" spellcheck="false">
-              <p class="hint">仅通过本机端口或 SSH 访问管理页时需要指定，例如 https://relay.example.com。</p>
+          <div class="section-heading"><div><h2 id="proxy-title">公网连接</h2><p class="muted">设置 Relay Web 的公网地址，修改后自动检测代理 IP，启动时也会重新检测。</p></div><button id="detect" class="quiet" type="button">检测</button></div>
+          <form id="settings-form">
+            <label for="public-url">Relay 公网地址</label><input id="public-url" type="url" placeholder="https://relay.example.com" spellcheck="false" aria-describedby="public-url-hint">
+            <p id="public-url-hint" class="hint">填写访问 Relay Web 的 HTTPS 网址，不是管理页面的网址。多台服务器的子域名共用同一代理时，只需填写统一入口。</p>
+            <div class="address-row"><span id="detection-dot" class="dot"></span><span id="public-address" class="mono">尚未设置公网地址</span></div>
+            <p id="detection-status" class="hint" aria-live="polite"></p>
+            <details id="advanced"><summary>高级设置</summary>
               <label for="trusted-proxies">额外可信代理</label><input id="trusted-proxies" placeholder="127.0.0.1/32, ::1/128" spellcheck="false">
               <p class="hint">通常无需填写。多级代理可补充明确可信的 IP/CIDR；自动检测的单个 IP 会单独维护。</p>
               <p class="hint">自动检测结果：<code id="detected-proxy">尚无</code></p>
               <button id="save-settings" class="quiet" type="submit">保存设置</button>
-            </form>
-          </details>
+            </details>
+          </form>
         </section>
         <section class="card" aria-labelledby="servers-title">
           <div class="section-heading"><div><h2 id="servers-title">服务器授权</h2><p id="registration-mode" class="muted">每个 token 只授权一台 Spool 服务器。</p></div></div>

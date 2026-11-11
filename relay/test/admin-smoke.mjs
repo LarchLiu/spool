@@ -33,11 +33,14 @@ try {
   let output = "", diagnostics = "";
   fixture.stdout.on("data", (chunk) => { output += chunk; });
   fixture.stderr.on("data", (chunk) => { diagnostics += chunk; });
-  const url = await until(() => {
+  const fixtureInfo = await until(() => {
     if (fixture.exitCode !== null) throw new Error("Fixture failed: " + output + diagnostics);
-    const match = output.match(/\{"fixture_url":"([^"]+)"\}/);
-    return match?.[1];
+    const line = output.split("\n").slice(0, -1).find((line) => line.startsWith('{"fixture_url":'));
+    return line && JSON.parse(line);
   }, "Relay fixture start");
+  const url = fixtureInfo.fixture_url;
+  const publicURL = fixtureInfo.public_url;
+  assert.notEqual(url, publicURL, "Management and service entries must be separate");
   const profile = join(scratch, "profile");
   browser = spawn(process.env.CHROME_BIN, [
     "--headless", "--no-first-run", "--no-default-browser-check", "--disable-background-networking",
@@ -79,6 +82,7 @@ try {
   await send("Runtime.enable");
   await send("Log.enable");
   await send("Page.enable");
+  await send("Emulation.setFocusEmulationEnabled", { enabled: true });
   await send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 1100, deviceScaleFactor: 1, mobile: false });
   await send("Page.navigate", { url });
   await until(() => evaluate('!!document.getElementById("login-form")'), "dashboard shell");
@@ -87,12 +91,31 @@ try {
   assert.equal(await evaluate('document.getElementById("dashboard").hidden'), true);
   await evaluate(`document.getElementById("admin-token").value=${JSON.stringify(adminToken)};document.getElementById("login-form").requestSubmit()`);
   await until(() => evaluate('!document.getElementById("dashboard").hidden'), "login");
-  await until(() => evaluate('document.getElementById("detection-status").textContent.includes("检测成功")'), "automatic HTTPS origin detection");
-  assert.equal(await evaluate('document.getElementById("public-address").textContent'), url);
+  await until(() => evaluate(`fetch('/v1/settings',{headers:{Authorization:'Bearer '+${JSON.stringify(adminToken)}}}).then(r=>r.json()).then(s=>s.admin_origin===location.origin && !s.detecting && s.public_url==='')`), "management origin does not choose probe address");
+  await until(() => evaluate('!document.getElementById("public-url").disabled'), "management initialization completes");
+  assert.equal(await evaluate('document.getElementById("public-url").value'), "");
+  assert.equal(await evaluate('document.getElementById("detect").disabled'), true);
+  await evaluate('document.getElementById("public-url").focus()');
+  assert.equal(await evaluate('document.activeElement.id'), "public-url");
+  await evaluate(`document.getElementById("public-url").value=${JSON.stringify(publicURL)};document.getElementById("public-url").dispatchEvent(new Event('input',{bubbles:true}))`);
+  assert.equal(await evaluate('document.getElementById("public-url").checkValidity()'), true);
+  await evaluate('document.getElementById("server-name").focus()');
+  try {
+    await until(() => evaluate('document.getElementById("detection-status").textContent.includes("检测成功")'), "saving the separate public URL automatically starts detection");
+  } catch (error) {
+    console.error(await evaluate('JSON.stringify({address:document.getElementById("public-url").value,status:document.getElementById("detection-status").textContent,notice:document.getElementById("notice").textContent,disabled:document.getElementById("public-url").disabled,focus:document.activeElement.id})'));
+    throw error;
+  }
+  assert.equal(await evaluate('document.getElementById("public-address").textContent'), publicURL);
   assert.equal(await evaluate('document.getElementById("advanced").open'), false);
-  assert.equal(await evaluate('document.getElementById("public-override").value'), "");
+  assert.equal(await evaluate('document.getElementById("public-url").value'), publicURL);
   assert.equal(await evaluate('document.getElementById("detect").textContent'), "检测");
   assert.equal(await evaluate('document.getElementById("online-count").textContent'), "1");
+  // Enter also saves the explicit URL, including backend normalization.
+  await evaluate(`document.getElementById('public-url').focus();document.getElementById('public-url').value=${JSON.stringify(publicURL + "/")};document.getElementById('public-url').dispatchEvent(new Event('input',{bubbles:true}))`);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  await until(() => evaluate(`!document.getElementById('public-url').disabled && document.getElementById('public-url').value===${JSON.stringify(publicURL)}`), "Enter saves and normalizes the service URL");
   assert.equal(await evaluate('document.getElementById("admin-token").value'), "");
   assert.deepEqual(await evaluate('[localStorage.length,sessionStorage.length,document.cookie]'), [0, 0, ""]);
   const name = "office-linux";
@@ -113,9 +136,11 @@ try {
   await until(() => evaluate('document.getElementById("revoke-dialog").open'), "revocation confirmation");
   await evaluate('document.querySelector("#revoke-dialog .danger").click()');
   await until(() => evaluate('document.querySelector("#servers .badge").textContent==="已撤销"'), "revocation");
-  const revoked = await evaluate(`fetch('/v1/host',{headers:{Authorization:'Bearer '+${JSON.stringify(token)}}}).then(r=>r.status)`);
-  // This fixture routes native endpoints explicitly below, as a real TLS proxy does.
-  assert.equal(revoked, 401);
+  // The native endpoint is on the service origin, outside the admin page's
+  // strict same-origin CSP. The test client accepts only fixture TLS here.
+  const revoked = await fetch(publicURL + "/v1/host", { headers: { Authorization: "Bearer " + token }, tls: { rejectUnauthorized: false } });
+  assert.equal(revoked.status, 401);
+  await revoked.arrayBuffer();
   await evaluate('document.getElementById("detect").click()');
   await until(() => evaluate('!document.getElementById("detect").disabled && document.getElementById("detection-status").textContent.includes("检测成功")'), "manual detection retry");
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -131,7 +156,7 @@ try {
   await evaluate('document.getElementById("logout").click()');
   assert.equal(await evaluate('document.getElementById("dashboard").hidden && document.getElementById("issued-token").value === "" && document.getElementById("servers").childElementCount===0'), true);
   assert.deepEqual(errors, [], "Browser errors");
-  console.log(JSON.stringify({ ok: true, checks: 24, artifacts }));
+  console.log(JSON.stringify({ ok: true, checks: 28, artifacts }));
 } finally {
   socket?.close();
   if (browser) { browser.kill("SIGTERM"); await browserDone; }
