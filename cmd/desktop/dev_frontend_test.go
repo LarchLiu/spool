@@ -85,9 +85,17 @@ func TestDesktopDevFrontendRoutesAssetsAndUsesTheActiveService(t *testing.T) {
 	}))
 	t.Cleanup(vite.Close)
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The headers that make the service treat a loopback peer as a proxy.
+		var forwarded []string
+		for _, name := range []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Forwarded-Port", "X-Real-IP", "Via"} {
+			if values := r.Header.Values(name); len(values) != 0 {
+				forwarded = append(forwarded, name+"="+strings.Join(values, ","))
+			}
+		}
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"host": r.Host, "origin": r.Header.Get("Origin"), "csrf": r.Header.Get("X-CSRF-Token"),
 			"cookie": r.Header.Get("Cookie"), "site": r.Header.Get("Sec-Fetch-Site"), "path": r.URL.RequestURI(),
+			"forwarded": strings.Join(forwarded, ";"),
 		})
 	}))
 	t.Cleanup(backend.Close)
@@ -123,6 +131,22 @@ func TestDesktopDevFrontendRoutesAssetsAndUsesTheActiveService(t *testing.T) {
 			headers["cookie"] != "spool_session=fixture-session" || headers["site"] != "same-origin" || headers["path"] != path {
 			t.Fatalf("API proxy changed auth/CSRF headers or path: %d %+v", status, headers)
 		}
+		// The service only allows plain HTTP from a direct loopback request.
+		if headers["forwarded"] != "" {
+			t.Fatalf("API proxy marked the desktop's own request as forwarded: %s", headers["forwarded"])
+		}
+	}
+	relayed, _ := http.NewRequest("GET", frontend.url+"/api/me", nil)
+	relayed.Header.Set("X-Forwarded-For", "203.0.113.9")
+	relayed.Header.Set("X-Forwarded-Proto", "https")
+	relayed.Header.Set("Via", "1.1 edge")
+	_, body := devRequest(t, client, relayed)
+	var headers map[string]string
+	if err := json.Unmarshal([]byte(body), &headers); err != nil {
+		t.Fatal(err, body)
+	}
+	if headers["forwarded"] != "X-Forwarded-For=203.0.113.9;X-Forwarded-Proto=https;Via=1.1 edge" {
+		t.Fatalf("API proxy hid or rewrote a client's forwarding headers: %q", headers["forwarded"])
 	}
 	request, _ := http.NewRequest("GET", frontend.url+"/api/me", nil)
 	request.Host = "foreign.example"

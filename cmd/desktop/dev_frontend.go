@@ -58,10 +58,24 @@ func startDesktopDevFrontend(development bool, address string, serviceURL func()
 					http.Error(w, "invalid chat service address", http.StatusBadGateway)
 					return
 				}
-				api := httputil.NewSingleHostReverseProxy(target)
-				// Preserve Host/Origin for the existing CSRF checks, and flush SSE
-				// immediately rather than buffering streamed chat events.
-				api.FlushInterval = -1
+				// The service allows plain HTTP only for a direct loopback request and
+				// reads any forwarding header as a remote proxy, so add none here.
+				// Restore the ones Rewrite strips: a request another proxy relayed
+				// to this listener must stay recognizable to the service.
+				api := &httputil.ReverseProxy{
+					Rewrite: func(r *httputil.ProxyRequest) {
+						r.SetURL(target)
+						// Preserve Host/Origin for the existing CSRF checks.
+						r.Out.Host = r.In.Host
+						for _, name := range []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto"} {
+							if values := r.In.Header.Values(name); len(values) != 0 {
+								r.Out.Header[name] = append([]string(nil), values...)
+							}
+						}
+					},
+					// Flush SSE immediately rather than buffering streamed chat events.
+					FlushInterval: -1,
+				}
 				api.ServeHTTP(w, r)
 				return
 			}
