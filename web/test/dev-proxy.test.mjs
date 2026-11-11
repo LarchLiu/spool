@@ -10,11 +10,17 @@ test("desktop dev starts a pinned Vite origin without silently changing ports", 
   const config = JSON.parse(
     await readFile(new URL("../../mygo.json", import.meta.url), "utf8"),
   );
-  assert.equal(config.devUrl, "http://127.0.0.1:5173");
+  assert.equal(config.devUrl, "http://127.0.0.1:9981");
   assert.equal(
     config.devCommand,
-    "bun run --bun --cwd web dev --port 5173 --strictPort",
+    "bun run --bun --cwd web dev --port 9981 --strictPort",
   );
+  const loaded = await loadConfigFromFile(
+    { command: "serve", mode: "development" },
+    fileURLToPath(new URL("../vite.config.ts", import.meta.url)),
+  );
+  assert.equal(loaded.config.server.port, 9981);
+  assert.equal(loaded.config.server.strictPort, true);
   const makefile = await readFile(
     new URL("../../Makefile", import.meta.url),
     "utf8",

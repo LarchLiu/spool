@@ -79,7 +79,7 @@ window.mygo = { on: () => () => {}, call: async (method, ...args) => {
   throw new Error('unexpected bridge method: ' + method);
 } };
 let data = {
-  settings: { host: '127.0.0.1', port: 8787, public_url: '', idle_minutes: 15, history_cache_mib: 64, auto_start: false, relay_enabled: false, relay_web_enabled: false, relay_url: pairing.relay_url, relay_lan_port: 28082, tsnet_enabled: true, tsnet_hostname: 'spool-server', tsnet_port: 443 },
+  settings: { host: '127.0.0.1', port: 59001, public_url: '', idle_minutes: 15, history_cache_mib: 64, auto_start: false, relay_enabled: false, relay_web_enabled: false, relay_url: pairing.relay_url, relay_lan_port: 10095, tsnet_enabled: true, tsnet_hostname: 'spool-server', tsnet_port: 443 },
   status: { Running: true, Relay: { State: 'disabled', RegistrationTokenSet: false, Registered: false, Registering: false }, TSNet: { State: 'Running', URL: 'https://spool.example.ts.net' } },
   database: 'fixture.sqlite',
 };

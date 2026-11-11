@@ -96,7 +96,7 @@ function toServiceDraft(settings: ServerSettings): ServiceDraft {
     relay_enabled: settings.relay_enabled ?? false,
     relay_web_enabled: settings.relay_web_enabled ?? false,
     relay_url: settings.relay_url ?? "",
-    relay_lan_port: String(settings.relay_lan_port ?? 28082),
+    relay_lan_port: String(settings.relay_lan_port ?? 10095),
   };
 }
 

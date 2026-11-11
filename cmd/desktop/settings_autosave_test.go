@@ -19,7 +19,7 @@ func TestNativeServiceFieldsAutosaveOnBlurEnterAndNavigation(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = service.Close() })
-	p := &panel{service: service, settings: workspace.DefaultSettings(), port: "8787", tab: "Service", preferences: workspace.UIPreferences{Language: "en"}}
+	p := &panel{service: service, settings: workspace.DefaultSettings(), port: "59001", tab: "Service", preferences: workspace.UIPreferences{Language: "en"}}
 	view := ui.NewTester(func(c *ui.Context) {
 		ui.Column(c).Fill().Children(func() {
 			p.serviceSettingField(c, "Host", &p.settings.Host, func(s *workspace.Settings, value string) error { s.Host = value; return nil })
@@ -42,7 +42,7 @@ func TestNativeServiceFieldsAutosaveOnBlurEnterAndNavigation(t *testing.T) {
 		t.Fatal("typing must not save a partial field", settings)
 	}
 	replace("Port", "9000")
-	if settings, _ := service.Store.Settings(); settings.Host != "localhost" || settings.Port != 8787 || p.busy {
+	if settings, _ := service.Store.Settings(); settings.Host != "localhost" || settings.Port != 59001 || p.busy {
 		t.Fatal("blur failed to save just the previous field", settings, p.busy)
 	}
 	view.Key(0, ui.KeyEnter)

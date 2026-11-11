@@ -59,7 +59,7 @@ func runLegacy(ctx context.Context, args []string) (runErr error) {
 	relayEnabled := flags.Bool("relay", false, "persist outbound Spool relay and secure LAN listener enablement")
 	relayWeb := flags.Bool("relay-web", false, "persist public Web/PWA access through the registered relay")
 	relayURL := flags.String("relay-url", "", "public HTTPS origin of the independent Spool relay")
-	relayLANPort := flags.Int("relay-lan-port", 28082, "secure LAN listener and discovery port")
+	relayLANPort := flags.Int("relay-lan-port", workspace.DefaultSettings().RelayLANPort, "secure LAN listener and discovery port")
 	relayPair := flags.Bool("relay-pair", false, "start the service, print a five-minute invitation and approve one phone interactively")
 	relayDevices := flags.Bool("relay-devices", false, "list paired devices locally and exit (service must be stopped)")
 	relayRevoke := flags.String("relay-revoke", "", "revoke a paired device fingerprint locally and exit (service must be stopped)")

@@ -118,7 +118,7 @@ SPOOL_NEW_PASSWORD='replace-with-a-long-unique-password' \
 ./build/spool-server project add --name Example \
   --directory /absolute/project/path --members alex
 
-./build/spool-server serve --host 127.0.0.1 --port 8787
+./build/spool-server serve --host 127.0.0.1 --port 59001
 ```
 
 Chat and management APIs require an enabled account. The service does not
@@ -126,14 +126,14 @@ provide a default password, remote sign-up, or remote administration API.
 
 ### Web/PWA and HTTPS
 
-For local access, open `http://127.0.0.1:8787`. To use a browser on another
+For local access, open `http://127.0.0.1:59001`. To use a browser on another
 device or install the PWA, access Spool through HTTPS and configure the exact
 same Public URL in Desktop settings or the server configuration. For example,
 with Caddy:
 
 ```caddyfile
 chat.example.com {
-    reverse_proxy 127.0.0.1:8787 {
+    reverse_proxy 127.0.0.1:59001 {
         flush_interval -1
     }
 }

@@ -2003,7 +2003,7 @@ Spool with its normal loopback listener. Expose it **within the tailnet**, not
 with Funnel:
 
 ```sh
-tailscale serve --bg http://127.0.0.1:8787
+tailscale serve --bg http://127.0.0.1:59001
 ```
 
 For the Serve option, set Spool's **Public origin** to the exact HTTPS origin returned by Serve, for

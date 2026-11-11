@@ -84,11 +84,11 @@ output can contain a credential-bearing proxy URL; keep it private.
 SPOOL_NEW_PASSWORD='replace-with-a-long-unique-password' \
   spool-server user add --username alice --nickname Alice
 spool-server project add --name Example --directory /srv/example --members alice
-spool-server serve --host 127.0.0.1 --port 8787
+spool-server serve --host 127.0.0.1 --port 59001
 ```
 
 The service stays in the foreground; SIGINT/SIGTERM saves active turns and shuts
-it down. Visit `http://127.0.0.1:8787` locally, or use an SSH tunnel. Remote
+it down. Visit `http://127.0.0.1:59001` locally, or use an SSH tunnel. Remote
 browser/PWA access should use an HTTPS reverse proxy with a matching
 `--public-url https://chat.example.com`, embedded Tailscale, or the trusted Relay
 Web gateway. The proxy must support WebSocket and streaming responses. Spool
@@ -227,7 +227,7 @@ run the relevant CLI commands or verify/install the new matching archive, then
 
 ## Compatibility
 
-Existing flat flags (for example `spool-server -host 127.0.0.1 -port 8787`) still
+Existing flat flags (for example `spool-server -host 127.0.0.1 -port 59001`) still
 work. `spool-server legacy --help` lists them. Bare `spool-server` now prints
 help; use `spool-server serve` in service units. The structured CLI does not
 include voxl or Desktop-only UI/update operations.

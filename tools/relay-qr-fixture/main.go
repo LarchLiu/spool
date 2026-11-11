@@ -20,7 +20,7 @@ func main() {
 	if *output == "" {
 		log.Fatal("-out is required")
 	}
-	p := relay.Pairing{Version: 2, RelayURL: "https://relay.example.com", PublicKey: make([]byte, 32), AccessToken: base64.RawURLEncoding.EncodeToString(make([]byte, 32)), LAN: []string{"192.168.1.20:28082"}, Invitation: base64.RawURLEncoding.EncodeToString(make([]byte, 32)), ExpiresAt: time.Now().Add(relay.PairingLifetime).Unix()}
+	p := relay.Pairing{Version: 2, RelayURL: "https://relay.example.com", PublicKey: make([]byte, 32), AccessToken: base64.RawURLEncoding.EncodeToString(make([]byte, 32)), LAN: []string{"192.168.1.20:10095"}, Invitation: base64.RawURLEncoding.EncodeToString(make([]byte, 32)), ExpiresAt: time.Now().Add(relay.PairingLifetime).Unix()}
 	code, err := p.Encode()
 	if err != nil {
 		log.Fatal(err)

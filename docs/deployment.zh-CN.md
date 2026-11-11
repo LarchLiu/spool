@@ -101,7 +101,7 @@ SPOOL_NEW_PASSWORD='replace-with-a-long-unique-password' \
 ./build/spool-server project add --name Example \
   --directory /absolute/project/path --members alex
 
-./build/spool-server serve --host 127.0.0.1 --port 8787
+./build/spool-server serve --host 127.0.0.1 --port 59001
 ```
 
 聊天和管理 API 都要求登录账户；服务不会提供默认密码、远程注册或远程管理 API。
@@ -112,13 +112,13 @@ Desktop 的「关于 → 运行配置」中，空闲释放时间和历史缓存�
 
 ### Web/PWA 与 HTTPS
 
-本机访问可以直接打开 `http://127.0.0.1:8787`。要从其他设备使用浏览器或安装
+本机访问可以直接打开 `http://127.0.0.1:59001`。要从其他设备使用浏览器或安装
 PWA，应通过 HTTPS 反向代理访问，并在 Desktop 设置或 server 参数中配置完全一致的
 Public origin。例如 Caddy：
 
 ```caddyfile
 chat.example.com {
-    reverse_proxy 127.0.0.1:8787 {
+    reverse_proxy 127.0.0.1:59001 {
         flush_interval -1
     }
 }

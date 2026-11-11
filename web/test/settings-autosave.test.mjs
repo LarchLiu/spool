@@ -9,7 +9,7 @@ import {
 
 const initial = () => ({
   host: "127.0.0.1",
-  port: 8787,
+  port: 59001,
   public_url: "",
   web_trusted_proxies: "127.0.0.0/8,::1/128",
   idle_minutes: 15,
@@ -375,7 +375,7 @@ test("cancelling Web discards incomplete and failed drafts while keeping other e
   autosave.edit("idle_minutes", "30");
   autosave.edit("history_cache_mib", "128");
   autosave.prepareCancel("web")(initial());
-  assert.equal(autosave.draft.port, "8787");
+  assert.equal(autosave.draft.port, "59001");
   assert.equal(autosave.draft.host, initial().host);
   assert.equal(autosave.draft.public_url, initial().public_url);
   assert.equal(
@@ -406,7 +406,7 @@ test("Relay cancellation preserves runtime and unrelated drafts", () => {
   assert.equal(autosave.draft.relay_enabled, false);
   assert.equal(autosave.draft.relay_web_enabled, false);
   assert.equal(autosave.draft.relay_url, "");
-  assert.equal(autosave.draft.relay_lan_port, "28082");
+  assert.equal(autosave.draft.relay_lan_port, "10095");
   assert.equal(autosave.draft.idle_minutes, "");
   assert.equal(autosave.draft.port, "");
   assert.equal(autosave.draft.auto_start, false);

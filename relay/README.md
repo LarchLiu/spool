@@ -64,7 +64,7 @@ changes only the host port mapping; the container's administrative port stays
 `28081`. When updating an existing deployment, update proxy targets and explicit
 listener overrides to use the new ports. Existing `.env` values and saved Spool
 LAN settings retain their configured ports; use `28080` for `RELAY_PORT`, `28081`
-for `RELAY_ADMIN_PORT`, and `28082` for the secure LAN listener to adopt the defaults.
+for `RELAY_ADMIN_PORT`, and `10095` for the secure LAN listener to adopt the defaults.
 Compose already binds both listeners inside the container. When deploying the
 Dockerfile directly, add `-admin-listen 0.0.0.0:28081` to the start command to
 let a separate proxy container reach management; keep its host mapping private.
@@ -474,7 +474,7 @@ the home server, `SPOOL_RELAY_REGISTRATION_TOKEN` still names its own issued tok
 ## Desktop and Android pairing
 
 1. In **Spool Desktop → Service → Spool Relay**, enter the relay HTTPS origin
-   and a free secure LAN port (default 28082). The enable switch stays at the top
+   and a free secure LAN port (default 10095). The enable switch stays at the top
    and is disabled until registration succeeds.
 2. The relay address box includes **Relay registration token** with one **Register**
    button. Enter a token issued through the VPS administrative API, or leave it
@@ -534,7 +534,7 @@ Headless configuration, from the main Spool repository while the service is stop
 # Set this server's SPOOL_RELAY_REGISTRATION_TOKEN, or leave it empty for automatic enrollment.
 # Register, start Spool, print a five-minute invitation, and approve locally.
 go run ./cmd/server -data-dir /path/to/spool-data \
-  -relay -relay-register -relay-name 'Home Mac' -relay-url https://relay.example.com -relay-lan-port 28082 -relay-pair
+  -relay -relay-register -relay-name 'Home Mac' -relay-url https://relay.example.com -relay-lan-port 10095 -relay-pair
 # Compare the displayed phone fingerprint and type yes to approve.
 # Spool keeps running after approval. On later launches, reuse saved credentials:
 go run ./cmd/server -data-dir /path/to/spool-data
