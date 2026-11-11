@@ -25,7 +25,13 @@ import {
   type SettingsSection,
   type SettingsSnapshot,
 } from "./settings-client";
-import { Hint, knownMessage, type PageProps, type Run } from "./settings-ui";
+import {
+  Hint,
+  SettingsError,
+  knownMessage,
+  type PageProps,
+  type Run,
+} from "./settings-ui";
 import {
   ServicePage,
   PeoplePage,
@@ -279,11 +285,7 @@ export function SettingsApp() {
               <h1>{t(section)}</h1>
               <p>{t(descriptions[section])}</p>
             </header>
-            {data?.message && (
-              <div role="alert" className="settings-error">
-                {knownMessage(data.message, t)}
-              </div>
-            )}
+            <SettingsError message={data?.message} t={t} />
             {!available ? (
               <div className="settings-notice">
                 <ShieldCheck size={20} />
@@ -295,16 +297,21 @@ export function SettingsApp() {
               </div>
             ) : (
               <>
-                {(saveError || error) && (
-                  <div role="alert" className="settings-error">
-                    {knownMessage(saveError || error, t)}
-                    {!data && (
-                      <button type="button" onClick={() => void refresh(true)}>
-                        {t("Retry")}
-                      </button>
-                    )}
-                  </div>
-                )}
+                <SettingsError
+                  message={saveError || error}
+                  t={t}
+                  onDismiss={() => {
+                    setSaveError("");
+                    setError("");
+                  }}
+                >
+                  {knownMessage(saveError || error, t)}
+                  {!data && (
+                    <button type="button" onClick={() => void refresh(true)}>
+                      {t("Retry")}
+                    </button>
+                  )}
+                </SettingsError>
                 {!props ? (
                   <Hint>{t("Working…")}</Hint>
                 ) : (

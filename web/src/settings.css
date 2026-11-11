@@ -811,6 +811,9 @@
   overflow-wrap: anywhere;
 }
 .settings-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   border: 1px solid var(--error-border);
   background: var(--error-bg);
   color: var(--error-text);
@@ -822,6 +825,15 @@
 }
 .settings-error button {
   margin-left: 12px;
+}
+.settings-error-content {
+  flex: 1;
+  min-width: 0;
+}
+.settings-error > .icon {
+  flex: 0 0 32px;
+  margin: -6px -9px -6px 0;
+  color: inherit;
 }
 .settings-info,
 .settings-notice {

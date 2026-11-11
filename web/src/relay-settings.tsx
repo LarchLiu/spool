@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronRight, Info } from "lucide-react";
 import { settingsCall, type SettingsSnapshot } from "./settings-client";
-import { CopyAddressButton, knownMessage, TextField } from "./settings-ui";
+import { CopyAddressButton, SettingsError, TextField } from "./settings-ui";
 import type { Translator } from "./i18n";
 
 type Pairing = {
@@ -57,11 +57,7 @@ function DeviceApprovalDialog({
       <code className="settings-relay-fingerprint">
         {device.id.match(/.{1,8}/g)?.join(" ")}
       </code>
-      {error && (
-        <div className="settings-error" role="alert">
-          {knownMessage(error, t)}
-        </div>
-      )}
+      <SettingsError message={error} t={t} />
       <div className="settings-relay-approval-actions">
         <button
           type="button"
@@ -165,11 +161,7 @@ export function RelayRegistration({
           {t(registering ? "Registering…" : "Register")}
         </button>
       </div>
-      {error && (
-        <div className="settings-error" role="alert">
-          {knownMessage(error, t)}
-        </div>
-      )}
+      <SettingsError message={error} t={t} onDismiss={() => setError("")} />
     </div>
   );
 }
@@ -395,11 +387,7 @@ export function RelayPairing({
           </span>
           <ChevronRight size={16} aria-hidden="true" />
         </button>
-        {error && (
-          <div className="settings-error" role="alert">
-            {knownMessage(error, t)}
-          </div>
-        )}
+        <SettingsError message={error} t={t} />
         <div id={pairingID} hidden={!expanded}>
           {expanded && (
             <>

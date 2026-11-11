@@ -5,7 +5,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { Check, CircleAlert, Copy, FolderOpen } from "lucide-react";
+import { Check, CircleAlert, Copy, FolderOpen, X } from "lucide-react";
 import en from "../../locales/en.json";
 import type { MessageKey, Translator } from "./i18n";
 import { settingsCall, type SettingsSnapshot } from "./settings-client";
@@ -18,6 +18,42 @@ export type PageProps = { data: SettingsSnapshot; run: Run; t: Translator };
 
 export function knownMessage(value: string, t: Translator) {
   return Object.hasOwn(en, value) ? t(value as MessageKey) : value;
+}
+export function SettingsError({
+  message,
+  t,
+  children,
+  onDismiss,
+}: {
+  message?: string;
+  t: Translator;
+  children?: ReactNode;
+  onDismiss?: () => void;
+}) {
+  const [dismissedMessage, setDismissedMessage] = useState<string>();
+  // Polling the same error must not reopen it. Clearing or changing the error
+  // allows a later failure to be shown, even when its text is the same.
+  useEffect(() => setDismissedMessage(undefined), [message]);
+  if (!message || dismissedMessage === message) return null;
+  return (
+    <div className="settings-error" role="alert">
+      <div className="settings-error-content">
+        {children ?? knownMessage(message, t)}
+      </div>
+      <button
+        type="button"
+        className="icon"
+        onClick={() => {
+          setDismissedMessage(message);
+          onDismiss?.();
+        }}
+        aria-label={t("Dismiss")}
+        title={t("Dismiss")}
+      >
+        <X size={15} aria-hidden="true" />
+      </button>
+    </div>
+  );
 }
 export function Card({
   title,

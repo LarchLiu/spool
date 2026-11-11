@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import type { Translator } from "./i18n";
 import { settingsCall, type ReleaseHistory } from "./settings-client.js";
 import { ReleaseHistoryLoader } from "./release-history.js";
+import { SettingsError } from "./settings-ui";
 
 function releaseLink(href: string | undefined, base: string) {
   if (!href || !defaultUrlTransform(href)) return;
@@ -184,19 +185,17 @@ export function ReleaseNotesPanel({
                 {t("Loading releases from GitHub…")}
               </p>
             )}
-            {state.error && (
-              <div className="settings-error" role="alert">
-                <p>
-                  {t(
-                    "Could not load release notes. Check your network or GitHub rate limit, then retry.",
-                  )}
-                </p>
-                <p>{state.error}</p>
-                <button type="button" onClick={() => void loader.load(true)}>
-                  {t("Retry")}
-                </button>
-              </div>
-            )}
+            <SettingsError message={state.error} t={t}>
+              <p>
+                {t(
+                  "Could not load release notes. Check your network or GitHub rate limit, then retry.",
+                )}
+              </p>
+              <p>{state.error}</p>
+              <button type="button" onClick={() => void loader.load(true)}>
+                {t("Retry")}
+              </button>
+            </SettingsError>
             {state.history && (
               <ReleaseHistoryVersions history={state.history} t={t} />
             )}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { PageProps } from "./settings-ui";
-import { Card, Row, Toggle, knownMessage } from "./settings-ui";
+import { Card, Row, SettingsError, Toggle, knownMessage } from "./settings-ui";
 
 export function VoxlSettings({ data, run, t }: PageProps) {
   const voxl = data.status.Voxl;
@@ -39,14 +39,12 @@ export function VoxlSettings({ data, run, t }: PageProps) {
           </button>
         )}
       </Row>
-      {voxl.error && (
-        <p className="settings-error" role="alert">
-          {voxl.error
-            .split("\n")
-            .map((line) => knownMessage(line, t))
-            .join("\n")}
-        </p>
-      )}
+      <SettingsError message={voxl.error} t={t}>
+        {voxl.error
+          ?.split("\n")
+          .map((line) => knownMessage(line, t))
+          .join("\n")}
+      </SettingsError>
       <Row
         title={t("Enable remote desktop")}
         help={t(

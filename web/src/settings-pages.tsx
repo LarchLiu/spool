@@ -43,6 +43,7 @@ import {
   TextField,
   PathField,
   Hint,
+  SettingsError,
   submit,
   knownMessage,
   type PageProps,
@@ -301,11 +302,11 @@ export function ServicePage({ data, run, t }: PageProps) {
             </button>
           </div>
         )}
-      {unregisterError && (
-        <div className="settings-error" role="alert">
-          {knownMessage(unregisterError, t)}
-        </div>
-      )}
+      <SettingsError
+        message={unregisterError}
+        t={t}
+        onDismiss={() => setUnregisterError("")}
+      />
     </div>
   );
   const [authKey, setAuthKey] = useState("");
@@ -382,11 +383,7 @@ export function ServicePage({ data, run, t }: PageProps) {
           </button>
         </div>
       </Card>
-      {data.status.Error && (
-        <div className="settings-error">
-          {knownMessage(data.status.Error, t)}
-        </div>
-      )}
+      <SettingsError message={data.status.Error} t={t} />
       <div
         className="settings-service-tabs"
         role="tablist"
@@ -591,11 +588,7 @@ export function ServicePage({ data, run, t }: PageProps) {
               onCommit={() => void autosave.commit("web_trusted_proxies")}
             />
           </details>
-          {webError && (
-            <div className="settings-error" role="alert">
-              {knownMessage(webError, t)}
-            </div>
-          )}
+          <SettingsError message={webError} t={t} />
         </Card>
       </ServiceTabPanel>
       <ServiceTabPanel id={tabsID} tab="relay" active={activeTab}>
@@ -690,11 +683,7 @@ export function ServicePage({ data, run, t }: PageProps) {
               </Row>
             )}
           </div>
-          {data.status.Relay?.Error && (
-            <div className="settings-error" role="alert">
-              {data.status.Relay.Error}
-            </div>
-          )}
+          <SettingsError message={data.status.Relay?.Error} t={t} />
           <RelayPairing data={data} t={t} active={activeTab === "relay"} />
         </Card>
       </ServiceTabPanel>
@@ -810,11 +799,11 @@ export function ServicePage({ data, run, t }: PageProps) {
                 )}
               </button>
             </div>
-            {registrationError && (
-              <div className="settings-error" role="alert">
-                {knownMessage(registrationError, t)}
-              </div>
-            )}
+            <SettingsError
+              message={registrationError}
+              t={t}
+              onDismiss={() => setRegistrationError("")}
+            />
           </div>
           {canLogin && (
             <div className="settings-card-actions">
@@ -847,11 +836,11 @@ export function ServicePage({ data, run, t }: PageProps) {
               </button>
             </div>
           )}
-          {loginError && (
-            <div className="settings-error" role="alert">
-              {knownMessage(loginError, t)}
-            </div>
-          )}
+          <SettingsError
+            message={loginError}
+            t={t}
+            onDismiss={() => setLoginError("")}
+          />
           {canLogin && draft.tsnet_enabled && !tailnet?.AuthURL && (
             <Hint>
               {t(
@@ -859,19 +848,17 @@ export function ServicePage({ data, run, t }: PageProps) {
               )}
             </Hint>
           )}
-          {tailnet?.Error && (
-            <div className="settings-error" role="alert">
-              <p>{tailnet.Error}</p>
-              <button
-                type="button"
-                onClick={() =>
-                  void run({ kind: "apply-service-changes", target: "tsnet" })
-                }
-              >
-                {t("Reconnect Tailscale")}
-              </button>
-            </div>
-          )}
+          <SettingsError message={tailnet?.Error} t={t}>
+            <p>{tailnet?.Error}</p>
+            <button
+              type="button"
+              onClick={() =>
+                void run({ kind: "apply-service-changes", target: "tsnet" })
+              }
+            >
+              {t("Reconnect Tailscale")}
+            </button>
+          </SettingsError>
         </Card>
       </ServiceTabPanel>
       <ServiceTabPanel id={tabsID} tab="desktop" active={activeTab}>
@@ -1374,16 +1361,14 @@ export function AboutPage({ data, run, t }: PageProps) {
           t={t}
         />
       )}
-      {state.Error && (
-        <div className="settings-error" role="alert">
-          {knownMessage(state.Error, t)}
-          <Hint>
-            {t(
-              "Check your network and installation permissions, then retry. Signature failures are never bypassed.",
-            )}
-          </Hint>
-        </div>
-      )}
+      <SettingsError message={state.Error} t={t}>
+        {knownMessage(state.Error, t)}
+        <Hint>
+          {t(
+            "Check your network and installation permissions, then retry. Signature failures are never bypassed.",
+          )}
+        </Hint>
+      </SettingsError>
       {state.LastCheck && !state.LastCheck.startsWith("0001") && (
         <Hint>
           {t("Last checked: {time}", {
