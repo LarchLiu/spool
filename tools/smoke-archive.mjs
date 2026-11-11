@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { closeSync, openSync } from "node:fs";
 import { resolve, win32 } from "node:path";
 
 export function smokeTarCommand(platform = process.platform, env = process.env) {
@@ -10,6 +11,16 @@ export function smokeTarCommand(platform = process.platform, env = process.env) 
 }
 
 export function extractSmokeArchive(directory, filename, destination, run = execFileSync) {
-  // Keep the archive name relative: GNU tar interprets drive letters as hosts.
-  run(smokeTarCommand(), ["-xzf", filename, "-C", resolve(destination)], { cwd: resolve(directory) });
+  const archive = resolve(directory, filename);
+  const input = openSync(archive, "r");
+  try {
+    // Windows tar can lose Unicode in command-line paths. Open the archive in
+    // Bun and pass its handle; CreateProcess receives the working directory as
+    // UTF-16, so neither the archive nor destination needs a tar path argument.
+    run(smokeTarCommand(), ["-xzf", "-"], { cwd: resolve(destination), stdio: [input, "pipe", "pipe"] });
+  } catch (error) {
+    throw new Error(`Could not extract ${archive} into ${resolve(destination)}: ${error.message}`, { cause: error });
+  } finally {
+    closeSync(input);
+  }
 }

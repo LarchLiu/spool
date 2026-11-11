@@ -1,0 +1,74 @@
+name: Smoke tooling
+run-name: Smoke tooling ${{ inputs.ref || github.ref_name }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch or full commit SHA to check (blank uses the selected branch)
+        required: false
+        type: string
+      package_run:
+        description: Optional Release run ID whose Windows packages should also be tested
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: smoke-tools-${{ inputs.ref || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Check ${{ matrix.target }} smoke tooling
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: windows-amd64 }
+          - { os: windows-11-arm, target: windows-arm64 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: .bun-version
+      - name: Test smoke extraction and scratch cleanup under Git Bash
+        shell: bash
+        run: bun test tools/test-scratch.test.mjs tools/smoke-archive.test.mjs tools/smoke-release.test.mjs
+      - name: Download existing release packages
+        if: inputs.package_run != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: packages-${{ matrix.target }}
+          path: smoke-assets
+          run-id: ${{ inputs.package_run }}
+          github-token: ${{ github.token }}
+      - name: Resolve package version from source
+        if: inputs.package_run != ''
+        shell: bash
+        run: bun -e 'import {appendFileSync, readFileSync} from "node:fs"; appendFileSync(process.env.GITHUB_ENV, "RELEASE_TAG=v" + JSON.parse(readFileSync("mygo.json", "utf8")).version + "\n");'
+      - name: Run headless server without a display
+        if: inputs.package_run != ''
+        run: bun tools/smoke-server.mjs smoke-assets "${{ matrix.target }}"
+      - name: Launch packaged desktop and probe Web service under Git Bash
+        if: inputs.package_run != ''
+        shell: bash
+        run: bun tools/smoke-release.mjs smoke-assets "${{ matrix.target }}"
+      - name: Keep smoke diagnostics
+        if: always() && inputs.package_run != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: smoke-tooling-${{ matrix.target }}
+          path: |
+            smoke-results/
+            build/artifacts/server-smoke/
+          if-no-files-found: warn
+          retention-days: 7
