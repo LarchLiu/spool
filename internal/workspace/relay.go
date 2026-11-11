@@ -113,10 +113,10 @@ func (s *Service) startRelayLocked(settings Settings) error {
 			runtime.status.WebURL = ""
 		}
 		runtime.mu.Unlock()
-		if state == "registration_required" && !s.relayRegistering && s.relayRegistrationToken(settings.RelayURL) == host.RegistrationToken() && s.relayRegisteredLocked(settings.RelayURL) {
+		if state == "registration_required" && !s.relayRegistering && s.relayRegistrationToken(settings.RelayURL) == host.RegistrationToken() {
 			// A network outage preserves registration. An explicit rejection
-			// requires enrollment again, including after an app restart.
-			if err := s.invalidateRelayRegistrationLocked(settings.RelayURL); err != nil {
+			// disables this entry until enrollment succeeds again.
+			if err := s.disableRejectedRelayLocked(runtime); err != nil {
 				log.Printf("event=relay_registration_invalidation_failed error=%q", err)
 			}
 		}
@@ -184,6 +184,23 @@ func (s *Service) startRelayLocked(settings Settings) error {
 	}()
 	log.Printf("event=relay_started server_id=%q lan_port=%d", id.ID(), settings.RelayLANPort)
 	return nil
+}
+
+// Caller holds Service.mu and has matched the rejected runtime and credential.
+// Stop only this ingress, preserving local service work and other saved origins.
+func (s *Service) disableRejectedRelayLocked(runtime *relayRuntime) error {
+	origin := relayOrigin(runtime.host.URL)
+	registrationErr := s.invalidateRelayRegistrationLocked(runtime.host.URL)
+	current, settingsErr := s.Store.Settings()
+	if settingsErr == nil && relayOrigin(current.RelayURL) == origin && current.RelayEnabled {
+		current.RelayEnabled = false
+		settingsErr = s.Store.SaveSettings(current)
+	}
+	runtime.close()
+	s.relay = nil
+	s.activeSettings.RelayEnabled = false
+	s.app.configureRelayWeb(s.activeSettings)
+	return errors.Join(registrationErr, settingsErr)
 }
 
 func relayLANAddresses(port int) []string {

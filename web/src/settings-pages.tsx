@@ -270,38 +270,35 @@ export function ServicePage({ data, run, t }: PageProps) {
           onBusyChange={setRegisteringRelay}
         />
       )}
-      {!relayActive &&
-        (relayRegistered ||
-          (draft.relay_url === data.settings.relay_url &&
-            data.status.Relay?.RegistrationTokenSet)) && (
-          <div className="settings-card-actions">
-            <button
-              type="button"
-              disabled={
-                relayRegistering || draft.relay_url !== data.settings.relay_url
+      {!relayActive && relayRegistered && (
+        <div className="settings-card-actions">
+          <button
+            type="button"
+            disabled={
+              relayRegistering || draft.relay_url !== data.settings.relay_url
+            }
+            onClick={async () => {
+              setRegisteringRelay(true);
+              setUnregisterError("");
+              try {
+                const result = await run({
+                  kind: "unregister-relay",
+                  target: data.settings.relay_url ?? "",
+                });
+                if (result) setRegisteredRelayURL(undefined);
+              } catch (error) {
+                setUnregisterError(
+                  error instanceof Error ? error.message : String(error),
+                );
+              } finally {
+                setRegisteringRelay(false);
               }
-              onClick={async () => {
-                setRegisteringRelay(true);
-                setUnregisterError("");
-                try {
-                  const result = await run({
-                    kind: "unregister-relay",
-                    target: data.settings.relay_url ?? "",
-                  });
-                  if (result) setRegisteredRelayURL(undefined);
-                } catch (error) {
-                  setUnregisterError(
-                    error instanceof Error ? error.message : String(error),
-                  );
-                } finally {
-                  setRegisteringRelay(false);
-                }
-              }}
-            >
-              {t(relayRegistering ? "Unregistering…" : "Unregister")}
-            </button>
-          </div>
-        )}
+            }}
+          >
+            {t(relayRegistering ? "Unregistering…" : "Unregister")}
+          </button>
+        </div>
+      )}
       <SettingsError
         message={unregisterError}
         t={t}

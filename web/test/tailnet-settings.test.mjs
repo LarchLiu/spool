@@ -42,6 +42,57 @@ function renderService(state = {}, settings = {}) {
   );
 }
 
+test("saved relay tokens do not show Unregister without a confirmed registration", () => {
+  for (const State of ["registration_required", "disabled", "stopped"]) {
+    const html = renderService(
+      {
+        Relay: {
+          State,
+          Registered: false,
+          RegistrationTokenSet: true,
+          Registering: false,
+        },
+      },
+      { relay_url: "https://relay.example.test", relay_enabled: false },
+    );
+    assert.match(html, />Register<\/button>/, State);
+    assert.doesNotMatch(html, />Unregister<\/button>/, State);
+    assert.match(
+      html,
+      /aria-label="Enable Spool Relay" aria-checked="false"[^>]*disabled/,
+      State,
+    );
+  }
+});
+
+test("confirmed relay registrations show Unregister only while inactive", () => {
+  for (const State of [
+    "disabled",
+    "stopped",
+    "connecting",
+    "reconnecting",
+    "connected",
+  ]) {
+    const html = renderService(
+      {
+        Relay: {
+          State,
+          Registered: true,
+          RegistrationTokenSet: true,
+          Registering: false,
+        },
+      },
+      { relay_url: "https://relay.example.test", relay_enabled: false },
+    );
+    assert.doesNotMatch(html, />Register<\/button>/, State);
+    assert.equal(
+      />Unregister<\/button>/.test(html),
+      State === "disabled" || State === "stopped",
+      State,
+    );
+  }
+});
+
 test("service offers optional masked enrollment without storing a key in the settings draft", async () => {
   const html = renderService({
     TSNet: {
