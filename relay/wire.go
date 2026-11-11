@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -53,31 +54,45 @@ func validToken(value string) bool {
 	b, err := base64.RawURLEncoding.DecodeString(value)
 	return err == nil && len(b) == 32
 }
+
+// Signatures cover a domain-separated byte string, so one made for a purpose
+// can never be presented as another. Fields are joined with NUL, which no
+// field may contain.
+func signedProof(domain string, fields ...string) []byte {
+	return []byte(domain + "\x00" + strings.Join(fields, "\x00"))
+}
+
+// proof is the layout every host could sign from the start.
 func proof(challenge, token string) []byte {
-	return []byte("spool-relay-v1\x00" + challenge + "\x00" + token)
-}
-func namedRegistrationProof(challenge, token, webOrigin, name string) []byte {
-	if name == "" {
-		return registrationProof(challenge, token, webOrigin)
-	}
-	return []byte("spool-relay-register-v1\x00" + challenge + "\x00" + token + "\x00" + webOrigin + "\x00" + name)
+	return signedProof("spool-relay-v1", challenge, token)
 }
 
-func hostRegistrationProof(challenge, token, webOrigin, name string, version int) []byte {
-	if version == 0 {
-		return namedRegistrationProof(challenge, token, webOrigin, name)
-	}
-	return []byte("spool-relay-subdomain-v2\x00" + challenge + "\x00" + token + "\x00" + webOrigin + "\x00" + name)
-}
 func unregisterProof(challenge, token string) []byte {
-	return []byte("spool-relay-unregister-v1\x00" + challenge + "\x00" + token)
+	return signedProof("spool-relay-unregister-v1", challenge, token)
 }
 
-func registrationProof(challenge, token, webOrigin string) []byte {
-	if webOrigin == "" {
+// hostRegistrationProof is what a host signs to register. The layout follows
+// what the message carries, so a host or relay from before a field existed
+// still signs and verifies the same bytes:
+//
+//	spool-relay-subdomain-v2  challenge token webOrigin name  (web_version 2)
+//	spool-relay-register-v1   challenge token webOrigin name  (named enrollment)
+//	spool-relay-web-v1        challenge token webOrigin       (shared-origin Web)
+//	spool-relay-v1            challenge token                 (native)
+//
+// The layouts are also mutually exclusive, so a signature for one cannot be
+// replayed as another. Changing any of them breaks existing hosts and relays.
+func hostRegistrationProof(challenge, token, webOrigin, name string, version int) []byte {
+	switch {
+	case version != 0:
+		return signedProof("spool-relay-subdomain-v2", challenge, token, webOrigin, name)
+	case name != "":
+		return signedProof("spool-relay-register-v1", challenge, token, webOrigin, name)
+	case webOrigin != "":
+		return signedProof("spool-relay-web-v1", challenge, token, webOrigin)
+	default:
 		return proof(challenge, token)
 	}
-	return []byte("spool-relay-web-v1\x00" + challenge + "\x00" + token + "\x00" + webOrigin)
 }
 func writeControl(ctx context.Context, c *websocket.Conn, m controlMessage) error {
 	ctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
