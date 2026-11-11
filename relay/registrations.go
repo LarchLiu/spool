@@ -337,14 +337,8 @@ func (s *Server) RevokeRegistration(id string) error {
 }
 
 func (s *Server) disconnectRegistrationLocked(record registrationRecord) {
-	id := record.ID
-	if host := s.hosts[record.ServerID]; host != nil && host.registrationID == id {
-		delete(s.hosts, host.id)
-		host.cancel()
-		for _, pair := range host.pairs {
-			pair.cancel()
-		}
-		host.control.CloseNow()
+	if host := s.hosts[record.ServerID]; host != nil && host.registrationID == record.ID {
+		s.disconnectHostLocked(host)
 	}
 }
 

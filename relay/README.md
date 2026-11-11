@@ -153,6 +153,9 @@ relay.example.com {
 Clients use TCP 443. Let the proxy manage its certificate and HTTP challenge as
 usual. WebSocket upgrades must work, with no short maximum connection lifetime.
 Heartbeat pings run every 20 seconds; the home server reconnects automatically.
+After a network change it takes over its previous control connection once that
+connection fails a three-second liveness probe, without waiting for the
+heartbeat. A second running instance of the same identity is refused instead.
 For direct TLS, pass `-listen :443 -tls-cert fullchain.pem -tls-key privkey.pem`.
 Proxy trust is detected at startup from `RELAY_PUBLIC_URL`. Add explicit extra
 CIDRs in the dashboard when necessary. Forwarded

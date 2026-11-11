@@ -43,6 +43,9 @@ type Server struct {
 	proxyJob       *proxyDetectionJob
 	proxyError     string
 	proxyWorkers   sync.WaitGroup
+	// takeoverProbe bounds how long a reconnecting host waits for the live
+	// duplicate check before it replaces an unreachable control connection.
+	takeoverProbe time.Duration
 }
 type registeredHost struct {
 	id, token      string
@@ -55,6 +58,12 @@ type registeredHost struct {
 	open           chan controlMessage
 	pairs          map[string]*relayPair
 }
+
+// A host that changed networks reconnects immediately, while this relay still
+// holds the old control socket until its heartbeat times out (up to 30 seconds).
+// A short ping separates that case from a second live instance.
+const takeoverProbeTimeout = 3 * time.Second
+
 type relayPair struct {
 	id, secret string
 	host       *registeredHost
@@ -99,7 +108,7 @@ func NewServer(opts ServerOptions) (*Server, error) {
 	if opts.MaxConnectionsPerHost <= 0 {
 		opts.MaxConnectionsPerHost = 128
 	}
-	s := &Server{opts: opts, hosts: make(map[string]*registeredHost), pending: make(map[string]*relayPair), registrations: make(map[string]registrationRecord), tokenIndex: make(map[string]string)}
+	s := &Server{opts: opts, hosts: make(map[string]*registeredHost), pending: make(map[string]*relayPair), registrations: make(map[string]registrationRecord), tokenIndex: make(map[string]string), takeoverProbe: takeoverProbeTimeout}
 	if err := s.loadRegistrations(); err != nil {
 		return nil, err
 	}
@@ -166,7 +175,10 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 	s.mu.Lock()
 	registration, allowed := s.registrationForRequestLocked(r)
 	withoutToken := s.opts.AllowUnregisteredHosts && r.Header.Get("Authorization") == ""
-	full := s.closed || (!registrationOnly && len(s.hosts) >= s.opts.MaxHosts) || s.registering >= s.opts.MaxHosts
+	// A credential whose identity is already connected can only replace that
+	// entry, so it never counts as an additional host.
+	reconnecting := !registrationOnly && allowed && registration.ServerID != "" && s.hosts[registration.ServerID] != nil
+	full := s.closed || (!registrationOnly && !reconnecting && len(s.hosts) >= s.opts.MaxHosts) || s.registering >= s.opts.MaxHosts
 	if (allowed || withoutToken) && !full {
 		s.registering++
 	}
@@ -220,6 +232,10 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 	}
 	metadata := registrationMetadata{name: name, ip: s.clientIP(r), enrollment: registrationOnly}
 	h := &registeredHost{id: ServerID(m.PublicKey), token: m.AccessToken, publicKey: append(ed25519.PublicKey(nil), m.PublicKey...), webOrigin: m.WebOrigin, registrationID: registration.ID, control: c, ctx: ctx, cancel: cancel, open: make(chan controlMessage, 32), pairs: make(map[string]*relayPair)}
+	var unreachable *registeredHost
+	if reconnecting {
+		unreachable = s.unreachableHost(ctx, h.id, registration.ID)
+	}
 	s.mu.Lock()
 	current, allowed := s.registrationForRequestLocked(r)
 	if !withoutToken && (!allowed || current.ID != registration.ID) {
@@ -227,7 +243,12 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 		writeControl(ctx, c, controlMessage{Type: "registration_rejected"})
 		return
 	}
-	if s.closed || (!registrationOnly && len(s.hosts) >= s.opts.MaxHosts) || s.hosts[h.id] != nil && (!registrationOnly || withoutToken) {
+	// A live duplicate keeps its connection: two instances sharing one identity
+	// must not disconnect each other in turn.
+	existing := s.hosts[h.id]
+	replaces := existing != nil && existing == unreachable
+	conflicts := existing != nil && !replaces && (!registrationOnly || withoutToken)
+	if s.closed || conflicts || (!registrationOnly && !replaces && len(s.hosts) >= s.opts.MaxHosts) {
 		s.mu.Unlock()
 		return
 	}
@@ -260,6 +281,9 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 		s.mu.Unlock()
 		writeControl(ctx, c, controlMessage{Type: "ready", RegistrationToken: issuedToken})
 		return
+	}
+	if replaces {
+		s.disconnectHostLocked(existing)
 	}
 	h.registrationID = current.ID
 	s.hosts[h.id] = h
@@ -306,6 +330,39 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 		}
 	}
 }
+
+// unreachableHost returns the connected host for id only when its control
+// connection fails a liveness probe. The caller has verified the identity's
+// signature; the credential must also be the one that connection registered.
+func (s *Server) unreachableHost(ctx context.Context, id, registrationID string) *registeredHost {
+	s.mu.Lock()
+	existing := s.hosts[id]
+	s.mu.Unlock()
+	if existing == nil || existing.registrationID != registrationID {
+		return nil
+	}
+	probe, cancel := context.WithTimeout(ctx, s.takeoverProbe)
+	defer cancel()
+	// A canceled newcomer proves nothing about the existing connection.
+	if existing.control.Ping(probe) == nil || ctx.Err() != nil {
+		return nil
+	}
+	return existing
+}
+
+// Caller holds Server.mu. Retires one control connection and its data
+// connections; its handler observes the cancellation and returns.
+func (s *Server) disconnectHostLocked(host *registeredHost) {
+	if s.hosts[host.id] == host {
+		delete(s.hosts, host.id)
+	}
+	host.cancel()
+	for _, pair := range host.pairs {
+		pair.cancel()
+	}
+	host.control.CloseNow()
+}
+
 func (s *Server) connect(w http.ResponseWriter, r *http.Request, id string) {
 	s.mu.Lock()
 	h := s.hosts[id]
