@@ -24,6 +24,9 @@ type savedDevice struct {
 	Seed       []byte `json:"seed"`
 	Invitation string `json:"invitation,omitempty"`
 	Approved   bool   `json:"approved"`
+	// The relay admission token after the server rotated it. Until then the
+	// saved pairing code's token is current.
+	AccessToken string `json:"access_token,omitempty"`
 }
 
 func devicePath(directory, id string) string { return filepath.Join(directory, "devices", id+".json") }

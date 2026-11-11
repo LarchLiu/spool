@@ -24,6 +24,7 @@ type Dialer struct {
 	mu          sync.Mutex
 	lan         []string
 	path        string
+	access      string
 	connections map[*clientConn]struct{}
 }
 
@@ -51,6 +52,28 @@ func (d *Dialer) SetLANAddresses(addresses []string) error {
 }
 func (d *Dialer) Path() string { d.mu.Lock(); defer d.mu.Unlock(); return d.path }
 
+// AccessToken is the admission credential used for new relay connections.
+func (d *Dialer) AccessToken() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.access == "" {
+		return d.Pairing.AccessToken
+	}
+	return d.access
+}
+
+// SetAccessToken applies a rotated admission token. Established connections
+// keep the credential they were admitted with.
+func (d *Dialer) SetAccessToken(token string) error {
+	if !validToken(token) {
+		return errors.New("invalid admission token")
+	}
+	d.mu.Lock()
+	d.access = token
+	d.mu.Unlock()
+	return nil
+}
+
 func (d *Dialer) DialTLSContext(ctx context.Context, network, address string) (net.Conn, error) {
 	if network != "tcp" || address != net.JoinHostPort(d.Pairing.ID()+".spool.invalid", "443") {
 		return nil, errors.New("connection outside paired Spool server")
@@ -73,7 +96,7 @@ func (d *Dialer) DialTLSContext(ctx context.Context, network, address string) (n
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	c, err := dialWebsocket(ctx, d.HTTPClient, d.Pairing.RelayURL, "/v1/connect/"+d.Pairing.ID(), d.Pairing.AccessToken)
+	c, err := dialWebsocket(ctx, d.HTTPClient, d.Pairing.RelayURL, "/v1/connect/"+d.Pairing.ID(), d.AccessToken())
 	if err != nil {
 		return nil, errors.New("Spool relay unavailable")
 	}

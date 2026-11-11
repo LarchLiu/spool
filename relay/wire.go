@@ -35,6 +35,11 @@ type controlMessage struct {
 	ClientIP          string `json:"client_ip,omitempty"`
 	// Sent with ready: the relay's per-host data connection limit.
 	MaxConnections int `json:"max_connections,omitempty"`
+	// Sent with ready: this relay applies admission messages on a live control
+	// connection, so a rotation does not need the host to register again.
+	AdmissionUpdates bool `json:"admission_updates,omitempty"`
+	// Sent with admission: the current admission token, then retired ones.
+	Tokens []string `json:"tokens,omitempty"`
 }
 
 func randomID() string {

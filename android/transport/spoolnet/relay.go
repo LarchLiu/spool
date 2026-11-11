@@ -55,6 +55,13 @@ func NewRelayClient(dataDir, code string) (*Client, error) {
 		return nil, err
 	}
 	dialer.TLSConfig = cfg
+	if device.AccessToken != "" {
+		if err := dialer.SetAccessToken(device.AccessToken); err != nil {
+			cancel()
+			dialer.Close()
+			return nil, errors.New("invalid saved device identity; pair again")
+		}
+	}
 	httpClient, transport := nativeHTTPClient(nil)
 	transport.DialTLSContext = dialer.DialTLSContext
 	origin, _ := url.Parse(relay.Origin(p.ID()))
@@ -64,7 +71,11 @@ func NewRelayClient(dataDir, code string) (*Client, error) {
 		dialer.Close()
 		return nil, err
 	}
-	return &Client{direct: true, origin: origin, ctx: ctx, cancel: cancel, transport: transport, http: httpClient, relay: dialer, relayHTTP: outerTransport}, nil
+	c := &Client{direct: true, origin: origin, ctx: ctx, cancel: cancel, transport: transport, http: httpClient, relay: dialer, relayHTTP: outerTransport,
+		admissionSync: make(chan struct{}, 1), admissionDone: make(chan struct{})}
+	go c.keepAdmissionCurrent(dataDir, p, device.Seed)
+	c.requestAdmissionSync()
+	return c, nil
 }
 
 // SetLANAddresses accepts resolved NSD addresses for this paired identity.

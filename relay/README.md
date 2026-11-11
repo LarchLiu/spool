@@ -546,6 +546,18 @@ Only public device keys are stored on Spool; neither the Relay VPS nor Desktop
 receives a phone's private key. These management operations are available only
 through the private Desktop bridge or local server command, never the Web API.
 
+Every paired phone holds the relay admission token, so revoking one also
+replaces it. The signing key is untouched: the same Server ID, registration and
+device keys stay in use, and established connections continue. The remaining
+phones collect the new token over their own pinned connection the next time the
+app starts or the network changes, and report it back. Once the last one has
+done so, the replaced token stops being honored. Otherwise it expires 30 days
+after the revocation. A phone that is away for longer, or runs a Spool Android
+version from before this behavior, then reaches the server over the LAN or must
+pair again. The rotation protects availability, not access: a revoked phone's
+key is already rejected at the TLS handshake, but with the old token it could
+still open relay connections to this server and use up its connection limit.
+
 Allow the secure LAN TCP port and mDNS UDP 5353 on the home computer's local
 firewall. Do not forward those ports on the router. Guest Wi-Fi isolation can
 prevent LAN connectivity; the phone then uses the relay.
@@ -709,6 +721,9 @@ Android ── pinned mutual TLS ───────────────�
   again; there is no legacy device-authentication bypass. The standalone relay's
   opaque native tunnel and Web gateway protocol do not require an update for
   this device-authentication change.
+- An older Android client does not collect a rotated admission token, so after
+  another device is revoked it loses the relay path once the 30-day grace period
+  ends and needs the LAN or a new pairing. Update the app to keep it.
 
 ## Protocol
 
@@ -741,6 +756,12 @@ headers, never URL parameters. Compression is disabled.
   that host's data connections. `ready.max_connections` carries the per-server
   limit; a host at its limit answers `open` with `reject` and the same ID, and
   the relay closes that client at once.
+- Admission: `ready.admission_updates` says the relay applies `{"type":"admission",
+  "tokens":[...]}` from the host on the live control connection, where the first
+  token is current and later ones are still honored after a rotation. `/v1/connect`
+  accepts any of them. A relay without this capability keeps only the token from
+  the registration handshake, so the host registers again after a rotation
+  instead of updating it in place.
 - `https://<server-id>.web.<public-hostname>/...`: proxies HTTP, SSE and WebSockets
   for an opted-in authenticated host. Registration signs `web_version=2`,
   `web_origin`, the challenge and admission token; `ready.web_url` returns the

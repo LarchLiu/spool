@@ -24,11 +24,27 @@ import (
 
 const ServiceType = "_spool._tcp"
 
+// AdmissionGrace is how long a replaced admission token is still accepted, so
+// paired devices that are away can collect the current one.
+const AdmissionGrace = 30 * 24 * time.Hour
+
+const maxRetiredTokens = 4
+
+// RetiredToken is an admission token that rotation replaced.
+type RetiredToken struct {
+	Token     string `json:"token"`
+	ExpiresAt int64  `json:"expires_at"`
+}
+
 // Identity is local-only. Neither the signing seed nor relay registration
 // credentials appear in a pairing code, discovery advertisement or API response.
 type Identity struct {
 	Seed        []byte `json:"seed"`
 	AccessToken string `json:"access_token"`
+	// Every paired device holds the admission token, including one that is
+	// later revoked. Rotation replaces it; replaced tokens stay here until the
+	// remaining devices have the current one or the grace period ends.
+	Retired []RetiredToken `json:"retired_tokens,omitempty"`
 }
 
 func NewIdentity() (*Identity, error) {
@@ -39,6 +55,85 @@ func NewIdentity() (*Identity, error) {
 	return &Identity{Seed: private.Seed(), AccessToken: randomID()}, nil
 }
 
+func (i *Identity) valid() bool {
+	if len(i.Seed) != ed25519.SeedSize || !validToken(i.AccessToken) || len(i.Retired) > maxRetiredTokens {
+		return false
+	}
+	for _, retired := range i.Retired {
+		if !validToken(retired.Token) {
+			return false
+		}
+	}
+	return true
+}
+
+// RetiredTokens returns the replaced admission tokens still accepted at now.
+func (i *Identity) RetiredTokens(now time.Time) []RetiredToken {
+	var current []RetiredToken
+	for _, retired := range i.Retired {
+		if now.Unix() < retired.ExpiresAt {
+			current = append(current, retired)
+		}
+	}
+	return current
+}
+
+func saveIdentity(directory string, id *Identity) error {
+	data, err := json.Marshal(id)
+	if err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(directory, "identity-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	if _, err = file.Write(data); err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(file.Name(), filepath.Join(directory, "identity.json"))
+}
+
+// RotateAccessToken replaces the admission token and keeps the previous one
+// for the grace period. The signing key, and so the server identity that
+// devices have pinned, is unchanged. The result is saved before it returns.
+func RotateAccessToken(directory string) (*Identity, error) {
+	id, err := LoadIdentity(directory)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	retired := append(id.RetiredTokens(now), RetiredToken{Token: id.AccessToken, ExpiresAt: now.Add(AdmissionGrace).Unix()})
+	if len(retired) > maxRetiredTokens {
+		retired = retired[len(retired)-maxRetiredTokens:]
+	}
+	next := &Identity{Seed: id.Seed, AccessToken: randomID(), Retired: retired}
+	if err := saveIdentity(directory, next); err != nil {
+		return nil, err
+	}
+	return next, nil
+}
+
+// DropRetiredTokens ends the grace period once no device needs it.
+func DropRetiredTokens(directory string) (*Identity, error) {
+	id, err := LoadIdentity(directory)
+	if err != nil || len(id.Retired) == 0 {
+		return id, err
+	}
+	next := &Identity{Seed: id.Seed, AccessToken: id.AccessToken}
+	if err := saveIdentity(directory, next); err != nil {
+		return nil, err
+	}
+	return next, nil
+}
+
 func LoadIdentity(directory string) (*Identity, error) {
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return nil, err
@@ -47,7 +142,7 @@ func LoadIdentity(directory string) (*Identity, error) {
 	data, err := os.ReadFile(path)
 	if err == nil {
 		var id Identity
-		if json.Unmarshal(data, &id) != nil || len(id.Seed) != ed25519.SeedSize || !validToken(id.AccessToken) {
+		if json.Unmarshal(data, &id) != nil || !id.valid() {
 			return nil, errors.New("invalid relay identity; restore the original identity file")
 		}
 		return &id, nil

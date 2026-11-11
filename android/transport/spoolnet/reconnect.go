@@ -20,6 +20,9 @@ func (c *Client) NetworkChanged() {
 	c.transport.CloseIdleConnections()
 	if c.relay != nil {
 		c.relay.NetworkChanged()
+		// A phone that just reached its home network can collect a token that
+		// expired on the relay path.
+		c.requestAdmissionSync()
 	}
 	if c.server != nil {
 		c.server.Sys().NetMon.Get().InjectEvent()

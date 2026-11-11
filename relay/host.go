@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -56,20 +57,111 @@ type Host struct {
 	connections       map[*ownedConn]struct{}
 	// Connections being opened or established, bounded by limit.
 	reserved, limit int
+	// The admission token in use and replaced ones still honored. They change
+	// with SetAdmission while Identity keeps the values the host started with.
+	access  string
+	retired []RetiredToken
+	// What the current control connection registered with, and whether its
+	// relay applies admission changes without a new registration.
+	sessionAccess  string
+	sessionUpdates bool
+	// Wakes the session after the admission tokens change.
+	admissionChanged chan struct{}
 }
 
 func NewHost(ctx context.Context, url, registrationToken string, id *Identity, client *http.Client) (*Host, error) {
 	if _, err := ParseRelayURL(url); err != nil {
 		return nil, err
 	}
-	if id == nil || len(id.Seed) != ed25519.SeedSize || !validToken(id.AccessToken) {
+	if id == nil || !id.valid() {
 		return nil, errors.New("invalid relay identity")
 	}
 	if registrationToken != "" && (len(registrationToken) < 32 || len(registrationToken) > 512 || strings.ContainsAny(registrationToken, "\r\n")) {
 		return nil, errors.New("relay registration token must be empty or contain 32–512 characters")
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	return &Host{URL: url, registrationToken: registrationToken, Identity: id, HTTPClient: client, ctx: ctx, cancel: cancel, accepted: make(chan net.Conn), connections: make(map[*ownedConn]struct{}), limit: defaultHostConnections}, nil
+	return &Host{URL: url, registrationToken: registrationToken, Identity: id, HTTPClient: client, ctx: ctx, cancel: cancel, accepted: make(chan net.Conn), connections: make(map[*ownedConn]struct{}), limit: defaultHostConnections,
+		access: id.AccessToken, retired: id.RetiredTokens(time.Now()), admissionChanged: make(chan struct{}, 1)}, nil
+}
+
+// AccessToken is the admission token for new pairing codes and connections.
+func (h *Host) AccessToken() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.access
+}
+
+// SetAdmission applies a rotated identity. Established connections continue;
+// the relay learns the change on the existing control connection.
+func (h *Host) SetAdmission(id *Identity) {
+	h.mu.Lock()
+	h.access, h.retired = id.AccessToken, id.RetiredTokens(time.Now())
+	h.mu.Unlock()
+	h.notifyAdmission()
+}
+
+// ExpireAdmission stops honoring retired tokens whose grace period has ended.
+func (h *Host) ExpireAdmission(now time.Time) {
+	h.mu.Lock()
+	current := h.retired[:0:0]
+	for _, retired := range h.retired {
+		if now.Unix() < retired.ExpiresAt {
+			current = append(current, retired)
+		}
+	}
+	changed := len(current) != len(h.retired)
+	h.retired = current
+	h.mu.Unlock()
+	if changed {
+		h.notifyAdmission()
+	}
+}
+
+func (h *Host) notifyAdmission() {
+	select {
+	case h.admissionChanged <- struct{}{}:
+	default:
+	}
+}
+
+func (h *Host) admissionTokens() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	tokens := []string{h.access}
+	for _, retired := range h.retired {
+		tokens = append(tokens, retired.Token)
+	}
+	return tokens
+}
+
+// maintainAdmission keeps one control connection's relay informed of the
+// tokens this host honors, starting from what the handshake registered.
+func (h *Host) maintainAdmission(ctx context.Context, c *websocket.Conn) {
+	h.mu.Lock()
+	known, updates := []string{h.sessionAccess}, h.sessionUpdates
+	h.mu.Unlock()
+	for {
+		tokens := h.admissionTokens()
+		switch {
+		case slices.Equal(tokens, known):
+		case updates:
+			if writeControl(ctx, c, controlMessage{Type: "admission", Tokens: tokens}) != nil {
+				c.CloseNow()
+				return
+			}
+		case tokens[0] != known[0]:
+			// An older relay only learns the admission token at registration,
+			// and cannot honor retired ones. Register again with the new token.
+			c.CloseNow()
+			return
+		}
+		known = tokens
+		select {
+		case <-ctx.Done():
+			return
+		case <-h.admissionChanged:
+		}
+	}
 }
 
 func (h *Host) RegistrationToken() string {
@@ -166,8 +258,9 @@ func (h *Host) handshakeNamed(path, name string) (_ *websocket.Conn, credential 
 		webOrigin = u.String()
 		webVersion = 2
 	}
-	if err := writeControl(authCtx, c, controlMessage{Type: "register", PublicKey: h.Identity.PublicKey(), AccessToken: h.Identity.AccessToken, WebOrigin: webOrigin, WebVersion: webVersion, Name: name,
-		Signature: ed25519.Sign(h.Identity.PrivateKey(), hostRegistrationProof(m.Challenge, h.Identity.AccessToken, webOrigin, name, webVersion))}); err != nil {
+	access := h.AccessToken()
+	if err := writeControl(authCtx, c, controlMessage{Type: "register", PublicKey: h.Identity.PublicKey(), AccessToken: access, WebOrigin: webOrigin, WebVersion: webVersion, Name: name,
+		Signature: ed25519.Sign(h.Identity.PrivateKey(), hostRegistrationProof(m.Challenge, access, webOrigin, name, webVersion))}); err != nil {
 		return nil, "", err
 	}
 	m, err = readControl(authCtx, c)
@@ -198,6 +291,7 @@ func (h *Host) handshakeNamed(path, name string) (_ *websocket.Conn, credential 
 	h.mu.Lock()
 	h.webURL = m.WebURL
 	h.limit = hostConnectionLimit(m.MaxConnections)
+	h.sessionAccess, h.sessionUpdates = access, m.AdmissionUpdates
 	h.mu.Unlock()
 	return c, token, nil
 }
@@ -235,6 +329,8 @@ func (h *Host) session() error {
 		h.OnWebURL(webURL)
 	}
 	go keepAlive(ctx, c)
+	h.workers.Add(1)
+	go func() { defer h.workers.Done(); h.maintainAdmission(ctx, c) }()
 	for {
 		m, err := readControl(ctx, c)
 		if err != nil {

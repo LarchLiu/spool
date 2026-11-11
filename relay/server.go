@@ -52,7 +52,10 @@ type Server struct {
 	takeoverProbe time.Duration
 }
 type registeredHost struct {
-	id, token      string
+	id string
+	// Admission tokens this connection accepts, current first. Guarded by
+	// Server.mu: the host replaces them without reconnecting.
+	tokens         []string
 	publicKey      ed25519.PublicKey
 	webOrigin      string // Signed host opt-in, valid only for this connection.
 	registrationID string
@@ -130,6 +133,16 @@ func NewServer(opts ServerOptions) (*Server, error) {
 
 func authorized(r *http.Request, token string) bool {
 	return subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+token)) == 1
+}
+
+// admitted accepts any admission credential the host currently honors.
+func admitted(r *http.Request, tokens []string) bool {
+	for _, token := range tokens {
+		if authorized(r, token) {
+			return true
+		}
+	}
+	return false
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
@@ -241,7 +254,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 		return
 	}
 	metadata := registrationMetadata{name: name, ip: s.clientIP(r), enrollment: registrationOnly}
-	h := &registeredHost{id: ServerID(m.PublicKey), token: m.AccessToken, publicKey: append(ed25519.PublicKey(nil), m.PublicKey...), webOrigin: m.WebOrigin, registrationID: registration.ID, control: c, ctx: ctx, cancel: cancel, open: make(chan controlMessage, 32), pairs: make(map[string]*relayPair)}
+	h := &registeredHost{id: ServerID(m.PublicKey), tokens: []string{m.AccessToken}, publicKey: append(ed25519.PublicKey(nil), m.PublicKey...), webOrigin: m.WebOrigin, registrationID: registration.ID, control: c, ctx: ctx, cancel: cancel, open: make(chan controlMessage, 32), pairs: make(map[string]*relayPair)}
 	h.web = newWebPool(func(ctx context.Context, clientIP string) (net.Conn, error) { return s.dialWeb(ctx, h, clientIP) })
 	var unreachable *registeredHost
 	if reconnecting {
@@ -321,7 +334,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 	if h.webOrigin != "" {
 		webURL = h.webOrigin + "/"
 	}
-	if writeControl(ctx, c, controlMessage{Type: "ready", RegistrationToken: issuedToken, WebURL: webURL, MaxConnections: limit}) != nil {
+	if writeControl(ctx, c, controlMessage{Type: "ready", RegistrationToken: issuedToken, WebURL: webURL, MaxConnections: limit, AdmissionUpdates: true}) != nil {
 		return
 	}
 	go keepAlive(ctx, c)
@@ -336,6 +349,9 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 			}
 			if m.Type == "reject" {
 				s.rejectPair(h, m.ID)
+			}
+			if m.Type == "admission" {
+				s.setAdmission(h, m.Tokens)
 			}
 		}
 	}()
@@ -433,10 +449,29 @@ func (s *Server) rejectPair(h *registeredHost, id string) {
 	s.mu.Unlock()
 }
 
+// setAdmission applies tokens the host still honors, newest first. A host
+// connection may only ever widen or narrow its own admission, and every token
+// arrives on the control connection that proved the host's identity.
+func (s *Server) setAdmission(h *registeredHost, tokens []string) {
+	if len(tokens) == 0 || len(tokens) > 1+maxRetiredTokens {
+		return
+	}
+	for _, token := range tokens {
+		if !validToken(token) {
+			return
+		}
+	}
+	s.mu.Lock()
+	if s.hosts[h.id] == h {
+		h.tokens = append([]string(nil), tokens...)
+	}
+	s.mu.Unlock()
+}
+
 func (s *Server) connect(w http.ResponseWriter, r *http.Request, id string) {
 	s.mu.Lock()
 	h := s.hosts[id]
-	if h == nil || !authorized(r, h.token) {
+	if h == nil || !admitted(r, h.tokens) {
 		s.mu.Unlock()
 		http.Error(w, "server unavailable", 404)
 		return

@@ -20,12 +20,15 @@ import (
 
 const PairingLifetime = 5 * time.Minute
 const devicePairPath = "/_spool/pair"
+const deviceAdmissionPath = "/_spool/admission"
 
 type Device struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	PublicKey []byte `json:"key"`
 	CreatedAt int64  `json:"created_at"`
+	// Digest of the relay admission token this device is known to hold.
+	Admission string `json:"admission,omitempty"`
 }
 type DeviceRequest struct {
 	Device
@@ -40,6 +43,9 @@ type deviceInvitation struct {
 	token   string
 	expires time.Time
 	request *DeviceRequest
+	// Digest of the admission token in the pairing code that carries this
+	// invitation, which is the one the device will hold once approved.
+	admission string
 }
 type deviceApproval struct {
 	token   string
@@ -55,6 +61,35 @@ type Devices struct {
 	invitation  *deviceInvitation
 	approvals   map[string]deviceApproval
 	connections map[*deviceConn]string
+	// Set by SetAdmission while a relay host is running.
+	admission func() string
+	settled   func()
+}
+
+// SetAdmission connects paired devices to the server's relay admission token.
+// current returns the token in use. settled is called, without any Devices
+// lock held, when the last paired device confirms that it holds that token, so
+// replaced tokens are no longer needed. Pass nil for both to disconnect.
+func (d *Devices) SetAdmission(current func() string, settled func()) {
+	d.mu.Lock()
+	d.admission, d.settled = current, settled
+	d.mu.Unlock()
+}
+
+// AdmissionSettled reports whether every paired device holds token.
+func (d *Devices) AdmissionSettled(token string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.admissionSettledLocked(tokenDigest(token))
+}
+
+func (d *Devices) admissionSettledLocked(digest string) bool {
+	for _, device := range d.keys {
+		if device.Admission != digest {
+			return false
+		}
+	}
+	return true
 }
 
 func OpenDevices(directory string) (*Devices, error) {
@@ -124,6 +159,9 @@ func (d *Devices) Invite() (string, int64) {
 		}
 	}
 	d.invitation = &deviceInvitation{token: randomID(), expires: time.Now().Add(PairingLifetime)}
+	if d.admission != nil {
+		d.invitation.admission = tokenDigest(d.admission())
+	}
 	return d.invitation.token, d.invitation.expires.Unix()
 }
 
@@ -164,6 +202,7 @@ func (d *Devices) Decide(requestID string, approve bool) error {
 		return errors.New("Remove an unused device before pairing another.")
 	}
 	device := p.request.Device
+	device.Admission = p.admission
 	previous, existed := d.keys[device.ID]
 	d.keys[device.ID] = device
 	if err := d.saveLocked(); err != nil {
@@ -305,6 +344,10 @@ func (d *Devices) Handler(next http.Handler, serverID string, webAllowed func() 
 				http.Error(w, "device revoked; pair again", 403)
 				return
 			}
+			if r.URL.Path == deviceAdmissionPath {
+				d.syncAdmission(w, r, DeviceFingerprint(key))
+				return
+			}
 			if strings.HasPrefix(r.URL.Path, "/web/") {
 				http.NotFound(w, r)
 				return
@@ -369,6 +412,86 @@ func (d *Devices) pair(w http.ResponseWriter, r *http.Request) {
 func writePairingState(w http.ResponseWriter, state, id string) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"state": state, "device_id": id})
+}
+
+// syncAdmission tells a paired device the current admission token and records
+// that the device holds it once the device reports the same token back. The
+// record is what lets a replaced token be dropped early, so it is only made
+// for a token the device has demonstrably saved, not one merely sent to it.
+func (d *Devices) syncAdmission(w http.ResponseWriter, r *http.Request, id string) {
+	d.mu.Lock()
+	current := d.admission
+	d.mu.Unlock()
+	if current == nil || r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+	var input struct {
+		Have string `json:"have"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048))
+	if dec.Decode(&input) != nil || dec.Decode(new(any)) != io.EOF {
+		http.Error(w, "invalid admission request", 400)
+		return
+	}
+	token := current()
+	digest := tokenDigest(token)
+	d.mu.Lock()
+	device, paired := d.keys[id]
+	settled := false
+	if paired && device.Admission != digest && subtle.ConstantTimeCompare([]byte(input.Have), []byte(token)) == 1 {
+		confirmed := device
+		confirmed.Admission = digest
+		d.keys[id] = confirmed
+		if err := d.saveLocked(); err != nil {
+			d.keys[id] = device
+			d.mu.Unlock()
+			http.Error(w, "admission storage unavailable", 500)
+			return
+		}
+		settled = d.admissionSettledLocked(digest)
+	}
+	notify := d.settled
+	d.mu.Unlock()
+	if !paired {
+		http.Error(w, "device revoked; pair again", 403)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"token": token})
+	if settled && notify != nil {
+		notify()
+	}
+}
+
+// SyncAdmission reports the admission token this device holds and returns the
+// server's current one. It only talks to the pinned home identity with the
+// device's own key; the relay never sees either token in this exchange.
+func SyncAdmission(ctx context.Context, client *http.Client, p Pairing, have string) (string, error) {
+	b, err := json.Marshal(map[string]string{"have": have})
+	if err != nil {
+		return "", err
+	}
+	r, err := http.NewRequestWithContext(ctx, http.MethodPost, Origin(p.ID())+deviceAdmissionPath, strings.NewReader(string(b)))
+	if err != nil {
+		return "", err
+	}
+	r.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(r)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return "", errors.New("admission token unavailable")
+	}
+	var result struct {
+		Token string `json:"token"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 2048)).Decode(&result) != nil || !validToken(result.Token) {
+		return "", errors.New("invalid admission response")
+	}
+	return result.Token, nil
 }
 
 func (d *Devices) CloseConnections() {

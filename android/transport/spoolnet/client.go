@@ -44,6 +44,9 @@ type Client struct {
 	relay            *relay.Dialer
 	relayHTTP        *http.Transport
 	relayLAN         string
+	// Paired connections only: wakes and ends the admission token sync.
+	admissionSync chan struct{}
+	admissionDone chan struct{}
 }
 
 // NewDirectClient connects to one HTTPS origin over the system network without
@@ -266,6 +269,7 @@ func (c *Client) Close() error {
 	if c.relay != nil {
 		c.relay.Close()
 		c.relayHTTP.CloseIdleConnections()
+		<-c.admissionDone
 	}
 	if c.node != nil {
 		<-c.node.done

@@ -128,6 +128,9 @@ func (s *Service) startRelayLocked(settings Settings) error {
 		}
 	}
 	s.relay = runtime
+	// Paired devices collect a rotated admission token over their pinned
+	// device connection, and the last confirmation ends the grace period.
+	devices.SetAdmission(host.AccessToken, func() { s.settleRelayAdmission() })
 	host.OnRegistrationToken = func(issued string) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -185,6 +188,9 @@ func (s *Service) startRelayLocked(settings Settings) error {
 			case <-ctx.Done():
 				return
 			case <-timer.C:
+				// Admission tokens replaced by a rotation stop being honored
+				// when their grace period ends, without reading the store.
+				host.ExpireAdmission(time.Now())
 			}
 		}
 	}()
@@ -247,7 +253,7 @@ func (s *Service) RelayPairingCode() (string, error) {
 		return "", err
 	}
 	invitation, expires := devices.Invite()
-	return (relay.Pairing{Version: 2, RelayURL: s.relay.host.URL, PublicKey: id.PublicKey(), AccessToken: id.AccessToken, LAN: relayLANAddresses(port), Invitation: invitation, ExpiresAt: expires}).Encode()
+	return (relay.Pairing{Version: 2, RelayURL: s.relay.host.URL, PublicKey: id.PublicKey(), AccessToken: s.relay.host.AccessToken(), LAN: relayLANAddresses(port), Invitation: invitation, ExpiresAt: expires}).Encode()
 }
 
 // RegisterRelay enrolls while the relay switch remains off. Only a confirmed
@@ -496,7 +502,64 @@ func (s *Service) RevokeRelayDevice(id string) error {
 	if err != nil {
 		return err
 	}
-	return d.Revoke(id)
+	if err := d.Revoke(id); err != nil {
+		return err
+	}
+	// The revoked device still holds the admission token, which is the only
+	// relay credential a paired phone ever had. Replace it, keeping the old one
+	// valid until the remaining devices have collected the new one. The device
+	// is revoked either way, so a storage failure is logged, not returned.
+	if err := s.rotateRelayAdmissionLocked(d); err != nil {
+		log.Printf("event=relay_admission_rotation_failed error=%q", err)
+	}
+	return nil
+}
+
+// Caller holds Service.mu. The signing key is untouched, so paired devices
+// keep the same pinned identity and relay registration.
+func (s *Service) rotateRelayAdmissionLocked(d *relay.Devices) error {
+	directory := filepath.Join(s.Store.Root(), "relay")
+	id, err := relay.RotateAccessToken(directory)
+	if err != nil {
+		return err
+	}
+	if d.AdmissionSettled(id.AccessToken) {
+		// No device is left to collect the new token; the old one is not needed.
+		if id, err = relay.DropRetiredTokens(directory); err != nil {
+			return err
+		}
+	}
+	if s.relay != nil {
+		s.relay.host.SetAdmission(id)
+	}
+	return nil
+}
+
+// Called without holding Service.mu when the last paired device confirms the
+// current admission token.
+func (s *Service) settleRelayAdmission() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	devices, err := s.relayDevicesLocked()
+	if err != nil {
+		return
+	}
+	directory := filepath.Join(s.Store.Root(), "relay")
+	id, err := relay.LoadIdentity(directory)
+	// Another rotation may have happened since the device confirmed this one.
+	if err != nil || len(id.Retired) == 0 || !devices.AdmissionSettled(id.AccessToken) {
+		return
+	}
+	if id, err = relay.DropRetiredTokens(directory); err != nil {
+		log.Printf("event=relay_admission_retire_failed error=%q", err)
+		return
+	}
+	if s.relay != nil {
+		s.relay.host.SetAdmission(id)
+	}
 }
 func (s *Service) CancelRelayPairing(code string) error {
 	p, err := relay.ParsePairing(code)
