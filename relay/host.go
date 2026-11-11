@@ -144,12 +144,14 @@ func (h *Host) handshakeNamed(path, name string) (_ *websocket.Conn, credential 
 		return nil, "", fmt.Errorf("relay challenge failed: %w", errors.Join(err, errors.New("invalid registration challenge")))
 	}
 	webOrigin := ""
+	webVersion := 0
 	if h.WebEnabled && path == "/v1/host" {
 		u, _ := ParseRelayURL(h.URL)
 		webOrigin = u.String()
+		webVersion = 2
 	}
-	if err := writeControl(authCtx, c, controlMessage{Type: "register", PublicKey: h.Identity.PublicKey(), AccessToken: h.Identity.AccessToken, WebOrigin: webOrigin, Name: name,
-		Signature: ed25519.Sign(h.Identity.PrivateKey(), namedRegistrationProof(m.Challenge, h.Identity.AccessToken, webOrigin, name))}); err != nil {
+	if err := writeControl(authCtx, c, controlMessage{Type: "register", PublicKey: h.Identity.PublicKey(), AccessToken: h.Identity.AccessToken, WebOrigin: webOrigin, WebVersion: webVersion, Name: name,
+		Signature: ed25519.Sign(h.Identity.PrivateKey(), hostRegistrationProof(m.Challenge, h.Identity.AccessToken, webOrigin, name, webVersion))}); err != nil {
 		return nil, "", err
 	}
 	m, err = readControl(authCtx, c)
@@ -171,7 +173,7 @@ func (h *Host) handshakeNamed(path, name string) (_ *websocket.Conn, credential 
 	if token == "" {
 		return nil, "", errors.New("relay did not issue a registration token")
 	}
-	if m.WebURL != "" && (webOrigin == "" || m.WebURL != webOrigin+WebPath(h.Identity.ID())) {
+	if m.WebURL != "" && (webOrigin == "" || !ValidateWebURL(m.WebURL, h.Identity.ID())) {
 		return nil, "", errors.New("invalid relay Web address")
 	}
 	h.mu.Lock()

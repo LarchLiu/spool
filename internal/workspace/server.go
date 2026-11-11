@@ -27,6 +27,7 @@ import (
 
 type App struct {
 	relayWebPrefix  string
+	relayWebOrigin  string
 	store           *Store
 	runner          agent.AgentRunner
 	settings        Settings
@@ -119,6 +120,7 @@ func (a *App) configureRelayWeb(settings Settings) {
 	defer a.configMu.Unlock()
 	a.settings.RelayURL, a.settings.RelayEnabled, a.settings.RelayWebEnabled = settings.RelayURL, settings.RelayEnabled, settings.RelayWebEnabled
 	a.relayWebPrefix = prefix
+	a.relayWebOrigin = ""
 }
 func apiJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -219,7 +221,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 			apiError(w, 401, "用户名或密码不正确")
 			return
 		}
-		http.SetCookie(w, &http.Cookie{Name: authCookie, Value: token, Path: requestWebPath(r), HttpOnly: true, Secure: a.secureCookie(r), SameSite: http.SameSiteStrictMode, MaxAge: 7 * 24 * 3600})
+		http.SetCookie(w, &http.Cookie{Name: requestAuthCookie(r), Value: token, Path: requestWebPath(r), HttpOnly: true, Secure: a.secureCookie(r), SameSite: http.SameSiteStrictMode, MaxAge: 7 * 24 * 3600})
 		a.signedInResponse(w, id)
 		return
 	}
@@ -314,7 +316,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		}
 		a.presence.Remove(id.TokenHash)
 		a.store.changes.publish(changeAuth | changePresence)
-		http.SetCookie(w, &http.Cookie{Name: authCookie, Path: requestWebPath(r), MaxAge: -1, HttpOnly: true, Secure: a.secureCookie(r), SameSite: http.SameSiteStrictMode})
+		http.SetCookie(w, &http.Cookie{Name: requestAuthCookie(r), Path: requestWebPath(r), MaxAge: -1, HttpOnly: true, Secure: a.secureCookie(r), SameSite: http.SameSiteStrictMode})
 		apiJSON(w, 200, map[string]bool{"ok": true})
 	case path == "/api/projects" && r.Method == "GET":
 		projects, err := a.store.UserProjects(id.User.ID)

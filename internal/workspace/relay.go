@@ -94,6 +94,12 @@ func (s *Service) startRelayLocked(settings Settings) error {
 	runtime := &relayRuntime{ingress: ingress, cancel: cancel, host: host, lan: listener, devices: devices, status: RelayStatus{State: "connecting", ServerID: id.ID(), LANAddress: listener.Addr().String(), RegistrationTokenSet: token != ""}}
 	host.WebEnabled = settings.RelayWebEnabled
 	host.OnWebURL = func(address string) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.relay != runtime || ctx.Err() != nil {
+			return
+		}
+		s.app.configureRelayWebOrigin(address)
 		runtime.mu.Lock()
 		runtime.status.WebURL = address
 		runtime.mu.Unlock()

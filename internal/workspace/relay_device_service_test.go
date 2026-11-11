@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"strconv"
 	"testing"
 	"time"
@@ -22,8 +21,7 @@ func TestRelayDeviceAdmissionFollowsAppliedSettings(t *testing.T) {
 		return connection, nil
 	})
 	waitTailnet(t, service, func(status ServiceStatus) bool { return status.TSNet.URL != "" })
-	broker, token := testRelayBroker(t)
-	public := httptest.NewServer(broker)
+	_, public, token := relayWebBroker(t)
 	defer public.Close()
 	defer service.Stop()
 	settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
@@ -95,7 +93,7 @@ func TestRelayDeviceAdmissionFollowsAppliedSettings(t *testing.T) {
 	defer publicClient.CloseIdleConnections()
 	checkWeb := func(want int) {
 		t.Helper()
-		response, err := publicClient.Get(public.URL + relay.WebPath(p.ID()) + "api/me")
+		response, err := publicClient.Get(relayTenantURL(t, public.URL, p.ID()) + "api/me")
 		if err != nil {
 			t.Fatal(err)
 		}

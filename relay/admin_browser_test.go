@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync/atomic"
 	"testing"
 )
 
@@ -16,15 +17,28 @@ func TestAdminBrowserFixture(t *testing.T) {
 		t.Skip("opt-in browser fixture")
 	}
 	s := testBroker(t)
-	public := trustedProbeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var proxyReady atomic.Bool
+	public := webPublicServerWithHandler(t, s, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" && !proxyReady.Load() {
+			http.Error(w, "proxy is starting", http.StatusServiceUnavailable)
+			return
+		}
 		r.TLS = nil
 		r.Header.Set("X-Forwarded-Proto", "https")
 		r.Header.Set("X-Forwarded-For", "203.0.113.9")
 		s.ServeHTTP(w, r)
 	}))
+	s.StartProxyDetectionWhenReady()
 	// Management and public traffic have independent listeners, matching the
 	// normal deployment instead of relying on per-path management URL routing.
-	admin := httptest.NewTLSServer(s.AdminHandler())
+	admin := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/fixture/proxy-ready" && authorized(r, testAdminToken) {
+			proxyReady.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		s.AdminHandler().ServeHTTP(w, r)
+	}))
 	t.Cleanup(admin.Close)
 	// Exercise online server metadata against an actual native connection.
 	_, token := createViaAPI(t, s, "home-mac")

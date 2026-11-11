@@ -5,7 +5,7 @@ this directory on a VPS. It does not run Spool, agents, a database, or voxl.
 Both the home server and Android make outbound connections to the VPS; there
 is no hole punching, Internet P2P, or port forwarding at home.
 An optional Web gateway also serves browsers and installed PWAs at
-`https://relay.example.com/web/<server-id>/` through the same outbound connection.
+`https://<server-id>.web.relay.example.com/` through the same outbound connection.
 
 ## Docker Compose
 
@@ -17,6 +17,8 @@ cp .env.example .env
 chmod 600 .env
 openssl rand -hex 32
 # Put the generated value in SPOOL_RELAY_ADMIN_TOKEN in .env.
+# Set RELAY_PUBLIC_HOST, RELAY_ADMIN_HOST and RELAY_PUBLIC_URL; configure DNS.
+# COMPOSE_PROFILES=caddy includes Caddy; leave it empty for an existing proxy.
 docker compose up -d --build
 docker compose ps
 curl --fail http://127.0.0.1:28080/healthz
@@ -30,10 +32,20 @@ The local `.env` is excluded from Git and the image build context.
 | --- | --- | --- |
 | `SPOOL_RELAY_ADMIN_TOKEN` | Required | Management API credential, 32–512 characters. |
 | `RELAY_REQUIRE_REGISTRATION_TOKEN` | `true` | Set `false` to allow signed automatic server registration. |
-| `RELAY_TRUSTED_PROXIES` | Empty | Initial proxy IP CIDRs; saved dashboard settings take precedence. Usually automatic detection is sufficient. |
-| `RELAY_BIND_ADDRESS` | `127.0.0.1` | Host interface for the HTTP relay backend. |
 | `RELAY_PORT` | `28080` | Host port for the HTTP relay backend. |
 | `RELAY_ADMIN_PORT` | `28081` | Host loopback port for the management API. |
+| `COMPOSE_PROFILES` | Empty in Compose; `caddy` in example | Start the optional bundled Caddy. |
+| `RELAY_PUBLIC_URL` | Empty | Deployment service HTTPS origin; read-only in the dashboard. |
+| `CADDY_CERTIFICATE_MODE` | `individual` | Bundled Caddy only: `individual` or `wildcard`. |
+| `RELAY_PUBLIC_HOST` / `RELAY_ADMIN_HOST` | Required for bundled Caddy | Public service and management hostnames. |
+| `CLOUDFLARE_API_TOKEN` | Empty | Bundled Caddy wildcard DNS credential; never passed to Relay. |
+| `RELAY_TRAEFIK_TOKEN` | Empty | Independent read-only token for Traefik config discovery. |
+| `RELAY_TRAEFIK_RESOLVER` | `letsencrypt` | Existing Traefik resolver for Relay routes; `none` uses loaded certificates. |
+| `RELAY_PROXY_UPSTREAM` | `http://relay:28080` | Upstream URL exposed to Traefik; use a stable Docker network alias. |
+| `RELAY_PROXY_PORT` | `28082` | Host loopback port for private proxy integration. |
+
+See [Web subdomain deployment](relay-web-subdomains.zh-CN.md) before
+enabling public Web, including both certificate modes and external proxy setup.
 
 For automatic registration, set `RELAY_REQUIRE_REGISTRATION_TOKEN=false` in
 `.env` and run `docker compose up -d`. The administrative credential remains
@@ -64,13 +76,13 @@ origin with a certificate trusted by the app; a LAN HTTP address does not work.
 The default loopback mapping is accessible only from the Docker host. Running
 the container at home does not itself create a publicly reachable endpoint.
 
-In the dashboard, set **Relay 公网地址** to the HTTPS address that reaches the
-public Relay listener (`28080`). Saving a changed address automatically detects
-the proxy's actual source IP, including a Docker bridge or proxy-container IP. See
-[public management and proxy detection](#public-management-and-proxy-detection)
-for proxy routes. The management page's URL is independent and is never used
-automatically as the detection target.
-Detection runs after the address changes and once at startup; **检测** retries it.
+Set `RELAY_PUBLIC_URL` in the deployment environment. Web addresses use
+`<server-id>.web.<public hostname>` automatically. The dashboard displays the
+origin and derived suffix read-only; changing the origin requires redeployment
+and matching proxy/DNS configuration. Startup waits up to five minutes for the public
+HTTPS entry before detecting the proxy once; **检测** retries it. The button stays
+disabled while waiting or detecting. Manual trusted CIDRs remain editable under
+**高级设置**.
 
 Registrations and revocations persist in the `relay-data` named volume. The
 container uses the image's non-root user, a read-only root filesystem and a
@@ -96,6 +108,7 @@ When a platform builds `relay/Dockerfile` without Compose, set these as containe
 ```dotenv
 SPOOL_RELAY_ADMIN_TOKEN=your-generated-management-credential
 RELAY_REQUIRE_REGISTRATION_TOKEN=false
+RELAY_PUBLIC_URL=https://relay.example.com
 ```
 
 The relay reads the registration setting itself at startup; it does not need to
@@ -122,8 +135,8 @@ go build -trimpath -o spool-relay ./cmd/spool-relay
 openssl rand -hex 32
 # Save that random value as SPOOL_RELAY_ADMIN_TOKEN in your service manager.
 export SPOOL_RELAY_ADMIN_TOKEN='the-generated-value'
-./spool-relay -listen 127.0.0.1:28080 -data-dir ./relay-data \
-  -trusted-proxies 127.0.0.1/32
+export RELAY_PUBLIC_URL=https://relay.example.com
+./spool-relay -listen 127.0.0.1:28080 -data-dir ./relay-data
 ```
 
 Point `relay.example.com` at the VPS and put a TLS reverse proxy in front.
@@ -141,10 +154,8 @@ Clients use TCP 443. Let the proxy manage its certificate and HTTP challenge as
 usual. WebSocket upgrades must work, with no short maximum connection lifetime.
 Heartbeat pings run every 20 seconds; the home server reconnects automatically.
 For direct TLS, pass `-listen :443 -tls-cert fullchain.pem -tls-key privkey.pem`.
-Omit `-trusted-proxies` for direct TLS. For the loopback Caddy example above,
-`127.0.0.1/32` trusts only that proxy's IPv4 connection. The flag overrides
-`RELAY_TRUSTED_PROXIES` when initializing settings; saved dashboard settings
-take precedence on subsequent starts. An invalid CIDR prevents startup. Forwarded
+Proxy trust is detected at startup from `RELAY_PUBLIC_URL`. Add explicit extra
+CIDRs in the dashboard when necessary. Forwarded
 chains are read from right to left, stopping at the first untrusted address. Other
 forwarding headers and client cookies cannot choose the login rate-limit key.
 
@@ -189,7 +200,7 @@ sudo install -d -m 700 /etc/spool-relay
 sudo touch /etc/spool-relay/relay.env
 sudo chmod 600 /etc/spool-relay/relay.env
 sudoedit /etc/spool-relay/relay.env
-# Set SPOOL_RELAY_ADMIN_TOKEN to your generated value (see deploy/relay.env.example).
+# Set SPOOL_RELAY_ADMIN_TOKEN and RELAY_PUBLIC_URL (see deploy/relay.env.example).
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now spool-relay
@@ -306,40 +317,29 @@ Host, set `X-Forwarded-Proto: https`, and replace or safely append
 `X-Forwarded-For`. Forwarding only to the management port cannot verify the
 public Relay listener.
 
-Set **Relay 公网地址** to `https://relay.example.com`. Leaving the input or
-pressing Enter saves it and automatically starts verification against the
-public listener. The management hostname is recorded separately for isolation;
-it never determines the service URL, including when management uses HTTPS.
-Verification uses a one-time callback and independent response proof with normal
-TLS certificate validation, without credentials or redirects. On success it trusts only the observed TCP
-peer as an exact `/32` or `/128`, applies it immediately and persists it in
-`settings.json` alongside the saved address. Direct TLS needs no proxy entry.
-Relay repeats this once after binding the public listener on startup, replacing
-the previous automatic IP on success. It does not probe periodically. Failure
-is shown in the dashboard and **检测** retries it; a failed retry does not erase
-the previous verified result for the same address. Changing the address clears
-the previous automatic trust immediately.
+Set `RELAY_PUBLIC_URL=https://relay.example.com` in the deployment environment.
+The dashboard displays it read-only and records its management origin separately.
+Startup waits up to five minutes for a valid HTTPS `/healthz` response and
+immediately validates a one-time callback without credentials or redirects. It
+persists and immediately trusts only the observed TCP peer as an exact /32 or
+/128. Direct TLS needs no proxy entry. **检测** retries; there is no
+periodic probing. A failed retry preserves the verified result for the same
+origin. Redeployment with a different or empty URL discards old automatic trust.
+The callback `/.well-known/spool-relay/proxy-check/*` must reach port 28080.
+See [deployment configuration and migration](relay-web-subdomains.zh-CN.md#配置文件与动态管理)
+for environment precedence and settings-file migration.
 
-The same setting is used for public, local and SSH dashboard access. Enter the
-service HTTPS origin without a path or wildcard. The callback
-`/.well-known/spool-relay/proxy-check/*` must reach `28080` on this Relay process.
-Clearing the address disables automatic detection and removes automatic trust;
-manual CIDRs remain. Version 1 settings that inferred a URL from the management
-page are cleared on load, while explicitly supplied old overrides are preserved.
-New writes use settings version 2; older binaries reject that settings file.
-
-If the Web gateway later routes individual servers by subdomain, those hostnames
+The Web gateway routes individual servers by subdomain. Those hostnames
 can share the same public IP and backend port `28080`. Configure the base
 hostname as the detection address and route its callback to that port too.
 One verified peer covers hostnames using the same proxy path and backend process;
 DNS alone does not prove that two hostnames use the same proxy. Extra ingress
 paths or different proxy peers need their own explicit trusted CIDRs. This
-setting does not itself enable subdomain routing in the Web gateway.
+setting configures proxy trust independently from DNS and HTTPS routing.
 
 **额外可信代理** is for explicitly trusted extra hops in a multi-proxy chain.
 The detected peer remains separate and is replaced automatically after a
-successful startup check. Manual CIDRs persist and take precedence over initial
-`RELAY_TRUSTED_PROXIES` / `-trusted-proxies` values. These settings and server
+successful startup check. Manual CIDRs persist; no proxy-trust environment variable or startup flag is needed. These settings and server
 registrations use the same persistent data directory/volume; the administrator
 credential stays in the process environment. Back up this volume when migrating.
 
@@ -349,15 +349,16 @@ The API remains available to scripts. Every API request requires a Bearer
 administrator credential; browser callers must be same-origin. Tokens and
 credentials are never accepted in URL query strings.
 
-`GET /v1/settings` returns the public service URL, the saved management origin,
-manual CIDRs, the last verified peer/origin/time, and detection progress/error.
-`PUT /v1/settings` accepts only `public_url`, `browser_origin`, and
-`trusted_proxies` (an array of CIDRs); detection-owned fields are read-only.
-An empty public URL disables automatic detection; `browser_origin` only records
-the management origin for tenant isolation.
-`POST /v1/proxy-detection` retries the saved URL and returns HTTP 202; poll
-`GET /v1/settings` for completion. Saving an address change also starts this
-backend verifier, so API clients do not need a second request.
+`GET /v1/settings` returns the deployment URL and subdomain suffix, saved
+management origin, manual CIDRs, verified peer/origin/time, and detection status.
+`PUT /v1/settings` accepts only `browser_origin` and optional
+`trusted_proxies` (an array of CIDRs). Omitting the array preserves it; an empty
+array clears manual entries. Deployment and detection-owned fields are read-only.
+`POST /v1/proxy-detection` retries the deployment URL and returns HTTP 202; poll
+`GET /v1/settings` for completion.
+`PATCH /v1/registrations/<id>` with `{"web_blocked":true}` stops Web publication
+without revoking native registration; `false` allows the host to opt in again.
+The host reconnects to update its displayed URL; existing streams close.
 
 ```sh
 # Run on the VPS, with SPOOL_RELAY_ADMIN_TOKEN set to its configured value.
@@ -407,9 +408,8 @@ curl -fsS https://relay-admin.example.com/v1/registrations \
 ```
 
 By default the IP comes from the socket peer. The dashboard can detect the
-nearest proxy automatically as described above. For manual initialization,
-set `RELAY_TRUSTED_PROXIES` (or `-trusted-proxies`) to actual proxy CIDRs, for
-example `127.0.0.1/32,::1/128` for a local proxy. Do not copy unrelated private
+nearest proxy automatically as described above. For extra manual trust,
+use the dashboard advanced settings to add actual proxy CIDRs, for example `127.0.0.1/32,::1/128` for a local proxy. Do not copy unrelated private
 ranges or trust all addresses. The relay follows
 `X-Forwarded-For` from right to left through trusted hops, stopping at the first
 untrusted address. A Cloudflare + Coolify chain requires both trusted proxy hops
@@ -558,36 +558,34 @@ Back up that file with your private Spool data. Replacing it requires re-pairing
 
 ## Public internet access
 
-The relay can publish each connected Spool server that enables Web access under
-its stable Server ID:
+Each Web-enabled server has an isolated browser origin:
 
 ```text
-https://relay.example.com/web/<server-id>/
+https://<server-id>.web.relay.example.com/
 ```
 
-The ID is part of the URL path. One relay HTTPS address and certificate serve
-all connected servers; no per-server domain, wildcard DNS, browser extension or
-Tailscale client is needed. The existing HTTPS reverse proxy must preserve the
-Host header and the complete `/web/<server-id>/` path, support WebSocket upgrades,
-and stream SSE without buffering. The Caddy configuration above already forwards
-all paths this way. Do not strip `/web/` with a path-rewriting proxy rule.
+The relay operator configures its public HTTPS URL in the deployment environment
+and certificates in the front proxy. The Web suffix is always `web.<public hostname>`.
+Server IDs produce stable DNS labels. Only a credential-authenticated, signed
+v2 opt-in publishes a route.
+Native enrollment by itself never publishes Web content.
 
-1. Upgrade both the relay and the home Spool server, then register and enable
-   Spool Relay as described above.
-2. In **Spool Desktop → Service → Spool Relay**, enable **Public internet access**.
-3. Restart the Spool service to apply its Web setting. On connection, the relay
-   verifies the registration and signed Web opt-in, then automatically adds the
-   route and returns its URL. **Public Web address** appears inside the Web access
-   section, with a copy icon beside it. Sign in with an
-   existing Spool user account. An HTTPS browser can then install the PWA.
+See [subdomain deployment and migration](relay-web-subdomains.zh-CN.md)
+for optional bundled Caddy, external proxies, Coolify HTTP provider setup,
+DNS API credentials, and certificate modes. `COMPOSE_PROFILES=caddy` starts
+the bundled proxy; an empty value keeps the relay independent. Individual
+certificates need no DNS API; the bundled wildcard mode supports Cloudflare DNS.
+Certificate credentials belong to the proxy, never the relay data store.
 
-Web routes are runtime state in the relay's authenticated host registry. There
-is no static Server ID list to configure. A new server can join while the relay
-keeps running; stopping a host or revoking its registration removes its route
-and closes its active tunnels. Reconnecting restores the same path if Web access
-is still enabled. Relay restarts rebuild routes as hosts reconnect; enrollment
-records remain persistent. Registering a server without connecting it does not
-publish Web access.
+1. Upgrade both Relay and Spool, configure DNS and the proxy once, then register.
+2. Enable **Public internet access** in Spool's Relay settings and apply changes.
+3. Open the returned **Public Web address**, sign in, and optionally install its PWA.
+
+Publishing intent survives temporary host disconnects and relay restarts, so
+certificate authorization does not churn. Requests still require a connected
+host. Disabling Web updates the record on the next authenticated host connection;
+revocation, unregistration, or the administrator's **停用 Web** removes publishing
+qualification. Native identities remain separate from browser accounts.
 
 For a headless Spool installation, `-relay-web` persists the same setting:
 
@@ -617,24 +615,23 @@ listener. Disabling Web blocks new gateway requests, including on an existing
 HTTP connection; restarting applies the routing change and closes old streams.
 Native device revocation does not revoke a separate browser login.
 
-All Web mounts on one relay share a browser origin. Path-scoped cookies, PWA
-registrations, caches and preferences let multiple servers work in separate
-tabs, but paths are **not a security boundary between untrusted server operators**.
-The manifest keeps a shared PWA identity for the relay origin, with each server's
-own start URL and service-worker scope. A shared identity does not add a server
-switcher to the Web interface; server links can be opened in separate browser tabs.
-Only co-host mutually trusted server operators. The existing relay registration
-policy controls who may connect and publish Web: with required tokens, issue
-credentials only to trusted operators. With automatic registration, any server
-that can enroll may also opt into Web access. Its host must explicitly enable
-Web and sign that choice; native-only hosts do not publish Web routes.
+Each server now has its own host-only `__Host-spool_session` cookie,
+PWA identity, Service Worker, caches, and storage. Exact Origin and CSRF checks
+also reject same-site sibling-domain requests. The gateway strips parent-domain
+Cookie attributes, and the browser rejects parent-domain `__Host-` cookie
+injection. Web domains cannot route to another server by changing a path.
+
+Legacy public `/web/<server-id>/` mounts return 410 and a site-data clearing
+header; they never serve tenant HTML. Open the new address, sign in again, and
+reinstall the PWA. Existing cached legacy installations should be removed.
+Older clients retain native connectivity but cannot publish shared-origin Web.
 
 The Server ID is a routing identifier, not a password. Spool still enforces login,
 CSRF, project membership and remote desktop permissions. The relay does not
 create user accounts or expose desktop management APIs. Logout revokes the
 current application session; registration revocation closes the server's native
 and Web tunnels. Cookies, uploads, downloads, chat SSE, workspace WebSockets and
-remote desktop viewers all use the same server prefix. Push notifications return
+remote desktop viewers all use the server's own origin. Push notifications return
 to that server's PWA scope.
 
 Login limits use the client's IP address reported by the relay over the host's
@@ -713,12 +710,14 @@ headers, never URL parameters. Compression is disabled.
 - `/v1/data/<connection-id>`: the host supplies the one-time secret; the relay
   joins the sockets. Pending joins expire after 10 seconds. Control loss closes
   that host's data connections.
-- `/web/<server-id>/...`: proxies HTTP, SSE and WebSocket requests only for a
-  connected, authenticated server that opts into Web. Host registration signs
-  `web_origin` using a separate proof domain; the relay dynamically publishes the
-  route and `ready.web_url` confirms the public URL.
-  Web-disabled hosts retain the original native registration protocol. Upgrade
-  both components before enabling Web; older relays cannot verify the Web proof.
+- `https://<server-id>.web.<public-hostname>/...`: proxies HTTP, SSE and WebSockets
+  for an opted-in authenticated host. Registration signs `web_version=2`,
+  `web_origin`, the challenge and admission token; `ready.web_url` returns the
+  isolated assignment. The home verifies its identity label before accepting it.
+- Private proxy listener (default loopback 28082): `GET /v1/tls/allow?domain=...`
+  implements Caddy ask; `GET /v1/traefik` returns a complete routing snapshot
+  and requires the independent `RELAY_TRAEFIK_TOKEN`. Neither endpoint is served
+  by the public or administrative listener.
 
 Binary messages carry fragments of the inner TLS byte stream, at most 64 KiB
 each; they are not application-message boundaries. Control messages are at most
@@ -738,4 +737,4 @@ Web coverage is in `web_test.go`, `internal/workspace/relay_web_test.go`, and
 `web/test/app-path.test.mjs` / `web/test/web-push.test.mjs`. After building the
 frontend, set `CHROME_BIN` to a standalone Chromium binary and run
 `go test ./internal/workspace -run '^TestRelayWebBrowser$'` from the main repository
-using its cache/scratch wrapper to check two concurrent Web/PWA mounts.
+using its cache/scratch wrapper to check two concurrent Web/PWA origins.

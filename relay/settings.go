@@ -12,10 +12,9 @@ import (
 	"time"
 )
 
-// Automatic trust is kept separate from operator-supplied CIDRs. Only the
-// callback verifier can write it; changing the public origin clears it.
-type relaySettings struct {
-	PublicURL      string     `json:"public_url"`
+// Only operational state is persisted. Public addresses always come from the
+// deployment; a stale dashboard file must never override a redeployment.
+type relayRuntimeSettings struct {
 	AdminOrigin    string     `json:"admin_origin"`
 	TrustedProxies []string   `json:"trusted_proxies"`
 	DetectedProxy  string     `json:"detected_proxy"`
@@ -23,20 +22,26 @@ type relaySettings struct {
 	DetectedAt     *time.Time `json:"detected_at,omitempty"`
 }
 
+type relaySettings struct {
+	PublicURL string `json:"public_url"`
+	WebDomain string `json:"web_domain"`
+	relayRuntimeSettings
+}
+
 type settingsInput struct {
-	PublicURL      string   `json:"public_url"`
-	BrowserOrigin  string   `json:"browser_origin"`
-	TrustedProxies []string `json:"trusted_proxies"`
+	BrowserOrigin  string    `json:"browser_origin"`
+	TrustedProxies *[]string `json:"trusted_proxies,omitempty"`
 }
 
 type settingsStatus struct {
 	relaySettings
 	Detecting            bool   `json:"detecting"`
+	WaitingForProxy      bool   `json:"waiting_for_proxy"`
 	DetectionError       string `json:"detection_error"`
 	RegistrationRequired bool   `json:"registration_required"`
 }
 
-var errInvalidSettings = errors.New("invalid relay settings: use an HTTPS origin and valid proxy CIDRs")
+var errInvalidSettings = errors.New("invalid relay settings: check the HTTPS origin and proxy CIDRs")
 
 func publicOrigin(address string) (string, error) {
 	address = strings.TrimSpace(address)
@@ -69,14 +74,23 @@ func normalizedProxies(values []string) ([]string, error) {
 }
 
 func (s *Server) loadSettings() error {
-	var err error
-	s.settings.TrustedProxies, err = normalizedProxies(s.opts.TrustedProxies)
-	if err != nil {
-		return err
+	s.settings.PublicURL = strings.TrimSpace(s.opts.PublicURL)
+	if s.settings.PublicURL != "" {
+		origin, err := publicOrigin(s.settings.PublicURL)
+		if err != nil {
+			return err
+		}
+		s.settings.PublicURL = origin
+	}
+	s.settings.WebDomain = ""
+	if s.settings.PublicURL != "" {
+		public, _ := url.Parse(s.settings.PublicURL)
+		s.settings.WebDomain = webDomain(public.Hostname())
 	}
 	file, err := os.Open(filepath.Join(s.opts.DataDir, "settings.json"))
 	if os.IsNotExist(err) {
-		return nil // CLI/environment CIDRs bootstrap a store without saved settings.
+		s.applyProxySettingsLocked()
+		return nil
 	}
 	if err != nil {
 		return err
@@ -84,33 +98,28 @@ func (s *Server) loadSettings() error {
 	defer file.Close()
 	var saved struct {
 		Version int `json:"version"`
-		// Version 1 inferred the service URL from the management browser origin
-		// unless an override was provided. Preserve only explicitly chosen URLs.
-		LegacyOverride string `json:"public_url_override,omitempty"`
-		relaySettings
+		// Versions 1–3 persisted deployment choices. Accept them for migration,
+		// but never use them as a fallback for missing environment variables.
+		LegacyPublicURL       string `json:"public_url,omitempty"`
+		LegacyOverride        string `json:"public_url_override,omitempty"`
+		LegacyWebDomain       string `json:"web_domain,omitempty"`
+		LegacyCertificateMode string `json:"certificate_mode,omitempty"`
+		relayRuntimeSettings
 	}
 	decoder := json.NewDecoder(io.LimitReader(file, 32769))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&saved) != nil || decoder.Decode(new(any)) != io.EOF || (saved.Version != 1 && saved.Version != 2) {
+	if decoder.Decode(&saved) != nil || decoder.Decode(new(any)) != io.EOF || saved.Version < 1 || saved.Version > 4 {
 		return errors.New("invalid relay settings store")
-	}
-	if saved.PublicURL != "" {
-		origin, err := publicOrigin(saved.PublicURL)
-		if err != nil || origin != saved.PublicURL {
-			return errInvalidSettings
-		}
-	}
-	if saved.LegacyOverride != "" && (saved.Version != 1 || saved.LegacyOverride != saved.PublicURL) {
-		return errInvalidSettings
 	}
 	if saved.AdminOrigin != "" {
 		origin, err := publicOrigin(saved.AdminOrigin)
-		if err != nil || origin != saved.AdminOrigin {
+		if err != nil || origin != saved.AdminOrigin || origin == s.settings.PublicURL {
 			return errInvalidSettings
 		}
 	}
 	if saved.DetectedOrigin != "" || saved.DetectedProxy != "" || saved.DetectedAt != nil {
-		if saved.PublicURL == "" || saved.DetectedOrigin != saved.PublicURL || saved.DetectedAt == nil {
+		origin, err := publicOrigin(saved.DetectedOrigin)
+		if err != nil || origin != saved.DetectedOrigin || saved.DetectedAt == nil {
 			return errInvalidSettings
 		}
 		if saved.DetectedProxy != "" {
@@ -120,15 +129,16 @@ func (s *Server) loadSettings() error {
 			}
 		}
 	}
-	if saved.Version == 1 && saved.LegacyOverride == "" {
-		saved.PublicURL, saved.DetectedProxy, saved.DetectedOrigin, saved.DetectedAt = "", "", "", nil
+	// Trust is valid only for the deployed origin that was actually verified.
+	// Version 1 inferred the URL from the management page unless overridden.
+	if saved.DetectedOrigin != s.settings.PublicURL || saved.Version == 1 && saved.LegacyOverride == "" {
+		saved.DetectedProxy, saved.DetectedOrigin, saved.DetectedAt = "", "", nil
 	}
-	proxies, err := normalizedProxies(saved.TrustedProxies)
+	saved.TrustedProxies, err = normalizedProxies(saved.TrustedProxies)
 	if err != nil {
 		return err
 	}
-	saved.TrustedProxies = proxies
-	s.settings = saved.relaySettings
+	s.settings.relayRuntimeSettings = saved.relayRuntimeSettings
 	s.applyProxySettingsLocked()
 	return nil
 }
@@ -137,8 +147,8 @@ func (s *Server) loadSettings() error {
 func (s *Server) saveSettingsLocked(next relaySettings) error {
 	data, err := json.MarshalIndent(struct {
 		Version int `json:"version"`
-		relaySettings
-	}{2, next}, "", "  ")
+		relayRuntimeSettings
+	}{4, next.relayRuntimeSettings}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -173,17 +183,14 @@ func (s *Server) settingsStatus() settingsStatus {
 	defer s.mu.Unlock()
 	next := s.settings
 	next.TrustedProxies = append([]string{}, next.TrustedProxies...)
-	return settingsStatus{next, s.proxyJob != nil, s.proxyError, !s.opts.AllowUnregisteredHosts}
+	return settingsStatus{relaySettings: next, Detecting: s.proxyJob != nil, WaitingForProxy: s.proxyJob != nil && s.proxyJob.waiting, DetectionError: s.proxyError, RegistrationRequired: !s.opts.AllowUnregisteredHosts}
 }
 
 func (s *Server) updateSettings(input settingsInput) error {
-	proxies, err := normalizedProxies(input.TrustedProxies)
-	if err != nil {
-		return err
-	}
-	var origin string
-	if strings.TrimSpace(input.PublicURL) != "" {
-		origin, err = publicOrigin(input.PublicURL)
+	var proxies []string
+	var err error
+	if input.TrustedProxies != nil {
+		proxies, err = normalizedProxies(*input.TrustedProxies)
 		if err != nil {
 			return err
 		}
@@ -195,8 +202,8 @@ func (s *Server) updateSettings(input settingsInput) error {
 			return err
 		}
 	} else if input.BrowserOrigin != "" {
-		// The browser origin protects the administrative host from tenant Web
-		// content. It never chooses the public service URL or proxy-check target.
+		// Management origin protects tenant isolation; it never chooses the
+		// public URL or the destination of a proxy check.
 		u, parseErr := url.Parse(input.BrowserOrigin)
 		if parseErr != nil || u.Scheme != "http" || !loopbackHost(u.Hostname()) || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 			return errInvalidSettings
@@ -211,19 +218,17 @@ func (s *Server) updateSettings(input settingsInput) error {
 	if adminOrigin != "" {
 		next.AdminOrigin = adminOrigin
 	}
-	next.PublicURL, next.TrustedProxies = origin, proxies
-	changed := next.PublicURL != s.settings.PublicURL
-	if changed {
-		next.DetectedProxy, next.DetectedOrigin, next.DetectedAt = "", "", nil
+	if input.TrustedProxies != nil {
+		next.TrustedProxies = proxies
+	}
+	if next.AdminOrigin != "" && next.AdminOrigin == next.PublicURL {
+		return errInvalidSettings
 	}
 	if err := s.saveSettingsLocked(next); err != nil {
 		return err
 	}
 	s.settings = next
 	s.applyProxySettingsLocked()
-	if changed {
-		s.startProxyDetectionLocked()
-	}
 	return nil
 }
 

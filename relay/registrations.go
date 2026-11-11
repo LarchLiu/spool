@@ -37,6 +37,8 @@ type Registration struct {
 	RevokedAt      *time.Time `json:"revoked_at,omitempty"`
 	UnregisteredAt *time.Time `json:"unregistered_at,omitempty"`
 	RegistrationIP string     `json:"registration_ip,omitempty"`
+	WebPublished   bool       `json:"web_published"`
+	WebBlocked     bool       `json:"web_blocked"`
 }
 
 type registrationRecord struct {
@@ -62,8 +64,9 @@ func (r *registrationRecord) applyMetadata(metadata registrationMetadata, first 
 
 type registrationStatus struct {
 	Registration
-	Connected   bool `json:"connected"`
-	Connections int  `json:"connections"`
+	Connected   bool   `json:"connected"`
+	Connections int    `json:"connections"`
+	WebURL      string `json:"web_url,omitempty"`
 }
 
 const maxRegistryBytes = 8 << 20
@@ -237,6 +240,7 @@ func (s *Server) claimRegistrationLocked(record registrationRecord, serverID str
 		}
 	}
 	previous := record
+	record.WebBlocked = record.WebBlocked || s.webBlockedLocked(serverID)
 	record.applyMetadata(metadata, record.ServerID == "")
 	record.ServerID = serverID
 	if record == previous {
@@ -286,6 +290,7 @@ func (s *Server) claimIdentityLocked(serverID string, metadata registrationMetad
 		}
 		record.Registration = Registration{ID: randomID(), Name: "Spool-" + serverID[:12], ServerID: serverID, Automatic: true, CreatedAt: time.Now().UTC()}
 	}
+	record.WebBlocked = s.webBlockedLocked(serverID)
 	record.applyMetadata(metadata, record.TokenHash == "")
 	token, oldHash := randomID(), record.TokenHash
 	record.TokenHash = tokenDigest(token)
@@ -373,6 +378,9 @@ func (s *Server) registrationStatuses(id string) []registrationStatus {
 			continue
 		}
 		status := registrationStatus{Registration: record.Registration}
+		if record.active() && record.WebPublished && !record.WebBlocked {
+			status.WebURL = s.webURLLocked(record.ServerID)
+		}
 		if host := s.hosts[record.ServerID]; host != nil && host.registrationID == record.ID && host.ctx.Err() == nil {
 			status.Connected, status.Connections = true, len(host.pairs)
 		}
@@ -385,4 +393,59 @@ func (s *Server) registrationStatuses(id string) []registrationStatus {
 		return list[i].CreatedAt.Before(list[j].CreatedAt)
 	})
 	return list
+}
+
+// Publishing intent survives temporary disconnects and relay restarts. Only a
+// successfully authenticated host handshake may update this field.
+func (s *Server) setWebPublishedLocked(id string, enabled bool) error {
+	record := s.registrations[id]
+	if record.ID == "" || record.WebPublished == enabled {
+		return nil
+	}
+	next := make(map[string]registrationRecord, len(s.registrations))
+	for key, value := range s.registrations {
+		next[key] = value
+	}
+	record.WebPublished = enabled
+	next[id] = record
+	if err := s.saveRegistrations(next); err != nil {
+		return err
+	}
+	s.registrations = next
+	return nil
+}
+
+// Caller holds Server.mu. Web restrictions belong to the identity, including
+// after self-unregistration or credential replacement.
+func (s *Server) webBlockedLocked(serverID string) bool {
+	for _, record := range s.registrations {
+		if serverID != "" && record.ServerID == serverID && record.WebBlocked {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) setWebBlocked(id string, blocked bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.registrations[id]
+	if !ok || !record.active() {
+		return ErrRegistrationNotFound
+	}
+	next := make(map[string]registrationRecord, len(s.registrations))
+	for key, value := range s.registrations {
+		if key == id || record.ServerID != "" && value.ServerID == record.ServerID {
+			value.WebBlocked = blocked
+		}
+		next[key] = value
+	}
+	if err := s.saveRegistrations(next); err != nil {
+		return err
+	}
+	s.registrations = next
+	// Reconnect to update the advertised URL and close existing Web streams.
+	// The native registration and paired identities remain valid.
+	s.disconnectRegistrationLocked(record)
+	return nil
 }

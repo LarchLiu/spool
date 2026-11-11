@@ -28,14 +28,14 @@ func webFixture(t *testing.T, enabled bool, handler http.Handler) (*Server, *Hos
 	if err != nil {
 		t.Fatal(err)
 	}
-	public := httptest.NewTLSServer(broker)
+	public := webPublicServer(t, broker)
 	t.Cleanup(func() { broker.Close(); public.Close() })
 	_, credential, err := broker.CreateRegistration("web test")
 	if err != nil {
 		t.Fatal(err)
 	}
 	host, _ := startWebTestHost(t, public, credential, id, enabled, handler)
-	return broker, host, public, public.URL + WebPath(id.ID())
+	return broker, host, public, testTenantURL(t, public.URL, id.ID())
 }
 
 func startWebTestHost(t *testing.T, public *httptest.Server, credential string, id *Identity, enabled bool, handler http.Handler) (*Host, func()) {
@@ -77,7 +77,7 @@ func startWebTestHost(t *testing.T, public *httptest.Server, credential string, 
 	case address := <-ready:
 		want := ""
 		if enabled {
-			want = public.URL + WebPath(id.ID())
+			want = testTenantURL(t, public.URL, id.ID())
 		}
 		if address != want {
 			t.Fatalf("Web URL %q, want %q", address, want)
@@ -114,13 +114,13 @@ func TestWebRoutesFollowHostLifecycleWithoutRelayRestart(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			broker := testBrokerMode(t, automatic)
-			public := httptest.NewTLSServer(broker)
+			public := webPublicServer(t, broker)
 			t.Cleanup(func() { broker.Close(); public.Close() })
 			client := public.Client()
 			client.Timeout = 5 * time.Second
 			check := func(id *Identity, want int) {
 				t.Helper()
-				resp, err := client.Get(public.URL + WebPath(id.ID()))
+				resp, err := client.Get(testTenantURL(t, public.URL, id.ID()))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -185,7 +185,7 @@ func TestWebRoutesFollowHostLifecycleWithoutRelayRestart(t *testing.T) {
 
 func TestWebOptInMustBeAuthenticatedAndSigned(t *testing.T) {
 	broker := testBroker(t)
-	public := httptest.NewTLSServer(broker)
+	public := webPublicServer(t, broker)
 	t.Cleanup(func() { broker.Close(); public.Close() })
 	id, _ := NewIdentity()
 	_, token := createViaAPI(t, broker, "signed web")
@@ -213,13 +213,47 @@ func TestWebOptInMustBeAuthenticatedAndSigned(t *testing.T) {
 	if _, err = readControl(ctx, socket); err == nil || ctx.Err() != nil {
 		t.Fatal("unsigned Web opt-in was not rejected promptly", err)
 	}
-	resp, err := public.Client().Get(public.URL + WebPath(id.ID()))
+	resp, err := public.Client().Get(testTenantURL(t, public.URL, id.ID()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
 	if resp.StatusCode != 503 {
 		t.Fatal("invalid registration published a Web route")
+	}
+}
+
+func TestWebProtocolVersionCannotBeUpgradedOrDowngraded(t *testing.T) {
+	broker := testBroker(t)
+	public := webPublicServer(t, broker)
+	id, _ := NewIdentity()
+	_, token := createViaAPI(t, broker, "version signature")
+	for _, versions := range [][2]int{{0, 2}, {2, 0}, {2, 3}} {
+		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+		socket, err := dialWebsocket(ctx, public.Client(), public.URL, "/v1/host", token)
+		if err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+		challenge, err := readControl(ctx, socket)
+		if err != nil {
+			t.Fatal(err)
+		}
+		message := controlMessage{Type: "register", PublicKey: id.PublicKey(), AccessToken: id.AccessToken, WebOrigin: public.URL, WebVersion: versions[1],
+			Signature: ed25519.Sign(id.PrivateKey(), hostRegistrationProof(challenge.Challenge, id.AccessToken, public.URL, "", versions[0]))}
+		if err := writeControl(ctx, socket, message); err != nil {
+			t.Fatal(err)
+		}
+		_, err = readControl(ctx, socket)
+		socket.CloseNow()
+		if err == nil || ctx.Err() != nil {
+			cancel()
+			t.Fatal("tampered Web version was not promptly rejected", versions, err)
+		}
+		cancel()
+	}
+	if statuses := broker.registrationStatuses(""); len(statuses) != 1 || statuses[0].WebPublished || statuses[0].ServerID != "" {
+		t.Fatal("invalid signature/version persisted publication", statuses)
 	}
 }
 
@@ -237,6 +271,7 @@ func TestWebProxyCookiesOriginsStreamingAndRevocation(t *testing.T) {
 		}
 		switch path {
 		case "/login":
+			w.Header().Set("Clear-Site-Data", `"cookies", "*"`)
 			http.SetCookie(w, &http.Cookie{Name: "spool_session", Value: "synthetic", Path: "/", Domain: "example.com", HttpOnly: true, Secure: true})
 		case "/file":
 			if cookie, err := r.Cookie("spool_session"); err != nil || cookie.Value != "synthetic" {
@@ -292,16 +327,19 @@ func TestWebProxyCookiesOriginsStreamingAndRevocation(t *testing.T) {
 	resp := get("login")
 	resp.Body.Close()
 	cookies := resp.Cookies()
-	if len(cookies) != 1 || cookies[0].Path != WebPath(host.Identity.ID()) || cookies[0].Domain != "" || !cookies[0].Secure || !cookies[0].HttpOnly {
+	if len(cookies) != 1 || cookies[0].Path != "/" || cookies[0].Domain != "" || !cookies[0].Secure || !cookies[0].HttpOnly {
 		t.Fatal("unscoped login cookie", cookies)
 	}
-	other, _ := url.Parse(server.URL + "/web/another/")
+	if resp.Header.Get("Clear-Site-Data") != "" {
+		t.Fatal("tenant may clear sibling domains' cookies")
+	}
+	other, _ := url.Parse(strings.Replace(address, host.Identity.ID(), strings.Repeat("a", 52), 1))
 	if len(client.Jar.Cookies(other)) != 0 {
 		t.Fatal("cookie escaped server path")
 	}
 	payload := bytes.Repeat([]byte{0, 255, 128, 1}, 200000)
 	req, _ := http.NewRequest("POST", address+"file?path="+url.QueryEscape("a/b & 中文"), bytes.NewReader(payload))
-	req.Header.Set("Origin", server.URL)
+	req.Header.Set("Origin", strings.TrimSuffix(address, "/"))
 	req.Header.Set("X-CSRF-Token", "csrf")
 	req.Header.Set("X-Forwarded-Host", "evil.test")
 	req.Header.Set("X-Forwarded-For", "1.2.3.4")
@@ -328,7 +366,7 @@ func TestWebProxyCookiesOriginsStreamingAndRevocation(t *testing.T) {
 	for path, header := range map[string]string{"sw.js": "Service-Worker-Allowed", "redirect": "Location"} {
 		resp = get(path)
 		resp.Body.Close()
-		if !strings.HasPrefix(resp.Header.Get(header), WebPath(host.Identity.ID())) {
+		if !strings.HasPrefix(resp.Header.Get(header), "/") {
 			t.Fatal("unscoped response", header)
 		}
 	}
@@ -345,7 +383,7 @@ func TestWebProxyCookiesOriginsStreamingAndRevocation(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	socket, _, err := websocket.Dial(ctx, strings.Replace(address, "https:", "wss:", 1)+"ws", &websocket.DialOptions{HTTPClient: client, HTTPHeader: http.Header{"Origin": {server.URL}}})
+	socket, _, err := websocket.Dial(ctx, strings.Replace(address, "https:", "wss:", 1)+"ws", &websocket.DialOptions{HTTPClient: client, HTTPHeader: http.Header{"Origin": {strings.TrimSuffix(address, "/")}}})
 	if err != nil {
 		t.Fatal(err)
 	}

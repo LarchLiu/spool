@@ -9,7 +9,7 @@ async function (expectedUser) {
   };
   const base = location.pathname;
   window.relayStep = 'login';
-  assert(/^\/web\/[a-z2-7]{52}\/$/.test(base), "missing server ID path");
+  assert(base === '/' && /^[a-z2-7]{52}\./.test(location.hostname), "missing isolated server hostname");
   await wait(() => document.querySelector('input[name="username"]'), "login form did not load");
   const set = (name, value) => {
     const input = document.querySelector(`input[name="${name}"]`);

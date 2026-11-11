@@ -35,8 +35,8 @@ type relayWebNode struct {
 	url     string
 }
 
-// Two real Spool applications share a broker origin, with separate identities,
-// databases, cookies and PWA mounts. All host traffic uses outbound TLS tunnels.
+// Real Spool applications share a broker with separate Web origins, identities,
+// databases, cookies and PWA scopes. All host traffic uses outbound TLS tunnels.
 func relayWebFixture(t *testing.T, count int, trustedProxies ...string) (*relay.Server, *httptest.Server, []*relayWebNode) {
 	t.Helper()
 	localSessionHomes(t)
@@ -51,11 +51,7 @@ func relayWebFixture(t *testing.T, count int, trustedProxies ...string) (*relay.
 		nodes[i] = &relayWebNode{store: store, id: id, user: user, project: testProject(t, store, user)}
 		testAgent(t, store)
 	}
-	broker, err := relay.NewServer(relay.ServerOptions{AdminToken: strings.Repeat("a", 32), DataDir: t.TempDir(), TrustedProxies: trustedProxies})
-	if err != nil {
-		t.Fatal(err)
-	}
-	public := httptest.NewServer(broker)
+	broker, public := relayWebPublicServer(t, relay.ServerOptions{}, trustedProxies...)
 	t.Cleanup(func() { broker.Close(); public.Close() })
 	for _, node := range nodes {
 		settings := DefaultSettings()
@@ -99,7 +95,7 @@ func relayWebFixture(t *testing.T, count int, trustedProxies ...string) (*relay.
 		})
 		select {
 		case node.url = <-ready:
-			if node.url != public.URL+relay.WebPath(node.id.ID()) {
+			if node.url != relayTenantURL(t, public.URL, node.id.ID()) {
 				t.Fatal("invalid Web URL", node.url)
 			}
 		case <-time.After(5 * time.Second):
@@ -134,25 +130,25 @@ func TestRelayWebAuthenticationPathsAndLiveTraffic(t *testing.T) {
 	for i, node := range nodes {
 		request(node, "GET", "api/me", "", "", "", 401)
 		request(node, "POST", "api/login", `{"username":"alice","password":"test-password-2026"}`, "", "https://foreign.test", 403)
-		resp, data := request(node, "POST", "api/login", `{"username":"alice","password":"test-password-2026"}`, "", public.URL, 200)
+		resp, data := request(node, "POST", "api/login", `{"username":"alice","password":"test-password-2026"}`, "", strings.TrimSuffix(node.url, "/"), 200)
 		var signedIn struct{ CSRF string }
 		if err := json.Unmarshal(data, &signedIn); err != nil || signedIn.CSRF == "" {
 			t.Fatal("missing CSRF", err)
 		}
 		csrf[i] = signedIn.CSRF
-		if cookies := resp.Cookies(); len(cookies) != 1 || cookies[0].Path != relay.WebPath(node.id.ID()) || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
+		if cookies := resp.Cookies(); len(cookies) != 1 || cookies[0].Path != "/" || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
 			t.Fatal("incorrect session cookie", cookies)
 		}
 		_, data = request(node, "GET", "api/me", "", "", "", 200)
 		if !strings.Contains(string(data), node.user.ID) {
 			t.Fatal("wrong server session")
 		}
-		request(node, "POST", "api/logout", `{}`, "wrong", public.URL, 403)
+		request(node, "POST", "api/logout", `{}`, "wrong", strings.TrimSuffix(node.url, "/"), 403)
 		request(node, "POST", "api/logout", `{}`, csrf[i], "https://foreign.test", 403)
 	}
 	root, _ := url.Parse(public.URL + "/")
 	if len(jar.Cookies(root)) != 0 {
-		t.Fatal("relay sessions escaped their paths")
+		t.Fatal("relay sessions escaped their tenant hosts")
 	}
 	node := nodes[0]
 	chat, err := node.store.CreateChat(node.user.ID, node.project.ID, chatmodel.BackendCodex)
@@ -172,9 +168,10 @@ func TestRelayWebAuthenticationPathsAndLiveTraffic(t *testing.T) {
 	testUser(t, node.store, "bob")
 	bob, bobCSRF := loginRequest(t, node.app, "bob")
 	r, _ := http.NewRequest("POST", node.url+"api/chats", strings.NewReader(fmt.Sprintf(`{"project_id":%q,"backend":"codex"}`, node.project.ID)))
-	r.Header.Set("Origin", public.URL)
+	r.Header.Set("Origin", strings.TrimSuffix(node.url, "/"))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("X-CSRF-Token", bobCSRF)
+	bob.Name = "__Host-spool_session"
 	r.AddCookie(bob)
 	denied, err := (&http.Client{Timeout: 5 * time.Second}).Do(r)
 	if err != nil {
@@ -195,7 +192,7 @@ func TestRelayWebAuthenticationPathsAndLiveTraffic(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	socket, _, err := websocket.Dial(ctx, strings.Replace(node.url, "http:", "ws:", 1)+"api/events", &websocket.DialOptions{HTTPClient: client, HTTPHeader: http.Header{"Origin": {public.URL}}})
+	socket, _, err := websocket.Dial(ctx, strings.Replace(node.url, "https:", "wss:", 1)+"api/events", &websocket.DialOptions{HTTPClient: client, HTTPHeader: http.Header{"Origin": {strings.TrimSuffix(node.url, "/")}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,8 +200,8 @@ func TestRelayWebAuthenticationPathsAndLiveTraffic(t *testing.T) {
 	socket.SetReadLimit(4 << 20)
 	realtimeWrite(t, socket, realtimeInput{Type: "hello", CSRF: csrf[0], Visible: true})
 	realtimeReady(t, socket)
-	resp, _ := request(node, "POST", "api/logout", `{}`, csrf[0], public.URL, 200)
-	if cookies := resp.Cookies(); len(cookies) != 1 || cookies[0].MaxAge != -1 || cookies[0].Path != relay.WebPath(node.id.ID()) {
+	resp, _ := request(node, "POST", "api/logout", `{}`, csrf[0], strings.TrimSuffix(node.url, "/"), 200)
+	if cookies := resp.Cookies(); len(cookies) != 1 || cookies[0].MaxAge != -1 || cookies[0].Path != "/" {
 		t.Fatal("logout did not remove scoped cookie")
 	}
 	for {
@@ -245,7 +242,7 @@ func TestRelayWebLoginLimitsSeparateClientsAndRejectSpoofing(t *testing.T) {
 				r.Header.Set("Forwarded", "for="+spoof)
 				r.Header.Set("X-Spool-Relay-Client", spoof)
 				r.AddCookie(&http.Cookie{Name: "spool_relay_client", Value: spoof})
-				r.Header.Set("Origin", public.URL)
+				r.Header.Set("Origin", strings.TrimSuffix(node.url, "/"))
 				r.Header.Set("Content-Type", "application/json")
 				w := httptest.NewRecorder()
 				broker.ServeHTTP(w, r)
@@ -289,14 +286,17 @@ func TestRelayWebDetectedProxySeparatesLoginLimitsWithoutRestart(t *testing.T) {
 	broker, public, nodes := relayWebFixture(t, 1)
 	node := nodes[0]
 	target, _ := url.Parse(public.URL)
-	upstream := &http.Transport{}
+	upstream := http.DefaultTransport.(*http.Transport).Clone()
 	t.Cleanup(upstream.CloseIdleConnections)
 	proxy := &httputil.ReverseProxy{Transport: upstream, Rewrite: func(p *httputil.ProxyRequest) {
 		p.SetURL(target)
+		p.Out.Host = p.In.Host
 		p.Out.Header["X-Forwarded-For"] = p.In.Header.Values("X-Forwarded-For")
 		p.SetXForwarded()
 	}}
-	front := httptest.NewTLSServer(proxy)
+	front := httptest.NewUnstartedServer(proxy)
+	front.TLS = public.TLS.Clone()
+	front.StartTLS()
 	t.Cleanup(front.Close)
 	// Trust only this fixture's certificate for the production HTTPS verifier.
 	// No TLS verification bypass is used for the automatic callback.
@@ -323,7 +323,7 @@ func TestRelayWebDetectedProxySeparatesLoginLimitsWithoutRestart(t *testing.T) {
 		// TCP peer and all Relay host/data streams are real local connections.
 		r.RemoteAddr = net.JoinHostPort(ip, "41000")
 		r.TLS = &tls.ConnectionState{}
-		r.Header.Set("Origin", public.URL)
+		r.Header.Set("Origin", strings.TrimSuffix(node.url, "/"))
 		r.Header.Set("Content-Type", "application/json")
 		r.Header.Set("X-Forwarded-For", spoof)
 		r.Header.Set("X-Real-IP", spoof)
@@ -353,9 +353,15 @@ func TestRelayWebDetectedProxySeparatesLoginLimitsWithoutRestart(t *testing.T) {
 		broker.AdminHandler().ServeHTTP(w, r)
 		return w
 	}
-	data, _ := json.Marshal(map[string]any{"browser_origin": "https://relay-admin.example", "public_url": front.URL, "trusted_proxies": []string{}})
+	data, _ := json.Marshal(map[string]any{"browser_origin": "https://relay-admin.example", "trusted_proxies": []string{}})
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, front.Listener.Addr().String())
+	}
 	if w := admin(http.MethodPut, "/v1/settings", string(data)); w.Code != 200 {
 		t.Fatal("could not save Relay public URL", w.Code, w.Body)
+	}
+	if w := admin(http.MethodPost, "/v1/proxy-detection", ""); w.Code != http.StatusAccepted {
+		t.Fatal(w.Code, w.Body)
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -411,7 +417,7 @@ func TestRelayWebStaticAssetsAndHostValidation(t *testing.T) {
 		if response.StatusCode != 200 {
 			t.Fatal(path, response.StatusCode)
 		}
-		if path == "sw.js" && response.Header.Get("Service-Worker-Allowed") != relay.WebPath(node.id.ID()) {
+		if path == "sw.js" && response.Header.Get("Service-Worker-Allowed") != "/" {
 			t.Fatal("worker can escape its server path")
 		}
 		if path == "" && (!strings.Contains(string(data), `src="./assets/`) || strings.Contains(string(data), `href="/`)) {
@@ -448,11 +454,7 @@ func TestRelayWebServiceEnableDisable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	broker, err := relay.NewServer(relay.ServerOptions{AdminToken: strings.Repeat("a", 32), DataDir: t.TempDir(), AllowUnregisteredHosts: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	public := httptest.NewServer(broker)
+	broker, public := relayWebPublicServer(t, relay.ServerOptions{AllowUnregisteredHosts: true})
 	defer public.Close()
 	defer broker.Close()
 	port, err := net.Listen("tcp", "127.0.0.1:0")
@@ -475,7 +477,7 @@ func TestRelayWebServiceEnableDisable(t *testing.T) {
 	if err = service.Restart(); err != nil {
 		t.Fatal(err)
 	}
-	address := public.URL + relay.WebPath(id.ID())
+	address := relayTenantURL(t, public.URL, id.ID())
 	waitTailnet(t, service, func(s ServiceStatus) bool { return s.Relay.WebURL == address })
 	client := &http.Client{Timeout: 5 * time.Second}
 	check := func(want int) {

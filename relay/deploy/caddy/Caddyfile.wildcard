@@ -1,0 +1,14 @@
+{$RELAY_PUBLIC_HOST} {
+    reverse_proxy relay:28080
+}
+
+{$RELAY_ADMIN_HOST} {
+    reverse_proxy relay:28081
+}
+
+*.web.{$RELAY_PUBLIC_HOST} {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
+    reverse_proxy relay:28080
+}

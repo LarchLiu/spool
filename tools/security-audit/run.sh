@@ -1,5 +1,5 @@
 #!/bin/sh
-# Opt-in audit probes reproduce remaining risks and verify completed fixes.
+# Opt-in audit probes verify the protections for the original audit findings.
 # Go overlays keep these probes out of normal tests and production source files.
 set -eu
 REPO_ROOT=$(git rev-parse --show-toplevel)

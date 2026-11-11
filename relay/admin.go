@@ -111,6 +111,22 @@ func (s *Server) AdminHandler() http.Handler {
 				return
 			}
 			adminJSON(w, http.StatusOK, list[0])
+		case http.MethodPatch:
+			var input struct {
+				WebBlocked *bool `json:"web_blocked"`
+			}
+			if !decodeAdminJSON(w, r, &input) {
+				return
+			}
+			if input.WebBlocked == nil {
+				adminError(w, "web_blocked is required", 400)
+				return
+			}
+			if err := s.setWebBlocked(id, *input.WebBlocked); err != nil {
+				registrationError(w, err)
+				return
+			}
+			adminJSON(w, 200, s.registrationStatuses(id)[0])
 		case http.MethodDelete:
 			if err := s.RevokeRegistration(id); err != nil {
 				registrationError(w, err)
@@ -118,7 +134,7 @@ func (s *Server) AdminHandler() http.Handler {
 			}
 			w.WriteHeader(http.StatusNoContent)
 		default:
-			w.Header().Set("Allow", "GET, DELETE")
+			w.Header().Set("Allow", "GET, PATCH, DELETE")
 			adminError(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})

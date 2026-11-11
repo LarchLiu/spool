@@ -28,11 +28,14 @@ func TestClientAddressTrustBoundary(t *testing.T) {
 		{name: "reject forwarded zone", remote: "127.0.0.1:1234", trusted: []string{"127.0.0.1/32"}, forwarded: []string{"fe80::1%fake"}, want: "127.0.0.1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			broker, err := NewServer(ServerOptions{AdminToken: strings.Repeat("a", 32), DataDir: t.TempDir(), TrustedProxies: tc.trusted})
+			broker, err := NewServer(ServerOptions{AdminToken: strings.Repeat("a", 32), DataDir: t.TempDir()})
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer broker.Close()
+			if err := broker.updateSettings(settingsInput{TrustedProxies: &tc.trusted}); err != nil {
+				t.Fatal(err)
+			}
 			r := httptest.NewRequest("POST", "http://relay.test/", nil)
 			r.RemoteAddr = tc.remote
 			for _, value := range tc.forwarded {
@@ -49,11 +52,11 @@ func TestClientAddressTrustBoundary(t *testing.T) {
 	}
 }
 
-func TestInvalidTrustedProxyPreventsStartup(t *testing.T) {
+func TestInvalidTrustedProxyRejectedAtRuntime(t *testing.T) {
+	broker := testBroker(t)
 	for _, value := range []string{"localhost", "127.0.0.1", "127.0.0.1/33", ""} {
-		broker, err := NewServer(ServerOptions{AdminToken: strings.Repeat("a", 32), DataDir: t.TempDir(), TrustedProxies: []string{value}})
-		if err == nil {
-			broker.Close()
+		proxies := []string{value}
+		if err := broker.updateSettings(settingsInput{TrustedProxies: &proxies}); err == nil {
 			t.Errorf("accepted invalid trusted proxy %q", value)
 		}
 	}

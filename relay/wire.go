@@ -30,6 +30,7 @@ type controlMessage struct {
 	RegistrationToken string `json:"registration_token,omitempty"`
 	Name              string `json:"name,omitempty"`
 	WebOrigin         string `json:"web_origin,omitempty"`
+	WebVersion        int    `json:"web_version,omitempty"`
 	WebURL            string `json:"web_url,omitempty"`
 	ClientIP          string `json:"client_ip,omitempty"`
 }
@@ -53,6 +54,13 @@ func namedRegistrationProof(challenge, token, webOrigin, name string) []byte {
 		return registrationProof(challenge, token, webOrigin)
 	}
 	return []byte("spool-relay-register-v1\x00" + challenge + "\x00" + token + "\x00" + webOrigin + "\x00" + name)
+}
+
+func hostRegistrationProof(challenge, token, webOrigin, name string, version int) []byte {
+	if version == 0 {
+		return namedRegistrationProof(challenge, token, webOrigin, name)
+	}
+	return []byte("spool-relay-subdomain-v2\x00" + challenge + "\x00" + token + "\x00" + webOrigin + "\x00" + name)
 }
 func unregisterProof(challenge, token string) []byte {
 	return []byte("spool-relay-unregister-v1\x00" + challenge + "\x00" + token)

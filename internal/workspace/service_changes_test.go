@@ -2,12 +2,14 @@ package workspace
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -318,8 +320,7 @@ func TestApplyTailnetChangesKeepsWebAndCoreAndSerializesNodes(t *testing.T) {
 func TestApplyRelayChangesSharesCoreAndUpdatesPublicWebMount(t *testing.T) {
 	t.Setenv("SPOOL_RELAY_REGISTRATION_TOKEN", "")
 	service, settings := settingsService(t)
-	broker, token := testRelayBroker(t)
-	public := httptest.NewServer(broker)
+	_, public, token := relayWebBroker(t)
 	defer public.Close()
 	defer service.Stop()
 	settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
@@ -374,6 +375,78 @@ func TestApplyRelayChangesSharesCoreAndUpdatesPublicWebMount(t *testing.T) {
 		t.Fatal("stopping relay stopped another component")
 	}
 	requireServiceHealth(t, "http://"+service.Status().Address)
+}
+
+func TestRelayWebDeploymentSettingsReadOnlyAndOperatorBlock(t *testing.T) {
+	t.Setenv("SPOOL_RELAY_REGISTRATION_TOKEN", "")
+	service, settings := settingsService(t)
+	broker, public, token := relayWebBroker(t)
+	defer service.Stop()
+	settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RegisterRelay(t.Context(), public.URL, token); err != nil {
+		t.Fatal(err)
+	}
+	settings.RelayEnabled, settings.RelayWebEnabled = true, true
+	if err := service.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ApplyServiceChanges("relay"); err != nil {
+		t.Fatal(err)
+	}
+	initial := waitTailnet(t, service, func(status ServiceStatus) bool { return status.Relay.WebURL != "" }).Relay
+	admin := func(method, path, body string) []byte {
+		t.Helper()
+		r := httptest.NewRequest(method, "http://localhost"+path, strings.NewReader(body))
+		r.Header.Set("Authorization", "Bearer "+strings.Repeat("a", 32))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		broker.AdminHandler().ServeHTTP(w, r)
+		if w.Code != 200 {
+			t.Fatal("admin update failed", w.Code, w.Body)
+		}
+		return w.Body.Bytes()
+	}
+	for _, input := range []string{`{"public_url":"https://changed.example.com"}`, `{"web_domain":"web.relay.localhost"}`, `{"certificate_mode":"wildcard"}`} {
+		r := httptest.NewRequest("PUT", "http://localhost/v1/settings", strings.NewReader(input))
+		r.Header.Set("Authorization", "Bearer "+strings.Repeat("a", 32))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		broker.AdminHandler().ServeHTTP(w, r)
+		if w.Code != 400 {
+			t.Fatal("deployment changed through runtime API", w.Code, w.Body)
+		}
+	}
+	check := func(address string, want int) {
+		t.Helper()
+		response, err := public.Client().Get(address + "api/me")
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != want {
+			t.Fatal(address, response.StatusCode, want)
+		}
+	}
+	check(initial.WebURL, 401)
+	var records struct {
+		Registrations []struct {
+			ID       string `json:"id"`
+			ServerID string `json:"server_id"`
+		}
+	}
+	if err := json.Unmarshal(admin("GET", "/v1/registrations", ""), &records); err != nil || len(records.Registrations) != 1 || records.Registrations[0].ServerID != initial.ServerID {
+		t.Fatal("registration lookup", records, err)
+	}
+	path := "/v1/registrations/" + records.Registrations[0].ID
+	admin("PATCH", path, `{"web_blocked":true}`)
+	waitTailnet(t, service, func(status ServiceStatus) bool { return status.Relay.State == "connected" && status.Relay.WebURL == "" })
+	check(initial.WebURL, 503)
+	admin("PATCH", path, `{"web_blocked":false}`)
+	waitTailnet(t, service, func(status ServiceStatus) bool { return status.Relay.WebURL == initial.WebURL })
+	check(initial.WebURL, 401)
 }
 
 func TestServiceChangeActionsRespectUpdateAndStoppedState(t *testing.T) {
@@ -477,8 +550,7 @@ func TestSavingRuntimePreservesRemoteDesktopEnablement(t *testing.T) {
 func TestFailedRelayApplyRestoresPreviousConnection(t *testing.T) {
 	t.Setenv("SPOOL_RELAY_REGISTRATION_TOKEN", "")
 	service, settings := settingsService(t)
-	broker, token := testRelayBroker(t)
-	public := httptest.NewServer(broker)
+	_, public, token := relayWebBroker(t)
 	defer public.Close()
 	defer service.Stop()
 	settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)

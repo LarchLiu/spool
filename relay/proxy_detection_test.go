@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -68,7 +70,9 @@ func TestProxyDetectionUsesServiceURLAndRestart(t *testing.T) {
 		r.Header.Set("X-Forwarded-For", "203.0.113.9")
 		broker.ServeHTTP(w, r)
 	}))
-	if err := s.updateSettings(settingsInput{PublicURL: public.URL, BrowserOrigin: "https://relay-admin.example", TrustedProxies: []string{"10.10.0.0/24"}}); err != nil {
+	configureTestDeployment(t, s, public.URL)
+	s.StartProxyDetection()
+	if err := s.updateSettings(settingsInput{BrowserOrigin: "https://relay-admin.example", TrustedProxies: proxiesptr([]string{"10.10.0.0/24"})}); err != nil {
 		t.Fatal(err)
 	}
 	status := awaitDetection(t, s)
@@ -111,8 +115,162 @@ func TestProxyDetectionUsesServiceURLAndRestart(t *testing.T) {
 	r.URL.Path = WebPath(strings.Repeat("a", 52))
 	w = httptest.NewRecorder()
 	restored.ServeHTTP(w, r)
-	if w.Code != 403 {
+	if w.Code != http.StatusGone {
 		t.Fatal("tenant Web allowed on management origin", w.Code)
+	}
+}
+
+func TestStartupProxyDetectionWaitsForPublicProxy(t *testing.T) {
+	s := testBroker(t)
+	var ready atomic.Bool
+	var callbacks atomic.Int32
+	healthChecked := make(chan struct{}, 1)
+	public := trustedProbeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			if !ready.Load() {
+				http.Error(w, "proxy is starting", http.StatusServiceUnavailable)
+				select {
+				case healthChecked <- struct{}{}:
+				default:
+				}
+				return
+			}
+		} else {
+			callbacks.Add(1)
+		}
+		r.TLS = nil
+		r.RemoteAddr = "172.18.0.9:1234"
+		r.Header.Set("X-Forwarded-Proto", "https")
+		r.Header.Set("X-Forwarded-For", "203.0.113.9")
+		s.ServeHTTP(w, r)
+	}))
+	configureTestDeployment(t, s, public.URL)
+	s.StartProxyDetectionWhenReady()
+	select {
+	case <-healthChecked:
+	case <-time.After(3 * time.Second):
+		t.Fatal("startup never checked public readiness")
+	}
+	status := s.settingsStatus()
+	if !status.Detecting || !status.WaitingForProxy || status.DetectionError != "" || status.DetectedAt != nil || callbacks.Load() != 0 {
+		t.Fatal("proxy validation started before readiness", status, callbacks.Load())
+	}
+	if err := s.updateSettings(settingsInput{TrustedProxies: proxiesptr([]string{"10.10.0.0/24"})}); err != nil {
+		t.Fatal(err)
+	}
+	ready.Store(true)
+	status = awaitDetection(t, s)
+	if status.WaitingForProxy || status.DetectionError != "" || status.DetectedProxy != "172.18.0.9/32" || status.DetectedAt == nil || callbacks.Load() != 1 || len(status.TrustedProxies) != 1 {
+		t.Fatal("ready proxy was not verified exactly once", status, callbacks.Load())
+	}
+}
+
+func TestStartupProxyDetectionStartsAsSoonAsHealthy(t *testing.T) {
+	s := testBroker(t)
+	healthChecked := make(chan struct{}, 1)
+	callback := make(chan struct{}, 1)
+	var healthChecks atomic.Int32
+	public := trustedProbeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			healthChecks.Add(1)
+			select {
+			case healthChecked <- struct{}{}:
+			default:
+			}
+		} else {
+			select {
+			case callback <- struct{}{}:
+			default:
+			}
+		}
+		s.ServeHTTP(w, r)
+	}))
+	configureTestDeployment(t, s, public.URL)
+	s.StartProxyDetectionWhenReady()
+	select {
+	case <-healthChecked:
+	case <-time.After(3 * time.Second):
+		t.Fatal("startup never checked public readiness")
+	}
+	select {
+	case <-callback:
+	case <-time.After(proxyReadyInterval):
+		t.Fatal("healthy public proxy did not immediately start validation")
+	}
+	status := awaitDetection(t, s)
+	if status.WaitingForProxy || status.DetectionError != "" || status.DetectedAt == nil || healthChecks.Load() != 1 {
+		t.Fatal("healthy startup did not finish after its first readiness check", status, healthChecks.Load())
+	}
+}
+
+func TestStartupProxyWaitCanBeCanceledOrReplaced(t *testing.T) {
+	for _, action := range []string{"close", "manual-check"} {
+		t.Run(action, func(t *testing.T) {
+			s := testBroker(t)
+			healthChecked := make(chan struct{}, 1)
+			public := trustedProbeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/healthz" {
+					http.Error(w, "proxy is starting", 503)
+					select {
+					case healthChecked <- struct{}{}:
+					default:
+					}
+					return
+				}
+				s.ServeHTTP(w, r)
+			}))
+			configureTestDeployment(t, s, public.URL)
+			s.StartProxyDetectionWhenReady()
+			select {
+			case <-healthChecked:
+			case <-time.After(3 * time.Second):
+				t.Fatal("startup never checked public readiness")
+			}
+			if action == "manual-check" {
+				s.StartProxyDetection()
+				status := awaitDetection(t, s)
+				if status.WaitingForProxy || status.DetectionError != "" || status.DetectedAt == nil {
+					t.Fatal("manual check did not replace startup wait", status)
+				}
+				return
+			}
+			closed := make(chan struct{})
+			go func() { s.Close(); close(closed) }()
+			select {
+			case <-closed:
+			case <-time.After(3 * time.Second):
+				t.Fatal("Close did not cancel and join readiness wait")
+			}
+			if status := s.settingsStatus(); status.Detecting || status.WaitingForProxy || status.DetectedAt != nil || status.DetectionError != "" {
+				t.Fatal("canceled readiness wait changed policy", status)
+			}
+		})
+	}
+}
+
+func TestProxyReadinessRequiresHealthAndHonorsDeadline(t *testing.T) {
+	for _, mode := range []string{"unavailable", "wrong-body", "redirect"} {
+		t.Run(mode, func(t *testing.T) {
+			var redirected atomic.Bool
+			public := trustedProbeServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/healthz" {
+					redirected.Store(true)
+				}
+				switch mode {
+				case "unavailable":
+					http.Error(w, "starting", 503)
+				case "wrong-body":
+					io.WriteString(w, "unrelated application")
+				case "redirect":
+					http.Redirect(w, r, "/elsewhere", 302)
+				}
+			}))
+			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+			defer cancel()
+			if err := waitForPublicProxy(ctx, public.URL); err == nil || ctx.Err() == nil || redirected.Load() {
+				t.Fatal("readiness accepted an invalid response or ignored cancellation", err)
+			}
+		})
 	}
 }
 
@@ -156,9 +314,8 @@ func TestProxyDetectionRejectsUnverifiedResponses(t *testing.T) {
 				}
 				s.ServeHTTP(w, r)
 			}))
-			if err := s.updateSettings(settingsInput{PublicURL: public.URL}); err != nil {
-				t.Fatal(err)
-			}
+			configureTestDeployment(t, s, public.URL)
+			s.StartProxyDetection()
 			status := awaitDetection(t, s)
 			if status.DetectionError == "" || status.DetectedAt != nil || status.DetectedProxy != "" || redirectFollowed {
 				t.Fatal("unverified proxy accepted", status)
@@ -171,16 +328,14 @@ func TestProxyDetectionRequiresTrustedTLSAndSupportsDirectTLS(t *testing.T) {
 	s := testBroker(t)
 	untrusted := httptest.NewTLSServer(s)
 	defer untrusted.Close()
-	if err := s.updateSettings(settingsInput{PublicURL: untrusted.URL}); err != nil {
-		t.Fatal(err)
-	}
+	configureTestDeployment(t, s, untrusted.URL)
+	s.StartProxyDetection()
 	if status := awaitDetection(t, s); status.DetectionError == "" || status.DetectedAt != nil {
 		t.Fatal("untrusted certificate accepted")
 	}
 	public := trustedProbeServer(t, s)
-	if err := s.updateSettings(settingsInput{PublicURL: public.URL}); err != nil {
-		t.Fatal(err)
-	}
+	configureTestDeployment(t, s, public.URL)
+	s.StartProxyDetection()
 	if status := awaitDetection(t, s); status.DetectionError != "" || status.DetectedAt == nil || status.DetectedProxy != "" {
 		t.Fatal("direct TLS should need no proxy", status)
 	}
@@ -196,9 +351,8 @@ func TestProxyDetectionCancellationAndConcurrentPolicy(t *testing.T) {
 		}
 		<-r.Context().Done()
 	}))
-	if err := s.updateSettings(settingsInput{PublicURL: public.URL}); err != nil {
-		t.Fatal(err)
-	}
+	configureTestDeployment(t, s, public.URL)
+	s.StartProxyDetection()
 	select {
 	case <-started:
 	case <-time.After(3 * time.Second):
@@ -218,7 +372,7 @@ func TestProxyDetectionCancellationAndConcurrentPolicy(t *testing.T) {
 			}
 		}()
 	}
-	if err := s.updateSettings(settingsInput{TrustedProxies: []string{"127.0.0.1/32"}}); err != nil {
+	if err := s.updateSettings(settingsInput{TrustedProxies: proxiesptr([]string{"127.0.0.1/32"})}); err != nil {
 		t.Fatal(err)
 	}
 	workers.Wait()
@@ -229,7 +383,7 @@ func TestProxyDetectionCancellationAndConcurrentPolicy(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("Close did not cancel and join verifier")
 	}
-	if status := s.settingsStatus(); status.DetectedAt != nil || status.PublicURL != "" || status.Detecting {
+	if status := s.settingsStatus(); status.DetectedAt != nil || status.PublicURL != public.URL || status.Detecting {
 		t.Fatal("cancelled detection changed policy", status)
 	}
 }
@@ -237,11 +391,14 @@ func TestProxyDetectionCancellationAndConcurrentPolicy(t *testing.T) {
 func TestSettingsValidationPersistenceAndFailures(t *testing.T) {
 	s := testBroker(t)
 	for _, address := range []string{"http://example.com", "https://user:pass@example.com", "https://example.com/path", "https://example.com?", "https://example.com#", "https://example.com:999999"} {
-		if err := s.updateSettings(settingsInput{PublicURL: address}); err == nil {
+		opts := s.opts
+		opts.PublicURL = address
+		if other, err := NewServer(opts); err == nil {
+			other.Close()
 			t.Fatal("accepted unsafe origin", address)
 		}
 	}
-	if err := s.updateSettings(settingsInput{BrowserOrigin: "http://localhost:28081", TrustedProxies: []string{"10.0.0.0/24"}}); err != nil {
+	if err := s.updateSettings(settingsInput{BrowserOrigin: "http://localhost:28081", TrustedProxies: proxiesptr([]string{"10.0.0.0/24"})}); err != nil {
 		t.Fatal(err)
 	}
 	if s.settingsStatus().PublicURL != "" {
@@ -258,7 +415,7 @@ func TestSettingsValidationPersistenceAndFailures(t *testing.T) {
 	if err := os.Mkdir(file, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.updateSettings(settingsInput{TrustedProxies: []string{"192.0.2.2/32"}}); err == nil {
+	if err := s.updateSettings(settingsInput{TrustedProxies: proxiesptr([]string{"192.0.2.2/32"})}); err == nil {
 		t.Fatal("failed persistence reported success")
 	}
 	if got := s.settingsStatus().TrustedProxies; len(got) != 1 || got[0] != "10.0.0.0/24" {
@@ -305,7 +462,9 @@ func TestLegacyProxySettingsMigration(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(s.opts.DataDir, "settings.json"), data, 0600); err != nil {
 				t.Fatal(err)
 			}
-			restored, err := NewServer(s.opts)
+			opts := s.opts
+			opts.PublicURL = origin
+			restored, err := NewServer(opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -314,7 +473,7 @@ func TestLegacyProxySettingsMigration(t *testing.T) {
 			if explicit && (status.PublicURL != origin || status.DetectedProxy != "172.18.0.3/32" || status.DetectedAt == nil) {
 				t.Fatal("explicit legacy URL was lost", status)
 			}
-			if !explicit && (status.PublicURL != "" || status.DetectedProxy != "" || status.DetectedOrigin != "" || status.DetectedAt != nil) {
+			if !explicit && (status.PublicURL != origin || status.DetectedProxy != "" || status.DetectedOrigin != "" || status.DetectedAt != nil) {
 				t.Fatal("legacy inferred management URL remained trusted", status)
 			}
 			if status.AdminOrigin != "https://relay-admin.example" || len(status.TrustedProxies) != 1 || status.TrustedProxies[0] != "10.0.0.1/32" {
@@ -373,7 +532,7 @@ func TestAdminDashboardAndSameOriginAPI(t *testing.T) {
 	request := httptest.NewRequest("GET", "https://admin.example"+WebPath(strings.Repeat("a", 52)), nil)
 	w = httptest.NewRecorder()
 	s.ServeHTTP(w, request)
-	if w.Code != 403 {
+	if w.Code != http.StatusGone {
 		t.Fatal("management origin allowed tenant content")
 	}
 }
@@ -396,15 +555,14 @@ func TestFailedRetryPreservesVerifiedPolicyAndManualEdits(t *testing.T) {
 		r.Header.Set("X-Forwarded-For", "203.0.113.9")
 		s.ServeHTTP(w, r)
 	}))
-	if err := s.updateSettings(settingsInput{PublicURL: public.URL}); err != nil {
-		t.Fatal(err)
-	}
+	configureTestDeployment(t, s, public.URL)
+	s.StartProxyDetection()
 	before := awaitDetection(t, s)
 	mu.Lock()
 	fail = true
 	mu.Unlock()
 	s.StartProxyDetection()
-	if err := s.updateSettings(settingsInput{PublicURL: public.URL, TrustedProxies: []string{"10.10.0.0/24"}}); err != nil {
+	if err := s.updateSettings(settingsInput{TrustedProxies: proxiesptr([]string{"10.10.0.0/24"})}); err != nil {
 		t.Fatal(err)
 	}
 	after := awaitDetection(t, s)
@@ -412,3 +570,5 @@ func TestFailedRetryPreservesVerifiedPolicyAndManualEdits(t *testing.T) {
 		t.Fatal("failed retry lost verified or manually edited policy", after)
 	}
 }
+
+func proxiesptr(values []string) *[]string { return &values }

@@ -91,31 +91,30 @@ try {
   assert.equal(await evaluate('document.getElementById("dashboard").hidden'), true);
   await evaluate(`document.getElementById("admin-token").value=${JSON.stringify(adminToken)};document.getElementById("login-form").requestSubmit()`);
   await until(() => evaluate('!document.getElementById("dashboard").hidden'), "login");
-  await until(() => evaluate(`fetch('/v1/settings',{headers:{Authorization:'Bearer '+${JSON.stringify(adminToken)}}}).then(r=>r.json()).then(s=>s.admin_origin===location.origin && !s.detecting && s.public_url==='')`), "management origin does not choose probe address");
-  await until(() => evaluate('!document.getElementById("public-url").disabled'), "management initialization completes");
-  assert.equal(await evaluate('document.getElementById("public-url").value'), "");
+  await until(() => evaluate(`fetch('/v1/settings',{headers:{Authorization:'Bearer '+${JSON.stringify(adminToken)}}}).then(r=>r.json()).then(s=>s.admin_origin===location.origin && s.detecting && s.waiting_for_proxy)`), "startup waits for the public proxy");
   assert.equal(await evaluate('document.getElementById("detect").disabled'), true);
-  await evaluate('document.getElementById("public-url").focus()');
-  assert.equal(await evaluate('document.activeElement.id'), "public-url");
-  await evaluate(`document.getElementById("public-url").value=${JSON.stringify(publicURL)};document.getElementById("public-url").dispatchEvent(new Event('input',{bubbles:true}))`);
-  assert.equal(await evaluate('document.getElementById("public-url").checkValidity()'), true);
-  await evaluate('document.getElementById("server-name").focus()');
-  try {
-    await until(() => evaluate('document.getElementById("detection-status").textContent.includes("检测成功")'), "saving the separate public URL automatically starts detection");
-  } catch (error) {
-    console.error(await evaluate('JSON.stringify({address:document.getElementById("public-url").value,status:document.getElementById("detection-status").textContent,notice:document.getElementById("notice").textContent,disabled:document.getElementById("public-url").disabled,focus:document.activeElement.id})'));
-    throw error;
-  }
-  assert.equal(await evaluate('document.getElementById("public-address").textContent'), publicURL);
-  assert.equal(await evaluate('document.getElementById("advanced").open'), false);
+  assert.equal(await evaluate('document.getElementById("detect").textContent'), "等待代理…");
+  assert.equal(await evaluate('document.getElementById("detection-status").textContent.includes("等待公网 HTTPS 代理就绪")'), true);
+  assert.equal(await evaluate(`fetch('/fixture/proxy-ready',{method:'POST',headers:{Authorization:'Bearer '+${JSON.stringify(adminToken)}}}).then(r=>r.status)`), 204);
+  await until(() => evaluate(`fetch('/v1/settings',{headers:{Authorization:'Bearer '+${JSON.stringify(adminToken)}}}).then(r=>r.json()).then(s=>s.admin_origin===location.origin && !s.detecting && s.public_url===${JSON.stringify(publicURL)})`), "deployment URL survives management login");
+  await until(() => evaluate('document.getElementById("detection-status").textContent.includes("检测成功")'), "startup proxy detection");
+  assert.equal(await evaluate('document.getElementById("detect").disabled'), false);
+  assert.equal(await evaluate('document.getElementById("public-url").readOnly'), true);
+  assert.equal(await evaluate('document.getElementById("web-domain").readOnly'), true);
   assert.equal(await evaluate('document.getElementById("public-url").value'), publicURL);
+  assert.equal(await evaluate('document.getElementById("web-domain").value'), "web." + new URL(publicURL).hostname);
+  assert.equal(await evaluate('document.getElementById("certificate-mode")'), null);
+  assert.equal(await evaluate('document.getElementById("save-web-settings")'), null);
+  assert.equal(await evaluate('document.getElementById("proxy-type")'), null);
+  for (const body of [{public_url:"https://changed.example.com"},{web_domain:"changed.example.com"},{certificate_mode:"wildcard"}]) {
+    assert.equal(await evaluate(`fetch('/v1/settings',{method:'PUT',headers:{Authorization:'Bearer '+${JSON.stringify(adminToken)},'Content-Type':'application/json'},body:${JSON.stringify(JSON.stringify(body))}}).then(r=>r.status)`),400);
+  }
+  assert.equal(await evaluate('document.getElementById("advanced").open'), false);
+  await evaluate('document.getElementById("advanced").open=true;document.getElementById("trusted-proxies").value="10.10.0.0/24";document.getElementById("trusted-proxies").dispatchEvent(new Event("input",{bubbles:true}));document.getElementById("settings-form").requestSubmit()');
+  await until(() => evaluate(`!document.getElementById('save-settings').disabled && fetch('/v1/settings',{headers:{Authorization:'Bearer '+${JSON.stringify(adminToken)}}}).then(r=>r.json()).then(s=>s.trusted_proxies.join(',')==='10.10.0.0/24' && s.public_url===${JSON.stringify(publicURL)} && !!s.detected_proxy)`), "manual proxy edits preserve deployment and detected peer");
+  await evaluate('document.getElementById("advanced").open=false');
   assert.equal(await evaluate('document.getElementById("detect").textContent'), "检测");
   assert.equal(await evaluate('document.getElementById("online-count").textContent'), "1");
-  // Enter also saves the explicit URL, including backend normalization.
-  await evaluate(`document.getElementById('public-url').focus();document.getElementById('public-url').value=${JSON.stringify(publicURL + "/")};document.getElementById('public-url').dispatchEvent(new Event('input',{bubbles:true}))`);
-  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
-  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
-  await until(() => evaluate(`!document.getElementById('public-url').disabled && document.getElementById('public-url').value===${JSON.stringify(publicURL)}`), "Enter saves and normalizes the service URL");
   assert.equal(await evaluate('document.getElementById("admin-token").value'), "");
   assert.deepEqual(await evaluate('[localStorage.length,sessionStorage.length,document.cookie]'), [0, 0, ""]);
   const name = "office-linux";
@@ -156,7 +155,7 @@ try {
   await evaluate('document.getElementById("logout").click()');
   assert.equal(await evaluate('document.getElementById("dashboard").hidden && document.getElementById("issued-token").value === "" && document.getElementById("servers").childElementCount===0'), true);
   assert.deepEqual(errors, [], "Browser errors");
-  console.log(JSON.stringify({ ok: true, checks: 28, artifacts }));
+  console.log(JSON.stringify({ ok: true, checks: 37, artifacts }));
 } finally {
   socket?.close();
   if (browser) { browser.kill("SIGTERM"); await browserDone; }

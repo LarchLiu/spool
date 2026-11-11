@@ -58,13 +58,14 @@
     settings = next;
     $("public-address").textContent = next.public_url || "尚未设置公网地址";
     $("detected-proxy").textContent = next.detected_proxy || (next.detected_at ? "直接 TLS 连接，无需代理 IP" : "尚无");
-    $("detect").disabled = !next.public_url || next.detecting;
-    $("detect").textContent = next.detecting ? "检测中…" : "检测";
+    $("detect").disabled = !next.public_url || next.detecting || savingSettings;
+    $("detect").textContent = next.waiting_for_proxy ? "等待代理…" : next.detecting ? "检测中…" : "检测";
     $("detection-dot").className = "dot" + (next.detecting ? " busy" : next.detected_at && !next.detection_error ? " success" : "");
-    $("detection-status").textContent = next.detecting ? "正在验证公网地址，成功后将自动保存并生效…" : next.detection_error || (next.detected_at ? "检测成功 · " + (next.detected_proxy ? "已信任代理 " + next.detected_proxy : "无需配置可信代理") + " · " + new Date(next.detected_at).toLocaleString() : next.public_url ? "尚未验证，点击检测重试。" : "填写 Relay 公网地址后，离开输入框或按回车即可保存并自动检测。");
+    $("detection-status").textContent = next.waiting_for_proxy ? "正在等待公网 HTTPS 代理就绪，就绪后会自动验证…" : next.detecting ? "正在验证公网地址，成功后将自动保存并生效…" : next.detection_error || (next.detected_at ? "检测成功 · " + (next.detected_proxy ? "已信任代理 " + next.detected_proxy : "无需配置可信代理") + " · " + new Date(next.detected_at).toLocaleString() : next.public_url ? "尚未验证，点击检测重试。" : "请在部署环境中设置 RELAY_PUBLIC_URL，重新部署后会自动检测。");
     $("registration-mode").textContent = next.registration_required ? "每个 token 只授权一台 Spool 服务器。" : "已开启自动注册；新服务器也可凭签名身份自动注册。";
+    $("public-url").value = next.public_url;
+    $("web-domain").value = next.web_domain || "";
     if (fill && !settingsDirty) {
-      $("public-url").value = next.public_url;
       $("trusted-proxies").value = (next.trusted_proxies || []).join(", ");
     }
   }
@@ -81,12 +82,26 @@
       const identity = document.createElement("td");
       identity.append(node("div", entry.name, "server-name"));
       identity.append(node("span", entry.server_id || "等待服务器首次注册", "server-detail mono"));
+      if (entry.web_url) {
+        const link = node("a", entry.web_url, "server-detail mono");
+        link.href = entry.web_url; link.target = "_blank"; link.rel = "noopener noreferrer";
+        identity.append(link);
+      } else if (entry.server_id && !entry.revoked_at && !entry.unregistered_at) identity.append(node("span", "Web 未发布", "server-detail"));
       identity.append(node("span", "创建于 " + date(entry.created_at) + (entry.automatic ? " · 自动注册" : ""), "server-detail"));
       const state = entry.revoked_at ? "已撤销" : entry.unregistered_at ? "已注销" : entry.connected ? "在线" : entry.server_id ? "离线" : "待注册";
       const status = document.createElement("td");
       status.append(node("span", state, "badge" + (entry.revoked_at ? " revoked" : entry.connected ? " online" : "")));
       const action = document.createElement("td");
       if (!entry.revoked_at && !entry.unregistered_at) {
+        if (entry.server_id) {
+          const webButton = node("button", entry.web_blocked ? "允许 Web" : "停用 Web", "quiet");
+          webButton.addEventListener("click", async () => {
+            webButton.disabled = true;
+            try { await api("/v1/registrations/" + encodeURIComponent(entry.id), { method: "PATCH", body: JSON.stringify({web_blocked: !entry.web_blocked}) }); await refresh(); showNotice("Web 发布资格已更新。", true); }
+            catch(error) { showNotice(error.message); webButton.disabled = false; }
+          });
+          action.append(webButton);
+        }
         const button = node("button", "撤销", "quiet revoke");
         button.addEventListener("click", () => revoke(entry));
         action.append(button);
@@ -128,11 +143,10 @@
   async function saveSettings() {
     if (savingSettings) return;
     savingSettings = true;
-    $("public-url").disabled = $("trusted-proxies").disabled = $("save-settings").disabled = true;
+    $("trusted-proxies").disabled = $("save-settings").disabled = true;
     $("detect").disabled = true;
     try {
       const next = await api("/v1/settings", { method: "PUT", body: JSON.stringify({
-        public_url: $("public-url").value.trim(),
         browser_origin: location.origin,
         trusted_proxies: $("trusted-proxies").value.split(",").map((v) => v.trim()).filter(Boolean),
       }) });
@@ -141,7 +155,7 @@
       poll();
     } finally {
       savingSettings = false;
-      $("public-url").disabled = $("trusted-proxies").disabled = $("save-settings").disabled = false;
+      $("trusted-proxies").disabled = $("save-settings").disabled = false;
       if (settings) renderSettings(settings);
     }
   }
@@ -170,16 +184,6 @@
   $("settings-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     try { await saveSettings(); showNotice("设置已保存。", true); } catch (error) { showNotice(error.message); }
-  });
-  $("public-url").addEventListener("blur", async () => {
-    if (!settings || $("public-url").value.trim() === settings.public_url || !$("public-url").checkValidity()) return;
-    try { await saveSettings(); showNotice(""); } catch (error) { showNotice(error.message); }
-  });
-  $("public-url").addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.isComposing) {
-      event.preventDefault();
-      $("settings-form").requestSubmit();
-    }
   });
   $("detect").addEventListener("click", async () => {
     $("detect").disabled = true;

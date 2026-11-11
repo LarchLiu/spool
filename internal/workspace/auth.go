@@ -95,7 +95,7 @@ func (s *Store) logout(tokenHash string) error {
 }
 
 func (a *App) identity(r *http.Request) (authIdentity, error) {
-	c, err := r.Cookie(authCookie)
+	c, err := r.Cookie(requestAuthCookie(r))
 	if err != nil || len(c.Value) > 128 {
 		return authIdentity{}, fmt.Errorf("请先登录")
 	}

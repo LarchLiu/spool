@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -17,9 +17,24 @@ import (
 func TestRelayWebBrowser(t *testing.T) {
 	chrome := os.Getenv("CHROME_BIN")
 	if chrome == "" {
-		t.Skip("set CHROME_BIN to check two relay Web/PWA mounts in a real browser")
+		t.Skip("set CHROME_BIN to check two relay Web/PWA origins in a real browser")
 	}
 	_, public, nodes := relayWebFixture(t, 2)
+	// An untrusted operator can replace its own HTML and CSP. Do not let the
+	// normal Spool CSP mask a missing browser-origin boundary in this test.
+	originalAssets := nodes[0].app.assets
+	nodes[0].app.assets = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/isolation.html" {
+			w.Header().Del("Content-Security-Policy")
+			w.Header().Set("Content-Type", "text/html")
+			// A malicious tenant cannot use this domain-wide cookie clearing
+			// header to log out other origins; the gateway strips it.
+			w.Header().Set("Clear-Site-Data", `"cookies"`)
+			fmt.Fprint(w, "<!doctype html><title>Untrusted server operator</title>")
+			return
+		}
+		originalAssets.ServeHTTP(w, r)
+	})
 	output := filepath.Join("..", "..", "build", "artifacts", "relay-web")
 	if err := os.MkdirAll(output, 0755); err != nil {
 		t.Fatal(err)
@@ -30,7 +45,7 @@ func TestRelayWebBrowser(t *testing.T) {
 	}
 	defer log.Close()
 	profile := t.TempDir()
-	command := exec.Command(chrome, "--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-extensions", "--disable-breakpad", "--remote-debugging-port=0", "--user-data-dir="+profile, "about:blank")
+	command := exec.Command(chrome, "--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-extensions", "--disable-breakpad", "--ignore-certificate-errors", "--no-proxy-server", "--host-resolver-rules=MAP *.relay.localhost 127.0.0.1,MAP relay.localhost 127.0.0.1", "--remote-debugging-port=0", "--user-data-dir="+profile, "about:blank")
 	command.Stdout, command.Stderr = log, log
 	if err = command.Start(); err != nil {
 		t.Fatal(err)
@@ -142,14 +157,57 @@ window.EventSource = class extends EventSource {
 		if err := json.Unmarshal(run(driver, browserCommand{Method: "Page.getAppManifest"}), &processed); err != nil {
 			t.Fatal("could not read browser manifest", err)
 		}
-		if processed.Manifest.ID != strings.TrimSuffix(public.URL, "/")+"/" || processed.Manifest.Scope != nodes[i].url || processed.Manifest.StartURL != nodes[i].url {
-			t.Fatalf("unexpected shared PWA identity or server scope for server %d: %+v", i+1, processed.Manifest)
+		if processed.Manifest.ID != nodes[i].url || processed.Manifest.Scope != nodes[i].url || processed.Manifest.StartURL != nodes[i].url {
+			t.Fatalf("unexpected isolated PWA identity or scope for server %d: %+v", i+1, processed.Manifest)
 		}
 		if err := os.WriteFile(filepath.Join(output, fmt.Sprintf("browser-server-%d.json", i+1)), result, 0644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	// Both tabs stay signed in to their own database on the same relay origin.
+	// An operator controls arbitrary scripts on its own server. Exercise the
+	// sibling-domain boundary from that actual browser execution context, with
+	// the victim logged in. Include credentials and even a known victim CSRF to
+	// prove Origin enforcement independently of the inability to read that CSRF.
+	evaluate(second, `localStorage.setItem('tenant-secret','victim-only')`)
+	victimCSRF := evaluate(second, `(async()=> (await (await fetch('/api/me')).json()).csrf)()`)
+	run(first, browserCommand{Method: "Page.navigate", Params: map[string]any{"url": nodes[0].url + "isolation.html"}})
+	for string(evaluate(first, `document.title === 'Untrusted server operator' && document.readyState === 'complete'`)) != "true" {
+		select {
+		case <-ctx.Done():
+			t.Fatal("attacker document did not load")
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+	attack := fmt.Sprintf(`(async()=>{
+ const victim=%q;
+ const blocked=async work=>{try{await work();return false}catch{return true}};
+ const readBlocked=await blocked(()=>fetch(victim+'api/me',{credentials:'include'}).then(r=>r.json()));
+ const writeBlocked=await blocked(()=>fetch(victim+'api/logout',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','X-CSRF-Token':%s},body:'{}'}));
+ await fetch(victim+'api/logout',{method:'POST',mode:'no-cors',credentials:'include',headers:{'Content-Type':'text/plain'},body:'{}'});
+ const workerBlocked=await blocked(()=>navigator.serviceWorker.register(victim+'sw.js',{scope:victim}));
+ const socketBlocked=await new Promise(resolve=>{const socket=new WebSocket(victim.replace('https:','wss:')+'api/events');socket.onopen=()=>{socket.close();resolve(false)};socket.onerror=()=>resolve(true);setTimeout(()=>{socket.close();resolve(true)},3000)});
+ document.cookie='__Host-spool_session=attacker; Domain=relay.localhost; Path=/; Secure';
+ document.cookie='spool_session=attacker; Domain=relay.localhost; Path=/; Secure';
+ return {readBlocked,writeBlocked,workerBlocked,socketBlocked,storageIsolated:localStorage.getItem('tenant-secret')===null,hostCookieProtected:!document.cookie.includes('__Host-spool_session')};
+})()`, nodes[1].url, victimCSRF)
+	observed := evaluate(first, attack)
+	var checks map[string]bool
+	if err := json.Unmarshal(observed, &checks); err != nil || len(checks) != 6 {
+		t.Fatal("invalid isolation result", string(observed), err)
+	}
+	for check, passed := range checks {
+		if !passed {
+			t.Fatal("cross-tenant isolation failed", check, string(observed))
+		}
+	}
+	if string(evaluate(second, `fetch('/api/me').then(r=>r.status)`)) != "200" {
+		t.Fatal("sibling script altered victim authentication")
+	}
+	if err := os.WriteFile(filepath.Join(output, "isolation.json"), observed, 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("CS-01 browser isolation: %s", observed)
+	// Both tabs stay signed in to their own database on separate origins.
 	t.Log("checking both sessions")
 	for i, driver := range []*browserDriver{first, second} {
 		value := evaluate(driver, `(async () => (await (await fetch('./api/me')).json()).user.id)()`)
@@ -157,9 +215,31 @@ window.EventSource = class extends EventSource {
 			t.Fatal("another tab replaced the session", string(value))
 		}
 	}
-	// A new navigation restores the authenticated page and its path-scoped SW.
+	// Legacy cleanup must not clear cookies across the parent domain. Visiting
+	// the old shared mount in a third tab must leave both new origins signed in.
+	var legacyTab struct{ TargetID string }
+	if err := json.Unmarshal(run(first, browserCommand{Method: "Target.createTarget", Params: map[string]any{"url": "about:blank"}}), &legacyTab); err != nil || legacyTab.TargetID == "" {
+		t.Fatal("could not create legacy migration tab", err)
+	}
+	legacy := &browserDriver{profile: profile, targetID: legacyTab.TargetID}
+	defer legacy.close()
+	run(legacy, browserCommand{Method: "Page.enable"}, browserCommand{Method: "Page.navigate", Params: map[string]any{"url": public.URL + "/web/" + nodes[0].id.ID() + "/"}})
+	for string(evaluate(legacy, `document.readyState === 'complete' && document.body?.innerText.includes('Relay Web has moved')`)) != "true" {
+		select {
+		case <-ctx.Done():
+			t.Fatal("legacy migration response did not load")
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+	for _, driver := range []*browserDriver{first, second} {
+		if string(evaluate(driver, `fetch('/api/me').then(r=>r.status)`)) != "200" {
+			t.Fatal("legacy migration cleared another origin's session")
+		}
+	}
+	run(first, browserCommand{Method: "Target.closeTarget", Params: map[string]any{"targetId": legacyTab.TargetID}})
+	// A new navigation restores the authenticated page and its origin's SW.
 	t.Log("checking reload and offline fallback")
-	run(first, browserCommand{Method: "Page.reload"})
+	run(first, browserCommand{Method: "Page.navigate", Params: map[string]any{"url": nodes[0].url}})
 	for {
 		value := evaluate(first, "document.readyState === 'complete' && window.relayProbe?.ready && !!navigator.serviceWorker.controller")
 		if string(value) == "true" {

@@ -16,14 +16,14 @@ import (
 )
 
 type ServerOptions struct {
-	AdminToken             string
-	DataDir                string
-	AllowUnregisteredHosts bool
-	MaxHosts               int
-	MaxConnections         int
-	MaxConnectionsPerHost  int
-	// Only these proxy peers may supply X-Forwarded-For client addresses.
-	TrustedProxies []string
+	AdminToken                                   string
+	DataDir                                      string
+	AllowUnregisteredHosts                       bool
+	MaxHosts                                     int
+	MaxConnections                               int
+	MaxConnectionsPerHost                        int
+	PublicURL                                    string
+	TraefikToken, TraefikResolver, ProxyUpstream string
 }
 
 // Server forwards opaque native streams and optional public Web requests.
@@ -66,17 +66,29 @@ type relayPair struct {
 }
 
 func NewServer(opts ServerOptions) (*Server, error) {
+	if opts.ProxyUpstream == "" {
+		opts.ProxyUpstream = "http://relay:28080"
+	}
+	if !validProxyUpstream(opts.ProxyUpstream) {
+		return nil, errors.New("invalid proxy upstream")
+	}
+	if opts.TraefikResolver == "" {
+		opts.TraefikResolver = "letsencrypt"
+	}
+	if !validTraefikResolver(opts.TraefikResolver) {
+		return nil, errors.New("RELAY_TRAEFIK_RESOLVER must contain only letters, numbers, hyphens or underscores")
+	}
+	if opts.TraefikToken != "" && (len(opts.TraefikToken) < 32 || len(opts.TraefikToken) > 512 || strings.ContainsAny(opts.TraefikToken, "\r\n")) {
+		return nil, errors.New("RELAY_TRAEFIK_TOKEN must contain 32–512 characters")
+	}
 	if len(opts.AdminToken) < 32 || len(opts.AdminToken) > 512 || strings.ContainsAny(opts.AdminToken, "\r\n") {
 		return nil, errors.New("SPOOL_RELAY_ADMIN_TOKEN must contain 32–512 characters")
 	}
+	if opts.TraefikToken == opts.AdminToken {
+		return nil, errors.New("RELAY_TRAEFIK_TOKEN must differ from the administrator token")
+	}
 	if strings.TrimSpace(opts.DataDir) == "" {
 		return nil, errors.New("relay data directory is required")
-	}
-	opts.TrustedProxies = append([]string(nil), opts.TrustedProxies...)
-	for _, value := range opts.TrustedProxies {
-		if strings.TrimSpace(value) == "" || strings.Contains(value, ",") {
-			return nil, errors.New("trusted proxies must be IP CIDR ranges")
-		}
 	}
 	if opts.MaxHosts <= 0 {
 		opts.MaxHosts = 100
@@ -88,11 +100,6 @@ func NewServer(opts ServerOptions) (*Server, error) {
 		opts.MaxConnectionsPerHost = 128
 	}
 	s := &Server{opts: opts, hosts: make(map[string]*registeredHost), pending: make(map[string]*relayPair), registrations: make(map[string]registrationRecord), tokenIndex: make(map[string]string)}
-	var err error
-	s.trustedProxies, err = ParseTrustedProxies(strings.Join(opts.TrustedProxies, ","))
-	if err != nil {
-		return nil, err
-	}
 	if err := s.loadRegistrations(); err != nil {
 		return nil, err
 	}
@@ -107,12 +114,20 @@ func authorized(r *http.Request, token string) bool {
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if s.serveTenant(w, r) {
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, proxyProbePath) {
 		s.serveProxyProbe(w, r)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/web/") {
-		s.serveWeb(w, r)
+		// Shared-origin mounts are retired. Never serve tenant-controlled HTML
+		// here, including offline pages from the old PWA installation.
+		// Cookie clearing spans the registrable domain, including sibling hosts.
+		// Retired cookies are inert because new origins only accept __Host- cookies.
+		w.Header().Set("Clear-Site-Data", "\"cache\", \"storage\"")
+		http.Error(w, "Relay Web has moved to isolated subdomains. Open the new address from Spool settings.", http.StatusGone)
 		return
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/healthz" {
@@ -187,7 +202,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 	m, err := readControl(authCtx, c)
 	authCancel()
 	if err != nil || m.Type != "register" || len(m.PublicKey) != ed25519.PublicKeySize || !validToken(m.AccessToken) ||
-		!ed25519.Verify(m.PublicKey, namedRegistrationProof(challenge, m.AccessToken, m.WebOrigin, m.Name), m.Signature) {
+		!ed25519.Verify(m.PublicKey, hostRegistrationProof(challenge, m.AccessToken, m.WebOrigin, m.Name, m.WebVersion), m.Signature) {
 		return
 	}
 	name := strings.TrimSpace(m.Name)
@@ -199,6 +214,9 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 		if u, e := ParseRelayURL(m.WebOrigin); e != nil || u.String() != m.WebOrigin {
 			return
 		}
+	}
+	if m.WebVersion != 0 && m.WebVersion != 2 {
+		return
 	}
 	metadata := registrationMetadata{name: name, ip: s.clientIP(r), enrollment: registrationOnly}
 	h := &registeredHost{id: ServerID(m.PublicKey), token: m.AccessToken, publicKey: append(ed25519.PublicKey(nil), m.PublicKey...), webOrigin: m.WebOrigin, registrationID: registration.ID, control: c, ctx: ctx, cancel: cancel, open: make(chan controlMessage, 32), pairs: make(map[string]*relayPair)}
@@ -226,6 +244,18 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 		}
 		return
 	}
+	// Only the signed v2 opt-in may publish isolated Web. Old clients keep
+	// native connectivity but cannot reintroduce shared-origin Web mounts.
+	h.webOrigin = ""
+	if m.WebOrigin != "" && m.WebVersion == 2 && !s.registrations[current.ID].WebBlocked {
+		h.webOrigin = strings.TrimSuffix(s.webURLLocked(h.id), "/")
+	}
+	if !registrationOnly {
+		if err := s.setWebPublishedLocked(current.ID, m.WebOrigin != "" && m.WebVersion == 2); err != nil {
+			s.mu.Unlock()
+			return
+		}
+	}
 	if registrationOnly {
 		s.mu.Unlock()
 		writeControl(ctx, c, controlMessage{Type: "ready", RegistrationToken: issuedToken})
@@ -249,7 +279,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request, registrationOn
 	}()
 	webURL := ""
 	if h.webOrigin != "" {
-		webURL = h.webOrigin + WebPath(h.id)
+		webURL = h.webOrigin + "/"
 	}
 	if writeControl(ctx, c, controlMessage{Type: "ready", RegistrationToken: issuedToken, WebURL: webURL}) != nil {
 		return

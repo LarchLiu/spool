@@ -3,7 +3,6 @@ package workspace
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -22,16 +21,12 @@ func TestRelayRejectedAuthorizationDisablesOnlyRelay(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("SPOOL_RELAY_REGISTRATION_TOKEN", "")
 			service, settings := settingsService(t)
-			broker, err := relay.NewServer(relay.ServerOptions{AdminToken: strings.Repeat("a", 32), DataDir: t.TempDir()})
-			if err != nil {
-				t.Fatal(err)
-			}
+			broker, public := relayWebPublicServer(t, relay.ServerOptions{})
 			t.Cleanup(func() { broker.Close() })
 			registration, token, err := broker.CreateRegistration("revoked server")
 			if err != nil {
 				t.Fatal(err)
 			}
-			public := httptest.NewServer(broker)
 			t.Cleanup(public.Close)
 			settings.RelayURL, settings.RelayLANPort = public.URL, availableServicePort(t)
 			settings.RelayWebEnabled = true

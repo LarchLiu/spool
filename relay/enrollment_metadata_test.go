@@ -162,12 +162,14 @@ func TestRegistrationIPBehindTrustedProxyAndLegacyUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := s.opts
-	opts.TrustedProxies = []string{"10.0.0.0/24"}
 	upgraded, err := NewServer(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer upgraded.Close()
+	if err := upgraded.updateSettings(settingsInput{TrustedProxies: proxiesptr([]string{"10.0.0.0/24"})}); err != nil {
+		t.Fatal(err)
+	}
 	public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.RemoteAddr = "10.0.0.2:1234"
 		// A client-provided prefix must not override the first untrusted hop.
