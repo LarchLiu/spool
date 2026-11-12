@@ -336,6 +336,17 @@ disconnects the selected server and disables its token. Inactive records remain
 visible. The list refreshes every ten seconds; proxy detection does not run on a
 timer.
 
+Search tokens by name, Device ID or registration IP, and combine the connection
+and Web status filters to narrow the list. Results are shown newest first, 20 per
+page. Select a token name to open its details and copy its IDs, IP or Web URL.
+The dashboard never retrieves previously issued token secrets.
+
+Use **全选本页** or individual checkboxes to select active tokens for revocation
+or Web permission changes. Selections carry across pages; changing a status tab
+or search/filter condition clears them. Batch confirmation lists the affected
+names and count. Only applicable Web permissions are changed, and failed items
+remain selected so they can be retried.
+
 ### Public management and proxy detection
 
 Use separate HTTPS hostnames for the dashboard and public Relay traffic. The

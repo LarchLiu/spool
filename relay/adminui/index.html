@@ -476,6 +476,41 @@
                   <span>全部</span><span class="tab-count">0</span>
                 </button>
               </div>
+              <div
+                class="token-filters"
+                role="search"
+                aria-label="搜索与筛选 token"
+              >
+                <label class="token-search">
+                  <span>搜索 token</span>
+                  <input
+                    id="token-search"
+                    type="search"
+                    placeholder="名称、Device ID 或注册 IP"
+                    autocomplete="off"
+                  />
+                </label>
+                <label>
+                  <span>连接状态</span>
+                  <select id="token-connection-filter">
+                    <option value="all">全部连接状态</option>
+                    <option value="online">在线</option>
+                    <option value="offline">离线</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Web 状态</span>
+                  <select id="token-web-filter">
+                    <option value="all">全部 Web 状态</option>
+                    <option value="published">Web 已发布</option>
+                    <option value="unpublished">Web 未发布</option>
+                    <option value="blocked">Web 已停用</option>
+                  </select>
+                </label>
+                <button id="clear-token-filters" type="button" disabled>
+                  重置筛选
+                </button>
+              </div>
               <div class="settings-card">
                 <div
                   id="token-panel"
@@ -483,6 +518,31 @@
                   aria-labelledby="token-tab-registered"
                   tabindex="0"
                 >
+                  <div class="token-selection">
+                    <label class="selection-label">
+                      <input id="select-token-page" type="checkbox" />
+                      <span>全选本页</span>
+                    </label>
+                    <span id="token-selection-count" role="status"></span>
+                    <div
+                      id="token-bulk-actions"
+                      class="token-bulk-actions"
+                      hidden
+                    >
+                      <button id="bulk-allow-web" type="button">
+                        允许 Web
+                      </button>
+                      <button id="bulk-disable-web" type="button">
+                        停用 Web
+                      </button>
+                      <button id="bulk-revoke" type="button" class="revoke">
+                        撤销
+                      </button>
+                      <button id="clear-token-selection" type="button">
+                        清除选择
+                      </button>
+                    </div>
+                  </div>
                   <div id="token-table" class="table-scroll">
                     <table>
                       <thead>
@@ -601,6 +661,125 @@
         <div class="dialog-actions">
           <button class="quiet" value="cancel" autofocus>取消</button
           ><button class="danger" value="revoke">撤销 token</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog
+      id="token-details"
+      class="token-drawer"
+      aria-labelledby="token-details-title"
+    >
+      <div class="section-heading">
+        <h2 id="token-details-title">Token 详情</h2>
+        <button
+          id="close-token-details"
+          class="icon"
+          type="button"
+          aria-label="关闭详情"
+          autofocus
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m18 6-12 12M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <h3 id="token-details-name"></h3>
+      <dl class="token-detail-fields">
+        <div>
+          <dt>Token ID</dt>
+          <dd>
+            <code id="detail-token-id"></code
+            ><button
+              type="button"
+              data-copy-detail="detail-token-id"
+              aria-label="复制 Token ID"
+            >
+              复制
+            </button>
+          </dd>
+        </div>
+        <div>
+          <dt>Device ID</dt>
+          <dd>
+            <code id="detail-device-id"></code
+            ><button
+              type="button"
+              data-copy-detail="detail-device-id"
+              aria-label="复制 Device ID"
+            >
+              复制
+            </button>
+          </dd>
+        </div>
+        <div>
+          <dt>设备状态</dt>
+          <dd id="detail-device-status"></dd>
+        </div>
+        <div>
+          <dt>注册 IP</dt>
+          <dd>
+            <code id="detail-registration-ip"></code
+            ><button
+              type="button"
+              data-copy-detail="detail-registration-ip"
+              aria-label="复制注册 IP"
+            >
+              复制
+            </button>
+          </dd>
+        </div>
+        <div>
+          <dt>Web 状态</dt>
+          <dd id="detail-web-status"></dd>
+        </div>
+        <div>
+          <dt>Web 地址</dt>
+          <dd>
+            <a id="detail-web-url" target="_blank" rel="noopener noreferrer"></a
+            ><button
+              type="button"
+              data-copy-detail="detail-web-url"
+              aria-label="复制 Web 地址"
+            >
+              复制
+            </button>
+          </dd>
+        </div>
+        <div>
+          <dt>当前连接</dt>
+          <dd id="detail-connections"></dd>
+        </div>
+        <div>
+          <dt>创建时间</dt>
+          <dd id="detail-created-at"></dd>
+        </div>
+        <div>
+          <dt>撤销时间</dt>
+          <dd id="detail-revoked-at"></dd>
+        </div>
+        <div>
+          <dt>注销时间</dt>
+          <dd id="detail-unregistered-at"></dd>
+        </div>
+      </dl>
+      <p id="detail-copy-status" role="status" class="settings-hint"></p>
+    </dialog>
+    <dialog
+      id="bulk-dialog"
+      aria-labelledby="bulk-dialog-title"
+      aria-describedby="bulk-dialog-description"
+    >
+      <form method="dialog">
+        <h2 id="bulk-dialog-title"></h2>
+        <p id="bulk-dialog-description"></p>
+        <ul id="bulk-dialog-items" class="bulk-dialog-items"></ul>
+        <div class="dialog-actions">
+          <button value="cancel" autofocus>取消</button>
+          <button
+            id="confirm-bulk-action"
+            value="confirm"
+            class="primary"
+          ></button>
         </div>
       </form>
     </dialog>

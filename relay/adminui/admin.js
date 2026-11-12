@@ -5,7 +5,7 @@ import { locale, t } from "./presentation.js";
   let settings;
   let timer;
   let generation = 0;
-  let pending = false;
+  let pending;
   let settingsDirty = false;
   let savingSettings = false;
   let issuedTokens = [];
@@ -16,6 +16,12 @@ import { locale, t } from "./presentation.js";
   let tokenFilter = "registered";
   let tokenPage = 1;
   const tokenPageSize = 20;
+  const selectedTokens = new Set();
+  let pageTokens = [];
+  let bulkBusy = false;
+  let detailsID = "";
+  let detailCopyMessage = "";
+  let bulkAction;
   let notice;
   const tokenTabs = [...document.querySelectorAll("[data-token-filter]")];
   const emptyStates = {
@@ -112,6 +118,19 @@ import { locale, t } from "./presentation.js";
     renderIssuedTokens();
     tokenFilter = "registered";
     tokenPage = 1;
+    selectedTokens.clear();
+    bulkBusy = false;
+    bulkAction = undefined;
+    detailsID = "";
+    detailCopyMessage = "";
+    $("token-details-name").textContent = $("detail-copy-status").textContent =
+      "";
+    for (const field of $("token-details").querySelectorAll(
+      "dd > code, dd > a, dd[id]",
+    ))
+      field.textContent = "";
+    $("detail-web-url").removeAttribute("href");
+    resetTokenFilters();
     renderServers([]);
     $("server-name").value = "";
     $("dashboard").hidden = true;
@@ -120,7 +139,9 @@ import { locale, t } from "./presentation.js";
     navigate("servers");
     $("revoke-dialog").close();
     $("appearance-dialog").close();
-    pending = false;
+    $("bulk-dialog").close();
+    $("token-details").close();
+    pending = undefined;
   }
   async function api(path, options = {}) {
     const epoch = generation;
@@ -218,9 +239,209 @@ import { locale, t } from "./presentation.js";
     if (entry.revoked_at || entry.unregistered_at) return "revoked";
     return entry.server_id ? "registered" : "unused";
   }
+  function registrationState(entry) {
+    return entry.revoked_at
+      ? "已撤销"
+      : entry.unregistered_at
+        ? "已注销"
+        : entry.server_id
+          ? "已注册"
+          : "未注册";
+  }
+  function webState(entry) {
+    return entry.web_blocked
+      ? "Web 已停用"
+      : entry.web_url
+        ? "Web 已发布"
+        : "Web 未发布";
+  }
+  function hasTokenFilters() {
+    return (
+      $("token-search").value.trim() ||
+      $("token-connection-filter").value !== "all" ||
+      $("token-web-filter").value !== "all"
+    );
+  }
+  function resetTokenFilters() {
+    $("token-search").value = "";
+    $("token-connection-filter").value = $("token-web-filter").value = "all";
+  }
+  function matchesTokenFilters(entry) {
+    const query = $("token-search").value.trim().toLowerCase();
+    if (
+      query &&
+      ![entry.name, entry.server_id, entry.registration_ip].some((value) =>
+        value?.toLowerCase().includes(query),
+      )
+    )
+      return false;
+    const connection = $("token-connection-filter").value;
+    if (connection === "online" && !entry.connected) return false;
+    if (
+      connection === "offline" &&
+      (registrationGroup(entry) !== "registered" || entry.connected)
+    )
+      return false;
+    const web = $("token-web-filter").value;
+    return (
+      web === "all" ||
+      (web === "published" && !!entry.web_url) ||
+      (web === "unpublished" && !entry.web_url) ||
+      (web === "blocked" && entry.web_blocked)
+    );
+  }
+  for (const [id, event] of [
+    ["token-search", "input"],
+    ["token-connection-filter", "change"],
+    ["token-web-filter", "change"],
+  ]) {
+    $(id).addEventListener(event, () => {
+      tokenPage = 1;
+      selectedTokens.clear();
+      renderServers(registrations);
+    });
+  }
+  $("clear-token-filters").addEventListener("click", () => {
+    resetTokenFilters();
+    tokenPage = 1;
+    selectedTokens.clear();
+    renderServers(registrations);
+  });
+  function selectedEntries() {
+    return registrations.filter(
+      (entry) =>
+        selectedTokens.has(entry.id) && registrationGroup(entry) !== "revoked",
+    );
+  }
+  function renderSelection() {
+    const entries = selectedEntries();
+    const eligible = pageTokens.filter(
+      (entry) => registrationGroup(entry) !== "revoked",
+    );
+    const selectedOnPage = eligible.filter((entry) =>
+      selectedTokens.has(entry.id),
+    ).length;
+    $("select-token-page").checked =
+      eligible.length > 0 && selectedOnPage === eligible.length;
+    $("select-token-page").indeterminate =
+      selectedOnPage > 0 && selectedOnPage < eligible.length;
+    $("select-token-page").disabled = bulkBusy || eligible.length === 0;
+    $("token-selection-count").textContent = t("已选 {count} 项", {
+      count: entries.length,
+    });
+    $("token-bulk-actions").hidden = entries.length === 0;
+    $("bulk-revoke").disabled = $("clear-token-selection").disabled = bulkBusy;
+    $("bulk-allow-web").disabled =
+      bulkBusy ||
+      !entries.some((entry) => entry.server_id && entry.web_blocked);
+    $("bulk-disable-web").disabled =
+      bulkBusy ||
+      !entries.some((entry) => entry.server_id && !entry.web_blocked);
+    for (const checkbox of $("servers").querySelectorAll(
+      "[data-select-token]",
+    )) {
+      checkbox.checked = selectedTokens.has(checkbox.dataset.selectToken);
+      checkbox.disabled = bulkBusy;
+    }
+  }
+  $("select-token-page").addEventListener("change", (event) => {
+    for (const entry of pageTokens.filter(
+      (entry) => registrationGroup(entry) !== "revoked",
+    )) {
+      if (event.target.checked) selectedTokens.add(entry.id);
+      else selectedTokens.delete(entry.id);
+    }
+    renderSelection();
+  });
+  $("clear-token-selection").addEventListener("click", () => {
+    selectedTokens.clear();
+    renderSelection();
+  });
+  function renderTokenDetails() {
+    if (!detailsID) return;
+    const entry = registrations.find((entry) => entry.id === detailsID);
+    if (!entry) {
+      $("token-details").close();
+      return;
+    }
+    $("token-details-name").textContent = entry.name;
+    $("detail-copy-status").textContent = t(detailCopyMessage);
+    const values = {
+      "detail-token-id": entry.id,
+      "detail-device-id": entry.server_id || "—",
+      "detail-device-status":
+        t(registrationState(entry)) +
+        (registrationGroup(entry) === "registered"
+          ? " · " + t(entry.connected ? "在线" : "离线")
+          : ""),
+      "detail-registration-ip": entry.registration_ip || "—",
+      "detail-web-status": t(webState(entry)),
+      "detail-web-url": entry.web_url || "—",
+      "detail-connections": String(entry.connections),
+      "detail-created-at": date(entry.created_at),
+      "detail-revoked-at": entry.revoked_at ? date(entry.revoked_at) : "—",
+      "detail-unregistered-at": entry.unregistered_at
+        ? date(entry.unregistered_at)
+        : "—",
+    };
+    for (const [id, value] of Object.entries(values)) $(id).textContent = value;
+    if (entry.web_url) $("detail-web-url").href = entry.web_url;
+    else $("detail-web-url").removeAttribute("href");
+    for (const button of document.querySelectorAll("[data-copy-detail]"))
+      button.disabled = values[button.dataset.copyDetail] === "—";
+  }
+  function openTokenDetails(entry) {
+    detailsID = entry.id;
+    detailCopyMessage = "";
+    renderTokenDetails();
+    $("token-details").showModal();
+  }
+  $("close-token-details").addEventListener("click", () =>
+    $("token-details").close(),
+  );
+  $("token-details").addEventListener("click", (event) => {
+    if (event.target !== $("token-details")) return;
+    const rect = event.target.getBoundingClientRect();
+    if (
+      event.clientX < rect.left ||
+      event.clientX > rect.right ||
+      event.clientY < rect.top ||
+      event.clientY > rect.bottom
+    )
+      event.target.close();
+  });
+  $("token-details").addEventListener("close", () => {
+    const id = detailsID;
+    detailsID = "";
+    if (credential) {
+      const row = [...$("servers").children].find(
+        (row) => row.dataset.tokenId === id,
+      );
+      (row?.querySelector(".server-name") || $("token-panel")).focus({
+        preventScroll: true,
+      });
+    }
+  });
+  for (const button of document.querySelectorAll("[data-copy-detail]"))
+    button.addEventListener("click", async () => {
+      const field = $(button.dataset.copyDetail);
+      try {
+        await navigator.clipboard.writeText(field.textContent);
+        detailCopyMessage = "已复制。";
+        $("detail-copy-status").textContent = t(detailCopyMessage);
+      } catch {
+        const range = document.createRange();
+        range.selectNodeContents(field);
+        getSelection().removeAllRanges();
+        getSelection().addRange(range);
+        detailCopyMessage = "请使用系统复制快捷键复制已选中的内容。";
+        $("detail-copy-status").textContent = t(detailCopyMessage);
+      }
+    });
   function selectTokenFilter(filter) {
     tokenFilter = filter;
     tokenPage = 1;
+    selectedTokens.clear();
     renderServers(registrations);
   }
   function changeTokenPage(offset) {
@@ -231,6 +452,124 @@ import { locale, t } from "./presentation.js";
   }
   $("token-previous-page").addEventListener("click", () => changeTokenPage(-1));
   $("token-next-page").addEventListener("click", () => changeTokenPage(1));
+  function actionEntries(action) {
+    return selectedEntries().filter(
+      (entry) =>
+        action === "revoke" ||
+        (entry.server_id && entry.web_blocked === (action === "allow")),
+    );
+  }
+  function renderBulkDialog() {
+    if (!bulkAction) return;
+    const { action, entries } = bulkAction;
+    const label =
+      action === "revoke"
+        ? "撤销 token"
+        : action === "allow"
+          ? "允许 Web"
+          : "停用 Web";
+    $("bulk-dialog-title").textContent = t(label);
+    $("bulk-dialog-description").textContent = t(
+      action === "revoke"
+        ? "将撤销 {count} 个 token，并断开它们的 Relay 连接。此操作无法撤回。"
+        : action === "allow"
+          ? "将允许 {count} 台服务器发布 Web。服务器仍需自行开启 Web。"
+          : "将停用 {count} 台服务器的 Web 访问。",
+      { count: entries.length },
+    );
+    $("bulk-dialog-items").replaceChildren(
+      ...entries.map((entry) => node("li", entry.name)),
+    );
+    $("confirm-bulk-action").textContent = t(label);
+    $("confirm-bulk-action").className =
+      action === "revoke" ? "danger" : "primary";
+  }
+  for (const [id, action] of [
+    ["bulk-revoke", "revoke"],
+    ["bulk-allow-web", "allow"],
+    ["bulk-disable-web", "disable"],
+  ]) {
+    $(id).addEventListener("click", () => {
+      if (bulkBusy) return;
+      const entries = actionEntries(action);
+      if (!entries.length) return;
+      bulkAction = { action, entries };
+      renderBulkDialog();
+      $("bulk-dialog").returnValue = "cancel";
+      $("bulk-dialog").showModal();
+    });
+  }
+  $("bulk-dialog").addEventListener("close", () => {
+    const operation = bulkAction;
+    bulkAction = undefined;
+    if ($("bulk-dialog").returnValue === "confirm" && operation && credential) {
+      performTokenAction(
+        operation.action,
+        operation.entries.map((entry) => entry.id),
+        true,
+      );
+    }
+  });
+  async function performTokenAction(action, ids, batch = false) {
+    if (bulkBusy || !credential) return;
+    const epoch = generation;
+    bulkBusy = true;
+    renderServers(registrations);
+    const completed = [];
+    const failed = [];
+    try {
+      if (pending) await pending;
+      for (const id of ids) {
+        if (epoch !== generation) return;
+        try {
+          await api(
+            "/v1/registrations/" + encodeURIComponent(id),
+            action === "revoke"
+              ? { method: "DELETE" }
+              : {
+                  method: "PATCH",
+                  body: JSON.stringify({ web_blocked: action === "disable" }),
+                },
+          );
+          completed.push(id);
+          selectedTokens.delete(id);
+        } catch (error) {
+          if (epoch !== generation) return;
+          failed.push(id);
+          selectedTokens.add(id);
+        }
+      }
+      if (action === "revoke") {
+        issuedTokens = issuedTokens.filter(
+          (result) => !completed.includes(result.registration.id),
+        );
+        renderIssuedTokens();
+      }
+      await refresh();
+      if (epoch !== generation) return;
+      if (failed.length) {
+        showNotice(
+          "成功 {success} 项，失败 {failed} 项。失败项保留选择，可重试。",
+          false,
+          { success: completed.length, failed: failed.length },
+        );
+      } else if (batch) {
+        showNotice("已更新 {count} 项。", true, { count: completed.length });
+      } else {
+        showNotice(
+          action === "revoke" ? "token 已撤销。" : "Web 发布资格已更新。",
+          true,
+        );
+      }
+    } catch (error) {
+      if (epoch === generation) showNotice(error.message);
+    } finally {
+      if (epoch === generation) {
+        bulkBusy = false;
+        renderServers(registrations);
+      }
+    }
+  }
   for (const [index, tab] of tokenTabs.entries()) {
     tab.addEventListener("click", () =>
       selectTokenFilter(tab.dataset.tokenFilter),
@@ -250,12 +589,20 @@ import { locale, t } from "./presentation.js";
   }
   function renderServers(list) {
     registrations = list;
+    const activeIDs = new Set(
+      list
+        .filter((entry) => registrationGroup(entry) !== "revoked")
+        .map((entry) => entry.id),
+    );
+    for (const id of selectedTokens)
+      if (!activeIDs.has(id)) selectedTokens.delete(id);
     const counts = { registered: 0, revoked: 0, unused: 0, all: list.length };
     for (const entry of list) counts[registrationGroup(entry)]++;
     for (const tab of tokenTabs) {
       const selected = tab.dataset.tokenFilter === tokenFilter;
       tab.setAttribute("aria-selected", String(selected));
       tab.tabIndex = selected ? 0 : -1;
+      tab.disabled = bulkBusy;
       tab.querySelector(".tab-count").textContent =
         counts[tab.dataset.tokenFilter];
     }
@@ -265,150 +612,177 @@ import { locale, t } from "./presentation.js";
     );
     const visible = list.filter(
       (entry) =>
-        tokenFilter === "all" || registrationGroup(entry) === tokenFilter,
+        (tokenFilter === "all" || registrationGroup(entry) === tokenFilter) &&
+        matchesTokenFilters(entry),
     );
     const pages = Math.max(1, Math.ceil(visible.length / tokenPageSize));
     tokenPage = Math.max(1, Math.min(tokenPage, pages));
     const start = (tokenPage - 1) * tokenPageSize;
-    const rows = visible
-      .reverse()
-      .slice(start, start + tokenPageSize)
-      .map((entry) => {
-        const row = document.createElement("tr");
-        const identity = document.createElement("td");
-        identity.append(node("div", entry.name, "server-name"));
-        identity.append(
+    pageTokens = visible.reverse().slice(start, start + tokenPageSize);
+    const rows = pageTokens.map((entry) => {
+      const row = document.createElement("tr");
+      row.dataset.tokenId = entry.id;
+      const identity = document.createElement("td");
+      const identityRow = node("div", "", "token-identity");
+      if (registrationGroup(entry) !== "revoked") {
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.dataset.selectToken = entry.id;
+        checkbox.setAttribute(
+          "aria-label",
+          t("选择 {name}", { name: entry.name }),
+        );
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) selectedTokens.add(entry.id);
+          else selectedTokens.delete(entry.id);
+          renderSelection();
+        });
+        identityRow.append(checkbox);
+      }
+      const identityCopy = node("div", "", "token-identity-copy");
+      const name = node("button", entry.name, "server-name");
+      name.type = "button";
+      name.setAttribute("aria-haspopup", "dialog");
+      name.addEventListener("click", () => openTokenDetails(entry));
+      identityCopy.append(name);
+      identityCopy.append(
+        node(
+          "span",
+          t("创建于 {date}", { date: date(entry.created_at) }) +
+            (entry.automatic ? " · " + t("自动注册") : ""),
+          "server-detail",
+        ),
+      );
+      identityRow.append(identityCopy);
+      identity.append(identityRow);
+      const state = registrationState(entry);
+      const status = node("td", "", "device-status");
+      const badge = node(
+        "span",
+        t(state),
+        "badge" +
+          (registrationGroup(entry) === "revoked"
+            ? " revoked"
+            : registrationGroup(entry) === "unused"
+              ? " unused"
+              : entry.connected
+                ? " online"
+                : ""),
+      );
+      if (entry.server_id) badge.title = entry.server_id;
+      status.append(badge);
+      if (registrationGroup(entry) === "registered")
+        status.append(
           node(
             "span",
-            t("创建于 {date}", { date: date(entry.created_at) }) +
-              (entry.automatic ? " · " + t("自动注册") : ""),
-            "server-detail",
+            t(entry.connected ? "在线" : "离线"),
+            "connection-state",
           ),
         );
-        const state = entry.revoked_at
-          ? "已撤销"
-          : entry.unregistered_at
-            ? "已注销"
-            : entry.server_id
-              ? "已注册"
-              : "未注册";
-        const status = node("td", "", "device-status");
-        const badge = node(
-          "span",
-          t(state),
-          "badge" +
-            (registrationGroup(entry) === "revoked"
-              ? " revoked"
-              : registrationGroup(entry) === "unused"
-                ? " unused"
-                : entry.connected
-                  ? " online"
-                  : ""),
-        );
-        if (entry.server_id) badge.title = entry.server_id;
-        status.append(badge);
-        if (registrationGroup(entry) === "registered")
-          status.append(
-            node(
-              "span",
-              t(entry.connected ? "在线" : "离线"),
-              "connection-state",
-            ),
+      const action = document.createElement("td");
+      const actions = node("div", "", "server-actions");
+      action.append(actions);
+      if (!entry.revoked_at && !entry.unregistered_at) {
+        if (entry.server_id) {
+          const webButton = node(
+            "button",
+            t(entry.web_blocked ? "允许 Web" : "停用 Web"),
+            "quiet",
           );
-        const action = document.createElement("td");
-        const actions = node("div", "", "server-actions");
-        action.append(actions);
-        if (!entry.revoked_at && !entry.unregistered_at) {
-          if (entry.server_id) {
-            const webButton = node(
-              "button",
-              t(entry.web_blocked ? "允许 Web" : "停用 Web"),
-              "quiet",
-            );
-            webButton.addEventListener("click", async () => {
-              webButton.disabled = true;
-              try {
-                await api("/v1/registrations/" + encodeURIComponent(entry.id), {
-                  method: "PATCH",
-                  body: JSON.stringify({ web_blocked: !entry.web_blocked }),
-                });
-                await refresh();
-                showNotice("Web 发布资格已更新。", true);
-              } catch (error) {
-                showNotice(error.message);
-                webButton.disabled = false;
-              }
-            });
-            actions.append(webButton);
-          }
-          const button = node("button", t("撤销"), "quiet revoke");
-          button.addEventListener("click", () => revoke(entry));
-          actions.append(button);
-        } else action.textContent = "—";
-        const ip = node("td", entry.registration_ip || "—", "mono");
-        const web = document.createElement("td");
-        const webStatus = node("div", "", "web-status");
-        if (entry.web_url) {
-          const link = node("a", "", "web-link");
-          link.href = entry.web_url;
-          link.title = entry.web_url;
-          link.setAttribute("aria-label", entry.web_url);
-          link.target = "_blank";
-          link.rel = "noopener noreferrer";
-          const svg = document.createElementNS(
-            "http://www.w3.org/2000/svg",
-            "svg",
+          webButton.disabled = bulkBusy;
+          webButton.addEventListener("click", () =>
+            performTokenAction(entry.web_blocked ? "allow" : "disable", [
+              entry.id,
+            ]),
           );
-          svg.setAttribute("viewBox", "0 0 24 24");
-          svg.setAttribute("aria-hidden", "true");
-          const circle = document.createElementNS(svg.namespaceURI, "circle");
-          circle.setAttribute("cx", "12");
-          circle.setAttribute("cy", "12");
-          circle.setAttribute("r", "10");
-          const path = document.createElementNS(svg.namespaceURI, "path");
-          path.setAttribute(
-            "d",
-            "M2 12h20M12 2a18 18 0 0 1 0 20 18 18 0 0 1 0-20",
-          );
-          svg.append(circle, path);
-          link.append(svg);
-          webStatus.append(link);
-        } else {
-          const unavailable = node("span", "—", "muted");
-          unavailable.title = t("Web 未发布");
-          webStatus.append(unavailable);
+          actions.append(webButton);
         }
-        const connections = node(
-          "span",
-          String(entry.connections),
-          "connection-count",
+        const button = node("button", t("撤销"), "quiet revoke");
+        button.disabled = bulkBusy;
+        button.addEventListener("click", () => revoke(entry));
+        actions.append(button);
+      } else action.textContent = "—";
+      const ip = node("td", entry.registration_ip || "—", "mono");
+      const web = document.createElement("td");
+      const webStatus = node("div", "", "web-status");
+      if (entry.web_url) {
+        const link = node("a", "", "web-link");
+        link.href = entry.web_url;
+        link.title = entry.web_url;
+        link.setAttribute("aria-label", entry.web_url);
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        const svg = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "svg",
         );
-        connections.title = t("当前连接");
-        webStatus.append(connections);
-        web.append(webStatus);
-        status.dataset.label = t("设备状态");
-        ip.dataset.label = t("注册 IP");
-        web.dataset.label = t("Web 状态");
-        action.dataset.label = t("操作");
-        row.append(identity, status, ip, web, action);
-        return row;
-      });
+        svg.setAttribute("viewBox", "0 0 24 24");
+        svg.setAttribute("aria-hidden", "true");
+        const circle = document.createElementNS(svg.namespaceURI, "circle");
+        circle.setAttribute("cx", "12");
+        circle.setAttribute("cy", "12");
+        circle.setAttribute("r", "10");
+        const path = document.createElementNS(svg.namespaceURI, "path");
+        path.setAttribute(
+          "d",
+          "M2 12h20M12 2a18 18 0 0 1 0 20 18 18 0 0 1 0-20",
+        );
+        svg.append(circle, path);
+        link.append(svg);
+        webStatus.append(link);
+      } else {
+        const unavailable = node("span", "—", "muted");
+        unavailable.title = t("Web 未发布");
+        webStatus.append(unavailable);
+      }
+      const connections = node(
+        "span",
+        String(entry.connections),
+        "connection-count",
+      );
+      connections.title = t("当前连接");
+      webStatus.append(connections);
+      web.append(webStatus);
+      status.dataset.label = t("设备状态");
+      ip.dataset.label = t("注册 IP");
+      web.dataset.label = t("Web 状态");
+      action.dataset.label = t("操作");
+      row.append(identity, status, ip, web, action);
+      return row;
+    });
     $("servers").replaceChildren(...rows);
-    $("empty-state").textContent = t(emptyStates[tokenFilter]);
+    $("empty-state").textContent = t(
+      hasTokenFilters()
+        ? "没有匹配的 token，请调整搜索或筛选条件。"
+        : emptyStates[tokenFilter],
+    );
     $("empty-state").hidden = visible.length > 0;
     $("token-table").hidden = visible.length === 0;
     $("token-pagination").hidden = visible.length === 0;
-    $("token-page-summary").textContent = t("第 {start}–{end} 条，共 {total} 条", {
-      start: visible.length ? start + 1 : 0,
-      end: Math.min(start + tokenPageSize, visible.length),
-      total: visible.length,
-    });
+    $("token-page-summary").textContent = t(
+      "第 {start}–{end} 条，共 {total} 条",
+      {
+        start: visible.length ? start + 1 : 0,
+        end: Math.min(start + tokenPageSize, visible.length),
+        total: visible.length,
+      },
+    );
     $("token-page-status").textContent = t("第 {page} / {pages} 页", {
       page: tokenPage,
       pages,
     });
-    $("token-previous-page").disabled = tokenPage === 1;
-    $("token-next-page").disabled = tokenPage === pages;
+    $("token-previous-page").disabled = bulkBusy || tokenPage === 1;
+    $("token-next-page").disabled = bulkBusy || tokenPage === pages;
+    for (const id of [
+      "token-search",
+      "token-connection-filter",
+      "token-web-filter",
+    ])
+      $(id).disabled = bulkBusy;
+    $("clear-token-filters").disabled = bulkBusy || !hasTokenFilters();
+    $("refresh").disabled = bulkBusy;
+    renderSelection();
+    renderTokenDetails();
     $("online-count").textContent = list.filter((e) => e.connected).length;
     $("active-count").textContent = list.filter(
       (e) => !e.revoked_at && !e.unregistered_at,
@@ -418,19 +792,19 @@ import { locale, t } from "./presentation.js";
       0,
     );
   }
-  async function refresh() {
-    if (!credential || pending) return;
-    pending = true;
-    try {
-      const [next, list] = await Promise.all([
-        api("/v1/settings"),
-        api("/v1/registrations"),
-      ]);
-      renderSettings(next, true);
-      renderServers(list.registrations);
-    } finally {
-      pending = false;
-    }
+  function refresh() {
+    if (!credential) return Promise.resolve();
+    if (pending) return pending;
+    const request = Promise.all([api("/v1/settings"), api("/v1/registrations")])
+      .then(([next, list]) => {
+        renderSettings(next, true);
+        renderServers(list.registrations);
+      })
+      .finally(() => {
+        if (pending === request) pending = undefined;
+      });
+    pending = request;
+    return request;
   }
   function navigate(page) {
     const network = page === "network";
@@ -462,7 +836,7 @@ import { locale, t } from "./presentation.js";
     timer = setTimeout(
       async () => {
         try {
-          await refresh();
+          if (!bulkBusy) await refresh();
         } catch (error) {
           showNotice(error.message);
         }
@@ -584,6 +958,7 @@ import { locale, t } from "./presentation.js";
       renderIssuedTokens();
       $("server-name").value = "";
       showNotice("");
+      resetTokenFilters();
       selectTokenFilter("unused");
       await refresh();
     } catch (error) {
@@ -698,19 +1073,7 @@ import { locale, t } from "./presentation.js";
       async () => {
         document.removeEventListener("relay-presentation-change", description);
         if (dialog.returnValue !== "revoke" || !credential) return;
-        try {
-          await api("/v1/registrations/" + encodeURIComponent(entry.id), {
-            method: "DELETE",
-          });
-          issuedTokens = issuedTokens.filter(
-            (result) => result.registration.id !== entry.id,
-          );
-          renderIssuedTokens();
-          await refresh();
-          showNotice("token 已撤销。", true);
-        } catch (error) {
-          showNotice(error.message);
-        }
+        await performTokenAction("revoke", [entry.id]);
       },
       { once: true },
     );
@@ -718,6 +1081,7 @@ import { locale, t } from "./presentation.js";
   document.addEventListener("relay-presentation-change", () => {
     if (settings) renderSettings(settings);
     if (credential) renderServers(registrations);
+    renderBulkDialog();
     if (notice) showNotice(notice.message, notice.success, notice.values);
     navigate($("network-page").hidden ? "servers" : "network");
     renderIssuedTokens();

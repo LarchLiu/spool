@@ -93,6 +93,16 @@ select {
 input::placeholder {
   color: var(--subtle);
 }
+input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
 svg {
   width: 17px;
   height: 17px;
@@ -715,6 +725,76 @@ code,
   min-width: 0;
   white-space: nowrap;
 }
+.token-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.token-filters label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  flex: 1 1 135px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.token-filters .token-search {
+  flex: 2 1 220px;
+}
+.token-selection,
+.token-bulk-actions,
+.selection-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.token-selection {
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--divider);
+  font-size: 11px;
+  color: var(--muted);
+}
+.token-bulk-actions {
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.token-bulk-actions button {
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+.token-bulk-actions .revoke {
+  color: var(--danger);
+}
+.token-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.token-identity > input {
+  margin-top: 3px;
+}
+.token-identity-copy {
+  min-width: 0;
+}
+button.server-name {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  text-align: left;
+  font-size: 12px;
+}
+button.server-name:hover {
+  background: transparent;
+  color: var(--primary);
+  text-decoration: underline;
+}
 .token-tabs [role="tab"]:focus-visible,
 #token-panel:focus-visible {
   outline-offset: -3px;
@@ -909,6 +989,66 @@ dialog p {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 24px;
+}
+dialog.token-drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(460px, 100vw);
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  border-radius: 0;
+  border-width: 0 0 0 1px;
+}
+.token-drawer h2 {
+  margin: 0;
+}
+.token-drawer h3 {
+  font-size: 17px;
+  overflow-wrap: anywhere;
+  margin: 25px 0;
+}
+.token-detail-fields {
+  margin: 0;
+}
+.token-detail-fields > div {
+  padding: 13px 0;
+  border-bottom: 1px solid var(--divider);
+}
+.token-detail-fields dt {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.token-detail-fields dd {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.token-detail-fields :is(code, a) {
+  flex: 1;
+  min-width: 0;
+  user-select: text;
+}
+.token-detail-fields a {
+  color: var(--primary);
+}
+.token-detail-fields button {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 2px 6px;
+  font-size: 10px;
+}
+.bulk-dialog-items {
+  max-height: 180px;
+  overflow: auto;
+  padding-left: 20px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 [hidden] {
   display: none !important;

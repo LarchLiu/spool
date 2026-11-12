@@ -130,6 +130,10 @@ try {
   };
   const tabCounts = () => evaluate('[...document.querySelectorAll(".token-tabs .tab-count")].map(e=>Number(e.textContent))');
   const rowNames = () => evaluate('[...document.querySelectorAll("#servers .server-name")].map(e=>e.textContent)');
+  const filterValue = async (id, value) => {
+    await evaluate(`(() => {const element=document.getElementById(${JSON.stringify(id)});element.value=${JSON.stringify(value)};element.dispatchEvent(new Event(element.tagName==='INPUT'?'input':'change',{bubbles:true}));})()`);
+  };
+  const checkedIDs = () => evaluate('[...document.querySelectorAll("#servers [data-select-token]:checked")].map(e=>e.dataset.selectToken)');
   const pagination = () => evaluate(`({
     summary: document.getElementById('token-page-summary').textContent,
     status: document.getElementById('token-page-status').textContent,
@@ -275,11 +279,48 @@ try {
     return tabs.find(tab => tab.url === published.web_url && tab.title === 'Spool browser fixture');
   }, 'Web icon opens the published workspace');
   await send('Target.closeTarget', { targetId: workspaceTab.id });
+  await filterValue('token-search', 'HOME-MAC');
+  assert.deepEqual(await rowNames(), ['home-mac'], 'Search must ignore case');
+  await filterValue('token-search', published.server_id.slice(8, 30));
+  assert.deepEqual(await rowNames(), ['home-mac'], 'Search must match Device ID');
+  await filterValue('token-search', published.registration_ip);
+  assert.equal((await rowNames()).length, 2, 'Search must match registration IP');
+  await filterValue('token-search', 'does-not-exist');
+  assert.equal((await rowNames()).length, 0);
+  assert.equal(await evaluate('document.getElementById("empty-state").textContent'), '没有匹配的 token，请调整搜索或筛选条件。');
+  assert.equal(await evaluate('document.getElementById("token-pagination").hidden'), true);
+  await click('#clear-token-filters');
+  await filterValue('token-connection-filter', 'offline');
+  assert.deepEqual(await rowNames(), ['offline-server']);
+  await filterValue('token-web-filter', 'published');
+  assert.deepEqual(await rowNames(), [], 'Filters must combine');
+  await filterValue('token-connection-filter', 'online');
+  assert.deepEqual(await rowNames(), ['home-mac']);
+  await click('#servers .server-name');
+  assert.equal(await evaluate('document.getElementById("token-details").open'), true);
+  assert.equal(await evaluate('document.getElementById("detail-device-id").textContent'), published.server_id);
+  assert.equal(await evaluate('document.getElementById("detail-web-url").href'), published.web_url);
+  await send('Browser.grantPermissions', { origin: url, permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'] });
+  await click('[data-copy-detail="detail-device-id"]');
+  assert.equal(await evaluate('navigator.clipboard.readText()'), published.server_id, 'Detail copy must use the full ID');
+  await viewport(320, 720, true);
+  await fitsViewport();
+  assert.equal(await evaluate('document.getElementById("token-details").scrollWidth <= document.getElementById("token-details").clientWidth'), true, 'Details must fit on mobile');
+  await capture('token-details-mobile');
+  await key('Escape', 'Escape', 27);
+  assert.equal(await evaluate('document.activeElement.matches("#servers .server-name")'), true, 'Details must restore focus');
+  await viewport(1280, 900);
+  await click('#clear-token-filters');
   await selectFilter('revoked');
   assert.equal(await evaluate('document.querySelector("#servers .server-name").textContent'), 'retired-server');
   assert.equal(await evaluate('document.querySelector("#servers .badge").textContent'), '已注销');
   assert.equal(await evaluate('!!document.querySelector("#servers .web-link")'), false, 'Retired tokens must not have a Web link');
-  assert.equal(await evaluate('document.querySelectorAll("#servers button").length'), 0, 'Retired tokens must not offer active actions');
+  assert.equal(await evaluate('document.querySelectorAll("#servers .server-actions button").length'), 0, 'Retired tokens must not offer active actions');
+  assert.equal(await evaluate('document.querySelectorAll("#servers [data-select-token]").length'), 0, 'Retired tokens must not be selectable');
+  await click('#servers .server-name');
+  assert.notEqual(await evaluate('document.getElementById("detail-unregistered-at").textContent'), '—');
+  assert.equal(await evaluate('document.querySelector("[data-copy-detail=detail-web-url]").disabled'), true);
+  await click('#close-token-details');
   await selectFilter('unused');
   assert.equal(await evaluate('document.getElementById("empty-state").hidden || !document.getElementById("token-table").hidden'), false, 'Unused view must have an empty state');
   assert.equal(await evaluate('document.getElementById("token-pagination").hidden'), true, 'Empty lists must hide pagination');
@@ -573,12 +614,119 @@ try {
   await selectFilter('all');
   assert.equal((await pagination()).summary, 'Showing 1–20 of 46');
   assert.deepEqual(await tabCounts(), [2, 3, 41, 46], 'Tab counts must include all pages');
+  await selectFilter('unused');
+  await click('#select-token-page');
+  assert.equal((await checkedIDs()).length, 20, 'Select page must select exactly its 20 active records');
+  await click('#token-next-page');
+  assert.equal((await checkedIDs()).length, 0);
+  await click('#servers [data-select-token]');
+  assert.equal(await evaluate('document.getElementById("token-selection-count").textContent'), '21 selected', 'Selection must persist across pages');
+  assert.equal(await evaluate('document.getElementById("select-token-page").indeterminate'), true);
+  await click('#refresh');
+  await until(() => evaluate('document.getElementById("token-selection-count").textContent==="21 selected"'), 'refresh retains selection');
+  await filterValue('token-search', 'pagination-new-token');
+  assert.deepEqual(await rowNames(), ['pagination-new-token']);
+  assert.equal(await evaluate('document.getElementById("token-selection-count").textContent'), '0 selected', 'Search must clear selection');
+  assert.equal((await pagination()).status, 'Page 1 of 1');
+  await click('#servers [data-select-token]');
+  assert.equal(await evaluate('document.getElementById("bulk-disable-web").disabled'), true, 'Unused tokens must not offer Web changes');
+  await click('#clear-token-filters');
+  await selectFilter('registered');
+  await click('#select-token-page');
+  await click('#bulk-disable-web');
+  assert.equal(await evaluate('document.querySelectorAll("#bulk-dialog-items li").length'), 2);
+  await click('#bulk-dialog button[value=cancel]');
+  assert.equal((await checkedIDs()).length, 2, 'Cancel must preserve selection');
+  // Fail one real request while allowing the other to reach the Relay.
+  const offlineEntry = initialList.find(entry => entry.name === 'offline-server');
+  await evaluate(`(() => {
+    const original=window.fetch;
+    window.fetch=(path, options) => {
+      if(path===${JSON.stringify('/v1/registrations/' + offlineEntry.id)} && options?.method==='PATCH') {
+        window.fetch=original;
+        return Promise.resolve(new Response(JSON.stringify({error:'fixture temporary failure'}),{status:503,headers:{'Content-Type':'application/json'}}));
+      }
+      return original(path,options);
+    };
+  })()`);
+  await click('#bulk-disable-web');
+  await click('#confirm-bulk-action');
+  await until(() => evaluate('document.getElementById("notice").textContent.includes("1 succeeded, 1 failed")'), 'partial batch failure');
+  assert.deepEqual(await checkedIDs(), [offlineEntry.id], 'Only failed batch items must remain selected');
+  await filterValue('token-web-filter', 'blocked');
+  assert.deepEqual(await rowNames(), ['home-mac'], 'Web disabled filter must reflect the successful mutation');
+  await click('#clear-token-filters');
+  await evaluate(`document.querySelector('[data-select-token="${offlineEntry.id}"]').click()`);
+  await click('#bulk-disable-web');
+  await click('#confirm-bulk-action');
+  await until(() => evaluate('document.getElementById("notice").textContent==="Updated 1 items."'), 'retry failed Web change');
+  await click('#select-token-page');
+  await click('#bulk-allow-web');
+  await click('#confirm-bulk-action');
+  await until(() => evaluate('document.getElementById("notice").textContent==="Updated 2 items."'), 'bulk allow Web');
+  assert.equal(await evaluate('!!document.querySelector("#servers .web-link")'), true);
+  await selectFilter('unused');
+  await click('#servers [data-select-token]');
+  await click('#token-next-page');
+  await click('#servers [data-select-token]');
+  await click('#bulk-revoke');
+  assert.equal(await evaluate('document.querySelectorAll("#bulk-dialog-items li").length'), 2, 'Confirmation must list cross-page targets');
+  await click('#bulk-dialog button[value=cancel]');
+  assert.equal(await evaluate('document.getElementById("token-selection-count").textContent'), '2 selected');
+  await click('#bulk-revoke');
+  await click('#confirm-bulk-action');
+  await until(() => evaluate('document.getElementById("notice").textContent==="Updated 2 items." && document.querySelector("#token-tab-unused .tab-count").textContent==="39"'), 'bulk revocation');
+  assert.deepEqual(await checkedIDs(), []);
+  await selectFilter('revoked');
+  assert.equal((await rowNames()).length, 5);
+  await click('#servers .server-name');
+  assert.notEqual(await evaluate('document.getElementById("detail-revoked-at").textContent'), '—');
+  await capture('token-details-desktop');
+  await click('#close-token-details');
+  await selectFilter('registered');
+  await click('#select-token-page');
+  await evaluate('document.getElementById("servers-title").scrollIntoView({block:"start"})');
+  await capture('token-management-desktop');
   await evaluate('document.querySelector("[data-theme-choice=dark]").click()');
+  await evaluate('document.getElementById("servers-title").scrollIntoView({block:"start"})');
+  await capture('token-management-dark');
+  await viewport(320, 720, true);
+  await fitsViewport();
+  await tabsFit();
+  await evaluate('document.getElementById("token-panel").scrollIntoView({block:"start"})');
+  await capture('token-management-mobile');
+  await language('ja');
+  await fitsViewport();
+  await click('#bulk-disable-web');
+  assert.equal(await evaluate('document.getElementById("bulk-dialog-description").textContent.includes("2 台")'), true);
+  await fitsViewport();
+  await click('#bulk-dialog button[value=cancel]');
+  await language('en');
+  await evaluate('document.querySelector("[data-theme-choice=dark]").click()');
+  await evaluate(`(() => {
+    const original=window.fetch;
+    window.actionAttempts=0;
+    window.fetch=(path,options) => {
+      if(options?.method==='PATCH') {
+        window.actionAttempts++;
+        return new Promise(resolve => {window.releaseAction=() => {window.fetch=original;resolve(new Response(null,{status:204}));};});
+      }
+      return original(path,options);
+    };
+  })()`);
+  await click('#bulk-disable-web');
+  await click('#confirm-bulk-action');
+  await until(() => evaluate('typeof window.releaseAction === "function"'), 'batch in flight');
   await viewport(320, 720, true);
   assert.equal(await evaluate('document.getElementById("settings-sidebar").inert'), true, 'Narrow sidebar must start closed after resizing');
   await openSidebar();
   await click('#logout');
   assert.equal(await evaluate('document.getElementById("dashboard").hidden && document.getElementById("issued-results").childElementCount===0 && document.getElementById("servers").childElementCount===0'), true);
+  assert.equal(await evaluate('document.getElementById("token-search").value==="" && document.getElementById("token-selection-count").textContent==="0 selected" && !document.getElementById("token-details").open'), true, 'Logout must clear management state');
+  assert.equal(await evaluate('document.getElementById("detail-device-id").textContent'), '', 'Logout must clear detail metadata');
+  await evaluate('window.releaseAction()');
+  await evaluate('new Promise(resolve => setTimeout(resolve, 50))');
+  assert.equal(await evaluate('window.actionAttempts'), 1, 'Logging out must prevent subsequent batch requests');
   assert.equal(await evaluate('document.getElementById("login").hidden'), false);
   await fitsViewport();
   await send('Page.reload');
@@ -586,7 +734,7 @@ try {
   assert.equal(await evaluate('document.getElementById("dashboard").hidden && document.getElementById("issued-results").childElementCount===0 && document.getElementById("token-result").hidden'), true, 'Reload must not restore credentials');
   await fitsViewport();
   assert.deepEqual(errors, [], "Browser errors");
-  console.log(JSON.stringify({ ok: true, coverage: ["login", "login-settings-position", "navigation-order", "mobile-drawer", "drawer-keyboard-focus", "token-tabs", "token-pagination", "pagination-refresh", "pagination-boundaries", "retired-tokens", "offline-registration", "deployment-addresses", "proxy-settings", "tokens", "random-names", "batch-summary", "txt-download", "revocation", "languages", "preferences-persistence", "version", "light-dark", "desktop-tablet-mobile"], artifacts }));
+  console.log(JSON.stringify({ ok: true, coverage: ["login", "login-settings-position", "navigation-order", "mobile-drawer", "drawer-keyboard-focus", "token-tabs", "token-pagination", "pagination-refresh", "pagination-boundaries", "token-search", "combined-filters", "token-details", "detail-clipboard", "cross-page-selection", "bulk-web", "bulk-revocation", "partial-failure-retry", "retired-tokens", "offline-registration", "deployment-addresses", "proxy-settings", "tokens", "random-names", "batch-summary", "txt-download", "revocation", "languages", "preferences-persistence", "version", "light-dark", "desktop-tablet-mobile"], artifacts }));
 } finally {
   socket?.close();
   if (browser) { browser.kill("SIGTERM"); await browserDone; }
