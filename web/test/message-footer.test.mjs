@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -121,16 +120,7 @@ test("attachment-only messages disable copy without losing their send time", () 
   assert.match(html, /<button[^>]*disabled=""/);
 });
 
-test("hidden copy feedback stays anchored to the footer instead of overflowing the page", async () => {
-  const css = await readFile(
-    new URL("../src/style.css", import.meta.url),
-    "utf8",
-  );
-  assert.match(css, /^\.message-footer \{[^}]*position: relative;/m);
-  assert.match(
-    css,
-    /^\.message-copy-status \{[^}]*position: absolute;[^}]*clip-path: inset\(50%\);/m,
-  );
+test("copy feedback exposes a status region for both message roles", () => {
   for (const role of ["user", "assistant"]) {
     assert.match(
       renderFooter(role),
@@ -263,31 +253,4 @@ test("failed copies propagate failure and still clean up the fallback", async ()
   assert.ok(f.events.includes("remove"));
   assert.ok(f.events.some((event) => event[0] === "restore focus"));
   assert.ok(f.events.some((event) => event[0] === "restore selection"));
-});
-
-test("chat wiring uses each input's timestamp with a turn fallback and the final answer's finish time", async () => {
-  const source = await readFile(
-    new URL("../src/main.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    source,
-    /<MessageFooter\s+role="user"\s+text=\{userText\}\s+timestamp=\{\s*input.find\(\(part\) => part.timestamp\)\?\.timestamp \|\|\s*turn.started_at\s*\}/,
-  );
-  assert.match(
-    source,
-    /<TurnResponse[\s\S]*?timestamp=\{turn.finished_at\}[\s\S]*?locale=\{locale\}/,
-  );
-  const css = await readFile(
-    new URL("../src/style.css", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    css,
-    /\.message-footer-user \{[^}]*align-self: flex-end;[^}]*justify-content: flex-end;/,
-  );
-  assert.match(
-    css,
-    /\.message-footer-assistant \{[^}]*justify-content: flex-start;/,
-  );
 });

@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -9,13 +8,11 @@ import {
   UserMessage,
 } from "../.test-build/components/web/src/user-message.js";
 
-test("filtered provider-only input hides the whole row while attachment-only input remains visible", async () => {
+test("filtered provider-only input hides the whole row while attachment-only input remains visible", () => {
   assert.equal(hasUserMessage("", []), false);
   assert.equal(hasUserMessage(" \n\t", []), false);
   assert.equal(hasUserMessage("Real prompt", []), true);
   assert.equal(hasUserMessage("", [{ id: "attachment" }]), true);
-  const source = await readFile(new URL("../src/main.tsx", import.meta.url), "utf8");
-  assert.match(source, /hasUserMessage\(userText, turnFiles\) \? \(/);
 });
 
 function overflowFixture(t, height = 40) {
@@ -97,34 +94,4 @@ test("overflow follows wrapping and Markdown height changes and disconnects on c
   assert.deepEqual(f.changes, [false, true, false]);
   f.cleanup();
   assert.equal(f.disconnected(), true);
-});
-
-test("only user text is collapsible; attachments and copy retain the complete message", async () => {
-  const main = await readFile(
-    new URL("../src/main.tsx", import.meta.url),
-    "utf8",
-  );
-  const source = await readFile(
-    new URL("../src/user-message.tsx", import.meta.url),
-    "utf8",
-  );
-  const css = await readFile(
-    new URL("../src/style.css", import.meta.url),
-    "utf8",
-  );
-  assert.match(main, /userText && (?:\(\s*)?<UserMessage text=\{userText\} t=\{t\}/);
-  assert.match(main, /<MessageFooter\s+role="user"\s+text=\{userText\}/);
-  assert.match(source, /aria-controls=\{id\}/);
-  assert.match(source, /aria-expanded=\{expanded\}/);
-  assert.match(source, /setExpanded\(\(value\) => !value\)/);
-  assert.match(source, /t\(expanded \? "Show less" : "Show more"\)/);
-  assert.match(
-    css,
-    /\.user-bubble-content \{\s*max-height: 8lh;\s*overflow: hidden;/,
-  );
-  assert.match(
-    css,
-    /\.user-bubble-content\[data-expanded="true"\] \{\s*max-height: none;/,
-  );
-  assert.match(css, /\.user-message-toggle \{[^}]*margin: 8px 0 0;/);
 });

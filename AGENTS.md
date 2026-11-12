@@ -74,6 +74,9 @@ run the smallest relevant package, test case, or test file and expand only when
 the affected dependencies or a failure warrant it. Do not use `make test`,
 `go test ./...`, or `go test -race ./...` as a default after every edit.
 
+- Prefer tests of observable behavior, rendered semantics, and cross-component
+  contracts. Avoid tests that only match implementation source, CSS declarations,
+  or incidental wording; verify layout in browser or visual checks when needed.
 - Documentation and comments need review and formatting/link checks, not runtime
   suites. For scripts and build configuration, check syntax and the affected
   command paths; use `make -n` to inspect recipes without building applications.

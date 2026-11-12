@@ -86,13 +86,6 @@ test("desktop notification navigation buffers cold clicks and consumes only nati
   assert.equal(events.size, 0);
 });
 
-test("desktop skips PWA registration and install UI without changing browser behavior", async () => {
-  const source = await readFile(new URL("../src/main.tsx", import.meta.url), "utf8");
-  assert.match(source, /if \(isDesktopChat\(\)\) return;\s*const handler =/);
-  assert.match(source, /setInstall\(e as BeforeInstallPromptEvent\)/);
-  assert.match(source, /\.register\(appURL\("\/sw\.js"\), \{ scope: appURL\("\/"\) \}\)/);
-});
-
 test("native settings link is desktop-only, localized, and stays in the same page", (t) => {
   const render = () => renderToStaticMarkup(createElement(DesktopSettingsLink, {
     t: (key) => key === "Settings" ? "设置" : key,
@@ -112,19 +105,6 @@ test("native settings link is desktop-only, localized, and stays in the same pag
 test("native settings destination matches the desktop navigation guard", async () => {
   const source = await readFile(new URL("../../cmd/desktop/chat.go", import.meta.url), "utf8");
   assert.ok(source.includes(`const desktopSettingsPath = "${desktopSettingsPath}"`));
-});
-
-test("settings remains reachable from loading, sign-in and authenticated chat", async () => {
-  const main = await readFile(new URL("../src/main.tsx", import.meta.url), "utf8");
-  const sidebar = await readFile(new URL("../src/sidebar.tsx", import.meta.url), "utf8");
-  assert.match(main, /className="loading"[\s\S]*?<DesktopSettingsLink[^>]*className="desktop-settings-corner"/);
-  assert.match(main, /className=\{isDesktopChat\(\) \? "login desktop-login" : "login"\}[\s\S]*?<DesktopSettingsLink[^>]*className="desktop-settings-corner"/);
-  assert.match(sidebar, /<ChatSettingsControl t=\{t\} onAppearance=\{props\.onSettings\} \/>\s*<button[\s\S]*?onClick=\{props\.onLogout\}/);
-  assert.doesNotMatch(sidebar, /sidebar-settings|Palette|DesktopSettingsLink/);
-  assert.match(main, /const appearance = !isDesktopChat\(\) && appearanceOpen/);
-  assert.match(main, /function updatePreferences[\s\S]*?if \(isDesktopChat\(\)\) return/);
-  assert.doesNotMatch(main, /api<UIPreferences>\("\/preferences"|setPreferences\(v\.preferences\)/);
-  assert.match(main, /!isDesktopChat\(\) && \(\s*<button\s*className="icon login-preferences"/);
 });
 
 test("footer settings replaces appearance in desktop but preserves the browser control", (t) => {
@@ -161,7 +141,7 @@ test("desktop settings marks available and restart-pending updates with a locali
   }
 });
 
-test("desktop update availability is cached by preload and changes live without exposing management to chat", async () => {
+test("desktop update availability follows native events and unsubscribes", () => {
   const listeners = new Map();
   const surface = {
     spoolDesktop: true,
@@ -184,15 +164,6 @@ test("desktop update availability is cached by preload and changes live without 
     assert.equal(desktopUpdateAvailable(invalid), false);
     assert.doesNotThrow(() => subscribeDesktopUpdates(() => assert.fail("invalid surface subscribed"), invalid)());
   }
-  const source = await readFile(new URL("../../cmd/desktop/window_chrome.go", import.meta.url), "utf8");
-  assert.match(source, /window\.mygo\?\.on\("spool:update-available"/);
-  assert.match(source, /window\.spoolUpdateAvailable = next/);
-  assert.match(source, /new Event\("spool:update-changed"\)/);
-  assert.match(source, /state\.Enabled && state\.Version != ""/);
-  const chat = await readFile(new URL("../../cmd/desktop/chat.go", import.meta.url), "utf8");
-  assert.match(chat, /OnDidFinishLoad[\s\S]*?p\.sendUpdateAvailability\(view\)/);
-  const main = await readFile(new URL("../../cmd/desktop/main.go", import.meta.url), "utf8");
-  assert.match(main, /ticker\.C:[\s\S]*?p\.sendUpdateAvailability\(p\.chatView\)/);
 });
 
 test("desktop locale starts with the native setting and updates through MyGo events", () => {
@@ -265,15 +236,4 @@ test("desktop ignores account and logged-out preferences while browser settings 
   assert.deepEqual(chatPreferences({ theme: "dark", language: "ja" }, undefined, { spoolDesktop: true }), {
     theme: "system", language: "system",
   });
-});
-
-test("presentation subscribes to native locale without waiting for login or reloading chat", async () => {
-  const source = await readFile(new URL("../src/use-presentation.ts", import.meta.url), "utf8");
-  assert.match(source, /useSyncExternalStore\(\s*subscribeDesktopLocale,\s*desktopLocale,/);
-  assert.match(source, /useSyncExternalStore\(\s*subscribeDesktopTheme,\s*desktopTheme,/);
-  assert.match(source, /chatPreferences\(preferences, nativeLocale\)/);
-  assert.match(source, /resolveLanguage\(effective\.language, systemLanguages\)/);
-  assert.match(source, /resolveTheme\(effective\.theme, systemDark\)/);
-  assert.match(source, /nativeTheme \?\? resolveTheme/);
-  assert.match(source, /setAPILanguage\(locale\)/);
 });

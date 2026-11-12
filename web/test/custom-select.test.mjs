@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFile, readdir } from "node:fs/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CustomSelect } from "../.test-build/components/web/src/custom-select.js";
@@ -62,45 +61,6 @@ test("appearance language uses the shared control and preserves saving state", (
   );
   assert.match(html, />日本語<\/span>/);
   assert.doesNotMatch(html, /<select|<option/);
-});
-
-test("all frontend views forbid browser-native dropdowns", async () => {
-  for (const name of await readdir(new URL("../src/", import.meta.url))) {
-    if (!/\.[jt]sx?$/.test(name)) continue;
-    const source = await readFile(
-      new URL(`../src/${name}`, import.meta.url),
-      "utf8",
-    );
-    assert.doesNotMatch(
-      source,
-      /<(?:select|option|optgroup|datalist)\b|createElement\(["']select["']/,
-      name,
-    );
-  }
-});
-
-test("packaged desktop smoke follows the custom language control instead of a native select", async () => {
-  const source = await readFile(
-    new URL("../../cmd/desktop/smoke.go", import.meta.url),
-    "utf8",
-  );
-  const appearance = source.slice(
-    source.indexOf("func (p *panel) probeThemePicker("),
-    source.indexOf("func (p *panel) probeManagementLists("),
-  );
-  assert.match(
-    appearance,
-    /\.custom-select-trigger\[aria-haspopup="listbox"\]/,
-  );
-  for (const [, selector] of appearance.matchAll(
-    /querySelector(?:All)?\('([^']*)'\)/g,
-  )) {
-    assert.ok(selector !== "select" && !selector.endsWith(" select"), selector);
-  }
-  assert.match(appearance, /\[role="option"\]\[data-value=/);
-  assert.match(appearance, /snapshot\.preferences\.language === %q/);
-  assert.match(appearance, /document\.documentElement\.lang === %q/);
-  assert.match(appearance, /appearance render: %w/);
 });
 
 const view = { x: 0, y: 0, width: 390, height: 700 };

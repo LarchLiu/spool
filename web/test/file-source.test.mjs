@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { readFile } from "node:fs/promises";
 import {
   FileSource,
   FileSourceBoundary,
@@ -10,7 +9,7 @@ import {
   centerSourceLine,
 } from "../.test-build/components/web/src/file-source.js";
 
-test("source previews use the existing single-file renderer in both themes", async () => {
+test("source previews use the existing single-file renderer in both themes", () => {
   for (const theme of ["light", "dark"]) {
     const html = renderToStaticMarkup(
       createElement(FileSource, {
@@ -25,14 +24,6 @@ test("source previews use the existing single-file renderer in both themes", asy
     assert.match(html, /export const label = &lt;span&gt;Hello&lt;\/span&gt;;/);
     assert.doesNotMatch(html, /contenteditable|textarea/);
   }
-  const source = await readFile(
-    new URL("../src/file-source.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(source, /disableFileHeader: true/);
-  assert.match(source, /themeType: theme/);
-  assert.match(source, /edit=\{false\}/);
-  assert.match(source, /name: path, contents/);
 });
 
 test("the plain source fallback preserves blank lines, indentation and inert markup", () => {

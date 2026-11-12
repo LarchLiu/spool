@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFile } from "node:fs/promises";
 import {
   hasSettingsBridge,
   settingsCall,
@@ -11,118 +10,6 @@ import {
   projectMembers,
   settingsSections,
 } from "../.test-build/settings-client.js";
-
-test("settings keeps a minimal sidebar with one back icon and right-aligned status, not a version", async () => {
-  const source = await readFile(
-    new URL("../src/settings-app.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.doesNotMatch(source, /settings-(?:brand|breadcrumb|search)/);
-  assert.match(
-    source,
-    /className="settings-sidebar"[\s\S]*?<h1>\{t\("Settings"\)\}<\/h1>\s*<nav/,
-  );
-  assert.match(
-    source,
-    /settings-sidebar-bottom[\s\S]*?className="icon"[\s\S]*?aria-label=\{t\("Back to Chat"\)\}[\s\S]*?<ArrowLeft[^>]*\/>\s*<\/button>\s*<span className="settings-sidebar-status" role="status">[\s\S]*?settings-status-dot/,
-  );
-  assert.doesNotMatch(
-    source,
-    /settings-version|\{t\("Back to Chat"\)\}\s*<\/button>/,
-  );
-  assert.equal((source.match(/kind: "open-chat"/g) ?? []).length, 1);
-  assert.doesNotMatch(source, /data\?\.version \|\| "Spool"/);
-});
-
-test("settings and chat use the same shared scrollbar rule", async () => {
-  const css = await readFile(
-    new URL("../src/style.css", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    css,
-    /\.sidebar-scroll,\s*\.history,\s*\.settings-sidebar-content,\s*\.settings-main\s*\{\s*scrollbar-width: thin;\s*scrollbar-color: var\(--border-strong\) transparent;/,
-  );
-});
-
-test("chat and settings footers share the same height and icon buttons stay circular", async () => {
-  const shared = await readFile(
-    new URL("../src/style.css", import.meta.url),
-    "utf8",
-  );
-  const settings = await readFile(
-    new URL("../src/settings.css", import.meta.url),
-    "utf8",
-  );
-  assert.match(shared, /--sidebar-footer-height: 64px/);
-  assert.match(
-    shared,
-    /\.side-foot,\s*\.settings-sidebar-bottom \{[^}]*height: var\(--sidebar-footer-height\)/,
-  );
-  assert.match(
-    shared,
-    /\.icon \{[^}]*width: 32px;[^}]*height: 32px;[^}]*border-radius: 50%/,
-  );
-  assert.match(
-    shared,
-    /\.icon:hover:not\(:disabled\) \{[^}]*background: var\(--control-hover\)/,
-  );
-  assert.match(
-    shared,
-    /\.icon:active:not\(:disabled\) \{[^}]*background: var\(--control-active\)/,
-  );
-  assert.match(settings, /\.settings-sidebar-status \{[^}]*margin-left: auto/);
-  assert.match(
-    settings,
-    /\.settings-sidebar-content \{[^}]*min-height: 0;[^}]*overflow: auto/,
-  );
-  assert.match(
-    settings,
-    /\.desktop-settings-shell button:where\(:not\(\.icon\)\) \{/,
-  );
-  assert.doesNotMatch(settings, /\.settings-sidebar-bottom[^}]*\{[^}]*height:/);
-  assert.doesNotMatch(settings, /\.settings-sidebar \{[^}]*padding/);
-});
-
-test("chat sends and settings controls share the application primary palette", async () => {
-  const shared = await readFile(
-    new URL("../src/style.css", import.meta.url),
-    "utf8",
-  );
-  const settings = await readFile(
-    new URL("../src/settings.css", import.meta.url),
-    "utf8",
-  );
-  assert.match(shared, /--color-primary: #b74e2d/);
-  assert.match(shared, /--color-primary: #ca7657/);
-  assert.match(shared, /\.send \{[^}]*background: var\(--color-primary\)/);
-  assert.match(
-    shared,
-    /\.send:hover:not\(:disabled\) \{\s*background: var\(--color-primary-hover\)/,
-  );
-  assert.match(
-    settings,
-    /\.settings-primary \{[^}]*background: var\(--color-primary\)/,
-  );
-  assert.match(
-    settings,
-    /\.settings-toggle\[aria-checked="true"\] \{\s*background: var\(--color-primary\)/,
-  );
-  assert.match(settings, /accent-color: var\(--color-primary\)/);
-  assert.match(
-    settings,
-    /\.desktop-settings-shell button:where\(:not\(\.icon\)\) \{[^}]*color: var\(--text\)/,
-  );
-  assert.match(
-    settings,
-    /\.settings-primary \{\s*color: var\(--color-on-primary\)/,
-  );
-  assert.doesNotMatch(
-    settings,
-    /\.desktop-settings-shell button:where\(:not\(\.icon\)\) \{[^}]*color: var\(--color-primary\)/,
-  );
-  assert.doesNotMatch(settings, /--settings-accent|#3278cf|#2468bb/);
-});
 
 function mockRuntime(t, value) {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "mygo");
@@ -253,16 +140,4 @@ test("removing members also removes automation controllers and chooses a valid o
   assert.deepEqual(empty.issues.assignee_ids, []);
   assert.equal(empty.issues.user_id, "");
   assert.deepEqual(project.members, ["a", "b"]);
-});
-
-
-test("session permissions live in project member button groups, not People or dropdowns", async () => {
-  const people = await readFile(new URL("../src/settings-pages.tsx", import.meta.url), "utf8");
-  const projects = await readFile(new URL("../src/settings-projects.tsx", import.meta.url), "utf8");
-  assert.doesNotMatch(people, /read_only|Session access|Can control sessions/);
-  assert.match(projects, /className="settings-member-access"[\s\S]*?role="group"[\s\S]*?aria-pressed=/);
-  assert.doesNotMatch(projects, /<select[^>]*[\s\S]*?aria-label=\{t\("(?:Shared session permissions|In-app permissions)"\)\}/);
-  assert.match(projects, /member_access: \{\s*\.\.\.old.member_access/);
-  assert.match(projects, /member_own_access: \{\s*\.\.\.old.member_own_access/);
-  assert.match(projects, /In-app permissions: read-only allows viewing existing chats/);
 });

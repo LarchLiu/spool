@@ -59,8 +59,16 @@ func TestVoxlInstallationAndConfigDoNotStartCapture(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "capture-started")
 	t.Setenv("SPOOL_TEST_VOXL_STARTED", marker)
 	status := decode[localVoxl](t, cliOK(t, root, "voxl", "status"))
-	if status.Installed || status.Enabled || status.Running || status.Directory != filepath.Join(root, "voxl") {
+	if status.Installed || status.Enabled || status.Running {
 		t.Fatal("unexpected uninstalled status", status)
+	}
+	// The data store resolves symlinks, including macOS's /var alias.
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(resolvedRoot, "voxl"); status.Directory != want {
+		t.Fatalf("helper directory: got %q, want %q", status.Directory, want)
 	}
 	before := decode[workspace.Settings](t, cliOK(t, root, "config", "show"))
 	for _, command := range [][]string{

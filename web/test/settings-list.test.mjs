@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { readFile } from "node:fs/promises";
 import { UserAvatar } from "../.test-build/user-avatar.js";
 import { avatarDataURI } from "../.test-build/avatar.js";
 import {
@@ -134,96 +133,4 @@ test("editors provide a non-submit back action", () => {
   );
   assert.match(html, /type="button" class="settings-back"/);
   assert.match(html, /Back to list/);
-});
-
-test("people, projects and agents share the list-to-editor flow", async () => {
-  const pages = await readFile(
-    new URL("../src/settings-pages.tsx", import.meta.url),
-    "utf8",
-  );
-  const projects = await readFile(
-    new URL("../src/settings-projects.tsx", import.meta.url),
-    "utf8",
-  );
-  const people = pages.slice(
-    pages.indexOf("export function PeoplePage"),
-    pages.indexOf("export function AgentsPage"),
-  );
-  const agents = pages.slice(
-    pages.indexOf("export function AgentsPage"),
-    pages.indexOf("function AgentCard"),
-  );
-  for (const source of [people, projects, agents]) {
-    assert.match(source, /<SettingsList/);
-    assert.match(source, /<SettingsBack/);
-    assert.doesNotMatch(source, /settings-entity-list/);
-  }
-  assert.match(people, /if \(!editing\)/);
-  assert.match(projects, /if \(!editing\)/);
-  assert.match(agents, /useState<Backend>\(\)/);
-  assert.match(people, /icon: <UserAvatar person=\{person\} size=\{34\}/);
-  assert.match(
-    agents,
-    /icon: <AgentIcon backend=\{agent.backend\} size=\{20\} decorative/,
-  );
-  const online = pages.slice(
-    pages.indexOf("export function OnlinePage"),
-    pages.indexOf("export function AppearancePage"),
-  );
-  assert.match(online, /icon=\{<UserAvatar person=\{person\} size=\{34\}/);
-});
-
-test("global GitHub CLI settings follow the project list and never appear in a project editor", async () => {
-  const projects = await readFile(
-    new URL("../src/settings-projects.tsx", import.meta.url),
-    "utf8",
-  );
-  const overview = projects.slice(
-    projects.indexOf("if (!editing)"),
-    projects.indexOf("<SettingsBack"),
-  );
-  const editor = projects.slice(projects.indexOf("<SettingsBack"));
-  assert.match(
-    overview,
-    /<SettingsList[\s\S]*className="settings-github-cli"[\s\S]*<Card title="GitHub CLI">/,
-  );
-  assert.match(overview, /help=\{data.github_message\}/);
-  assert.match(projects, /kind: "save-github", path: githubPath/);
-  assert.match(overview, /kind: "check-github"/);
-  assert.doesNotMatch(
-    editor,
-    /settings-github-cli|githubPath|save-github|check-github|data.github_message/,
-  );
-  assert.match(editor, /className="icon"[\s\S]*?<X size=\{16\}/);
-});
-
-test("GitHub CLI path settings start collapsed behind the status row's rightmost action", async () => {
-  const projects = await readFile(
-    new URL("../src/settings-projects.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    projects,
-    /\[githubPathOpen, setGitHubPathOpen\] = useState\(false\)/,
-  );
-  const github = projects.slice(
-    projects.indexOf('className="settings-github-cli"'),
-    projects.indexOf("<SettingsBack"),
-  );
-  const status = github.slice(0, github.indexOf("</Row>"));
-  assert.match(status, /help=\{data.github_message\}/);
-  assert.match(
-    status,
-    /kind: "check-github"[\s\S]*aria-expanded=\{githubPathOpen\}[\s\S]*aria-controls="github-cli-path-settings"/,
-  );
-  assert.match(
-    status,
-    /onClick=\{\(\) => setGitHubPathOpen\(\(open\) => !open\)\}/,
-  );
-  assert.match(status, /\{t\("Path settings"\)\}\s*<\/button>\s*$/);
-  assert.match(
-    github,
-    /<div id="github-cli-path-settings" hidden=\{!githubPathOpen\}>[\s\S]*<PathField/,
-  );
-  assert.match(github, /\{githubPathOpen && \(\s*<Hint>/);
 });

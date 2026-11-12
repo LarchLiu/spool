@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FileTree } from "@pierre/trees";
@@ -174,93 +173,7 @@ test("sidebar widths clamp invalid persisted values and retain independent colla
   assert.equal(panelWidth("right", 450), 450);
 });
 
-test("sidebar separators keep fixed geometry while pressed and all resize handles use neutral feedback", async () => {
-  const css = await readFile(
-    new URL("../src/style.css", import.meta.url),
-    "utf8",
-  );
-  assert.match(css, /\.panel-resize-handle \{[^}]*width: 8px/);
-  assert.doesNotMatch(css, /\.panel-resize-handle\.resizing \{/);
-  for (const selector of [
-    "panel-resize-handle",
-    "file-preview-resize-handle",
-  ]) {
-    assert.match(
-      css,
-      new RegExp(
-        `\\.${selector}\\.resizing::after \\{[^}]*background: var\\(--muted\\)`,
-      ),
-    );
-    assert.doesNotMatch(
-      css,
-      new RegExp(
-        `\\.${selector}[^}]*\\{[^}]*background: var\\(--(?:focus-ring|color-primary)\\)`,
-      ),
-    );
-  }
-  const handle = await readFile(
-    new URL("../src/panel-resize-handle.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    handle,
-    /event\.clientX !== start\.current\.x \|\| start\.current\.moved/,
-  );
-  assert.match(
-    handle,
-    /onLostPointerCapture=\{\(event\) =>\s*event\.currentTarget\.classList\.remove\("resizing"\)/,
-  );
-});
-
-test("header sidebar open buttons are hidden while their sidebar is open", async () => {
-  const main = await readFile(
-    new URL("../src/main.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    main,
-    /!\(narrowLayout \? sidebar : panels\.leftOpen\) && \(\s*<button\s+className="icon panel-toggle-left"/,
-  );
-  assert.match(
-    main,
-    /!\(narrowLayout \? fileSidebarMobile : panels\.rightOpen\) && \(\s*<button/,
-  );
-  assert.doesNotMatch(main, /PanelLeftClose|Collapse sidebar/);
-});
-
-test("mobile navigation uses menu and close icons without changing desktop panel icons", async () => {
-  const main = await readFile(
-    new URL("../src/main.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    main,
-    /narrowLayout \?\s*\(?\s*<Menu size=\{18\} \/>\s*\)?\s*:\s*\(?\s*<PanelLeftOpen size=\{18\} \/>/,
-  );
-  const sidebar = await readFile(
-    new URL("../src/sidebar.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    sidebar,
-    /props\.open \? <X size=\{18\} \/> : <PanelLeftClose size=\{18\} \/>/,
-  );
-  for (const attribute of ["aria-label", "title"]) {
-    assert.ok(
-      sidebar.includes(
-        `${attribute}={t(props.open ? "Close sidebar" : "Collapse sidebar")}`,
-      ),
-    );
-  }
-});
-
-test("the file sidebar title contains the project name and refresh before close", async () => {
-  const source = await readFile(
-    new URL("../src/file-sidebar.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(source, /<FileSidebarHeader\s+name=\{project\.name\}/);
-  assert.doesNotMatch(source, /file-project-bar/);
+test("the file sidebar title contains the project name and refresh before close", () => {
   const html = renderToStaticMarkup(
     createElement(FileSidebarHeader, {
       name: "Project name",
@@ -277,7 +190,7 @@ test("the file sidebar title contains the project name and refresh before close"
   assert.doesNotMatch(html, /<form|<input/);
 });
 
-test("file search switches the project title to a live search input without a submit button", async () => {
+test("file search switches the project title to a live search input without a submit button", () => {
   const props = {
     name: "Project name",
     t: (key) => key,
@@ -317,13 +230,6 @@ test("file search switches the project title to a live search input without a su
   );
   assert.match(empty, /<strong>Files<\/strong>/);
   assert.doesNotMatch(empty, /Search files|Refresh files/);
-  const source = await readFile(
-    new URL("../src/file-sidebar.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(source, /search: false/);
-  assert.match(source, /useFileTreeSearch\(model\)/);
-  assert.match(source, /onChange: search\.setValue/);
 });
 
 test("the external search keeps tree filtering, selection and cancel behavior without the built-in input", () => {
@@ -375,22 +281,6 @@ test("file preview split restores and clamps its saved ratio", () => {
   assert.ok(compact.min <= compact.max);
   assert.ok(previewTreeFraction(0.1, 180) >= compact.min);
   assert.ok(previewTreeFraction(0.9, 180) <= compact.max);
-});
-
-test("file loading retains the displayed file and its own line target without a loading flash", async () => {
-  const source = await readFile(
-    new URL("../src/file-sidebar.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.doesNotMatch(source, /loadingFile|setLoadingFile|Loading file…/);
-  assert.match(source, /setLoaded\(\{ file: next, selection \}\)/);
-  assert.match(source, /key=\{loaded\.selection\.request\}/);
-  assert.match(source, /target=\{loaded\.selection\.target\}/);
-  const pending = source.slice(
-    source.indexOf("if (!active || !selection) return;"),
-    source.indexOf(".then(async (next)"),
-  );
-  assert.doesNotMatch(pending, /setLoaded\(null\)/);
 });
 
 test("file preview exposes a keyboard-focusable horizontal separator only when open", () => {

@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -235,49 +234,6 @@ test("approval and denial actions retain an escaped request summary with their a
   }
 });
 
-test("single chat avatars and agent icons share a 16px slot while stacks stay compact", async () => {
-  const css = await readFile(
-    new URL("../src/style.css", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    css,
-    /^\.avatar-stack-item \+ \.avatar-stack-item \{\s*margin-left: -9px;/m,
-  );
-  assert.match(
-    css,
-    /\.nav-chat-agent \{[^}]*place-items: center;[^}]*width: 16px;\s*height: 16px;/,
-  );
-  assert.match(
-    css,
-    /\.nav-chat \.avatar-stack-item \{\s*width: 16px;\s*height: 16px;\s*border-width: 1px;/,
-  );
-  assert.match(
-    css,
-    /\.nav-chat \.avatar-stack \.user-avatar \{\s*width: 14px;\s*height: 14px;/,
-  );
-  assert.match(
-    css,
-    /\.nav-chat \.avatar-stack-item:only-child \{\s*border: 0;/,
-  );
-  assert.match(
-    css,
-    /\.nav-chat \.avatar-stack-item:only-child \.user-avatar \{\s*width: 16px;\s*height: 16px;/,
-  );
-  assert.match(
-    css,
-    /\.nav-chat \.avatar-stack-more \{\s*width: auto;\s*min-width: 20px;/,
-  );
-  assert.match(
-    css,
-    /\.nav-chat \.avatar-stack-item \+ \.avatar-stack-item \{\s*margin-left: -10px;/,
-  );
-  assert.match(
-    css,
-    /\.nav-chat \.avatar-stack-item \+ \.avatar-stack-more \{\s*margin-left: -3px;/,
-  );
-});
-
 test("SSE metadata, native IDs and backward pagination retain actor identities", () => {
   const withMetadata = reconcileMetadata(chat, {
     id: chat.id,
@@ -303,45 +259,4 @@ test("SSE metadata, native IDs and backward pagination retain actor identities",
     history.turns.map((item) => item.user_id),
     [alice.id, bob.id],
   );
-});
-
-test("both sidebar lists replace the leading agent icon only when operators exist", async () => {
-  const sidebar = await readFile(
-    new URL("../src/sidebar.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    sidebar,
-    /!!chat\.participants\?\.length && (?:\(\s*)?<ChatOperatorAvatars\s+chat=\{chat\}\s+resolve=\{props.resolveProfile\}\s*\/>/,
-  );
-  assert.match(
-    sidebar,
-    /!chat\.participants\?\.length && \(\s*<span className="nav-chat-agent">\s*<AgentIcon/,
-  );
-  assert.match(
-    sidebar,
-    /<ChatOperatorAvatars\s+chat=\{chat\}\s+resolve=\{props.resolveProfile\}\s*\/>\s*(?:\))?\}\s*<button\s+type="button"\s+className="nav-chat-open"/,
-  );
-  assert.equal((sidebar.match(/<ChatOperatorAvatars /g) || []).length, 1);
-  assert.match(sidebar, /chatButton\(chat, true\)/);
-  assert.match(sidebar, /chatButton\(chat, false\)/);
-});
-
-test("message avatars sit to the right", async () => {
-  const main = await readFile(
-    new URL("../src/main.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    main,
-    /<\/div>\s*<TurnOperatorAvatar person=\{operator\} \/>\s*<\/div>\s*\) : null;/,
-  );
-  assert.match(main, /renderUser=\{renderInput\}/);
-  assert.match(main, /actions=\{\s*<TurnActions[\s\S]*?\/>\s*\}/);
-  assert.equal((main.match(/<TurnActions/g) || []).length, 1);
-  const css = await readFile(
-    new URL("../src/style.css", import.meta.url),
-    "utf8",
-  );
-  assert.match(css, /\.user-row\s*\{[^}]*display: flex;[^}]*gap: 10px;/);
 });

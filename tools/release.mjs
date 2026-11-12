@@ -17,7 +17,8 @@ Examples:
   bun tools/release.mjs patch --dry-run
 
 Defaults to patch when the version argument is omitted or empty.
-Synchronizes version files, commits them, and creates an annotated local tag.
+Runs make test, then synchronizes version files, commits them, and creates an annotated local tag.
+Dry runs skip tests and preview the release without changing files, commits or tags.
 Checks origin tags unless --offline is set. Never pushes or publishes.
 `;
 
@@ -119,6 +120,12 @@ export async function prepareLocalRelease(input, {
   // Fail before writing anything if Git cannot identify the release author.
   git(["var", "GIT_AUTHOR_IDENT"]);
   git(["var", "GIT_COMMITTER_IDENT"]);
+  console.log("Running pre-release checks: make test");
+  try {
+    execFileSync("make", ["test"], { cwd: root, env, stdio: "inherit" });
+  } catch (error) {
+    throw new Error("Pre-release tests failed (make test); release preparation stopped.", { cause: error });
+  }
   if (git(["rev-parse", "HEAD"]) !== head || git(["branch", "--show-current"]) !== branch ||
       git(["status", "--porcelain=v1", "--untracked-files=all"])) {
     throw new Error("The checkout changed during release preparation; nothing was written, please retry");

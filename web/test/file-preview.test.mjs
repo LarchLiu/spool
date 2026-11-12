@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { readFile } from "node:fs/promises";
 import {
   filePreviewKind,
   HtmlFilePreview,
@@ -127,23 +126,4 @@ test("empty HTML previews still have a sandbox, document and accessible title", 
   assert.match(html, /title="Empty preview"/);
   assert.match(html, /srcDoc="&lt;!doctype html&gt;/);
   assert.match(html, /sandbox=""/);
-});
-
-test("the viewer shares Source/Preview controls without losing source line navigation", async () => {
-  const source = await readFile(
-    new URL("../src/file-sidebar.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(source, /const previewKind = filePreviewKind\(file\)/);
-  assert.match(
-    source,
-    /\[renderPreview, setRenderPreview\] = useState\(false\)/,
-  );
-  assert.match(source, /aria-pressed=\{!renderPreview\}/);
-  assert.match(source, /aria-pressed=\{renderPreview\}/);
-  assert.match(source, /onClick=\{\(\) => setRenderPreview\(true\)\}/);
-  assert.match(source, /onClick=\{\(\) => setRenderPreview\(false\)\}/);
-  assert.match(source, /previewKind === "html" \? \(\s*<HtmlFilePreview/);
-  assert.match(source, /previewKind === "markdown" \? \(\s*<MarkdownMessage/);
-  assert.match(source, /<FileSource[\s\S]*?line=\{target\.line\}/);
 });

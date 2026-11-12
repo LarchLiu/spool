@@ -128,38 +128,3 @@ test("only Mac desktop renders a logo-only window brand with a native drag strip
   assert.match(html, /<img src="\/logo.png" alt="" draggable="false"/);
   assert.doesNotMatch(html, /Spool|button|input/);
 });
-
-test("Mac chrome shares native control insets and does not intercept header buttons", async () => {
-  const css = await readFile(
-    new URL("../src/style.css", import.meta.url),
-    "utf8",
-  );
-  const chrome = await readFile(
-    new URL("../../cmd/desktop/window_chrome.go", import.meta.url),
-    "utf8",
-  );
-  const sidebar = await readFile(
-    new URL("../src/sidebar.tsx", import.meta.url),
-    "utf8",
-  );
-  const settings = await readFile(
-    new URL("../src/settings.css", import.meta.url),
-    "utf8",
-  );
-  assert.match(chrome, /window\.mygo\.on\("spool:titlebar"/);
-  assert.match(chrome, /setProperty\("--desktop-controls-left"/);
-  assert.match(
-    css,
-    /left: calc\(var\(--desktop-controls-left, 80px\) \+ 12px\)/,
-  );
-  assert.match(css, /\.desktop-window-brand \{[^}]*--app-region: drag/);
-  assert.match(
-    css,
-    /:is\([^}]*button,[^}]*\[role="separator"\][^}]*\{\s*--app-region: no-drag/,
-  );
-  assert.match(sidebar, /!isMacDesktop\(\) && \([\s\S]*?Spool/);
-  assert.match(
-    settings,
-    /:root\[data-desktop-platform="darwin"\] \.settings-sidebar-content \{\s*padding-top: 82px/,
-  );
-});

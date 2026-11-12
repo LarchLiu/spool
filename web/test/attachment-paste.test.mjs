@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import {
   pasteAttachments,
   prepareAttachments,
@@ -121,25 +120,4 @@ test("pasted files use existing draft previews, text excerpts and attachment lim
     validateAttachments([{ size: 4 * 1024 * 1024 + 1 }]),
     "Each attachment must be nonempty and at most 4 MB",
   );
-});
-
-test("the message input routes paste through the same guarded addFiles flow as the picker", async () => {
-  const source = await readFile(
-    new URL("../src/main.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    source,
-    /onPaste=\{\(event\) => pasteAttachments\(event, addFiles\)\}/,
-  );
-  assert.match(
-    source,
-    /if \(!selected.length \|\| preparingFiles \|\| posting \|\| !composerWritable\)/,
-  );
-  assert.match(
-    source,
-    /validateAttachments\(\[\.\.\.filesRef.current, \.\.\.selected\]\)/,
-  );
-  assert.match(source, /setFiles\(\(old\) => \[\.\.\.old, \.\.\.prepared\]\)/);
-  assert.match(source, /releaseAttachments\(prepared\)/);
 });

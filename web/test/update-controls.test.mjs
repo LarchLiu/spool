@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { UpdateCheckInterval, UpdateIndicator } from "../.test-build/components/web/src/update-controls.js";
 import { AppearanceDialog } from "../.test-build/components/web/src/appearance-dialog.js";
-import { settingsSections } from "../.test-build/settings-client.js";
 
 const t = (key, values = {}) => key.replace(/\{([^}]+)\}/g, (_, name) => String(values[name] ?? `{${name}}`));
 const intervals = [30, 60, 360, 720, 1440];
@@ -31,51 +29,12 @@ test("automatic checks can be disabled without losing the chosen interval", () =
   assert.match(html, /aria-pressed="true"[^>]*>24 hours<\/button>/);
 });
 
-test("one saved switch controls automatic installation and restart, including the installed message", async () => {
-  const pages = await readFile(new URL("../src/settings-pages.tsx", import.meta.url), "utf8");
-  const label = "Automatically install updates and restart when no chats are running";
-  assert.match(pages, /<Row\s+title=\{t\(\s*"Automatically install updates and restart when no chats are running",?\s*\)\}\s*>\s*<Toggle\s+label=\{t\(\s*"Automatically install updates and restart when no chats are running",?\s*\)\}\s+value=\{data\.update_preferences\.automatic_installs\}\s+onChange=\{\(automatic_installs\) => save\(\{ automatic_installs \}\)\}/);
-  assert.match(pages, /data\.update_preferences\.automatic_installs\s*\? "Update installed\. The app will restart automatically when no chats are running\."\s*: "Update installed\. Restart when all chats have finished, or use it on the next launch\."/);
-  assert.doesNotMatch(pages, /automatic_restarts|Automatic updates never restart/);
-  for (const locale of ["en", "zh-CN", "ja"]) {
-    const catalog = JSON.parse(await readFile(new URL(`../../locales/${locale}.json`, import.meta.url), "utf8"));
-    assert.ok(catalog[label]);
-    assert.ok(catalog["Update installed. The app will restart automatically when no chats are running."]);
-    assert.ok(catalog["Automatic updates install and restart the app when no chats are running. Busy updates are retried after chats finish."]);
-  }
-});
-
-test("project permissions and update intervals share segmented buttons with theme-colored selection", async () => {
-  const css = await readFile(new URL("../src/settings.css", import.meta.url), "utf8");
-  assert.match(css, /\.settings-check-interval,\s*\.settings-member-access \{[^}]*display: inline-flex;[^}]*background: var\(--soft\)/);
-  assert.match(css, /\.settings-check-interval button,\s*\.settings-member-access button \{[^}]*background: transparent;[^}]*color: var\(--muted\)/);
-  assert.match(css, /\.settings-check-interval button\[aria-pressed="true"\],\s*\.settings-member-access button\[aria-pressed="true"\] \{[^}]*background: var\(--elevated\);[^}]*color: var\(--color-primary\)/);
-});
-
-test("update indicators use a shared primary-color dot and expose a localized meaning", async () => {
+test("update indicators expose a localized meaning", () => {
   const html = renderToStaticMarkup(createElement(UpdateIndicator, { t: (key) => `translated:${key}` }));
   assert.match(html, /role="img" aria-label="translated:Update available"/);
-  const css = await readFile(new URL("../src/style.css", import.meta.url), "utf8");
-  assert.match(css, /\.update-indicator \{[^}]*background: var\(--color-primary\)/);
-  assert.match(css, /\.desktop-settings > \.update-indicator \{[^}]*position: absolute;[^}]*top: 3px;[^}]*right: 3px/);
 });
 
-test("About replaces Updates, marks pending updates and ends with a safe repository icon link", async () => {
-  assert.equal(settingsSections.at(-1), "About");
-  assert.equal(settingsSections.includes("Updates"), false);
-  const app = await readFile(new URL("../src/settings-app.tsx", import.meta.url), "utf8");
-  assert.match(app, /key === "About" &&\s*data\?\.updates\.Enabled &&\s*data\.updates\.Version &&\s*<UpdateIndicator/);
-  assert.match(app, /About: AboutPage/);
-  assert.match(app, /data-page=\{key\} hidden=\{section !== key\}/);
-  const pages = await readFile(new URL("../src/settings-pages.tsx", import.meta.url), "utf8");
-  assert.match(pages, /export function AboutPage/);
-  assert.match(pages, /<Row title=\{t\("Check interval"\)\}>\s*<UpdateCheckInterval/);
-  assert.doesNotMatch(pages, /<Row title=\{t\("Check interval"\)\} wide>/);
-  assert.match(pages, /\.\.\.\(latest \?\? data\)\.update_preferences/);
-  assert.match(pages, /<Row title=\{t\("GitHub repository"\)\} help="LarchLiu\/spool">[\s\S]*?href="https:\/\/github.com\/LarchLiu\/spool"[\s\S]*?target="_blank"\s*rel="noopener noreferrer"[\s\S]*?<Github[^>]+\/>[\s\S]*?<\/Card>\s*<\/>\s*\);\s*\}/);
-});
-
-test("browser settings show the running version rather than the SQLite hint, even while saving", async () => {
+test("browser settings show the running version rather than the SQLite hint, even while saving", () => {
   for (const saving of [true, false]) {
     const html = renderToStaticMarkup(createElement(AppearanceDialog, {
       preferences: { theme: "system", language: "en" },
@@ -84,7 +43,4 @@ test("browser settings show the running version rather than the SQLite hint, eve
     assert.match(html, /<p>Current version: 9\.8\.7<\/p>/);
     assert.doesNotMatch(html, /SQLite|Changes apply immediately/);
   }
-  const main = await readFile(new URL("../src/main.tsx", import.meta.url), "utf8");
-  assert.match(main, /api<\{ version: string \}>\("\/version"\)/);
-  assert.match(main, /<AppearanceDialog[\s\S]*?version=\{version\}/);
 });

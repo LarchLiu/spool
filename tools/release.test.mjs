@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,10 +15,11 @@ const lockText = `{
 }
 `;
 
-async function fixture(t, { remote = true } = {}) {
+async function fixture(t, { remote = true, testRecipe = 'cat mygo.json >> "$$RELEASE_CHECK_LOG"' } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "spool-release-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const root = join(directory, "repo");
+  const checkLog = join(directory, "checks.log");
   await mkdir(join(root, "web"), { recursive: true });
   await mkdir(join(root, "relay"), { recursive: true });
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")));
@@ -28,6 +30,7 @@ async function fixture(t, { remote = true } = {}) {
     GIT_AUTHOR_EMAIL: "release@example.test",
     GIT_COMMITTER_NAME: "Spool Release Test",
     GIT_COMMITTER_EMAIL: "release@example.test",
+    RELEASE_CHECK_LOG: checkLog,
   });
   const git = (...args) => execFileSync("git", args, { cwd: root, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   git("init", "--initial-branch=main");
@@ -39,7 +42,8 @@ async function fixture(t, { remote = true } = {}) {
   await writeFile(join(root, "web/package.json"), `${JSON.stringify({ name: "spool-web", version: "0.1.0", dependencies: { example: "0.1.0" } }, null, 2)}\n`);
   await writeFile(join(root, "relay/version.json"), '{"version":"0.1.0"}\n');
   await writeFile(join(root, "web/bun.lock"), lockText);
-  git("add", "--", ...versionFiles, "web/bun.lock");
+  await writeFile(join(root, "Makefile"), `.PHONY: test\ntest:\n\t@${testRecipe}\n`);
+  git("add", "--", ...versionFiles, "web/bun.lock", "Makefile");
   git("commit", "-m", "Initial version");
   if (remote) {
     const origin = join(directory, "origin.git");
@@ -48,7 +52,7 @@ async function fixture(t, { remote = true } = {}) {
     git("push", "origin", "HEAD");
   }
   const readVersions = async () => Promise.all(versionFiles.map((name) => readFile(join(root, name), "utf8")));
-  return { root, directory, env, git, hooks, readVersions };
+  return { root, directory, env, git, hooks, readVersions, checkLog };
 }
 
 test("CLI accepts explicit versions and bump types, with opt-in preview and offline mode", () => {
@@ -114,6 +118,7 @@ test("release updates only version metadata, commits it and creates an annotated
   const repo = await fixture(t);
   const remoteBefore = repo.git("ls-remote", "origin");
   const result = await prepareLocalRelease("0.2.0", repo);
+  assert.equal(JSON.parse(await readFile(repo.checkLog, "utf8")).version, "0.1.0", "tests must run once before the version changes");
   const [mygoText, packageText, relayText] = await repo.readVersions();
   const mygo = JSON.parse(mygoText);
   const pkg = JSON.parse(packageText);
@@ -130,6 +135,20 @@ test("release updates only version metadata, commits it and creates an annotated
   assert.equal(repo.git("cat-file", "-t", "v0.2.0"), "tag");
   assert.equal(repo.git("rev-parse", "v0.2.0^{commit}"), result.commit);
   assert.equal(repo.git("status", "--porcelain"), "");
+  assert.equal(repo.git("ls-remote", "origin"), remoteBefore);
+});
+
+test("failed pre-release tests leave versions, commits, tags and origin untouched", async (t) => {
+  const repo = await fixture(t, { testRecipe: 'cat mygo.json >> "$$RELEASE_CHECK_LOG"; exit 1' });
+  const before = await repo.readVersions();
+  const head = repo.git("rev-parse", "HEAD");
+  const remoteBefore = repo.git("ls-remote", "origin");
+  await assert.rejects(prepareLocalRelease("patch", repo), /Pre-release tests failed/);
+  assert.equal(JSON.parse(await readFile(repo.checkLog, "utf8")).version, "0.1.0");
+  assert.deepEqual(await repo.readVersions(), before);
+  assert.equal(repo.git("rev-parse", "HEAD"), head);
+  assert.equal(repo.git("status", "--porcelain"), "");
+  assert.equal(repo.git("tag", "--list"), "");
   assert.equal(repo.git("ls-remote", "origin"), remoteBefore);
 });
 
@@ -187,6 +206,7 @@ test("dry-run previews dirty worktrees without changing any files, commits or ta
   assert.equal(result.version, "0.2.0");
   assert.equal(result.dirty, true);
   assert.equal(result.commit, undefined);
+  assert.equal(existsSync(repo.checkLog), false, "dry runs must not execute tests");
   assert.deepEqual(await repo.readVersions(), files);
   assert.equal(repo.git("rev-parse", "HEAD"), head);
   assert.equal(repo.git("tag", "--list"), "");

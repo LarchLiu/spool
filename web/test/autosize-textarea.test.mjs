@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { resizeTextarea } from "../.test-build/autosize-textarea.js";
 
@@ -107,19 +106,4 @@ test("compact floating windows can cap draft height without losing scrollable te
   assert.equal(f.textarea.style.overflowY, "auto");
   resizeTextarea(f.textarea, 1);
   assert.equal(f.textarea.style.height, "48px");
-});
-
-test("following history observes viewport changes as well as message growth", async () => {
-  const main = await readFile(
-    new URL("../src/main.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(
-    main,
-    /if \(follow\.current\)\s*scroller\.scrollTop = scroller\.scrollHeight/,
-  );
-  assert.match(
-    main,
-    /resize\.observe\(element\);\s*resize\.observe\(scroller\)/,
-  );
 });

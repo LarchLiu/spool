@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFile } from "node:fs/promises";
 import {
   createSettingsCommandQueue,
   NetworkSettingsAutosave,
@@ -453,72 +452,4 @@ test("cancellation preserves edits made while the request is pending", async () 
   assert.equal(autosave.draft.port, "9100");
   await autosave.commit("port");
   assert.equal(autosave.draft.port, "9100");
-});
-
-test("service UI commits on blur/Enter, removes save controls and restarts only on click", async () => {
-  const pages = await readFile(
-    new URL("../src/settings-pages.tsx", import.meta.url),
-    "utf8",
-  );
-  const service = pages.slice(
-    pages.indexOf("export function ServicePage"),
-    pages.indexOf("export function PeoplePage"),
-  );
-  assert.doesNotMatch(service, /<form|<Save|Save settings|submit\(/);
-  assert.equal((service.match(/onCommit=/g) ?? []).length, 7);
-  assert.match(
-    service,
-    /autosave\.edit\("auto_start", v\);\s*void autosave\.commit\("auto_start"\)/,
-  );
-  const fields = await readFile(
-    new URL("../src/settings-ui.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(fields, /onBlur=.*[\s\S]*reportValidity\(\)[\s\S]*onCommit\(\)/);
-  assert.match(fields, /e\.key === "Enter" && !e\.nativeEvent\.isComposing/);
-  const app = await readFile(
-    new URL("../src/settings-app.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(app, /createSettingsCommandQueue/);
-  assert.match(app, /setBusy\(command\.kind !== "save-settings"\)/);
-  assert.match(app, /<SettingsChanges/);
-  const changes = await readFile(
-    new URL("../src/settings-changes.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(changes, /data.status.PendingChanges/);
-  assert.match(changes, /kind: "apply-service-changes", target/);
-  assert.match(changes, /kind: "cancel-service-changes", target/);
-  assert.doesNotMatch(changes, /kind: "restart-service"/);
-});
-
-test("native smoke requires real page focus and blur before accepting autosave", async () => {
-  const source = await readFile(
-    new URL("../../cmd/desktop/smoke.go", import.meta.url),
-    "utf8",
-  );
-  const probe = source.slice(
-    source.indexOf("func (p *panel) probeSettings("),
-    source.indexOf("func (p *panel) probeAboutSettings("),
-  );
-  assert.match(probe, /p\.showMainWindow\(\)\s+view\.Focus\(\)/);
-  const focus = probe.indexOf("return document.hasFocus();");
-  assert.ok(
-    focus >= 0 &&
-      focus <
-        probe.indexOf("smokeSetInput(input, String(window.smokeWebPort))"),
-  );
-  assert.match(probe, /input\.addEventListener\('blur'/);
-  assert.match(probe, /blur: window\.smokeServiceBlurred === true/);
-  assert.match(
-    probe,
-    /saved: snapshot\.settings\.port === window\.smokeWebPort/,
-  );
-  assert.doesNotMatch(
-    probe,
-    /dispatchEvent\(new (?:FocusEvent|Event)\('(?:blur|focusout)'/,
-  );
-  assert.match(probe, /nativeSection: snapshot\.section === %q/);
-  assert.match(probe, /compact settings %s: %w/);
 });

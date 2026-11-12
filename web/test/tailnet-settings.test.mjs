@@ -172,17 +172,6 @@ test("waiting for login always exposes a sign-in action even before an auth URL 
   }
 });
 
-test("login requests bypass the global settings queue and only report local errors", async () => {
-  const pages = await readFile(
-    new URL("../src/settings-pages.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(pages, /await settingsCall<boolean>\("TSNetLogin"\)/);
-  assert.doesNotMatch(pages, /run\(\{ kind: "tsnet-login"/);
-  assert.match(pages, /setLoginError\(\s*error instanceof Error/);
-  assert.match(pages, /disabled=\{requestingLogin\}/);
-});
-
 function renderNetwork(settings = {}) {
   return renderToStaticMarkup(
     createElement(NetworkPage, {
@@ -202,7 +191,7 @@ function renderNetwork(settings = {}) {
   );
 }
 
-test("system proxy is an application Network setting, not a Tailscale option", async () => {
+test("system proxy is an application Network setting, not a Tailscale option", () => {
   const html = renderNetwork();
   assert.match(html, /aria-label="Enable proxy" aria-checked="true"/);
   assert.match(html, /aria-label="Use system proxy" aria-checked="true"/);
@@ -219,18 +208,6 @@ test("system proxy is an application Network setting, not a Tailscale option", a
   assert.match(html, /Leave blank to inherit NO_PROXY/);
   assert.doesNotMatch(html, /Restart service/);
   assert.doesNotMatch(renderService(), /Use system proxy/);
-  const app = await readFile(
-    new URL("../src/settings-app.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(app, /Network: NetworkPage/);
-  assert.match(app, /data-page=\{key\} hidden=\{section !== key\}/);
-  const client = await readFile(
-    new URL("../src/settings-client.ts", import.meta.url),
-    "utf8",
-  );
-  assert.match(client, /"Online",\s*"Appearance",\s*"Network"/);
-  assert.doesNotMatch(client, /tsnet_use_system_proxy/);
 });
 
 test("proxy controls follow master, system, custom order and retain inactive values", () => {

@@ -103,14 +103,6 @@ test("avatar cache keys use resolved style and seed and respect configuration ch
   assert.equal(avatarDataURI(person), automatic);
 });
 
-test("avatars are generated locally by the original JS package without image API requests", () => {
-  const source = readFileSync(new URL("../src/avatar.ts", import.meta.url), "utf8");
-  assert.match(source, /@dicebear\/core/);
-  assert.match(source, /new Avatar/);
-  assert.doesNotMatch(source, /\/api\/avatars|fetch\(/);
-  assert.match(imageSVG(user), /^<svg /);
-});
-
 test("local JS images remain byte-identical to all 24 Go and Android golden vectors", () => {
   const cases = JSON.parse(readFileSync(new URL("../../internal/avatar/testdata/web-fixtures.json", import.meta.url), "utf8"));
   assert.equal(cases.length, 24);
@@ -244,25 +236,13 @@ test("local styles retain their matching attribution in the picker", () => {
   assert.equal(avatarAttribution("toon-head").license.name, "CC BY 4.0");
 });
 
-test("avatar image uses a local data URI and the picker exposes accessible selection controls", () => {
+test("avatar images use a local data URI and decorative alt text", () => {
   const html = renderToStaticMarkup(
     createElement(UserAvatar, { person: user }),
   );
   assert.match(html, /src="data:image\/svg\+xml;charset=utf-8,/);
   assert.match(html, /alt=""/);
   assert.doesNotMatch(html, /src="https?:/);
-  const dialog = readFileSync(
-    new URL("../src/avatar-dialog.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(dialog, /aria-labelledby="avatar-title"/);
-  assert.match(dialog, /aria-label=\{t\("Close avatar picker"\)\}/);
-  assert.match(dialog, /aria-label=\{t\("Avatar \{number\}"/);
-  assert.match(dialog, /aria-pressed=\{draft.seed === seed\}/);
-  assert.match(dialog, /Use my name/);
-  assert.match(dialog, /disabled=\{saving \|\| !changed\}/);
-  assert.match(dialog, /Generated on your device/);
-  assert.doesNotMatch(dialog, /Generated on your Spool server/);
 });
 
 test("online avatar stack shows up to three people and summarizes the rest", () => {
