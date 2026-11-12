@@ -10,6 +10,9 @@
     <string name="desktop_video_error">この端末ではデスクトップ映像をデコードできません。切断して再試行してください。</string>
     <string name="desktop_read_only">表示のみ</string>
     <string name="desktop_keyboard">キーボード</string>
+    <string name="desktop_copy">デスクトップからコピー</string>
+    <string name="desktop_paste">デスクトップに貼り付け</string>
+    <string name="desktop_clipboard_error">クリップボードを同期できません。256 KiB 以下のテキストまたは 15 MiB 以下の画像を使用してください。</string>
     <string name="desktop_pan">移動と拡大</string>
     <string name="desktop_fit">画面に合わせる</string>
     <string name="desktop_zoom_in">拡大</string>

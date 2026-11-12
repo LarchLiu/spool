@@ -2025,6 +2025,7 @@ public final class MainActivity extends Activity {
                 });
                 return new NativeDesktopConnection.Wire() {
                     public void send(String command) throws Exception { stream.send(command); }
+                    public void image(byte[] png) throws Exception { stream.sendClipboardImage(png); }
                     public void close() { stream.close(); }
                 };
             }

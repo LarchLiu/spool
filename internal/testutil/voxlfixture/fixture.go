@@ -27,7 +27,7 @@ func Run() bool {
 	if os.Getenv(helperEnv) != "1" {
 		return false
 	}
-	port, shared, transfers := "", "", ""
+	port, shared, transfers, clipboard := "", "", "", ""
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" {
 			version := os.Getenv("SPOOL_TEST_VOXL_VERSION")
@@ -45,6 +45,9 @@ func Run() bool {
 		}
 		if strings.HasPrefix(arg, "--file-transfers=") {
 			transfers = strings.TrimPrefix(arg, "--file-transfers=")
+		}
+		if strings.HasPrefix(arg, "--enable-clipboard=") {
+			clipboard = strings.TrimPrefix(arg, "--enable-clipboard=")
 		}
 	}
 	if marker := os.Getenv("SPOOL_TEST_VOXL_STARTED"); marker != "" {
@@ -85,7 +88,7 @@ func Run() bool {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"clients": []string{}, "files_root": shared, "transfers": transfers})
+			_ = json.NewEncoder(w).Encode(map[string]any{"clients": []string{}, "files_root": shared, "transfers": transfers, "clipboard": clipboard})
 			return
 		}
 		if r.URL.Path == "/files/upload" {

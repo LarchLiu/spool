@@ -36,7 +36,8 @@ final class NativeDesktopDialog extends Dialog {
     final NativeDesktopView desktop;
     private final LinearLayout shell, heading, dock, toolbarControls;
     private final TextView status;
-    private final NativeUi.IconButton keyboard, pan, minus, fit, plus, shortcut, alt, shift, fullscreenButton, toolbarToggle;
+    private final NativeUi.IconButton keyboard, copy, paste, pan, minus, fit, plus, shortcut, alt, shift, fullscreenButton, toolbarToggle;
+    final NativeDesktopClipboard clipboard;
     private final java.util.List<NativeUi.IconButton> keys = new java.util.ArrayList<>();
     final NativeDesktopConnection connection;
     private volatile boolean closed, ended, acceptingVideo;
@@ -98,6 +99,8 @@ final class NativeDesktopDialog extends Dialog {
         tools.setHorizontalScrollBarEnabled(false);
         LinearLayout buttons = ui.row();
         keyboard = button(buttons, "keyboard", label(R.string.desktop_keyboard), desktop::keyboard);
+        copy = button(buttons, "copy", label(R.string.desktop_copy), desktop::copy);
+        paste = button(buttons, "clipboard_paste", label(R.string.desktop_paste), this::clipboardPaste);
         pan = button(buttons, "pan", label(R.string.desktop_pan), () -> desktop.panMode(!desktop.panMode()));
         minus = button(buttons, "minus", label(R.string.desktop_zoom_out), () -> desktop.zoom(1 / 1.25));
         fit = button(buttons, "fit", label(R.string.desktop_fit), desktop::fit);
@@ -132,12 +135,23 @@ final class NativeDesktopDialog extends Dialog {
         connection = new NativeDesktopConnection(transport, io, main, new NativeDesktopConnection.Events() {
             public void message(byte[] data, boolean binary) {
                 if (closed || ended) return;
-                if (binary) { if (acceptingVideo) desktop.binary(data); return; }
+                if (binary) {
+                    if (data.length > 0 && data[0] == 4 && data.length <= NativeDesktopClipboard.MAX_IMAGE + 1)
+                        main.post(() -> { if (!closed && !ended) clipboard.remoteImage(data); });
+                    else if (acceptingVideo) desktop.binary(data);
+                    return;
+                }
                 try {
-                    if (data.length > 65536) throw new IllegalArgumentException("Desktop message too large");
+                    // Keep the wire limit independent of Android's smaller
+                    // clipboard limit so an oversized clip reports a clipboard error.
+                    if (data.length > 6 * (1 << 20) + 128) throw new IllegalArgumentException("Desktop message too large");
                     JSONObject message = new JSONObject(new String(data, StandardCharsets.UTF_8));
                     switch (message.optString("t")) {
                         case "ping": send("po," + message.getLong("s")); break;
+                        case "clip":
+                            String text = message.getString("d");
+                            main.post(() -> { if (!closed && !ended) clipboard.remoteText(text); });
+                            break;
                         case "hello":
                             acceptingVideo = false;
                             NativeDesktopProtocol.Layout layout = new NativeDesktopProtocol.Layout(message);
@@ -156,9 +170,14 @@ final class NativeDesktopDialog extends Dialog {
             }
             public void failed(String reason) { NativeDesktopDialog.this.failed(reason); }
         });
+        clipboard = new NativeDesktopClipboard(ui.context, io, desktop::controllable, desktop::pasteText,
+                (png, modifiers) -> { if (desktop.controllable() && connection.image(png)) desktop.pasteShortcut(modifiers); },
+                () -> android.widget.Toast.makeText(ui.context, label(R.string.desktop_clipboard_error), android.widget.Toast.LENGTH_SHORT).show(),
+                label(R.string.desktop_title));
+        desktop.clipboard(clipboard);
         setOnDismissListener(dialog -> {
             closed = true; acceptingVideo = false;
-            desktop.close(); connection.close(); main.removeCallbacksAndMessages(null); dismissed.run();
+            clipboard.close(); desktop.close(); connection.close(); main.removeCallbacksAndMessages(null); dismissed.run();
         });
         updateControls();
     }
@@ -233,6 +252,7 @@ final class NativeDesktopDialog extends Dialog {
         boolean control = desktop.controllable();
         pan.setEnabled(desktop.ready());
         keyboard.setEnabled(control);
+        copy.setEnabled(control); paste.setEnabled(control);
         for (NativeUi.IconButton key : keys) key.setEnabled(control);
         shortcut.setEnabled(control); alt.setEnabled(control); shift.setEnabled(control);
         shortcut.setSelected(desktop.held(desktop.shortcut()));
@@ -294,7 +314,7 @@ final class NativeDesktopDialog extends Dialog {
     }
     private void failed(String reason) {
         if (closed || ended) return;
-        acceptingVideo = false; desktop.close(); connection.close();
+        acceptingVideo = false; clipboard.close(); desktop.close(); connection.close();
         main.removeCallbacks(firstFrameTimeout);
         ended = true;
         status.setVisibility(View.VISIBLE); status.setTextColor(ui.error);
@@ -311,5 +331,10 @@ final class NativeDesktopDialog extends Dialog {
         }
         applyFullscreen();
         desktop.requestFocus(); connection.start();
+    }
+    private void clipboardPaste() { clipboard.paste(); }
+    @Override public void onWindowFocusChanged(boolean focus) {
+        super.onWindowFocusChanged(focus);
+        if (clipboard != null) clipboard.focus(focus);
     }
 }

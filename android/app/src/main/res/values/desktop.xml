@@ -10,6 +10,9 @@
     <string name="desktop_video_error">This device could not decode the desktop video. Disconnect and try again.</string>
     <string name="desktop_read_only">Read-only desktop</string>
     <string name="desktop_keyboard">Keyboard</string>
+    <string name="desktop_copy">Copy from desktop</string>
+    <string name="desktop_paste">Paste to desktop</string>
+    <string name="desktop_clipboard_error">Could not sync clipboard. Use text up to 256 KiB or an image up to 15 MiB.</string>
     <string name="desktop_pan">Pan and zoom</string>
     <string name="desktop_fit">Fit desktop to window</string>
     <string name="desktop_zoom_in">Zoom in</string>

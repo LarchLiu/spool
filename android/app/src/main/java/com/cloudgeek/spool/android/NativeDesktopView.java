@@ -43,6 +43,7 @@ final class NativeDesktopView extends FrameLayout implements AutoCloseable {
     private int hotX, hotY, pointerX, pointerY;
     private boolean pointerVisible, active, panMode;
     private volatile boolean closed;
+    private NativeDesktopClipboard clipboard;
     private int gesture;
     private float startX, startY, lastX, lastY, midX, midY, distance;
 
@@ -179,6 +180,58 @@ final class NativeDesktopView extends FrameLayout implements AutoCloseable {
     }
     boolean held(int keysym) { return sticky.contains(keysym); }
     int shortcut() { return layout != null && layout.mac ? 0xffeb : 0xffe3; }
+    void clipboard(NativeDesktopClipboard value) { clipboard = value; }
+    void copy() {
+        if (!controllable()) return;
+        if (clipboard != null) clipboard.copy();
+        shortcut('c');
+    }
+    void pasteText(String text, int modifiers) {
+        if (!controllable()) return;
+        send.accept("c," + text); pasteShortcut(modifiers);
+    }
+    void pasteShortcut(int modifiers) {
+        if (!controllable()) return;
+        java.util.Set<Integer> held = heldModifiers(), wanted = new java.util.LinkedHashSet<>();
+        addModifier(wanted, held, shortcut());
+        if ((modifiers & KeyEvent.META_SHIFT_MASK) != 0) addModifier(wanted, held, 0xffe1);
+        if ((modifiers & KeyEvent.META_ALT_MASK) != 0) addModifier(wanted, held, 0xffe9);
+        if ((modifiers & KeyEvent.META_META_MASK) != 0) addModifier(wanted, held, layout.mac ? 0xffe3 : 0xffeb);
+        // Image decoding may finish after physical modifiers have been released.
+        // Synthesize the original shortcut, then restore the currently held keys.
+        for (int key : held) if (!wanted.contains(key)) send.accept("k," + key + ",0");
+        for (int key : wanted) if (!held.contains(key)) send.accept("k," + key + ",1");
+        tap('v');
+        for (int key : wanted) if (!held.contains(key)) send.accept("k," + key + ",0");
+        for (int key : held) if (!wanted.contains(key)) send.accept("k," + key + ",1");
+    }
+    private java.util.Set<Integer> heldModifiers() {
+        java.util.Set<Integer> result = new java.util.TreeSet<>(sticky);
+        result.addAll(keys.values());
+        result.removeIf(key -> key != 0xffe1 && key != 0xffe2 && key != 0xffe3 && key != 0xffe4
+                && key != 0xffe9 && key != 0xffea && key != 0xffeb && key != 0xffec);
+        return result;
+    }
+    private static void addModifier(java.util.Set<Integer> wanted, java.util.Set<Integer> held, int left) {
+        if (held.contains(left)) wanted.add(left);
+        if (held.contains(left + 1)) wanted.add(left + 1);
+        if (!held.contains(left) && !held.contains(left + 1)) wanted.add(left);
+    }
+    private int pasteModifiers(KeyEvent event) {
+        int modifiers = event.getMetaState();
+        java.util.Set<Integer> held = heldModifiers();
+        if (held.contains(0xffe1) || held.contains(0xffe2)) modifiers |= KeyEvent.META_SHIFT_ON;
+        if (held.contains(0xffe9) || held.contains(0xffea)) modifiers |= KeyEvent.META_ALT_ON;
+        int meta = layout.mac ? 0xffe3 : 0xffeb;
+        if (held.contains(meta) || held.contains(meta + 1)) modifiers |= KeyEvent.META_META_ON;
+        return modifiers;
+    }
+    private void shortcut(int key) {
+        if (!controllable()) return;
+        releaseAll();
+        int modifier = shortcut();
+        send.accept("k," + modifier + ",1"); tap(key); send.accept("k," + modifier + ",0");
+    }
     void releaseAll() {
         if (main == null) return;
         main.removeCallbacks(longPress);
@@ -270,6 +323,7 @@ final class NativeDesktopView extends FrameLayout implements AutoCloseable {
         out.inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
         out.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI | EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING;
         out.initialSelStart = out.initialSelEnd = 0;
+        out.contentMimeTypes = new String[]{"image/*"};
         return new BaseInputConnection(this, false) {
             private String composing = "";
             @Override public boolean setComposingText(CharSequence text, int cursor) { composing = text.toString(); return true; }
@@ -287,6 +341,15 @@ final class NativeDesktopView extends FrameLayout implements AutoCloseable {
             @Override public CharSequence getTextAfterCursor(int count, int flags) { return ""; }
             @Override public CharSequence getSelectedText(int flags) { return ""; }
             @Override public boolean performEditorAction(int action) { tap(0xff0d); return true; }
+            @Override public boolean performContextMenuAction(int action) {
+                if (action == android.R.id.paste || action == android.R.id.pasteAsPlainText) return clipboard != null && clipboard.paste();
+                if (action == android.R.id.copy) { copy(); return true; }
+                if (action == android.R.id.cut) { shortcut('x'); return true; }
+                return false;
+            }
+            @Override public boolean commitContent(android.view.inputmethod.InputContentInfo info, int flags, android.os.Bundle opts) {
+                return clipboard != null && clipboard.content(info, flags);
+            }
         };
     }
     private void type(String text) {
@@ -304,6 +367,11 @@ final class NativeDesktopView extends FrameLayout implements AutoCloseable {
     }
     @Override public boolean onKeyDown(int code, KeyEvent event) {
         if (!controllable() || code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) return super.onKeyDown(code, event);
+        if (clipboard != null && (code == KeyEvent.KEYCODE_PASTE || code == KeyEvent.KEYCODE_V
+                && (event.isCtrlPressed() || held(shortcut())) && !event.isAltPressed())) {
+            if (event.getRepeatCount() == 0) clipboard.paste(pasteModifiers(event));
+            keys.put(code, 0); return true;
+        }
         int symbol = key(code, event);
         if (symbol == 0) return super.onKeyDown(code, event);
         keys.put(code, symbol); send.accept("k," + symbol + ",1"); return true;
@@ -311,6 +379,7 @@ final class NativeDesktopView extends FrameLayout implements AutoCloseable {
     @Override public boolean onKeyUp(int code, KeyEvent event) {
         Integer symbol = keys.remove(code);
         if (symbol == null || !controllable()) return super.onKeyUp(code, event);
+        if (symbol == 0) return true;
         send.accept("k," + symbol + ",0"); return true;
     }
     private int key(int code, KeyEvent event) {

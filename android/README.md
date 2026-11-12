@@ -2234,7 +2234,20 @@ temporarily reveals the system bars. The toolbar stays above the Android keyboar
 display cutouts. Closing the viewer, backgrounding, signing out or revocation closes
 the view and its media resources. Reconnection requires another explicit action.
 
-Desktop audio, microphone, clipboard synchronization and voxl's shared-folder
+The toolbar's **Copy from desktop** sends the host's copy shortcut and republishes
+the current session's last known remote clipboard, so copying the same content
+again also works after a local copy. Remote clipboard changes sync text and images
+to Android while the viewer has focus.
+**Paste to desktop**, external **Ctrl+V**, and Android IME paste send local text
+or images before the host's paste shortcut. Image keyboards can also insert
+images through Android's content API. External paste preserves modifiers, including
+**Ctrl+Shift+V**. Text is limited to 256 KiB of UTF-8 to fit Android's clipboard IPC and
+images to 15 MiB and 16 megapixels. Images use a private content URI backed by
+one cache file so they remain available for local paste after disconnecting.
+Only explicit paste actions read Android's clipboard; read-only views suppress
+paste and remote keyboard input.
+
+Desktop audio, microphone and voxl's shared-folder
 panel are not implemented in this native viewer. Project-file browsing remains
 available through the existing workspace UI. Unsupported video dimensions or
 decoder failures end the view with an error rather than accumulating frames.

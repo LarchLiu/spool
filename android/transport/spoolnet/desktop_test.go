@@ -144,14 +144,94 @@ func TestDesktopRefusesForeignTokensAndReportsForbiddenWithoutRetry(t *testing.T
 }
 
 func TestDesktopCommandBounds(t *testing.T) {
-	for _, command := range []string{"a,4294967295", "po,12345", "m,1920,1080", "b,3,0", "k,16832768,1", "r", "v,0", "au,0", "kf", "sp,-4.5,60.0"} {
+	for _, command := range []string{"a,4294967295", "po,12345", "m,1920,1080", "b,3,0", "k,16832768,1", "r", "v,0", "au,0", "kf", "sp,-4.5,60.0", "c,", "c,中文\ntext,😀\r\n", "c," + strings.Repeat("x", maxDesktopClipboardText)} {
 		if !validDesktopCommand(command) {
 			t.Errorf("refused valid command %q", command)
 		}
 	}
-	for _, command := range []string{"", "a,-1", "a,4294967296", "m,1,2,3", "m,NaN,0", "b,4,1", "k,10,2", "v,yes", "sp,NaN,0", "sp,Inf,0", "sp,1e12,0", "r\nk,1,1", "sz,1280,720", `{"type":"hello"}`, "c,private"} {
+	for _, command := range []string{"", "a,-1", "a,4294967296", "m,1,2,3", "m,NaN,0", "b,4,1", "k,10,2", "v,yes", "sp,NaN,0", "sp,Inf,0", "sp,1e12,0", "r\nk,1,1", "sz,1280,720", `{"type":"hello"}`, "c,\x00", "c,\xff", "c," + strings.Repeat("x", maxDesktopClipboardText+1)} {
 		if validDesktopCommand(command) {
 			t.Errorf("accepted invalid command %q", command)
 		}
+	}
+}
+
+func TestDesktopClipboardSharesOrderedBoundedWriterWithPasteKeys(t *testing.T) {
+	png := []byte("\x89PNG\r\n\x1a\nfixture")
+	got := make(chan desktopMessage, 8)
+	client := nativeFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: []string{"example.com"}})
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.CloseNow()
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		for i := 0; i < 6; i++ {
+			kind, data, err := conn.Read(ctx)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			got <- desktopMessage{data, kind == websocket.MessageBinary}
+		}
+	})
+	probe := newDesktopProbe()
+	stream, err := client.OpenDesktop(strings.Repeat("x", 43), probe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stream.Close)
+	receiveDesktop(t, probe.opened)
+	for _, initial := range []string{"v,0", "au,0"} {
+		if message := receiveDesktop(t, got); message.binary || string(message.data) != initial {
+			t.Fatal(message)
+		}
+	}
+	text := "c,中文\ntext,😀"
+	if err := stream.Send(text); err != nil {
+		t.Fatal(err)
+	}
+	if err := stream.SendClipboardImage(png); err != nil {
+		t.Fatal(err)
+	}
+	png[8] = 'X' // Callers may reuse their buffer immediately.
+	for _, key := range []string{"k,118,1", "k,118,0"} {
+		if err := stream.Send(key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, expected := range []desktopMessage{{[]byte(text), false}, {[]byte("\x11\x89PNG\r\n\x1a\nfixture"), true}, {[]byte("k,118,1"), false}, {[]byte("k,118,0"), false}} {
+		actual := receiveDesktop(t, got)
+		if actual.binary != expected.binary || !bytes.Equal(actual.data, expected.data) {
+			t.Fatal("clipboard/input order or bytes changed", actual)
+		}
+	}
+}
+
+func TestDesktopClipboardQueueBoundsAndClose(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	s := &DesktopStream{stream: &EventStream{ctx: ctx, cancel: cancel}, commands: make(chan desktopOutgoing, 256)}
+	for _, png := range [][]byte{nil, []byte("not png"), make([]byte, maxDesktopClipboardImage+1)} {
+		if s.SendClipboardImage(png) == nil {
+			t.Fatal("invalid clipboard image accepted")
+		}
+	}
+	large := make([]byte, maxDesktopClipboardImage)
+	copy(large, "\x89PNG\r\n\x1a\n")
+	if err := s.SendClipboardImage(large); err != nil {
+		t.Fatal(err)
+	}
+	if s.SendClipboardImage(large) == nil {
+		t.Fatal("clipboard queue exceeded byte budget")
+	}
+	s.Close()
+	if len(s.commands) != 0 || s.queuedBytes != 0 {
+		t.Fatal("closed stream retained clipboard data")
+	}
+	if s.Send("c,late") == nil || s.SendClipboardImage(large) == nil {
+		t.Fatal("closed stream accepted clipboard data")
 	}
 }

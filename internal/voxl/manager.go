@@ -231,7 +231,7 @@ func (m *Manager) startLocked(request, parent context.Context) error {
 	defer stopRequestCancel()
 	cmd, cleanup, err := m.desktopCommand(ctx, "--addr=127.0.0.1", fmt.Sprintf("--port=%d", port),
 		"--file-transfers=upload,download", "--files-root="+shared, "--upload-dir=",
-		"--enable-clipboard=false", "--microphone-enabled=false", "--audio-enabled=false", "--enable-resize=false",
+		"--enable-clipboard=true", "--microphone-enabled=false", "--audio-enabled=false", "--enable-resize=false",
 		// Spool validates the real browser origin before rewriting it to the
 		// loopback origin. No wildcard host/origin exceptions are needed here.
 		"--enable-basic-auth=true", "--title=Spool")

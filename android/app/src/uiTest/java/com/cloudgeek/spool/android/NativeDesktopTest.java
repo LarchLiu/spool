@@ -227,6 +227,54 @@ public class NativeDesktopTest {
             assertEquals(1, dismissed[0]); assertFalse(dialog.isShowing()); assertTrue(f.requests.isEmpty()); assertEquals(0, f.opened);
         }
     }
+    @Test public void dialogRoutesClipboardMessagesAndToolbarPasteThroughTheLiveView() throws Exception {
+        try (var controller = Robolectric.buildActivity(Activity.class).setup()) {
+            Fixture f = new Fixture();
+            NativeDesktopDialog dialog = new NativeDesktopDialog(new NativeUi(controller.get(), false, "zh-CN"), f, f.io, () -> {});
+            try {
+                dialog.show(); f.io.next(); idle();
+                View root = dialog.getWindow().getDecorView();
+                View copy = labelled(root, "从远程桌面复制"), paste = labelled(root, "粘贴到远程桌面");
+                assertNotNull(copy); assertNotNull(paste); assertFalse(paste.isEnabled());
+                ready(dialog.desktop, false); dialog.desktop.panMode(false); dialog.clipboard.focus(true);
+                assertTrue(copy.isEnabled()); assertTrue(paste.isEnabled());
+                String remote = "中文\n" + "remote".repeat(15000); // Larger than the old video-only JSON limit.
+                f.listener.message(new JSONObject().put("t", "clip").put("d", remote).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8), false);
+                idle();
+                var system = (android.content.ClipboardManager) controller.get().getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                assertEquals(remote, system.getPrimaryClip().getItemAt(0).getText());
+                system.setPrimaryClip(android.content.ClipData.newPlainText("local", "local\n😀"));
+                assertTrue(paste.performClick());
+                assertTrue(f.commands.indexOf("c,local\n😀") < f.commands.indexOf("k,118,1"));
+                ready(dialog.desktop, true); dialog.desktop.panMode(false);
+                assertFalse(copy.isEnabled()); assertFalse(paste.isEnabled());
+                int count = f.commands.size(); paste.performClick(); assertEquals(count, f.commands.size());
+            } finally { dialog.dismiss(); idle(); f.io.drain(); }
+        }
+    }
+    @Test public void oversizedClipboardReportsErrorWithoutEndingTheDesktopConnection() throws Exception {
+        try (var controller = Robolectric.buildActivity(Activity.class).setup()) {
+            Fixture f = new Fixture();
+            NativeDesktopDialog dialog = new NativeDesktopDialog(new NativeUi(controller.get(), false, "zh-CN"), f, f.io, () -> {});
+            try {
+                dialog.show(); f.io.next(); idle();
+                ready(dialog.desktop, false); dialog.clipboard.focus(true);
+                var system = (android.content.ClipboardManager) controller.get().getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                system.setPrimaryClip(android.content.ClipData.newPlainText("local", "sentinel"));
+                // JSON escaping makes this larger than six times the new local
+                // limit; it must still reach the clipboard size validation.
+                String oversized = "\u0001".repeat(300 * 1024);
+                byte[] packet = new JSONObject().put("t", "clip").put("d", oversized).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                assertTrue(packet.length > 6 * NativeDesktopClipboard.MAX_TEXT + 128);
+                f.listener.message(packet, false); idle();
+                assertTrue(dialog.desktop.controllable()); assertEquals(0, f.closed);
+                assertEquals("sentinel", system.getPrimaryClip().getItemAt(0).getText());
+                assertEquals(dialog.label(R.string.desktop_clipboard_error), org.robolectric.shadows.ShadowToast.getTextOfLatestToast());
+                f.listener.message(new JSONObject().put("t", "clip").put("d", "valid next copy").toString().getBytes(java.nio.charset.StandardCharsets.UTF_8), false);
+                idle(); assertEquals("valid next copy", system.getPrimaryClip().getItemAt(0).getText());
+            } finally { dialog.dismiss(); idle(); f.io.drain(); }
+        }
+    }
     private static View labelled(View view, String label) {
         if (label.equals(view.getContentDescription())) return view;
         if (view instanceof android.view.ViewGroup group) {

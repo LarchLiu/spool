@@ -267,6 +267,14 @@ Windows 和 Linux 继续直接运行 voxl，并使用相同的按需启停规则
 文件面板使用 `<data-dir>/voxl/shared/`，上传和下载仍受 Spool 登录、远程桌面授权、
 Origin 和 CSRF 检查保护。更多平台依赖可参考 [voxl upstream instructions](https://github.com/tembo/voxl#usage)。
 
+voxl 剪贴板支持文字和图片双向同步。先点击远程桌面，再使用
+**Ctrl/Command + C / V** 复制粘贴；浏览器询问剪贴板权限时请选择允许。
+远程复制的内容可能要等查看器重新获得焦点或再次交互后才写入本地剪贴板，
+图片支持取决于浏览器的剪贴板 API。
+Android 原生查看器同样支持文字和图片，可使用工具栏的**从远程桌面复制**、
+**粘贴到远程桌面**，以及外接键盘 **Ctrl+V** 和输入法粘贴。
+请同时更新 Spool 服务端和 Android 应用。
+
 ## voxl 版权与许可证
 
 Spool 集成的 [voxl](https://github.com/tembo/voxl) 源代码采用

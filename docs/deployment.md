@@ -322,6 +322,14 @@ helper listens only on loopback. Its file panel uses `<data-dir>/voxl/shared/`;
 uploads and downloads remain protected by Spool login, remote desktop grants,
 Origin, and CSRF checks. See the [voxl upstream instructions](https://github.com/tembo/voxl#usage) for platform dependencies.
 
+Text and images sync in both directions through voxl's clipboard. Click inside
+the remote desktop before using **Ctrl/Command + C / V**. Allow clipboard access
+if the browser asks. Remote copies may wait until the viewer regains focus or
+you interact with it; image support depends on the browser's clipboard APIs.
+The native Android viewer also supports text and image clipboard sync through
+its **Copy from desktop** and **Paste to desktop** buttons, external **Ctrl+V**,
+and Android IME paste. Update both Spool Server and the Android app.
+
 Enable the viewer toolbar's **pan button** to zoom and pan locally. With it
 selected, use **− / +** or **Ctrl/Command + wheel** to zoom from **100% to 500%**
 relative to the desktop fitted to the window. Drag with the left or middle mouse

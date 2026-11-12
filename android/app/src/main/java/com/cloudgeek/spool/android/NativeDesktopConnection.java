@@ -8,6 +8,7 @@ import org.json.JSONObject;
 final class NativeDesktopConnection implements AutoCloseable {
     interface Wire {
         void send(String command) throws Exception;
+        default void image(byte[] png) throws Exception { throw new UnsupportedOperationException("Clipboard images unavailable"); }
         void close();
     }
     interface Listener {
@@ -73,6 +74,11 @@ final class NativeDesktopConnection implements AutoCloseable {
         }
         try { wire.send(command); }
         catch (Exception error) { fail("Desktop connection ended"); }
+    }
+    synchronized boolean image(byte[] png) {
+        if (closed || wire == null) return false;
+        try { wire.image(png); return true; }
+        catch (Exception error) { fail("Desktop connection ended"); return false; }
     }
     private void fail(String reason) {
         main.post(() -> {

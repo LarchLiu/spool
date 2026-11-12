@@ -106,7 +106,7 @@ export function RemoteDesktopDialog({
           title={t("Remote desktop")}
           src={appURL(`/api/desktop/view/?token=${encodeURIComponent(token)}`)}
           referrerPolicy="no-referrer"
-          allow="fullscreen"
+          allow="fullscreen; clipboard-read; clipboard-write"
           allowFullScreen
           onLoad={(event) => {
             disposeViewer.current?.();

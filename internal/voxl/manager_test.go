@@ -65,11 +65,15 @@ func TestManagerOwnsAuthenticatedLoopbackHelperAndReapsIt(t *testing.T) {
 	var config struct {
 		FilesRoot string `json:"files_root"`
 		Transfers string `json:"transfers"`
+		Clipboard string `json:"clipboard"`
 	}
 	err = json.NewDecoder(response.Body).Decode(&config)
 	response.Body.Close()
 	if err != nil || config.FilesRoot != filepath.Join(root, "shared") || config.Transfers != "upload,download" {
 		t.Fatal("file transfers must use this Spool instance's shared folder", config, err)
+	}
+	if config.Clipboard != "true" {
+		t.Fatal("remote desktop must enable two-way clipboard sync", config)
 	}
 	if err := m.Install(context.Background()); err == nil {
 		t.Fatal("installation allowed over a running helper")

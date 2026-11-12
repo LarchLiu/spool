@@ -1,6 +1,7 @@
 package spoolnet
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"math"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coder/websocket"
 )
@@ -24,9 +26,20 @@ type DesktopListener interface {
 }
 
 type DesktopStream struct {
-	stream   *EventStream
-	commands chan string
+	stream      *EventStream
+	commands    chan desktopOutgoing
+	queueMu     sync.Mutex
+	queuedBytes int
 }
+
+type desktopOutgoing struct {
+	kind websocket.MessageType
+	data []byte
+}
+
+const maxDesktopClipboardText = 1 << 20
+const maxDesktopClipboardImage = 15 << 20 // voxl's native clipboard limit
+const maxDesktopQueueBytes = 16 << 20
 
 var desktopTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{32,128}$`)
 
@@ -37,7 +50,7 @@ func (c *Client) OpenDesktop(token string, listener DesktopListener) (*DesktopSt
 		return nil, errors.New("invalid desktop subscription")
 	}
 	ctx, cancel := context.WithCancel(c.ctx)
-	s := &DesktopStream{stream: &EventStream{ctx: ctx, cancel: cancel}, commands: make(chan string, 256)}
+	s := &DesktopStream{stream: &EventStream{ctx: ctx, cancel: cancel}, commands: make(chan desktopOutgoing, 256)}
 	go func() {
 		defer s.Close()
 		headers := http.Header{"Origin": {c.origin.String()}}
@@ -84,8 +97,11 @@ func (c *Client) OpenDesktop(token string, listener DesktopListener) (*DesktopSt
 				case <-ctx.Done():
 					return
 				case message := <-s.commands:
+					s.queueMu.Lock()
+					s.queuedBytes -= len(message.data)
+					s.queueMu.Unlock()
 					writeCtx, done := context.WithTimeout(ctx, 5*time.Second)
-					err := conn.Write(writeCtx, websocket.MessageText, []byte(message))
+					err := conn.Write(writeCtx, message.kind, message.data)
 					done()
 					if err != nil {
 						failed()
@@ -118,22 +134,59 @@ func (s *DesktopStream) Send(command string) error {
 	if !validDesktopCommand(command) {
 		return errors.New("invalid desktop command")
 	}
+	return s.enqueue(desktopOutgoing{websocket.MessageText, []byte(command)})
+}
+
+// SendClipboardImage queues PNG data before any following paste keys, on the
+// same writer as text input. The caller retains ownership of its byte slice.
+func (s *DesktopStream) SendClipboardImage(png []byte) error {
+	if len(png) > maxDesktopClipboardImage || !bytes.HasPrefix(png, []byte("\x89PNG\r\n\x1a\n")) {
+		return errors.New("invalid desktop clipboard image")
+	}
+	data := make([]byte, len(png)+1)
+	data[0] = 0x11
+	copy(data[1:], png)
+	return s.enqueue(desktopOutgoing{websocket.MessageBinary, data})
+}
+
+func (s *DesktopStream) enqueue(message desktopOutgoing) error {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
 	if s.stream.ctx.Err() != nil {
 		return errors.New("desktop is closed")
+	}
+	if len(message.data) > maxDesktopQueueBytes-s.queuedBytes {
+		return errors.New("desktop input queue is full")
 	}
 	select {
 	case <-s.stream.ctx.Done():
 		return errors.New("desktop is closed")
-	case s.commands <- command:
+	case s.commands <- message:
+		s.queuedBytes += len(message.data)
 		return nil
 	default:
 		return errors.New("desktop input queue is full")
 	}
 }
 
-func (s *DesktopStream) Close() { s.stream.Close() }
+func (s *DesktopStream) Close() {
+	s.stream.Close()
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	for {
+		select {
+		case message := <-s.commands:
+			s.queuedBytes -= len(message.data)
+		default:
+			return
+		}
+	}
+}
 
 func validDesktopCommand(command string) bool {
+	if strings.HasPrefix(command, "c,") {
+		return len(command)-2 <= maxDesktopClipboardText && utf8.ValidString(command) && !strings.ContainsRune(command, '\x00')
+	}
 	if len(command) > 128 || strings.ContainsAny(command, "\r\n\x00") {
 		return false
 	}
