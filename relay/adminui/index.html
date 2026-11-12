@@ -220,7 +220,7 @@
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
-                  d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.55-2.6L20 7M4 17l2.35 2.6A7 7 0 0 0 17.9 17"
+                  d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 9M21 3v6h-6"
                 />
               </svg>
             </button>
@@ -340,7 +340,11 @@
             </section>
             <section class="settings-group" aria-labelledby="create-title">
               <h2 id="create-title">生成 token</h2>
-              <div class="generation-modes" role="group" aria-label="生成方式">
+              <div
+                class="generation-modes segmented-control"
+                role="group"
+                aria-label="生成方式"
+              >
                 <button
                   type="button"
                   data-token-mode="single"
@@ -423,52 +427,56 @@
             </section>
             <section class="settings-group" aria-labelledby="servers-title">
               <h2 id="servers-title">Token 管理</h2>
+              <div
+                class="token-tabs segmented-control"
+                role="tablist"
+                aria-label="Token 状态"
+              >
+                <button
+                  id="token-tab-registered"
+                  type="button"
+                  role="tab"
+                  data-token-filter="registered"
+                  aria-controls="token-panel"
+                  aria-selected="true"
+                >
+                  <span>已注册</span><span class="tab-count">0</span>
+                </button>
+                <button
+                  id="token-tab-revoked"
+                  type="button"
+                  role="tab"
+                  data-token-filter="revoked"
+                  aria-controls="token-panel"
+                  aria-selected="false"
+                  tabindex="-1"
+                >
+                  <span>已撤销</span><span class="tab-count">0</span>
+                </button>
+                <button
+                  id="token-tab-unused"
+                  type="button"
+                  role="tab"
+                  data-token-filter="unused"
+                  aria-controls="token-panel"
+                  aria-selected="false"
+                  tabindex="-1"
+                >
+                  <span>未注册</span><span class="tab-count">0</span>
+                </button>
+                <button
+                  id="token-tab-all"
+                  type="button"
+                  role="tab"
+                  data-token-filter="all"
+                  aria-controls="token-panel"
+                  aria-selected="false"
+                  tabindex="-1"
+                >
+                  <span>全部</span><span class="tab-count">0</span>
+                </button>
+              </div>
               <div class="settings-card">
-                <div class="token-tabs" role="tablist" aria-label="Token 状态">
-                  <button
-                    id="token-tab-registered"
-                    type="button"
-                    role="tab"
-                    data-token-filter="registered"
-                    aria-controls="token-panel"
-                    aria-selected="true"
-                  >
-                    <span>已注册</span><span class="tab-count">0</span>
-                  </button>
-                  <button
-                    id="token-tab-revoked"
-                    type="button"
-                    role="tab"
-                    data-token-filter="revoked"
-                    aria-controls="token-panel"
-                    aria-selected="false"
-                    tabindex="-1"
-                  >
-                    <span>已撤销</span><span class="tab-count">0</span>
-                  </button>
-                  <button
-                    id="token-tab-unused"
-                    type="button"
-                    role="tab"
-                    data-token-filter="unused"
-                    aria-controls="token-panel"
-                    aria-selected="false"
-                    tabindex="-1"
-                  >
-                    <span>未注册</span><span class="tab-count">0</span>
-                  </button>
-                  <button
-                    id="token-tab-all"
-                    type="button"
-                    role="tab"
-                    data-token-filter="all"
-                    aria-controls="token-panel"
-                    aria-selected="false"
-                    tabindex="-1"
-                  >
-                    <span>全部</span><span class="tab-count">0</span>
-                  </button>
-                </div>
                 <div
                   id="token-panel"
                   role="tabpanel"
@@ -479,10 +487,10 @@
                     <table>
                       <thead>
                         <tr>
-                          <th scope="col">名称 / 绑定服务器</th>
-                          <th scope="col">Token 状态</th>
+                          <th scope="col">Token 名称</th>
+                          <th scope="col" class="device-status">设备状态</th>
                           <th scope="col">注册 IP</th>
-                          <th scope="col">连接</th>
+                          <th scope="col">Web 状态</th>
                           <th scope="col">操作</th>
                         </tr>
                       </thead>
@@ -493,6 +501,27 @@
                     暂无已注册的 token。服务器使用 token
                     完成首次注册后会显示在这里。
                   </p>
+                  <nav
+                    id="token-pagination"
+                    class="token-pagination"
+                    aria-label="Token 列表分页"
+                    hidden
+                  >
+                    <span id="token-page-summary"></span>
+                    <div class="pagination-controls">
+                      <button id="token-previous-page" type="button" disabled>
+                        上一页
+                      </button>
+                      <span
+                        id="token-page-status"
+                        aria-live="polite"
+                        aria-atomic="true"
+                      ></span>
+                      <button id="token-next-page" type="button" disabled>
+                        下一页
+                      </button>
+                    </div>
+                  </nav>
                 </div>
               </div>
               <p class="settings-hint">

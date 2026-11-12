@@ -40,13 +40,16 @@ func TestAdminBrowserFixture(t *testing.T) {
 		s.AdminHandler().ServeHTTP(w, r)
 	}))
 	t.Cleanup(admin.Close)
-	// Exercise online server metadata against an actual native connection.
+	// Exercise online server metadata and Web links against a real host.
 	_, token := createViaAPI(t, s, "home-mac")
 	id, err := NewIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}
-	startAdminTestHost(t, public, token, id, make(chan struct{}))
+	startWebTestHost(t, public, token, id, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		io.WriteString(w, "<!doctype html><title>Spool browser fixture</title>Workspace ready")
+	}))
 	// Registered tokens remain registered while offline. Self-unregistration
 	// permanently retires a token and must never make it look unused again.
 	for _, name := range []string{"offline-server", "retired-server"} {

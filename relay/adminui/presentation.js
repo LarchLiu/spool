@@ -228,11 +228,20 @@ const messages = [
     "選択されたトークンをショートカットキーでコピーしてください。",
   ],
   ["Token 管理", "Token management", "トークン管理"],
-  ["名称 / 绑定服务器", "Name / linked server", "名前 / 登録サーバー"],
-  ["Token 状态", "Token status", "トークンの状態"],
+  ["Token 名称", "Token name", "トークン名"],
+  ["设备状态", "Device status", "デバイスの状態"],
   ["注册 IP", "Registration IP", "登録元 IP"],
-  ["连接", "Connections", "接続"],
-  ["操作", "Actions", "操作"],
+  ["Web 状态", "Web status", "Web の状態"],
+  ["操作", "Action", "操作"],
+  ["Token 列表分页", "Token list pagination", "トークン一覧のページ切り替え"],
+  ["上一页", "Previous", "前へ"],
+  ["下一页", "Next", "次へ"],
+  [
+    "第 {start}–{end} 条，共 {total} 条",
+    "Showing {start}–{end} of {total}",
+    "{total} 件中 {start}～{end} 件",
+  ],
+  ["第 {page} / {pages} 页", "Page {page} of {pages}", "{page} / {pages} ページ"],
   [
     "暂无已注册的 token。服务器使用 token 完成首次注册后会显示在这里。",
     "No registered tokens. Tokens appear here after a server completes its first registration.",
@@ -433,6 +442,8 @@ const dynamic = new Set([
   "issued-results",
   "servers",
   "empty-state",
+  "token-page-summary",
+  "token-page-status",
   "revoke-description",
 ]);
 const staticText = [];

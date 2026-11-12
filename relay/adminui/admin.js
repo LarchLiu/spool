@@ -14,6 +14,8 @@ import { locale, t } from "./presentation.js";
   let creating = false;
   let registrations = [];
   let tokenFilter = "registered";
+  let tokenPage = 1;
+  const tokenPageSize = 20;
   let notice;
   const tokenTabs = [...document.querySelectorAll("[data-token-filter]")];
   const emptyStates = {
@@ -109,6 +111,7 @@ import { locale, t } from "./presentation.js";
     batchResult = false;
     renderIssuedTokens();
     tokenFilter = "registered";
+    tokenPage = 1;
     renderServers([]);
     $("server-name").value = "";
     $("dashboard").hidden = true;
@@ -217,8 +220,17 @@ import { locale, t } from "./presentation.js";
   }
   function selectTokenFilter(filter) {
     tokenFilter = filter;
+    tokenPage = 1;
     renderServers(registrations);
   }
+  function changeTokenPage(offset) {
+    tokenPage += offset;
+    renderServers(registrations);
+    $("token-panel").focus({ preventScroll: true });
+    $("token-panel").scrollIntoView({ block: "start" });
+  }
+  $("token-previous-page").addEventListener("click", () => changeTokenPage(-1));
+  $("token-next-page").addEventListener("click", () => changeTokenPage(1));
   for (const [index, tab] of tokenTabs.entries()) {
     tab.addEventListener("click", () =>
       selectTokenFilter(tab.dataset.tokenFilter),
@@ -255,37 +267,16 @@ import { locale, t } from "./presentation.js";
       (entry) =>
         tokenFilter === "all" || registrationGroup(entry) === tokenFilter,
     );
+    const pages = Math.max(1, Math.ceil(visible.length / tokenPageSize));
+    tokenPage = Math.max(1, Math.min(tokenPage, pages));
+    const start = (tokenPage - 1) * tokenPageSize;
     const rows = visible
-      .slice()
       .reverse()
+      .slice(start, start + tokenPageSize)
       .map((entry) => {
         const row = document.createElement("tr");
         const identity = document.createElement("td");
         identity.append(node("div", entry.name, "server-name"));
-        identity.append(
-          node(
-            "span",
-            entry.server_id ||
-              t(
-                registrationGroup(entry) === "revoked"
-                  ? "未绑定服务器"
-                  : "等待服务器首次注册",
-              ),
-            "server-detail mono",
-          ),
-        );
-        if (entry.web_url) {
-          const link = node("a", entry.web_url, "server-detail mono");
-          link.href = entry.web_url;
-          link.target = "_blank";
-          link.rel = "noopener noreferrer";
-          identity.append(link);
-        } else if (
-          entry.server_id &&
-          !entry.revoked_at &&
-          !entry.unregistered_at
-        )
-          identity.append(node("span", t("Web 未发布"), "server-detail"));
         identity.append(
           node(
             "span",
@@ -301,19 +292,21 @@ import { locale, t } from "./presentation.js";
             : entry.server_id
               ? "已注册"
               : "未注册";
-        const status = document.createElement("td");
-        status.append(
-          node(
-            "span",
-            t(state),
-            "badge" +
-              (registrationGroup(entry) === "revoked"
-                ? " revoked"
+        const status = node("td", "", "device-status");
+        const badge = node(
+          "span",
+          t(state),
+          "badge" +
+            (registrationGroup(entry) === "revoked"
+              ? " revoked"
+              : registrationGroup(entry) === "unused"
+                ? " unused"
                 : entry.connected
                   ? " online"
                   : ""),
-          ),
         );
+        if (entry.server_id) badge.title = entry.server_id;
+        status.append(badge);
         if (registrationGroup(entry) === "registered")
           status.append(
             node(
@@ -353,18 +346,69 @@ import { locale, t } from "./presentation.js";
           actions.append(button);
         } else action.textContent = "—";
         const ip = node("td", entry.registration_ip || "—", "mono");
-        const connections = node("td", String(entry.connections));
-        status.dataset.label = t("Token 状态");
+        const web = document.createElement("td");
+        const webStatus = node("div", "", "web-status");
+        if (entry.web_url) {
+          const link = node("a", "", "web-link");
+          link.href = entry.web_url;
+          link.title = entry.web_url;
+          link.setAttribute("aria-label", entry.web_url);
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          const svg = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "svg",
+          );
+          svg.setAttribute("viewBox", "0 0 24 24");
+          svg.setAttribute("aria-hidden", "true");
+          const circle = document.createElementNS(svg.namespaceURI, "circle");
+          circle.setAttribute("cx", "12");
+          circle.setAttribute("cy", "12");
+          circle.setAttribute("r", "10");
+          const path = document.createElementNS(svg.namespaceURI, "path");
+          path.setAttribute(
+            "d",
+            "M2 12h20M12 2a18 18 0 0 1 0 20 18 18 0 0 1 0-20",
+          );
+          svg.append(circle, path);
+          link.append(svg);
+          webStatus.append(link);
+        } else {
+          const unavailable = node("span", "—", "muted");
+          unavailable.title = t("Web 未发布");
+          webStatus.append(unavailable);
+        }
+        const connections = node(
+          "span",
+          String(entry.connections),
+          "connection-count",
+        );
+        connections.title = t("当前连接");
+        webStatus.append(connections);
+        web.append(webStatus);
+        status.dataset.label = t("设备状态");
         ip.dataset.label = t("注册 IP");
-        connections.dataset.label = t("当前连接");
+        web.dataset.label = t("Web 状态");
         action.dataset.label = t("操作");
-        row.append(identity, status, ip, connections, action);
+        row.append(identity, status, ip, web, action);
         return row;
       });
     $("servers").replaceChildren(...rows);
     $("empty-state").textContent = t(emptyStates[tokenFilter]);
     $("empty-state").hidden = visible.length > 0;
     $("token-table").hidden = visible.length === 0;
+    $("token-pagination").hidden = visible.length === 0;
+    $("token-page-summary").textContent = t("第 {start}–{end} 条，共 {total} 条", {
+      start: visible.length ? start + 1 : 0,
+      end: Math.min(start + tokenPageSize, visible.length),
+      total: visible.length,
+    });
+    $("token-page-status").textContent = t("第 {page} / {pages} 页", {
+      page: tokenPage,
+      pages,
+    });
+    $("token-previous-page").disabled = tokenPage === 1;
+    $("token-next-page").disabled = tokenPage === pages;
     $("online-count").textContent = list.filter((e) => e.connected).length;
     $("active-count").textContent = list.filter(
       (e) => !e.revoked_at && !e.unregistered_at,

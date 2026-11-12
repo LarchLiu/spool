@@ -57,6 +57,7 @@ try {
   socket = new WebSocket(targets.find((entry) => entry.type === "page").webSocketDebuggerUrl);
   await once(socket, "open");
   let sequence = 0;
+  let registrationResponses = 0;
   const pending = new Map();
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
@@ -68,6 +69,7 @@ try {
     }
     if (message.method === "Runtime.exceptionThrown") errors.push(message.params.exceptionDetails.text);
     if (message.method === "Log.entryAdded" && message.params.entry.level === "error" && message.params.entry.source === "security") errors.push(message.params.entry.text);
+    if (message.method === "Network.responseReceived" && new URL(message.params.response.url).pathname === '/v1/registrations') registrationResponses++;
   });
   const send = (method, params = {}) => new Promise((resolve, reject) => {
     const id = ++sequence;
@@ -127,13 +129,41 @@ try {
     assert.equal(await evaluate('document.getElementById("token-panel").getAttribute("aria-labelledby")'), 'token-tab-' + filter);
   };
   const tabCounts = () => evaluate('[...document.querySelectorAll(".token-tabs .tab-count")].map(e=>Number(e.textContent))');
+  const rowNames = () => evaluate('[...document.querySelectorAll("#servers .server-name")].map(e=>e.textContent)');
+  const pagination = () => evaluate(`({
+    summary: document.getElementById('token-page-summary').textContent,
+    status: document.getElementById('token-page-status').textContent,
+    previousDisabled: document.getElementById('token-previous-page').disabled,
+    nextDisabled: document.getElementById('token-next-page').disabled
+  })`);
   const fitsViewport = async () => {
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, "Page overflows horizontally");
     assert.equal(await evaluate(`document.getElementById('dashboard').hidden || document.getElementById('settings-main').scrollWidth <= document.getElementById('settings-main').clientWidth`), true, "Settings content overflows horizontally");
   };
+  const deviceStatusAligned = async () => {
+    assert.equal(await evaluate(`(() => {
+      const center = element => { const rect = element.getBoundingClientRect(); return (rect.left + rect.right) / 2; };
+      if (matchMedia('(max-width: 700px)').matches) {
+        return [...document.querySelectorAll('#servers .device-status')].every(cell => {
+          const left = cell.getBoundingClientRect().left;
+          const badge = cell.querySelector('.badge').getBoundingClientRect();
+          const online = cell.querySelector('.connection-state');
+          const onlineRect = online?.getBoundingClientRect();
+          return Math.abs(badge.left - left) < 1
+            && Math.abs(cell.parentElement.querySelector('.web-status').closest('td').getBoundingClientRect().left - left) < 1
+            && (!online || (onlineRect.left > badge.right && Math.abs((onlineRect.top + onlineRect.bottom) / 2 - (badge.top + badge.bottom) / 2) < 1));
+        });
+      }
+      return [...document.querySelectorAll('#servers .connection-state')].every(online => {
+        const cell = online.closest('td');
+        return Math.abs(center(cell.querySelector('.badge')) - center(online)) < 1 && Math.abs(center(cell) - center(online)) < 1;
+      });
+    })()`), true, 'Narrow device status must align left with the online state beside its badge; desktop status must stay centered');
+  };
   await send("Runtime.enable");
   await send("Log.enable");
   await send("Page.enable");
+  await send("Network.enable");
   const downloads = join(scratch, "downloads");
   await mkdir(downloads);
   await send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads });
@@ -220,12 +250,39 @@ try {
   assert.deepEqual(await evaluate('[...document.querySelectorAll("#servers .server-name")].map(e=>e.textContent).sort()'), ['home-mac', 'offline-server']);
   assert.deepEqual(await evaluate('[...document.querySelectorAll("#servers .badge")].map(e=>e.textContent)'), ['已注册', '已注册']);
   assert.deepEqual(await evaluate('[...document.querySelectorAll("#servers .connection-state")].map(e=>e.textContent).sort()'), ['在线', '离线']);
+  assert.deepEqual(await evaluate('[...document.querySelectorAll("#token-table th")].map(e=>e.textContent)'), ['Token 名称', '设备状态', '注册 IP', 'Web 状态', '操作']);
+  const initialList = await evaluate(`fetch('/v1/registrations',{headers:{Authorization:'Bearer '+${JSON.stringify(adminToken)}}}).then(r=>r.json()).then(s=>s.registrations)`);
+  for (const entry of initialList.filter(entry => !entry.unregistered_at)) {
+    const rendered = await evaluate(`(() => {
+      const row = [...document.querySelectorAll('#servers tr')].find(row => row.querySelector('.server-name').textContent === ${JSON.stringify(entry.name)});
+      const link = row.cells[3].querySelector('a');
+      return { deviceID: row.cells[1].querySelector('.badge').title, nameText: row.cells[0].textContent, webURL: link?.href, webTitle: link?.title, webLabel: link?.getAttribute('aria-label'), hasIcon: !!link?.querySelector('svg'), count: Number(row.cells[3].querySelector('.connection-count').textContent) };
+    })()`);
+    assert.equal(rendered.deviceID, entry.server_id, 'Registration badge hover must reveal the device ID');
+    assert.equal(rendered.nameText.includes(entry.server_id), false, 'Device IDs belong on the status badge');
+    assert.equal(rendered.webURL, entry.web_url);
+    assert.equal(rendered.webTitle, entry.web_url, 'Web icon hover must reveal the URL');
+    assert.equal(rendered.webLabel, entry.web_url);
+    assert.equal(rendered.hasIcon, !!entry.web_url);
+    assert.equal(rendered.count, entry.connections);
+  }
+  await deviceStatusAligned();
+  const published = initialList.find(entry => entry.web_url);
+  assert.ok(published, 'Fixture must publish a Web entry');
+  await click('#servers .web-link');
+  const workspaceTab = await until(async () => {
+    const tabs = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+    return tabs.find(tab => tab.url === published.web_url && tab.title === 'Spool browser fixture');
+  }, 'Web icon opens the published workspace');
+  await send('Target.closeTarget', { targetId: workspaceTab.id });
   await selectFilter('revoked');
   assert.equal(await evaluate('document.querySelector("#servers .server-name").textContent'), 'retired-server');
   assert.equal(await evaluate('document.querySelector("#servers .badge").textContent'), '已注销');
+  assert.equal(await evaluate('!!document.querySelector("#servers .web-link")'), false, 'Retired tokens must not have a Web link');
   assert.equal(await evaluate('document.querySelectorAll("#servers button").length'), 0, 'Retired tokens must not offer active actions');
   await selectFilter('unused');
   assert.equal(await evaluate('document.getElementById("empty-state").hidden || !document.getElementById("token-table").hidden'), false, 'Unused view must have an empty state');
+  assert.equal(await evaluate('document.getElementById("token-pagination").hidden'), true, 'Empty lists must hide pagination');
   await key('End', 'End', 35);
   assert.equal(await evaluate('document.activeElement.id'), 'token-tab-all');
   assert.equal(await evaluate('document.querySelectorAll("#servers tr").length'), 3);
@@ -281,10 +338,14 @@ try {
   assert.equal(await evaluate('document.getElementById("admin-token").value'), "");
   assert.deepEqual(await evaluate('[Object.keys(localStorage),sessionStorage.length,document.cookie]'), [["spool.relay.ui-preferences.v1"], 0, ""]);
   await navigate("servers");
-  await click('#servers .server-actions button:not(.revoke)');
-  await until(() => evaluate('document.querySelector("#servers .server-actions button:not(.revoke)").textContent === "允许 Web"'), "block Web publishing");
-  await click('#servers .server-actions button:not(.revoke)');
-  await until(() => evaluate('document.querySelector("#servers .server-actions button:not(.revoke)").textContent === "停用 Web"'), "restore Web publishing");
+  const publishedRow = await evaluate('[...document.querySelectorAll("#servers tr")].findIndex(row => row.querySelector(".web-link")) + 1');
+  const publishedWebButton = `#servers tr:nth-child(${publishedRow}) .server-actions button:not(.revoke)`;
+  await click(publishedWebButton);
+  await until(() => evaluate('!document.querySelector("#servers .web-link")'), 'disabled Web removes the link');
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(publishedWebButton)}).textContent`), '允许 Web');
+  await click(publishedWebButton);
+  await until(() => evaluate('!!document.querySelector("#servers .web-link")'), 'allowed Web restores the link');
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(publishedWebButton)}).textContent`), '停用 Web');
   await click('#refresh');
   const name = "office-linux";
   await evaluate(`document.getElementById("server-name").value=${JSON.stringify(name)};document.getElementById("create-form").requestSubmit()`);
@@ -294,6 +355,7 @@ try {
   const token = await evaluate('document.getElementById("issued-token").value');
   assert.match(token, /^[A-Za-z0-9_-]{32,}$/);
   assert.equal(await evaluate('document.querySelector("#servers .server-name").textContent'), name);
+  assert.deepEqual(await pagination(), { summary: '第 1–1 条，共 1 条', status: '第 1 / 1 页', previousDisabled: true, nextDisabled: true });
   // Native protocol reuses the same real token store; listing never reveals it.
   const list = await evaluate(`fetch('/v1/registrations',{headers:{Authorization:'Bearer '+${JSON.stringify(adminToken)}}}).then(r=>r.json())`);
   assert.equal(JSON.stringify(list).includes(token), false);
@@ -326,8 +388,13 @@ try {
   assert.equal(await evaluate('document.getElementById("token-tab-revoked").getAttribute("aria-selected")'), 'true', 'Navigation must preserve the filter');
   await selectFilter('all');
   await viewport(390, 844, true);
+  await deviceStatusAligned();
   await fitsViewport();
   await capture("mobile");
+  await selectFilter('registered');
+  await evaluate('document.getElementById("servers-title").scrollIntoView({block:"start"})');
+  await capture('device-status-mobile');
+  await selectFilter('all');
   await openSidebar();
   assert.equal(await evaluate('document.getElementById("settings-sidebar").getAttribute("role")'), 'dialog');
   assert.equal(await evaluate('document.getElementById("settings-main").inert && document.getElementById("mobile-header").inert'), true);
@@ -354,6 +421,7 @@ try {
   assert.equal(await evaluate('document.activeElement.id'), 'sidebar-toggle');
   await viewport(320, 720, true);
   await fitsViewport();
+  await deviceStatusAligned();
   // Exercise hostile names after capturing the ordinary example screens.
   // The fixture and every registration disappear when this run exits.
   const hostileName = '<img src=x onerror="window.relayXSS=true">';
@@ -408,6 +476,7 @@ try {
   assert.equal(await evaluate('document.getElementById("create-token").textContent'), 'Generate tokens');
   assert.equal(await evaluate('document.getElementById("token-result-title").textContent'), 'Session tokens: 4');
   assert.equal(await evaluate('document.getElementById("servers-title").textContent'), 'Token management');
+  assert.deepEqual(await evaluate('[...document.querySelectorAll("#token-table th")].map(e=>e.textContent)'), ['Token name', 'Device status', 'Registration IP', 'Web status', 'Action']);
   assert.equal(await evaluate('document.getElementById("token-tab-unused").getAttribute("aria-selected")'), 'true');
   await click('[data-theme-choice="dark"]');
   await click('#close-preferences');
@@ -433,6 +502,78 @@ try {
   await click('#dashboard-preferences');
   await language('en');
   await click('#close-preferences');
+  // More than two pages exercise real ordering, refreshes and page boundaries.
+  await evaluate('document.getElementById("batch-count").value="36";document.getElementById("create-form").requestSubmit()');
+  await until(() => evaluate('!document.getElementById("create-token").disabled && document.querySelector("#token-tab-unused .tab-count").textContent==="41"'), 'pagination batch');
+  await click('#dismiss-token');
+  const paginationList = await evaluate(`fetch('/v1/registrations',{headers:{Authorization:'Bearer '+${JSON.stringify(adminToken)}}}).then(r=>r.json()).then(s=>s.registrations)`);
+  const unusedNames = paginationList.filter(entry => !entry.server_id && !entry.revoked_at && !entry.unregistered_at).reverse().map(entry => entry.name);
+  assert.equal(unusedNames.length, 41);
+  assert.deepEqual(await rowNames(), unusedNames.slice(0, 20), 'First page must show the newest 20 tokens');
+  assert.deepEqual(await pagination(), { summary: 'Showing 1–20 of 41', status: 'Page 1 of 3', previousDisabled: true, nextDisabled: false });
+  await click('#token-next-page');
+  assert.deepEqual(await rowNames(), unusedNames.slice(20, 40));
+  assert.deepEqual(await pagination(), { summary: 'Showing 21–40 of 41', status: 'Page 2 of 3', previousDisabled: false, nextDisabled: false });
+  const beforeRefresh = registrationResponses;
+  await click('#refresh');
+  await until(() => registrationResponses > beforeRefresh, 'page refresh');
+  assert.deepEqual(await rowNames(), unusedNames.slice(20, 40), 'Refresh must preserve the page and ordering');
+  const beforePoll = registrationResponses;
+  await until(() => registrationResponses > beforePoll, 'automatic page refresh');
+  assert.deepEqual(await rowNames(), unusedNames.slice(20, 40), 'Polling must preserve the page');
+  await navigate('network');
+  await navigate('servers');
+  assert.equal((await pagination()).status, 'Page 2 of 3', 'Navigation must preserve the page');
+  await language('zh-CN');
+  assert.equal((await pagination()).status, '第 2 / 3 页', 'Language changes must preserve the page');
+  assert.equal((await pagination()).summary, '第 21–40 条，共 41 条');
+  await language('ja');
+  assert.equal((await pagination()).status, '2 / 3 ページ');
+  assert.equal((await pagination()).summary, '41 件中 21～40 件');
+  await language('en');
+  await click('#token-previous-page');
+  assert.deepEqual(await rowNames(), unusedNames.slice(0, 20));
+  await click('#token-next-page');
+  await click('#token-next-page');
+  assert.deepEqual(await rowNames(), unusedNames.slice(40));
+  assert.deepEqual(await pagination(), { summary: 'Showing 41–41 of 41', status: 'Page 3 of 3', previousDisabled: false, nextDisabled: true });
+  await evaluate('document.getElementById("servers-title").scrollIntoView({block:"center"})');
+  await capture('pagination-desktop-dark');
+  await evaluate('document.querySelector("[data-theme-choice=light]").click()');
+  await evaluate('document.getElementById("servers-title").scrollIntoView({block:"center"})');
+  await capture('pagination-desktop');
+  await viewport(320, 720, true);
+  await tabsFit();
+  await fitsViewport();
+  await evaluate('document.getElementById("servers-title").scrollIntoView({block:"start"})');
+  await capture('pagination-mobile');
+  await language('ja');
+  await tabsFit();
+  await fitsViewport();
+  assert.equal(await evaluate('document.querySelector("#token-pagination").scrollWidth <= document.querySelector("#token-pagination").clientWidth'), true, 'Translated pagination must fit on mobile');
+  await language('en');
+  await viewport(1280, 900);
+  await evaluate('document.querySelector("#servers .revoke").click()');
+  await until(() => evaluate('document.getElementById("revoke-dialog").open'), 'last-page revocation confirmation');
+  await click('#revoke-dialog .danger');
+  await until(() => evaluate('document.getElementById("token-page-status").textContent === "Page 2 of 2"'), 'last-page clamp after revocation');
+  assert.deepEqual(await rowNames(), unusedNames.slice(20, 40));
+  assert.deepEqual(await pagination(), { summary: 'Showing 21–40 of 40', status: 'Page 2 of 2', previousDisabled: false, nextDisabled: true });
+  await click('[data-token-mode="single"]');
+  await evaluate('document.getElementById("server-name").value="pagination-new-token";document.getElementById("create-form").requestSubmit()');
+  await until(() => evaluate('!document.getElementById("create-token").disabled && document.querySelector("#servers .server-name").textContent === "pagination-new-token"'), 'creation returns to the first page');
+  assert.deepEqual(await pagination(), { summary: 'Showing 1–20 of 41', status: 'Page 1 of 3', previousDisabled: true, nextDisabled: false });
+  await click('#dismiss-token');
+  await click('#token-next-page');
+  await selectFilter('registered');
+  assert.equal((await pagination()).status, 'Page 1 of 1', 'Changing filters must return to the first page');
+  assert.equal((await rowNames()).length, 2);
+  await selectFilter('revoked');
+  assert.equal((await rowNames()).length, 3);
+  await selectFilter('all');
+  assert.equal((await pagination()).summary, 'Showing 1–20 of 46');
+  assert.deepEqual(await tabCounts(), [2, 3, 41, 46], 'Tab counts must include all pages');
+  await evaluate('document.querySelector("[data-theme-choice=dark]").click()');
   await viewport(320, 720, true);
   assert.equal(await evaluate('document.getElementById("settings-sidebar").inert'), true, 'Narrow sidebar must start closed after resizing');
   await openSidebar();
@@ -445,7 +586,7 @@ try {
   assert.equal(await evaluate('document.getElementById("dashboard").hidden && document.getElementById("issued-results").childElementCount===0 && document.getElementById("token-result").hidden'), true, 'Reload must not restore credentials');
   await fitsViewport();
   assert.deepEqual(errors, [], "Browser errors");
-  console.log(JSON.stringify({ ok: true, coverage: ["login", "login-settings-position", "navigation-order", "mobile-drawer", "drawer-keyboard-focus", "token-tabs", "retired-tokens", "offline-registration", "deployment-addresses", "proxy-settings", "tokens", "random-names", "batch-summary", "txt-download", "revocation", "languages", "preferences-persistence", "version", "light-dark", "desktop-tablet-mobile"], artifacts }));
+  console.log(JSON.stringify({ ok: true, coverage: ["login", "login-settings-position", "navigation-order", "mobile-drawer", "drawer-keyboard-focus", "token-tabs", "token-pagination", "pagination-refresh", "pagination-boundaries", "retired-tokens", "offline-registration", "deployment-addresses", "proxy-settings", "tokens", "random-names", "batch-summary", "txt-download", "revocation", "languages", "preferences-persistence", "version", "light-dark", "desktop-tablet-mobile"], artifacts }));
 } finally {
   socket?.close();
   if (browser) { browser.kill("SIGTERM"); await browserDone; }
