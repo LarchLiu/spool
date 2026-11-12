@@ -11,13 +11,22 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 
+	"spool/internal/diagnostics"
+	"spool/internal/testutil/voxlfixture"
 	"spool/internal/workspace"
 )
 
 func TestMain(m *testing.M) {
+	if diagnostics.RunCrashMonitor() {
+		os.Exit(0)
+	}
+	if voxlfixture.Run() {
+		return
+	}
 	root, err := os.MkdirTemp("", "server-cli-homes-")
 	if err != nil {
 		panic(err)
@@ -32,6 +41,7 @@ func TestMain(m *testing.M) {
 		}
 	}
 	code := m.Run()
+	_ = debug.SetCrashOutput(nil, debug.CrashOptions{})
 	_ = os.RemoveAll(root)
 	os.Exit(code)
 }
@@ -95,6 +105,7 @@ func TestInvalidCommandsDoNotCreateData(t *testing.T) {
 		{"user", "unknown"}, {"user", "add"}, {"project", "update", "--project", "p"},
 		{"agent", "set", "--backend", "other", "--enabled=false"}, {"config", "set"},
 		{"user", "list", "extra"}, {"project", "show", "--unknown"},
+		{"voxl", "install", "--binary", "relative/voxl"},
 		{"project", "member", "set", "--project", "p", "--user", "u", "--access", "root"},
 	} {
 		_, err := invoke(t, root, args...)

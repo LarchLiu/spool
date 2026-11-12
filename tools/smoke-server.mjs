@@ -30,14 +30,22 @@ export async function smokeServer(directory, target, env = process.env) {
       SPOOL_RELAY_REGISTRATION_TOKEN: "", TMPDIR: join(run, "tmp"), TMP: join(run, "tmp"), TEMP: join(run, "tmp"),
     };
     const command = (...args) => execFileSync(binary, args, { env: isolated, encoding: "utf8", timeout: 30_000 });
-    assert.match(command("--help"), /Spool headless/);
+    assert.match(command("--help"), /Spool server/);
     assert.match(command("help", "project", "member", "set"), /--?own-access/);
+    assert.match(command("help", "voxl", "install"), /--?binary/);
+    assert.match(command("serve", "--help"), /--?remote-desktop/);
+    const voxl = JSON.parse(command("voxl", "status"));
+    assert.equal(voxl.installed, false);
+    assert.equal(voxl.enabled, false);
+    assert.equal(voxl.running, false);
     assert.equal(command("version").trim(), version);
     const user = JSON.parse(execFileSync(binary, ["user", "add", "--username", "smoke"], {
       env: { ...isolated, SPOOL_NEW_PASSWORD: "smoke-test-password-only" }, encoding: "utf8", timeout: 30_000,
     }));
     const project = JSON.parse(command("project", "add", "--name", "Smoke", "--directory", join(run, "project"), "--members", "smoke"));
     assert.deepEqual(project.members, [user.id]);
+    assert.equal(JSON.parse(command("user", "update", "--user", "smoke", "--remote-desktop=true")).remote_desktop, true);
+    assert.equal(JSON.parse(command("user", "update", "--user", "smoke", "--remote-desktop=false")).remote_desktop, false);
     command("agent", "set", "--backend", "codex", "--enabled=false");
     command("agent", "set", "--backend", "claude", "--enabled=false");
     const listener = createServer();

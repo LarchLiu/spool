@@ -275,18 +275,23 @@ You can import an existing voxl binary or let Spool build a pinned
 
 ```sh
 # Import an existing local voxl binary
-./build/spool-server -install-voxl \
-  -voxl-binary /absolute/path/to/voxl
+./build/spool-server voxl install --binary /absolute/path/to/voxl
+./build/spool-server voxl status
 
 # Grant or revoke remote desktop access for a user
-./build/spool-server -remote-desktop-user alice \
-  -remote-desktop=true
+./build/spool-server user update --user alice --remote-desktop=true
 
-# Enable remote desktop
-./build/spool-server -remote-desktop=true
+# Enable remote desktop and start the service
+./build/spool-server config set --remote-desktop=true
+./build/spool-server serve
 ```
 
-Without `-voxl-binary`, Spool first searches for a local executable and then
+The CLI supports desktop hosts as well as headless hosts. Administration requires
+other instances using the data directory to be stopped. Use
+`--remote-desktop=false` to revoke a user's grant or disable the channel. `serve`
+also accepts `--remote-desktop=true/false`; omitted options preserve saved values.
+
+Without `--binary`, Spool first searches for a local executable and then
 builds `voxl-server` **0.3.3** from crates.io when needed. The native prerequisites
 vary by platform: macOS needs Xcode Command Line Tools and Rust; Linux needs
 X11/Xvfb, Rust, x264, libyuv, Opus, PulseAudio and XCB development libraries
@@ -306,7 +311,7 @@ viewer/transfer closing stops both the helper app and voxl. Installing or
 enabling remote desktop does not start capture, and no login item is installed.
 
 Existing macOS installations containing only `bin/voxl` need one local
-**Install voxl** action (or `-install-voxl`). This packages the existing binary
+**Install voxl** action (or `voxl install`). This packages the existing binary
 without downloading or rebuilding Rust. The old binary is retained; shared
 files remain outside the app in `voxl/shared/`. A complete helper app is reused
 unchanged across ordinary Spool upgrades, including its signature. Replacing
@@ -317,7 +322,7 @@ atomically replaces the app after verification; a failed upgrade keeps the old
 app intact. Grant the replacement helper access again if macOS requests it.
 Windows and Linux continue to run voxl directly with the same on-demand lifetime.
 
-Remote desktop uses the existing Spool HTTPS/Tailscale entry, while the voxl
+Remote desktop uses the existing Spool HTTPS/Tailscale/Relay entry, while the voxl
 helper listens only on loopback. Its file panel uses `<data-dir>/voxl/shared/`;
 uploads and downloads remain protected by Spool login, remote desktop grants,
 Origin, and CSRF checks. See the [voxl upstream instructions](https://github.com/tembo/voxl#usage) for platform dependencies.

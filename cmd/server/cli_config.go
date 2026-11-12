@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+
 	"spool/internal/workspace"
 )
 
-// Explicit bindings keep desktop-only settings out of headless configuration.
+// Explicit bindings select service settings independently of the Desktop UI.
 // Applying only visited flags preserves unrelated saved settings.
-func configFlags(c *command) func(*workspace.Settings) {
+func configFlags(c *command) func(*workspace.Service) error {
 	v := workspace.DefaultSettings()
 	f := c.flags
 	f.BoolVar(&v.WebEnabled, "web", v.WebEnabled, "Enable the local HTTP listener")
@@ -31,7 +32,8 @@ func configFlags(c *command) func(*workspace.Settings) {
 	f.BoolVar(&v.RelayWebEnabled, "relay-web", false, "Enable public Web/PWA access through the trusted relay")
 	f.StringVar(&v.RelayURL, "relay-url", "", "Relay HTTPS origin, e.g. https://relay.example.com")
 	f.IntVar(&v.RelayLANPort, "relay-lan-port", v.RelayLANPort, "Secure LAN listener/discovery port (1-65535)")
-	return func(s *workspace.Settings) {
+	f.BoolVar(&v.RemoteDesktopEnabled, "remote-desktop", false, "Enable on-demand voxl remote desktop (install voxl and grant users access first)")
+	apply := func(s *workspace.Settings) {
 		if changed(c, "web") {
 			s.WebEnabled = v.WebEnabled
 		}
@@ -86,6 +88,15 @@ func configFlags(c *command) func(*workspace.Settings) {
 		if changed(c, "relay-lan-port") {
 			s.RelayLANPort = v.RelayLANPort
 		}
+		if changed(c, "remote-desktop") {
+			s.RemoteDesktopEnabled = v.RemoteDesktopEnabled
+		}
+	}
+	return func(s *workspace.Service) error {
+		if changed(c, "remote-desktop") && v.RemoteDesktopEnabled && !s.VoxlStatus().Installed {
+			return fmt.Errorf("install voxl locally with 'spool-server voxl install' before enabling remote desktop")
+		}
+		return saveConfig(s, apply)
 	}
 }
 
@@ -99,7 +110,7 @@ func saveConfig(s *workspace.Service, apply func(*workspace.Settings)) error {
 }
 
 func addConfig(root *command, out io.Writer) {
-	c := root.add("config", "Inspect or change persisted service/network settings", "Changes apply on the next serve. Omitted options keep their saved values.\nProxy URLs may contain credentials: keep config output private.")
+	c := root.add("config", "Inspect or change persisted service/network settings", "Changes apply on the next serve. Omitted options keep their saved values.\nProxy URLs may contain credentials: keep config output private.\nRemote desktop requires a local voxl installation and per-user grants.")
 	show := c.add("show", "Print saved settings as JSON", "Requires the service to be stopped; this is saved configuration, not live status.")
 	show.run = func(_ context.Context, s *workspace.Service) error {
 		v, err := s.Store.Settings()
@@ -109,7 +120,7 @@ func addConfig(root *command, out io.Writer) {
 		return writeJSON(out, v)
 	}
 	set := c.add("set", "Update selected service/network settings", "Only explicitly supplied options change. Use --option=false to disable a boolean.\nExample: spool-server config set --tsnet=true --tsnet-hostname build-host")
-	apply := configFlags(set)
+	save := configFlags(set)
 	set.validate = func() error {
 		if set.flags.NFlag() == 0 {
 			return usage("supply at least one setting; use '%s --help'", set.path)
@@ -117,7 +128,7 @@ func addConfig(root *command, out io.Writer) {
 		return nil
 	}
 	set.run = func(_ context.Context, s *workspace.Service) error {
-		if err := saveConfig(s, apply); err != nil {
+		if err := save(s); err != nil {
 			return err
 		}
 		v, err := s.Store.Settings()
@@ -129,10 +140,10 @@ func addConfig(root *command, out io.Writer) {
 }
 
 func addServe(root *command, out io.Writer) {
-	c := root.add("serve", "Run the HTTP/Web/PWA and agent service in the foreground", "Options persist to the selected data directory; omitted options keep saved values.\nInstall/login Codex or Claude as the service OS user. SPOOL_CODEX_BIN and\nSPOOL_CLAUDE_BIN override discovery unless an agent path is saved.\nFor remote browsers configure an HTTPS reverse proxy and matching --public-url,\nor enable Tailscale/Relay. SIGINT/SIGTERM gracefully save and stop active turns.")
-	apply := configFlags(c)
+	c := root.add("serve", "Run the HTTP/Web/PWA, agent and optional remote desktop service", "Options persist to the selected data directory; omitted options keep saved values.\nInstall/login Codex or Claude as the service OS user. SPOOL_CODEX_BIN and\nSPOOL_CLAUDE_BIN override discovery unless an agent path is saved.\nFor remote browsers configure an HTTPS reverse proxy and matching --public-url,\nor enable Tailscale/Relay. Remote desktop uses these same entries and requires\na desktop session, local voxl installation and per-user grants.\nSIGINT/SIGTERM gracefully save and stop active turns and the desktop helper.")
+	save := configFlags(c)
 	c.run = func(ctx context.Context, s *workspace.Service) error {
-		if err := saveConfig(s, apply); err != nil {
+		if err := save(s); err != nil {
 			return err
 		}
 		if err := s.Start(); err != nil {

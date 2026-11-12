@@ -44,6 +44,7 @@ func addUsers(root *command, out io.Writer) {
 	add := c.add("add", "Create a login account", "Set SPOOL_NEW_PASSWORD in the environment; passwords are never accepted as command arguments.\nExample: SPOOL_NEW_PASSWORD='a-long-unique-password' spool-server user add --username alice")
 	username := add.flags.String("username", "", "Unique login name (required)")
 	nickname := add.flags.String("nickname", "", "Display name; defaults to username")
+	remoteDesktop := add.flags.Bool("remote-desktop", false, "Grant access to the host desktop when remote desktop is enabled")
 	add.validate = func() error {
 		if err := required("username", *username); err != nil {
 			return err
@@ -57,23 +58,24 @@ func addUsers(root *command, out io.Writer) {
 			name = *username
 		}
 		password, _ := envRequired("SPOOL_NEW_PASSWORD")
-		v, err := s.Store.SaveUser(workspace.UserInput{Username: *username, Nickname: name, Password: password})
+		v, err := s.Store.SaveUser(workspace.UserInput{Username: *username, Nickname: name, Password: password, RemoteDesktop: *remoteDesktop})
 		if err != nil {
 			return err
 		}
 		return writeJSON(out, v)
 	}
-	update := c.add("update", "Change a username, display name or password", "Only supplied fields change. Use --password to read the new password from SPOOL_NEW_PASSWORD.")
+	update := c.add("update", "Change account details, password or remote desktop access", "Only supplied fields change. Use --password to read the new password from SPOOL_NEW_PASSWORD.\nRemote desktop grants allow control of the host's full desktop, independently of project permissions.")
 	ref := update.flags.String("user", "", "Current username or ID (required)")
 	newName := update.flags.String("username", "", "New login name")
 	newNick := update.flags.String("nickname", "", "New display name")
 	password := update.flags.Bool("password", false, "Reset password from SPOOL_NEW_PASSWORD")
+	newRemoteDesktop := update.flags.Bool("remote-desktop", false, "Grant or revoke host desktop access (--remote-desktop=true/false)")
 	update.validate = func() error {
 		if err := required("user", *ref); err != nil {
 			return err
 		}
-		if !changed(update, "username") && !changed(update, "nickname") && !*password {
-			return usage("supply --username, --nickname or --password")
+		if !changed(update, "username") && !changed(update, "nickname") && !*password && !changed(update, "remote-desktop") {
+			return usage("supply --username, --nickname, --password or --remote-desktop")
 		}
 		if *password {
 			_, err := envRequired("SPOOL_NEW_PASSWORD")
@@ -95,6 +97,9 @@ func addUsers(root *command, out io.Writer) {
 		}
 		if *password {
 			v.Password, _ = envRequired("SPOOL_NEW_PASSWORD")
+		}
+		if changed(update, "remote-desktop") {
+			v.RemoteDesktop = *newRemoteDesktop
 		}
 		saved, err := s.Store.SaveUser(v)
 		if err != nil {

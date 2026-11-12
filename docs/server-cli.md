@@ -1,9 +1,11 @@
 # Spool Server CLI
 
 `spool-server` runs the same workspace backend as Desktop, with embedded Web/PWA
-assets. It needs no GUI, GTK, WebKit, X11 or voxl. Install and authenticate Codex
-and/or Claude Code on the service machine, as the OS user running Spool. Git and
-an authenticated GitHub CLI are also needed for Issue automation.
+assets. The server itself needs no GUI, GTK or WebKit. On a host with a desktop
+session it also supports optional voxl remote desktop, configured through the
+CLI and authorized per user. Install and authenticate Codex and/or Claude Code
+on the service machine, as the OS user running Spool. Git and an authenticated
+GitHub CLI are also needed for Issue automation.
 
 ## Installation and releases
 
@@ -116,15 +118,16 @@ entries (loopback by default), see [Web/PWA and HTTPS](deployment.md#webpwa-and-
 Only configure actual proxy IP CIDRs. An empty value clears manual entries;
 automatically verified trust is managed separately and bound to its public URL.
 
-`serve` accepts the same network/runtime options as `config set`. Explicit
-options persist; omitted options keep their saved values.
+`serve` accepts the same network, runtime and remote desktop options as
+`config set`. Explicit options persist; omitted options keep their saved values.
 
 ## Local administration
 
 | Command | Purpose |
 | --- | --- |
-| `config show`, `config set` | HTTP, public origin, idle timeout, history cache, proxy, Tailscale and Relay settings |
-| `user list/add/update/enable/disable` | Login accounts and password resets |
+| `config show`, `config set` | HTTP, public origin, idle timeout, history cache, proxy, Tailscale, Relay and remote desktop settings |
+| `voxl status/install` | Local remote desktop helper installation and saved enablement |
+| `user list/add/update/enable/disable` | Login accounts, password resets and remote desktop grants |
 | `project list/show/add/update/archive/unarchive` | Local directories, sharing and file access |
 | `project member set/remove` | Individual membership and shared/personal chat permissions |
 | `agent list/set/refresh` | Codex/Claude enablement, executable paths and discovery |
@@ -202,6 +205,42 @@ interrupted. Stop it before other management commands. Relay credentials stay
 in private files, outside JSON settings/status. See [relay deployment](../relay/README.md)
 for the independent VPS component.
 
+## Remote desktop on a desktop host
+
+Using the CLI does not require a headless host. Stop any instance using the data
+directory, then install voxl, grant users access and enable the channel:
+
+```sh
+# Import a local binary, or omit --binary to discover/build voxl locally:
+spool-server voxl install --binary /absolute/path/to/voxl
+spool-server voxl status
+spool-server user update --user alice --remote-desktop=true
+spool-server config set --remote-desktop=true
+spool-server serve
+# Alternatively, enable and serve together: spool-server serve --remote-desktop=true
+```
+
+`user add --remote-desktop=true` grants access when creating an account. Grants
+default to false and are independent of project membership. Use
+`user update --user alice --remote-desktop=false` to revoke a grant, or
+`config set --remote-desktop=false` to disable the channel for everyone. Account
+updates preserve grants unless explicitly changed. Config/serve options preserve
+saved enablement when omitted; explicit enablement requires an installed helper.
+
+`voxl status` reports the installation directory, helper app path on macOS, and
+saved `enabled` state as JSON. It is an offline check: the service must be stopped,
+so `running` is false. Installation and enablement do not start screen capture.
+During `serve`, authorized users can connect through the existing Web/PWA or
+Android desktop channel using the same HTTPS, Tailscale or Relay entry. voxl
+starts on demand, stops after the last connection closes, and stops on service
+shutdown. Its own listener stays on loopback.
+
+Run Spool as a user with access to the desktop session. macOS requires a logged-in
+desktop session and Screen Recording/Accessibility access for **Voxl Helper**;
+Linux requires X11/Xvfb and the correct `DISPLAY`/`XAUTHORITY` environment; Windows
+requires an interactive desktop session. A service manager must provide the same
+session access and environment. See [voxl prerequisites and platform setup](deployment.md#remote-desktop-voxl).
+
 ## Linux systemd user service and updates
 
 The Linux archive includes `spool-server.service`, also available in
@@ -229,5 +268,6 @@ run the relevant CLI commands or verify/install the new matching archive, then
 
 Existing flat flags (for example `spool-server -host 127.0.0.1 -port 59001`) still
 work. `spool-server legacy --help` lists them. Bare `spool-server` now prints
-help; use `spool-server serve` in service units. The structured CLI does not
-include voxl or Desktop-only UI/update operations.
+help; use `spool-server serve` in service units. The structured CLI supports voxl
+installation, remote desktop enablement and user grants. Desktop window/tray
+controls and the Desktop self-updater remain specific to the Desktop application.

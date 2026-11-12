@@ -217,7 +217,7 @@ CSRF 检查。
 ## Remote desktop (voxl)
 
 voxl 是可选的远程桌面组件，与项目权限分开管理。只有在本机 Service 设置或
-headless CLI 中安装并启用 voxl，并且管理员给某个用户授予远程桌面权限后，用户
+server CLI 中安装并启用 voxl，并且管理员给某个用户授予远程桌面权限后，用户
 才会看到 **Connect to desktop**。打开连接时 voxl 才启动；最后一个查看者断开
 后会停止。远程桌面可以控制服务主机的完整桌面，包括 Spool 设置，因此只应授予
 可信用户。
@@ -226,18 +226,22 @@ headless CLI 中安装并启用 voxl，并且管理员给某个用户授予远�
 
 ```sh
 # 导入本机已有的 voxl
-./build/spool-server -install-voxl \
-  -voxl-binary /absolute/path/to/voxl
+./build/spool-server voxl install --binary /absolute/path/to/voxl
+./build/spool-server voxl status
 
 # 给用户授予或撤销远程桌面权限
-./build/spool-server -remote-desktop-user alice \
-  -remote-desktop=true
+./build/spool-server user update --user alice --remote-desktop=true
 
-# 启用远程桌面功能
-./build/spool-server -remote-desktop=true
+# 启用远程桌面功能并启动服务
+./build/spool-server config set --remote-desktop=true
+./build/spool-server serve
 ```
 
-如果不传 `-voxl-binary`，Spool 会先查找本机已有的可执行文件，找不到时从
+CLI 同样支持有桌面的主机。管理命令需要先停止使用同一数据目录的其他实例。
+使用 `--remote-desktop=false` 可撤销用户授权或关闭整个通道；`serve` 也接受
+`--remote-desktop=true/false`，省略时保留已保存的设置。
+
+如果不传 `--binary`，Spool 会先查找本机已有的可执行文件，找不到时从
 crates.io 构建 `voxl-server` **0.3.3**。各平台还需要 voxl 的原生依赖：macOS
 需要 Xcode Command Line Tools 和 Rust；Linux 需要 X11/Xvfb、Rust、x264、libyuv、
 Opus、PulseAudio 和 XCB 开发库（Debian/Ubuntu 对应 `libxcb1-dev`）；
@@ -255,7 +259,7 @@ macOS 安装时还会用 Xcode 命令行工具在本机编译一个小型原生�
 不会启动采集，也不会注册登录启动项。
 
 旧版 macOS 安装如果只有 `bin/voxl`，请在本机点击一次 **安装 voxl** 或执行
-`-install-voxl`，即可将已有二进制包装成应用包，无需下载或重新编译 Rust。
+`voxl install`，即可将已有二进制包装成应用包，无需下载或重新编译 Rust。
 原二进制会保留，共享文件继续放在应用包外的 `voxl/shared/`。普通 Spool 升级
 会原样复用完整的 helper 应用包及其签名；替换或重新编译 helper 本身仍可能需要
 重新授权。第一版 helper（安装格式 1）需要在本机点击一次 **升级 voxl**，
@@ -263,7 +267,7 @@ macOS 安装时还会用 Xcode 命令行工具在本机编译一个小型原生�
 替换应用包；升级失败会保留原应用。如 macOS 提示，请给新版 helper 重新授权。
 Windows 和 Linux 继续直接运行 voxl，并使用相同的按需启停规则。
 
-远程桌面通过现有 Spool HTTPS/Tailscale 入口访问，voxl helper 只监听本机回环地址。
+远程桌面通过现有 Spool HTTPS/Tailscale/Relay 入口访问，voxl helper 只监听本机回环地址。
 文件面板使用 `<data-dir>/voxl/shared/`，上传和下载仍受 Spool 登录、远程桌面授权、
 Origin 和 CSRF 检查保护。更多平台依赖可参考 [voxl upstream instructions](https://github.com/tembo/voxl#usage)。
 
