@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { nextReleaseVersion, parseReleaseArgs, prepareLocalRelease } from "./release.mjs";
 
-const versionFiles = ["mygo.json", "web/package.json"];
+const versionFiles = ["mygo.json", "web/package.json", "relay/version.json"];
 const lockText = `{
   "lockfileVersion": 2,
   "workspaces": { "": { "name": "spool-web", "dependencies": { "example": "0.1.0" } } },
@@ -19,6 +19,7 @@ async function fixture(t, { remote = true } = {}) {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const root = join(directory, "repo");
   await mkdir(join(root, "web"), { recursive: true });
+  await mkdir(join(root, "relay"), { recursive: true });
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")));
   Object.assign(env, {
     GIT_CONFIG_NOSYSTEM: "1",
@@ -36,6 +37,7 @@ async function fixture(t, { remote = true } = {}) {
   git("config", "core.hooksPath", hooks);
   await writeFile(join(root, "mygo.json"), '{"name":"Spool","version":"0.1.0","buildCommand":"bun run --bun --cwd web build"}\n');
   await writeFile(join(root, "web/package.json"), `${JSON.stringify({ name: "spool-web", version: "0.1.0", dependencies: { example: "0.1.0" } }, null, 2)}\n`);
+  await writeFile(join(root, "relay/version.json"), '{"version":"0.1.0"}\n');
   await writeFile(join(root, "web/bun.lock"), lockText);
   git("add", "--", ...versionFiles, "web/bun.lock");
   git("commit", "-m", "Initial version");
@@ -112,13 +114,14 @@ test("release updates only version metadata, commits it and creates an annotated
   const repo = await fixture(t);
   const remoteBefore = repo.git("ls-remote", "origin");
   const result = await prepareLocalRelease("0.2.0", repo);
-  const [mygoText, packageText] = await repo.readVersions();
+  const [mygoText, packageText, relayText] = await repo.readVersions();
   const mygo = JSON.parse(mygoText);
   const pkg = JSON.parse(packageText);
   assert.equal(mygo.version, "0.2.0");
   assert.equal(mygo.buildCommand, "bun run --bun --cwd web build");
   assert.equal(mygoText.split("\n").length, 2);
   assert.equal(pkg.version, "0.2.0");
+  assert.equal(JSON.parse(relayText).version, "0.2.0");
   assert.equal(pkg.dependencies.example, "0.1.0");
   assert.equal(await readFile(join(repo.root, "web/bun.lock"), "utf8"), lockText);
   assert.deepEqual(result.files, versionFiles);

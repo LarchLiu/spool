@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/hex"
@@ -8,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/netip"
 	"os"
@@ -20,10 +22,11 @@ import (
 )
 
 var (
-	ErrInvalidRegistration  = errors.New("a registration name of 1–128 bytes without control characters is required")
-	ErrRegistrationExists   = errors.New("this server already has an active registration")
-	ErrRegistrationNotFound = errors.New("registration not found")
-	ErrRegistrationRevoked  = errors.New("server registration was revoked")
+	ErrInvalidRegistration      = errors.New("a registration name of 1–128 bytes without control characters is required")
+	ErrInvalidRegistrationCount = errors.New("count must be an integer between 1 and 100")
+	ErrRegistrationExists       = errors.New("this server already has an active registration")
+	ErrRegistrationNotFound     = errors.New("registration not found")
+	ErrRegistrationRevoked      = errors.New("server registration was revoked")
 	// Returned for a new identity enrolling without a token. Enrolling with an
 	// administrator-issued token is not limited.
 	ErrRegistrationLimited = errors.New("too many new automatic registrations from this network")
@@ -74,6 +77,25 @@ type registrationStatus struct {
 
 const maxRegistryBytes = 8 << 20
 const maxRegistrations = 10000
+const maxRegistrationBatch = 100
+
+type issuedRegistration struct {
+	Registration Registration `json:"registration"`
+	Token        string       `json:"token"`
+}
+
+func randomRegistrationName() (string, error) {
+	const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	var name [12]byte
+	for i := range name {
+		index, err := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
+		if err != nil {
+			return "", err
+		}
+		name[i] = letters[index.Int64()]
+	}
+	return string(name[:]), nil
+}
 
 func validServerID(id string) bool {
 	if len(id) != 52 || strings.ToLower(id) != id {
@@ -195,31 +217,67 @@ func (s *Server) credentialForRequestLocked(r *http.Request) (registrationRecord
 // CreateRegistration issues an unused credential. Its first authenticated
 // registration records the server identity; later connections must use that key.
 func (s *Server) CreateRegistration(name string) (Registration, string, error) {
-	name = strings.TrimSpace(name)
-	if !validRegistrationName(name) {
-		return Registration{}, "", ErrInvalidRegistration
+	issued, err := s.createRegistrations([]string{name})
+	if err != nil {
+		return Registration{}, "", err
+	}
+	return issued[0].Registration, issued[0].Token, nil
+}
+
+// createRegistrations commits the whole batch before returning any credentials.
+// Empty names receive distinct random names; only token digests are persisted.
+func (s *Server) createRegistrations(names []string) ([]issuedRegistration, error) {
+	if len(names) < 1 || len(names) > maxRegistrationBatch {
+		return nil, ErrInvalidRegistrationCount
+	}
+	for i, name := range names {
+		names[i] = strings.TrimSpace(name)
+		if names[i] != "" && !validRegistrationName(names[i]) {
+			return nil, ErrInvalidRegistration
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return Registration{}, "", errors.New("relay is closed")
+		return nil, errors.New("relay is closed")
 	}
-	if len(s.registrations) >= maxRegistrations {
-		return Registration{}, "", errors.New("relay registration store is full")
+	if len(s.registrations)+len(names) > maxRegistrations {
+		return nil, errors.New("relay registration store is full")
 	}
-	token := randomID()
-	record := registrationRecord{Registration: Registration{ID: randomID(), Name: name, CreatedAt: time.Now().UTC()}, TokenHash: tokenDigest(token)}
-	next := make(map[string]registrationRecord, len(s.registrations)+1)
+	next := make(map[string]registrationRecord, len(s.registrations)+len(names))
+	usedNames := make(map[string]bool, len(s.registrations)+len(names))
 	for id, value := range s.registrations {
 		next[id] = value
+		usedNames[value.Name] = true
 	}
-	next[record.ID] = record
+	issued := make([]issuedRegistration, 0, len(names))
+	for _, name := range names {
+		if name == "" {
+			for {
+				var err error
+				name, err = randomRegistrationName()
+				if err != nil {
+					return nil, err
+				}
+				if !usedNames[name] {
+					break
+				}
+			}
+		}
+		usedNames[name] = true
+		token := randomID()
+		record := registrationRecord{Registration: Registration{ID: randomID(), Name: name, CreatedAt: time.Now().UTC()}, TokenHash: tokenDigest(token)}
+		next[record.ID] = record
+		issued = append(issued, issuedRegistration{record.Registration, token})
+	}
 	if err := s.saveRegistrations(next); err != nil {
-		return Registration{}, "", fmt.Errorf("save relay registration: %w", err)
+		return nil, fmt.Errorf("save relay registration: %w", err)
 	}
 	s.registrations = next
-	s.tokenIndex[record.TokenHash] = record.ID
-	return record.Registration, token, nil
+	for _, result := range issued {
+		s.tokenIndex[tokenDigest(result.Token)] = result.Registration.ID
+	}
+	return issued, nil
 }
 
 // Caller holds Server.mu and has verified the signed challenge. An explicit

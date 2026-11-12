@@ -282,10 +282,12 @@ memory; refreshing or signing out requires entering it again. No browser cookies
 or persistent storage grant management access. Remote browser access requires
 HTTPS. This credential is never entered into Spool Desktop.
 
-Give each token a server name, select **生成 token**, then copy the once-only
-result into that Spool server's registration settings. The list shows online,
-offline, unused, unregistered and revoked entries, historical registration IPs,
-Server IDs and active connection counts. **撤销** asks for confirmation, then
+Optionally name a token, select **生成 token**, then copy the once-only
+result into that Spool server's registration settings. The token management tabs
+show **已注册** (registered, online or offline), **已撤销** (revoked or permanently
+retired), **未注册** (unused), and **全部** (all), with counts for each group.
+Entries include historical registration IPs, Server IDs and active connection
+counts. **撤销** asks for confirmation, then
 disconnects the selected server and disables its token. Inactive records remain
 visible. The list refreshes every ten seconds; proxy detection does not run on a
 timer.
@@ -386,6 +388,15 @@ curl --fail-with-body -X DELETE \
 
 `POST /v1/registrations` accepts `{"name":"..."}` and returns HTTP 201 with
 `{"registration":{"id":"...","name":"...","created_at":"..."},"token":"..."}`.
+Omitting `name` or leaving it blank generates a random 12-letter name using
+uppercase and lowercase ASCII letters. `POST /v1/registrations/batch` accepts
+`{"count":10}` (1–100) and returns HTTP 201 with
+`{"registrations":[{"registration":{...},"token":"..."},...]}`. Every batch name
+is random; the batch is saved atomically. The dashboard shows a batch summary and
+exports newly generated names and tokens as UTF-8 TXT, one tab-separated pair per
+line. Keep the export before closing or dismissing the result; raw tokens are
+held only in page memory. Language and theme preferences alone are stored locally.
+The displayed Relay version comes from the binary's embedded release metadata.
 Save the `token` in the corresponding Spool Desktop. `GET /v1/registrations`
 returns `{"registrations":[...]}`; `GET /v1/registrations/{id}` returns one entry.
 Automatically enrolled entries also appear here with `automatic: true` and the

@@ -95,7 +95,7 @@ func TestAdminAuthenticationAndPersistentRevocation(t *testing.T) {
 			t.Fatal("accepted query credentials", w.Code)
 		}
 	}
-	for _, body := range []string{`{}`, `{"name":""}`, `{"name":"home","server_id":"not-required"}`, `{"name":"home"} {}`, `{"name":"` + strings.Repeat("a", 5000) + `"}`} {
+	for _, body := range []string{`{"name":"home","server_id":"not-required"}`, `{"name":"home"} {}`, `{"name":"` + strings.Repeat("a", 5000) + `"}`} {
 		if w = adminRequest(t, s, "POST", "/v1/registrations", testAdminToken, body); w.Code != 400 {
 			t.Fatal("accepted invalid input", w.Code)
 		}
@@ -377,6 +377,10 @@ func TestStoreFailuresDoNotReportSuccessfulChanges(t *testing.T) {
 	w := adminRequest(t, s, "POST", "/v1/registrations", testAdminToken, `{"name":"failed"}`)
 	if w.Code != 500 || len(s.registrationStatuses("")) != 1 {
 		t.Fatal("failed persistence created a usable token")
+	}
+	w = adminRequest(t, s, "POST", "/v1/registrations/batch", testAdminToken, `{"count":10}`)
+	if w.Code != 500 || len(s.registrationStatuses("")) != 1 || len(s.tokenIndex) != 1 || strings.Contains(w.Body.String(), `"token":`) {
+		t.Fatal("failed batch persistence published credentials")
 	}
 	w = adminRequest(t, s, "DELETE", "/v1/registrations/"+registration.ID, testAdminToken, "")
 	if w.Code != 500 || s.registrationStatuses(registration.ID)[0].RevokedAt != nil {

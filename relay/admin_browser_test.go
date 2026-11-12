@@ -47,6 +47,23 @@ func TestAdminBrowserFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	startAdminTestHost(t, public, token, id, make(chan struct{}))
+	// Registered tokens remain registered while offline. Self-unregistration
+	// permanently retires a token and must never make it look unused again.
+	for _, name := range []string{"offline-server", "retired-server"} {
+		_, token := createViaAPI(t, s, name)
+		identity, err := NewIdentity()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Register(t.Context(), public.URL, token, identity, public.Client()); err != nil {
+			t.Fatal(err)
+		}
+		if name == "retired-server" {
+			if err := Unregister(t.Context(), public.URL, token, identity, public.Client()); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	if err := json.NewEncoder(os.Stdout).Encode(map[string]string{"fixture_url": admin.URL, "public_url": public.URL}); err != nil {
 		t.Fatal(err)
 	}

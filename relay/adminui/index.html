@@ -1,61 +1,579 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
-  <title>Spool Relay · 管理</title>
-  <link rel="stylesheet" href="/admin.css">
-  <script src="/admin.js" defer></script>
-</head>
-<body>
-  <div class="shell">
-    <header class="topbar"><a class="brand" href="/" aria-label="Spool Relay 首页"><span class="brand-mark">S</span>Spool <span class="muted">Relay</span></a><button id="logout" class="quiet" hidden>退出管理</button></header>
-    <main>
-      <section id="login" class="login-card card">
-        <span class="eyebrow">RELAY CONSOLE</span>
-        <h1>管理你的 Relay</h1>
-        <p class="muted">为 Spool 服务器签发 token，查看连接状态与授权。</p>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Spool Relay · 管理</title>
+    <link rel="icon" href="/logo.png" type="image/png" />
+    <link rel="stylesheet" href="/admin.css" />
+    <script src="/admin.js" type="module"></script>
+  </head>
+  <body>
+    <main id="login" class="login">
+      <button
+        id="login-preferences"
+        class="icon appearance-entry"
+        type="button"
+        aria-label="语言与主题"
+        title="语言与主题"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 7h16M4 17h16" />
+          <circle cx="9" cy="7" r="3" />
+          <circle cx="15" cy="17" r="3" />
+        </svg>
+      </button>
+      <section class="login-story" aria-labelledby="story-title">
+        <a class="brand" href="/" aria-label="Spool Relay 首页"
+          ><img
+            class="brand-mark"
+            src="/logo.png"
+            alt=""
+            width="32"
+            height="32"
+          />Spool <span class="brand-tag">Relay</span></a
+        >
+        <div class="login-story-copy">
+          <span class="eyebrow">你的工作空间，始终相连。</span>
+          <h1 id="story-title">让工作，<br />随处可达。</h1>
+          <p>
+            连接你的设备，回到熟悉的工作空间。<br />让本地的
+            Spool，陪你走得更远。
+          </p>
+        </div>
+        <span class="login-foot">Spool Relay · 连接你的私有工作空间</span>
+      </section>
+      <section class="login-panel" aria-labelledby="login-title">
         <form id="login-form">
+          <span class="eyebrow">欢迎回来</span>
+          <h2 id="login-title">登录 Relay 管理</h2>
+          <p>查看连接状态，管理 Spool 服务器授权。</p>
           <label for="admin-token">管理员 token</label>
-          <input id="admin-token" type="password" autocomplete="off" spellcheck="false" required placeholder="SPOOL_RELAY_ADMIN_TOKEN">
-          <p class="hint">使用部署时设置的管理员 token。凭据仅保留在当前页面内存中，刷新后需重新输入。</p>
-          <button id="login-button" class="primary" type="submit">进入管理</button>
+          <input
+            id="admin-token"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            required
+            placeholder="输入管理员 token"
+            aria-describedby="login-hint"
+          />
+          <div id="login-notice">
+            <p id="notice" role="status" aria-live="polite" hidden></p>
+          </div>
+          <button id="login-button" class="primary" type="submit">
+            <span>进入管理</span
+            ><svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 17 17 7M7 7h10v10" />
+            </svg>
+          </button>
+          <small id="login-hint"
+            >使用部署时设置的管理员 token。<br />凭据仅保留在当前页面，刷新后需重新登录。</small
+          >
         </form>
       </section>
-      <p id="notice" role="status" aria-live="polite" hidden></p>
-      <div id="dashboard" hidden>
-        <div class="page-title"><div><span class="eyebrow">OVERVIEW</span><h1>Relay 管理</h1><p class="muted">连接你的设备，管理每一份授权。</p></div><button id="refresh" class="quiet">刷新</button></div>
-        <div class="metrics"><div class="metric"><span>在线服务器</span><strong id="online-count">0</strong></div><div class="metric"><span>有效授权</span><strong id="active-count">0</strong></div><div class="metric"><span>当前连接</span><strong id="connection-count">0</strong></div></div>
-        <section class="card proxy-card" aria-labelledby="proxy-title">
-          <div class="section-heading"><div><h2 id="proxy-title">公网连接</h2><p class="muted">域名由部署配置确定。启动时等待公网代理就绪后自动检测 IP，可点击检测重试。</p></div><button id="detect" class="quiet" type="button">检测</button></div>
-          <form id="settings-form">
-            <label for="public-url">Relay 公网地址</label><input id="public-url" type="url" readonly placeholder="尚未配置" aria-describedby="public-url-hint">
-            <p id="public-url-hint" class="hint">通过部署环境变量 RELAY_PUBLIC_URL 设置，修改后重新部署，并同步调整代理与 DNS。</p>
-            <label for="web-domain">Web 子域名后缀</label><input id="web-domain" readonly placeholder="尚未配置">
-            <p class="hint">自动使用主入口域名的 web 子域名，例如 web.relay.example.com。证书由前置代理管理。</p>
-            <div class="address-row"><span id="detection-dot" class="dot"></span><span id="public-address" class="mono">尚未设置公网地址</span></div>
-            <p id="detection-status" class="hint" aria-live="polite"></p>
-            <details id="advanced"><summary>高级设置</summary>
-              <label for="trusted-proxies">额外可信代理</label><input id="trusted-proxies" placeholder="127.0.0.1/32, ::1/128" spellcheck="false">
-              <p class="hint">通常无需填写。多级代理可补充明确可信的 IP/CIDR；自动检测的单个 IP 会单独维护。</p>
-              <p class="hint">自动检测结果：<code id="detected-proxy">尚无</code></p>
-              <button id="save-settings" class="quiet" type="submit">保存设置</button>
-            </details>
-          </form>
-        </section>
-        <section class="card" aria-labelledby="servers-title">
-          <div class="section-heading"><div><h2 id="servers-title">服务器授权</h2><p id="registration-mode" class="muted">每个 token 只授权一台 Spool 服务器。</p></div></div>
-          <form id="create-form" class="create-row"><label class="sr-only" for="server-name">服务器名称</label><input id="server-name" required placeholder="服务器名称，例如 home-mac" autocomplete="off"><button id="create-token" class="primary" type="submit">生成 token</button></form>
-          <div id="token-result" class="token-result" hidden><div class="section-heading"><strong>token 已生成，仅显示这一次</strong><button id="dismiss-token" class="quiet" type="button">关闭</button></div><p class="hint">复制并保存到对应 Spool 服务器的 Relay 注册设置中。</p><div class="copy-row"><input id="issued-token" readonly aria-label="新生成的 token" spellcheck="false"><button id="copy-token" class="quiet">复制</button></div></div>
-          <div class="table-scroll"><table><thead><tr><th>服务器 / Web 地址</th><th>状态</th><th>注册 IP</th><th>连接</th><th>操作</th></tr></thead><tbody id="servers"></tbody></table></div>
-          <p id="empty-state" class="empty">暂无服务器授权。输入名称，生成第一个 token。</p>
-        </section>
-        <p class="footer-note">撤销授权会断开该服务器的 Relay 连接。已撤销的记录会保留，防止旧凭据再次生效。</p>
-      </div>
     </main>
-    <footer>Spool Relay <span>·</span> 私有管理入口</footer>
-  </div>
-  <dialog id="revoke-dialog"><form method="dialog"><h2>撤销服务器授权？</h2><p id="revoke-description"></p><p class="muted">当前 Relay 连接会断开，旧 token 将无法重新连接。</p><div class="dialog-actions"><button class="quiet" value="cancel">取消</button><button class="danger" value="revoke">撤销授权</button></div></form></dialog>
-</body>
+
+    <div id="dashboard" class="settings-shell" hidden>
+      <header id="mobile-header" class="mobile-header">
+        <button
+          id="sidebar-toggle"
+          class="icon"
+          type="button"
+          aria-label="打开菜单"
+          aria-expanded="false"
+          aria-controls="settings-sidebar"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <a class="brand" href="/" aria-label="Spool Relay 首页"
+          ><img
+            class="brand-mark"
+            src="/logo.png"
+            alt=""
+            width="26"
+            height="26"
+          />Spool <span class="brand-tag">Relay</span></a
+        >
+      </header>
+      <div
+        id="sidebar-backdrop"
+        class="sidebar-backdrop"
+        aria-hidden="true"
+        hidden
+      ></div>
+      <aside
+        id="settings-sidebar"
+        class="settings-sidebar"
+        aria-label="Relay 管理"
+      >
+        <div class="settings-sidebar-content">
+          <div class="settings-sidebar-heading">
+            <a class="brand" href="/" aria-label="Spool Relay 首页"
+              ><img
+                class="brand-mark"
+                src="/logo.png"
+                alt=""
+                width="26"
+                height="26"
+              />Spool <span class="brand-tag">Relay</span></a
+            >
+            <button
+              id="sidebar-close"
+              class="icon"
+              type="button"
+              aria-label="关闭菜单"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m18 6-12 12M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <h1>Relay 管理</h1>
+          <nav class="settings-nav" aria-label="Relay 管理">
+            <p>服务</p>
+            <button
+              type="button"
+              data-page="servers"
+              aria-controls="servers-page"
+              aria-current="page"
+              class="selected"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="3" width="18" height="7" rx="2" />
+                <rect x="3" y="14" width="18" height="7" rx="2" />
+                <path d="M7 6.5h.01M7 17.5h.01" /></svg
+              ><span>服务器授权</span
+              ><svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m9 6 6 6-6 6" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              data-page="network"
+              aria-controls="network-page"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <path
+                  d="M2 12h20M12 2a18 18 0 0 1 0 20 18 18 0 0 1 0-20"
+                /></svg
+              ><span>公网连接</span
+              ><svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m9 6 6 6-6 6" />
+              </svg>
+            </button>
+          </nav>
+        </div>
+        <div class="settings-sidebar-bottom">
+          <button
+            id="dashboard-preferences"
+            class="icon"
+            type="button"
+            aria-label="语言与主题"
+            title="语言与主题"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M4 17h16" />
+              <circle cx="9" cy="7" r="3" />
+              <circle cx="15" cy="17" r="3" />
+            </svg>
+          </button>
+          <button
+            id="logout"
+            class="icon"
+            type="button"
+            aria-label="退出管理"
+            title="退出管理"
+            hidden
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"
+              />
+            </svg>
+          </button>
+          <span class="sidebar-status"
+            ><span>Spool Relay</span
+            ><span class="version">v{{version}}</span></span
+          >
+        </div>
+      </aside>
+      <main id="settings-main" class="settings-main">
+        <div class="settings-page">
+          <header class="settings-page-header">
+            <div>
+              <h1 id="page-title">服务器授权</h1>
+              <p id="page-description">
+                管理 token 的生成、注册状态与访问权限。
+              </p>
+            </div>
+            <button
+              id="refresh"
+              class="icon"
+              type="button"
+              aria-label="刷新"
+              title="刷新"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.55-2.6L20 7M4 17l2.35 2.6A7 7 0 0 0 17.9 17"
+                />
+              </svg>
+            </button>
+          </header>
+          <div id="dashboard-notice"></div>
+
+          <div id="network-page" hidden>
+            <section class="settings-group" aria-labelledby="addresses-title">
+              <h2 id="addresses-title">
+                访问地址 <span class="group-note">由部署配置提供</span>
+              </h2>
+              <div class="settings-card">
+                <div class="settings-row address-setting">
+                  <div class="settings-row-label">
+                    <span id="public-url-label">Relay 公网地址</span>
+                    <p id="public-url-hint">Relay 服务的公网 HTTPS 入口。</p>
+                  </div>
+                  <code
+                    id="public-url"
+                    class="display-value"
+                    aria-labelledby="public-url-label"
+                    aria-describedby="public-url-hint"
+                    >尚未配置</code
+                  >
+                </div>
+                <div class="settings-row address-setting">
+                  <div class="settings-row-label">
+                    <span id="web-domain-label">Web 子域名后缀</span>
+                    <p id="web-domain-hint">服务器 Web 地址自动使用此后缀。</p>
+                  </div>
+                  <code
+                    id="web-domain"
+                    class="display-value"
+                    aria-labelledby="web-domain-label"
+                    aria-describedby="web-domain-hint"
+                    >尚未配置</code
+                  >
+                </div>
+              </div>
+              <p class="settings-hint">
+                地址仅供查看。如需修改，请更新部署环境中的
+                <code>RELAY_PUBLIC_URL</code>，并重新部署；Web
+                子域名后缀会自动推导。
+              </p>
+            </section>
+
+            <section class="settings-group" aria-labelledby="proxy-title">
+              <h2 id="proxy-title">连接检测</h2>
+              <div class="settings-card">
+                <div class="settings-row">
+                  <div class="settings-row-label">
+                    <span class="state-heading"
+                      ><span id="detection-dot" class="dot"></span
+                      ><span id="detection-label">尚未验证</span></span
+                    >
+                    <p id="detection-status" aria-live="polite"></p>
+                  </div>
+                  <button id="detect" class="quiet" type="button">检测</button>
+                </div>
+                <div class="settings-row">
+                  <div class="settings-row-label">
+                    <span>自动检测的代理</span>
+                    <p>验证成功后自动信任当前代理 IP。</p>
+                  </div>
+                  <code id="detected-proxy" class="display-value">尚无</code>
+                </div>
+              </div>
+              <p class="settings-hint">
+                启动时会等待公网 HTTPS 代理就绪并自动检测，也可以手动重试。
+              </p>
+            </section>
+
+            <details id="advanced" class="settings-group advanced-settings">
+              <summary>
+                高级设置<svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m9 6 6 6-6 6" />
+                </svg>
+              </summary>
+              <form id="settings-form" class="settings-card">
+                <div class="settings-row settings-row-wide">
+                  <div class="settings-row-label">
+                    <label for="trusted-proxies">额外可信代理</label>
+                    <p id="trusted-proxies-hint">
+                      通常无需填写。多级代理可补充明确可信的
+                      IP/CIDR，使用逗号分隔。
+                    </p>
+                  </div>
+                  <input
+                    id="trusted-proxies"
+                    placeholder="127.0.0.1/32, ::1/128"
+                    spellcheck="false"
+                    aria-describedby="trusted-proxies-hint"
+                  />
+                </div>
+                <div class="settings-card-actions">
+                  <button id="save-settings" class="quiet" type="submit">
+                    保存设置
+                  </button>
+                </div>
+              </form>
+            </details>
+          </div>
+
+          <div id="servers-page">
+            <section class="settings-group" aria-label="连接概况">
+              <div class="settings-card metrics">
+                <div class="metric">
+                  <span>在线服务器</span><strong id="online-count">0</strong>
+                </div>
+                <div class="metric">
+                  <span>有效 token</span><strong id="active-count">0</strong>
+                </div>
+                <div class="metric">
+                  <span>当前连接</span><strong id="connection-count">0</strong>
+                </div>
+              </div>
+            </section>
+            <section class="settings-group" aria-labelledby="create-title">
+              <h2 id="create-title">生成 token</h2>
+              <div class="generation-modes" role="group" aria-label="生成方式">
+                <button
+                  type="button"
+                  data-token-mode="single"
+                  aria-pressed="true"
+                >
+                  单个生成</button
+                ><button
+                  type="button"
+                  data-token-mode="batch"
+                  aria-pressed="false"
+                >
+                  批量生成
+                </button>
+              </div>
+              <div class="settings-card">
+                <form id="create-form" class="settings-row settings-row-wide">
+                  <div id="single-name-label" class="settings-row-label">
+                    <label for="server-name">Token 名称（选填）</label>
+                    <p id="random-name-hint">
+                      留空时自动生成 12 位大小写字母名称。
+                    </p>
+                  </div>
+                  <div id="batch-count-label" class="settings-row-label" hidden>
+                    <label for="batch-count">生成数量</label>
+                    <p id="batch-count-hint">
+                      每次可生成 1–100 个 token，名称随机使用 12 位大小写字母。
+                    </p>
+                  </div>
+                  <div class="create-row">
+                    <input
+                      id="server-name"
+                      placeholder="留空则随机生成名称"
+                      autocomplete="off"
+                      aria-describedby="random-name-hint"
+                    /><input
+                      id="batch-count"
+                      type="number"
+                      min="1"
+                      max="100"
+                      step="1"
+                      value="10"
+                      required
+                      disabled
+                      hidden
+                      aria-describedby="batch-count-hint"
+                    /><button id="create-token" class="primary" type="submit">
+                      生成 token
+                    </button>
+                  </div>
+                  <p id="registration-mode" class="settings-hint">
+                    每个 token 只授权一台 Spool 服务器。
+                  </p>
+                </form>
+              </div>
+              <div id="token-result" class="token-result" hidden>
+                <div class="section-heading">
+                  <strong id="token-result-title">本次会话生成的 token</strong
+                  ><button
+                    id="dismiss-token"
+                    class="icon"
+                    type="button"
+                    aria-label="关闭 token"
+                    title="关闭"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="m18 6-12 12M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <p id="token-result-hint" class="settings-hint">
+                  请及时复制或导出。本次生成的 token
+                  仅保留在当前页面，关闭后无法再次查看。
+                </p>
+                <div id="issued-results" class="issued-results"></div>
+                <div class="export-row">
+                  <span class="settings-hint">TXT 每行包含名称和 token。</span
+                  ><button id="export-tokens" type="button">导出 TXT</button>
+                </div>
+              </div>
+            </section>
+            <section class="settings-group" aria-labelledby="servers-title">
+              <h2 id="servers-title">Token 管理</h2>
+              <div class="settings-card">
+                <div class="token-tabs" role="tablist" aria-label="Token 状态">
+                  <button
+                    id="token-tab-registered"
+                    type="button"
+                    role="tab"
+                    data-token-filter="registered"
+                    aria-controls="token-panel"
+                    aria-selected="true"
+                  >
+                    <span>已注册</span><span class="tab-count">0</span>
+                  </button>
+                  <button
+                    id="token-tab-revoked"
+                    type="button"
+                    role="tab"
+                    data-token-filter="revoked"
+                    aria-controls="token-panel"
+                    aria-selected="false"
+                    tabindex="-1"
+                  >
+                    <span>已撤销</span><span class="tab-count">0</span>
+                  </button>
+                  <button
+                    id="token-tab-unused"
+                    type="button"
+                    role="tab"
+                    data-token-filter="unused"
+                    aria-controls="token-panel"
+                    aria-selected="false"
+                    tabindex="-1"
+                  >
+                    <span>未注册</span><span class="tab-count">0</span>
+                  </button>
+                  <button
+                    id="token-tab-all"
+                    type="button"
+                    role="tab"
+                    data-token-filter="all"
+                    aria-controls="token-panel"
+                    aria-selected="false"
+                    tabindex="-1"
+                  >
+                    <span>全部</span><span class="tab-count">0</span>
+                  </button>
+                </div>
+                <div
+                  id="token-panel"
+                  role="tabpanel"
+                  aria-labelledby="token-tab-registered"
+                  tabindex="0"
+                >
+                  <div id="token-table" class="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th scope="col">名称 / 绑定服务器</th>
+                          <th scope="col">Token 状态</th>
+                          <th scope="col">注册 IP</th>
+                          <th scope="col">连接</th>
+                          <th scope="col">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody id="servers"></tbody>
+                    </table>
+                  </div>
+                  <p id="empty-state" class="empty">
+                    暂无已注册的 token。服务器使用 token
+                    完成首次注册后会显示在这里。
+                  </p>
+                </div>
+              </div>
+              <p class="settings-hint">
+                撤销 token 会断开绑定服务器的 Relay
+                连接。已撤销列表也包含已注销的失效
+                token，记录会保留以防止旧凭据再次生效。
+              </p>
+            </section>
+          </div>
+        </div>
+      </main>
+    </div>
+    <dialog
+      id="appearance-dialog"
+      class="appearance-dialog"
+      aria-labelledby="appearance-title"
+    >
+      <div class="section-heading">
+        <h2 id="appearance-title">语言与主题</h2>
+        <button
+          id="close-preferences"
+          class="icon"
+          type="button"
+          aria-label="关闭设置"
+          title="关闭设置"
+          autofocus
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m18 6-12 12M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <fieldset class="theme-field">
+        <legend>主题</legend>
+        <div class="theme-options">
+          <button type="button" data-theme-choice="light" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" />
+              <path
+                d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"
+              /></svg
+            ><span>浅色</span></button
+          ><button type="button" data-theme-choice="dark" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" /></svg
+            ><span>深色</span></button
+          ><button type="button" data-theme-choice="system" aria-pressed="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <path d="M8 21h8M12 17v4" /></svg
+            ><span>跟随系统</span>
+          </button>
+        </div>
+      </fieldset>
+      <div class="language-choice">
+        <label for="language-choice">语言</label
+        ><select id="language-choice">
+          <option value="system">跟随系统</option>
+          <option value="zh-CN">简体中文</option>
+          <option value="en">English</option>
+          <option value="ja">日本語</option>
+        </select>
+      </div>
+      <p class="appearance-version">
+        <span>当前版本</span><code>v{{version}}</code>
+      </p>
+    </dialog>
+    <dialog
+      id="revoke-dialog"
+      aria-labelledby="revoke-title"
+      aria-describedby="revoke-description"
+    >
+      <form method="dialog">
+        <h2 id="revoke-title">撤销 token？</h2>
+        <p id="revoke-description"></p>
+        <p class="muted">当前 Relay 连接会断开，旧 token 将无法重新连接。</p>
+        <div class="dialog-actions">
+          <button class="quiet" value="cancel" autofocus>取消</button
+          ><button class="danger" value="revoke">撤销 token</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
 </html>

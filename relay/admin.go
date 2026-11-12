@@ -89,14 +89,35 @@ func (s *Server) AdminHandler() http.Handler {
 					return
 				}
 				w.Header().Set("Location", "/v1/registrations/"+registration.ID)
-				adminJSON(w, http.StatusCreated, struct {
-					Registration Registration `json:"registration"`
-					Token        string       `json:"token"`
-				}{registration, token})
+				adminJSON(w, http.StatusCreated, issuedRegistration{registration, token})
 			default:
 				w.Header().Set("Allow", "GET, POST")
 				adminError(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
+			return
+		}
+		if r.URL.Path == "/v1/registrations/batch" {
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", "POST")
+				adminError(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var input struct {
+				Count int `json:"count"`
+			}
+			if !decodeAdminJSON(w, r, &input) {
+				return
+			}
+			if input.Count < 1 || input.Count > maxRegistrationBatch {
+				registrationError(w, ErrInvalidRegistrationCount)
+				return
+			}
+			issued, err := s.createRegistrations(make([]string, input.Count))
+			if err != nil {
+				registrationError(w, err)
+				return
+			}
+			adminJSON(w, http.StatusCreated, map[string]any{"registrations": issued})
 			return
 		}
 		if r.URL.Path == "/v1/registrations/purge" {
@@ -204,7 +225,7 @@ func decodeAdminJSON(w http.ResponseWriter, r *http.Request, input any) bool {
 
 func registrationError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, ErrInvalidRegistration):
+	case errors.Is(err, ErrInvalidRegistration), errors.Is(err, ErrInvalidRegistrationCount):
 		adminError(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrRegistrationExists):
 		adminError(w, err.Error(), http.StatusConflict)

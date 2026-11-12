@@ -7,6 +7,8 @@ test("desktop and PWA metadata consistently use Spool", async () => {
   const desktop = JSON.parse(await read("../../mygo.json"));
   const manifest = JSON.parse(await read("../public/manifest.webmanifest"));
   const pkg = JSON.parse(await read("../package.json"));
+  const relay = JSON.parse(await read("../../relay/version.json"));
+  assert.equal(relay.version, pkg.version);
   assert.equal(desktop.name, "Spool");
   assert.equal(desktop.slug, "spool");
   assert.equal(desktop.identifier, "com.cloudgeek.spool");
@@ -31,6 +33,7 @@ test("logo-derived icons are exported at the expected dimensions", async () => {
     ["../public/apple-touch-icon.png", 180],
     ["../public/favicon.png", 32],
     ["../public/logo.png", 128],
+    ["../../relay/adminui/logo.png", 128],
   ]) {
     const png = await readFile(new URL(path, import.meta.url));
     assert.equal(png.subarray(1, 4).toString(), "PNG", path);

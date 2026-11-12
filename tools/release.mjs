@@ -7,7 +7,7 @@ import { releaseVersion } from "./prepare-release.mjs";
 import { compareTags } from "./release-metadata.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
-const versionFiles = ["mygo.json", "web/package.json"];
+const versionFiles = ["mygo.json", "web/package.json", "relay/version.json"];
 const usage = `Usage: bun tools/release.mjs [version|patch|minor|major] [--dry-run] [--offline]
 
 Examples:

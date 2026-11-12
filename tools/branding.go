@@ -36,6 +36,7 @@ func main() {
 		{"web/public/apple-touch-icon.png", 180, true},
 		{"web/public/favicon.png", 32, false},
 		{"web/public/logo.png", 128, false},
+		{"relay/adminui/logo.png", 128, false},
 		{"assets/icon.png", 1024, false},
 		{"android/app/src/main/res/drawable-nodpi/spool_launcher_logo.png", 512, false},
 		{"tray.png", 44, false},

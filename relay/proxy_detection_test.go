@@ -485,10 +485,13 @@ func TestLegacyProxySettingsMigration(t *testing.T) {
 
 func TestAdminDashboardAndSameOriginAPI(t *testing.T) {
 	s := testBroker(t)
-	for path, contentType := range map[string]string{"/": "text/html", "/admin.js": "text/javascript", "/admin.css": "text/css"} {
+	for path, contentType := range map[string]string{"/": "text/html", "/admin.js": "text/javascript", "/presentation.js": "text/javascript", "/admin.css": "text/css", "/logo.png": "image/png"} {
 		w := adminRequest(t, s, "GET", path, "", "")
 		if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), contentType) || w.Header().Get("Content-Security-Policy") == "" || strings.Contains(w.Body.String(), testAdminToken) {
 			t.Fatal("invalid dashboard asset", path, w.Code)
+		}
+		if path == "/" && (strings.Contains(w.Body.String(), "{{version}}") || !strings.Contains(w.Body.String(), "v"+Version())) {
+			t.Fatal("dashboard version missing")
 		}
 		public := httptest.NewRecorder()
 		s.ServeHTTP(public, httptest.NewRequest("GET", path, nil))
