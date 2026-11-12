@@ -34,6 +34,7 @@ import { locale, t } from "./presentation.js";
   let detailCopyMessage = "";
   let bulkAction;
   let revokeEntry;
+  let deviceIDTrigger;
   let notice;
   const tokenTabs = [...document.querySelectorAll("[data-token-filter]")];
   const emptyStates = {
@@ -307,6 +308,85 @@ import { locale, t } from "./presentation.js";
     if (className) element.className = className;
     return element;
   }
+  function hideDeviceID() {
+    deviceIDTrigger?.removeAttribute("aria-describedby");
+    deviceIDTrigger = undefined;
+    $("device-id-tooltip").hidden = true;
+    $("device-id-tooltip-value").textContent = "";
+  }
+  function showDeviceID(trigger, id) {
+    hideDeviceID();
+    deviceIDTrigger = trigger;
+    const tooltip = $("device-id-tooltip");
+    $("device-id-tooltip-value").textContent = id;
+    trigger.setAttribute("aria-describedby", tooltip.id);
+    tooltip.hidden = false;
+    const badge = trigger.getBoundingClientRect();
+    const rect = tooltip.getBoundingClientRect();
+    const width = document.documentElement.clientWidth;
+    const height = innerHeight;
+    const below = badge.bottom + 8;
+    const above = badge.top - rect.height - 8;
+    const placeBelow = below + rect.height <= height - 12 || above < 12;
+    tooltip.dataset.placement = placeBelow ? "below" : "above";
+    tooltip.style.left =
+      Math.max(
+        12,
+        Math.min(
+          width - rect.width - 12,
+          badge.left + (badge.width - rect.width) / 2,
+        ),
+      ) + "px";
+    tooltip.style.top =
+      Math.max(
+        12,
+        Math.min(height - rect.height - 12, placeBelow ? below : above),
+      ) + "px";
+  }
+  function attachDeviceID(badge, id) {
+    badge.type = "button";
+    for (const event of ["pointerenter", "focus", "click"])
+      badge.addEventListener(event, () => showDeviceID(badge, id));
+    badge.addEventListener("pointerleave", (event) => {
+      if (
+        deviceIDTrigger === badge &&
+        document.activeElement !== badge &&
+        !$("device-id-tooltip").contains(event.relatedTarget)
+      )
+        hideDeviceID();
+    });
+    badge.addEventListener("blur", () => {
+      if (
+        deviceIDTrigger === badge &&
+        !$("device-id-tooltip").matches(":hover")
+      )
+        hideDeviceID();
+    });
+  }
+  $("device-id-tooltip").addEventListener("pointerleave", (event) => {
+    if (
+      deviceIDTrigger &&
+      document.activeElement !== deviceIDTrigger &&
+      !deviceIDTrigger.contains(event.relatedTarget)
+    )
+      hideDeviceID();
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (
+      deviceIDTrigger &&
+      !deviceIDTrigger.contains(event.target) &&
+      !$("device-id-tooltip").contains(event.target)
+    )
+      hideDeviceID();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && deviceIDTrigger) {
+      event.preventDefault();
+      hideDeviceID();
+    }
+  });
+  document.addEventListener("scroll", hideDeviceID, true);
+  window.addEventListener("resize", hideDeviceID);
   function registrationGroup(entry) {
     if (entry.revoked_at || entry.unregistered_at) return "revoked";
     return entry.server_id ? "registered" : "unused";
@@ -881,6 +961,7 @@ import { locale, t } from "./presentation.js";
     });
   }
   function renderServers(list) {
+    hideDeviceID();
     registrations = list;
     const counts = tokenResult.counts;
     for (const tab of tokenTabs) {
@@ -927,20 +1008,28 @@ import { locale, t } from "./presentation.js";
       name.setAttribute("aria-haspopup", "dialog");
       name.addEventListener("click", () => openTokenDetails(entry));
       identityCopy.append(name);
-      identityCopy.append(
+      const created = node("time", "", "server-detail token-created");
+      created.dateTime = entry.created_at;
+      created.append(
         node(
           "span",
-          t("创建于 {date}", { date: date(entry.created_at) }) +
-            (entry.automatic ? " · " + t("自动注册") : ""),
-          "server-detail",
+          t("创建于 {date}", { date: date(entry.created_at) }),
+          "created-full",
+        ),
+        node(
+          "span",
+          new Date(entry.created_at).toLocaleDateString(locale()),
+          "created-date",
         ),
       );
+      if (entry.automatic) created.append(" · " + t("自动注册"));
+      identityCopy.append(created);
       identityRow.append(identityCopy);
       identity.append(identityRow);
       const state = registrationState(entry);
       const status = node("td", "", "device-status");
       const badge = node(
-        "span",
+        entry.server_id ? "button" : "span",
         t(state),
         "badge" +
           (registrationGroup(entry) === "revoked"
@@ -951,7 +1040,7 @@ import { locale, t } from "./presentation.js";
                 ? " online"
                 : ""),
       );
-      if (entry.server_id) badge.title = entry.server_id;
+      if (entry.server_id) attachDeviceID(badge, entry.server_id);
       status.append(badge);
       if (registrationGroup(entry) === "registered")
         status.append(
@@ -1105,6 +1194,7 @@ import { locale, t } from "./presentation.js";
     return request;
   }
   function navigate(page) {
+    hideDeviceID();
     currentPage = page;
     const network = page === "network";
     $("activity-page").hidden = page !== "activity";

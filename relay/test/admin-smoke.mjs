@@ -85,9 +85,9 @@ try {
     return result.result.value;
   };
   diagnose = () => evaluate(`({notice:document.getElementById('notice')?.textContent,dialogs:[...document.querySelectorAll('dialog[open]')].map(e=>e.id),listBusy:document.getElementById('token-panel')?.getAttribute('aria-busy'),selection:document.getElementById('token-selection-count')?.textContent,refreshDisabled:document.getElementById('refresh')?.disabled,bulkDisabled:document.getElementById('bulk-disable-web')?.disabled})`);
-  const capture = async (name) => {
+  const capture = async (name, captureBeyondViewport = true) => {
     await evaluate('document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))');
-    const image = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
+    const image = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport });
     await writeFile(join(artifacts, name + ".png"), Buffer.from(image.data, "base64"));
   };
   const viewport = async (width, height, mobile = false) => {
@@ -109,6 +109,18 @@ try {
     await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
     await send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
     await idleLists();
+  };
+  const hover = async (selector) => {
+    await evaluate(`(() => {const element=document.querySelector(${JSON.stringify(selector)}),r=element.getBoundingClientRect();if(r.top<0||r.bottom>innerHeight)element.scrollIntoView({block:'nearest'});return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));})()`);
+    const point = await evaluate(`(() => {const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};})()`);
+    await send('Input.dispatchMouseEvent', {type:'mouseMoved', ...point});
+  };
+  const tooltipFits = async () => {
+    assert.equal(await evaluate(`(() => {
+      const tooltip=document.getElementById('device-id-tooltip'), r=tooltip.getBoundingClientRect();
+      return !tooltip.hidden && r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight && tooltip.scrollWidth<=tooltip.clientWidth
+        && tooltip.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2));
+    })()`), true, 'Device ID popup must fit the viewport and remain above the table');
   };
   const key = async (key, code, windowsVirtualKeyCode, modifiers = 0) => {
     for (const type of ['keyDown', 'keyUp'])
@@ -171,6 +183,22 @@ try {
         return Math.abs(center(cell.querySelector('.badge')) - center(online)) < 1 && Math.abs(center(cell) - center(online)) < 1;
       });
     })()`), true, 'Narrow device status must align left with the online state beside its badge; desktop status must stay centered');
+  };
+  const mobileTokenLayout = async () => {
+    assert.equal(await evaluate(`(() => {
+      return [...document.querySelectorAll('#servers tr')].every(row => {
+        const [identity, device, ip, web, action]=[...row.cells].map(cell=>cell.getBoundingClientRect());
+        const buttons=[...row.querySelectorAll('.server-actions button')].map(button=>button.getBoundingClientRect());
+        const created=row.querySelector('.token-created');
+        const expectedDate=new Date(created.dateTime).toLocaleDateString(document.documentElement.lang);
+        return identity.bottom<=device.top && Math.abs(device.top-action.top)<1
+          && ip.top>=device.bottom && web.top>=ip.bottom
+          && Math.abs(device.left-ip.left)<1 && Math.abs(device.left-web.left)<1
+          && action.left>device.right && action.left>ip.right && action.left>web.right
+          && buttons.every((rect,i)=>rect.left>=action.left && rect.right<=action.right+1 && (!i||rect.top>=buttons[i-1].bottom))
+          && created.innerText.startsWith(expectedDate) && !created.innerText.includes(':');
+      });
+    })()`), true, 'Mobile actions must occupy their own right column beside device, IP and Web status');
   };
   await send("Runtime.enable");
   await send("Log.enable");
@@ -282,9 +310,10 @@ try {
     const rendered = await evaluate(`(() => {
       const row = [...document.querySelectorAll('#servers tr')].find(row => row.querySelector('.server-name').textContent === ${JSON.stringify(entry.name)});
       const link = row.cells[3].querySelector('a');
-      return { deviceID: row.cells[1].querySelector('.badge').title, nameText: row.cells[0].textContent, webURL: link?.href, webTitle: link?.title, webLabel: link?.getAttribute('aria-label'), hasIcon: !!link?.querySelector('svg'), count: Number(row.cells[3].querySelector('.connection-count').textContent) };
+      return { nativeTitle: row.cells[1].querySelector('.badge').getAttribute('title'), focusableBadge: row.cells[1].querySelector('.badge').matches('button'), nameText: row.cells[0].textContent, webURL: link?.href, webTitle: link?.title, webLabel: link?.getAttribute('aria-label'), hasIcon: !!link?.querySelector('svg'), count: Number(row.cells[3].querySelector('.connection-count').textContent) };
     })()`);
-    assert.equal(rendered.deviceID, entry.server_id, 'Registration badge hover must reveal the device ID');
+    assert.equal(rendered.nativeTitle, null, 'Device IDs must use a custom popup instead of the native title');
+    assert.equal(rendered.focusableBadge, true, 'Registration badges must support keyboard access');
     assert.equal(rendered.nameText.includes(entry.server_id), false, 'Device IDs belong on the status badge');
     assert.equal(rendered.webURL, entry.web_url);
     assert.equal(rendered.webTitle, entry.web_url, 'Web icon hover must reveal the URL');
@@ -295,6 +324,29 @@ try {
   await deviceStatusAligned();
   const published = initialList.find(entry => entry.web_url);
   assert.ok(published, 'Fixture must publish a Web entry');
+  const publishedBadge = `#servers tr[data-token-id="${published.id}"] .badge`;
+  await hover(publishedBadge);
+  assert.equal(await evaluate('document.getElementById("device-id-tooltip").hidden'), false, 'Hover must show the popup immediately without a delay');
+  assert.equal(await evaluate('document.getElementById("device-id-tooltip-value").textContent'), published.server_id);
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(publishedBadge)}).getAttribute('aria-describedby')`), 'device-id-tooltip');
+  await tooltipFits();
+  await capture('device-id-tooltip-desktop', false);
+  await hover('#device-id-tooltip-value');
+  assert.equal(await evaluate('document.getElementById("device-id-tooltip").hidden'), false, 'The popup must remain open when hovered so the ID can be selected');
+  await send('Input.dispatchMouseEvent', {type:'mouseMoved',x:0,y:0});
+  assert.equal(await evaluate('document.getElementById("device-id-tooltip").hidden'), true, 'Leaving the badge and popup must dismiss it');
+  await evaluate(`document.querySelector(${JSON.stringify(publishedBadge)}).focus()`);
+  assert.equal(await evaluate('document.getElementById("device-id-tooltip-value").textContent'), published.server_id, 'Keyboard focus must reveal the full ID');
+  await key('Escape', 'Escape', 27);
+  assert.equal(await evaluate('document.getElementById("device-id-tooltip").hidden'), true, 'Escape must dismiss the popup');
+  await evaluate('document.activeElement.blur()');
+  await theme('dark');
+  await hover(publishedBadge);
+  await tooltipFits();
+  await capture('device-id-tooltip-dark', false);
+  await theme('light');
+  await evaluate('document.getElementById("settings-main").dispatchEvent(new Event("scroll"))');
+  assert.equal(await evaluate('document.getElementById("device-id-tooltip").hidden'), true, 'Scrolling must dismiss detached popups');
   await click('#servers .web-link');
   const workspaceTab = await until(async () => {
     const tabs = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
@@ -321,6 +373,7 @@ try {
   await click('#servers .server-name');
   assert.equal(await evaluate('document.getElementById("token-details").open'), true);
   assert.equal(await evaluate('document.getElementById("detail-device-id").textContent'), published.server_id);
+  assert.equal(await evaluate('document.getElementById("detail-created-at").textContent.includes(":")'), true, 'Details must retain the full creation time');
   assert.equal(await evaluate('document.getElementById("detail-web-url").href'), published.web_url);
   await send('Browser.grantPermissions', { origin: url, permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'] });
   await click('[data-copy-detail="detail-device-id"]');
@@ -460,7 +513,23 @@ try {
   await capture("mobile");
   await selectFilter('registered');
   await evaluate('document.getElementById("servers-title").scrollIntoView({block:"start"})');
+  await mobileTokenLayout();
   await capture('device-status-mobile');
+  await viewport(700, 900, true);
+  assert.equal(await evaluate(`(() => {
+    return [...document.querySelectorAll('#servers .token-identity-copy')].every(identity=>{
+      const name=identity.querySelector('.server-name').getBoundingClientRect(),created=identity.querySelector('.server-detail').getBoundingClientRect();
+      return created.left>name.right && created.top<name.bottom && created.bottom>name.top;
+    });
+  })()`), true, 'The creation time must follow the token name on the same line when space allows');
+  await mobileTokenLayout();
+  await viewport(390, 844, true);
+  await click(publishedBadge);
+  assert.equal(await evaluate('document.getElementById("device-id-tooltip-value").textContent'), published.server_id, 'A tap must reveal the full Device ID on mobile');
+  await tooltipFits();
+  await capture('device-id-tooltip-mobile', false);
+  await click('#servers-title');
+  assert.equal(await evaluate('document.getElementById("device-id-tooltip").hidden'), true, 'Clicking outside must dismiss the popup');
   await selectFilter('all');
   await openSidebar();
   assert.equal(await evaluate('document.getElementById("settings-sidebar").getAttribute("role")'), 'dialog');
@@ -489,6 +558,7 @@ try {
   await viewport(320, 720, true);
   await fitsViewport();
   await deviceStatusAligned();
+  await mobileTokenLayout();
   // Exercise hostile names after capturing the ordinary example screens.
   // The fixture and every registration disappear when this run exits.
   const hostileName = '<img src=x onerror="window.relayXSS=true">';

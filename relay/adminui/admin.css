@@ -871,6 +871,9 @@ tr:last-child td {
   margin-top: 4px;
   overflow-wrap: anywhere;
 }
+.created-date {
+  display: none;
+}
 .device-status {
   text-align: center;
 }
@@ -882,6 +885,46 @@ tr:last-child td {
   color: var(--muted);
   font-size: 10px;
   white-space: nowrap;
+}
+button.badge {
+  min-height: 0;
+  border: 0;
+  font: inherit;
+  font-size: 10px;
+}
+.device-id-tooltip {
+  position: fixed;
+  z-index: 100;
+  top: 0;
+  left: 0;
+  width: min(390px, calc(100vw - 32px));
+  padding: 11px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: 0 6px 24px #0002;
+  text-align: left;
+}
+.device-id-tooltip > span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.device-id-tooltip code {
+  display: block;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.device-id-tooltip::before {
+  content: "";
+  position: absolute;
+  inset: -8px 0 auto;
+  height: 8px;
+}
+.device-id-tooltip[data-placement="above"]::before {
+  inset: auto 0 -8px;
 }
 .badge.online {
   background: var(--success-bg);
@@ -1262,6 +1305,47 @@ dialog.token-drawer {
   }
   td:first-child {
     grid-column: 1 / -1;
+  }
+  #servers tr {
+    grid-template-columns: minmax(0, 1fr) minmax(100px, 40%);
+    align-items: start;
+  }
+  #servers td:nth-child(2) {
+    grid-area: 2 / 1;
+  }
+  #servers td:nth-child(3) {
+    grid-area: 3 / 1;
+  }
+  #servers td:nth-child(4) {
+    grid-area: 4 / 1;
+  }
+  #servers td:last-child {
+    grid-area: 2 / 2 / 5 / 3;
+  }
+  #servers .server-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 7px;
+  }
+  #servers .server-actions button {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  #servers .token-identity-copy {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 3px 9px;
+  }
+  #servers .token-identity-copy .server-detail {
+    display: inline;
+    margin-top: 0;
+  }
+  #servers .created-full {
+    display: none;
+  }
+  #servers .created-date {
+    display: inline;
   }
   .device-status {
     text-align: left;
