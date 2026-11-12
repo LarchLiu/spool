@@ -59,6 +59,7 @@ try {
   await once(socket, "open");
   let sequence = 0;
   let registrationResponses = 0;
+  let settingsResponses = 0;
   const pending = new Map();
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
@@ -71,6 +72,7 @@ try {
     if (message.method === "Runtime.exceptionThrown") errors.push(message.params.exceptionDetails.text);
     if (message.method === "Log.entryAdded" && message.params.entry.level === "error" && message.params.entry.source === "security") errors.push(message.params.entry.text);
     if (message.method === "Network.responseReceived" && new URL(message.params.response.url).pathname === '/v1/registrations/search') registrationResponses++;
+    if (message.method === "Network.responseReceived" && new URL(message.params.response.url).pathname === '/v1/settings') settingsResponses++;
   });
   const send = (method, params = {}) => new Promise((resolve, reject) => {
     const id = ++sequence;
@@ -358,6 +360,10 @@ try {
   assert.equal(await evaluate('document.getElementById("detect").disabled'), true);
   assert.equal(await evaluate('document.getElementById("detect").textContent'), "等待代理…");
   assert.equal(await evaluate('document.getElementById("detection-status").textContent.includes("等待公网 HTTPS 代理就绪")'), true);
+  const beforeDetectionLists = registrationResponses;
+  const beforeDetectionSettings = settingsResponses;
+  await until(() => settingsResponses >= beforeDetectionSettings + 2, 'proxy detection progress polling');
+  assert.equal(registrationResponses, beforeDetectionLists, 'Detection progress must not refresh the token list');
   assert.equal(await evaluate(`fetch('/fixture/proxy-ready',{method:'POST',headers:{Authorization:'Bearer '+${JSON.stringify(adminToken)}}}).then(r=>r.status)`), 204);
   await until(() => evaluate(`fetch('/v1/settings',{headers:{Authorization:'Bearer '+${JSON.stringify(adminToken)}}}).then(r=>r.json()).then(s=>s.admin_origin===location.origin && !s.detecting && s.public_url===${JSON.stringify(publicURL)})`), "deployment URL survives management login");
   await until(() => evaluate('document.getElementById("detection-status").textContent.includes("检测成功")'), "startup proxy detection");
@@ -579,9 +585,14 @@ try {
   await click('#refresh');
   await until(() => registrationResponses > beforeRefresh, 'page refresh');
   assert.deepEqual(await rowNames(), unusedNames.slice(20, 40), 'Refresh must preserve the page and ordering');
-  const beforePoll = registrationResponses;
-  await until(() => registrationResponses > beforePoll, 'automatic page refresh');
-  assert.deepEqual(await rowNames(), unusedNames.slice(20, 40), 'Polling must preserve the page');
+  const beforeIdleLists = registrationResponses;
+  const beforeIdleSettings = settingsResponses;
+  // Wait beyond the previous 10-second interval to verify an idle dashboard
+  // sends no periodic requests after proxy detection has finished.
+  await evaluate('new Promise(resolve => setTimeout(resolve, 11000))');
+  assert.equal(registrationResponses, beforeIdleLists, 'The token list must not refresh on a timer');
+  assert.equal(settingsResponses, beforeIdleSettings, 'Settings polling must stop when detection finishes');
+  assert.deepEqual(await rowNames(), unusedNames.slice(20, 40), 'An idle list must preserve the page');
   await navigate('network');
   await navigate('servers');
   assert.equal((await pagination()).status, 'Page 2 of 3', 'Navigation must preserve the page');

@@ -3,7 +3,7 @@ import { locale, t } from "./presentation.js";
   const $ = (id) => document.getElementById(id);
   let credential = "";
   let settings;
-  let timer;
+  let detectionTimer;
   let generation = 0;
   let pending;
   let settingsDirty = false;
@@ -123,7 +123,7 @@ import { locale, t } from "./presentation.js";
     generation++;
     credential = "";
     settings = undefined;
-    clearTimeout(timer);
+    clearTimeout(detectionTimer);
     $("admin-token").value = "";
     issuedTokens = [];
     batchResult = false;
@@ -298,6 +298,7 @@ import { locale, t } from "./presentation.js";
     if (fill && !settingsDirty) {
       $("trusted-proxies").value = (next.trusted_proxies || []).join(", ");
     }
+    pollDetection();
   }
   const date = (value) => new Date(value).toLocaleString(locale());
   function node(tag, text, className) {
@@ -1135,20 +1136,20 @@ import { locale, t } from "./presentation.js";
       setSidebar(false, true);
     });
   }
-  function poll() {
-    clearTimeout(timer);
-    if (!credential) return;
-    timer = setTimeout(
-      async () => {
-        try {
-          if (!bulkBusy) await refresh();
-        } catch (error) {
+  function pollDetection() {
+    clearTimeout(detectionTimer);
+    if (!credential || !settings?.detecting) return;
+    const epoch = generation;
+    detectionTimer = setTimeout(async () => {
+      try {
+        renderSettings(await api("/v1/settings"), true);
+      } catch (error) {
+        if (epoch === generation) {
           showNotice(error.message);
+          pollDetection();
         }
-        poll();
-      },
-      settings?.detecting ? 800 : 10000,
-    );
+      }
+    }, 800);
   }
   async function saveSettings() {
     if (savingSettings) return;
@@ -1168,7 +1169,6 @@ import { locale, t } from "./presentation.js";
       });
       settingsDirty = false;
       renderSettings(next, true);
-      poll();
     } finally {
       savingSettings = false;
       $("trusted-proxies").disabled = $("save-settings").disabled = false;
@@ -1194,7 +1194,6 @@ import { locale, t } from "./presentation.js";
         settings.admin_origin !== location.origin
       )
         await saveSettings();
-      poll();
     } catch (error) {
       showNotice(error.message);
     } finally {
@@ -1230,7 +1229,6 @@ import { locale, t } from "./presentation.js";
     try {
       renderSettings(await api("/v1/proxy-detection", { method: "POST" }));
       showNotice("");
-      poll();
     } catch (error) {
       showNotice(error.message);
       if (settings) renderSettings(settings);

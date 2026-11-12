@@ -333,12 +333,14 @@ retired), **未注册** (unused), and **全部** (all), with counts for each gro
 Entries include historical registration IPs, Server IDs and active connection
 counts. **撤销** asks for confirmation, then
 disconnects the selected server and disables its token. Inactive records remain
-visible. The list refreshes every ten seconds; proxy detection does not run on a
-timer.
+visible. The list loads on login, manual refresh, pagination/filter changes and
+after administrative operations; it does not refresh on a timer. Proxy detection
+progress updates automatically while a check is running, without refreshing the
+token list or periodically restarting detection.
 
 Search tokens by name, Device ID or registration IP, and combine the connection
 and Web status filters to narrow the list. Filtering and pagination run on the
-server; polling returns the current page and global counts. Results are shown
+server; list requests return the current page and global counts. Results are shown
 newest first, 20 per page. Select a token name to open its details and copy its
 IDs, IP or Web URL.
 The dashboard never retrieves previously issued token secrets.
