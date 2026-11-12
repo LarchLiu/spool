@@ -2,7 +2,6 @@ package voxl
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -11,12 +10,7 @@ import (
 func (b *buildEnvironment) prepareLinux(ctx context.Context) (string, error) {
 	var missing []string
 	cargo, rustc := b.linuxRustTool(ctx, "cargo"), b.linuxRustTool(ctx, "rustc")
-	if cargo == "" {
-		missing = append(missing, "cargo >= 1.85")
-	}
-	if rustc == "" {
-		missing = append(missing, "rustc >= 1.85")
-	} else {
+	if rustc != "" {
 		b.set("RUSTC", rustc)
 	}
 	// The native Rust toolchain links through cc; bindgen also needs libclang.
@@ -59,7 +53,10 @@ func (b *buildEnvironment) prepareLinux(ctx context.Context) (string, error) {
 		return "", ctx.Err()
 	}
 	if len(missing) > 0 {
-		return "", dependencyError("Run the Linux install.sh again to prepare voxl dependencies, then retry. See the Spool README for manual installation.", missing)
+		return "", dependencyError("Run the Linux install.sh to prepare native system libraries, then retry. See docs/deployment.md for manual installation.", missing)
+	}
+	if cargo == "" || rustc == "" {
+		return b.prepareTemporaryRust(ctx)
 	}
 	// DISPLAY is needed when streaming, not when compiling; headless hosts can
 	// build before starting X11/Xvfb. Wayland alone is unsupported upstream.
@@ -67,16 +64,15 @@ func (b *buildEnvironment) prepareLinux(ctx context.Context) (string, error) {
 }
 
 // Desktop sessions can still have the distribution's older Rust first in PATH
-// after install.sh prepares rustup without modifying shell profiles. Continue
-// searching the user tool locations until a compatible version is found.
+// with a newer compiler in a user tool directory. Continue searching those
+// locations until a compatible version is found.
 func (b *buildEnvironment) linuxRustTool(ctx context.Context, name string) string {
 	for _, path := range b.find(name) {
 		version, err := b.output(ctx, path, "--version")
 		if err != nil {
 			continue
 		}
-		var major, minor int
-		if n, _ := fmt.Sscanf(version, name+" %d.%d", &major, &minor); n == 2 && (major > 1 || major == 1 && minor >= 85) {
+		if compatibleRustVersion(version, name) {
 			return path
 		}
 	}

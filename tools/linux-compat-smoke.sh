@@ -50,6 +50,7 @@ case "$image_id" in
   *) echo 'Add bootstrap packages for this test image first.' >&2; exit 1 ;;
 esac
 . "$REPO_ROOT/tools/linux-dependencies.sh"
+. "$REPO_ROOT/tools/install-runtime.sh"
 fail() { echo "linux-compat-smoke: $*" >&2; exit 1; }
 # Only this container test replaces the production sudo/polkit boundary.
 spool_system_command() { "$@"; }
@@ -70,6 +71,16 @@ if [ "$mode" = voxl ]; then
   skip_dependencies=no
   skip_voxl_dependencies=no
   spool_prepare_dependencies
+  # This explicit disposable-container build owns its toolchain/cache. The
+  # production installer never installs Rust or changes a user's defaults.
+  if ! spool_rust_ready; then
+    if ! command -v rustup >/dev/null 2>&1; then
+      fetch https://sh.rustup.rs "$work/rustup-init.sh"
+      sh "$work/rustup-init.sh" -y --profile minimal --default-toolchain none --no-modify-path
+    fi
+    export RUSTUP_TOOLCHAIN=stable
+    rustup toolchain install stable --profile minimal
+  fi
   cargo install voxl-server --version =0.3.3 --locked --registry crates-io --root "$RUN_ROOT/voxl" --target-dir "$RUN_ROOT/target"
   "$RUN_ROOT/voxl/bin/voxl-server" --help >/dev/null
 fi

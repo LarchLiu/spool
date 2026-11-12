@@ -39,19 +39,20 @@ Alpine, NixOS, unrecognized distributions and immutable/OSTree variants require
 manual dependency provisioning. Older Ubuntu/Debian/RHEL versions are excluded
 from automatic setup. `--skip-dependencies` is available for managed environments;
 it does not establish binary compatibility. Release archives target x86_64 and
-arm64 and require Bun and OpenSSL 3+ for verification.
+arm64 and require OpenSSL 3+ for verification. The installer reuses Bun or
+Node.js 18+ when available. Otherwise it needs `unzip` and downloads the pinned
+Bun version, verifies its SHA-256 checksum, and uses it only for this installation.
+The temporary Bun is stored in a private `~/.local/.spool.runtime.*` directory
+so it can run when system temporary storage is mounted with `noexec`, and is
+removed when the installer exits. Existing runtimes are left unchanged.
 
-If Rust or Cargo is missing or older than 1.85, it installs rustup for the
-current user when needed, then runs:
-
-```sh
-rustup toolchain install stable --profile minimal
-rustup default stable
-```
-
-It leaves shell profiles unchanged and
-preserves a working, compatible toolchain. This step needs access to
-`sh.rustup.rs` and Rust's toolchain download servers.
+The installer checks Rust and Cargo but never installs, upgrades or changes
+their defaults. If either is missing or older than 1.85, Spool installation
+continues with a reminder that **Install voxl** will prepare a temporary
+toolchain when needed. On Linux, that action reuses compatible Rust/Cargo or
+downloads Rust into the voxl installation job's private directory. The temporary
+toolchain is removed after the build, including failure or cancellation. User
+Cargo/Rustup homes, shell profiles and default toolchains remain unchanged.
 
 For manual setup on Debian/Ubuntu, install the system packages with:
 
@@ -295,7 +296,9 @@ Without `--binary`, Spool first searches for a local executable and then
 builds `voxl-server` **0.3.3** from crates.io when needed. The native prerequisites
 vary by platform: macOS needs Xcode Command Line Tools and Rust; Linux needs
 X11/Xvfb, Rust, x264, libyuv, Opus, PulseAudio and XCB development libraries
-(`libxcb1-dev` on Debian/Ubuntu); Windows needs Rust
+(`libxcb1-dev` on Debian/Ubuntu). On Linux, missing or outdated Rust/Cargo is
+prepared temporarily when you install voxl and removed after the build;
+Windows needs Rust
 MSVC, Visual Studio C++ Build Tools, LLVM, and vcpkg.
 
 On macOS, local installation also compiles a small native launcher with Xcode

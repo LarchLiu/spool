@@ -41,6 +41,9 @@ func newDependencyFixture(t *testing.T, goos string) *dependencyFixture {
 		}
 	}
 	f.b = &buildEnvironment{goos: goos, env: []string{"PATH=" + f.bin, "TMPDIR=" + filepath.Join(root, "tmp")}, log: &bytes.Buffer{}, run: f.run, step: func(s string) { f.steps = append(f.steps, s) }}
+	f.b.download = func(context.Context, string, int64) ([]byte, error) {
+		return nil, errors.New("unexpected fixture download")
+	}
 	return f
 }
 
@@ -132,6 +135,13 @@ func (f *dependencyFixture) run(cmd *exec.Cmd) error {
 	case (name == "brew" || name == "vcpkg") && len(args) > 0 && args[0] == "install":
 		if f.onInstall != nil {
 			return f.onInstall(cmd)
+		}
+	case name == "rustup-init":
+		if f.onInstall != nil {
+			return f.onInstall(cmd)
+		}
+		for _, name := range []string{"cargo", "rustc"} {
+			f.tool(filepath.Join(f.b.get("CARGO_HOME"), "bin"), name)
 		}
 	case slices.Equal(args, []string{"--version"}), name == "vcpkg" && slices.Equal(args, []string{"version"}):
 		fmt.Fprintln(cmd.Stdout, name+" fixture version")
@@ -330,15 +340,15 @@ func TestBuildLinuxSkipsOldDistributionRustForUserToolchain(t *testing.T) {
 	}
 }
 
-func TestBuildLinuxRejectsRustOlderThanVoxlRequires(t *testing.T) {
+func TestBuildLinuxDoesNotUseRustOlderThanVoxlRequires(t *testing.T) {
 	f := newDependencyFixture(t, "linux")
 	f.ready()
 	for _, name := range []string{"cargo", "rustc"} {
 		f.versions[filepath.Join(f.bin, name)] = "1.75.0"
 	}
 	_, err := f.b.prepare(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "cargo >= 1.85") || !strings.Contains(err.Error(), "rustc >= 1.85") {
-		t.Fatalf("incompatible Rust was not reported before building: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "unexpected fixture download") {
+		t.Fatalf("incompatible Rust was used instead of preparing temporary tooling: %v", err)
 	}
 }
 

@@ -3,11 +3,14 @@ import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
 import { gzipSync } from "node:zlib";
 import { signRelease } from "./sign-release.mjs";
 import { installerName, releaseTargets, serverArchiveName } from "./release-assets.mjs";
+import { writeZip } from "./archive.mjs";
+
+const node = spawnSync("sh", ["-c", "command -v node"], { encoding: "utf8" }).stdout?.trim();
 
 const key = generateKeyPairSync("ed25519");
 const pub = key.publicKey.export({ format: "der", type: "spki" }).subarray(-32);
@@ -50,8 +53,9 @@ test("only the final signing stage needs the key and signs both archive and meta
   const installer = await readFile(join(directory, "install.sh"), "utf8");
   assert.ok(!installer.includes("@PUBLIC_KEY_DER@"));
   assert.ok(!installer.includes("@LINUX_DEPENDENCIES@"));
-  assert.match(installer, /rustup toolchain install stable --profile minimal/);
-  assert.match(installer, /rustup default stable/);
+  assert.ok(!installer.includes("@INSTALL_RUNTIME@"));
+  assert.ok(!installer.includes("@BUN_VERSION@"));
+  assert.doesNotMatch(installer, /rustup (?:default|toolchain)|sh\.rustup\.rs/);
   assert.doesNotMatch(installer, /spool_gpu_available|spool_configure_rendering|--(?:software|hardware)-rendering/);
   assert.doesNotMatch(installer, /LIBGL_ALWAYS_SOFTWARE|WEBKIT_DISABLE_COMPOSITING_MODE|WEBKIT_SKIA_ENABLE_CPU_RENDERING/);
   assert.ok(!installer.includes(env.MYGO_UPDATER_PRIVATE_KEY));
@@ -65,7 +69,8 @@ test("signing rejects injected build output before producing signed metadata", a
   assert.ok(!(await readdir(directory)).some((name) => name.startsWith("update-")));
 });
 
-test("installer verifies both signatures before replacing an app and preserves user data", async (t) => {
+for (const runtime of ["bun", "node"]) {
+test(`installer uses ${runtime} to verify signatures, extract safely, and preserve user data`, { skip: runtime === "node" && !node, timeout: 30000 }, async (t) => {
   // macOS provides LibreSSL on some runners. Use Homebrew's OpenSSL 3 when
   // present; the actual Linux installer intentionally fails closed without it.
   const bin = execFileSync("sh", ["-c", 'command -v openssl'], { encoding: "utf8" }).trim();
@@ -99,9 +104,19 @@ test("installer verifies both signatures before replacing an app and preserves u
   })) {
     await writeFile(join(mocks, name), script, { mode: 0o755 });
   }
-  const run = (input = archive, extraEnv = {}, options = ["--skip-dependencies"]) => spawnSync("sh", [join(directory, "install.sh"), ...options, input], {
-    env: { ...process.env, HOME: home, XDG_DATA_HOME: join(home, ".local/share"), PATH: mocks + delimiter + process.env.PATH, ...extraEnv }, encoding: "utf8",
+  for (const name of ["sh", "mkdir", "rmdir", "rm", "mktemp", "tr", "dirname", "cp", "cat", "mv", "ln", "chmod", "unzip"]) {
+    const path = execFileSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" }).trim();
+    await symlink(path, join(mocks, name));
+  }
+  // A closed PATH exercises the selected runtime without reaching host tools.
+  await symlink(runtime === "bun" ? process.execPath : node, join(mocks, runtime));
+  const run = (input = archive, extraEnv = {}, options = ["--skip-dependencies"]) => spawnSync("/bin/sh", [join(directory, "install.sh"), ...options, input], {
+    env: { ...process.env, HOME: home, XDG_DATA_HOME: join(home, ".local/share"), PATH: mocks, CARGO_HOME: join(root, "cargo"), BUN_INSTALL: join(root, "bun"), ...extraEnv }, encoding: "utf8",
   });
+  const assertClean = async () => {
+    const entries = await readdir(join(home, ".local"));
+    assert.ok(entries.every(name => !name.startsWith(".spool")), `installer leaked scratch/lock: ${entries}`);
+  };
   const manifestPath = join(directory, "update-linux-amd64.json");
   const signaturePath = `${manifestPath}.sig`;
   const original = await readFile(manifestPath);
@@ -110,6 +125,7 @@ test("installer verifies both signatures before replacing an app and preserves u
   let result = run();
   assert.notEqual(result.status, 0);
   assert.equal(await readFile(join(app, "spool"), "utf8"), "old-app");
+  await assertClean();
   await writeFile(signaturePath, originalSignature);
   await writeFile(manifestPath, original.toString().replaceAll("1.2.3", "99.0.0"));
   result = run();
@@ -160,28 +176,79 @@ test("installer verifies both signatures before replacing an app and preserves u
   const desktop = await readFile(desktopFile, "utf8");
   const exec = desktop.split("\n").find((line) => line.startsWith("Exec="));
   assert.equal(exec, `Exec="${app}/spool"`);
+  await assertClean();
+
+  if (runtime === "bun") {
+    // No existing runtime: download a versioned fixture through the real fetch,
+    // checksum, unzip and installer cleanup paths without accessing the network.
+    await rm(join(mocks, "bun"));
+    await rm(join(home, ".bun"), { recursive: true, force: true });
+    const version = (await readFile(new URL("../.bun-version", import.meta.url), "utf8")).trim();
+    const bootstrap = writeZip(new Map([["bun-linux-x64-baseline/bun", Buffer.from(`#!/bin/sh
+set -eu
+# Real Bun creates caches while running installer scripts. Keep that side
+# effect visible even when this fixture delegates to a different host version.
+mkdir -p "\${BUN_INSTALL_CACHE_DIR:-$HOME/.bun/install/cache}/@t@" "\${BUN_RUNTIME_TRANSPILER_CACHE_PATH:-$HOME/.cache/bun}"
+if [ "$1" = --version ]; then echo '${version}'; else exec '${process.execPath}' "$@"; fi
+`)]]));
+    const zipPath = join(root, "bun.zip");
+    const sumsPath = join(root, "checksums");
+    const checksum = createHash("sha256").update(bootstrap).digest("hex");
+    await writeFile(zipPath, bootstrap);
+    await writeFile(sumsPath, `${checksum}  bun-linux-x64-baseline.zip\n`);
+    await writeFile(join(mocks, "curl"), `#!/bin/sh
+set -eu
+for argument do
+  case "$argument" in https://*) url="$argument" ;; esac
+  output="$argument"
+done
+case "$url" in
+  'https://github.com/oven-sh/bun/releases/download/bun-v${version}/bun-linux-x64-baseline.zip') cp '${zipPath}' "$output" ;;
+  'https://github.com/oven-sh/bun/releases/download/bun-v${version}/SHASUMS256.txt') cp '${sumsPath}' "$output" ;;
+  *) exit 79 ;;
+esac
+`, { mode: 0o755 });
+    result = run();
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    assert.match(result.stdout, /downloading temporary Bun/);
+    await assertClean();
+    await assert.rejects(readdir(join(home, ".bun")), { code: "ENOENT" });
+    await assert.rejects(readdir(join(home, ".cache")), { code: "ENOENT" });
+    await assert.rejects(readFile(join(home, ".bun", "bin", "bun")), { code: "ENOENT" });
+    await writeFile(sumsPath, `${"0".repeat(64)}  bun-linux-x64-baseline.zip\n`);
+    await writeFile(join(app, "spool"), "old-app");
+    result = run();
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Bun download checksum mismatch/);
+    assert.equal(await readFile(join(app, "spool"), "utf8"), "old-app");
+    await assertClean();
+    await writeFile(sumsPath, `${checksum}  bun-linux-x64-baseline.zip\n`);
+    await writeFile(archive, tampered);
+    result = run();
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /invalid archive signature/);
+    assert.equal(await readFile(join(app, "spool"), "utf8"), "old-app");
+    await assertClean();
+    await writeFile(archive, content);
+    await symlink(process.execPath, join(mocks, "bun"));
+    await rm(join(mocks, "curl"));
+  }
 
   // Exercise the published, inlined dependency flow without touching the host's
   // package manager. A declined system install must not replace the old app.
   await writeFile(join(app, "spool"), "old-app");
-  await writeFile(join(mocks, "bun"), `#!/bin/sh
-if [ "$1" = -e ]; then exit 1; fi
-exec '${process.execPath}' "$@"
-`, { mode: 0o755 });
   await writeFile(join(mocks, "apt-get"), '#!/bin/sh\nexit 99\n', { mode: 0o755 });
   const denied = join(root, "authorization-denied");
   await writeFile(join(mocks, "sudo"), `#!/bin/sh\nprintf denied > '${denied}'\nexit 1\n`, { mode: 0o755 });
   // Isolate user tool directories too: the dependency helper prepends them.
-  const isolatedTools = { CARGO_HOME: join(root, "cargo"), BUN_INSTALL: join(root, "bun") };
   const osRelease = join(root, "os-release");
   await writeFile(osRelease, 'ID=ubuntu\nVERSION_ID="24.04"\n');
-  result = run(archive, { ...isolatedTools, spool_os_release_file: osRelease }, []);
+  result = run(archive, { spool_os_release_file: osRelease }, []);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /existing Spool app was not replaced/);
   assert.equal(await readFile(denied, "utf8"), "denied");
   assert.equal(await readFile(join(app, "spool"), "utf8"), "old-app");
   assert.equal(await readFile(join(home, ".spool", "settings"), "utf8"), "keep-data");
-  await rm(join(mocks, "bun"));
 
   const replacement = join(root, "unsigned.tar.gz");
   await writeFile(join(payload, "spool"), "#!/bin/sh\necho unsigned-app\n");
@@ -225,6 +292,7 @@ esac
     });
   }
 });
+}
 
 test("workflow pins actions, keeps private keys out of builds and uploads assets once", async () => {
   const workflow = await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");

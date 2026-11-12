@@ -451,6 +451,7 @@ func (m *Manager) Install(ctx context.Context, source ...string) (installErr err
 		return err
 	}
 	tools := newBuildEnvironment(env, log, m.installStep)
+	defer tools.cleanupTemporaryRust()
 	cargo, err := tools.prepare(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -461,6 +462,7 @@ func (m *Manager) Install(ctx context.Context, source ...string) (installErr err
 	m.installStep("Building voxl…")
 	cmd := exec.CommandContext(ctx, cargo, "install", "voxl-server", "--version", "="+Version, "--locked", "--registry", "crates-io", "--root", stage, "--target-dir", filepath.Join(stage, "target"))
 	cmd.Env = tools.env
+	cmd.Dir = tools.get("TMPDIR")
 	configureCommand(cmd)
 	cmd.Stdout, cmd.Stderr = log, log
 	err = cmd.Run()

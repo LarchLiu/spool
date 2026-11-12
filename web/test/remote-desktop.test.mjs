@@ -261,5 +261,6 @@ test("local installer shows dependency progress and translates errors with a mis
   assert.doesNotMatch(html, /translated: x264/);
   assert.ok(html.indexOf('role="alert"') < html.indexOf("Enable remote desktop"));
   assert.ok(html.indexOf('role="alert"') < html.indexOf("Component licenses"));
-  assert.match(html, /run install\.sh to prepare WebKitGTK/);
+  assert.match(html, /run install\.sh for WebKitGTK/);
+  assert.match(html, /temporary toolchain and removes it after the build without changing your toolchain/);
 });

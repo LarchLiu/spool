@@ -6,9 +6,10 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 
 const helper = resolve("tools/linux-dependencies.sh");
+const runtimeHelper = resolve("tools/install-runtime.sh");
 const bun = process.execPath;
 
-async function fixture(t, { manager = "apt-get", privilege = "sudo", rustup = true, oldCargo = false, distribution } = {}) {
+async function fixture(t, { manager = "apt-get", privilege = "sudo", rust = true, oldCargo = false, distribution } = {}) {
   const root = await mkdtemp(join(tmpdir(), "linux-dependencies-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const bin = join(root, "bin");
@@ -45,23 +46,17 @@ esac`);
     await tool(privilege, `printf '%s\\n' '${privilege}'\" $*\" >> \"$FIXTURE_ROOT/actions\"
 exec "$@"`);
   }
-  await tool("cargo", oldCargo
-    ? `if [ -f "$FIXTURE_ROOT/cargo-ready" ]; then echo 'cargo 1.85.0'; else echo 'cargo 1.75.0'; fi`
-    : "echo 'cargo 1.85.0'");
-  await tool("rustc", `if [ -f "$FIXTURE_ROOT/rust-ready" ]; then echo 'rustc 1.85.0'; else echo 'rustc 1.75.0'; fi`);
-  const rustupBody = `printf 'rustup %s\\n' "$*" >> "$FIXTURE_ROOT/actions"
-if [ "$*" = 'default stable' ]; then : > "$FIXTURE_ROOT/rust-ready"; : > "$FIXTURE_ROOT/cargo-ready"; fi`;
-  await writeFile(join(root, "rustup-template"), `#!/bin/sh\nset -eu\n${rustupBody}\n`, { mode: 0o755 });
-  if (rustup) await tool("rustup", rustupBody);
+  if (rust) {
+    await tool("cargo", `echo 'cargo ${oldCargo ? "1.75.0" : "1.85.0"}'`);
+    await tool("rustc", `if [ -f "$FIXTURE_ROOT/rust-ready" ]; then echo 'rustc 1.85.0'; else echo 'rustc 1.75.0'; fi`);
+  }
+  await tool("rustup", `printf 'rustup %s\\n' "$*" >> "$FIXTURE_ROOT/actions"; exit 77`);
   const run = (body = "", env = {}) => spawnSync("/bin/sh", ["-s"], {
     input: `set -eu
 . "$HELPER"
+. "$RUNTIME_HELPER"
 fail() { echo "$*" >&2; exit 1; }
-fetch() {
-  [ "$1" = https://sh.rustup.rs ] || exit 1
-  printf '%s\\n' 'fetch rustup' >> "$FIXTURE_ROOT/actions"
-  printf '%s\\n' '#!/bin/sh' 'printf "bootstrap %s\\n" "$*" >> "$FIXTURE_ROOT/actions"' 'cp "$FIXTURE_ROOT/rustup-template" "$MOCK_BIN/rustup"' 'chmod 755 "$MOCK_BIN/rustup"' > "$2"
-}
+fetch() { echo 'unexpected toolchain download' >&2; exit 78; }
 spool_runtime_ready() { [ -f "$FIXTURE_ROOT/runtime-ready" ]; }
 spool_voxl_native_ready() { [ -f "$FIXTURE_ROOT/native-ready" ]; }
 work="$WORK"
@@ -71,7 +66,7 @@ skip_voxl_dependencies=no
 ${body}
 spool_prepare_dependencies
 `,
-    env: { PATH: bin, HOME: join(root, "home"), FIXTURE_ROOT: root, MOCK_BIN: bin, HELPER: helper, WORK: work, OS_RELEASE: osRelease, ...env },
+    env: { PATH: bin, HOME: join(root, "home"), FIXTURE_ROOT: root, MOCK_BIN: bin, HELPER: helper, RUNTIME_HELPER: runtimeHelper, WORK: work, OS_RELEASE: osRelease, ...env },
     encoding: "utf8",
   });
   const actions = async () => (await readFile(join(root, "actions"), "utf8").catch(() => "")).trim().split("\n").filter(Boolean);
@@ -87,7 +82,7 @@ test("ready Linux dependencies do not run a package manager or change Rust defau
   assert.deepEqual(await f.actions(), []);
 });
 
-test("missing dependencies install system packages before preparing minimal stable Rust", async (t) => {
+test("missing native dependencies install packages and only warn about old Rust", async (t) => {
   const f = await fixture(t);
   const result = f.run();
   assert.equal(result.status, 0, result.stderr);
@@ -97,32 +92,31 @@ test("missing dependencies install system packages before preparing minimal stab
   for (const name of ["libwebkit2gtk-4.1-0", "libayatana-appindicator3-1", "libgl1-mesa-dri", "build-essential", "clang", "libclang-dev", "pkg-config", "esbuild", "libx264-dev", "libyuv-dev", "libopus-dev", "libpulse-dev", "libxcb1-dev"]) {
     assert.ok(packages.split(" ").includes(name), `${name}: ${packages}`);
   }
-  assert.deepEqual(actions.slice(-2), ["rustup toolchain install stable --profile minimal", "rustup default stable"]);
-  assert.match(result.stdout, /voxl build dependencies are ready/);
+  assert.ok(actions.every(line => !line.includes("rustup")));
+  assert.match(result.stdout, /voxl needs Rust and Cargo 1.85 or later/);
+  assert.doesNotMatch(result.stdout, /voxl build dependencies are ready/);
 });
 
-test("rustup bootstrap runs as the current user without modifying shell profiles", async (t) => {
-  const f = await fixture(t, { rustup: false });
+test("missing Rust never bootstraps or changes the users toolchain", async (t) => {
+  const f = await fixture(t, { rust: false });
   await f.ready("runtime", "native");
+  const config = join(f.root, "home", ".rustup", "settings.toml");
+  await mkdir(join(f.root, "home", ".rustup"), { recursive: true });
+  await writeFile(config, 'default_toolchain = "1.70.0"\n');
   const result = f.run();
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(await f.actions(), [
-    "fetch rustup",
-    "bootstrap -y --profile minimal --default-toolchain none --no-modify-path",
-    "rustup toolchain install stable --profile minimal",
-    "rustup default stable",
-  ]);
+  assert.deepEqual(await f.actions(), []);
+  assert.equal(await readFile(config, "utf8"), 'default_toolchain = "1.70.0"\n');
+  assert.match(result.stdout, /Your Rust toolchain and defaults were not changed/);
 });
 
-test("an old Cargo is upgraded even when rustc is already compatible", async (t) => {
+test("an old Cargo is reported without upgrades even when rustc is compatible", async (t) => {
   const f = await fixture(t, { oldCargo: true });
   await f.ready("runtime", "native", "rust");
   const result = f.run();
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(await f.actions(), [
-    "rustup toolchain install stable --profile minimal",
-    "rustup default stable",
-  ]);
+  assert.deepEqual(await f.actions(), []);
+  assert.match(result.stdout, /voxl needs Rust and Cargo 1.85 or later/);
 });
 
 test("desktop-only mode omits voxl libraries and Rust", async (t) => {

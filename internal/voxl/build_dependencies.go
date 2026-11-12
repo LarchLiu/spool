@@ -24,11 +24,15 @@ type buildEnvironment struct {
 	step       func(string)
 	run        func(*exec.Cmd) error
 	appleClang string
+	download   func(context.Context, string, int64) ([]byte, error)
+	rustRoot   string
 }
 
 func newBuildEnvironment(env []string, log io.Writer, step func(string)) *buildEnvironment {
 	home, _ := os.UserHomeDir()
 	b := &buildEnvironment{goos: runtime.GOOS, env: env, log: log, step: step, run: func(cmd *exec.Cmd) error { return cmd.Run() }}
+	// Probing a user rustup shim must not install a missing selected toolchain.
+	b.set("RUSTUP_AUTO_INSTALL", "0")
 	bunRoot := b.get("BUN_INSTALL")
 	if bunRoot == "" {
 		bunRoot = filepath.Join(home, ".bun")

@@ -41,14 +41,17 @@ export async function signRelease(directory, env = process.env) {
   const template = await readFile(new URL("./install.sh", import.meta.url), "utf8");
   const installerBuild = await Bun.build({
     entrypoints: [fileURLToPath(new URL("./install-archive.mjs", import.meta.url))],
-    target: "bun", format: "esm", write: false,
+    target: "node", format: "esm", write: false,
   });
   if (!installerBuild.success) throw new AggregateError(installerBuild.logs, "Could not bundle the standalone installer");
   const installer = await installerBuild.outputs[0].text();
+  const runtime = await readFile(new URL("./install-runtime.sh", import.meta.url), "utf8");
+  const bunVersion = (await readFile(new URL("../.bun-version", import.meta.url), "utf8")).trim();
   const dependencies = await readFile(new URL("./linux-dependencies.sh", import.meta.url), "utf8");
   await writeFile(join(directory, "install.sh"), template
     .replaceAll("@REPOSITORY@", env.GITHUB_REPOSITORY)
     .replaceAll("@PUBLIC_KEY_DER@", publicKeyDER.toString("base64"))
+    .replace("@INSTALL_RUNTIME@", () => runtime.replaceAll("@BUN_VERSION@", bunVersion))
     .replace("@LINUX_DEPENDENCIES@", () => dependencies)
     .replace("@INSTALLER_JS@", () => installer), { mode: 0o755 });
   await verifyReleaseAssets(directory, {

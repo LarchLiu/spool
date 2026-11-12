@@ -30,18 +30,15 @@ Debian/Ubuntu 衍生发行版通过 `ID_LIKE` 识别，不会把 Mint 等系统�
 均视为实验支持。Alpine、NixOS、未知发行版和不可变/OSTree 系统需要自行准备
 依赖；旧版 Ubuntu/Debian/RHEL 不做自动安装。自管环境可用
 `--skip-dependencies`，但跳过检查不代表二进制兼容。发布包仅提供 x86_64 和
-arm64，验证发布包需要 Bun 和 OpenSSL 3+。
+arm64，验证发布包需要 OpenSSL 3+。安装器优先复用已有的 Bun 或 Node.js 18+；
+均不可用时，需要 `unzip`，并自动下载固定版本的 Bun，校验 SHA-256 后仅供本次安装使用。
+临时 Bun 位于私有的 `~/.local/.spool.runtime.*` 目录，以兼容挂载为 `noexec`
+的系统临时目录；安装器退出时自动清理，不影响已有运行时。
 
-如果 Rust 或 Cargo 缺失或版本低于 1.85，脚本会在必要时为当前用户安装 rustup，
-再执行：
-
-```sh
-rustup toolchain install stable --profile minimal
-rustup default stable
-```
-
-已有可用且兼容的工具链会保留，不修改 shell 配置文件。
-此步骤需要访问 `sh.rustup.rs` 和 Rust 工具链下载服务器。
+安装器仅检查 Rust 和 Cargo，不会安装、升级或切换默认工具链。如果任一项缺失
+或版本低于 1.85，Spool 仍会继续安装。Linux 用户点击**安装 voxl**时，会优先
+复用兼容工具链；缺少时下载到该安装任务的独立目录，构建结束、失败或取消后自动
+清理。不会修改用户的 Cargo/Rustup 目录、shell 配置或默认工具链。
 
 Debian/Ubuntu 也可以手动安装系统依赖：
 
@@ -245,6 +242,7 @@ CLI 同样支持有桌面的主机。管理命令需要先停止使用同一数�
 crates.io 构建 `voxl-server` **0.3.3**。各平台还需要 voxl 的原生依赖：macOS
 需要 Xcode Command Line Tools 和 Rust；Linux 需要 X11/Xvfb、Rust、x264、libyuv、
 Opus、PulseAudio 和 XCB 开发库（Debian/Ubuntu 对应 `libxcb1-dev`）；
+Linux 缺少 Rust/Cargo 或版本过旧时，会在安装 voxl 时临时准备，构建后清理。
 Windows 需要 Rust MSVC、Visual Studio C++ Build Tools、
 LLVM 和 vcpkg。
 

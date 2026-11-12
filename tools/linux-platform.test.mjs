@@ -13,7 +13,9 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 
 const helper = resolve("tools/linux-dependencies.sh");
+const runtimeHelper = resolve("tools/install-runtime.sh");
 const bun = process.execPath;
+const node = spawnSync("sh", ["-c", "command -v node"], { encoding: "utf8" }).stdout?.trim();
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "linux-platform-"));
@@ -21,10 +23,11 @@ async function fixture(t) {
   const osRelease = join(root, "os-release");
   const run = (body, env = {}) =>
     spawnSync("/bin/sh", ["-s"], {
-      input: `set -eu\n. "$HELPER"\n${body}\n`,
+      input: `set -eu\n. "$HELPER"\n. "$RUNTIME_HELPER"\n${body}\n`,
       env: {
         PATH: `${join(root, "bin")}:/usr/bin:/bin`,
         HELPER: helper,
+        RUNTIME_HELPER: runtimeHelper,
         OS_RELEASE: osRelease,
         ...env,
       },
@@ -64,6 +67,33 @@ test("os-release identifies distribution versions and derivatives without choosi
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout.trim(), expected);
   }
+});
+
+test("Node loads real libraries, rejects missing and invalid libraries, and searches libclang paths", { skip: !node }, async (t) => {
+  const f = await fixture(t);
+  const library = process.platform === "darwin" ? "/usr/lib/libSystem.B.dylib" : "libc.so.6";
+  const invalid = join(f.root, "invalid.so");
+  const customLibrary = join(f.root, "library.so");
+  execFileSync("cc", [process.platform === "darwin" ? "-dynamiclib" : "-shared", "-fPIC", "-x", "c", "-", "-o", customLibrary], { input: "int fixture(void) { return 0; }\n" });
+  await writeFile(invalid, "not a shared library");
+  for (const [body, expected, env] of [
+    ['spool_load_libraries "$LIBRARY"', 0, {}],
+    ['spool_load_libraries "$LIBRARY" "$MISSING"', 1, {}],
+    ['spool_load_libraries "$INVALID"', 1, {}],
+    ['spool_load_libraries --clang', 0, { LIBCLANG_PATH: customLibrary }],
+  ]) {
+    const result = f.run(body, { spool_js_runtime: node, LIBRARY: library, MISSING: join(f.root, "missing.so"), INVALID: invalid, ...env });
+    assert.equal(result.status, expected, result.stderr);
+  }
+  const directory = join(f.root, "clang");
+  await mkdir(directory);
+  await symlink(customLibrary, join(directory, "libclang.so.1"));
+  const result = f.run("spool_load_libraries --clang", { spool_js_runtime: node, LIBCLANG_PATH: directory });
+  assert.equal(result.status, 0, result.stderr);
+  await writeFile(f.osRelease, 'ID=ubuntu\nVERSION_ID="24.04"\n');
+  const distribution = f.run('spool_distribution "$OS_RELEASE"', { spool_js_runtime: node });
+  assert.equal(distribution.status, 0, distribution.stderr);
+  assert.equal(distribution.stdout.trim(), "apt-get:ubuntu 24.04");
 });
 
 test("os-release parsing never evaluates command substitutions", async (t) => {
@@ -123,7 +153,8 @@ export const dlopen = () => ({
     shim,
     `import {spawnSync} from 'node:child_process';
 const args = process.argv.slice(2);
-if (args[0] === '-e') args[1] = args[1].replaceAll('"bun:ffi"', ${JSON.stringify(JSON.stringify(loader))});
+const at = args.indexOf('-e');
+if (at >= 0) args[at + 1] = args[at + 1].replaceAll('"bun:ffi"', ${JSON.stringify(JSON.stringify(loader))});
 const result = spawnSync(process.execPath, args, {stdio:'inherit'});
 process.exit(result.status ?? 1);
 `,

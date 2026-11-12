@@ -1,34 +1,54 @@
 # Inlined into the signed release installer by sign-release.mjs. Keep this file
 # sourceable so dependency installation can be tested with inert package tools.
 spool_load_libraries() {
-  bun -e '
-import { dlopen } from "bun:ffi";
-import { ptr } from "bun:ffi";
-import { existsSync, statSync } from "node:fs";
+  spool_js -e '
+import { existsSync, statSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { constants } from "node:os";
+let load, close = () => {};
+if (process.versions.bun) {
+const { dlopen, ptr } = await import("bun:ffi");
 // Bun requires a symbol table. Call the system loader to probe arbitrary libraries.
 const loader = dlopen(process.platform === "darwin" ? "/usr/lib/libSystem.B.dylib" : "libdl.so.2", {
   dlopen: { args: ["ptr", "i32"], returns: "ptr" },
   dlclose: { args: ["ptr"], returns: "i32" },
 });
+load = (name) => {
+  const encoded = Buffer.from(name + "\0"), handle = loader.symbols.dlopen(ptr(encoded), 2);
+  if (handle) loader.symbols.dlclose(handle);
+  return !!handle;
+};
+close = () => loader.close();
+} else {
+  load = (name) => {
+    try { process.dlopen({ exports: {} }, name, constants.dlopen.RTLD_NOW); return true; }
+    catch (error) {
+      // Node checks addon registration after dlopen succeeds. An ordinary
+      // shared library reaches this specific error only when it was loaded.
+      return error.code === "ERR_DLOPEN_FAILED" && error.message.startsWith("Module did not self-register: ");
+    }
+  };
+}
 const clang = process.argv[1] === "--clang";
 let names = process.argv.slice(1);
 if (clang) {
-  const matches = (pattern) => {
-    try { return [...new Bun.Glob(pattern).scanSync({ followSymlinks: true })]; }
+  const entries = (directory) => {
+    try { return readdirSync(directory); }
     catch (error) { if (["ENOENT", "ENOTDIR"].includes(error.code)) return []; throw error; }
   };
+  const matches = (directory) => entries(directory).filter(name => /^libclang.*\.so/.test(name)).map(name => join(directory, name));
   const custom = process.env.LIBCLANG_PATH || "";
-  names = custom && existsSync(custom) && statSync(custom).isFile() ? [custom] : custom ? matches(custom + "/libclang*.so*") : [];
-  names.push("libclang.so", ...["/usr/lib/llvm-*/lib/libclang.so*", "/usr/lib/*-linux-gnu/libclang-*.so*", "/usr/lib64/libclang*.so*", "/usr/lib/libclang*.so*"].flatMap(matches));
+  names = custom && existsSync(custom) && statSync(custom).isFile() ? [custom] : custom ? matches(custom) : [];
+  const directories = entries("/usr/lib").flatMap(name => name.startsWith("llvm-") ? [join("/usr/lib", name, "lib")] : name.endsWith("-linux-gnu") ? [join("/usr/lib", name)] : []);
+  names.push("libclang.so", ...[...directories, "/usr/lib64", "/usr/lib"].flatMap(matches));
 }
 try {
   for (const name of names) {
-    const encoded = Buffer.from(name + "\0"), handle = loader.symbols.dlopen(ptr(encoded), 2);
-    if (handle) { loader.symbols.dlclose(handle); if (clang) process.exit(0); }
+    if (load(name)) { if (clang) process.exit(0); }
     else if (!clang) process.exit(1);
   }
   if (clang) process.exit(1);
-} finally { loader.close(); }
+} finally { close(); }
 ' -- "$@" >/dev/null 2>&1
 }
 
@@ -46,8 +66,9 @@ spool_rust_ready() {
   # voxl's locked dependencies need Rust 1.85; Ubuntu 24.04 starts at 1.75.
   for spool_tool in cargo rustc; do
     command -v "$spool_tool" >/dev/null 2>&1 || return 1
-    "$spool_tool" --version | bun -e '
-const m = (await Bun.stdin.text()).match(/^(?:rustc|cargo) (\d+)\.(\d+)/);
+    RUSTUP_AUTO_INSTALL=0 "$spool_tool" --version | spool_js -e '
+import { readFileSync } from "node:fs";
+const m = readFileSync(0, "utf8").match(/^(?:rustc|cargo) (\d+)\.(\d+)/);
 process.exit(m && (+m[1] > 1 || +m[1] === 1 && +m[2] >= 85) ? 0 : 1);
 ' || return 1
   done
@@ -66,7 +87,7 @@ spool_voxl_native_ready() {
 
 spool_distribution() {
   # os-release uses shell quoting, but parsing it must not execute shell code.
-  bun - "${1:-${spool_os_release_file:-/etc/os-release}}" <<'JS'
+  spool_js - "${1:-${spool_os_release_file:-/etc/os-release}}" <<'JS'
 import { existsSync, readFileSync } from 'node:fs';
 let path = process.argv[2]; if (!existsSync(path) && path === '/etc/os-release') path = '/usr/lib/os-release';
 const data = {};
@@ -113,8 +134,9 @@ JS
 spool_package_available() {
   case "$spool_manager" in
     apt-get)
-      LC_ALL=C apt-cache policy "$1" 2>/dev/null | bun -e '
-const match = (await Bun.stdin.text()).match(/^\s*Candidate:\s*(\S+)/m); process.exit(match && match[1] !== "(none)" ? 0 : 1);
+      LC_ALL=C apt-cache policy "$1" 2>/dev/null | spool_js -e '
+import { readFileSync } from "node:fs";
+const match = readFileSync(0, "utf8").match(/^\s*Candidate:\s*(\S+)/m); process.exit(match && match[1] !== "(none)" ? 0 : 1);
 '
       ;;
     dnf) LC_ALL=C dnf -q info "$1" >/dev/null 2>&1 ;;
@@ -253,19 +275,11 @@ spool_prepare_dependencies() {
   if [ "$skip_voxl_dependencies" = no ]; then
     spool_voxl_native_ready || fail 'voxl native build dependencies are still unavailable; check clang, libclang, esbuild, pkg-config, x264, libyuv, Opus, PulseAudio and XCB'
     if ! spool_rust_ready; then
-      echo 'Preparing the minimal stable Rust toolchain for voxl…'
-      if ! command -v rustup >/dev/null 2>&1; then
-        fetch https://sh.rustup.rs "$work/rustup-init.sh"
-        # Install as the regular user and leave shell profiles unchanged.
-        sh "$work/rustup-init.sh" -y --profile minimal --default-toolchain none --no-modify-path || fail 'could not install rustup'
-      fi
-      rustup toolchain install stable --profile minimal || fail 'could not download the stable Rust toolchain'
-      rustup default stable || fail 'could not select the stable Rust toolchain'
-      # Discard a cached /usr/bin/cargo lookup after creating ~/.cargo/bin.
-      hash -r
-      spool_rust_ready || fail 'Rust 1.85 or later and Cargo are still unavailable after rustup setup'
+      echo 'voxl needs Rust and Cargo 1.85 or later. Install voxl will prepare a temporary toolchain when needed and remove it after building.'
+      echo 'Your Rust toolchain and defaults were not changed.'
+    else
+      echo 'voxl build dependencies are ready. Use Install voxl in Spool to build the helper.'
     fi
-    echo 'voxl build dependencies are ready. Use Install voxl in Spool to build the helper.'
   fi
   echo 'Desktop runtime dependencies are ready.'
 }

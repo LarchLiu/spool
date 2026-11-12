@@ -93,7 +93,7 @@ export function VoxlSettings({ data, run, t }: PageProps) {
             )}
             <br />
             {t(
-              "On Linux, run install.sh to prepare WebKitGTK, voxl build libraries and a compatible Rust toolchain before installing voxl.",
+              "On Linux, run install.sh for WebKitGTK and voxl build libraries. Install voxl reuses compatible Rust/Cargo or prepares a temporary toolchain and removes it after the build without changing your toolchain.",
             )}
             <br />
             <br />

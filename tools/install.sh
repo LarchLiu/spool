@@ -1,7 +1,7 @@
 #!/bin/sh
 # Installs a signed Spool release for the current Linux user. Only system
-# dependency installation uses sudo/polkit; the app and Rust stay user-owned.
-# Requires Bun, OpenSSL 3+ and curl (or wget). User data is never removed.
+# dependency installation uses sudo/polkit; the app stays user-owned.
+# Requires OpenSSL 3+ and curl (or wget). User data is never removed.
 set -eu
 repository='@REPOSITORY@'
 public_key_der='@PUBLIC_KEY_DER@'
@@ -17,7 +17,8 @@ case "$argument" in
     echo 'Usage: sh install.sh [--skip-voxl-dependencies | --skip-dependencies] [ARCHIVE]'
     echo '       sh install.sh --uninstall'
     echo 'Installs WebKitGTK, desktop runtime libraries and voxl build dependencies by default.'
-    echo 'System packages require administrator authorization; Rust is installed for the current user.'
+    echo 'System packages require administrator authorization; Rust/Cargo are checked but never installed or changed.'
+    echo 'Uses Bun or Node.js 18+; otherwise downloads temporary Bun (requires unzip), removed on exit.'
     exit 0 ;;
   --uninstall)
     rm -rf "$app_dir"
@@ -34,7 +35,7 @@ done
 [ "$(id -u)" != 0 ] || fail 'run as your regular user, not root'
 PATH="${BUN_INSTALL:-$HOME/.bun}/bin:$PATH"
 export PATH
-for tool in bun openssl; do command -v "$tool" >/dev/null 2>&1 || fail "install $tool first"; done
+command -v openssl >/dev/null 2>&1 || fail 'install openssl first'
 case "$(openssl version)" in 'OpenSSL 3.'*|'OpenSSL 4.'*) ;; *) fail 'OpenSSL 3 or later is required for Ed25519 verification' ;; esac
 case "$(uname -m)" in
   x86_64|amd64) target=linux-amd64 ;;
@@ -46,11 +47,12 @@ esac
 mkdir -p "$HOME/.local"
 lock="$HOME/.local/.spool-install.lock"
 mkdir "$lock" 2>/dev/null || fail "another installer is running, or a stale lock exists at $lock"
-work=''; staging=''; backup=''
+work=''; staging=''; backup=''; runtime_work=''
 cleanup() {
   if [ -n "$backup" ] && [ -d "$backup/app" ] && [ ! -e "$app_dir" ]; then mv "$backup/app" "$app_dir"; fi
   [ -z "$work" ] || rm -rf "$work"
   [ -z "$staging" ] || rm -rf "$staging"
+  [ -z "$runtime_work" ] || rm -rf "$runtime_work"
   # Keep the backup if an exceptional restore failure prevented recovery.
   if [ -n "$backup" ] && [ ! -e "$backup/app" ]; then rmdir "$backup" 2>/dev/null || true; fi
   rmdir "$lock" 2>/dev/null || true
@@ -69,6 +71,7 @@ fetch() {
     wget --https-only --timeout=60 --tries=3 --retry-connrefused --retry-on-http-error=408,429,500,502,503,504 -qO "$2" "$1"
   fi
 }
+@INSTALL_RUNTIME@
 @LINUX_DEPENDENCIES@
 if [ -n "$archive" ]; then
   cp "$(dirname "$archive")/update-$target.json" "$work/manifest.json"
@@ -79,8 +82,9 @@ else
   fetch "$base.sig" "$work/manifest.sig"
 fi
 openssl pkeyutl -verify -pubin -keyform DER -inkey "$work/key.der" -rawin -in "$work/manifest.json" -sigfile "$work/manifest.sig" >/dev/null 2>&1 || fail 'invalid manifest signature; nothing was installed'
+spool_prepare_runtime
 spool_archive() {
-  bun - "$@" <<'JS'
+  spool_js - "$@" <<'JS'
 @INSTALLER_JS@
 JS
 }
