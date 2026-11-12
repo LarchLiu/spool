@@ -42,6 +42,7 @@ DNS 记录，便于新服务器自动获得可解析的地址；逐域名模式�
 | 文件 | 用途 | 启动方式 |
 | --- | --- | --- |
 | `.env.example` | Docker Compose 的完整部署模板，含可选 Caddy | 复制为 `.env` 后执行 `docker compose up -d --build` |
+| `compose.image.yaml` | 使用 GHCR 发布的 Relay 和 Caddy 镜像，无需本地构建 | 设置同一份 `.env`，执行 `docker compose -f compose.image.yaml pull` 和 `docker compose -f compose.image.yaml up -d --no-build` |
 | `deploy/relay.env.example` | 直接运行 Relay 二进制／systemd 的进程环境模板，不启动代理 | 由 `deploy/spool-relay.service` 的 `EnvironmentFile` 读取 |
 
 无内置 Caddy 的 Compose 部署仍使用 `.env.example`，将 `COMPOSE_PROFILES` 留空，

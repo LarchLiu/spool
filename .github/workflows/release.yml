@@ -218,6 +218,89 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  relay:
+    name: Relay ${{ matrix.image }} image (${{ matrix.arch }})
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, arch: amd64, image: relay, context: relay }
+          - { os: ubuntu-24.04-arm, arch: arm64, image: relay, context: relay }
+          - { os: ubuntu-24.04, arch: amd64, image: caddy, context: relay/deploy/caddy }
+          - { os: ubuntu-24.04-arm, arch: arm64, image: caddy, context: relay/deploy/caddy }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: matrix.image == 'relay'
+        with:
+          go-version-file: relay/go.mod
+          cache-dependency-path: relay/go.sum
+      - name: Test Relay and deployment configuration
+        if: matrix.image == 'relay'
+        run: |
+          sh tools/run.sh relay-release-check sh -eu -c '
+            go -C relay test -race -timeout=10m ./...
+            go -C relay vet ./...
+            bun test relay/test/deployment.test.mjs
+          '
+      - name: Validate embedded version and resolve image name
+        id: image
+        run: bun tools/relay-images.mjs prepare "${{ matrix.image }}"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Build native image for smoke test
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          tags: spool-${{ matrix.image }}:release-check
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
+            org.opencontainers.image.version=${{ steps.image.outputs.version }}
+          cache-from: type=gha,scope=relay-${{ matrix.image }}-${{ matrix.arch }}
+      - name: Run native image smoke test
+        run: sh tools/run.sh relay-image-smoke bun relay/test/image-smoke.mjs "${{ matrix.image }}" "spool-${{ matrix.image }}:release-check" "${{ steps.image.outputs.version }}"
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Push verified image by digest without moving release tags
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ steps.image.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
+            org.opencontainers.image.version=${{ steps.image.outputs.version }}
+          cache-to: type=gha,mode=max,scope=relay-${{ matrix.image }}-${{ matrix.arch }}
+      - name: Record image digest
+        env:
+          IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
+        run: bun tools/relay-images.mjs record "${{ matrix.image }}" "${{ matrix.arch }}" build/relay-images
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: relay-image-${{ matrix.image }}-${{ matrix.arch }}
+          path: build/relay-images/*.json
+          if-no-files-found: error
+          retention-days: 7
+
   smoke:
     name: Run ${{ matrix.target }} package
     needs: [prepare, build]
@@ -281,7 +364,7 @@ jobs:
 
   publish:
     name: Publish complete release
-    needs: [prepare, build, android, smoke]
+    needs: [prepare, build, android, smoke, relay]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Serialize publication across tags so an older build cannot replace Latest.
@@ -290,6 +373,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
+      packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -354,12 +438,27 @@ jobs:
         run: |
           set -euo pipefail
           cd release-assets
-          sha256sum * > SHA256SUMS
+          sha256sum -- * > SHA256SUMS
       - name: Recheck publication state and Latest version
         id: metadata
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: bun tools/release-metadata.mjs
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: relay-image-*
+          path: build/relay-images
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publish Relay and Caddy multi-platform image tags
+        env:
+          MAKE_LATEST: ${{ steps.metadata.outputs.make_latest }}
+        run: bun tools/relay-images.mjs publish build/relay-images
       - name: Upload to draft, then publish
         env:
           GH_TOKEN: ${{ github.token }}

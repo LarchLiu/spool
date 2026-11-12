@@ -9,6 +9,49 @@ An optional Web gateway also serves browsers and installed PWAs at
 
 ## Docker Compose
 
+### Published images (no local build)
+
+Release Actions publishes these images for `linux/amd64` and `linux/arm64`:
+
+- `ghcr.io/larchliu/spool-relay:<version>`
+- `ghcr.io/larchliu/spool-relay-caddy:<version>` (includes the Cloudflare DNS plugin)
+
+Image tags use the release version without the leading `v`, such as `0.1.22`.
+`latest` follows the newest stable release; prereleases and older release retries
+do not move it. Each native image is tested before its digest is uploaded. The
+final publication job creates the versioned multi-platform tags after all release
+jobs pass, using the same serialization and Latest decision as the GitHub release.
+
+Copy `compose.image.yaml` and `.env.example` to your deployment directory; no
+source checkout, Go compiler, Dockerfile or local Caddy files are needed. Then:
+
+```sh
+cp .env.example .env
+chmod 600 .env
+openssl rand -hex 32
+# Set SPOOL_RELAY_ADMIN_TOKEN and the hostnames/URL in .env.
+# COMPOSE_PROFILES=caddy includes Caddy; leave it empty for an existing proxy.
+# Optional: pin RELAY_IMAGE_TAG to a published version, without the leading v.
+docker compose -f compose.image.yaml pull
+docker compose -f compose.image.yaml up -d --no-build
+```
+
+Use `-f compose.image.yaml` for subsequent `logs`, `ps`, `stop` and `down`
+commands too. To update, change `RELAY_IMAGE_TAG` when pinned, then repeat `pull`
+and `up -d --no-build`. The project name, configuration and named data volumes
+match `compose.yaml`, allowing an existing source deployment to switch to images
+without copying data. Keep the same project name if you previously overrode it.
+
+The workflow authenticates to GHCR with `GITHUB_TOKEN` and job-scoped
+`packages: write`; no Docker Hub credentials are needed. After the first release,
+the repository owner must set both GHCR packages to **Public** for anonymous
+pulls, or deployment hosts must sign in with credentials that can read them.
+Images become available after the first successful release with this workflow.
+Forks publish under `ghcr.io/<owner>/<repository>-relay` and `-relay-caddy`;
+update both `image:` paths in the deployment file when using a fork.
+
+### Build from source
+
 The included `compose.yaml` runs the independent relay on either a local Docker
 host or a VPS. From this directory, configure it once and start it:
 
@@ -35,6 +78,7 @@ The local `.env` is excluded from Git and the image build context.
 | `RELAY_PORT` | `28080` | Host port for the HTTP relay backend. |
 | `RELAY_ADMIN_PORT` | `28081` | Host loopback port for the management API. |
 | `COMPOSE_PROFILES` | Empty in Compose; `caddy` in example | Start the optional bundled Caddy. |
+| `RELAY_IMAGE_TAG` | `latest` | `compose.image.yaml` only: published version without `v`, or `latest`. |
 | `RELAY_PUBLIC_URL` | Empty | Deployment service HTTPS origin; read-only in the dashboard. |
 | `CADDY_CERTIFICATE_MODE` | `individual` | Bundled Caddy only: `individual` or `wildcard`. |
 | `RELAY_PUBLIC_HOST` / `RELAY_ADMIN_HOST` | Required for bundled Caddy | Public service and management hostnames. |

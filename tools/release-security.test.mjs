@@ -228,13 +228,13 @@ esac
 
 test("workflow pins actions, keeps private keys out of builds and uploads assets once", async () => {
   const workflow = await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
-  for (const use of workflow.matchAll(/uses: (\S+)/g)) assert.match(use[1], /^(?:actions\/[\w-]+|oven-sh\/setup-bun)@[a-f0-9]{40}$/);
+  for (const use of workflow.matchAll(/uses: (\S+)/g)) assert.match(use[1], /^(?:actions\/[\w-]+|oven-sh\/setup-bun|docker\/(?:setup-buildx|login|build-push)-action)@[a-f0-9]{40}$/);
   const [beforePublish, publish] = workflow.split("\n  publish:\n");
   assert.doesNotMatch(beforePublish, /secrets\.MYGO_UPDATER_PRIVATE_KEY/);
   assert.equal((publish.match(/secrets\.MYGO_UPDATER_PRIVATE_KEY/g) ?? []).length, 1);
   assert.match(beforePublish, /go test -race -v -timeout=10m/);
   assert.equal((publish.match(/gh release upload/g) ?? []).length, 1);
-  assert.match(publish, /needs: \[prepare, build, android, smoke\]/);
+  assert.match(publish, /needs: \[prepare, build, android, smoke, relay\]/);
   for (const name of ["ANDROID_KEYSTORE_BASE64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD"]) {
     assert.doesNotMatch(beforePublish, new RegExp(`secrets\\.${name}`));
     assert.equal((publish.match(new RegExp(`secrets\\.${name}`, "g")) ?? []).length, 1);
