@@ -1,4 +1,62 @@
 const messages = [
+  ["正在加载…", "Loading…", "読み込み中…"],
+  [
+    "列表加载失败，请点击刷新重试。",
+    "Could not load the list. Refresh to retry.",
+    "一覧を読み込めません。更新して再試行してください。",
+  ],
+  ["操作记录", "Activity", "操作履歴"],
+  [
+    "查看 token 和 Web 权限的变更记录。",
+    "Review token and Web permission changes.",
+    "トークンと Web 権限の変更を確認します。",
+  ],
+  [
+    "保留最近 1,000 条记录，包含操作时间、目标和结果；不记录 token 密钥。",
+    "Keeps the latest 1,000 events with time, target and result. Token secrets are never recorded.",
+    "日時、対象、結果を含む最新 1,000 件を保存します。トークンの秘密値は記録しません。",
+  ],
+  ["操作时间", "Time", "操作日時"],
+  ["目标", "Target", "対象"],
+  ["结果", "Result", "結果"],
+  ["成功", "Succeeded", "成功"],
+  ["失败", "Failed", "失敗"],
+  ["暂无操作记录。", "No activity yet.", "操作履歴はありません。"],
+  ["操作记录分页", "Activity pagination", "操作履歴のページ切り替え"],
+  ["设备注册", "Device registration", "デバイス登録"],
+  ["重新签发 token", "Reissue token", "トークンの再発行"],
+  ["设备注销", "Device unregistration", "デバイス登録解除"],
+  ["永久删除", "Delete permanently", "完全に削除"],
+  [
+    "永久删除记录？",
+    "Delete records permanently?",
+    "記録を完全に削除しますか？",
+  ],
+  [
+    "将永久删除 {count} 条记录。",
+    "Permanently delete {count} records.",
+    "{count} 件の記録を完全に削除します。",
+  ],
+  [
+    "已永久删除 {count} 条记录。",
+    "Permanently deleted {count} records.",
+    "{count} 件の記録を完全に削除しました。",
+  ],
+  [
+    "此操作无法恢复，会断开当前连接并使旧 token 失效，同时移除这些记录的撤销限制和 Web 禁用状态。开启自动注册时，设备可能重新注册。",
+    "This cannot be undone. Current connections will close and old tokens will stop working. Revocation restrictions and Web blocks held by these records will also be removed. Devices may enroll again if automatic registration is enabled.",
+    "元に戻せません。現在の接続を切断し、古いトークンを無効にします。これらの記録による登録禁止と Web ブロックも解除されます。自動登録が有効な場合、デバイスが再登録される可能性があります。",
+  ],
+  [
+    "输入 DELETE 确认永久删除",
+    "Type DELETE to confirm permanent deletion",
+    "完全削除を確認するには DELETE と入力",
+  ],
+  [
+    "可跨页选择，单次最多选择 256 项。",
+    "Select across pages, up to 256 items at a time.",
+    "ページをまたいで最大 256 件を選択できます。",
+  ],
   ["Spool Relay · 管理", "Spool Relay · Admin", "Spool Relay · 管理"],
   ["Spool Relay 首页", "Spool Relay home", "Spool Relay ホーム"],
   [
@@ -493,6 +551,12 @@ export function t(key, values = {}) {
 
 // Keep original keys for static DOM text so switching languages is reversible.
 const dynamic = new Set([
+  "token-list-status",
+  "activity-rows",
+  "activity-page-status",
+  "activity-page-summary",
+  "purge-description",
+  "purge-items",
   "page-title",
   "page-description",
   "notice",

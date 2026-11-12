@@ -1050,6 +1050,39 @@ dialog.token-drawer {
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+#purge-confirmation {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+}
+#activity-table table {
+  table-layout: fixed;
+}
+#activity-rows td {
+  overflow-wrap: anywhere;
+}
+#activity-rows .server-detail {
+  white-space: normal;
+}
+.activity-success {
+  color: var(--success);
+}
+.activity-failed {
+  color: var(--danger);
+}
+#refresh[aria-busy="true"] svg {
+  animation: refreshing 1s linear infinite;
+}
+@keyframes refreshing {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #refresh[aria-busy="true"] svg {
+    animation: none;
+  }
+}
 [hidden] {
   display: none !important;
 }

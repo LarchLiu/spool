@@ -166,6 +166,19 @@
                 <path d="m9 6 6 6-6 6" />
               </svg>
             </button>
+            <button
+              type="button"
+              data-page="activity"
+              aria-controls="activity-page"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 5H5v16h14V5h-4M9 3h6v4H9zM8 12h8M8 16h5" />
+              </svg>
+              <span>操作记录</span
+              ><svg class="nav-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m9 6 6 6-6 6" />
+              </svg>
+            </button>
           </nav>
         </div>
         <div class="settings-sidebar-bottom">
@@ -324,6 +337,47 @@
             </details>
           </div>
 
+          <div id="activity-page" hidden>
+            <section class="settings-group" aria-labelledby="activity-title">
+              <h2 id="activity-title">操作记录</h2>
+              <p class="settings-hint">
+                保留最近 1,000 条记录，包含操作时间、目标和结果；不记录 token
+                密钥。
+              </p>
+              <div class="settings-card">
+                <div id="activity-table" class="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th scope="col">操作时间</th>
+                        <th scope="col">操作</th>
+                        <th scope="col">目标</th>
+                        <th scope="col">结果</th>
+                      </tr>
+                    </thead>
+                    <tbody id="activity-rows"></tbody>
+                  </table>
+                </div>
+                <p id="activity-empty" class="empty">暂无操作记录。</p>
+                <nav
+                  id="activity-pagination"
+                  class="token-pagination"
+                  aria-label="操作记录分页"
+                  hidden
+                >
+                  <span id="activity-page-summary"></span>
+                  <div class="pagination-controls">
+                    <button id="activity-previous-page" type="button" disabled>
+                      上一页</button
+                    ><span id="activity-page-status" aria-live="polite"></span
+                    ><button id="activity-next-page" type="button" disabled>
+                      下一页
+                    </button>
+                  </div>
+                </nav>
+              </div>
+            </section>
+          </div>
           <div id="servers-page">
             <section class="settings-group" aria-label="连接概况">
               <div class="settings-card metrics">
@@ -486,6 +540,7 @@
                   <input
                     id="token-search"
                     type="search"
+                    maxlength="256"
                     placeholder="名称、Device ID 或注册 IP"
                     autocomplete="off"
                   />
@@ -538,6 +593,9 @@
                       <button id="bulk-revoke" type="button" class="revoke">
                         撤销
                       </button>
+                      <button id="bulk-purge" type="button" class="revoke">
+                        永久删除
+                      </button>
                       <button id="clear-token-selection" type="button">
                         清除选择
                       </button>
@@ -557,6 +615,12 @@
                       <tbody id="servers"></tbody>
                     </table>
                   </div>
+                  <p
+                    id="token-list-status"
+                    class="empty"
+                    role="status"
+                    hidden
+                  ></p>
                   <p id="empty-state" class="empty">
                     暂无已注册的 token。服务器使用 token
                     完成首次注册后会显示在这里。
@@ -589,6 +653,7 @@
                 连接。已撤销列表也包含已注销的失效
                 token，记录会保留以防止旧凭据再次生效。
               </p>
+              <p class="settings-hint">可跨页选择，单次最多选择 256 项。</p>
             </section>
           </div>
         </div>
@@ -780,6 +845,30 @@
             value="confirm"
             class="primary"
           ></button>
+        </div>
+      </form>
+    </dialog>
+    <dialog
+      id="purge-dialog"
+      aria-labelledby="purge-title"
+      aria-describedby="purge-description purge-warning"
+    >
+      <form method="dialog">
+        <h2 id="purge-title">永久删除记录？</h2>
+        <p id="purge-description"></p>
+        <ul id="purge-items" class="bulk-dialog-items"></ul>
+        <p id="purge-warning">
+          此操作无法恢复，会断开当前连接并使旧 token
+          失效，同时移除这些记录的撤销限制和 Web
+          禁用状态。开启自动注册时，设备可能重新注册。
+        </p>
+        <label for="purge-confirmation">输入 DELETE 确认永久删除</label>
+        <input id="purge-confirmation" autocomplete="off" spellcheck="false" />
+        <div class="dialog-actions">
+          <button value="cancel" autofocus>取消</button
+          ><button id="confirm-purge" class="danger" value="purge" disabled>
+            永久删除
+          </button>
         </div>
       </form>
     </dialog>

@@ -337,15 +337,43 @@ visible. The list refreshes every ten seconds; proxy detection does not run on a
 timer.
 
 Search tokens by name, Device ID or registration IP, and combine the connection
-and Web status filters to narrow the list. Results are shown newest first, 20 per
-page. Select a token name to open its details and copy its IDs, IP or Web URL.
+and Web status filters to narrow the list. Filtering and pagination run on the
+server; polling returns the current page and global counts. Results are shown
+newest first, 20 per page. Select a token name to open its details and copy its
+IDs, IP or Web URL.
 The dashboard never retrieves previously issued token secrets.
 
-Use **全选本页** or individual checkboxes to select active tokens for revocation
-or Web permission changes. Selections carry across pages; changing a status tab
+Use **全选本页** or individual checkboxes to select tokens (up to 256 at a time).
+Active tokens support revocation and Web permission changes. Selections carry
+across pages; changing a status tab
 or search/filter condition clears them. Batch confirmation lists the affected
 names and count. Only applicable Web permissions are changed, and failed items
 remain selected so they can be retried.
+
+**永久删除** supports individual records and cross-page selections, including
+revoked and retired records. Review the listed targets and type `DELETE` to
+confirm. This disconnects live hosts, invalidates their old tokens and removes
+the selected records entirely. It also removes revocation tombstones and Web
+blocks held only by those records: identities may enroll again when automatic
+registration is enabled. Use revocation to keep an identity blocked.
+
+**操作记录** shows paginated token generation and credential recovery,
+registration/unregistration, revocation, Web permission and permanent deletion
+events, with target names, record IDs, time and success/failure results. Up to
+the latest 1,000 events are retained in `registrations.json` (older events can
+be trimmed sooner if the registry reaches its size limit). Successful changes
+and their events are saved
+in the same atomic snapshot; well-formed failed administrative token operations
+are recorded when storage is available. Token secrets, token hashes and admin
+credentials are excluded. Deleted targets remain named in activity history.
+Existing installations begin collecting events after upgrading; this local
+history is not a tamper-proof audit service. All operators use the shared admin
+credential, so it does not identify individual people.
+
+The dashboard uses authenticated JSON `POST /v1/registrations/search` and
+`POST /v1/activity/search` for paged reads, keeping search terms out of URL query
+strings. The existing `GET /v1/registrations` full list remains available to API
+clients. No refresh timestamp is displayed.
 
 ### Public management and proxy detection
 

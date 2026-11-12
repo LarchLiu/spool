@@ -33,6 +33,41 @@ func (s *Server) AdminHandler() http.Handler {
 			adminError(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		response := &adminResponse{ResponseWriter: w, status: http.StatusOK}
+		w = response
+		if r.URL.Path == "/v1/registrations/search" || r.URL.Path == "/v1/activity/search" {
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", "POST")
+				adminError(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			if r.URL.Path == "/v1/activity/search" {
+				var input struct {
+					Page     int `json:"page"`
+					PageSize int `json:"page_size"`
+				}
+				if !decodeAdminJSON(w, r, &input) {
+					return
+				}
+				if input.Page < 1 || input.PageSize < 1 || input.PageSize > 100 {
+					adminError(w, "invalid activity page", http.StatusBadRequest)
+					return
+				}
+				adminJSON(w, http.StatusOK, s.activityPage(input.Page, input.PageSize))
+				return
+			}
+			var input registrationSearch
+			if !decodeAdminJSON(w, r, &input) {
+				return
+			}
+			result, err := s.searchRegistrations(input)
+			if err != nil {
+				adminError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			adminJSON(w, http.StatusOK, result)
+			return
+		}
 		if r.URL.Path == "/v1/settings" {
 			switch r.Method {
 			case http.MethodGet:
@@ -83,6 +118,7 @@ func (s *Server) AdminHandler() http.Handler {
 				if !decodeAdminJSON(w, r, &input) {
 					return
 				}
+				defer s.auditFailure(response, "generate", nil)
 				registration, token, err := s.CreateRegistration(input.Name)
 				if err != nil {
 					registrationError(w, err)
@@ -112,6 +148,7 @@ func (s *Server) AdminHandler() http.Handler {
 				registrationError(w, ErrInvalidRegistrationCount)
 				return
 			}
+			defer s.auditFailure(response, "generate", nil)
 			issued, err := s.createRegistrations(make([]string, input.Count))
 			if err != nil {
 				registrationError(w, err)
@@ -137,6 +174,7 @@ func (s *Server) AdminHandler() http.Handler {
 				adminError(w, "ids must list 1–256 registration IDs", http.StatusBadRequest)
 				return
 			}
+			defer s.auditFailure(response, "purge", input.IDs)
 			purged, err := s.PurgeRegistrations(input.IDs)
 			if err != nil {
 				registrationError(w, err)
@@ -169,12 +207,23 @@ func (s *Server) AdminHandler() http.Handler {
 				adminError(w, "web_blocked is required", 400)
 				return
 			}
+			action := "allow"
+			if *input.WebBlocked {
+				action = "disable"
+			}
+			defer s.auditFailure(response, action, []string{id})
 			if err := s.setWebBlocked(id, *input.WebBlocked); err != nil {
 				registrationError(w, err)
 				return
 			}
-			adminJSON(w, 200, s.registrationStatuses(id)[0])
+			list := s.registrationStatuses(id)
+			if len(list) == 0 {
+				registrationError(w, ErrRegistrationNotFound)
+				return
+			}
+			adminJSON(w, 200, list[0])
 		case http.MethodDelete:
+			defer s.auditFailure(response, "revoke", []string{id})
 			if err := s.RevokeRegistration(id); err != nil {
 				registrationError(w, err)
 				return

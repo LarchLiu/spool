@@ -13,6 +13,17 @@ import { locale, t } from "./presentation.js";
   let tokenMode = "single";
   let creating = false;
   let registrations = [];
+  let tokenResult = { total: 0, pages: 1, counts: {}, metrics: {} };
+  const selectedRecords = new Map();
+  let detailEntry;
+  let listBusy = false;
+  let listError = false;
+  let listRevision = 0;
+  let activityPage = 1;
+  let activityResult = { events: [], page: 1, pages: 1, total: 0 };
+  let currentPage = "servers";
+  let purgeEntries = [];
+
   let tokenFilter = "registered";
   let tokenPage = 1;
   const tokenPageSize = 20;
@@ -22,6 +33,7 @@ import { locale, t } from "./presentation.js";
   let detailsID = "";
   let detailCopyMessage = "";
   let bulkAction;
+  let revokeEntry;
   let notice;
   const tokenTabs = [...document.querySelectorAll("[data-token-filter]")];
   const emptyStates = {
@@ -119,8 +131,29 @@ import { locale, t } from "./presentation.js";
     tokenFilter = "registered";
     tokenPage = 1;
     selectedTokens.clear();
+    selectedRecords.clear();
+    detailEntry = undefined;
+    tokenResult = { total: 0, pages: 1, counts: {}, metrics: {} };
+    listRevision++;
+    listBusy = false;
+    listError = false;
+    activityPage = 1;
+    activityResult = { events: [], page: 1, pages: 1, total: 0 };
+    renderActivity();
+    purgeEntries = [];
+    $("purge-dialog").close();
+    $("purge-confirmation").value = "";
+    for (const id of [
+      "purge-items",
+      "purge-description",
+      "bulk-dialog-items",
+      "bulk-dialog-description",
+      "revoke-description",
+    ])
+      $(id).textContent = "";
     bulkBusy = false;
     bulkAction = undefined;
+    revokeEntry = undefined;
     detailsID = "";
     detailCopyMessage = "";
     $("token-details-name").textContent = $("detail-copy-status").textContent =
@@ -141,6 +174,7 @@ import { locale, t } from "./presentation.js";
     $("appearance-dialog").close();
     $("bulk-dialog").close();
     $("token-details").close();
+    $("refresh").removeAttribute("aria-busy");
     pending = undefined;
   }
   async function api(path, options = {}) {
@@ -266,29 +300,63 @@ import { locale, t } from "./presentation.js";
     $("token-search").value = "";
     $("token-connection-filter").value = $("token-web-filter").value = "all";
   }
-  function matchesTokenFilters(entry) {
-    const query = $("token-search").value.trim().toLowerCase();
-    if (
-      query &&
-      ![entry.name, entry.server_id, entry.registration_ip].some((value) =>
-        value?.toLowerCase().includes(query),
-      )
-    )
-      return false;
-    const connection = $("token-connection-filter").value;
-    if (connection === "online" && !entry.connected) return false;
-    if (
-      connection === "offline" &&
-      (registrationGroup(entry) !== "registered" || entry.connected)
-    )
-      return false;
-    const web = $("token-web-filter").value;
-    return (
-      web === "all" ||
-      (web === "published" && !!entry.web_url) ||
-      (web === "unpublished" && !entry.web_url) ||
-      (web === "blocked" && entry.web_blocked)
-    );
+  async function loadTokens() {
+    if (!credential) return;
+    const epoch = generation;
+    const revision = ++listRevision;
+    const requestedDetail = detailsID;
+    listBusy = true;
+    listError = false;
+    renderServers(registrations);
+    try {
+      const result = await api("/v1/registrations/search", {
+        method: "POST",
+        body: JSON.stringify({
+          page: tokenPage,
+          page_size: tokenPageSize,
+          group: tokenFilter,
+          query: $("token-search").value.trim(),
+          connection: $("token-connection-filter").value,
+          web: $("token-web-filter").value,
+          selected: [...selectedTokens],
+          detail_id: requestedDetail,
+        }),
+      });
+      if (revision !== listRevision) return;
+      tokenResult = result;
+      tokenPage = result.page;
+      const selected = new Map(
+        result.selected.map((entry) => [entry.id, entry]),
+      );
+      selectedRecords.clear();
+      for (const id of selectedTokens) {
+        if (!selected.has(id)) {
+          selectedTokens.delete(id);
+          selectedRecords.delete(id);
+        } else selectedRecords.set(id, selected.get(id));
+      }
+      for (const entry of result.registrations)
+        selectedRecords.set(entry.id, entry);
+      if (requestedDetail && requestedDetail === detailsID) {
+        detailEntry = result.detail;
+        if (!detailEntry) $("token-details").close();
+      }
+      registrations = result.registrations;
+    } catch (error) {
+      if (epoch === generation && revision !== listRevision) return;
+      if (revision === listRevision) listError = true;
+      throw error;
+    } finally {
+      if (revision === listRevision) {
+        listBusy = false;
+        renderServers(registrations);
+      }
+    }
+  }
+  function requestTokens() {
+    loadTokens().catch((error) => {
+      if (credential) showNotice(error.message);
+    });
   }
   for (const [id, event] of [
     ["token-search", "input"],
@@ -298,26 +366,25 @@ import { locale, t } from "./presentation.js";
     $(id).addEventListener(event, () => {
       tokenPage = 1;
       selectedTokens.clear();
-      renderServers(registrations);
+      selectedRecords.clear();
+      requestTokens();
     });
   }
   $("clear-token-filters").addEventListener("click", () => {
     resetTokenFilters();
     tokenPage = 1;
     selectedTokens.clear();
-    renderServers(registrations);
+    selectedRecords.clear();
+    requestTokens();
   });
   function selectedEntries() {
-    return registrations.filter(
-      (entry) =>
-        selectedTokens.has(entry.id) && registrationGroup(entry) !== "revoked",
+    return [...selectedRecords.values()].filter((entry) =>
+      selectedTokens.has(entry.id),
     );
   }
   function renderSelection() {
     const entries = selectedEntries();
-    const eligible = pageTokens.filter(
-      (entry) => registrationGroup(entry) !== "revoked",
-    );
+    const eligible = pageTokens;
     const selectedOnPage = eligible.filter((entry) =>
       selectedTokens.has(entry.id),
     ).length;
@@ -325,31 +392,51 @@ import { locale, t } from "./presentation.js";
       eligible.length > 0 && selectedOnPage === eligible.length;
     $("select-token-page").indeterminate =
       selectedOnPage > 0 && selectedOnPage < eligible.length;
-    $("select-token-page").disabled = bulkBusy || eligible.length === 0;
+    $("select-token-page").disabled =
+      bulkBusy || listBusy || eligible.length === 0;
     $("token-selection-count").textContent = t("已选 {count} 项", {
       count: entries.length,
     });
     $("token-bulk-actions").hidden = entries.length === 0;
-    $("bulk-revoke").disabled = $("clear-token-selection").disabled = bulkBusy;
+    $("bulk-purge").disabled = $("clear-token-selection").disabled =
+      bulkBusy || listBusy;
+    $("bulk-revoke").disabled =
+      bulkBusy ||
+      listBusy ||
+      !entries.some((entry) => registrationGroup(entry) !== "revoked");
     $("bulk-allow-web").disabled =
       bulkBusy ||
-      !entries.some((entry) => entry.server_id && entry.web_blocked);
+      listBusy ||
+      !entries.some(
+        (entry) =>
+          registrationGroup(entry) !== "revoked" &&
+          entry.server_id &&
+          entry.web_blocked,
+      );
     $("bulk-disable-web").disabled =
       bulkBusy ||
-      !entries.some((entry) => entry.server_id && !entry.web_blocked);
+      listBusy ||
+      !entries.some(
+        (entry) =>
+          registrationGroup(entry) !== "revoked" &&
+          entry.server_id &&
+          !entry.web_blocked,
+      );
     for (const checkbox of $("servers").querySelectorAll(
       "[data-select-token]",
     )) {
       checkbox.checked = selectedTokens.has(checkbox.dataset.selectToken);
-      checkbox.disabled = bulkBusy;
+      checkbox.disabled =
+        bulkBusy ||
+        listBusy ||
+        (selectedTokens.size >= 256 && !checkbox.checked);
     }
   }
   $("select-token-page").addEventListener("change", (event) => {
-    for (const entry of pageTokens.filter(
-      (entry) => registrationGroup(entry) !== "revoked",
-    )) {
-      if (event.target.checked) selectedTokens.add(entry.id);
-      else selectedTokens.delete(entry.id);
+    for (const entry of pageTokens) {
+      if (event.target.checked) {
+        if (selectedTokens.size < 256) selectedTokens.add(entry.id);
+      } else selectedTokens.delete(entry.id);
     }
     renderSelection();
   });
@@ -359,7 +446,7 @@ import { locale, t } from "./presentation.js";
   });
   function renderTokenDetails() {
     if (!detailsID) return;
-    const entry = registrations.find((entry) => entry.id === detailsID);
+    const entry = detailEntry;
     if (!entry) {
       $("token-details").close();
       return;
@@ -392,6 +479,7 @@ import { locale, t } from "./presentation.js";
   }
   function openTokenDetails(entry) {
     detailsID = entry.id;
+    detailEntry = entry;
     detailCopyMessage = "";
     renderTokenDetails();
     $("token-details").showModal();
@@ -411,9 +499,14 @@ import { locale, t } from "./presentation.js";
       event.target.close();
   });
   $("token-details").addEventListener("close", () => {
+    if ($("token-details").open) return;
     const id = detailsID;
     detailsID = "";
-    if (credential) {
+    if (
+      credential &&
+      (document.activeElement === document.body ||
+        $("token-details").contains(document.activeElement))
+    ) {
       const row = [...$("servers").children].find(
         (row) => row.dataset.tokenId === id,
       );
@@ -442,11 +535,12 @@ import { locale, t } from "./presentation.js";
     tokenFilter = filter;
     tokenPage = 1;
     selectedTokens.clear();
-    renderServers(registrations);
+    selectedRecords.clear();
+    requestTokens();
   }
   function changeTokenPage(offset) {
     tokenPage += offset;
-    renderServers(registrations);
+    requestTokens();
     $("token-panel").focus({ preventScroll: true });
     $("token-panel").scrollIntoView({ block: "start" });
   }
@@ -455,8 +549,9 @@ import { locale, t } from "./presentation.js";
   function actionEntries(action) {
     return selectedEntries().filter(
       (entry) =>
-        action === "revoke" ||
-        (entry.server_id && entry.web_blocked === (action === "allow")),
+        registrationGroup(entry) !== "revoked" &&
+        (action === "revoke" ||
+          (entry.server_id && entry.web_blocked === (action === "allow"))),
     );
   }
   function renderBulkDialog() {
@@ -499,17 +594,177 @@ import { locale, t } from "./presentation.js";
       $("bulk-dialog").showModal();
     });
   }
-  $("bulk-dialog").addEventListener("close", () => {
-    const operation = bulkAction;
+  $("bulk-dialog").addEventListener("cancel", () => {
     bulkAction = undefined;
-    if ($("bulk-dialog").returnValue === "confirm" && operation && credential) {
-      performTokenAction(
-        operation.action,
-        operation.entries.map((entry) => entry.id),
-        true,
-      );
-    }
   });
+  $("bulk-dialog")
+    .querySelector("form")
+    .addEventListener("submit", (event) => {
+      const operation = bulkAction;
+      bulkAction = undefined;
+      if (event.submitter?.value === "confirm" && operation && credential) {
+        performTokenAction(
+          operation.action,
+          operation.entries.map((entry) => entry.id),
+          true,
+        );
+      }
+    });
+  function renderPurgeDialog() {
+    $("purge-description").textContent = t("将永久删除 {count} 条记录。", {
+      count: purgeEntries.length,
+    });
+    $("purge-items").replaceChildren(
+      ...purgeEntries.map((entry) => node("li", entry.name)),
+    );
+  }
+  function openPurge(entries) {
+    if (bulkBusy || listBusy || !entries.length) return;
+    purgeEntries = entries;
+    renderPurgeDialog();
+    $("purge-confirmation").value = "";
+    $("confirm-purge").disabled = true;
+    $("purge-dialog").returnValue = "cancel";
+    $("purge-dialog").showModal();
+  }
+  $("bulk-purge").addEventListener("click", () => openPurge(selectedEntries()));
+  $("purge-confirmation").addEventListener("input", () => {
+    $("confirm-purge").disabled = $("purge-confirmation").value !== "DELETE";
+  });
+  $("purge-dialog").addEventListener("cancel", () => {
+    purgeEntries = [];
+  });
+  $("purge-dialog")
+    .querySelector("form")
+    .addEventListener("submit", async (event) => {
+      const entries = purgeEntries;
+      purgeEntries = [];
+      if (
+        event.submitter?.value !== "purge" ||
+        $("purge-confirmation").value !== "DELETE" ||
+        !credential ||
+        bulkBusy
+      )
+        return;
+      const epoch = generation;
+      bulkBusy = true;
+      renderServers(registrations);
+      try {
+        if (pending) await pending;
+        if (epoch !== generation) return;
+        const result = await api("/v1/registrations/purge", {
+          method: "POST",
+          body: JSON.stringify({ ids: entries.map((entry) => entry.id) }),
+        });
+        for (const entry of entries) {
+          selectedTokens.delete(entry.id);
+          selectedRecords.delete(entry.id);
+        }
+        issuedTokens = issuedTokens.filter(
+          (result) =>
+            !entries.some((entry) => entry.id === result.registration.id),
+        );
+        renderIssuedTokens();
+        await refresh();
+        if (epoch === generation)
+          showNotice("已永久删除 {count} 条记录。", true, {
+            count: result.purged,
+          });
+      } catch (error) {
+        if (epoch === generation) showNotice(error.message);
+      } finally {
+        if (epoch === generation) {
+          bulkBusy = false;
+          renderServers(registrations);
+        }
+      }
+    });
+  const activityLabels = {
+    generate: "生成 token",
+    rotate: "重新签发 token",
+    revoke: "撤销 token",
+    allow: "允许 Web",
+    disable: "停用 Web",
+    purge: "永久删除",
+    register: "设备注册",
+    auto_registered: "自动注册",
+    unregister: "设备注销",
+  };
+  function renderActivity() {
+    const { events, page, pages, total } = activityResult;
+    $("activity-rows").replaceChildren(
+      ...events.map((event) => {
+        const row = document.createElement("tr");
+        const target = node("td", event.name || "—");
+        if (event.target_id)
+          target.append(node("span", event.target_id, "server-detail mono"));
+        const cells = [
+          node("td", date(event.time)),
+          node("td", t(activityLabels[event.action] || event.action)),
+          target,
+          node(
+            "td",
+            t(event.result === "success" ? "成功" : "失败"),
+            event.result === "success" ? "activity-success" : "activity-failed",
+          ),
+        ];
+        ["操作时间", "操作", "目标", "结果"].forEach(
+          (label, i) => (cells[i].dataset.label = t(label)),
+        );
+        row.append(...cells);
+        return row;
+      }),
+    );
+    $("activity-empty").hidden = total > 0;
+    $("activity-table").hidden = total === 0;
+    $("activity-pagination").hidden = total === 0;
+    $("activity-page-status").textContent = t("第 {page} / {pages} 页", {
+      page,
+      pages,
+    });
+    $("activity-page-summary").textContent = t(
+      "第 {start}–{end} 条，共 {total} 条",
+      {
+        start: total ? (page - 1) * 20 + 1 : 0,
+        end: Math.min(page * 20, total),
+        total,
+      },
+    );
+    $("activity-previous-page").disabled = page === 1;
+    $("activity-next-page").disabled = page === pages;
+  }
+  let activityRevision = 0;
+  async function loadActivity() {
+    const revision = ++activityRevision;
+    $("activity-page").setAttribute("aria-busy", "true");
+    $("activity-previous-page").disabled = $("activity-next-page").disabled =
+      true;
+    try {
+      const result = await api("/v1/activity/search", {
+        method: "POST",
+        body: JSON.stringify({ page: activityPage, page_size: 20 }),
+      });
+      if (revision !== activityRevision) return;
+      activityResult = result;
+    } finally {
+      if (revision === activityRevision) {
+        // Failed navigation keeps the page whose events are still displayed.
+        activityPage = activityResult.page;
+        $("activity-page").setAttribute("aria-busy", "false");
+        renderActivity();
+      }
+    }
+  }
+  for (const [id, offset] of [
+    ["activity-previous-page", -1],
+    ["activity-next-page", 1],
+  ])
+    $(id).addEventListener("click", () => {
+      activityPage += offset;
+      loadActivity().catch((error) => {
+        if (credential) showNotice(error.message);
+      });
+    });
   async function performTokenAction(action, ids, batch = false) {
     if (bulkBusy || !credential) return;
     const epoch = generation;
@@ -589,42 +844,29 @@ import { locale, t } from "./presentation.js";
   }
   function renderServers(list) {
     registrations = list;
-    const activeIDs = new Set(
-      list
-        .filter((entry) => registrationGroup(entry) !== "revoked")
-        .map((entry) => entry.id),
-    );
-    for (const id of selectedTokens)
-      if (!activeIDs.has(id)) selectedTokens.delete(id);
-    const counts = { registered: 0, revoked: 0, unused: 0, all: list.length };
-    for (const entry of list) counts[registrationGroup(entry)]++;
+    const counts = tokenResult.counts;
     for (const tab of tokenTabs) {
       const selected = tab.dataset.tokenFilter === tokenFilter;
       tab.setAttribute("aria-selected", String(selected));
       tab.tabIndex = selected ? 0 : -1;
       tab.disabled = bulkBusy;
       tab.querySelector(".tab-count").textContent =
-        counts[tab.dataset.tokenFilter];
+        counts[tab.dataset.tokenFilter] || 0;
     }
     $("token-panel").setAttribute(
       "aria-labelledby",
       "token-tab-" + tokenFilter,
     );
-    const visible = list.filter(
-      (entry) =>
-        (tokenFilter === "all" || registrationGroup(entry) === tokenFilter) &&
-        matchesTokenFilters(entry),
-    );
-    const pages = Math.max(1, Math.ceil(visible.length / tokenPageSize));
-    tokenPage = Math.max(1, Math.min(tokenPage, pages));
+    const { total, pages } = tokenResult;
     const start = (tokenPage - 1) * tokenPageSize;
-    pageTokens = visible.reverse().slice(start, start + tokenPageSize);
+    pageTokens = list;
+    $("token-panel").setAttribute("aria-busy", String(listBusy));
     const rows = pageTokens.map((entry) => {
       const row = document.createElement("tr");
       row.dataset.tokenId = entry.id;
       const identity = document.createElement("td");
       const identityRow = node("div", "", "token-identity");
-      if (registrationGroup(entry) !== "revoked") {
+      {
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
         checkbox.dataset.selectToken = entry.id;
@@ -633,7 +875,8 @@ import { locale, t } from "./presentation.js";
           t("选择 {name}", { name: entry.name }),
         );
         checkbox.addEventListener("change", () => {
-          if (checkbox.checked) selectedTokens.add(entry.id);
+          if (checkbox.checked && selectedTokens.size < 256)
+            selectedTokens.add(entry.id);
           else selectedTokens.delete(entry.id);
           renderSelection();
         });
@@ -642,6 +885,7 @@ import { locale, t } from "./presentation.js";
       const identityCopy = node("div", "", "token-identity-copy");
       const name = node("button", entry.name, "server-name");
       name.type = "button";
+      name.disabled = listBusy;
       name.setAttribute("aria-haspopup", "dialog");
       name.addEventListener("click", () => openTokenDetails(entry));
       identityCopy.append(name);
@@ -689,7 +933,7 @@ import { locale, t } from "./presentation.js";
             t(entry.web_blocked ? "允许 Web" : "停用 Web"),
             "quiet",
           );
-          webButton.disabled = bulkBusy;
+          webButton.disabled = bulkBusy || listBusy;
           webButton.addEventListener("click", () =>
             performTokenAction(entry.web_blocked ? "allow" : "disable", [
               entry.id,
@@ -698,10 +942,14 @@ import { locale, t } from "./presentation.js";
           actions.append(webButton);
         }
         const button = node("button", t("撤销"), "quiet revoke");
-        button.disabled = bulkBusy;
+        button.disabled = bulkBusy || listBusy;
         button.addEventListener("click", () => revoke(entry));
         actions.append(button);
-      } else action.textContent = "—";
+      }
+      const purge = node("button", t("永久删除"), "quiet revoke purge");
+      purge.disabled = bulkBusy || listBusy;
+      purge.addEventListener("click", () => openPurge([entry]));
+      actions.append(purge);
       const ip = node("td", entry.registration_ip || "—", "mono");
       const web = document.createElement("td");
       const webStatus = node("div", "", "web-status");
@@ -756,23 +1004,31 @@ import { locale, t } from "./presentation.js";
         ? "没有匹配的 token，请调整搜索或筛选条件。"
         : emptyStates[tokenFilter],
     );
-    $("empty-state").hidden = visible.length > 0;
-    $("token-table").hidden = visible.length === 0;
-    $("token-pagination").hidden = visible.length === 0;
+    $("token-list-status").textContent = t(
+      listBusy
+        ? "正在加载…"
+        : listError
+          ? "列表加载失败，请点击刷新重试。"
+          : "",
+    );
+    $("token-list-status").hidden = !listBusy && !listError;
+    $("empty-state").hidden = total > 0 || listError || listBusy;
+    $("token-table").hidden = total === 0 || listError;
+    $("token-pagination").hidden = total === 0 || listError;
     $("token-page-summary").textContent = t(
       "第 {start}–{end} 条，共 {total} 条",
       {
-        start: visible.length ? start + 1 : 0,
-        end: Math.min(start + tokenPageSize, visible.length),
-        total: visible.length,
+        start: total ? start + 1 : 0,
+        end: Math.min(start + tokenPageSize, total),
+        total: total,
       },
     );
     $("token-page-status").textContent = t("第 {page} / {pages} 页", {
       page: tokenPage,
       pages,
     });
-    $("token-previous-page").disabled = bulkBusy || tokenPage === 1;
-    $("token-next-page").disabled = bulkBusy || tokenPage === pages;
+    $("token-previous-page").disabled = bulkBusy || listBusy || tokenPage === 1;
+    $("token-next-page").disabled = bulkBusy || listBusy || tokenPage === pages;
     for (const id of [
       "token-search",
       "token-connection-filter",
@@ -780,41 +1036,51 @@ import { locale, t } from "./presentation.js";
     ])
       $(id).disabled = bulkBusy;
     $("clear-token-filters").disabled = bulkBusy || !hasTokenFilters();
-    $("refresh").disabled = bulkBusy;
+    $("refresh").disabled = bulkBusy || !!pending;
     renderSelection();
     renderTokenDetails();
-    $("online-count").textContent = list.filter((e) => e.connected).length;
-    $("active-count").textContent = list.filter(
-      (e) => !e.revoked_at && !e.unregistered_at,
-    ).length;
-    $("connection-count").textContent = list.reduce(
-      (total, e) => total + e.connections,
-      0,
-    );
+    $("online-count").textContent = tokenResult.metrics.online || 0;
+    $("active-count").textContent = tokenResult.metrics.active || 0;
+    $("connection-count").textContent = tokenResult.metrics.connections || 0;
   }
   function refresh() {
     if (!credential) return Promise.resolve();
     if (pending) return pending;
-    const request = Promise.all([api("/v1/settings"), api("/v1/registrations")])
-      .then(([next, list]) => {
+    const request = Promise.all([
+      api("/v1/settings"),
+      loadTokens(),
+      currentPage === "activity" ? loadActivity() : null,
+    ])
+      .then(([next]) => {
         renderSettings(next, true);
-        renderServers(list.registrations);
       })
       .finally(() => {
-        if (pending === request) pending = undefined;
+        if (pending === request) {
+          pending = undefined;
+          $("refresh").disabled = bulkBusy;
+          $("refresh").removeAttribute("aria-busy");
+        }
       });
     pending = request;
+    $("refresh").disabled = true;
+    $("refresh").setAttribute("aria-busy", "true");
     return request;
   }
   function navigate(page) {
+    currentPage = page;
     const network = page === "network";
+    $("activity-page").hidden = page !== "activity";
     $("network-page").hidden = !network;
-    $("servers-page").hidden = network;
-    $("page-title").textContent = t(network ? "公网连接" : "服务器授权");
+    $("servers-page").hidden = page !== "servers";
+    $("page-title").textContent = t(
+      page === "activity" ? "操作记录" : network ? "公网连接" : "服务器授权",
+    );
     $("page-description").textContent = t(
-      network
-        ? "查看 Relay 的公网入口与代理连接状态。"
-        : "管理 token 的生成、注册状态与访问权限。",
+      page === "activity"
+        ? "查看 token 和 Web 权限的变更记录。"
+        : network
+          ? "查看 Relay 的公网入口与代理连接状态。"
+          : "管理 token 的生成、注册状态与访问权限。",
     );
     for (const button of document.querySelectorAll("[data-page]")) {
       const selected = button.dataset.page === page;
@@ -827,6 +1093,8 @@ import { locale, t } from "./presentation.js";
   for (const button of document.querySelectorAll("[data-page]")) {
     button.addEventListener("click", () => {
       navigate(button.dataset.page);
+      if (button.dataset.page === "activity")
+        loadActivity().catch((error) => showNotice(error.message));
       setSidebar(false, true);
     });
   }
@@ -1057,33 +1325,39 @@ import { locale, t } from "./presentation.js";
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
-  async function revoke(entry) {
-    const dialog = $("revoke-dialog");
-    const description = () => {
+  function renderRevokeDialog() {
+    if (revokeEntry)
       $("revoke-description").textContent = t("即将撤销 token「{name}」。", {
-        name: entry.name,
+        name: revokeEntry.name,
       });
-    };
-    description();
-    document.addEventListener("relay-presentation-change", description);
+  }
+  function revoke(entry) {
+    const dialog = $("revoke-dialog");
+    revokeEntry = entry;
+    renderRevokeDialog();
     dialog.returnValue = "cancel";
     dialog.showModal();
-    dialog.addEventListener(
-      "close",
-      async () => {
-        document.removeEventListener("relay-presentation-change", description);
-        if (dialog.returnValue !== "revoke" || !credential) return;
-        await performTokenAction("revoke", [entry.id]);
-      },
-      { once: true },
-    );
   }
+  $("revoke-dialog").addEventListener("cancel", () => {
+    revokeEntry = undefined;
+  });
+  $("revoke-dialog")
+    .querySelector("form")
+    .addEventListener("submit", (event) => {
+      const entry = revokeEntry;
+      revokeEntry = undefined;
+      if (event.submitter?.value === "revoke" && entry && credential)
+        performTokenAction("revoke", [entry.id]);
+    });
   document.addEventListener("relay-presentation-change", () => {
     if (settings) renderSettings(settings);
     if (credential) renderServers(registrations);
     renderBulkDialog();
+    renderRevokeDialog();
+    if (purgeEntries.length) renderPurgeDialog();
     if (notice) showNotice(notice.message, notice.success, notice.values);
-    navigate($("network-page").hidden ? "servers" : "network");
+    navigate(currentPage);
+    renderActivity();
     renderIssuedTokens();
     renderTokenMode();
   });

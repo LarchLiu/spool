@@ -13,6 +13,7 @@ const scratch = await mkdtemp(join(process.env.TMPDIR, "relay-admin-browser-"));
 const artifacts = resolve("build/artifacts/relay-admin");
 const adminToken = "test-administrator-credential-0000000001";
 let fixture, browser, socket, browserDone, fixtureDone;
+let diagnose;
 let errors = [];
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(check, label) {
@@ -26,7 +27,7 @@ async function until(check, label) {
 try {
   const build = spawn("go", ["-C", "relay", "test", "-c", "-o", join(scratch, "relay.test")], { stdio: "inherit" });
   assert.equal((await once(build, "close"))[0], 0, "Could not build Relay test fixture");
-  fixture = spawn(join(scratch, "relay.test"), ["-test.run=^TestAdminBrowserFixture$", "-test.timeout=90s"], {
+  fixture = spawn(join(scratch, "relay.test"), ["-test.run=^TestAdminBrowserFixture$", "-test.timeout=150s"], {
     env: { ...process.env, SPOOL_RELAY_BROWSER_FIXTURE: "1" }, stdio: ["pipe", "pipe", "pipe"],
   });
   fixtureDone = once(fixture, "close");
@@ -69,7 +70,7 @@ try {
     }
     if (message.method === "Runtime.exceptionThrown") errors.push(message.params.exceptionDetails.text);
     if (message.method === "Log.entryAdded" && message.params.entry.level === "error" && message.params.entry.source === "security") errors.push(message.params.entry.text);
-    if (message.method === "Network.responseReceived" && new URL(message.params.response.url).pathname === '/v1/registrations') registrationResponses++;
+    if (message.method === "Network.responseReceived" && new URL(message.params.response.url).pathname === '/v1/registrations/search') registrationResponses++;
   });
   const send = (method, params = {}) => new Promise((resolve, reject) => {
     const id = ++sequence;
@@ -81,6 +82,7 @@ try {
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
     return result.result.value;
   };
+  diagnose = () => evaluate(`({notice:document.getElementById('notice')?.textContent,dialogs:[...document.querySelectorAll('dialog[open]')].map(e=>e.id),listBusy:document.getElementById('token-panel')?.getAttribute('aria-busy'),selection:document.getElementById('token-selection-count')?.textContent,refreshDisabled:document.getElementById('refresh')?.disabled,bulkDisabled:document.getElementById('bulk-disable-web')?.disabled})`);
   const capture = async (name) => {
     await evaluate('document.fonts.ready.then(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))');
     const image = await send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true });
@@ -94,6 +96,7 @@ try {
     { name: "prefers-color-scheme", value },
     { name: "prefers-reduced-motion", value: "reduce" },
   ] });
+  const idleLists = () => until(() => evaluate('document.getElementById("token-panel")?.getAttribute("aria-busy")!=="true" && document.getElementById("activity-page")?.getAttribute("aria-busy")!=="true"'), 'server list response');
   const click = async (selector) => {
     const { x, y } = await evaluate(`(() => {
       const element = document.querySelector(${JSON.stringify(selector)});
@@ -103,10 +106,12 @@ try {
     })()`);
     await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
     await send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+    await idleLists();
   };
   const key = async (key, code, windowsVirtualKeyCode, modifiers = 0) => {
     for (const type of ['keyDown', 'keyUp'])
       await send('Input.dispatchKeyEvent', { type, key, code, windowsVirtualKeyCode, modifiers });
+    await idleLists();
   };
   const openSidebar = async () => {
     if (await evaluate('matchMedia("(max-width: 700px)").matches && document.getElementById("sidebar-toggle").getAttribute("aria-expanded") !== "true"')) {
@@ -132,6 +137,7 @@ try {
   const rowNames = () => evaluate('[...document.querySelectorAll("#servers .server-name")].map(e=>e.textContent)');
   const filterValue = async (id, value) => {
     await evaluate(`(() => {const element=document.getElementById(${JSON.stringify(id)});element.value=${JSON.stringify(value)};element.dispatchEvent(new Event(element.tagName==='INPUT'?'input':'change',{bubbles:true}));})()`);
+    await idleLists();
   };
   const checkedIDs = () => evaluate('[...document.querySelectorAll("#servers [data-select-token]:checked")].map(e=>e.dataset.selectToken)');
   const pagination = () => evaluate(`({
@@ -249,7 +255,7 @@ try {
   await until(() => evaluate('!document.getElementById("dashboard").hidden'), "login");
   assert.equal(await evaluate('document.getElementById("network-page").hidden'), true);
   assert.equal(await evaluate('document.getElementById("servers-page").hidden'), false);
-  assert.deepEqual(await evaluate('[...document.querySelectorAll("[data-page]")].map(e=>e.dataset.page)'), ['servers', 'network']);
+  assert.deepEqual(await evaluate('[...document.querySelectorAll("[data-page]")].map(e=>e.dataset.page)'), ['servers', 'network', 'activity']);
   assert.deepEqual(await tabCounts(), [2, 1, 0, 3]);
   assert.deepEqual(await evaluate('[...document.querySelectorAll("#servers .server-name")].map(e=>e.textContent).sort()'), ['home-mac', 'offline-server']);
   assert.deepEqual(await evaluate('[...document.querySelectorAll("#servers .badge")].map(e=>e.textContent)'), ['已注册', '已注册']);
@@ -315,8 +321,8 @@ try {
   assert.equal(await evaluate('document.querySelector("#servers .server-name").textContent'), 'retired-server');
   assert.equal(await evaluate('document.querySelector("#servers .badge").textContent'), '已注销');
   assert.equal(await evaluate('!!document.querySelector("#servers .web-link")'), false, 'Retired tokens must not have a Web link');
-  assert.equal(await evaluate('document.querySelectorAll("#servers .server-actions button").length'), 0, 'Retired tokens must not offer active actions');
-  assert.equal(await evaluate('document.querySelectorAll("#servers [data-select-token]").length'), 0, 'Retired tokens must not be selectable');
+  assert.equal(await evaluate('document.querySelectorAll("#servers .server-actions button:not(.purge)").length'), 0, 'Retired tokens must not offer active actions');
+  assert.equal(await evaluate('document.querySelectorAll("#servers [data-select-token]").length'), 1, 'Retired tokens must remain selectable for permanent deletion');
   await click('#servers .server-name');
   assert.notEqual(await evaluate('document.getElementById("detail-unregistered-at").textContent'), '—');
   assert.equal(await evaluate('document.querySelector("[data-copy-detail=detail-web-url]").disabled'), true);
@@ -683,6 +689,122 @@ try {
   assert.notEqual(await evaluate('document.getElementById("detail-revoked-at").textContent'), '—');
   await capture('token-details-desktop');
   await click('#close-token-details');
+  // Permanently deleting inactive records is a separate, explicit operation.
+  const purgedName = (await rowNames())[0];
+  await click('#servers .purge');
+  assert.equal(await evaluate('document.getElementById("purge-dialog").open'), true);
+  assert.equal(await evaluate('document.getElementById("confirm-purge").disabled'), true);
+  assert.ok((await evaluate('document.getElementById("purge-warning").textContent')).includes('Devices may enroll again'));
+  await click('#purge-dialog button[value=cancel]');
+  assert.ok((await rowNames()).includes(purgedName), 'Cancel must preserve the record');
+  await click('#servers .purge');
+  await evaluate('document.getElementById("purge-confirmation").value="delete";document.getElementById("purge-confirmation").dispatchEvent(new Event("input"))');
+  assert.equal(await evaluate('document.getElementById("confirm-purge").disabled'), true, 'Confirmation must match DELETE exactly');
+  await evaluate('document.getElementById("purge-confirmation").value="DELETE";document.getElementById("purge-confirmation").dispatchEvent(new Event("input"))');
+  await click('#confirm-purge');
+  await until(() => evaluate('document.getElementById("notice").textContent==="Permanently deleted 1 records." && !document.getElementById("refresh").disabled'), 'single permanent deletion');
+  assert.equal((await rowNames()).includes(purgedName), false);
+  await selectFilter('unused');
+  await click('#servers [data-select-token]');
+  await click('#token-next-page');
+  await click('#servers [data-select-token]');
+  await click('#bulk-purge');
+  assert.equal(await evaluate('document.querySelectorAll("#purge-items li").length'), 2, 'Purge must preserve cross-page targets');
+  await viewport(320, 720, true);
+  await fitsViewport();
+  await capture('purge-confirmation-mobile');
+  await evaluate('document.getElementById("purge-confirmation").value="DELETE";document.getElementById("purge-confirmation").dispatchEvent(new Event("input"))');
+  await click('#confirm-purge');
+  await until(() => evaluate('document.getElementById("notice").textContent==="Permanently deleted 2 records." && !document.getElementById("refresh").disabled'), 'cross-page permanent deletion');
+  assert.equal(await evaluate('document.getElementById("token-selection-count").textContent'), '0 selected');
+  assert.equal((await tabCounts())[2], 37);
+  await viewport(1280, 900);
+  await selectFilter('registered');
+  // Delayed older responses must never overwrite a newer search.
+  await evaluate(`(() => {
+    const original=window.fetch;
+    window.fetch=(path, options) => {
+      const response=original(path,options);
+      if(path==='/v1/registrations/search' && JSON.parse(options.body).query==='delayed-old-query') {
+        window.fetch=original;
+        return response.then(value => new Promise(resolve => {window.releaseSearch=()=>resolve(value);}));
+      }
+      return response;
+    };
+    document.getElementById('token-search').value='delayed-old-query';
+    document.getElementById('token-search').dispatchEvent(new Event('input'));
+  })()`);
+  await until(() => evaluate('typeof window.releaseSearch==="function"'), 'delayed search response');
+  await filterValue('token-search', 'HOME-MAC');
+  assert.deepEqual(await rowNames(), ['home-mac']);
+  await evaluate('window.releaseSearch();new Promise(resolve=>setTimeout(resolve,50))');
+  assert.deepEqual(await rowNames(), ['home-mac'], 'Old search must not replace new results');
+  await evaluate(`(() => {
+    const original=window.fetch;
+    window.fetch=(path,options) => {
+      if(path==='/v1/registrations/search') {
+        window.fetch=original;
+        return Promise.resolve(new Response(JSON.stringify({error:'fixture list failure'}),{status:503,headers:{'Content-Type':'application/json'}}));
+      }
+      return original(path,options);
+    };
+  })()`);
+  await filterValue('token-search', 'offline-server');
+  assert.equal(await evaluate('document.getElementById("token-table").hidden && document.getElementById("token-list-status").textContent.includes("Refresh to retry")'), true, 'Failed search must not present stale rows as results');
+  await click('#refresh');
+  assert.deepEqual(await rowNames(), ['offline-server'], 'Refresh must retry a failed list request');
+  assert.equal(await evaluate('document.getElementById("token-list-status").hidden'), true);
+  await click('#clear-token-filters');
+  // A real failed operation appears alongside successful changes, without secrets.
+  const retiredEntry = initialList.find(entry => entry.name === 'retired-server');
+  assert.equal(await evaluate(`fetch('/v1/registrations/${retiredEntry.id}',{method:'PATCH',headers:{Authorization:'Bearer '+${JSON.stringify(adminToken)},'Content-Type':'application/json'},body:JSON.stringify({web_blocked:true})}).then(r=>r.status)`), 404);
+  await navigate('activity');
+  await until(() => evaluate('document.querySelectorAll("#activity-rows tr").length===20'), 'activity history');
+  assert.equal(await evaluate('document.getElementById("page-title").textContent'), 'Activity');
+  assert.equal(await evaluate('document.querySelector("#activity-rows tr:nth-child(1) td:nth-child(4)").textContent'), 'Failed');
+  assert.equal(await evaluate('document.querySelector("#activity-rows tr:nth-child(2) td:nth-child(2)").textContent'), 'Delete permanently');
+  assert.equal(await evaluate(`document.getElementById('activity-rows').textContent.includes(${JSON.stringify(purgedName)})`), true, 'History must retain deleted target names');
+  assert.equal(await evaluate(`document.getElementById('activity-rows').textContent.includes(${JSON.stringify(adminToken)})`), false);
+  await capture('activity-desktop');
+  const retryFailedActivityPage = async (selector, page) => {
+    const previousStatus = await evaluate('document.getElementById("activity-page-status").textContent');
+    const previousRows = await evaluate('document.getElementById("activity-rows").textContent');
+    await evaluate(`(() => {
+      const original=window.fetch;
+      window.activityPageAttempts=[];
+      window.fetch=(path,options) => {
+        if(path==='/v1/activity/search') {
+          window.activityPageAttempts.push(JSON.parse(options.body).page);
+          if(window.activityPageAttempts.length===1)
+            return Promise.resolve(new Response(JSON.stringify({error:'fixture activity failure'}),{status:503,headers:{'Content-Type':'application/json'}}));
+          window.fetch=original;
+        }
+        return original(path,options);
+      };
+    })()`);
+    await click(selector);
+    await until(() => evaluate('document.getElementById("notice").textContent==="fixture activity failure"'), 'failed activity page');
+    assert.equal(await evaluate('document.getElementById("activity-page-status").textContent'), previousStatus, 'A failed activity request must preserve the displayed page');
+    assert.equal(await evaluate('document.getElementById("activity-rows").textContent'), previousRows, 'A failed activity request must preserve the displayed events');
+    await click(selector);
+    assert.deepEqual(await evaluate('window.activityPageAttempts'), [page, page], 'Retrying activity navigation must request the same page');
+    assert.ok((await evaluate('document.getElementById("activity-page-status").textContent')).startsWith(`Page ${page} of`));
+  };
+  await retryFailedActivityPage('#activity-next-page', 2);
+  await retryFailedActivityPage('#activity-previous-page', 1);
+  await click('#activity-next-page');
+  assert.ok((await evaluate('document.getElementById("activity-page-status").textContent')).startsWith('Page 2 of'));
+  await click('#refresh');
+  assert.ok((await evaluate('document.getElementById("activity-page-status").textContent')).startsWith('Page 2 of'), 'Refresh must preserve activity page');
+  await language('ja');
+  assert.equal(await evaluate('document.getElementById("page-title").textContent'), '操作履歴');
+  await evaluate('document.querySelector("[data-theme-choice=dark]").click()');
+  await viewport(320, 720, true);
+  await fitsViewport();
+  await capture('activity-mobile-dark');
+  await language('en');
+  await viewport(1280, 900);
+  await navigate('servers');
   await selectFilter('registered');
   await click('#select-token-page');
   await evaluate('document.getElementById("servers-title").scrollIntoView({block:"start"})');
@@ -724,6 +846,7 @@ try {
   assert.equal(await evaluate('document.getElementById("dashboard").hidden && document.getElementById("issued-results").childElementCount===0 && document.getElementById("servers").childElementCount===0'), true);
   assert.equal(await evaluate('document.getElementById("token-search").value==="" && document.getElementById("token-selection-count").textContent==="0 selected" && !document.getElementById("token-details").open'), true, 'Logout must clear management state');
   assert.equal(await evaluate('document.getElementById("detail-device-id").textContent'), '', 'Logout must clear detail metadata');
+  assert.equal(await evaluate('document.getElementById("activity-rows").childElementCount'), 0, 'Logout must clear activity metadata');
   await evaluate('window.releaseAction()');
   await evaluate('new Promise(resolve => setTimeout(resolve, 50))');
   assert.equal(await evaluate('window.actionAttempts'), 1, 'Logging out must prevent subsequent batch requests');
@@ -734,7 +857,10 @@ try {
   assert.equal(await evaluate('document.getElementById("dashboard").hidden && document.getElementById("issued-results").childElementCount===0 && document.getElementById("token-result").hidden'), true, 'Reload must not restore credentials');
   await fitsViewport();
   assert.deepEqual(errors, [], "Browser errors");
-  console.log(JSON.stringify({ ok: true, coverage: ["login", "login-settings-position", "navigation-order", "mobile-drawer", "drawer-keyboard-focus", "token-tabs", "token-pagination", "pagination-refresh", "pagination-boundaries", "token-search", "combined-filters", "token-details", "detail-clipboard", "cross-page-selection", "bulk-web", "bulk-revocation", "partial-failure-retry", "retired-tokens", "offline-registration", "deployment-addresses", "proxy-settings", "tokens", "random-names", "batch-summary", "txt-download", "revocation", "languages", "preferences-persistence", "version", "light-dark", "desktop-tablet-mobile"], artifacts }));
+  console.log(JSON.stringify({ ok: true, coverage: ["login", "login-settings-position", "navigation-order", "mobile-drawer", "drawer-keyboard-focus", "token-tabs", "server-pagination", "pagination-refresh", "pagination-boundaries", "token-search", "stale-search-responses", "combined-filters", "token-details", "detail-clipboard", "cross-page-selection", "bulk-web", "bulk-revocation", "partial-failure-retry", "permanent-deletion", "cross-page-purge", "activity-history", "activity-pagination", "retired-tokens", "offline-registration", "deployment-addresses", "proxy-settings", "tokens", "random-names", "batch-summary", "txt-download", "revocation", "languages", "preferences-persistence", "version", "light-dark", "desktop-tablet-mobile"], artifacts }));
+} catch (error) {
+  if (diagnose) console.error('Browser state:', await diagnose().catch(() => 'unavailable'));
+  throw error;
 } finally {
   socket?.close();
   if (browser) { browser.kill("SIGTERM"); await browserDone; }

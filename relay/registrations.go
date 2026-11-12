@@ -134,10 +134,15 @@ func (s *Server) loadRegistrations() error {
 	var saved struct {
 		Version       int                  `json:"version"`
 		Registrations []registrationRecord `json:"registrations"`
+		Activity      []activityEvent      `json:"activity,omitempty"`
 	}
 	if len(data) > maxRegistryBytes || json.Unmarshal(data, &saved) != nil || (saved.Version != 1 && saved.Version != 2) || len(saved.Registrations) > maxRegistrations {
 		return errors.New("invalid relay registration store")
 	}
+	if len(saved.Activity) > maxActivityEvents {
+		return errors.New("invalid relay activity store")
+	}
+	s.activity = saved.Activity
 	active := make(map[string]bool)
 	for _, record := range saved.Registrations {
 		digest, err := hex.DecodeString(record.TokenHash)
@@ -165,17 +170,32 @@ func (s *Server) loadRegistrations() error {
 // Caller holds Server.mu. Save a complete snapshot before publishing changes
 // to authentication state. A failed write/rename leaves the old state intact.
 func (s *Server) saveRegistrations(records map[string]registrationRecord) error {
+	return s.saveRegistrySnapshot(records, s.registrationActivity(records))
+}
+
+func (s *Server) saveRegistrySnapshot(records map[string]registrationRecord, activity []activityEvent) error {
 	list := make([]registrationRecord, 0, len(records))
 	for _, record := range records {
 		list = append(list, record)
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
-	data, err := json.MarshalIndent(struct {
-		Version       int                  `json:"version"`
-		Registrations []registrationRecord `json:"registrations"`
-	}{2, list}, "", "  ")
-	if err != nil {
-		return err
+	var data []byte
+	for {
+		var err error
+		data, err = json.MarshalIndent(struct {
+			Version       int                  `json:"version"`
+			Registrations []registrationRecord `json:"registrations"`
+			Activity      []activityEvent      `json:"activity,omitempty"`
+		}{2, list, activity}, "", "  ")
+		if err != nil {
+			return err
+		}
+		if len(data) <= maxRegistryBytes || len(activity) == 0 {
+			break
+		}
+		// Prune in chunks so a nearly full registry does not require hundreds
+		// of complete multi-megabyte serializations while holding Server.mu.
+		activity = activity[max(1, len(activity)/4):]
 	}
 	if len(data) > maxRegistryBytes {
 		return errors.New("relay registration store is full")
@@ -195,7 +215,11 @@ func (s *Server) saveRegistrations(records map[string]registrationRecord) error 
 	if closeErr != nil {
 		return closeErr
 	}
-	return os.Rename(file.Name(), filepath.Join(s.opts.DataDir, "registrations.json"))
+	if err := os.Rename(file.Name(), filepath.Join(s.opts.DataDir, "registrations.json")); err != nil {
+		return err
+	}
+	s.activity = activity
+	return nil
 }
 
 func (s *Server) registrationForRequestLocked(r *http.Request) (registrationRecord, bool) {
@@ -467,6 +491,10 @@ func (s *Server) unregisterLocked(record registrationRecord) error {
 func (s *Server) registrationStatuses(id string) []registrationStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.registrationStatusesLocked(id)
+}
+
+func (s *Server) registrationStatusesLocked(id string) []registrationStatus {
 	list := make([]registrationStatus, 0, len(s.registrations))
 	for _, record := range s.registrations {
 		if id != "" && record.ID != id {

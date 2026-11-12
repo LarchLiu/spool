@@ -39,6 +39,7 @@ type Server struct {
 	registering    int
 	closed         bool
 	registrations  map[string]registrationRecord
+	activity       []activityEvent
 	tokenIndex     map[string]string
 	enrollments    enrollmentLimiter
 	trustedProxies []netip.Prefix
