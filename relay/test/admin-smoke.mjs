@@ -248,6 +248,20 @@ try {
   await fitsViewport();
   await capture('login-tablet');
   await viewport(1280, 900);
+  // A proxy outage can replace every API response with an HTML error page.
+  await evaluate(`(() => {
+    window.proxyFixtureFetch=window.fetch;
+    window.fetch=(path,options) => path.startsWith('/v1/')
+      ? Promise.resolve(new Response('<!DOCTYPE html><title>Unavailable</title>DO_NOT_ECHO_PROXY_BODY',{status:503,headers:{'Content-Type':'text/html'}}))
+      : window.proxyFixtureFetch(path,options);
+    document.getElementById('admin-token').value=${JSON.stringify(adminToken)};
+    document.getElementById('login-form').requestSubmit();
+  })()`);
+  await until(() => evaluate('!document.getElementById("login-button").disabled && document.getElementById("notice").textContent.includes("HTTP 503")'), 'HTML 503 during login');
+  assert.equal(await evaluate('document.getElementById("dashboard").hidden'), true);
+  assert.equal(await evaluate('document.getElementById("notice").textContent.includes("/v1/settings")'), true, 'Proxy errors must identify the failing API');
+  assert.equal(await evaluate('/Unexpected token|DOCTYPE|DO_NOT_ECHO_PROXY_BODY/.test(document.getElementById("notice").textContent)'), false, 'Proxy errors must not expose HTML or parser diagnostics');
+  await evaluate('window.fetch=window.proxyFixtureFetch;delete window.proxyFixtureFetch');
   await evaluate(`document.getElementById("admin-token").value="wrong";document.getElementById("login-form").requestSubmit()`);
   await until(() => evaluate('document.getElementById("notice").textContent.includes("无效")'), "bad-token rejection");
   assert.equal(await evaluate('document.getElementById("dashboard").hidden'), true);
@@ -754,6 +768,32 @@ try {
   await click('#refresh');
   assert.deepEqual(await rowNames(), ['offline-server'], 'Refresh must retry a failed list request');
   assert.equal(await evaluate('document.getElementById("token-list-status").hidden'), true);
+  for (const [status, contentType, body] of [
+    [503, 'text/html; charset=utf-8', '<!DOCTYPE html><title>Unavailable</title>DO_NOT_ECHO_PROXY_BODY'],
+    [502, 'application/json', '<!DOCTYPE html><title>Bad gateway</title>DO_NOT_ECHO_PROXY_BODY'],
+    [404, 'text/html', '<!DOCTYPE html><title>Not found</title>DO_NOT_ECHO_PROXY_BODY'],
+    [200, 'text/html', '<!DOCTYPE html><title>Wrong route</title>DO_NOT_ECHO_PROXY_BODY'],
+    [200, 'application/json', '{"registrations":'],
+  ]) {
+    await evaluate(`(() => {
+      const original=window.fetch;
+      window.fetch=(path,options) => {
+        if(path==='/v1/registrations/search') {
+          window.fetch=original;
+          return Promise.resolve(new Response(${JSON.stringify(body)},{status:${status},headers:{'Content-Type':${JSON.stringify(contentType)}}}));
+        }
+        return original(path,options);
+      };
+    })()`);
+    await click('#refresh');
+    await until(() => evaluate(`!document.getElementById('refresh').disabled && document.getElementById('notice').textContent.includes('HTTP ${status}')`), 'non-JSON HTTP ' + status);
+    assert.equal(await evaluate('document.getElementById("notice").textContent.includes("/v1/registrations/search")'), true);
+    assert.equal(await evaluate('/Unexpected token|DOCTYPE|DO_NOT_ECHO_PROXY_BODY/.test(document.getElementById("notice").textContent)'), false);
+    assert.equal(await evaluate('document.getElementById("token-table").hidden && !document.getElementById("dashboard").hidden'), true, 'Proxy failures must hide stale results and preserve the session');
+    await click('#refresh');
+    assert.deepEqual(await rowNames(), ['offline-server'], 'Retry must recover without another login');
+    assert.equal(await evaluate('document.getElementById("notice").hidden'), true);
+  }
   await click('#clear-token-filters');
   // A real failed operation appears alongside successful changes, without secrets.
   const retiredEntry = initialList.find(entry => entry.name === 'retired-server');

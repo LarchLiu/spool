@@ -195,9 +195,46 @@ import { locale, t } from "./presentation.js";
       logout();
       throw new Error("管理员 token 无效，请重新输入。");
     }
-    const data = response.status === 204 ? null : await response.json();
+    if (response.status === 204) return null;
+    const kind = (response.headers.get("Content-Type") || "")
+      .split(";", 1)[0]
+      .trim()
+      .toLowerCase();
+    let data;
+    if (
+      kind === "application/json" ||
+      (kind.startsWith("application/") && kind.endsWith("+json"))
+    ) {
+      try {
+        data = await response.json();
+      } catch {
+        // Reverse proxies may send HTML or a truncated body even with a JSON
+        // content type. Preserve the HTTP status instead of exposing a parser error.
+      }
+    } else {
+      await response.body?.cancel();
+    }
     if (epoch !== generation) throw new Error("操作已取消。");
-    if (!response.ok) throw new Error(data?.error || "请求失败，请稍后重试。");
+    const values = { status: response.status, path };
+    if (!response.ok) {
+      if (typeof data?.error === "string" && data.error)
+        throw new Error(data.error);
+      throw new Error(
+        t(
+          response.status >= 500
+            ? "Relay 管理接口暂时不可用（HTTP {status}，{path}）。请稍后重试；若持续出现，请检查 Relay 服务和反向代理。"
+            : "管理接口请求失败（HTTP {status}，{path}）。请检查管理地址、代理路由和 Relay 版本。",
+          values,
+        ),
+      );
+    }
+    if (!data || typeof data !== "object" || Array.isArray(data))
+      throw new Error(
+        t(
+          "管理接口返回了无效响应（HTTP {status}，{path}），预期为 JSON。请检查管理地址和反向代理。",
+          values,
+        ),
+      );
     return data;
   }
   function renderSettings(next, fill = false) {

@@ -1,4 +1,19 @@
 const messages = [
+  [
+    "Relay 管理接口暂时不可用（HTTP {status}，{path}）。请稍后重试；若持续出现，请检查 Relay 服务和反向代理。",
+    "Relay administration is temporarily unavailable (HTTP {status}, {path}). Retry shortly. If it persists, check Relay and the reverse proxy.",
+    "Relay 管理 API を一時的に利用できません（HTTP {status}、{path}）。しばらくして再試行してください。続く場合は Relay とリバースプロキシを確認してください。",
+  ],
+  [
+    "管理接口请求失败（HTTP {status}，{path}）。请检查管理地址、代理路由和 Relay 版本。",
+    "The administration request failed (HTTP {status}, {path}). Check the management address, proxy routing and Relay version.",
+    "管理 API のリクエストに失敗しました（HTTP {status}、{path}）。管理アドレス、プロキシのルーティング、Relay のバージョンを確認してください。",
+  ],
+  [
+    "管理接口返回了无效响应（HTTP {status}，{path}），预期为 JSON。请检查管理地址和反向代理。",
+    "The administration API returned an invalid response (HTTP {status}, {path}); JSON was expected. Check the management address and reverse proxy.",
+    "管理 API が無効な応答を返しました（HTTP {status}、{path}）。JSON が必要です。管理アドレスとリバースプロキシを確認してください。",
+  ],
   ["正在加载…", "Loading…", "読み込み中…"],
   [
     "列表加载失败，请点击刷新重试。",
