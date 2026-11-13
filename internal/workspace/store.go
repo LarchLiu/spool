@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -28,13 +29,22 @@ type Store struct {
 	settingsMu           sync.Mutex
 	mu                   sync.Mutex
 	agentMu              sync.Mutex
-	localMu              sync.Mutex
-	localScanAt          time.Time
-	localIndex           agent.LocalSessionIndex
-	root                 string
-	db                   *sql.DB
-	runtimeMu            sync.Mutex
-	runtimeTurns         map[string]chatmodel.Turn
+	// localScanMu serializes provider discovery and owns localIndex,
+	// localClaude and localFailing. localMu guards localScanAt and the
+	// projection of discovered sessions; it is never held during discovery.
+	localScanMu  sync.Mutex
+	localMu      sync.Mutex
+	localScanAt  time.Time
+	localIndex   agent.LocalSessionIndex
+	localClaude  agent.ClaudeSessionLister
+	localFailing string
+	localSources map[chatmodel.Backend]agent.SessionLister
+	localContext context.Context
+	localCancel  context.CancelFunc
+	root         string
+	db           *sql.DB
+	runtimeMu    sync.Mutex
+	runtimeTurns map[string]chatmodel.Turn
 }
 
 const schema = `
@@ -128,7 +138,8 @@ func OpenStore(root string) (*Store, error) {
 	if _, err = db.Exec(`UPDATE user_avatars SET style=? WHERE style IN ('bottts-neutral','shapes','initials')`, DefaultAvatar().Style); err != nil {
 		return fail(err)
 	}
-	store := &Store{root: root, db: db, runtimeTurns: make(map[string]chatmodel.Turn), updateEvents: make(chan struct{}, 1)}
+	store := &Store{root: root, db: db, runtimeTurns: make(map[string]chatmodel.Turn), updateEvents: make(chan struct{}, 1), localClaude: agent.NewClaudeSessionLister()}
+	store.localContext, store.localCancel = context.WithCancel(context.Background())
 	settings, err := store.Settings()
 	if err != nil {
 		return fail(err)
@@ -140,6 +151,11 @@ func OpenStore(root string) (*Store, error) {
 	return store, nil
 }
 func (s *Store) Close() error {
+	s.localCancel()
+	s.localScanMu.Lock()
+	defer s.localScanMu.Unlock()
+	s.localMu.Lock()
+	defer s.localMu.Unlock()
 	// WAL/SHM files are expected while SQLite is open. Checkpoint on a clean
 	// shutdown so a stopped desktop process does not leave avoidable sidecars
 	// behind; SQLite will recreate them automatically on the next write.
@@ -186,6 +202,12 @@ func (s *Store) Get(id string) (chatmodel.Session, bool) {
 	}
 	stored := v
 	v = s.hydrateSession(v)
+	if stored.LocalSession {
+		// Discovery stores the same form, so the two never rewrite each other.
+		if v.Title = localSessionTitle(v.Title); v.Title == "" {
+			v.Title = stored.Title
+		}
+	}
 	if stored.AutomationChat {
 		// Issue chats deliberately retain their issue-number/title label.
 		v.Title = stored.Title

@@ -1,191 +1,121 @@
 package agent
 
 import (
-	"encoding/json"
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+	"time"
 
 	chatmodel "spool/internal/model"
 )
 
-func writeLocalSessionRecords(t *testing.T, path string, records ...map[string]any) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+func TestSessionIndexPreservesProviderSnapshotsAndDetectsReplacement(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	if err := os.WriteFile(path, []byte("first"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	file, err := os.Create(path)
-	if err != nil {
+	stamp := time.Unix(100, 0)
+	if err := os.Chtimes(path, stamp, stamp); err != nil {
 		t.Fatal(err)
 	}
-	defer file.Close()
-	for _, record := range records {
-		if err := json.NewEncoder(file).Encode(record); err != nil {
-			t.Fatal(err)
-		}
+	snapshot := []LocalSession{{ID: "native-session", Path: path, Directory: dir, Title: "First", UpdatedAt: 100}}
+	var failure error
+	source := SessionListerFunc(func(context.Context, ListSessionsOptions) ([]LocalSession, error) { return snapshot, failure })
+	sources := map[chatmodel.Backend]SessionLister{chatmodel.BackendCodex: source}
+	now := time.Unix(1000, 0)
+	index := LocalSessionIndex{now: func() time.Time { return now }}
+	first, err := index.Discover(ctx, sources)
+	if err != nil || len(first) != 1 {
+		t.Fatalf("initial snapshot: %+v %v", first, err)
+	}
+	snapshot[0].Title = "Renamed"
+	renamed, err := index.Discover(ctx, sources)
+	if err != nil || renamed[0].Title != "Renamed" || renamed[0].Generation != first[0].Generation {
+		t.Fatalf("title-only refresh: %+v %v", renamed, err)
+	}
+	if err := os.Rename(path, path+".old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("other"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	replaced, err := index.Discover(ctx, sources)
+	if err != nil || replaced[0].Generation == first[0].Generation {
+		t.Fatalf("replacement was not detected: %+v %v", replaced, err)
+	}
+	failure = errors.New("temporary provider failure")
+	retained, err := index.Discover(ctx, sources)
+	if err != nil || len(retained) != 1 || retained[0].Generation != replaced[0].Generation {
+		t.Fatalf("failed provider withdrew sessions: %+v %v", retained, err)
+	}
+	if failing := index.Failing(); len(failing) != 1 || failing[0] != chatmodel.BackendCodex {
+		t.Fatalf("failure was not reported: %+v", failing)
+	}
+	now = now.Add(localSessionRetryInterval)
+	failure, snapshot = nil, nil
+	empty, err := index.Discover(ctx, sources)
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("successful deletion was not reflected: %+v %v", empty, err)
 	}
 }
 
-func TestLocalSessionDiscoveryIgnoresSidechainsAndUsesNativeTitles(t *testing.T) {
-	root := t.TempDir()
-	codex, claude := filepath.Join(root, "codex"), filepath.Join(root, "claude")
-	t.Setenv("CODEX_HOME", codex)
-	t.Setenv("CLAUDE_CONFIG_DIR", claude)
-	write := func(path string, records ...map[string]any) {
-		t.Helper()
-		writeLocalSessionRecords(t, path, records...)
+func TestSessionIndexBoundsFailedAndDisabledProviders(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	calls := 0
+	var failure error
+	var requested ListSessionsOptions
+	source := SessionListerFunc(func(_ context.Context, options ListSessionsOptions) ([]LocalSession, error) {
+		calls++
+		requested = options
+		return []LocalSession{{ID: "native-session", Directory: dir, UpdatedAt: 100, TitleAuthoritative: true}}, failure
+	})
+	sources := map[chatmodel.Backend]SessionLister{chatmodel.BackendCodex: source}
+	now := time.Unix(1000, 0)
+	index := LocalSessionIndex{now: func() time.Time { return now }}
+	sessions, err := index.Discover(ctx, sources)
+	if err != nil || len(sessions) != 1 || sessions[0].Title != "Codex" || sessions[0].TitleAuthoritative {
+		t.Fatalf("untitled session was not listed under a provisional provider label: %+v %v", sessions, err)
 	}
-	meta := func(id string, source any) map[string]any {
-		return map[string]any{"type": "session_meta", "payload": map[string]any{"id": id, "cwd": root, "source": source}}
+	if requested.Limit != localSessionDiscoveryLimit || !requested.IncludeUntitled {
+		t.Fatalf("discovery was not bounded: %+v", requested)
 	}
-	write(filepath.Join(codex, "sessions", "rollout-primary.jsonl"), meta("codex-primary", "cli"))
-	write(filepath.Join(codex, "sessions", "rollout-sidechain.jsonl"), meta("codex-sidechain", map[string]any{"subagent": map[string]any{"thread_spawn": "parent"}}))
-	write(filepath.Join(codex, "sessions", "rollout-invalid.jsonl"), meta("../../invalid", "cli"))
-	write(filepath.Join(codex, "archived_sessions", "rollout-archived.jsonl"), meta("codex-archived", "cli"))
-	write(filepath.Join(codex, "session_index.jsonl"), map[string]any{"id": "codex-primary", "thread_name": "Named Codex chat"})
-	user := map[string]any{"type": "user", "sessionId": "claude-primary", "cwd": root, "message": map[string]any{"role": "user", "content": "<environment_context>runtime</environment_context>\nActual user request"}}
-	write(filepath.Join(claude, "projects", "project", "claude-primary.jsonl"), user)
-	sidechain := map[string]any{"type": "user", "sessionId": "claude-sidechain", "cwd": root, "isSidechain": true}
-	write(filepath.Join(claude, "projects", "project", "agent-sidechain.jsonl"), sidechain)
-	write(filepath.Join(claude, "projects", "project", "subagents", "nested.jsonl"), user)
+	failure = errors.New("provider unavailable")
+	for range 3 {
+		if sessions, err = index.Discover(ctx, sources); err != nil || len(sessions) != 1 {
+			t.Fatalf("recent snapshot was withdrawn: %+v %v", sessions, err)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("failing provider was retried on every refresh: %d calls", calls)
+	}
+	now = now.Add(localSessionStaleAfter)
+	if sessions, err = index.Discover(ctx, sources); err != nil || len(sessions) != 0 || calls != 3 {
+		t.Fatalf("stale snapshot outlived its bound: %+v %v calls=%d", sessions, err, calls)
+	}
+	failure = nil
+	now = now.Add(localSessionRetryInterval)
+	if sessions, err = index.Discover(ctx, sources); err != nil || len(sessions) != 1 || len(index.Failing()) != 0 {
+		t.Fatalf("provider did not recover: %+v %v", sessions, err)
+	}
+	if sessions, err = index.Discover(ctx, nil); err != nil || len(sessions) != 0 {
+		t.Fatalf("disabled provider kept its snapshot: %+v %v", sessions, err)
+	}
+}
+
+func TestSessionIndexCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 	var index LocalSessionIndex
-	sessions, err := index.Discover()
-	if err != nil || len(sessions) != 2 {
-		t.Fatalf("discovery included hidden sessions: %+v %v", sessions, err)
-	}
-	titles := map[string]string{}
-	generations := map[string]string{}
-	for _, session := range sessions {
-		titles[session.ID] = session.Title
-		generations[session.ID] = session.Generation
-		if !session.TitleAuthoritative {
-			t.Fatalf("complete transcript or title index was treated as a provisional title: %+v", session)
-		}
-	}
-	if titles["codex-primary"] != "Named Codex chat" || titles["claude-primary"] != "Actual user request" {
-		t.Fatalf("native titles were not projected correctly: %+v", titles)
-	}
-	write(filepath.Join(codex, "session_index.jsonl"), map[string]any{"id": "codex-primary", "thread_name": "Renamed without a turn"})
-	sessions, err = index.Discover()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, session := range sessions {
-		if session.Backend == chatmodel.BackendCodex && session.Title != "Renamed without a turn" {
-			t.Fatal("cached discovery missed provider title-index changes")
-		}
-		if session.Generation != generations[session.ID] || !session.TitleAuthoritative {
-			t.Fatal("title-only refresh changed the file generation or lost title authority")
-		}
-	}
-}
-
-func localSessionDiscoveryFile(t *testing.T, backend chatmodel.Backend) (path, directory string) {
-	t.Helper()
-	root := t.TempDir()
-	codex, claude := filepath.Join(root, "codex"), filepath.Join(root, "claude")
-	t.Setenv("CODEX_HOME", codex)
-	t.Setenv("CLAUDE_CONFIG_DIR", claude)
-	path = filepath.Join(codex, "sessions", "rollout-native-session.jsonl")
-	if backend == chatmodel.BackendClaude {
-		path = filepath.Join(claude, "projects", "project", "native-session.jsonl")
-	}
-	return path, root
-}
-
-func TestLocalSessionDiscoveryReadsLargeIdentityRecords(t *testing.T) {
-	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {
-		for _, preface := range []bool{false, true} {
-			name := string(backend)
-			if preface {
-				name += "/large-preface"
-			}
-			t.Run(name, func(t *testing.T) {
-				path, directory := localSessionDiscoveryFile(t, backend)
-				large := strings.Repeat("A", 400000)
-				record := map[string]any{"type": "session_meta", "payload": map[string]any{"id": "native-session", "cwd": directory, "source": "cli", "title": "First request", "developer_instructions": large}}
-				if backend == chatmodel.BackendClaude {
-					record = map[string]any{"type": "user", "sessionId": "native-session", "cwd": directory, "message": map[string]any{"role": "user", "content": []any{
-						map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": "image/png", "data": large}},
-						map[string]any{"type": "text", "text": "First request"},
-					}}}
-				}
-				var records []map[string]any
-				if preface {
-					records = append(records, map[string]any{"type": "file-history-snapshot", "snapshot": map[string]any{"data": large}})
-				}
-				writeLocalSessionRecords(t, path, append(records, record)...)
-				var index LocalSessionIndex
-				sessions, err := index.Discover()
-				if err != nil || len(sessions) != 1 {
-					t.Fatalf("large identity record was not discovered: %+v %v", sessions, err)
-				}
-				v := sessions[0]
-				if v.ID != "native-session" || v.Directory != directory || v.Title != "First request" || !v.TitleAuthoritative {
-					t.Fatalf("large identity record lost metadata: %+v", v)
-				}
-				sessions, err = index.Discover()
-				if err != nil || len(sessions) != 1 || sessions[0].Generation != v.Generation {
-					t.Fatalf("unchanged large record was not cached: %+v %v", sessions, err)
-				}
-			})
-		}
-	}
-}
-
-func TestLocalSessionDiscoveryRetriesUnreadableFiles(t *testing.T) {
-	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {
-		for _, previouslyCached := range []bool{false, true} {
-			name := string(backend)
-			if previouslyCached {
-				name += "/changed-cached-file"
-			}
-			t.Run(name, func(t *testing.T) {
-				path, directory := localSessionDiscoveryFile(t, backend)
-				record := func(title string) map[string]any {
-					if backend == chatmodel.BackendClaude {
-						return map[string]any{"type": "user", "sessionId": "native-session", "cwd": directory, "message": map[string]any{"role": "user", "content": title}}
-					}
-					return map[string]any{"type": "session_meta", "payload": map[string]any{"id": "native-session", "cwd": directory, "title": title}}
-				}
-				writeLocalSessionRecords(t, path, record("Original request"))
-				var index LocalSessionIndex
-				if previouslyCached {
-					if sessions, err := index.Discover(); err != nil || len(sessions) != 1 {
-						t.Fatalf("initial discovery failed: %+v %v", sessions, err)
-					}
-					writeLocalSessionRecords(t, path, record("Updated and longer request"))
-				}
-				t.Cleanup(func() { _ = os.Chmod(path, 0600) })
-				if err := os.Chmod(path, 0); err != nil {
-					t.Fatal(err)
-				}
-				if file, err := os.Open(path); err == nil {
-					file.Close()
-					t.Skip("cannot simulate an unreadable file")
-				}
-				before, err := os.Stat(path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if sessions, err := index.Discover(); err != nil || len(sessions) != 0 {
-					t.Fatalf("unreadable file was not skipped: %+v %v", sessions, err)
-				}
-				if err := os.Chmod(path, 0600); err != nil {
-					t.Fatal(err)
-				}
-				after, err := os.Stat(path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) || !os.SameFile(before, after) {
-					t.Fatal("permission recovery changed the file generation")
-				}
-				if sessions, err := index.Discover(); err != nil || len(sessions) != 1 || sessions[0].ID != "native-session" {
-					t.Fatalf("readable file was not retried: %+v %v", sessions, err)
-				}
-			})
-		}
+	_, err := index.Discover(ctx, map[chatmodel.Backend]SessionLister{chatmodel.BackendClaude: SessionListerFunc(func(ctx context.Context, _ ListSessionsOptions) ([]LocalSession, error) { return nil, ctx.Err() })})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation lost: %v", err)
 	}
 }

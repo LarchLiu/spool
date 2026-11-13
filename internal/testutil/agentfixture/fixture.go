@@ -156,6 +156,19 @@ func Run(t *testing.T) {
 					cursor = nil
 				}
 				send(map[string]any{"id": value["id"], "result": map[string]any{"data": models, "nextCursor": cursor}})
+			case "thread/list":
+				var pages map[string]json.RawMessage
+				body, err := os.ReadFile("fixture-thread-pages.json")
+				if err != nil || json.Unmarshal(body, &pages) != nil {
+					send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32603, "message": "fixture list unavailable"}})
+					continue
+				}
+				result, ok := pages[StringValue(params["cursor"])]
+				if !ok {
+					send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32600, "message": "unexpected fixture cursor"}})
+					continue
+				}
+				send(map[string]any{"id": value["id"], "result": result})
 			case "thread/start", "thread/resume":
 				if method == "thread/resume" {
 					thread = StringValue(params["threadId"])

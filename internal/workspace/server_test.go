@@ -82,6 +82,10 @@ func testStore(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
+	s.localSources = map[chatmodel.Backend]agent.SessionLister{
+		chatmodel.BackendCodex:  agent.SessionListerFunc(fixtureLocalCodexSessions),
+		chatmodel.BackendClaude: agent.ClaudeSessionLister{},
+	}
 	return s
 }
 func testUser(t *testing.T, s *Store, name string) User {

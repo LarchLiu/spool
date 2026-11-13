@@ -63,6 +63,8 @@ func (s *Store) readHistory(chat chatmodel.Session) (chatmodel.Session, error) {
 		if title := s.historyCache.titles.Title(path, chat.NativeSessionID); title != "" {
 			snapshot.Title = title
 		}
+	} else if chat.Backend == chatmodel.BackendClaude {
+		snapshot.Title = agent.ClaudeSessionTitle(path, chat.NativeSessionID, snapshot.Title)
 	}
 	return snapshot, nil
 }

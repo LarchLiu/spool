@@ -1,24 +1,49 @@
 package agent
 
 import (
-	"bufio"
-	"encoding/json"
-	"io"
-	"io/fs"
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
+	"time"
 
 	chatmodel "spool/internal/model"
 )
 
+// LocalSession is provider-owned metadata. Transcript bodies stay in the native
+// history store and are read only when a chat is opened.
 type LocalSession struct {
 	ID, Path, Directory, Title string
+	CustomTitle, FirstPrompt   string
+	GitBranch, Tag             string
+	FileSize                   int64
 	Generation                 string
 	Backend                    chatmodel.Backend
 	CreatedAt, UpdatedAt       int64
 	TitleAuthoritative         bool
+}
+
+type ListSessionsOptions struct {
+	Directory           string
+	Limit, Offset       int
+	IncludeWorktrees    *bool // Claude only: nil means true, matching its SDK
+	IncludeProgrammatic *bool // Claude only: nil means true, matching its SDK
+	// Claude only: keep sessions without any derivable title (Title is empty).
+	// The SDK omits them; Spool lists them under the provider label.
+	IncludeUntitled bool
+}
+
+// SessionLister lets each provider own discovery, filtering and pagination.
+// An empty Directory lists all projects; Limit <= 0 means no limit. Codex uses
+// an exact cwd filter; Claude optionally includes the directory's git worktrees.
+type SessionLister interface {
+	ListSessions(context.Context, ListSessionsOptions) ([]LocalSession, error)
+}
+
+type SessionListerFunc func(context.Context, ListSessionsOptions) ([]LocalSession, error)
+
+func (f SessionListerFunc) ListSessions(ctx context.Context, options ListSessionsOptions) ([]LocalSession, error) {
+	return f(ctx, options)
 }
 
 type localSessionFile struct {
@@ -26,69 +51,105 @@ type localSessionFile struct {
 	session LocalSession
 }
 
-// LocalSessionIndex retains metadata only, never native transcript bodies.
-// Callers serialize discovery; unchanged files need only a stat on later scans.
-type LocalSessionIndex struct {
-	files  map[string]localSessionFile
-	titles CodexSessionTitles
+const (
+	// Providers list newest first and Spool shows a small per-project window,
+	// so discovery never pages through or samples an unbounded history.
+	localSessionDiscoveryLimit = 2000
+	// A failing provider (missing, hung, or outdated CLI) is not retried on
+	// every refresh, and its last snapshot is withdrawn once it is this stale.
+	localSessionRetryInterval = time.Minute
+	localSessionStaleAfter    = 5 * time.Minute
+)
+
+type localSessionProvider struct {
+	sessions          []LocalSession
+	failedAt, retryAt time.Time
 }
 
-func (index *LocalSessionIndex) Discover() ([]LocalSession, error) {
-	files := make(map[string]localSessionFile)
-	var sessions []LocalSession
+// LocalSessionIndex only tracks generations of metadata returned by providers.
+// Callers serialize discovery. A failed provider retains its last successful
+// snapshot for a bounded time, so a transient CLI failure cannot withdraw its
+// chats, while a permanently broken one cannot show deleted chats forever.
+type LocalSessionIndex struct {
+	files     map[string]localSessionFile
+	providers map[chatmodel.Backend]*localSessionProvider
+	now       func() time.Time
+}
+
+// Failing reports providers whose latest listing failed, for diagnostics.
+func (index *LocalSessionIndex) Failing() []chatmodel.Backend {
+	var failing []chatmodel.Backend
 	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {
-		home, err := nativeSessionHome(backend)
-		if err != nil {
+		if provider := index.providers[backend]; provider != nil && !provider.failedAt.IsZero() {
+			failing = append(failing, backend)
+		}
+	}
+	return failing
+}
+
+func (index *LocalSessionIndex) Discover(ctx context.Context, sources map[chatmodel.Backend]SessionLister) ([]LocalSession, error) {
+	if index.providers == nil {
+		index.providers = make(map[chatmodel.Backend]*localSessionProvider)
+	}
+	now := time.Now()
+	if index.now != nil {
+		now = index.now()
+	}
+	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {
+		source := sources[backend]
+		if source == nil {
+			// A provider that is no longer listed (disabled) owns no snapshot.
+			delete(index.providers, backend)
 			continue
 		}
-		folder := "sessions"
-		if backend == chatmodel.BackendClaude {
-			folder = "projects"
+		provider := index.providers[backend]
+		if provider == nil {
+			provider = &localSessionProvider{}
+			index.providers[backend] = provider
 		}
-		err = filepath.WalkDir(filepath.Join(home, folder), func(path string, entry fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				// Optional native history must not block healthy providers or
-				// normal project navigation when one directory is unreadable.
-				return nil
+		if !now.Before(provider.retryAt) {
+			sessions, err := source.ListSessions(ctx, ListSessionsOptions{Limit: localSessionDiscoveryLimit, IncludeUntitled: true})
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
 			}
-			if entry.IsDir() {
-				if entry.Name() == "subagents" {
-					return filepath.SkipDir
-				}
-				return nil
+			if err == nil {
+				*provider = localSessionProvider{sessions: sessions}
+				continue
 			}
-			if entry.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(entry.Name(), ".jsonl") {
-				return nil
+			if provider.failedAt.IsZero() {
+				provider.failedAt = now
 			}
-			info, err := entry.Info()
-			if err != nil || !info.Mode().IsRegular() {
-				return nil
+			provider.retryAt = now.Add(localSessionRetryInterval)
+		}
+		if !provider.failedAt.IsZero() && now.Sub(provider.failedAt) >= localSessionStaleAfter {
+			provider.sessions = nil
+		}
+	}
+	files := make(map[string]localSessionFile)
+	var sessions []LocalSession
+	for backend, provider := range index.providers {
+		for _, v := range provider.sessions {
+			if !chatmodel.ValidID(v.ID) || !filepath.IsAbs(v.Directory) || (v.Path != "" && !filepath.IsAbs(v.Path)) {
+				continue
 			}
-			cached, ok := index.files[path]
-			if !ok || info.Size() != cached.info.Size() || !info.ModTime().Equal(cached.info.ModTime()) || !os.SameFile(info, cached.info) {
-				session, err := readLocalSession(backend, path, info)
-				if err != nil {
-					// Retry transient read failures even if the file generation is unchanged.
-					return nil
-				}
-				cached = localSessionFile{info: info, session: session}
+			if v.Title == "" {
+				v.Title, v.TitleAuthoritative = backend.Label(), false
 			}
-			files[path] = cached
-			v := cached.session
-			if v.ID == "" || v.Directory == "" {
-				return nil
+			v.Backend = backend
+			key := string(backend) + ":" + v.ID
+			var info os.FileInfo
+			if v.Path != "" {
+				info, _ = os.Stat(v.Path)
 			}
-			if backend == chatmodel.BackendCodex {
-				if title := index.titles.Title(path, v.ID); title != "" {
-					v.Title = title
-					v.TitleAuthoritative = true
-				}
+			cached, ok := index.files[key]
+			sameFile := info == nil && cached.info == nil || info != nil && cached.info != nil && info.Size() == cached.info.Size() && info.ModTime().Equal(cached.info.ModTime()) && os.SameFile(info, cached.info)
+			if ok && sameFile && v.Path == cached.session.Path && v.UpdatedAt == cached.session.UpdatedAt {
+				v.Generation = cached.session.Generation
+			} else {
+				v.Generation = chatmodel.NewID()
 			}
+			files[key] = localSessionFile{info: info, session: v}
 			sessions = append(sessions, v)
-			return nil
-		})
-		if err != nil {
-			return nil, err
 		}
 	}
 	index.files = files
@@ -96,109 +157,10 @@ func (index *LocalSessionIndex) Discover() ([]LocalSession, error) {
 		if sessions[i].UpdatedAt != sessions[j].UpdatedAt {
 			return sessions[i].UpdatedAt > sessions[j].UpdatedAt
 		}
-		return sessions[i].Path < sessions[j].Path
+		if sessions[i].Backend != sessions[j].Backend {
+			return sessions[i].Backend < sessions[j].Backend
+		}
+		return sessions[i].ID < sessions[j].ID
 	})
 	return sessions, nil
-}
-
-func readLocalSession(backend chatmodel.Backend, path string, info os.FileInfo) (LocalSession, error) {
-	v := LocalSession{Path: path, Backend: backend, UpdatedAt: info.ModTime().UnixMilli(), Generation: chatmodel.NewID()}
-	file, err := os.Open(path)
-	if err != nil {
-		return v, err
-	}
-	defer file.Close()
-	var title nativeSessionTitle
-	collect := func(source io.Reader, limit int64, identity bool) (int64, error) {
-		reader := bufio.NewReader(source)
-		var sampled int64
-		for sampled < limit || (identity && (v.ID == "" || v.Directory == "")) {
-			line, err := reader.ReadBytes('\n')
-			sampled += int64(len(line))
-			if err != nil && err != io.EOF {
-				return sampled, err
-			}
-			if len(line) == 0 {
-				break
-			}
-			var record map[string]any
-			if json.Unmarshal(line, &record) != nil {
-				continue
-			}
-			title.collect(backend, record)
-			if !identity {
-				if backend == chatmodel.BackendClaude && record["type"] == "custom-title" && strings.TrimSpace(stringValue(record["customTitle"])) != "" {
-					v.TitleAuthoritative = true
-				}
-				continue
-			}
-			if record["isSidechain"] == true {
-				v.ID, v.Directory = "", ""
-				return sampled, nil
-			}
-			if backend == chatmodel.BackendCodex && record["type"] == "session_meta" {
-				payload, _ := record["payload"].(map[string]any)
-				if source, ok := payload["source"].(map[string]any); ok && source["subagent"] != nil {
-					v.ID, v.Directory = "", ""
-					return sampled, nil
-				}
-				v.ID, v.Directory = stringValue(payload["id"]), stringValue(payload["cwd"])
-				v.CreatedAt = nativeTimestamp(record["timestamp"])
-			} else if backend == chatmodel.BackendClaude {
-				if id := backendSessionID(record); id != "" && v.ID == "" {
-					v.ID = id
-				}
-				if cwd := stringValue(record["cwd"]); cwd != "" && v.Directory == "" {
-					v.Directory = cwd
-				}
-				if v.CreatedAt == 0 {
-					v.CreatedAt = nativeTimestamp(record["timestamp"])
-				}
-			}
-			if v.Title == "" {
-				payload, _ := record["payload"].(map[string]any)
-				var content any
-				if backend == chatmodel.BackendCodex && record["type"] == "response_item" && payload["role"] == "user" {
-					content = payload["content"]
-				} else if backend == chatmodel.BackendClaude && record["type"] == "user" && record["isMeta"] != true && record["isCompactSummary"] != true {
-					message, _ := record["message"].(map[string]any)
-					content = message["content"]
-				}
-				texts, images := userContentTexts(content)
-				v.Title = strings.Join(strings.Fields(cleanUserTextBlocks(texts, images).Text), " ")
-			}
-		}
-		return sampled, nil
-	}
-	// Sample complete records, extending the prefix until identity is known so
-	// large images or metadata cannot hide it. Transcript bodies are not retained.
-	sampled, err := collect(io.NewSectionReader(file, 0, info.Size()), 256*1024, true)
-	if err != nil {
-		return v, err
-	}
-	v.TitleAuthoritative = sampled == info.Size()
-	if sampled < info.Size() {
-		start := max(0, info.Size()-64*1024)
-		reader := bufio.NewReader(io.NewSectionReader(file, start, info.Size()-start))
-		if _, err := reader.ReadBytes('\n'); err != nil && err != io.EOF {
-			return v, err
-		}
-		if _, err := collect(reader, 64*1024, false); err != nil {
-			return v, err
-		}
-	}
-	if title.text != "" {
-		v.Title = title.text
-	}
-	v.Title = chatmodel.Clip(v.Title, 200)
-	if v.Title == "" {
-		v.Title = backend.Label()
-	}
-	if v.CreatedAt == 0 {
-		v.CreatedAt = v.UpdatedAt
-	}
-	if !chatmodel.ValidID(v.ID) || !filepath.IsAbs(v.Directory) {
-		v.ID, v.Directory = "", ""
-	}
-	return v, nil
 }

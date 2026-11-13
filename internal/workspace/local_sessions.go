@@ -1,15 +1,19 @@
 package workspace
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"spool/internal/agent"
 	chatmodel "spool/internal/model"
 )
 
@@ -128,24 +132,102 @@ func matchLocalSessionProject(directory string, projects []localSessionProject) 
 }
 
 func (s *Store) syncLocalSessions(force bool) error {
+	return s.syncLocalSessionsContext(s.localContext, force)
+}
+
+// localSessionTitle is the single stored form of a native title: one line of
+// at most 200 bytes. It is idempotent, and both discovery and opened history
+// apply it, so neither path rewrites the other's title.
+func localSessionTitle(title string) string {
+	title = strings.Join(strings.Fields(title), " ")
+	if len(title) <= 200 {
+		return title
+	}
+	end := 200 - len("…")
+	for end > 0 && !utf8.RuneStart(title[end]) {
+		end--
+	}
+	return strings.TrimRight(title[:end], " ") + "…"
+}
+
+func sharesLocalSessions(projects []Project) bool {
+	for _, p := range projects {
+		if !p.Archived && p.SharedChats && p.SharedLocalChats {
+			return true
+		}
+	}
+	return false
+}
+
+// A disabled provider is neither executed nor listed.
+func (s *Store) localSessionSources() (map[chatmodel.Backend]agent.SessionLister, error) {
+	if s.localSources != nil {
+		return s.localSources, nil
+	}
+	providers, err := s.Agents()
+	if err != nil {
+		return nil, err
+	}
+	sources := map[chatmodel.Backend]agent.SessionLister{}
+	for _, provider := range providers {
+		if !provider.Enabled {
+			continue
+		}
+		switch provider.Backend {
+		case chatmodel.BackendCodex:
+			sources[provider.Backend] = agent.CodexSessionLister{Binary: provider.Executable}
+		case chatmodel.BackendClaude:
+			sources[provider.Backend] = s.localClaude
+		}
+	}
+	return sources, nil
+}
+
+func (s *Store) syncLocalSessionsContext(ctx context.Context, force bool) error {
+	// Discovery may start a provider CLI and take seconds. Only one runs at a
+	// time, and a page request never queues behind another caller's discovery:
+	// it serves the last projection and a navigation event follows any change.
+	if force {
+		s.localScanMu.Lock()
+	} else if !s.localScanMu.TryLock() {
+		return nil
+	}
+	defer s.localScanMu.Unlock()
 	s.localMu.Lock()
-	defer s.localMu.Unlock()
-	if !force && time.Since(s.localScanAt) < localSessionInterval {
+	fresh := !force && time.Since(s.localScanAt) < localSessionInterval
+	s.localMu.Unlock()
+	if fresh {
 		return nil
 	}
 	projects, err := s.Projects()
+	if err != nil || !sharesLocalSessions(projects) {
+		return err
+	}
+	sources, err := s.localSessionSources()
 	if err != nil {
 		return err
 	}
-	shared := false
-	for _, p := range projects {
-		shared = shared || (!p.Archived && p.SharedChats && p.SharedLocalChats)
-	}
-	if !shared {
-		return nil
-	}
-	local, err := s.localIndex.Discover()
+	local, err := s.localIndex.Discover(ctx, sources)
 	if err != nil {
+		return err
+	}
+	var failing []string
+	for _, backend := range s.localIndex.Failing() {
+		failing = append(failing, string(backend))
+	}
+	if state := strings.Join(failing, ","); state != s.localFailing {
+		// Report each outage and recovery once. Provider errors can contain
+		// native paths, so only the provider is named.
+		if s.localFailing = state; state == "" {
+			log.Printf("event=local_session_discovery_recovered")
+		} else {
+			log.Printf("event=local_session_discovery_failed backends=%s", state)
+		}
+	}
+	s.localMu.Lock()
+	defer s.localMu.Unlock()
+	// Sharing may have changed while providers were listed.
+	if projects, err = s.Projects(); err != nil || !sharesLocalSessions(projects) {
 		return err
 	}
 	// Serialize with native-session adoption/conversion so discovery cannot
@@ -202,6 +284,10 @@ func (s *Store) syncLocalSessions(force bool) error {
 	mappings := localSessionProjects(projects)
 	changed := false
 	for _, native := range local {
+		native.Title = localSessionTitle(native.Title)
+		if native.CreatedAt == 0 {
+			native.CreatedAt = native.UpdatedAt
+		}
 		key := string(native.Backend) + ":" + native.ID
 		if known[key] {
 			continue
@@ -283,6 +369,17 @@ func (a *App) startLocalSessionSync() {
 	a.streams.Add(1)
 	go func() {
 		defer a.streams.Done()
+		ctx, cancel := context.WithCancel(a.store.localContext)
+		stopped := make(chan struct{})
+		go func() {
+			defer close(stopped)
+			select {
+			case <-a.shutdown:
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
+		defer func() { cancel(); <-stopped }()
 		ticker := time.NewTicker(localSessionInterval)
 		defer ticker.Stop()
 		for {
@@ -291,7 +388,7 @@ func (a *App) startLocalSessionSync() {
 				return
 			case <-ticker.C:
 				// Do not expose provider paths in remote error responses/logs.
-				_ = a.store.syncLocalSessions(false)
+				_ = a.store.syncLocalSessionsContext(ctx, false)
 			}
 		}
 	}()
