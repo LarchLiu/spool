@@ -188,6 +188,9 @@ func (h *codexHistory) addResponse(item map[string]any, model string, transcript
 	}
 	if kind == "functioncall" || kind == "customtoolcall" || kind == "localshellcall" {
 		call := &codexCallRef{callID: stringValue(item["call_id"]), useIndex: len(transcript.Parts), resultIndex: -1}
+		if kind == "localshellcall" {
+			call.callID = codexLocalShellID(item)
+		}
 		h.calls = append(h.calls, call)
 		if call.callID != "" {
 			h.byCallID[call.callID] = call
@@ -279,12 +282,21 @@ func (h *codexHistory) addEvent(payload map[string]any, model string, transcript
 			return codexTranscriptParts(item, model)
 		}
 	case "mcptoolcall", "dynamictoolcall", "websearch", "collabagenttoolcall", "imagegeneration":
+		parts, ok := codexToolParts(item, model)
+		if !ok {
+			return nil
+		}
+		call := h.byCallID[stringValue(item["id"])]
+		if call == nil {
+			// No response item showed this call (an image generation, or a tool
+			// recorded only by its event): the event is the call and its result,
+			// exactly as native history returns it.
+			return parts
+		}
 		// The response items around this event already show the call; the event
 		// only adds what the provider recorded about its outcome.
-		if call := h.byCallID[stringValue(item["id"])]; call != nil && call.useIndex >= 0 && call.useIndex < len(transcript.Parts) {
-			if parts, ok := codexToolParts(item, model); ok && parts[0].Native != nil && transcript.Parts[call.useIndex].Native == nil {
-				transcript.Parts[call.useIndex].Native = parts[0].Native
-			}
+		if call.useIndex >= 0 && call.useIndex < len(transcript.Parts) && parts[0].Native != nil && transcript.Parts[call.useIndex].Native == nil {
+			transcript.Parts[call.useIndex].Native = parts[0].Native
 		}
 	case "agentmessage":
 		// Some native Codex rollouts only persist the human-readable final

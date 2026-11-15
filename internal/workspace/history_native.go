@@ -21,6 +21,9 @@ const (
 	codexWindowMaxPages  = 8
 	codexHistoryRetry    = 30 * time.Second
 	codexHistoryDeadline = 30 * time.Second
+	// How long after a rollout's last write Codex may still be making that
+	// write readable through its history requests.
+	codexWindowSettle = 2 * time.Second
 )
 
 // codexHistoryReader is agent.CodexHistory; tests substitute a fake.
@@ -37,20 +40,29 @@ type codexHistoryReader interface {
 // a page-scoped rollout reader after copying the window into a response.
 // A thread that cannot be paged is remembered as such, and its rollout bodies
 // are read by the Go parser instead.
+//
+// mu guards only this memory. Nothing holds it across a request to Codex, so a
+// slow read of one thread never delays a cached answer for another.
 type codexWindows struct {
 	mu         sync.Mutex
+	reading    sync.Mutex // one window read at a time; taken before mu
 	reader     codexHistoryReader
 	binary     string
-	retryAfter time.Time
+	retryAfter time.Time // Codex itself could not be reached
 	threads    map[string]*codexWindow
 	use        int64
 	maxBytes   int
+	settle     time.Duration // codexWindowSettle unless a test changes it
 }
 
+// A stored window is never changed, apart from its use counter under
+// codexWindows.mu, so its turns may be read without the lock.
 type codexWindow struct {
 	info        os.FileInfo
+	readAt      time.Time
 	thread      agent.CodexThread
 	unsupported bool
+	retryAfter  time.Time                // this thread could not be read
 	turns       []agent.CodexHistoryTurn // oldest first
 	before      string                   // cursor for older turns; "" at the start
 	used        int64
@@ -89,9 +101,61 @@ func summarizeTurns(turns []agent.CodexHistoryTurn) {
 	}
 }
 
-// The caller holds c.mu. It returns nil when native history cannot serve this
-// thread right now.
+// window returns nil when native history cannot serve this thread right now.
 func (c *codexWindows) window(binary, threadID string, info os.FileInfo) *codexWindow {
+	window, reader := c.cached(binary, threadID, info)
+	if reader == nil {
+		return window
+	}
+	// Codex answers one request at a time. Queueing here rather than inside the
+	// reader starts this read's deadline only when its own requests begin, and
+	// lets a second request for the same thread use the first one's answer.
+	c.reading.Lock()
+	defer c.reading.Unlock()
+	if window, reader = c.cached(binary, threadID, info); reader == nil {
+		return window
+	}
+	next, err := readCodexWindow(reader, threadID, info)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.reader != reader {
+		// Closed or replaced meanwhile: this answer belongs to no current cache.
+		return nil
+	}
+	switch {
+	case err == nil:
+	case errors.Is(err, agent.ErrCodexHistoryUnsupported):
+		next = &codexWindow{info: info, readAt: next.readAt, unsupported: true}
+	default:
+		// Keep reading rollouts while Codex is missing or failing, and say so.
+		log.Printf("event=codex_history_unavailable thread=%q error=%q", threadID, chatmodel.Clip(err.Error(), 240))
+		retry := time.Now().Add(codexHistoryRetry)
+		if errors.Is(err, agent.ErrCodexHistoryUnavailable) {
+			c.retryAfter = retry
+			return nil
+		}
+		// Codex answered, though not with this thread; the others are unaffected.
+		next = &codexWindow{info: info, retryAfter: retry}
+	}
+	if c.threads == nil {
+		c.threads = map[string]*codexWindow{}
+	}
+	c.use++
+	next.used = c.use
+	c.threads[threadID] = next
+	c.evict()
+	if err != nil {
+		return nil
+	}
+	return next
+}
+
+// cached answers from memory when it can: with a current window, or with nil
+// for a thread native history cannot serve right now. Otherwise it returns the
+// reader to read the thread with.
+func (c *codexWindows) cached(binary, threadID string, info os.FileInfo) (*codexWindow, codexHistoryReader) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.reader != nil && c.binary != binary {
 		c.reader.Close()
 		c.reader = nil
@@ -104,44 +168,56 @@ func (c *codexWindows) window(binary, threadID string, info os.FileInfo) *codexW
 		c.threads = map[string]*codexWindow{}
 	}
 	c.use++
-	current := c.threads[threadID]
-	if current != nil && sameHistoryFile(current.info, info) {
+	now := time.Now()
+	if current := c.threads[threadID]; current != nil {
 		current.used = c.use
-		if current.unsupported {
-			return nil
+		if now.Before(current.retryAfter) {
+			return nil, nil
 		}
-		return current
+		if current.retryAfter.IsZero() && sameHistoryFile(current.info, info) && !c.unsettled(current, now) {
+			if current.unsupported {
+				return nil, nil
+			}
+			return current, nil
+		}
 	}
-	if time.Now().Before(c.retryAfter) {
-		return nil
+	if now.Before(c.retryAfter) {
+		return nil, nil
 	}
+	return nil, c.reader
+}
+
+// A rollout's size and time identify what was written, not what Codex had made
+// readable when it was asked. A window read right after the last write may lack
+// that write, and nothing would change the file again to correct it, so such a
+// window is read once more after the rollout has been quiet for a while.
+func (c *codexWindows) unsettled(window *codexWindow, now time.Time) bool {
+	settle := c.settle
+	if settle <= 0 {
+		settle = codexWindowSettle
+	}
+	modified := window.info.ModTime()
+	return window.readAt.Sub(modified) < settle && now.Sub(modified) >= settle
+}
+
+// readCodexWindow reads a thread's newest turns. The caller holds no cache lock.
+func readCodexWindow(reader codexHistoryReader, threadID string, info os.FileInfo) (*codexWindow, error) {
+	next := &codexWindow{info: info, readAt: time.Now()}
 	ctx, cancel := context.WithTimeout(context.Background(), codexHistoryDeadline)
 	defer cancel()
-	next := &codexWindow{info: info, used: c.use}
-	fail := func(err error) *codexWindow {
-		if errors.Is(err, agent.ErrCodexHistoryUnsupported) {
-			next.unsupported = true
-			c.store(threadID, next)
-			return nil
-		}
-		// Keep reading rollouts while Codex is missing or failing, and say so once.
-		c.retryAfter = time.Now().Add(codexHistoryRetry)
-		log.Printf("event=codex_history_unavailable error=%q", chatmodel.Clip(err.Error(), 240))
-		return nil
-	}
-	thread, err := c.reader.Thread(ctx, threadID)
+	thread, err := reader.Thread(ctx, threadID)
 	if err != nil {
-		return fail(err)
+		return next, err
 	}
 	if !thread.Paginated {
-		return fail(agent.ErrCodexHistoryUnsupported)
+		return next, agent.ErrCodexHistoryUnsupported
 	}
 	next.thread = thread
 	cursor := ""
 	for range codexWindowMaxPages {
-		page, err := c.reader.Turns(ctx, threadID, cursor, codexWindowTurnPage)
+		page, err := reader.Turns(ctx, threadID, cursor, codexWindowTurnPage)
 		if err != nil {
-			return fail(err)
+			return next, err
 		}
 		summarizeTurns(page.Turns)
 		next.turns = append(page.Turns, next.turns...)
@@ -153,16 +229,17 @@ func (c *codexWindows) window(binary, threadID string, info os.FileInfo) *codexW
 	// An index that has not been built reads as an empty thread. The rollout
 	// is the record; let the parser decide whether it really is empty.
 	if len(next.turns) == 0 {
-		return fail(agent.ErrCodexHistoryUnsupported)
+		return next, agent.ErrCodexHistoryUnsupported
 	}
-	c.store(threadID, next)
-	return next
+	return next, nil
 }
 
-// The caller holds c.mu.
-func (c *codexWindows) store(threadID string, window *codexWindow) {
-	c.threads[threadID] = window
-	c.evict()
+// currentReader is the reader an explicit page or item request uses. Such a
+// request reaches Codex without holding the window cache.
+func (c *codexWindows) currentReader() codexHistoryReader {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.reader
 }
 
 func (c *codexWindows) setMaxBytes(limit int) {
@@ -220,21 +297,13 @@ func (s *Store) readCodexHistory(chat chatmodel.Session, path string) (chatmodel
 	if !enabled {
 		return chat, false
 	}
-	s.codexHistory.mu.Lock()
 	window := s.codexHistory.window(binary, chat.NativeSessionID, info)
-	var turns []agent.CodexHistoryTurn
-	var thread agent.CodexThread
-	before := ""
-	if window != nil {
-		turns, thread, before = window.turns, window.thread, window.before
-	}
-	s.codexHistory.mu.Unlock()
 	if window == nil {
 		return chat, false
 	}
-	chat = s.codexHistorySession(chat, turns, before)
-	if thread.Name != "" {
-		chat.Title = thread.Name
+	chat = s.codexHistorySession(chat, window.turns, window.before, true)
+	if window.thread.Name != "" {
+		chat.Title = window.thread.Name
 	} else if title := s.historyCache.titles.Title(path, chat.NativeSessionID); title != "" {
 		chat.Title = title
 	}
@@ -253,11 +322,17 @@ func nativeHistoryCursor(chatID, cursor string) string {
 	return "native-" + base64.RawURLEncoding.EncodeToString(data)
 }
 
-func (s *Store) codexHistorySession(chat chatmodel.Session, turns []agent.CodexHistoryTurn, before string) chatmodel.Session {
+// codexHistorySession shows native turns as a chat. A single tool's detail
+// shows neither model nor effort, so it passes withMetadata false and skips the
+// rollout search for them.
+func (s *Store) codexHistorySession(chat chatmodel.Session, turns []agent.CodexHistoryTurn, before string, withMetadata bool) chatmodel.Session {
 	// Native pages omit per-turn model/effort. Search only as far back as this
 	// page needs, and scan new records on append. Metadata failures must not
 	// hide readable native items or apply today's settings to historical turns.
-	metadata, _ := s.historyCache.codexTurnMetadata(chat.NativeSessionPath, turns)
+	var metadata map[string]agent.CodexTurnContext
+	if withMetadata {
+		metadata, _ = s.historyCache.codexTurnMetadata(chat.NativeSessionPath, turns)
+	}
 	chat.Turns = make([]chatmodel.Turn, 0, len(turns))
 	chat.Transcript = chatmodel.Transcript{Parts: []chatmodel.Part{}, Source: string(chat.Backend) + "-native"}
 	for _, native := range turns {
@@ -309,9 +384,8 @@ func (s *Store) codexHistoryPage(ctx context.Context, chat chatmodel.Session, be
 	if _, enabled := s.codexBinary(); !enabled {
 		return chat, errors.New("Codex is disabled")
 	}
-	s.codexHistory.mu.Lock()
-	defer s.codexHistory.mu.Unlock()
-	if s.codexHistory.reader == nil {
+	reader := s.codexHistory.currentReader()
+	if reader == nil {
 		return chat, errors.New("Codex history reader is unavailable")
 	}
 	ctx, cancel := context.WithTimeout(ctx, codexHistoryDeadline)
@@ -319,7 +393,7 @@ func (s *Store) codexHistoryPage(ctx context.Context, chat chatmodel.Session, be
 	var turns []agent.CodexHistoryTurn
 	cursor := anchor.Cursor
 	for range codexWindowMaxPages {
-		page, err := s.codexHistory.reader.Turns(ctx, chat.NativeSessionID, cursor, codexWindowTurnPage)
+		page, err := reader.Turns(ctx, chat.NativeSessionID, cursor, codexWindowTurnPage)
 		if err != nil {
 			return chat, err
 		}
@@ -331,7 +405,7 @@ func (s *Store) codexHistoryPage(ctx context.Context, chat chatmodel.Session, be
 			break
 		}
 	}
-	chat = s.codexHistorySession(chat, turns, cursor)
+	chat = s.codexHistorySession(chat, turns, cursor, true)
 	if err := s.attributeTurns(&chat); err != nil {
 		return chat, err
 	}
@@ -365,16 +439,15 @@ func (s *Store) codexToolSnapshot(ctx context.Context, chat chatmodel.Session, r
 	if _, enabled := s.codexBinary(); !enabled {
 		return chat, errors.New("Codex is disabled")
 	}
-	s.codexHistory.mu.Lock()
-	defer s.codexHistory.mu.Unlock()
-	if s.codexHistory.reader == nil {
+	reader := s.codexHistory.currentReader()
+	if reader == nil {
 		return chat, errors.New("Codex history reader is unavailable")
 	}
 	ctx, cancel := context.WithTimeout(ctx, codexHistoryDeadline)
 	defer cancel()
-	parts, err := s.codexHistory.reader.Item(ctx, chat.NativeSessionID, locator.Turn, locator.Item)
+	parts, err := reader.Item(ctx, chat.NativeSessionID, locator.Turn, locator.Item)
 	if err != nil {
 		return chat, err
 	}
-	return s.codexHistorySession(chat, []agent.CodexHistoryTurn{{ID: locator.Turn, Parts: parts}}, ""), nil
+	return s.codexHistorySession(chat, []agent.CodexHistoryTurn{{ID: locator.Turn, Parts: parts}}, "", false), nil
 }

@@ -23,6 +23,7 @@ final class NativeActivityModel {
         String kind, label, outcome = "";
         boolean compound;
         final List<Activity> activities = new ArrayList<>();
+        private Activity whole;
     }
 
     /** The text after a row's label: why a call did not succeed, then its change statistics. */
@@ -30,11 +31,16 @@ final class NativeActivityModel {
 
     static String trailing(Group group) { return trailing(group.outcome, changeStats(group.activities)); }
 
+    /**
+     * The row showing a compound command as it ran. A group keeps one, so that rows
+     * and caches keyed by an activity see the same one each time the group is bound.
+     */
     static Activity wholeCommand(NativeUi ui, Group group) {
+        if (group.whole != null) return group.whole;
         Activity first = group.activities.get(0), whole = new Activity();
         whole.kind = "shell"; whole.label = ui.t("Command and output"); whole.detail = ""; whole.stats = "";
         whole.use = first.use; whole.result = first.result;
-        return whole;
+        return group.whole = whole;
     }
 
     private static String trailing(String outcome, String stats) {

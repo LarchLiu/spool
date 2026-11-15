@@ -86,6 +86,7 @@ func (s *Store) attributeTurns(chat *chatmodel.Session) error {
 	}
 	// Prefer an exact provider identity. Never apply an unresolved offset to
 	// every later turn, or a failed request to a different provider session.
+	resolved := map[string]string{}
 	for _, v := range actors {
 		if v.native != "" || v.offset < 0 || (v.session != "" && v.session != chat.NativeSessionID) {
 			continue
@@ -94,10 +95,10 @@ func (s *Store) attributeTurns(chat *chatmodel.Session) error {
 		if chat.History != nil && chat.History.Native {
 			// The saved offset is already a seek anchor. Read to the first turn
 			// boundary after it, even when that turn is outside the native page.
-			identity, err = agent.CodexTurnAfter(chat.NativeSessionPath, v.offset)
-			if err != nil {
-				return err
-			}
+			// A rollout that cannot be read right now leaves this one request
+			// unattributed; it does not hide the history that was read.
+			identity, _ = agent.CodexTurnAfter(chat.NativeSessionPath, v.offset)
+			resolved[v.id] = identity
 		} else {
 			for _, turn := range chat.Turns {
 				if turn.NativeTurnID != "" && turn.SourceOffset >= v.offset {
@@ -111,6 +112,18 @@ func (s *Store) attributeTurns(chat *chatmodel.Session) error {
 				byNative[identity] = v
 			}
 		}
+	}
+	// A turn's identity does not change once its rollout names it, so the
+	// request that owns it is bound for good instead of being searched for on
+	// every read. A running request is bound by its own turn event, and one
+	// that a later unbound request could still claim is left to the next read.
+	running, active := s.runtimeTurn(chat.ID)
+	for id, identity := range resolved {
+		if identity == "" || byNative[identity].id != id || active && running.ID == id && running.Status == chatmodel.StatusRunning {
+			continue
+		}
+		_, _ = s.db.Exec(`UPDATE turn_actors SET native_turn_id=?1 WHERE session_id=?2 AND turn_id=?3 AND native_turn_id='' AND NOT EXISTS (
+			SELECT 1 FROM turn_actors o WHERE o.session_id=?2 AND o.turn_id<>?3 AND (o.native_turn_id=?1 OR o.native_turn_id='' AND o.source_offset>=0 AND o.started_at>=turn_actors.started_at))`, identity, chat.ID, id)
 	}
 	actions, err := s.db.Query(`SELECT turn_id,id,user_id,kind,approval_id,summary,created_at FROM turn_actions WHERE session_id=? ORDER BY created_at,id`, chat.ID)
 	if err != nil {

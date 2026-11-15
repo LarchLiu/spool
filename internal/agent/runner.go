@@ -333,7 +333,7 @@ func codexTranscriptParts(item map[string]any, model string) []chatmodel.Part {
 	case "customtoolcall":
 		return []chatmodel.Part{{ID: stringValue(item["call_id"]), Role: "assistant", Kind: "tool_use", Name: stringValue(item["name"]), Text: stringValue(item["input"]), Model: model}}
 	case "localshellcall":
-		return []chatmodel.Part{{ID: stringValue(item["id"]), Role: "assistant", Kind: "tool_use", Name: "shell", Text: codexCommandText(item), Model: model}}
+		return []chatmodel.Part{{ID: codexLocalShellID(item), Role: "assistant", Kind: "tool_use", Name: "shell", Text: codexCommandText(item), Model: model}}
 	case "imageview":
 		if path := stringValue(item["path"]); path != "" {
 			input, _ := json.Marshal(map[string]string{"path": path})
@@ -345,6 +345,15 @@ func codexTranscriptParts(item map[string]any, model string) []chatmodel.Part {
 	default:
 		return nil
 	}
+}
+
+// A local shell call's output names it by call_id, like any function call; the
+// item's own id is only a fallback for a record without one.
+func codexLocalShellID(item map[string]any) string {
+	if id := stringValue(item["call_id"]); id != "" {
+		return id
+	}
+	return stringValue(item["id"])
 }
 
 func codexCommandOutput(item map[string]any) string {

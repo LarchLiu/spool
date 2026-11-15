@@ -52,11 +52,19 @@ stopping after about 200 KB while preserving
 whole page boundaries. Older pages are not retained in the server cache. An
 unchanged rollout file reuses the native window and cached per-turn metadata.
 An append refreshes the native window and scans metadata only in the new
-records, retrying any incomplete last line.
+records, retrying any incomplete last line. A window read within two seconds
+of the rollout's last write may lack that write, so it is read once more after
+the rollout has been quiet that long.
+
+One window is read from Codex at a time, outside the store and cache locks:
+other chats keep their cached windows, new turns and writes while a read
+waits.
 
 `GET /api/chats/{id}/history` carries Codex's opaque continuation cursor inside
 a chat-scoped transport cursor, so paging survives cache eviction and appended
-turns. The live turn retains its starting window and cursor. Tool details and
+turns. Pages inside a loaded window are anchored to its turns; before its first
+turn the Codex cursor continues. The live turn retains its starting window and
+cursor, also in the response to stopping it. Tool details and
 images and reasoning details carry a stable turn/item locator and use `thread/items/read`; older
 app-servers fall back to `thread/items/list` filtered to that turn. Neither
 requires walking earlier turns or loading the whole session. Chat access is
@@ -66,19 +74,26 @@ The rollout parser (`session_transcript.go`, `session_turns.go`) remains the
 reader for everything native paging cannot serve, chosen per thread:
 
 - a legacy thread, including sessions converted by Spool;
-- a Codex without these methods, or one that is disabled or failing (retried
-  after 30 seconds);
+- a Codex without these methods, or one that is disabled;
+- a Codex that cannot be started, for every thread not yet read, or a single
+  thread whose read fails, for that thread (each retried after 30 seconds);
 - a paginated thread that returns no turns. Codex's history index is a view
   rebuilt from the rollout by whoever writes the thread, so a missing index
   reads as an empty thread; the rollout decides.
 
 When Codex supplies a native turn ID, both readers preserve it for actor
 attribution. Legacy turns without one retain their existing file-offset
-identity. After a crash before Spool saved the native turn ID, unresolved actor
+identity. A finished turn is saved under the identity its rollout records: the
+announced ID where the rollout names it, otherwise the first turn begun after
+the request, or the file-offset identity of a legacy rollout. A session resumed
+before its rollout was located has no request offset, and keeps what was
+announced. After a crash before Spool saved the native turn ID, unresolved actor
 records seek directly to the saved request offset and stop at the next native
 turn boundary to recover that identity and its approval actions, including when
-the turn is outside the loaded native window. This recovery does not build a
-full session index or decode transcript bodies.
+the turn is outside the loaded native window. The recovered identity is saved,
+so it is searched for once. A rollout that cannot be read leaves only that
+request unattributed. This recovery does not build a full session index or
+decode transcript bodies.
 
 The native API does not report per-turn model and reasoning effort. Spool joins
 them from each rollout `turn_context` by native turn ID, including on older
@@ -88,19 +103,26 @@ are skipped rather than decoded into transcript parts. A reverse search scans
 up to 4 MiB of blocks per request, plus decoding the matching context records,
 and saves its cursor if more is needed. Metadata beyond that budget remains
 absent until a later request continues the search. Missing IDs never inherit
-current thread settings. Cached results survive appends; a changed file
-identity, truncation, same-size edit, or changed append boundary resets them.
+current thread settings. Cached results survive appends, including one made
+while they are read; a changed file identity, truncation, same-size edit, or
+changed append boundary resets them. A single tool's details need no metadata
+and do not search for it.
 A matching in-memory turn can fill metadata that has not reached the rollout yet.
 
 Session conversion still reads the complete source file. An explicit external-file
-request checks references and attachments against the source file as needed,
-so links from older pages remain authorized after those pages leave the cache.
+request is decided from the loaded turns when they attach or reference the
+file. Otherwise the source file is read, so links from older pages remain
+authorized after those pages leave the cache; if it cannot be read the request
+fails as unavailable rather than as denied.
 
 Claude history is read from its JSONL files by the Go parser.
 
 Web and Android keep compound steps as summary rows and expose the original
 command and combined output once under “Command and output”. Full patch
 updates replace earlier bodies; command output deltas still append by item ID.
+A completed item is the record of its body: text that does not continue what
+was streamed (reasoning sections, rewritten output) replaces it, and a
+completion without output keeps the streamed output.
 
 ## Verification
 

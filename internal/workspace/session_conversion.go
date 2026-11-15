@@ -15,6 +15,17 @@ var errTaskSessionConversion = errors.New("Task chats cannot switch agents. Cont
 // A conversion is a new native session and a new chat, not a link to a mutable
 // source. Subsequent messages on either side cannot alter the other's context.
 func (s *Store) forkChat(id string, backend chatmodel.Backend, options chatmodel.CodexOptions, owner ...string) (chatmodel.Session, error) {
+	chat, err := s.createFork(id, backend, options, owner...)
+	if err != nil {
+		return chat, err
+	}
+	// Reading the new session's history can wait for its provider, so it is
+	// read after the store lock is released.
+	chat, _ = s.Get(chat.ID)
+	return chat, nil
+}
+
+func (s *Store) createFork(id string, backend chatmodel.Backend, options chatmodel.CodexOptions, owner ...string) (chatmodel.Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	source, ok := s.getSession(id)
@@ -83,7 +94,6 @@ func (s *Store) forkChat(id string, backend chatmodel.Backend, options chatmodel
 	}
 	committed = true
 	s.changes.publish(changeNavigation)
-	chat, _ = s.Get(chat.ID)
 	return chat, nil
 }
 

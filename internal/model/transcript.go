@@ -2,7 +2,7 @@ package model
 
 // Part is one normalized piece of a session transcript.
 type Part struct {
-	Replace   bool         `json:"-"` // a complete live tool body, rather than a delta
+	Replace   bool         `json:"-"` // the complete live body of a tool or of reasoning, rather than a delta
 	ID        string       `json:"id,omitempty"`
 	Phase     string       `json:"phase,omitempty"`
 	Timestamp int64        `json:"timestamp,omitempty"`

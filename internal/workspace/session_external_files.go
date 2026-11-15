@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -161,24 +162,36 @@ func (a *App) externalSessionFile(w http.ResponseWriter, r *http.Request, chat c
 	if root := canonicalDirectory(directory); !attached && root != "" && resolved != "" && directoryWithin(resolved, root) {
 		return false
 	}
-	// External links can belong to a page already evicted from the browsing
-	// window. Inspect the authoritative file only for this explicit file read;
-	// opening history and tool details still use native paging.
-	if snapshot.History != nil && snapshot.History.Native && chat.NativeSessionPath != "" {
-		_ = a.store.historyCache.read(chat.Backend, chat.NativeSessionPath, func(file *nativeHistory) error {
-			complete, err := a.store.readHistorySnapshot(chat, file)
-			if err == nil {
-				snapshot.Transcript.Parts = append(snapshot.Transcript.Parts, complete.Transcript.Parts...)
-			}
-			return err
-		})
-	}
-	attached = sessionUserAttachment(snapshot, path)
 	project, err := a.store.Project(chat.ProjectID)
-	if err != nil || (!attached && !project.AllowExternalFiles) {
+	if err != nil {
 		return false
 	}
-	if protectedProjectPath(path) || protectedProjectPath(resolved) || (!attached && !sessionReferencesFile(snapshot, path)) {
+	// An agent's reference counts only where the project allows external files.
+	referenced := attached || project.AllowExternalFiles && sessionReferencesFile(snapshot, path)
+	// External links can belong to a page that is not in the browsing window.
+	// Only when the loaded turns cannot settle this explicit file read is the
+	// authoritative rollout inspected; opening history and tool details still
+	// use native paging.
+	if snapshot.History != nil && snapshot.History.Native && chat.NativeSessionPath != "" && !referenced {
+		var complete chatmodel.Session
+		err := a.store.historyCache.read(chat.Backend, chat.NativeSessionPath, func(file *nativeHistory) error {
+			var err error
+			complete, err = a.store.readHistorySnapshot(chat, file)
+			return err
+		})
+		if err != nil {
+			// Neither granting nor denying is known to be right.
+			log.Printf("event=session_file_history_unavailable chat=%q error=%q", chat.ID, chatmodel.Clip(err.Error(), 240))
+			apiError(w, 503, "Native session history is unavailable")
+			return true
+		}
+		attached = sessionUserAttachment(complete, path)
+		referenced = attached || project.AllowExternalFiles && sessionReferencesFile(complete, path)
+	}
+	if !attached && !project.AllowExternalFiles {
+		return false
+	}
+	if protectedProjectPath(path) || protectedProjectPath(resolved) || !referenced {
 		projectFileError(w, os.ErrPermission)
 		return true
 	}

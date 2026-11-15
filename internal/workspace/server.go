@@ -587,15 +587,24 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 	}
 	if len(parts) == 2 && parts[1] == "history" && r.Method == "GET" {
 		before := r.URL.Query().Get("before")
+		if strings.HasPrefix(before, "native-") {
+			// Codex continues from its own cursor; no loaded window is involved.
+			page, err := a.store.codexHistoryPage(r.Context(), chat, before)
+			if errors.Is(err, errHistoryCursor) {
+				apiError(w, 400, "Invalid history cursor")
+			} else if err != nil {
+				apiError(w, 503, "Native session history is unavailable")
+			} else {
+				apiJSON(w, 200, transportSession(r, page))
+			}
+			return
+		}
 		current := a.snapshot(chat)
 		if current.History != nil && current.History.Error != "" {
 			apiError(w, 503, "Native session history is unavailable")
 			return
 		}
 		page, err := historyPage(current, before)
-		if strings.HasPrefix(before, "native-") {
-			page, err = a.store.codexHistoryPage(r.Context(), chat, before)
-		}
 		if err != nil {
 			if errors.Is(err, errHistoryCursor) {
 				apiError(w, 400, "Invalid history cursor")
@@ -1232,6 +1241,9 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 		a.liveMu.Lock()
 		current, live := a.live[id]
 		if live {
+			// Events rewrite and grow the turn's parts in place under liveMu; a
+			// frame is encoded outside it, from the parts as they are now.
+			current.Parts = ownedParts(current.Parts)
 			if hydrated, exists := a.liveBase[id]; exists {
 				baseTranscript = hydrated
 			}

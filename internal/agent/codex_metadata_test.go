@@ -283,3 +283,110 @@ func TestCodexTurnAfterSeeksToSavedOffset(t *testing.T) {
 		t.Fatalf("offset recovery: %q %v", got, err)
 	}
 }
+
+func TestCodexTurnIdentityIsTheOneTheRolloutRecords(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rollout.jsonl")
+	prefix := metadataRecord(t, 0, "earlier")
+	data := append(append([]byte{}, prefix...), []byte(`{"type":"event_msg","payload":{"type":"task_started","turn_id":"other-turn"}}`+"\n")...)
+	data = append(data, metadataRecord(t, 1, "announced")...)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	after := int64(len(prefix))
+	for _, tc := range []struct {
+		name, announced, want string
+		offset                int64
+	}{
+		{"announced turn recorded after another one", metadataTurn(1).ID, metadataTurn(1).ID, after},
+		{"unannounced turn", "", "other-turn", after},
+		{"announced under a name the rollout never uses", "live-only-id", "other-turn", after},
+		{"announced as a turn written before the request", metadataTurn(0).ID, "other-turn", after},
+		{"announced turn found from the start of the rollout", "other-turn", "other-turn", 0},
+		{"nothing written yet", metadataTurn(1).ID, "", int64(len(data))},
+		{"rollout shorter than the saved offset", "", "", int64(len(data)) + 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, err := CodexTurnIdentity(path, tc.offset, tc.announced); err != nil || got != tc.want {
+				t.Fatalf("identity %q, want %q (%v)", got, tc.want, err)
+			}
+		})
+	}
+}
+
+func TestCodexMetadataKeepsItsResultsWhileTheRolloutGrows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rollout.jsonl")
+	if err := os.WriteFile(path, metadataRecord(t, 0, "model-0"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		defer file.Close()
+		// An active turn appends all the time, also between a read's two stats.
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				if _, err := file.Write([]byte("{\"type\":\"unrelated\"}\n")); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}
+	}()
+	c := &CodexMetadata{}
+	requested := []CodexHistoryTurn{metadataTurn(0)}
+	for range 200 {
+		if got, err := c.Read(path, requested); err != nil || got[requested[0].ID].Model != "model-0" {
+			close(stop)
+			<-done
+			t.Fatalf("a growing rollout lost its metadata: %+v %v", got, err)
+		}
+	}
+	close(stop)
+	<-done
+}
+
+func TestCodexMetadataContinuesAnUnfinishedLongRecordWhereItStoppedSearching(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rollout.jsonl")
+	// The newest record is still being written and is longer than one search.
+	data := append(metadataRecord(t, 0, "model-0"), []byte(`{"type":"response_item","payload":{"output":"`+strings.Repeat("x", 6*1024*1024))...)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	info, _ := file.Stat()
+	reader := &metadataReader{ReaderAt: file, first: -1}
+	c := &CodexMetadata{}
+	requested := []CodexHistoryTurn{metadataTurn(1)}
+	if got, err := c.read(reader, info, requested); err != nil || len(got) != 0 {
+		t.Fatalf("unwritten turn: %+v %v", got, err)
+	}
+	searched := reader.first
+	writer, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	if _, err := writer.Write(append([]byte(`"}}`+"\n"), metadataRecord(t, 1, "model-1")...)); err != nil {
+		t.Fatal(err)
+	}
+	info, _ = file.Stat()
+	reader.bytes, reader.first = 0, -1
+	got, err := c.read(reader, info, requested)
+	if err != nil || got[requested[0].ID].Model != "model-1" {
+		t.Fatalf("appended turn: %+v %v", got, err)
+	}
+	if reader.first < searched {
+		t.Fatalf("the append was read from offset %d, before the %d already searched", reader.first, searched)
+	}
+}

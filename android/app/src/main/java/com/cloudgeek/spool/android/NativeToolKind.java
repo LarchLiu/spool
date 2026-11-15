@@ -175,17 +175,23 @@ final class NativeToolKind {
 
     private static int bytes(String value) { return value.getBytes(java.nio.charset.StandardCharsets.UTF_8).length; }
 
-    private static final Pattern GREP_VALUE_FLAG = Pattern.compile("^--(?:include|exclude|exclude-dir)$");
+    /** grep spells its options differently from rg: -r and -E take no value there. */
+    private static final Pattern GREP_VALUE_FLAG = Pattern.compile("^(?:-[efmABCdD]|--(?:regexp|file|max-count|context|after-context|before-context|include|exclude|exclude-dir|exclude-from|binary-files|devices|directories|label))$");
     private static final Pattern HEAD_VALUE_FLAG = Pattern.compile("^(?:-[nc]|--(?:lines|bytes))$");
     private static final Pattern LS_PLAIN_FLAG = Pattern.compile("^-[1aAbBcCdfFgGhHiklLmnopqrRsStuUvxX]+$");
     private static final Pattern FIND_NAME_FLAG = Pattern.compile("^-i?(?:name|path|regex)$");
 
     private static boolean searchCommand(String command) { return command.matches("rg|ripgrep|grep|egrep|fgrep"); }
 
+    /** An option of this search command whose value is the next argument. */
+    private static boolean searchValueFlag(String command, String arg) {
+        return (command.equals("rg") || command.equals("ripgrep") ? RG_VALUE_FLAG : GREP_VALUE_FLAG).matcher(arg).matches();
+    }
+
     /** A grep-like command's pattern and path operands; patterned also covers a pattern file. */
     private static final class Search {
         String query = ""; boolean patterned; final List<String> paths = new ArrayList<>();
-        Search(List<String> args) {
+        Search(String command, List<String> args) {
             boolean options = true;
             for (int i = 0; i < args.size(); i++) {
                 String arg = args.get(i);
@@ -198,7 +204,7 @@ final class NativeToolKind {
                     else if (arg.startsWith("-e")) value = arg.substring(2);
                     else pattern = false;
                     if (pattern && !patterned) { query = value; patterned = true; }
-                    if (RG_VALUE_FLAG.matcher(arg).matches() || GREP_VALUE_FLAG.matcher(arg).matches()) i++;
+                    if (searchValueFlag(command, arg)) i++;
                     continue;
                 }
                 if (!patterned) { query = arg; patterned = true; continue; }
@@ -227,7 +233,7 @@ final class NativeToolKind {
             return new String[] {one(paths), query};
         }
         if (searchCommand(command) && kind.equals("search")) {
-            Search search = new Search(args);
+            Search search = new Search(command, args);
             return new String[] {one(search.paths), search.query};
         }
         List<String> paths = new ArrayList<>(); boolean options = true;
@@ -235,7 +241,7 @@ final class NativeToolKind {
             String arg = args.get(i);
             if (options && arg.equals("--")) { options = false; continue; }
             if (options && arg.startsWith("-") && !arg.equals("-")) {
-                if (searchCommand(command)) { if (RG_VALUE_FLAG.matcher(arg).matches() || GREP_VALUE_FLAG.matcher(arg).matches()) i++; }
+                if (searchCommand(command)) { if (searchValueFlag(command, arg)) i++; }
                 else if (command.matches("head|tail") && HEAD_VALUE_FLAG.matcher(arg).matches()) i++;
                 else if (command.matches("cat|head|tail|nl")) { /* flags without values */ }
                 else if (command.equals("ls") && LS_PLAIN_FLAG.matcher(arg).matches()) { /* flags without values */ }
@@ -269,7 +275,7 @@ final class NativeToolKind {
             case "head": case "tail": return operands(args, HEAD_VALUE_FLAG) == 0;
             case "rg": case "ripgrep": case "grep": case "egrep": case "fgrep": {
                 if (args.contains("--files")) return false;
-                Search search = new Search(args);
+                Search search = new Search(input.command, args);
                 return search.patterned && search.paths.isEmpty();
             }
             case "sed": {

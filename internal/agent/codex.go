@@ -386,13 +386,18 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 						full := part.Text
 						if id != "" {
 							if previous := streamedToolOutput[id]; previous != "" {
-								if strings.HasPrefix(full, previous) {
+								switch {
+								case strings.HasPrefix(full, previous):
 									part.Text = full[len(previous):]
-								} else {
+								case full != "":
 									part.Replace = true
 								}
+								// A completion without a body of its own keeps what was
+								// streamed and only adds the outcome.
 							}
-							streamedToolOutput[id] = full
+							if full != "" {
+								streamedToolOutput[id] = full
+							}
 						}
 						if part.Text == "" && part.Native == nil && !part.Replace && len(part.Images) == 0 {
 							continue
@@ -411,8 +416,10 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 							if previous != "" {
 								if strings.HasPrefix(full, previous) {
 									part.Text = full[len(previous):]
-								} else if full == previous {
-									part.Text = ""
+								} else {
+									// The completed text is the record. It need not continue
+									// the deltas: summary sections are joined differently.
+									part.Replace = true
 								}
 							}
 							streamedThinking[id] = full

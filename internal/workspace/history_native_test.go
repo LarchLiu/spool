@@ -29,6 +29,7 @@ type fakeCodexHistory struct {
 	turnBytes int
 	items     int
 	idPrefix  string
+	note      string // appended to each answer
 }
 
 func (f *fakeCodexHistory) Close() {}
@@ -67,7 +68,7 @@ func (f *fakeCodexHistory) Turns(_ context.Context, _ string, before string, lim
 			{Role: "user", Kind: "text", Text: "prompt-" + id},
 			{ID: "call-" + id, Role: "assistant", Kind: "tool_use", Name: "shell", Text: "npm test", Native: &chatmodel.ToolNative{Status: chatmodel.ToolFailed, ExitCode: &exit}},
 			{ID: "call-" + id, Role: "tool", Kind: "tool_result", Text: strings.Repeat("x", f.turnBytes)},
-			{ID: "msg-" + id, Role: "assistant", Kind: "text", Phase: "final_answer", Text: "answer-" + id},
+			{ID: "msg-" + id, Role: "assistant", Kind: "text", Phase: "final_answer", Text: "answer-" + id + f.note},
 		}})
 	}
 	return page, nil
@@ -362,6 +363,7 @@ func TestCodexHistoryLoadsOlderPagesOnDemand(t *testing.T) {
 	fake := &fakeCodexHistory{count: 45, turnBytes: 60_000}
 	chat, path := nativeCodexChat(t, store, fake)
 	app := NewApp(store, nil, "", "")
+	t.Cleanup(func() { _ = app.Close() })
 	latest, _ := store.Get(chat.ID)
 	// 60 KB turns: one native page already fills a 200 KB transport page.
 	if len(latest.Turns) != codexWindowTurnPage || latest.History == nil || !latest.History.HasMore || latest.Turns[0].NativeTurnID != "turn-035" {
@@ -418,6 +420,7 @@ func TestToolDetailLoadsTheNativePageHoldingIt(t *testing.T) {
 	fake := &fakeCodexHistory{count: 45, turnBytes: 60_000}
 	chat, _ := nativeCodexChat(t, store, fake)
 	app := NewApp(store, nil, "", "")
+	t.Cleanup(func() { _ = app.Close() })
 	latest, _ := store.Get(chat.ID)
 	// A client still showing turn 3 after the server forgot its older pages.
 	old := chatmodel.Turn{ID: historyTurnID(chat.ID, "turn-003"), NativeTurnID: "turn-003", NativeHistory: true}

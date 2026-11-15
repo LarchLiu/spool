@@ -65,8 +65,9 @@ func historyPage(chat chatmodel.Session, before string) (chatmodel.Session, erro
 		// identity may change before the next page is requested.
 		history.Before = "after-" + historyCursor(chat.ID, chat.Turns[start-1])
 	} else if history.HasMore {
-		// Nothing loaded precedes this page: continue before its first turn.
-		history.Before = historyCursor(chat.ID, chat.Turns[0])
+		// Nothing loaded precedes this page. What does is the provider's to
+		// page, from the cursor that came with the loaded turns.
+		history.Before = chat.History.Before
 	}
 	base, limit := 0, 0
 	if start < end {

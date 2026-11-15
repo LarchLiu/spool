@@ -31,7 +31,8 @@ type CodexTurnContext struct {
 type CodexMetadata struct {
 	mu       sync.Mutex
 	info     os.FileInfo
-	end      int64
+	end      int64 // where an append is read from
+	tail     bool  // end is not yet known to follow a complete line
 	floor    int64
 	oldestAt int64
 	guard    []byte
@@ -47,26 +48,35 @@ func (c *CodexMetadata) Read(path string, turns []CodexHistoryTurn) (map[string]
 		return nil, err
 	}
 	defer file.Close()
+	var result map[string]CodexTurnContext
 	for range 3 {
 		info, err := file.Stat()
 		if err != nil {
 			return nil, err
 		}
-		result, err := c.read(file, info, turns)
+		result, err = c.read(file, info, turns)
 		current, statErr := os.Stat(path)
-		if statErr != nil || !sameCodexMetadataFile(info, current) {
+		if statErr != nil {
 			c.info = nil
-			if statErr != nil {
-				return nil, statErr
-			}
-			if !os.SameFile(info, current) {
-				return nil, io.ErrUnexpectedEOF
-			}
-			continue
+			return nil, statErr
 		}
-		return result, err
+		if err != nil || sameCodexMetadataFile(info, current) {
+			return result, err
+		}
+		if !os.SameFile(info, current) {
+			c.info = nil
+			return nil, io.ErrUnexpectedEOF
+		}
+		if current.Size() <= info.Size() {
+			// Rewritten in place: nothing read from it can be trusted.
+			c.info, result = nil, nil
+		}
+		// Otherwise the rollout grew meanwhile, as an active one always does.
+		// What was read is complete up to the size it had and is kept; the next
+		// pass reads only what was added, after checking that it was an append.
 	}
-	return nil, io.ErrUnexpectedEOF
+	// A rollout written faster than it is read still has what was found.
+	return result, nil
 }
 
 // The caller holds c.mu. ReaderAt keeps the scanned byte ranges observable in
@@ -91,11 +101,11 @@ func (c *CodexMetadata) read(file io.ReaderAt, info os.FileInfo, requested []Cod
 			if err != nil {
 				return nil, err
 			}
-			c.end = end
+			c.end, c.tail = end, false
 		} else {
 			c.turns = make(map[string]CodexTurnContext)
 			c.end, c.floor, c.oldestAt = info.Size(), info.Size(), 0
-			c.search = nil
+			c.search, c.tail = nil, true
 		}
 		c.guard = make([]byte, min(info.Size(), 128))
 		if _, err := file.ReadAt(c.guard, info.Size()-int64(len(c.guard))); err != nil {
@@ -108,9 +118,14 @@ func (c *CodexMetadata) read(file io.ReaderAt, info os.FileInfo, requested []Cod
 		if err != nil {
 			return nil, err
 		}
-		if c.floor == c.end {
+		if c.tail && end >= 0 {
 			// A trailing incomplete line will be retried on the next append.
-			c.end = end
+			c.end, c.tail = end, false
+		} else if c.tail {
+			// No line ends in what has been searched so far: one record, far
+			// longer than a context, which an append continues from here rather
+			// than from the start of the rollout.
+			c.end = start
 		}
 		c.floor = start
 	}
@@ -192,10 +207,12 @@ type codexMetadataSearch struct {
 
 // backward locates newlines in fixed-size blocks. Only context records are
 // decoded; long tool output is never assembled into a second in-memory body.
+// It returns how far back it has searched and where the last complete line
+// ends, or -1 while no line end has been found.
 func (c *CodexMetadata) backward(file io.ReaderAt, end int64, requested []CodexHistoryTurn) (int64, int64, error) {
 	block := make([]byte, codexMetadataBlock)
 	if c.search == nil {
-		c.search = &codexMetadataSearch{position: end, lineEnd: -1}
+		c.search = &codexMetadataSearch{position: end, lineEnd: -1, completeEnd: -1}
 	}
 	search := c.search
 	budgetEnd := max(0, search.position-codexMetadataBudget)
@@ -295,21 +312,54 @@ func codexMetadataCandidate(data []byte) bool {
 // CodexTurnAfter resolves an unannounced turn from the offset saved before its
 // request, stopping at the first native boundary rather than indexing history.
 func CodexTurnAfter(path string, offset int64) (string, error) {
+	first := ""
+	err := codexTurnsAfter(path, offset, func(id string) bool {
+		first = id
+		return true
+	})
+	return first, err
+}
+
+// CodexTurnIdentity is the identity the rollout gives the turn whose request
+// was made at an offset: the ID Codex announced for it where the rollout
+// records that, otherwise the first turn begun after the offset. History is
+// read back under that identity. It is empty when nothing after the offset
+// names a turn, as in a legacy rollout.
+func CodexTurnIdentity(path string, offset int64, announced string) (string, error) {
+	first, recorded := "", false
+	err := codexTurnsAfter(path, offset, func(id string) bool {
+		if first == "" {
+			first = id
+		}
+		recorded = id == announced
+		return recorded || announced == ""
+	})
+	if recorded {
+		return announced, err
+	}
+	return first, err
+}
+
+// codexTurnsAfter visits the IDs of the turns begun after an offset, oldest
+// first, until visit returns true. Only boundary records are decoded.
+func codexTurnsAfter(path string, offset int64, visit func(id string) bool) error {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil {
-		return "", err
+		return err
 	}
-	id := ""
+	if offset < 0 || offset > info.Size() {
+		return nil
+	}
 	_, err = codexMetadataForward(file, offset, info.Size(), func(record codexContextRecord, _ int64) bool {
-		if record.Payload.TurnID != "" && (record.Type == "turn_context" || record.Type == "event_msg" && record.Payload.Type == "task_started") {
-			id = record.Payload.TurnID
+		if record.Payload.TurnID == "" || record.Type != "turn_context" && (record.Type != "event_msg" || record.Payload.Type != "task_started") {
+			return false
 		}
-		return id != ""
+		return visit(record.Payload.TurnID)
 	})
-	return id, err
+	return err
 }

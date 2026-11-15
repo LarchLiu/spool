@@ -281,7 +281,8 @@ func shellOperations(source string, depth int) []chatmodel.ToolOperation {
 	return operations
 }
 
-var grepValueFlag = regexp.MustCompile(`^--(?:include|exclude|exclude-dir)$`)
+// grep spells its options differently from rg: -r and -E take no value there.
+var grepValueFlag = regexp.MustCompile(`^(?:-[efmABCdD]|--(?:regexp|file|max-count|context|after-context|before-context|include|exclude|exclude-dir|exclude-from|binary-files|devices|directories|label))$`)
 var headValueFlag = regexp.MustCompile(`^(?:-[nc]|--(?:lines|bytes))$`)
 var lsPlainFlag = regexp.MustCompile(`^-[1aAbBcCdfFgGhHiklLmnopqrRsStuUvxX]+$`)
 var findNameFlag = regexp.MustCompile(`^-i?(?:name|path|regex)$`)
@@ -290,9 +291,18 @@ func searchCommand(command string) bool {
 	return command == "rg" || command == "ripgrep" || command == "grep" || command == "egrep" || command == "fgrep"
 }
 
+// searchValueFlag reports an option of this search command whose value is the
+// next argument.
+func searchValueFlag(command, arg string) bool {
+	if command == "rg" || command == "ripgrep" {
+		return rgValueFlag.MatchString(arg)
+	}
+	return grepValueFlag.MatchString(arg)
+}
+
 // searchOperands reads a grep-like command's pattern and path operands.
 // patterned is also true for a pattern the command reads from a file.
-func searchOperands(args []string) (query string, paths []string, patterned bool) {
+func searchOperands(command string, args []string) (query string, paths []string, patterned bool) {
 	options := true
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -318,7 +328,7 @@ func searchOperands(args []string) (query string, paths []string, patterned bool
 			if pattern && !patterned {
 				query, patterned = value, true
 			}
-			if rgValueFlag.MatchString(arg) || grepValueFlag.MatchString(arg) {
+			if searchValueFlag(command, arg) {
 				i++
 			}
 			continue
@@ -367,7 +377,7 @@ func operationTarget(words []string, kind string) (path, query string) {
 		}
 		return one(paths), query
 	case searchCommand(command) && kind == "search":
-		query, paths, _ := searchOperands(args)
+		query, paths, _ := searchOperands(command, args)
 		return one(paths), query
 	}
 	var paths []string
@@ -381,7 +391,7 @@ func operationTarget(words []string, kind string) (path, query string) {
 		if options && strings.HasPrefix(arg, "-") && arg != "-" {
 			switch {
 			case searchCommand(command):
-				if rgValueFlag.MatchString(arg) || grepValueFlag.MatchString(arg) {
+				if searchValueFlag(command, arg) {
 					i++
 				}
 			case (command == "head" || command == "tail") && headValueFlag.MatchString(arg):
@@ -437,7 +447,7 @@ func pipeFilter(words []string) bool {
 				return false
 			}
 		}
-		_, paths, patterned := searchOperands(args)
+		_, paths, patterned := searchOperands(command, args)
 		return patterned && len(paths) == 0
 	case "sed":
 		files, ok := sedPrintFiles(args)

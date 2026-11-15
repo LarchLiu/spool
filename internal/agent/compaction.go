@@ -10,7 +10,7 @@ func compactionEvents(next func(AgentEvent) error) func(AgentEvent) error {
 				return nil
 			}
 			active = event.Compacting
-		} else if active && (event.Type == "delta" || event.Type == "part" || event.Type == "activity") {
+		} else if active && (event.Type == "delta" || event.Type == "part" || event.Type == "activity" || event.Type == "tool") {
 			active = false
 			if err := next(AgentEvent{Type: "compaction"}); err != nil {
 				return err

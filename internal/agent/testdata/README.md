@@ -18,8 +18,9 @@ Activity categories come first from what the provider itself reported: Codex's
 command actions (`commandActions` live and in thread history, `parsed_cmd` in a
 rollout) and the files of a native file change. Calls without that use the
 normalized tool name and structured arguments.
-An explicit native `unknown` action stays a general command, without inferring
-a more specific category from its text.
+Codex reports one `unknown` action for a whole command as soon as any step is
+not a read, listing, or search. That says nothing about the other steps, so such
+a call is classified from its literal command like one without native actions.
 Shell tools inspect the executable and literal shell wrappers, rather than
 matching keywords in paths, descriptions, search patterns, or source code.
 Scripts, redirections, expansions, and mixed command categories use the generic

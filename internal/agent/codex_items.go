@@ -414,7 +414,9 @@ func codexFileChanges(item map[string]any) []codexFileChange {
 		}
 		if entry.diff == "" && patch != "" {
 			entry.diff = patch
-			if !strings.Contains(patch, "diff --git ") {
+			// Only a header line counts: a changed line that merely mentions one
+			// is prefixed by its hunk marker.
+			if !strings.HasPrefix(patch, "diff --git ") && !strings.Contains(patch, "\ndiff --git ") {
 				entry.diff = head("a/"+name, "b/"+name) + patch
 			}
 			entry.file.Additions, entry.file.Deletions = 0, 0

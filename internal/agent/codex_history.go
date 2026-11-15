@@ -16,6 +16,12 @@ import (
 // cannot be read through paginated history. Callers read its rollout instead.
 var ErrCodexHistoryUnsupported = errors.New("Codex paginated history is unavailable for this thread")
 
+// ErrCodexHistoryUnavailable reports that Codex itself could not be started or
+// initialized: no other thread can expect to fare better right now. An error
+// without it concerns the one request that was made, whose process is
+// restarted by the next request if it had to be stopped.
+var ErrCodexHistoryUnavailable = errors.New("Codex history reader could not be started")
+
 const (
 	codexHistoryIdle     = 2 * time.Minute
 	codexHistoryPageSize = 100 // app-server's maximum for turns and items
@@ -145,7 +151,7 @@ func (h *CodexHistory) call(ctx context.Context, method string, params map[strin
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if err := h.startLocked(ctx); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrCodexHistoryUnavailable, err)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()

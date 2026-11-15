@@ -190,15 +190,19 @@ export function shellOperations(source: string, depth = 0): ToolOperation[] | un
 }
 
 const rgValueFlag = /^(?:-[efgtTmjErABC]|--(?:regexp|file|glob|iglob|type|type-not|ignore-file|pre|pre-glob|encoding|max-count|max-depth|threads|replace|sort|sortr|color|colors|context|after-context|before-context|path-separator|hostname-bin|hyperlink-format))$/;
-const grepValueFlag = /^--(?:include|exclude|exclude-dir)$/;
+// grep spells its options differently from rg: -r and -E take no value there.
+const grepValueFlag = /^(?:-[efmABCdD]|--(?:regexp|file|max-count|context|after-context|before-context|include|exclude|exclude-dir|exclude-from|binary-files|devices|directories|label))$/;
 const headValueFlag = /^(?:-[nc]|--(?:lines|bytes))$/;
 const lsPlainFlag = /^-[1aAbBcCdfFgGhHiklLmnopqrRsStuUvxX]+$/;
 const findNameFlag = /^-i?(?:name|path|regex)$/;
 const searchCommand = /^(rg|ripgrep|grep|egrep|fgrep)$/;
 
+// An option of this search command whose value is the next argument.
+const searchValueFlag = (command: string, arg: string) => (command === "rg" || command === "ripgrep" ? rgValueFlag : grepValueFlag).test(arg);
+
 // A grep-like command's pattern and path operands. `patterned` is also true
 // for a pattern the command reads from a file.
-function searchOperands(args: string[]) {
+function searchOperands(command: string, args: string[]) {
   let query = "", patterned = false, options = true;
   const paths: string[] = [];
   for (let i = 0; i < args.length; i++) {
@@ -212,7 +216,7 @@ function searchOperands(args: string[]) {
       else if (arg.startsWith("-e")) value = arg.slice(2);
       else pattern = false;
       if (pattern && !patterned) { query = value; patterned = true; }
-      if (rgValueFlag.test(arg) || grepValueFlag.test(arg)) i++;
+      if (searchValueFlag(command, arg)) i++;
       continue;
     }
     if (!patterned) { query = arg; patterned = true; continue; }
@@ -242,7 +246,7 @@ function operationTarget(words: string[], kind: ActivityKind): { path: string; q
     return { path: one(paths), query };
   }
   if (searchCommand.test(command) && kind === "search") {
-    const { query, paths } = searchOperands(args);
+    const { query, paths } = searchOperands(command, args);
     return { path: one(paths), query };
   }
   const paths: string[] = [];
@@ -251,7 +255,7 @@ function operationTarget(words: string[], kind: ActivityKind): { path: string; q
     const arg = args[i];
     if (options && arg === "--") { options = false; continue; }
     if (options && arg.startsWith("-") && arg !== "-") {
-      if (searchCommand.test(command)) { if (rgValueFlag.test(arg) || grepValueFlag.test(arg)) i++; }
+      if (searchCommand.test(command)) { if (searchValueFlag(command, arg)) i++; }
       else if (/^(head|tail)$/.test(command) && headValueFlag.test(arg)) i++;
       else if (/^(cat|head|tail|nl)$/.test(command)) { /* flags without values */ }
       else if (command === "ls" && lsPlainFlag.test(arg)) { /* flags without values */ }
@@ -286,7 +290,7 @@ function pipeFilter(words: string[]): boolean {
       return operands(headValueFlag) === 0;
     case "rg": case "ripgrep": case "grep": case "egrep": case "fgrep": {
       if (args.includes("--files")) return false;
-      const { paths, patterned } = searchOperands(args);
+      const { paths, patterned } = searchOperands(command, args);
       return patterned && paths.length === 0;
     }
     case "sed":

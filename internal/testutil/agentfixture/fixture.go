@@ -469,6 +469,17 @@ func Run(t *testing.T) {
 			notify("item/completed", map[string]any{"item": map[string]any{"id": "reasoning", "type": "reasoning", "summary": []any{map[string]any{"text": "Checking the fixture before running the tool."}}}})
 			notify("item/started", map[string]any{"item": map[string]any{"id": "tool", "type": "commandExecution", "command": []string{"git", "status", "--short"}}})
 			notify("item/commandExecution/outputDelta", map[string]any{"itemId": "tool", "delta": "fixture output\n"})
+			if strings.Contains(prompt, "restated-items") {
+				// Completions that restate what was streamed rather than continue it.
+				notify("item/started", map[string]any{"item": map[string]any{"id": "sections", "type": "reasoning", "summary": []any{}}})
+				notify("item/reasoning/summaryTextDelta", map[string]any{"itemId": "sections", "summaryIndex": 0, "delta": "First section"})
+				notify("item/reasoning/summaryTextDelta", map[string]any{"itemId": "sections", "summaryIndex": 1, "delta": "Second section"})
+				notify("item/completed", map[string]any{"item": map[string]any{"id": "sections", "type": "reasoning", "summary": []any{map[string]any{"text": "First section"}, map[string]any{"text": "Second section"}}}})
+				notify("item/completed", map[string]any{"item": map[string]any{"id": "tool", "type": "commandExecution", "command": []string{"git", "status", "--short"}, "aggregatedOutput": "", "exitCode": 0, "status": "completed"}})
+				notify("item/started", map[string]any{"item": map[string]any{"id": "rerun", "type": "commandExecution", "command": []string{"go", "test"}}})
+				notify("item/commandExecution/outputDelta", map[string]any{"itemId": "rerun", "delta": "streamed\n"})
+				notify("item/completed", map[string]any{"item": map[string]any{"id": "rerun", "type": "commandExecution", "command": []string{"go", "test"}, "aggregatedOutput": "final\n", "exitCode": 1, "status": "failed"}})
+			}
 			if strings.Contains(prompt, "file-change") {
 				notify("item/started", map[string]any{"item": map[string]any{"id": "file-change", "type": "fileChange"}})
 				notify("item/fileChange/patchUpdated", map[string]any{"itemId": "file-change", "changes": []any{map[string]any{"path": "main.go", "diff": "@@ -1 +1 @@\n-old\n+new"}}})
