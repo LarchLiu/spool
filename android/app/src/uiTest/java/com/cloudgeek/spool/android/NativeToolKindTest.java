@@ -75,6 +75,10 @@ public class NativeToolKindTest {
                 assertEquals(id, activities.size(), staticRows);
                 assertFalse(id, containsDetail(view));
                 assertTrue(id, state.items.isEmpty());
+                NativeDisclosureRow whole = rows.get(rows.size() - 1);
+                assertEquals("Command and output", whole.label.getText().toString());
+                assertTrue(whole.isClickable()); whole.performClick();
+                assertTrue(id, containsDetail(view));
                 assertEquals(id, original, part.toString());
             }
         }
@@ -89,13 +93,15 @@ public class NativeToolKindTest {
             JSONObject resultOne = new JSONObject("{\"id\":\"one\",\"role\":\"tool\",\"kind\":\"tool_result\",\"text\":\"first output\"}");
             List<NativeActivityModel.Activity> items = NativeActivityModel.fromParts(ui, Arrays.asList(one, two, resultTwo, resultOne), "codex");
             assertEquals(3, items.size()); assertSame(resultOne, items.get(0).result); assertSame(resultOne, items.get(1).result); assertSame(resultTwo, items.get(2).result);
+            // A lone pipeline is one call with its own details, labelled by what it searched.
+            assertFalse(items.get(2).noDetails); assertEquals("search", items.get(2).kind); assertEquals("Searched for TODO in src", items.get(2).label);
             JSONObject single = new JSONObject(one.toString()).put("text", "cat a");
             NativeActivityList.State state = new NativeActivityList.State();
             NativeActivityList list = new NativeActivityList(ui, Arrays.asList(single, resultOne), "codex", "Working", true, state, ignored -> {});
             controller.get().setContentView(list);
             List<NativeDisclosureRow> rows = new ArrayList<>(); collectRows(list, rows);
             rows.get(1).performClick(); assertTrue(containsDetail(list));
-            single.put("text", "cat a | head -20");
+            single.put("text", "cat a; cat b");
             list.bindParts(Arrays.asList(single, resultOne), "codex", "Working", true);
             assertFalse(containsDetail(list));
             rows.clear(); collectRows(list, rows); assertTrue(rows.get(1).isClickable()); assertFalse(rows.get(1).isSelected());
@@ -131,15 +137,15 @@ public class NativeToolKindTest {
             List<NativeActivityModel.Group> groups = NativeActivityModel.groups(ui, NativeActivityModel.fromParts(ui, Arrays.asList(one, two), "claude"));
             assertEquals(2, groups.size());
             assertTrue(groups.get(0).compound); assertTrue(groups.get(1).compound);
-            assertEquals("Ran command, read files", groups.get(0).label); assertEquals(3, groups.get(0).activities.size());
+            assertEquals("Ran command, read files, searched files", groups.get(0).label); assertEquals(3, groups.get(0).activities.size());
             JSONObject progress = new JSONObject().put("role", "assistant").put("kind", "text").put("text", "Checking results");
             NativeActivityList.State state = new NativeActivityList.State();
             NativeActivityList list = new NativeActivityList(ui, Arrays.asList(one, progress, two), "claude", "Working", true, state, ignored -> {});
             controller.get().setContentView(list);
             List<NativeDisclosureRow> rows = new ArrayList<>(); collectRows(list, rows); assertEquals(3, rows.size());
-            rows.get(1).performClick(); rows.clear(); collectRows(list, rows); assertEquals(6, rows.size());
+            rows.get(1).performClick(); rows.clear(); collectRows(list, rows); assertEquals(7, rows.size());
             list.bindParts(Arrays.asList(one, progress, two, progress), "claude", "Working", true);
-            rows.clear(); collectRows(list, rows); assertEquals(6, rows.size()); assertTrue(rows.get(1).isSelected());
+            rows.clear(); collectRows(list, rows); assertEquals(7, rows.size()); assertTrue(rows.get(1).isSelected());
             assertFalse(rows.get(rows.size()-1).isSelected()); assertFalse(containsDetail(list));
             rows.get(1).performClick(); rows.clear(); collectRows(list, rows); assertEquals(3, rows.size());
             NativeUi chinese = new NativeUi(controller.get(), false, "zh-CN");
@@ -151,6 +157,21 @@ public class NativeToolKindTest {
     private static void collectRows(View view, List<NativeDisclosureRow> rows) {
         if (view instanceof NativeDisclosureRow) rows.add((NativeDisclosureRow) view);
         else if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++) collectRows(((ViewGroup) view).getChildAt(i), rows);
+    }
+
+    @Test public void failedEditsKeepOutcomeWithoutClaimingSuccessfulChanges() throws Exception {
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false, "en");
+            JSONObject call = new JSONObject("{id:'a',role:'assistant',kind:'tool_use',name:'fileChange',text:'',tool:{kind:'write',path:'a.go',status:'failed',exit_code:2,changes:{additions:3,deletions:1}}}");
+            JSONObject second = new JSONObject(call.toString()).put("id", "b");
+            second.getJSONObject("tool").put("status", "declined");
+            List<NativeActivityModel.Activity> activities = NativeActivityModel.fromParts(ui, Arrays.asList(call, second), "codex");
+            assertEquals("Edit a.go", activities.get(0).label);
+            assertEquals("Exit code 2", activities.get(0).outcome);
+            assertEquals("Declined", activities.get(1).outcome);
+            assertEquals("", NativeActivityModel.changeStats(activities));
+            assertEquals("Edit files", NativeActivityModel.groups(ui, activities).get(0).label);
+        }
     }
     private static boolean containsDetail(View view) {
         if (view instanceof NativeToolDetail) return true;

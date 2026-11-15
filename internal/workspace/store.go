@@ -26,6 +26,7 @@ type Store struct {
 	desktopNotifications desktopNotificationHub
 	updateEvents         chan struct{}
 	historyCache         nativeHistoryCache
+	codexHistory         codexWindows
 	settingsMu           sync.Mutex
 	mu                   sync.Mutex
 	agentMu              sync.Mutex
@@ -148,6 +149,7 @@ func OpenStore(root string) (*Store, error) {
 		return fail(err)
 	}
 	store.historyCache.setMaxBytes(settings.HistoryCacheMiB * 1024 * 1024)
+	store.codexHistory.setMaxBytes(settings.HistoryCacheMiB * 1024 * 1024)
 	return store, nil
 }
 func (s *Store) Close() error {
@@ -162,6 +164,7 @@ func (s *Store) Close() error {
 	_, checkpointErr := s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
 	closeErr := s.db.Close()
 	s.historyCache.clear()
+	s.codexHistory.close()
 	return errors.Join(checkpointErr, closeErr)
 }
 func (s *Store) Root() string         { return s.root }
@@ -519,7 +522,20 @@ func (s *Store) finishTurn(id, turnID string, result agent.AgentResult, runErr e
 			nativePath = path
 		}
 	}
-	if nativePath != "" {
+	if nativePath != "" && v.Backend == chatmodel.BackendCodex && t.NativeTurnID == "" && t.SourceOffset >= 0 {
+		t.NativeTurnID, _ = agent.CodexTurnAfter(nativePath, t.SourceOffset)
+		if t.NativeTurnID == "" {
+			// Legacy Codex turns have no explicit identity. Index only records
+			// written after this request, and require an actual new user turn.
+			if index, e := agent.IndexSessionTurns(v.Backend, nativePath, t.SourceOffset); e == nil && len(index) > 0 {
+				last := index[len(index)-1]
+				if last.HasUserInput() {
+					t.NativeTurnID = nativeIdentity(v.NativeSessionID, last)
+				}
+			}
+		}
+	}
+	if nativePath != "" && v.Backend != chatmodel.BackendCodex {
 		if index, e := s.indexHistory(v.Backend, nativePath); e == nil && len(index) > 0 {
 			last := index[len(index)-1]
 			if last.Start >= t.SourceOffset {
@@ -603,10 +619,29 @@ func appendSessionPart(transcript *chatmodel.Transcript, turn *chatmodel.Turn, p
 }
 
 func appendTurnPart(turn *chatmodel.Turn, part chatmodel.Part) {
+	// Command output may arrive as multiple deltas. Merge the chunks of one
+	// result so the live transcript keeps the same shape as native history.
+	// Calls that run at once interleave their output; a chunk naming its call
+	// joins that call's result wherever it is.
+	if part.Kind == "tool_result" && part.ID != "" && len(part.Images) == 0 {
+		for i := len(turn.Parts) - 1; i >= 0; i-- {
+			if existing := &turn.Parts[i]; existing.Kind == "tool_result" && existing.ID == part.ID && existing.Role == part.Role && len(existing.Images) == 0 {
+				if part.Replace {
+					*existing = part
+				} else {
+					existing.Text += part.Text
+					existing.Cut += part.Cut
+					if part.Native != nil {
+						existing.Native = part.Native
+					}
+				}
+				existing.Tool = summarizeTool(*existing)
+				return
+			}
+		}
+	}
 	transcript := chatmodel.Transcript{Parts: turn.Parts}
-	// Command output may arrive as multiple deltas. Merge adjacent result
-	// chunks so the live transcript keeps the same shape as native history.
-	if part.Kind == "tool_result" && len(part.Images) == 0 {
+	if part.Kind == "tool_result" && len(part.Images) == 0 && (part.Text != "" || part.Native == nil) {
 		chatmodel.AppendStreamText(&transcript, part)
 	} else {
 		chatmodel.AppendPart(&transcript, part)
@@ -616,6 +651,27 @@ func appendTurnPart(turn *chatmodel.Turn, part chatmodel.Part) {
 		turn.Parts[last].Tool = summarizeTool(turn.Parts[last])
 	}
 	turn.PartEnd = turn.PartStart + len(turn.Parts)
+}
+
+// updateTurnTool records what a provider reported once a call it had already
+// announced finished. It reports whether that call is part of the turn.
+func updateTurnTool(turn *chatmodel.Turn, update chatmodel.Part) bool {
+	if update.ID == "" {
+		return false
+	}
+	for i := len(turn.Parts) - 1; i >= 0; i-- {
+		part := &turn.Parts[i]
+		if part.Kind != "tool_use" || part.ID != update.ID {
+			continue
+		}
+		if update.Text != "" {
+			part.Text = update.Text
+		}
+		part.Native = update.Native
+		part.Tool = summarizeTool(*part)
+		return true
+	}
+	return false
 }
 
 func appendTurnText(turn *chatmodel.Turn, part chatmodel.Part) {

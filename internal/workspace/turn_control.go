@@ -96,6 +96,7 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string, user string) (chat
 		a.completed[chat.ID] = completedTurn{turn: live}
 		delete(a.live, chat.ID)
 		delete(a.liveBase, chat.ID)
+		delete(a.liveHistory, chat.ID)
 		delete(a.liveTurns, chat.ID)
 	}
 	a.liveMu.Unlock()

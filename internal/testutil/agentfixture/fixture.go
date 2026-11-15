@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -169,6 +170,64 @@ func Run(t *testing.T) {
 					continue
 				}
 				send(map[string]any{"id": value["id"], "result": result})
+			case "thread/read", "thread/turns/list", "thread/items/read", "thread/items/list":
+				// fixture-thread-history.json maps a thread ID to its metadata and
+				// turns (newest first); without it the fixture has no paged history.
+				var threads map[string]struct {
+					Thread map[string]any `json:"thread"`
+					Turns  []any          `json:"turns"`
+				}
+				body, err := os.ReadFile("fixture-thread-history.json")
+				ok := false
+				entry := threads[""]
+				if err == nil && json.Unmarshal(body, &threads) == nil {
+					entry, ok = threads[StringValue(params["threadId"])]
+				}
+				if !ok {
+					send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32601, "message": method + " is not supported yet"}})
+					continue
+				}
+				if method == "thread/read" {
+					send(map[string]any{"id": value["id"], "result": map[string]any{"thread": entry.Thread}})
+					continue
+				}
+				if method == "thread/items/read" || method == "thread/items/list" {
+					if method == "thread/items/read" {
+						if _, err := os.Stat("unsupported-item-read"); err == nil {
+							send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32601, "message": "unsupported item read"}})
+							continue
+						}
+					}
+					var data []any
+					for _, raw := range entry.Turns {
+						turn, _ := raw.(map[string]any)
+						if turn["id"] != params["turnId"] {
+							continue
+						}
+						items, _ := turn["items"].([]any)
+						for _, rawItem := range items {
+							item, _ := rawItem.(map[string]any)
+							keep := method == "thread/items/list"
+							ids, _ := params["itemIds"].([]any)
+							for _, id := range ids {
+								keep = keep || id == item["id"]
+							}
+							if keep {
+								data = append(data, map[string]any{"turnId": turn["id"], "item": item})
+							}
+						}
+					}
+					send(map[string]any{"id": value["id"], "result": map[string]any{"data": data}})
+					continue
+				}
+				start, _ := strconv.Atoi(StringValue(params["cursor"]))
+				limit, _ := params["limit"].(float64)
+				end := min(len(entry.Turns), start+max(1, int(limit)))
+				var next any
+				if end < len(entry.Turns) {
+					next = strconv.Itoa(end)
+				}
+				send(map[string]any{"id": value["id"], "result": map[string]any{"data": entry.Turns[min(start, end):end], "nextCursor": next}})
 			case "thread/start", "thread/resume":
 				if method == "thread/resume" {
 					thread = StringValue(params["threadId"])

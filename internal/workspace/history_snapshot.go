@@ -50,6 +50,13 @@ func (s *Store) readHistory(chat chatmodel.Session) (chatmodel.Session, error) {
 		}
 	}
 	chat.NativeSessionPath = path
+	// Codex pages its own history; the rollout parser below serves threads
+	// and installations that cannot.
+	if chat.Backend == chatmodel.BackendCodex && chat.NativeSessionID != "" {
+		if native, ok := s.readCodexHistory(chat, path); ok {
+			return native, nil
+		}
+	}
 	snapshot := chat
 	err := s.historyCache.read(chat.Backend, path, func(file *nativeHistory) error {
 		var err error
@@ -157,6 +164,9 @@ func (s *Store) withRuntimeTurn(chat chatmodel.Session) chatmodel.Session {
 		}
 		if native.Model == "" {
 			native.Model = current.Model
+		}
+		if native.ReasoningEffort == "" {
+			native.ReasoningEffort = current.ReasoningEffort
 		}
 		chat.Turns[matched] = native
 	} else {

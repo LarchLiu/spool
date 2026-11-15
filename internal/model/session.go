@@ -30,6 +30,7 @@ const (
 )
 
 type Turn struct {
+	NativeHistory   bool             `json:"-"`
 	SourceOffset    int64            `json:"-"`
 	UserID          string           `json:"user_id,omitempty"`
 	Actions         []TurnAction     `json:"actions,omitempty"`
@@ -97,6 +98,7 @@ type Session struct {
 }
 
 type HistoryState struct {
+	Native  bool   `json:"-"`
 	Before  string `json:"before,omitempty"`
 	HasMore bool   `json:"has_more"`
 	Error   string `json:"error,omitempty"`

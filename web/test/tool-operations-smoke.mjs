@@ -6,6 +6,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { createServer as createPortProbe } from "node:net";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 requireRunTemp();
@@ -14,7 +15,7 @@ const { createServer } = await import(require.resolve("vite"));
 const { default: react } = await import(require.resolve("@vitejs/plugin-react"));
 const { chromium } = createRequire(path.join(process.env.SPOOL_NODE_MODULES || path.join(root, "web/node_modules"), "__tool_operations__.cjs"))("playwright");
 const fixtures = JSON.parse(await fs.readFile(path.join(root, "android/app/src/test/resources/tool-operations.json"), "utf8"));
-const output = path.join(root, "build/artifacts/tool-classification");
+const output = path.join(root, "build/artifacts/native-tool-items");
 const script = `import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';
 import {ToolActivityList} from '/src/tool-activity.tsx';import {translator} from '/src/i18n.ts';import '/src/style.css';
 function Scene(){const [parts,setParts]=useState([]);window.bind=parts=>flushSync(()=>setParts(parts));
@@ -39,7 +40,11 @@ const plugin = {
 };
 try {
   await fs.mkdir(output, { recursive: true });
-  server = await createServer({ cacheDir: path.join(requireRunTemp(), "vite-cache"), configFile: false, root: path.join(root, "web"), plugins: [plugin, react()], server: { host: "127.0.0.1", port: 0 } });
+  const probe = createPortProbe();
+  await new Promise((resolve, reject) => { probe.once("error", reject); probe.listen(0, "127.0.0.1", resolve); });
+  const port = probe.address().port;
+  await new Promise((resolve, reject) => probe.close(error => error ? reject(error) : resolve()));
+  server = await createServer({ cacheDir: path.join(requireRunTemp(), "vite-cache"), configFile: false, root: path.join(root, "web"), plugins: [plugin, react()], server: { host: "127.0.0.1", port, strictPort: true } });
   await server.listen();
   browser = await chromium.launch({ channel: "chrome", headless: true });
   const page = await browser.newPage({ viewport: { width: 1100, height: 700 } });
@@ -60,30 +65,37 @@ try {
     await page.waitForFunction(count => document.querySelectorAll(".tool-activity-static").length === count, fixture.operations.length);
     const rows = page.locator(".tool-activity-static");
     assert.equal(await rows.count(), fixture.operations.length, fixture.id);
-    assert.equal(await page.locator("button.tool-activity-item-summary, .tool-detail").count(), 0, fixture.id);
+    assert.equal(await group.locator("button.tool-activity-item-summary").count(), 1, fixture.id);
+    assert.match(await group.locator("button.tool-activity-item-summary").textContent(), /Command and output/, fixture.id);
     for (const row of await rows.all()) {
       assert.equal(await row.getAttribute("aria-expanded"), null, fixture.id);
       assert.equal(await row.locator(".tool-activity-caret").count(), 0, fixture.id);
       await row.click();
     }
     assert.equal(await page.locator(".tool-detail").count(), 0, fixture.id);
+    if (!lazy) {
+      await group.locator("button.tool-activity-item-summary").click();
+      assert.equal(await group.locator(".tool-detail").count(), 1, fixture.id);
+      assert.match(await group.locator(".tool-detail").textContent(), /combined output/, fixture.id);
+      await group.locator("button.tool-activity-item-summary").click();
+    }
     await group.locator("button.tool-activity-summary").click();
     assert.equal(await page.locator(".tool-activity-static").count(), 0, fixture.id);
     count++;
   }
-  // Same keyed row starts expanded, then becomes a pipeline. Its old state
+  // Same keyed row starts expanded, then becomes a compound command. Its old state
   // must not mount details or issue a lazy body request for the derived row.
   const single = { id: "live", role: "assistant", kind: "tool_use", name: "Bash", text: '{"command":"cat README.md"}' };
   await page.evaluate(part => window.bind([part]), single);
   await page.locator("button.tool-activity-item-summary").click();
   assert.equal(await page.locator(".tool-detail").count(), 1);
   assert.match(await page.locator(".tool-detail").textContent(), /cat README.md/);
-  await page.evaluate(part => window.bind([{ ...part, text: "", tool: { kind: "read", operations: [{ kind: "read", command: "cat README.md | head -20", path: "README.md" }], href: "/chats/chat/tool-detail?ref=live" } }]), single);
+  await page.evaluate(part => window.bind([{ ...part, text: "", tool: { kind: "read", operations: [{ kind: "read", command: "cat README.md", path: "README.md" }, {kind: "list", command: "ls"}], href: "/chats/chat/tool-detail?ref=live" } }]), single);
   assert.equal(await page.locator(".tool-activity-static").count(), 0);
   assert.equal(await page.locator(".tool-detail").count(), 0);
   await page.locator(".tool-activity-compound button.tool-activity-summary").click();
-  assert.equal(await page.locator(".tool-activity-static").count(), 1);
-  await page.locator(".tool-activity-static").click();
+  assert.equal(await page.locator(".tool-activity-static").count(), 2);
+  await page.locator(".tool-activity-static").first().click();
   assert.equal(await page.locator(".tool-detail").count(), 0);
   await page.evaluate(part => window.bind([part]), single);
   assert.equal(await page.locator("button.tool-activity-item-summary").count(), 1);
@@ -91,7 +103,7 @@ try {
   // Render the user's example at desktop/mobile widths for visual inspection.
   const example = fixtures[0];
   await page.evaluate(fixture => window.bind([{ role: "assistant", kind: "tool_use", name: fixture.name, text: JSON.stringify(fixture.input) }]), example);
-  assert.equal(await page.locator(".tool-activity-compound button.tool-activity-summary").textContent(), "Ran command, read files");
+  assert.equal(await page.locator(".tool-activity-compound button.tool-activity-summary").textContent(), "Ran command, read files, searched files");
   for (const [mode, width] of [["desktop", 1100], ["mobile", 390]]) {
     await page.setViewportSize({ width, height: 700 });
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -101,6 +113,10 @@ try {
     await page.locator(".tool-activity-compound button.tool-activity-summary").click();
     assert.equal(await page.locator(".tool-activity-static").count(), 3);
     await page.screenshot({ path: path.join(output, `operations-${mode}-expanded.png`) });
+    await page.locator(".tool-activity-whole button").click();
+    assert.equal(await page.locator(".tool-detail").count(), 1);
+    await page.screenshot({ path: path.join(output, `operations-${mode}-details.png`) });
+    await page.locator(".tool-activity-whole button").click();
     await page.locator(".tool-activity-compound button.tool-activity-summary").click();
   }
   const call = id => ({ id, role: "assistant", kind: "tool_use", name: example.name, text: JSON.stringify(example.input) });
@@ -115,6 +131,15 @@ try {
   assert.equal(await page.locator(".tool-activity-compound").count(), 0);
   await page.locator(".work-label-toggle").click();
   assert.equal(await page.locator(".tool-activity-static").count(), 3);
+  // One outcome belongs to the whole execution, including failed edits.
+  await page.evaluate(() => window.bind([
+    {id: "failed", role: "assistant", kind: "tool_use", name: "fileChange", text: "*** Update File: a.txt", tool: {kind: "write", status: "failed", exit_code: 2, path: "a.txt", changes: {additions: 3, deletions: 1}}},
+    {id: "declined", role: "assistant", kind: "tool_use", name: "fileChange", text: "*** Add File: b.txt", tool: {kind: "create", status: "declined", path: "b.txt", changes: {additions: 2, deletions: 0}}},
+  ]));
+  assert.match(await page.locator(".tool-activity-history").textContent(), /Exit code 2/);
+  assert.match(await page.locator(".tool-activity-history").textContent(), /Declined/);
+  assert.equal(await page.locator(".tool-activity-stats").count(), 0);
+  await page.screenshot({ path: path.join(output, "outcomes-mobile.png") });
   assert.equal(apiRequests, 0);
   assert.deepEqual(errors, []);
   const report = { fixtureProjections: count, compoundCallsInitiallyFolded: true, uniqueKindSummaries: true, independentCallGroups: true, expansionSurvivesLiveUpdates: true, staticRowsHaveNoButtonCaretOrDetails: true, staleExpansionSuppressed: true, ordinaryToolDetailsPreserved: true, detailRequests: apiRequests, javascriptErrors: errors };

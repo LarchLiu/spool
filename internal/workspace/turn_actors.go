@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"spool/internal/agent"
 	chatmodel "spool/internal/model"
 )
 
@@ -89,12 +90,25 @@ func (s *Store) attributeTurns(chat *chatmodel.Session) error {
 		if v.native != "" || v.offset < 0 || (v.session != "" && v.session != chat.NativeSessionID) {
 			continue
 		}
-		for _, turn := range chat.Turns {
-			if turn.NativeTurnID != "" && turn.SourceOffset >= v.offset {
-				if bound, ok := byNative[turn.NativeTurnID]; !ok || bound.native == "" {
-					byNative[turn.NativeTurnID] = v
+		identity := ""
+		if chat.History != nil && chat.History.Native {
+			// The saved offset is already a seek anchor. Read to the first turn
+			// boundary after it, even when that turn is outside the native page.
+			identity, err = agent.CodexTurnAfter(chat.NativeSessionPath, v.offset)
+			if err != nil {
+				return err
+			}
+		} else {
+			for _, turn := range chat.Turns {
+				if turn.NativeTurnID != "" && turn.SourceOffset >= v.offset {
+					identity = turn.NativeTurnID
+					break
 				}
-				break
+			}
+		}
+		if identity != "" {
+			if bound, ok := byNative[identity]; !ok || bound.native == "" {
+				byNative[identity] = v
 			}
 		}
 	}

@@ -39,15 +39,21 @@ func toolBounded(text string, limit int) string {
 	return text[:end]
 }
 
-// Keep classification/paths/statistics identical to tool-activity.tsx. Only the
-// localized labels belong to the clients; neither client needs the full JSON.
+// Specific provider classifications win. A generic native shell classification
+// still uses the literal command fallback, including its compound steps.
+// tool-activity.tsx and Android keep the same fallback rules and localize labels.
 func summarizeTool(part chatmodel.Part) *chatmodel.ToolSummary {
-	if part.Tool != nil && part.Tool.SourceText == part.Text && part.Tool.ImageCount == len(part.Images) {
+	if part.Tool != nil && part.Tool.SourceText == part.Text && part.Tool.ImageCount == len(part.Images) && part.Tool.SourceNative == part.Native {
 		copy := *part.Tool
 		return &copy
 	}
-	summary := &chatmodel.ToolSummary{Version: toolBodyVersion(part.Text), Bytes: len(part.Text), Kind: "other", SourceText: part.Text}
+	summary := &chatmodel.ToolSummary{Version: toolBodyVersion(part.Text), Bytes: len(part.Text), Kind: "other", SourceText: part.Text, SourceNative: part.Native}
 	summary.ImageCount = len(part.Images)
+	native := part.Native
+	if native == nil {
+		native = &chatmodel.ToolNative{}
+	}
+	summary.Status, summary.ExitCode, summary.DurationMs = native.Status, native.ExitCode, native.DurationMs
 	if part.Kind == "tool_result" {
 		return summarizeToolChanges(part.Text, summary)
 	}
@@ -62,12 +68,42 @@ func summarizeTool(part chatmodel.Part) *chatmodel.ToolSummary {
 	if toolPatchName.MatchString(name) {
 		files = toolPatchFile.FindAllStringSubmatch(part.Text, -1)
 	}
+	query := ""
 	switch {
 	case part.Kind == "thinking" || nameKind == "thinking":
 		summary.Kind = "thinking"
 		summary.Preview = toolBounded(part.Text, 2048)
 	case len(images) > 0:
 		summary.Kind, summary.ImagePaths = "image", images
+	case len(native.Files) > 0:
+		// A native file change says what happened to each file, whichever tool
+		// (a patch tool or a shell heredoc) the model used to make it.
+		summary.Kind = "write"
+		allAdd, allDelete := true, true
+		changes := chatmodel.ToolChanges{}
+		for _, file := range native.Files {
+			allAdd = allAdd && file.Kind == "create"
+			allDelete = allDelete && file.Kind == "delete"
+			changes.Additions += file.Additions
+			changes.Deletions += file.Deletions
+		}
+		if allAdd {
+			summary.Kind = "create"
+		} else if allDelete {
+			summary.Kind = "delete"
+		}
+		if len(native.Files) <= 64 {
+			summary.Files = make([]chatmodel.ToolFile, len(native.Files))
+			for i, file := range native.Files {
+				file.Path, file.MovePath = toolBounded(file.Path, 1024), toolBounded(file.MovePath, 1024)
+				summary.Files[i] = file
+			}
+		}
+		if len(native.Files) == 1 {
+			summary.Path = native.Files[0].Path
+		}
+		files = nil
+		summary.Changes = &changes
 	case toolPatchName.MatchString(name):
 		summary.Kind = "write"
 		allAdd, allDelete := len(files) > 0, len(files) > 0
@@ -80,10 +116,16 @@ func summarizeTool(part chatmodel.Part) *chatmodel.ToolSummary {
 		} else if allDelete {
 			summary.Kind = "delete"
 		}
-	case nameKind == "shell":
+	case nameKind == "shell" && (native.Kind == "" || native.Kind == "shell" && len(native.Operations) == 0):
 		command := toolCommand(part.Text, data)
 		summary.Kind = shellCommandKind(command, 0)
 		summary.Operations = shellOperations(command, 0)
+		if summary.Kind == "read" || summary.Kind == "list" || summary.Kind == "search" {
+			summary.Path, query = shellTarget(command, 0)
+		}
+	case native.Kind != "":
+		summary.Kind, summary.Path, query = native.Kind, native.Path, native.Query
+		summary.Operations = boundedOperations(native.Operations)
 	default:
 		summary.Kind = nameKind
 	}
@@ -96,14 +138,13 @@ func summarizeTool(part chatmodel.Part) *chatmodel.ToolSummary {
 		}
 		return ""
 	}
-	summary.Path = field("file_path", "path", "file", "filename", "target_file", "notebook_path")
-	if summary.Path == "" && nameKind == "shell" && summary.Kind == "search" {
-		summary.Path = shellSearchPath(toolCommand(part.Text, data), 0)
+	if summary.Path == "" && len(native.Files) == 0 {
+		summary.Path = field("file_path", "path", "file", "filename", "target_file", "notebook_path")
 	}
 	if summary.Path == "" {
 		if len(files) == 1 {
 			summary.Path = strings.TrimSpace(files[0][2])
-		} else if len(files) == 0 && nameKind != "shell" {
+		} else if len(files) == 0 && nameKind != "shell" && len(native.Files) == 0 && native.Kind == "" {
 			if match := toolPath.FindStringSubmatch(part.Text); match != nil {
 				summary.Path = match[1]
 			}
@@ -115,8 +156,29 @@ func summarizeTool(part chatmodel.Part) *chatmodel.ToolSummary {
 		summary.Path = "\u2026/" + strings.Join(pieces[len(pieces)-3:], "/")
 	}
 	summary.Path = toolBounded(summary.Path, 1024)
-	summary.Query = toolBounded(field("pattern", "query", "search_query", "searchTerm", "glob", "include"), 1024)
+	if query == "" {
+		query = field("pattern", "query", "search_query", "searchTerm", "glob", "include")
+	}
+	summary.Query = toolBounded(query, 1024)
+	if summary.Changes != nil {
+		summary.Stats = toolChangeSuffix(part.Text)
+		return summary
+	}
 	return summarizeToolChanges(part.Text, summary)
+}
+
+// Operation rows are display metadata; a command too large to bound is shown
+// as one call instead of being cut.
+func boundedOperations(operations []chatmodel.ToolOperation) []chatmodel.ToolOperation {
+	if len(operations) < 2 || len(operations) > 64 {
+		return nil
+	}
+	for _, operation := range operations {
+		if len(operation.Command) > 512 || len(operation.Path) > 1024 || len(operation.Query) > 1024 {
+			return nil
+		}
+	}
+	return append([]chatmodel.ToolOperation(nil), operations...)
 }
 
 func summarizeToolChanges(text string, summary *chatmodel.ToolSummary) *chatmodel.ToolSummary {
@@ -182,6 +244,9 @@ func toolChangeSuffix(text string) string {
 }
 
 func toolPartRef(chatID string, turn chatmodel.Turn, index int, part chatmodel.Part) string {
+	if turn.NativeHistory && turn.NativeTurnID != "" && part.ID != "" {
+		return nativeToolRef(chatID, turn.NativeTurnID, part)
+	}
 	return toolBodyVersion(chatID + ":" + turn.ID + ":" + strconv.Itoa(index-turn.PartStart) + ":" + part.Kind + ":" + part.ID)
 }
 

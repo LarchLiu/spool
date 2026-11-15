@@ -13,16 +13,32 @@ import org.json.JSONObject;
 final class NativeActivityModel {
     static final class Activity {
         JSONObject use, result;
-        String kind, label, detail, stats;
+        String kind, label, detail, stats, outcome = "";
         boolean noDetails;
         int inputStart;
         final List<JSONObject> input = new ArrayList<>();
         final List<String> images = new ArrayList<>(), imageURLs = new ArrayList<>();
     }
     static final class Group {
-        String kind, label;
+        String kind, label, outcome = "";
         boolean compound;
         final List<Activity> activities = new ArrayList<>();
+    }
+
+    /** The text after a row's label: why a call did not succeed, then its change statistics. */
+    static String trailing(Activity activity) { return trailing(activity.outcome, changeStats(java.util.Collections.singletonList(activity))); }
+
+    static String trailing(Group group) { return trailing(group.outcome, changeStats(group.activities)); }
+
+    static Activity wholeCommand(NativeUi ui, Group group) {
+        Activity first = group.activities.get(0), whole = new Activity();
+        whole.kind = "shell"; whole.label = ui.t("Command and output"); whole.detail = ""; whole.stats = "";
+        whole.use = first.use; whole.result = first.result;
+        return whole;
+    }
+
+    private static String trailing(String outcome, String stats) {
+        return outcome.isEmpty() ? stats : stats.isEmpty() ? outcome : outcome + "  " + stats;
     }
     private static final Pattern PATCH_FILE = Pattern.compile("^\\*\\*\\* (Add|Update|Delete) File: (.+)\\r?$", Pattern.MULTILINE);
     private static final Pattern PATCH_START = Pattern.compile("(?:^|\\n)(?:diff --git |--- [^\\n]+\\n\\+\\+\\+ |\\*\\*\\* Begin Patch)");
@@ -95,14 +111,22 @@ final class NativeActivityModel {
                 else if (NativeToolKind.nameKind(part.optString("name")).equals("shell"))
                     operations = NativeToolKind.operations(NativeToolKind.command(part.optString("text"), payload(part.optString("text"))), 0);
             }
-            if (operations == null || operations.length() == 0) { expanded.add(activity); continue; }
+            if (operations == null || operations.length() == 0) {
+                activity.outcome = outcome(ui, activity);
+                if (part != null && status(activity).matches("failed|declined|running") && activity.kind.matches("write|create|delete")) {
+                    String target = summary == null ? path(part, payload(part.optString("text")), null) : summary.optString("path");
+                    String action = activity.kind.equals("write") ? "Edit" : activity.kind.equals("create") ? "Create" : "Delete";
+                    activity.label = target.isEmpty() ? ui.t(action + " files") : ui.t(action + " {path}", "path", shortPath(target));
+                }
+                expanded.add(activity); continue;
+            }
             for (int i = 0; i < operations.length(); i++) {
                 JSONObject operation = operations.optJSONObject(i);
                 if (operation == null) continue;
                 try {
                     JSONObject synthetic = new JSONObject().put("kind", "tool_use").put("name", part.optString("name")).put("tool", operation);
                     Activity item = display(ui, synthetic, backend);
-                    if (operation.optString("path").isEmpty()) item.label += " \u00b7 " + oneLine(operation.optString("command"), 180);
+                    if (operation.optString("path").isEmpty() && operation.optString("query").isEmpty()) item.label += " \u00b7 " + oneLine(operation.optString("command"), 180);
                     item.use = part; item.result = activity.result; item.detail = ""; item.stats = ""; item.noDetails = true;
                     expanded.add(item);
                 } catch (org.json.JSONException impossible) { throw new IllegalStateException(impossible); }
@@ -119,8 +143,10 @@ final class NativeActivityModel {
         item.kind = !item.images.isEmpty() ? "image" : summary == null ? classify(part) : summary.optString("kind", "other");
         item.detail = part.optString("text");
         JSONObject data = summary == null ? payload(item.detail) : null;
-        String path = summary == null ? path(part, data) : summary.optString("path"),
-                query = summary == null ? field(data, "pattern", "query", "search_query", "searchTerm", "glob", "include") : summary.optString("query");
+        String[] target = summary == null ? shellTarget(part, data) : null;
+        String path = summary == null ? path(part, data, target) : summary.optString("path"),
+                query = summary != null ? summary.optString("query") : target != null && !target[1].isEmpty() ? target[1]
+                        : field(data, "pattern", "query", "search_query", "searchTerm", "glob", "include");
         String name = part.optString("name").trim();
         if (name.isEmpty()) name = backend.equals("claude") ? "Claude tool" : "Codex tool";
         switch (item.kind) {
@@ -215,18 +241,44 @@ final class NativeActivityModel {
         return "";
     }
 
-    private static String path(JSONObject part, JSONObject data) {
+    /** {path, query} of a shell call that reads, lists or searches one thing; otherwise null. */
+    private static String[] shellTarget(JSONObject part, JSONObject data) {
+        if (!NativeToolKind.nameKind(part.optString("name")).equals("shell")) return null;
+        String command = NativeToolKind.command(part.optString("text"), data);
+        return NativeToolKind.shellKind(command, 0).matches("read|list|search") ? NativeToolKind.target(command, 0) : null;
+    }
+
+    private static String path(JSONObject part, JSONObject data, String[] target) {
+        if (target != null && !target[0].isEmpty()) return target[0];
         String value = field(data, "file_path", "path", "file", "filename", "target_file", "notebook_path");
         if (!value.isEmpty()) return value;
         List<String[]> files = patchFiles(part);
         if (files.size() == 1) return files.get(0)[1];
         if (files.size() > 1) return "";
-        if (NativeToolKind.nameKind(part.optString("name")).equals("shell")) {
-            String command = NativeToolKind.command(part.optString("text"), data);
-            return NativeToolKind.shellKind(command, 0).equals("search") ? NativeToolKind.searchPath(command, 0) : "";
-        }
+        if (NativeToolKind.nameKind(part.optString("name")).equals("shell")) return "";
         Matcher matcher = Pattern.compile("(?:^|\\s)([\\w./~-]+\\.[\\w-]+)(?:\\s|$)").matcher(part.optString("text"));
         return matcher.find() ? matcher.group(1) : "";
+    }
+
+    /** "", "running", "completed", "failed" or "declined": a failure on the call or its result wins. */
+    static String status(Activity activity) {
+        JSONObject use = activity.use == null ? null : activity.use.optJSONObject("tool");
+        JSONObject result = activity.result == null ? null : activity.result.optJSONObject("tool");
+        String useStatus = use == null ? "" : use.optString("status"), resultStatus = result == null ? "" : result.optString("status");
+        if (useStatus.matches("failed|declined")) return useStatus;
+        if (resultStatus.matches("failed|declined")) return resultStatus;
+        return resultStatus.isEmpty() ? useStatus : resultStatus;
+    }
+
+    /** A short localized note for a call that failed or was declined; otherwise empty. */
+    static String outcome(NativeUi ui, Activity activity) {
+        String status = status(activity);
+        if (status.equals("declined")) return ui.t("Declined");
+        if (!status.equals("failed")) return "";
+        JSONObject use = activity.use == null ? null : activity.use.optJSONObject("tool");
+        JSONObject result = activity.result == null ? null : activity.result.optJSONObject("tool");
+        int code = use != null && use.has("exit_code") ? use.optInt("exit_code") : result != null ? result.optInt("exit_code") : 0;
+        return code != 0 ? ui.t("Exit code {code}", "code", code) : ui.t("Failed");
     }
 
     private static String shortPath(String value) {
@@ -268,6 +320,18 @@ final class NativeActivityModel {
             int count = 0;
             for (Activity activity : group.activities) count += activity.imageURLs.isEmpty() ? activity.images.size() : activity.imageURLs.size();
             group.label = imageLabel(ui, count);
+        }
+        for (Group group : groups) {
+            // The rows of a compound command share one execution and one outcome.
+            if (group.compound) { group.outcome = outcome(ui, group.activities.get(0)); continue; }
+            if (group.activities.size() > 1 && group.kind.matches("write|create|delete")) {
+                boolean unfinished = true;
+                for (Activity activity : group.activities) unfinished &= status(activity).matches("failed|declined|running");
+                if (unfinished) group.label = ui.t(group.kind.equals("write") ? "Edit files" : group.kind.equals("create") ? "Create files" : "Delete files");
+            }
+            int failures = 0;
+            for (Activity activity : group.activities) if (status(activity).matches("failed|declined")) failures++;
+            if (group.activities.size() > 1 && failures > 0) group.outcome = ui.t("{count} failed", "count", failures);
         }
         return groups;
     }
@@ -325,6 +389,8 @@ final class NativeActivityModel {
         long additions = 0, deletions = 0;
         for (Activity activity : activities) {
             if (!activity.kind.matches("write|create|delete")) return "";
+            // A change that failed or was declined did not happen.
+            if (status(activity).matches("failed|declined")) continue;
             JSONObject resultSummary = activity.result == null ? null : activity.result.optJSONObject("tool");
             JSONObject useSummary = activity.use == null ? null : activity.use.optJSONObject("tool");
             JSONObject changes = resultSummary == null ? null : resultSummary.optJSONObject("changes");

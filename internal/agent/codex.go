@@ -284,7 +284,7 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 			if itemID != "" {
 				streamedThinking[itemID] += delta
 			}
-			part := chatmodel.Part{Role: "assistant", Kind: "thinking", Model: result.Model, Text: delta}
+			part := chatmodel.Part{ID: itemID, Role: "assistant", Kind: "thinking", Model: result.Model, Text: delta}
 			if err := emit(AgentEvent{Type: "part", Part: &part}); err != nil {
 				return result, err, false
 			}
@@ -295,7 +295,7 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 				continue
 			}
 			streamedToolOutput[itemID] += delta
-			part := chatmodel.Part{Role: "tool", Kind: "tool_result", Text: delta}
+			part := chatmodel.Part{ID: itemID, Role: "tool", Kind: "tool_result", Text: delta}
 			if err := emit(AgentEvent{Type: "part", Part: &part}); err != nil {
 				return result, err, false
 			}
@@ -309,14 +309,13 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 				continue
 			}
 			streamedToolOutput[itemID] += delta
-			part := chatmodel.Part{Role: "tool", Kind: "tool_result", Text: delta}
+			part := chatmodel.Part{ID: itemID, Role: "tool", Kind: "tool_result", Text: delta}
 			if err := emit(AgentEvent{Type: "part", Part: &part}); err != nil {
 				return result, err, false
 			}
 		case "item/fileChange/patchUpdated":
-			// patchUpdated carries the current complete set of file changes,
-			// rather than a byte delta. Emit only the suffix when the update is
-			// cumulative; this prevents the same diff being appended repeatedly.
+			// A patch is a complete replacement; successive updates may change
+			// earlier hunks, not just append to them.
 			itemID := stringValue(params["itemId"])
 			changes := params["changes"]
 			if itemID == "" || changes == nil {
@@ -326,20 +325,11 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 			if full == "" {
 				continue
 			}
-			previous := streamedToolOutput[itemID]
-			delta := full
-			if previous != "" {
-				if strings.HasPrefix(full, previous) {
-					delta = full[len(previous):]
-				} else if full == previous {
-					delta = ""
-				}
-			}
-			streamedToolOutput[itemID] = full
-			if delta == "" {
+			if full == streamedToolOutput[itemID] {
 				continue
 			}
-			part := chatmodel.Part{Role: "tool", Kind: "tool_result", Text: delta}
+			streamedToolOutput[itemID] = full
+			part := chatmodel.Part{ID: itemID, Role: "tool", Kind: "tool_result", Text: full, Replace: true}
 			if err := emit(AgentEvent{Type: "part", Part: &part}); err != nil {
 				return result, err, false
 			}
@@ -398,13 +388,13 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 							if previous := streamedToolOutput[id]; previous != "" {
 								if strings.HasPrefix(full, previous) {
 									part.Text = full[len(previous):]
-								} else if full == previous {
-									part.Text = ""
+								} else {
+									part.Replace = true
 								}
 							}
 							streamedToolOutput[id] = full
 						}
-						if part.Text == "" {
+						if part.Text == "" && part.Native == nil && !part.Replace && len(part.Images) == 0 {
 							continue
 						}
 						activity := "Tool result"
@@ -435,7 +425,14 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 						}
 						continue
 					}
-					if part.Kind != "tool_use" || (!started && id != "" && startedItems[id]) {
+					if part.Kind != "tool_use" {
+						continue
+					}
+					if !started && id != "" && startedItems[id] {
+						// The call is already shown; completion adds its outcome.
+						if err := emit(AgentEvent{Type: "tool", Part: &part}); err != nil {
+							return result, err, false
+						}
 						continue
 					}
 					activity := codexActivity(item)

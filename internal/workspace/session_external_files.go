@@ -161,6 +161,19 @@ func (a *App) externalSessionFile(w http.ResponseWriter, r *http.Request, chat c
 	if root := canonicalDirectory(directory); !attached && root != "" && resolved != "" && directoryWithin(resolved, root) {
 		return false
 	}
+	// External links can belong to a page already evicted from the browsing
+	// window. Inspect the authoritative file only for this explicit file read;
+	// opening history and tool details still use native paging.
+	if snapshot.History != nil && snapshot.History.Native && chat.NativeSessionPath != "" {
+		_ = a.store.historyCache.read(chat.Backend, chat.NativeSessionPath, func(file *nativeHistory) error {
+			complete, err := a.store.readHistorySnapshot(chat, file)
+			if err == nil {
+				snapshot.Transcript.Parts = append(snapshot.Transcript.Parts, complete.Transcript.Parts...)
+			}
+			return err
+		})
+	}
+	attached = sessionUserAttachment(snapshot, path)
 	project, err := a.store.Project(chat.ProjectID)
 	if err != nil || (!attached && !project.AllowExternalFiles) {
 		return false

@@ -74,7 +74,7 @@ final class NativeActivityList extends LinearLayout {
                 title = previewTitle;
             } else { previewSource = previewLabel = null; previewTitle = null; }
             row.bind(title, NativeActivityModel.icon(activity.kind), prepared ? owner.itemStatistics(activity)
-                    : NativeActivityModel.changeStats(java.util.Collections.singletonList(activity)), prepared || owner.rowsChanged == null);
+                    : NativeActivityModel.trailing(activity), prepared || owner.rowsChanged == null);
             row.setDisclosureEnabled(!activity.noDetails);
             row.setExpanded(!activity.noDetails && owner.state.items.contains(id));
             if (!activity.noDetails && owner.state.items.contains(id)) {
@@ -125,13 +125,20 @@ final class NativeActivityList extends LinearLayout {
         }
         void bind(NativeActivityModel.Group group) {
             current = group;
-            heading.bind(group.label, NativeActivityModel.icon(group.kind), NativeActivityModel.changeStats(group.activities));
+            heading.bind(group.label, NativeActivityModel.icon(group.kind), NativeActivityModel.trailing(group));
             boolean expanded = group.compound ? state.compounds.contains(compoundKey(group, index)) : state.groups.contains(index); heading.setExpanded(expanded);
             if (expanded) {
                 List<View> views = new ArrayList<>(); Map<String, Item> next = new HashMap<>();
                 for (int i = 0; i < group.activities.size(); i++) {
                     String key = index + ":" + i; NativeActivityModel.Activity activity = group.activities.get(i);
                     Item item = items.get(key); if (item == null) item = new Item(NativeActivityList.this, activity, key, false); else item.bind(activity);
+                    views.add(item.view); next.put(key, item);
+                }
+                if (group.compound) {
+                    String key = compoundKey(group, index) + ":whole";
+                    NativeActivityModel.Activity activity = NativeActivityModel.wholeCommand(ui, group);
+                    Item item = items.get(key);
+                    if (item == null) item = new Item(NativeActivityList.this, activity, key, false); else item.bind(activity);
                     views.add(item.view); next.put(key, item);
                 }
                 NativeKeyedViews.sync(nested, views); items = next;
@@ -210,11 +217,11 @@ final class NativeActivityList extends LinearLayout {
     private final Map<Object, String> statistics = new java.util.IdentityHashMap<>();
 
     private String itemStatistics(NativeActivityModel.Activity activity) {
-        return statistics.computeIfAbsent(activity, ignored -> NativeActivityModel.changeStats(java.util.Collections.singletonList(activity)));
+        return statistics.computeIfAbsent(activity, ignored -> NativeActivityModel.trailing(activity));
     }
 
     private String groupStatistics(NativeActivityModel.Group group) {
-        return statistics.computeIfAbsent(group, ignored -> NativeActivityModel.changeStats(group.activities));
+        return statistics.computeIfAbsent(group, ignored -> NativeActivityModel.trailing(group));
     }
 
     private CharSequence previewTitle(String label, String source) {
@@ -448,7 +455,7 @@ final class NativeActivityList extends LinearLayout {
                         row.value = heading; row.addView(heading, new LayoutParams(-1, -2));
                     }
                     NativeDisclosureRow heading = (NativeDisclosureRow) row.value;
-                    heading.bind(group.label, NativeActivityModel.icon(group.kind), history.reuseActivityRows ? groupStatistics(group) : NativeActivityModel.changeStats(group.activities),
+                    heading.bind(group.label, NativeActivityModel.icon(group.kind), history.reuseActivityRows ? groupStatistics(group) : NativeActivityModel.trailing(group),
                             history.reuseActivityRows);
                     heading.setExpanded(group.compound ? state.compounds.contains(compoundKey(group, at)) : state.groups.contains(at));
                     heading.setOnClickListener(view -> {
@@ -460,7 +467,9 @@ final class NativeActivityList extends LinearLayout {
                 boolean expanded = group.compound ? state.compounds.contains(compoundKey(group, at)) : state.groups.contains(at);
                 if (expanded) for (int i = 0; i < group.activities.size(); i++)
                     appendVirtualItem(history, key + "/item:" + i, refresh, group.activities.get(i), at + ":" + i,
-                            0, true, i == 0, i == group.activities.size() - 1);
+                            0, true, i == 0, !group.compound && i == group.activities.size() - 1);
+                if (expanded && group.compound) appendVirtualItem(history, key + "/whole", refresh,
+                        NativeActivityModel.wholeCommand(ui, group), compoundKey(group, at) + ":whole", 0, true, false, true);
             }
         }
         if (!groups.isEmpty()) history.activity(prefix + "/end", "gap", false, children -> children.use("gap", "gap", () -> ui.space(10)));

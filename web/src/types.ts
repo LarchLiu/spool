@@ -167,12 +167,26 @@ export type ToolSummary = {
   stats?: string;
   changes?: { additions: number; deletions: number };
   operations?: ToolOperation[];
+  // What the provider reported about the call. A status may arrive on the
+  // call or on its result; absent means the provider did not say.
+  status?: "running" | "completed" | "failed" | "declined";
+  exit_code?: number;
+  duration_ms?: number;
+  files?: ToolFile[];
 };
 // Display-only input summaries. Compound commands have no per-operation output.
 export type ToolOperation = {
   kind: ToolSummary["kind"];
   command: string;
   path?: string;
+  query?: string;
+};
+export type ToolFile = {
+  path: string;
+  kind: "create" | "write" | "delete";
+  move_path?: string;
+  additions: number;
+  deletions: number;
 };
 export type Transcript = {
   parts: TranscriptPart[];

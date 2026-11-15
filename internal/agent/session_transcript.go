@@ -108,9 +108,9 @@ func parseTranscriptReader(backend chatmodel.Backend, reader io.Reader, model st
 
 // codexCallRef lets event_msg.item_completed records enrich the response_item
 // records around them. Codex writes a tool call first, then an event containing
-// the native command/file result, and finally a response_item tool result. The
-// IDs on those records are not always the same, so we also keep an ordered
-// queue for command execution events.
+// the native command/file result, and finally a response_item tool result. An
+// event names its call by ID; a command run inside another tool has an ID of
+// its own, so those fall back to file order.
 type codexCallRef struct {
 	callID      string
 	useIndex    int
@@ -182,6 +182,9 @@ func (h *codexHistory) addResponse(item map[string]any, model string, transcript
 			}
 		}
 		parts = filtered
+	}
+	if kind == "websearchcall" && len(parts) > 0 && stringValue(item["id"]) != "" {
+		h.byCallID[stringValue(item["id"])] = &codexCallRef{callID: stringValue(item["id"]), useIndex: len(transcript.Parts), resultIndex: -1, eventKind: kind}
 	}
 	if kind == "functioncall" || kind == "customtoolcall" || kind == "localshellcall" {
 		call := &codexCallRef{callID: stringValue(item["call_id"]), useIndex: len(transcript.Parts), resultIndex: -1}
@@ -275,6 +278,14 @@ func (h *codexHistory) addEvent(payload map[string]any, model string, transcript
 		if h.byCallID[stringValue(item["id"])] == nil {
 			return codexTranscriptParts(item, model)
 		}
+	case "mcptoolcall", "dynamictoolcall", "websearch", "collabagenttoolcall", "imagegeneration":
+		// The response items around this event already show the call; the event
+		// only adds what the provider recorded about its outcome.
+		if call := h.byCallID[stringValue(item["id"])]; call != nil && call.useIndex >= 0 && call.useIndex < len(transcript.Parts) {
+			if parts, ok := codexToolParts(item, model); ok && parts[0].Native != nil && transcript.Parts[call.useIndex].Native == nil {
+				transcript.Parts[call.useIndex].Native = parts[0].Native
+			}
+		}
 	case "agentmessage":
 		// Some native Codex rollouts only persist the human-readable final
 		// answer in event_msg.item_completed.AgentMessage. Newer rollouts also
@@ -331,17 +342,22 @@ func codexAgentMessageText(item map[string]any) string {
 }
 
 func (h *codexHistory) addCommandExecution(item map[string]any, model string, transcript *chatmodel.Transcript) []chatmodel.Part {
+	parts, _ := codexToolParts(item, model)
 	command := codexCommandText(item)
-	var call *codexCallRef
-	// CommandExecution IDs are different from response_item call IDs. Match in
-	// file order, preferring an un-enriched shell call immediately before this
-	// event.
-	for i := len(h.calls) - 1; i >= h.eventCursor; i-- {
-		candidate := h.calls[i]
-		if candidate.eventKind == "" && candidate.useIndex >= 0 {
-			call = candidate
-			h.eventCursor = i + 1
-			break
+	call := h.byCallID[stringValue(item["id"])]
+	if call != nil && call.eventKind != "" {
+		call = nil
+	}
+	if call == nil {
+		// A command run inside another tool: match in file order, preferring an
+		// un-enriched call immediately before this event.
+		for i := len(h.calls) - 1; i >= h.eventCursor; i-- {
+			candidate := h.calls[i]
+			if candidate.eventKind == "" && candidate.useIndex >= 0 {
+				call = candidate
+				h.eventCursor = i + 1
+				break
+			}
 		}
 	}
 	if call == nil {
@@ -355,38 +371,34 @@ func (h *codexHistory) addCommandExecution(item map[string]any, model string, tr
 	output := codexCommandOutput(item)
 	if call != nil {
 		call.eventKind, call.eventOutput = "commandexecution", output
-		if command != "" && call.useIndex >= 0 && call.useIndex < len(transcript.Parts) {
-			transcript.Parts[call.useIndex].Text = command
+		if call.useIndex >= 0 && call.useIndex < len(transcript.Parts) {
+			if command != "" {
+				transcript.Parts[call.useIndex].Text = command
+			}
+			transcript.Parts[call.useIndex].Native = parts[0].Native
 		}
 		if call.resultIndex >= 0 && call.resultIndex < len(transcript.Parts) && output != "" {
 			transcript.Parts[call.resultIndex].Text = output
 		}
 		return nil
 	}
-	if command == "" {
-		command = codexActivity(item)
-	}
-	parts := []chatmodel.Part{{Role: "assistant", Kind: "tool_use", Name: "shell", Text: command, Model: model}}
-	if output != "" {
-		parts = append(parts, chatmodel.Part{Role: "tool", Kind: "tool_result", Text: output})
-	}
 	return parts
 }
 
 func (h *codexHistory) addFileChange(item map[string]any, model string, transcript *chatmodel.Transcript) []chatmodel.Part {
-	callID := stringValue(item["id"])
-	call := h.byCallID[callID]
+	parts, _ := codexToolParts(item, model)
+	call := h.byCallID[stringValue(item["id"])]
 	diff := codexFileChangeDiff(item)
 	if call != nil {
 		call.eventKind, call.eventOutput = "filechange", diff
+		if call.useIndex >= 0 && call.useIndex < len(transcript.Parts) {
+			// The call keeps its own input; the files it changed are native facts.
+			transcript.Parts[call.useIndex].Native = parts[0].Native
+		}
 		if call.resultIndex >= 0 && call.resultIndex < len(transcript.Parts) && diff != "" {
 			transcript.Parts[call.resultIndex].Text = diff
 		}
 		return nil
-	}
-	parts := []chatmodel.Part{{Role: "assistant", Kind: "tool_use", Name: "fileChange", Text: "File change", Model: model}}
-	if diff != "" {
-		parts = append(parts, chatmodel.Part{Role: "tool", Kind: "tool_result", Text: diff})
 	}
 	return parts
 }
@@ -399,7 +411,7 @@ func (h *codexHistory) finish(transcript *chatmodel.Transcript) {
 		if call.resultIndex >= 0 || call.eventOutput == "" || call.useIndex < 0 || call.useIndex >= len(transcript.Parts) {
 			continue
 		}
-		part := chatmodel.Part{Role: "tool", Kind: "tool_result", Text: call.eventOutput}
+		part := chatmodel.Part{ID: call.callID, Role: "tool", Kind: "tool_result", Text: call.eventOutput}
 		at := call.useIndex + 1
 		transcript.Parts = append(transcript.Parts, chatmodel.Part{})
 		copy(transcript.Parts[at+1:], transcript.Parts[at:])

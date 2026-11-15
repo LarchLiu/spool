@@ -72,6 +72,9 @@ also checks current tail/sidecar rename metadata independently of cached turns.
 
 ## Verification
 
+Opened history, native pagination and tool activity projection are described in
+[agent-session-history.md](agent-session-history.md).
+
 Run ordinary offline tests and vet with the repository's scoped targets:
 
 ```sh

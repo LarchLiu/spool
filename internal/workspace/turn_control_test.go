@@ -92,7 +92,16 @@ func TestStopResponseCancelsOnlyOwnedTurnAndPreservesResume(t *testing.T) {
 				t.Fatalf("stop: %d %s", w.Code, w.Body.String())
 			}
 			var stopped chatmodel.Session
-			if json.Unmarshal(w.Body.Bytes(), &stopped) != nil || stopped.Status != chatmodel.StatusStopped || len(stopped.Transcript.Parts) == 0 || stopped.Transcript.Parts[len(stopped.Transcript.Parts)-1].Text != "Partial reply" || stopped.Turns[0].FinishedAt == 0 || stopped.NativeSessionID != "" {
+			// The fixture's Claude turn also announced a tool call without input.
+			reply := ""
+			if json.Unmarshal(w.Body.Bytes(), &stopped) == nil {
+				for _, part := range stopped.Transcript.Parts {
+					if part.Role == "assistant" && part.Kind == "text" {
+						reply = part.Text
+					}
+				}
+			}
+			if stopped.Status != chatmodel.StatusStopped || reply != "Partial reply" || len(stopped.Turns) == 0 || stopped.Turns[0].FinishedAt == 0 || stopped.NativeSessionID != "" {
 				t.Fatalf("partial response/status lost or native ID exposed: %s", w.Body.String())
 			}
 			agentfixture.WaitExit(t, pid)

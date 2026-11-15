@@ -2094,6 +2094,13 @@ a.attachment-open {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.tool-activity-outcome {
+  flex-shrink: 0;
+  color: var(--error-text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .tool-activity-caret {
   display: inline-flex;
   align-items: center;
