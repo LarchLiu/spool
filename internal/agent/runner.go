@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	chatmodel "spool/internal/model"
@@ -36,6 +35,8 @@ type AgentRequest struct {
 	Approve             chatmodel.ApprovalHandler
 }
 
+// AgentEvent types: session, turn, model, delta, message, retract, part,
+// activity, compaction, and tool (a call already shown, now with its outcome).
 type AgentEvent struct {
 	Type            string          `json:"type"`
 	Compacting      bool            `json:"compacting,omitempty"`
@@ -254,6 +255,9 @@ func codexTranscriptParts(item map[string]any, model string) []chatmodel.Part {
 	if codexCompactionItem(item) {
 		return nil
 	}
+	if parts, ok := codexToolParts(item, model); ok {
+		return parts
+	}
 	kind := codexItemKind(item)
 	switch kind {
 	case "message":
@@ -302,6 +306,14 @@ func codexTranscriptParts(item map[string]any, model string) []chatmodel.Part {
 		if len(text) == 0 {
 			if content, ok := item["content"].([]any); ok {
 				for _, value := range content {
+					// App-server content is a string array; rollout content uses
+					// typed text blocks. Both carry the body when no summary exists.
+					if value, ok := value.(string); ok {
+						if value != "" {
+							text = append(text, value)
+						}
+						continue
+					}
 					block, _ := value.(map[string]any)
 					for _, key := range []string{"text", "reasoning_text", "summary_text"} {
 						if value := stringValue(block[key]); value != "" {
@@ -315,13 +327,13 @@ func codexTranscriptParts(item map[string]any, model string) []chatmodel.Part {
 		if len(text) == 0 {
 			return nil
 		}
-		return []chatmodel.Part{transcriptModelPart(chatmodel.Part{Role: "assistant", Kind: "thinking", Text: strings.Join(text, "\n\n")}, model)}
+		return []chatmodel.Part{transcriptModelPart(chatmodel.Part{ID: stringValue(item["id"]), Role: "assistant", Kind: "thinking", Text: strings.Join(text, "\n\n")}, model)}
 	case "functioncall":
 		return []chatmodel.Part{{ID: stringValue(item["call_id"]), Role: "assistant", Kind: "tool_use", Name: stringValue(item["name"]), Text: prettyJSONText(stringValue(item["arguments"])), Model: model}}
 	case "customtoolcall":
 		return []chatmodel.Part{{ID: stringValue(item["call_id"]), Role: "assistant", Kind: "tool_use", Name: stringValue(item["name"]), Text: stringValue(item["input"]), Model: model}}
 	case "localshellcall":
-		return []chatmodel.Part{{Role: "assistant", Kind: "tool_use", Name: "shell", Text: codexCommandText(item), Model: model}}
+		return []chatmodel.Part{{ID: codexLocalShellID(item), Role: "assistant", Kind: "tool_use", Name: "shell", Text: codexCommandText(item), Model: model}}
 	case "imageview":
 		if path := stringValue(item["path"]); path != "" {
 			input, _ := json.Marshal(map[string]string{"path": path})
@@ -330,29 +342,18 @@ func codexTranscriptParts(item map[string]any, model string) []chatmodel.Part {
 		return nil
 	case "functioncalloutput", "customtoolcalloutput":
 		return []chatmodel.Part{{ID: stringValue(item["call_id"]), Role: "tool", Kind: "tool_result", Text: codexTranscriptOutput(item["output"]), Images: codexToolImages(item["output"])}}
-	case "commandexecution":
-		command := codexCommandText(item)
-		if command == "" {
-			command = codexActivity(item)
-		}
-		parts := []chatmodel.Part{{Role: "assistant", Kind: "tool_use", Name: "shell", Text: command, Model: model}}
-		if output := codexCommandOutput(item); output != "" {
-			parts = append(parts, chatmodel.Part{Role: "tool", Kind: "tool_result", Text: output})
-		}
-		return parts
-	case "filechange":
-		text := stringValue(item["title"])
-		if text == "" {
-			text = codexActivity(item)
-		}
-		parts := []chatmodel.Part{{Role: "assistant", Kind: "tool_use", Name: "fileChange", Text: text, Model: model}}
-		if diff := codexFileChangeDiff(item); diff != "" {
-			parts = append(parts, chatmodel.Part{Role: "tool", Kind: "tool_result", Text: diff})
-		}
-		return parts
 	default:
 		return nil
 	}
+}
+
+// A local shell call's output names it by call_id, like any function call; the
+// item's own id is only a fallback for a record without one.
+func codexLocalShellID(item map[string]any) string {
+	if id := stringValue(item["call_id"]); id != "" {
+		return id
+	}
+	return stringValue(item["id"])
 }
 
 func codexCommandOutput(item map[string]any) string {
@@ -378,140 +379,22 @@ func codexCommandOutput(item map[string]any) string {
 	return ""
 }
 
+// codexFileChangeDiff is a file change as one unified diff of all its files.
 func codexFileChangeDiff(item map[string]any) string {
+	var diffs []string
+	for _, change := range codexFileChanges(item) {
+		if change.diff != "" {
+			diffs = append(diffs, change.diff)
+		}
+	}
+	if len(diffs) > 0 {
+		return strings.Join(diffs, "\n")
+	}
+	// Older records carry one combined patch instead of per-file changes.
 	if diff := stringValue(item["diff"]); diff != "" {
 		return diff
 	}
-	if diff := stringValue(item["patch"]); diff != "" {
-		return diff
-	}
-	changes, _ := item["changes"].([]any)
-	if changesMap, ok := item["changes"].(map[string]any); ok {
-		changes = make([]any, 0, len(changesMap))
-		paths := make([]string, 0, len(changesMap))
-		for path := range changesMap {
-			paths = append(paths, path)
-		}
-		sort.Strings(paths)
-		for _, path := range paths {
-			value := changesMap[path]
-			change, _ := value.(map[string]any)
-			if change == nil {
-				// Some Codex versions use a path -> patch/content map rather
-				// than a path -> structured change object.
-				if text, ok := value.(string); ok {
-					change = map[string]any{"diff": text}
-				} else {
-					change = map[string]any{}
-				}
-			}
-			if stringValue(change["path"]) == "" {
-				change["path"] = path
-			}
-			changes = append(changes, change)
-		}
-	}
-	var diffs []string
-	for _, value := range changes {
-		change, _ := value.(map[string]any)
-		path := stringValue(change["path"])
-		if path == "" {
-			path = stringValue(change["file_path"])
-		}
-		if path == "" {
-			path = stringValue(change["filePath"])
-		}
-		diff := codexChangeDiff(change, path)
-		if diff == "" {
-			continue
-		}
-		diffs = append(diffs, diff)
-	}
-	return strings.Join(diffs, "\n")
-}
-
-func codexChangeDiff(change map[string]any, path string) string {
-	if change == nil {
-		return ""
-	}
-	diff := stringValue(change["diff"])
-	if diff == "" {
-		diff = stringValue(change["patch"])
-	}
-	if diff == "" {
-		diff = stringValue(change["unified_diff"])
-	}
-	if diff != "" {
-		if path != "" && !strings.Contains(diff, "diff --git ") {
-			diff = "diff --git a/" + path + " b/" + path + "\n--- a/" + path + "\n+++ b/" + path + "\n" + diff
-		}
-		return diff
-	}
-	kind := strings.ToLower(stringValue(change["type"]))
-	if kind == "" {
-		kind = strings.ToLower(stringValue(change["kind"]))
-	}
-	content := codexTranscriptOutput(change["content"])
-	if content == "" {
-		content = codexTranscriptOutput(change["new_content"])
-	}
-	if content == "" {
-		content = codexTranscriptOutput(change["newContent"])
-	}
-	if content == "" {
-		content = codexTranscriptOutput(change["newString"])
-	}
-	old := codexTranscriptOutput(change["old_content"])
-	if old == "" {
-		old = codexTranscriptOutput(change["originalFile"])
-	}
-	if old == "" {
-		old = codexTranscriptOutput(change["oldContent"])
-	}
-	if old == "" {
-		old = codexTranscriptOutput(change["original_file"])
-	}
-	if path == "" {
-		path = "file"
-	}
-	switch kind {
-	case "add", "create", "created":
-		lines := prefixedLines(content, "+")
-		return strings.Join(append([]string{
-			"diff --git a/" + path + " b/" + path,
-			"--- /dev/null",
-			"+++ b/" + path,
-			fmt.Sprintf("@@ -0,0 +1,%d @@", len(lines)),
-		}, lines...), "\n")
-	case "delete", "remove", "deleted":
-		lines := prefixedLines(oldOrContent(old, content), "-")
-		return strings.Join(append([]string{
-			"diff --git a/" + path + " b/" + path,
-			"--- a/" + path,
-			"+++ /dev/null",
-			fmt.Sprintf("@@ -1,%d +0,0 @@", len(lines)),
-		}, lines...), "\n")
-	case "update", "edit", "modify", "modified", "change":
-		if old == "" && content == "" {
-			return ""
-		}
-		oldLines := prefixedLines(old, "-")
-		newLines := prefixedLines(content, "+")
-		return strings.Join(append([]string{
-			"diff --git a/" + path + " b/" + path,
-			"--- a/" + path,
-			"+++ b/" + path,
-			fmt.Sprintf("@@ -1,%d +1,%d @@", len(oldLines), len(newLines)),
-		}, append(oldLines, newLines...)...), "\n")
-	}
-	return ""
-}
-
-func oldOrContent(old, content string) string {
-	if old != "" {
-		return old
-	}
-	return content
+	return stringValue(item["patch"])
 }
 
 func transcriptTextPart(role, text, model string) chatmodel.Part {
@@ -591,7 +474,7 @@ func codexToolImages(value any) []string {
 
 func claudeToolResultPart(item map[string]any) chatmodel.Part {
 	parts := claudeTranscriptParts("user", []any{map[string]any{
-		"type": "tool_result", "content": item["content"], "tool_use_id": item["tool_use_id"],
+		"type": "tool_result", "content": item["content"], "tool_use_id": item["tool_use_id"], "is_error": item["is_error"],
 	}}, "")
 	if len(parts) > 0 {
 		return parts[0]
@@ -666,8 +549,15 @@ func claudeTranscriptParts(role string, content any, model string) []chatmodel.P
 				}
 				text = strings.Join(content, "\n")
 			}
-			if text != "" {
-				parts = append(parts, chatmodel.Part{ID: stringValue(block["tool_use_id"]), Role: "tool", Kind: "tool_result", Text: text, Images: images})
+			if text != "" || block["is_error"] != nil {
+				part := chatmodel.Part{ID: stringValue(block["tool_use_id"]), Role: "tool", Kind: "tool_result", Text: text, Images: images}
+				if failed, ok := block["is_error"].(bool); ok {
+					part.Native = &chatmodel.ToolNative{Status: chatmodel.ToolCompleted}
+					if failed {
+						part.Native.Status = chatmodel.ToolFailed
+					}
+				}
+				parts = append(parts, part)
 			}
 		case "image":
 			source, _ := block["source"].(map[string]any)

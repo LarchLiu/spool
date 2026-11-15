@@ -40,6 +40,7 @@ type nativeHistory struct {
 	info      os.FileInfo
 	indexed   bool
 	index     []agent.NativeTurn
+	codex     *agent.CodexMetadata
 	title     string
 	directory string
 	parts     []chatmodel.Transcript
@@ -61,11 +62,15 @@ func (c *nativeHistoryCache) file(backend chatmodel.Backend, path string) (*nati
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	info, err := os.Stat(path)
+	var codex *agent.CodexMetadata
 	if previous := c.files[key]; previous != nil {
 		if err == nil && sameHistoryFile(previous.info, info) {
 			c.fileLRU.MoveToFront(previous.lru)
 			return previous, nil
 		}
+		// This reader validates file identity and append boundaries itself.
+		// Keep it across generations so growth only scans appended records.
+		codex = previous.codex
 		c.removeFile(previous)
 	}
 	if err != nil {
@@ -74,7 +79,10 @@ func (c *nativeHistoryCache) file(backend chatmodel.Backend, path string) (*nati
 	if c.files == nil {
 		c.files = make(map[string]*nativeHistory)
 	}
-	file := &nativeHistory{key: key, backend: backend, path: path, info: info}
+	if codex == nil {
+		codex = &agent.CodexMetadata{}
+	}
+	file := &nativeHistory{key: key, backend: backend, path: path, info: info, codex: codex}
 	file.lru = c.fileLRU.PushFront(file)
 	c.files[key] = file
 	limit := c.maxFiles
@@ -85,6 +93,14 @@ func (c *nativeHistoryCache) file(backend chatmodel.Backend, path string) (*nati
 		c.removeFile(c.fileLRU.Back().Value.(*nativeHistory))
 	}
 	return file, nil
+}
+
+func (c *nativeHistoryCache) codexTurnMetadata(path string, turns []agent.CodexHistoryTurn) (map[string]agent.CodexTurnContext, error) {
+	file, err := c.file(chatmodel.BackendCodex, path)
+	if err != nil {
+		return nil, err
+	}
+	return file.codex.Read(path, turns)
 }
 
 // Serialize readers of the same file, not unrelated conversations. The first
@@ -156,7 +172,7 @@ func (c *nativeHistoryCache) transcripts(file *nativeHistory) ([]chatmodel.Trans
 		for j := range transcript.Parts {
 			part := &transcript.Parts[j]
 			if toolPart(*part) {
-				if part.Kind == "tool_result" && len(part.Images) == 0 {
+				if part.Kind == "tool_result" && len(part.Images) == 0 && part.Native == nil {
 					version := toolBodyVersion(part.Text)
 					if summary := outputs[version]; summary != nil {
 						copy := *summary
@@ -185,7 +201,10 @@ func (c *nativeHistoryCache) transcripts(file *nativeHistory) ([]chatmodel.Trans
 					bytes += 16 + len(path)
 				}
 				for _, operation := range part.Tool.Operations {
-					bytes += 64 + len(operation.Kind) + len(operation.Command) + len(operation.Path)
+					bytes += 64 + len(operation.Kind) + len(operation.Command) + len(operation.Path) + len(operation.Query)
+				}
+				for _, file := range part.Tool.Files {
+					bytes += 64 + len(file.Path) + len(file.MovePath)
 				}
 			}
 		}

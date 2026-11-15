@@ -178,6 +178,7 @@ func (s *Store) saveSettingsLocked(v Settings) error {
 	_, err := s.db.Exec(`INSERT INTO settings VALUES('server',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, string(b))
 	if err == nil {
 		s.historyCache.setMaxBytes(v.HistoryCacheMiB * 1024 * 1024)
+		s.codexHistory.setMaxBytes(v.HistoryCacheMiB * 1024 * 1024)
 	}
 	return err
 }

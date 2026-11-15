@@ -82,6 +82,7 @@ final class NativeText {
             case "Code copied": value = "代码已复制"; break;
             case "Collapse file sidebar": value = "收起文件侧栏"; break;
             case "Command": value = "命令"; break;
+            case "Command and output": value = "完整命令与输出"; break;
             case "Command execution": value = "执行命令"; break;
             case "Compact context": value = "压缩上下文"; break;
             case "Compacting context…": value = "正在压缩上下文…"; break;
@@ -144,6 +145,12 @@ final class NativeText {
             case "Downloading update: {percent}%": value = "正在下载更新：{percent}%"; break;
             case "Edit prompt": value = "修改提示词"; break;
             case "Edited files": value = "编辑文件"; break;
+            case "Edit files": value = "编辑文件"; break;
+            case "Edit {path}": value = "编辑 {path}"; break;
+            case "Create files": value = "创建文件"; break;
+            case "Create {path}": value = "创建 {path}"; break;
+            case "Delete files": value = "删除文件"; break;
+            case "Delete {path}": value = "删除 {path}"; break;
             case "Edited {path}": value = "编辑 {path}"; break;
             case "Enable bypass": value = "确认跳过检查"; break;
             case "Enable full screen": value = "启用全屏"; break;
@@ -294,6 +301,10 @@ final class NativeText {
             case "Resize file preview": value = "调整文件预览高度"; break;
             case "Restoring sign-in…": value = "正在恢复登录…"; break;
             case "Result": value = "结果"; break;
+            case "Failed": value = "失败"; break;
+            case "Declined": value = "已拒绝"; break;
+            case "Exit code {code}": value = "退出码 {code}"; break;
+            case "{count} failed": value = "{count} 项失败"; break;
             case "Resume conversation": value = "恢复会话"; break;
             case "Resume this conversation": value = "恢复此会话"; break;
             case "Resume with newer model": value = "使用新模型恢复"; break;
@@ -513,6 +524,7 @@ final class NativeText {
             case "Code copied": value = "コードをコピーしました"; break;
             case "Collapse file sidebar": value = "ファイルサイドバーを閉じる"; break;
             case "Command": value = "コマンド"; break;
+            case "Command and output": value = "コマンドと出力"; break;
             case "Command execution": value = "コマンドの実行"; break;
             case "Compact context": value = "コンテキストを圧縮"; break;
             case "Compacting context…": value = "コンテキストを圧縮中…"; break;
@@ -575,6 +587,12 @@ final class NativeText {
             case "Downloading update: {percent}%": value = "更新をダウンロード中：{percent}%"; break;
             case "Edit prompt": value = "プロンプトを編集"; break;
             case "Edited files": value = "ファイルを編集"; break;
+            case "Edit files": value = "ファイルを編集"; break;
+            case "Edit {path}": value = "{path} を編集"; break;
+            case "Create files": value = "ファイルを作成"; break;
+            case "Create {path}": value = "{path} を作成"; break;
+            case "Delete files": value = "ファイルを削除"; break;
+            case "Delete {path}": value = "{path} を削除"; break;
             case "Edited {path}": value = "{path} を編集"; break;
             case "Enable bypass": value = "スキップを有効化"; break;
             case "Enable full screen": value = "全画面表示を有効化"; break;
@@ -725,6 +743,10 @@ final class NativeText {
             case "Resize file preview": value = "ファイルプレビューの高さを変更"; break;
             case "Restoring sign-in…": value = "ログインを復元中…"; break;
             case "Result": value = "結果"; break;
+            case "Failed": value = "失敗"; break;
+            case "Declined": value = "拒否"; break;
+            case "Exit code {code}": value = "終了コード {code}"; break;
+            case "{count} failed": value = "{count} 件失敗"; break;
             case "Resume conversation": value = "会話を再開"; break;
             case "Resume this conversation": value = "この会話を再開"; break;
             case "Resume with newer model": value = "新しいモデルで再開"; break;

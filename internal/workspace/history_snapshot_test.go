@@ -47,6 +47,27 @@ func appendNativeTurns(t *testing.T, path string, first, count, outputs int, dis
 	}
 }
 
+func TestRuntimeTurnPreservesModelAndReasoningEffort(t *testing.T) {
+	store := testStore(t)
+	current := chatmodel.Turn{ID: "live-turn", NativeTurnID: "native-turn", Model: "live-model", ReasoningEffort: "high", Status: chatmodel.StatusCompleted}
+	store.setRuntimeTurn("chat", current)
+	for _, tc := range []struct {
+		name, model, effort, wantModel, wantEffort string
+	}{
+		{"missing both", "", "", "live-model", "high"},
+		{"missing effort", "native-model", "", "native-model", "high"},
+		{"native metadata", "native-model", "low", "native-model", "low"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chat := chatmodel.Session{ID: "chat", Turns: []chatmodel.Turn{{NativeTurnID: current.NativeTurnID, Model: tc.model, ReasoningEffort: tc.effort}}}
+			snapshot := store.withRuntimeTurn(chat)
+			if len(snapshot.Turns) != 1 || snapshot.Turns[0].ID != current.ID || snapshot.Turns[0].Model != tc.wantModel || snapshot.Turns[0].ReasoningEffort != tc.wantEffort {
+				t.Fatalf("merged turn: %+v", snapshot.Turns)
+			}
+		})
+	}
+}
+
 func TestHistoryLoadsAllNativeTurnsWithoutSQLiteRows(t *testing.T) {
 	store := testStore(t)
 	indexes, reads := countNativeHistoryReads(store)

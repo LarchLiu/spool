@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -156,6 +157,77 @@ func Run(t *testing.T) {
 					cursor = nil
 				}
 				send(map[string]any{"id": value["id"], "result": map[string]any{"data": models, "nextCursor": cursor}})
+			case "thread/list":
+				var pages map[string]json.RawMessage
+				body, err := os.ReadFile("fixture-thread-pages.json")
+				if err != nil || json.Unmarshal(body, &pages) != nil {
+					send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32603, "message": "fixture list unavailable"}})
+					continue
+				}
+				result, ok := pages[StringValue(params["cursor"])]
+				if !ok {
+					send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32600, "message": "unexpected fixture cursor"}})
+					continue
+				}
+				send(map[string]any{"id": value["id"], "result": result})
+			case "thread/read", "thread/turns/list", "thread/items/read", "thread/items/list":
+				// fixture-thread-history.json maps a thread ID to its metadata and
+				// turns (newest first); without it the fixture has no paged history.
+				var threads map[string]struct {
+					Thread map[string]any `json:"thread"`
+					Turns  []any          `json:"turns"`
+				}
+				body, err := os.ReadFile("fixture-thread-history.json")
+				ok := false
+				entry := threads[""]
+				if err == nil && json.Unmarshal(body, &threads) == nil {
+					entry, ok = threads[StringValue(params["threadId"])]
+				}
+				if !ok {
+					send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32601, "message": method + " is not supported yet"}})
+					continue
+				}
+				if method == "thread/read" {
+					send(map[string]any{"id": value["id"], "result": map[string]any{"thread": entry.Thread}})
+					continue
+				}
+				if method == "thread/items/read" || method == "thread/items/list" {
+					if method == "thread/items/read" {
+						if _, err := os.Stat("unsupported-item-read"); err == nil {
+							send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32601, "message": "unsupported item read"}})
+							continue
+						}
+					}
+					var data []any
+					for _, raw := range entry.Turns {
+						turn, _ := raw.(map[string]any)
+						if turn["id"] != params["turnId"] {
+							continue
+						}
+						items, _ := turn["items"].([]any)
+						for _, rawItem := range items {
+							item, _ := rawItem.(map[string]any)
+							keep := method == "thread/items/list"
+							ids, _ := params["itemIds"].([]any)
+							for _, id := range ids {
+								keep = keep || id == item["id"]
+							}
+							if keep {
+								data = append(data, map[string]any{"turnId": turn["id"], "item": item})
+							}
+						}
+					}
+					send(map[string]any{"id": value["id"], "result": map[string]any{"data": data}})
+					continue
+				}
+				start, _ := strconv.Atoi(StringValue(params["cursor"]))
+				limit, _ := params["limit"].(float64)
+				end := min(len(entry.Turns), start+max(1, int(limit)))
+				var next any
+				if end < len(entry.Turns) {
+					next = strconv.Itoa(end)
+				}
+				send(map[string]any{"id": value["id"], "result": map[string]any{"data": entry.Turns[min(start, end):end], "nextCursor": next}})
 			case "thread/start", "thread/resume":
 				if method == "thread/resume" {
 					thread = StringValue(params["threadId"])
@@ -397,6 +469,17 @@ func Run(t *testing.T) {
 			notify("item/completed", map[string]any{"item": map[string]any{"id": "reasoning", "type": "reasoning", "summary": []any{map[string]any{"text": "Checking the fixture before running the tool."}}}})
 			notify("item/started", map[string]any{"item": map[string]any{"id": "tool", "type": "commandExecution", "command": []string{"git", "status", "--short"}}})
 			notify("item/commandExecution/outputDelta", map[string]any{"itemId": "tool", "delta": "fixture output\n"})
+			if strings.Contains(prompt, "restated-items") {
+				// Completions that restate what was streamed rather than continue it.
+				notify("item/started", map[string]any{"item": map[string]any{"id": "sections", "type": "reasoning", "summary": []any{}}})
+				notify("item/reasoning/summaryTextDelta", map[string]any{"itemId": "sections", "summaryIndex": 0, "delta": "First section"})
+				notify("item/reasoning/summaryTextDelta", map[string]any{"itemId": "sections", "summaryIndex": 1, "delta": "Second section"})
+				notify("item/completed", map[string]any{"item": map[string]any{"id": "sections", "type": "reasoning", "summary": []any{map[string]any{"text": "First section"}, map[string]any{"text": "Second section"}}}})
+				notify("item/completed", map[string]any{"item": map[string]any{"id": "tool", "type": "commandExecution", "command": []string{"git", "status", "--short"}, "aggregatedOutput": "", "exitCode": 0, "status": "completed"}})
+				notify("item/started", map[string]any{"item": map[string]any{"id": "rerun", "type": "commandExecution", "command": []string{"go", "test"}}})
+				notify("item/commandExecution/outputDelta", map[string]any{"itemId": "rerun", "delta": "streamed\n"})
+				notify("item/completed", map[string]any{"item": map[string]any{"id": "rerun", "type": "commandExecution", "command": []string{"go", "test"}, "aggregatedOutput": "final\n", "exitCode": 1, "status": "failed"}})
+			}
 			if strings.Contains(prompt, "file-change") {
 				notify("item/started", map[string]any{"item": map[string]any{"id": "file-change", "type": "fileChange"}})
 				notify("item/fileChange/patchUpdated", map[string]any{"itemId": "file-change", "changes": []any{map[string]any{"path": "main.go", "diff": "@@ -1 +1 @@\n-old\n+new"}}})

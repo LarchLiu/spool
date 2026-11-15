@@ -8278,8 +8278,8 @@
             "name": "exec_command",
             "text": "{\"cmd\":\"rg -n foo src\"}"
           },
-          "kind": "read",
-          "label": "Read files",
+          "kind": "search",
+          "label": "Searched for foo in src",
           "detail": "{\"cmd\":\"rg -n foo src\"}",
           "images": [],
           "stats": "",
@@ -8293,7 +8293,7 @@
             "text": "{\"cmd\":\"cat README.md\"}"
           },
           "kind": "read",
-          "label": "Read files",
+          "label": "Read README.md",
           "detail": "{\"cmd\":\"cat README.md\"}",
           "images": [],
           "stats": "",
@@ -8902,8 +8902,8 @@
             "name": "exec_command",
             "text": "{\"cmd\":\"rg -n foo src\"}"
           },
-          "kind": "read",
-          "label": "读取文件",
+          "kind": "search",
+          "label": "在 src 中搜索 foo",
           "detail": "{\"cmd\":\"rg -n foo src\"}",
           "images": [],
           "stats": "",
@@ -8917,7 +8917,7 @@
             "text": "{\"cmd\":\"cat README.md\"}"
           },
           "kind": "read",
-          "label": "读取文件",
+          "label": "读取 README.md",
           "detail": "{\"cmd\":\"cat README.md\"}",
           "images": [],
           "stats": "",

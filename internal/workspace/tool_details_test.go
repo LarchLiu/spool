@@ -28,12 +28,13 @@ func toolDetailChat(text string) chatmodel.Session {
 func TestToolSummaryMatchesActivityLabelsAndStatistics(t *testing.T) {
 	for _, tc := range []struct{ name, text, kind, path, query string }{
 		{"Read", `{"file_path":"src/a.go"}`, "read", "src/a.go", ""},
-		{"functions.exec_command", `{"cmd":"rg TODO","path":"src","pattern":"TODO"}`, "read", "src", "TODO"},
+		{"functions.exec_command", `{"cmd":"rg TODO","path":"src","pattern":"TODO"}`, "search", "src", "TODO"},
+		{"Bash", `{"command":"sed -n '1,20p' a/b/c/d.go"}`, "read", "…/b/c/d.go", ""},
 		{"apply_patch", "*** Begin Patch\n*** Add File: a/b/c/d.go\n+find cat\n*** End Patch", "create", "\u2026/b/c/d.go", ""},
 		{"apply_patch", "*** Begin Patch\n*** Delete File: gone.go\n*** End Patch", "delete", "gone.go", ""},
 		{"Edit", `{"file_path":"ui.tsx","new_string":"find cat"}`, "write", "ui.tsx", ""},
 		{"WebSearch", `{"query":"Go cache"}`, "web", "", "Go cache"},
-		{"functions.exec_command", `{"cmd":"ls src"}`, "list", "", ""},
+		{"functions.exec_command", `{"cmd":"ls src"}`, "list", "src", ""},
 		{"reasoning", strings.Repeat("thinking ", 10000), "thinking", "", ""},
 	} {
 		part := chatmodel.Part{Role: "assistant", Kind: "tool_use", Name: tc.name, Text: tc.text}

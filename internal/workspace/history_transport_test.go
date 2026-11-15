@@ -155,8 +155,14 @@ func TestHistoryTransportSSEDoesNotBypassPagination(t *testing.T) {
 			if len(page.Turns) == 0 || page.Turns[len(page.Turns)-1].ID != turn.ID {
 				continue
 			}
+			// BeginTurn publishes before the synthetic reply is installed. Its
+			// input-only snapshot is valid; wait for the output being checked.
+			current := page.Turns[len(page.Turns)-1]
+			if current.PartEnd == current.InputEnd {
+				continue
+			}
 			if len(page.Turns) != 1 || len(page.Transcript.Parts) != 2 || page.Transcript.Parts[1].Text != turn.Reply || !page.History.HasMore || page.Turns[0].PartStart != 0 || page.Turns[0].PartEnd != 2 {
-				t.Fatal("SSE truncated live content or used global part ranges")
+				t.Fatalf("SSE truncated live content or used global part ranges: turns=%d parts=%d current range=%d:%d:%d", len(page.Turns), len(page.Transcript.Parts), current.PartStart, current.InputEnd, current.PartEnd)
 			}
 			return
 		case <-deadline.C:

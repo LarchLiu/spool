@@ -23,9 +23,12 @@ func historyWindow(chat chatmodel.Session) chatmodel.Session {
 	return page
 }
 
-// Pagination is a transport concern only. The store has already decoded and
-// cached the entire native session, and live state remains complete in memory.
+// Native pages preserve app-server boundaries and cursors. File readers use
+// the byte-budget transport window below.
 func historyPage(chat chatmodel.Session, before string) (chatmodel.Session, error) {
+	if chat.History != nil && chat.History.Native && before == "" {
+		return chat, nil
+	}
 	end := len(chat.Turns)
 	if before != "" {
 		cursor, after := strings.CutPrefix(before, "after-")
@@ -51,7 +54,9 @@ func historyPage(chat chatmodel.Session, before string) (chatmodel.Session, erro
 			size += len(part.Text) + len(part.ImageURL)
 		}
 	}
-	history := &chatmodel.HistoryState{HasMore: start > 0}
+	// A natively paged chat holds only its loaded turns; more may exist before.
+	upstream := chat.History != nil && chat.History.HasMore
+	history := &chatmodel.HistoryState{HasMore: start > 0 || upstream && len(chat.Turns) > 0}
 	if chat.History != nil {
 		history.Error = chat.History.Error
 	}
@@ -59,6 +64,10 @@ func historyPage(chat chatmodel.Session, before string) (chatmodel.Session, erro
 		// Anchor to the preceding turn, not an unwritten live turn whose native
 		// identity may change before the next page is requested.
 		history.Before = "after-" + historyCursor(chat.ID, chat.Turns[start-1])
+	} else if history.HasMore {
+		// Nothing loaded precedes this page. What does is the provider's to
+		// page, from the cursor that came with the loaded turns.
+		history.Before = chat.History.Before
 	}
 	base, limit := 0, 0
 	if start < end {

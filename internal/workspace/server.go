@@ -52,6 +52,7 @@ type App struct {
 	// resumed chat needs this base while its provider is streaming new parts.
 	liveBase     map[string]chatmodel.Transcript
 	liveTurns    map[string][]chatmodel.Turn
+	liveHistory  map[string]*chatmodel.HistoryState
 	completed    map[string]completedTurn
 	presence     *Presence
 	limiter      loginLimiter
@@ -420,12 +421,37 @@ func (a *App) accessibleChat(user, id string) (chatmodel.Session, bool) {
 	chat.CanControl = &allowed
 	return chat, ok
 }
+
+// The caller has authorized this chat. Native locators resolve one item even
+// after a restart, independently of the pages a viewer has scrolled through.
+func (a *App) snapshotWithTool(ctx context.Context, chat chatmodel.Session, ref string) chatmodel.Session {
+	snapshot := a.snapshot(chat)
+	for _, turn := range snapshot.Turns {
+		for i := max(0, turn.PartStart); i < min(turn.PartEnd, len(snapshot.Transcript.Parts)); i++ {
+			if part := snapshot.Transcript.Parts[i]; toolPart(part) && toolPartRef(snapshot.ID, turn, i, part) == ref {
+				return snapshot
+			}
+		}
+	}
+	if strings.HasPrefix(ref, "native-tool-") {
+		located, err := a.store.codexToolSnapshot(ctx, chat, ref)
+		if err == nil {
+			return located
+		}
+		if !errors.Is(err, errHistoryCursor) {
+			snapshot.History = &chatmodel.HistoryState{Error: "Native session history is unavailable"}
+		}
+	}
+	return snapshot
+}
+
 func (a *App) snapshot(chat chatmodel.Session) chatmodel.Session {
 	a.liveMu.Lock()
 	defer a.liveMu.Unlock()
 	if t, ok := a.live[chat.ID]; ok && chat.Status == chatmodel.StatusRunning {
 		base := a.liveBase[chat.ID]
 		chat.Transcript = runningTranscript(base, t)
+		chat.History = a.liveHistory[chat.ID]
 		chat.Turns = append(append([]chatmodel.Turn(nil), a.liveTurns[chat.ID]...), t)
 		start := max(0, min(t.PartStart, len(chat.Transcript.Parts)))
 		t.PartStart = start
@@ -552,22 +578,39 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		return
 	}
 	if len(parts) == 2 && parts[1] == "tool-detail" && r.Method == "GET" {
-		a.toolDetailResponse(w, r, a.snapshot(chat), started)
+		a.toolDetailResponse(w, r, a.snapshotWithTool(r.Context(), chat, r.URL.Query().Get("ref")), started)
 		return
 	}
 	if len(parts) == 2 && parts[1] == "tool-image" && (r.Method == "GET" || r.Method == "HEAD") {
-		a.toolImageResponse(w, r, a.snapshot(chat))
+		a.toolImageResponse(w, r, a.snapshotWithTool(r.Context(), chat, r.URL.Query().Get("ref")))
 		return
 	}
 	if len(parts) == 2 && parts[1] == "history" && r.Method == "GET" {
-		chat = a.snapshot(chat)
-		if chat.History != nil && chat.History.Error != "" {
+		before := r.URL.Query().Get("before")
+		if strings.HasPrefix(before, "native-") {
+			// Codex continues from its own cursor; no loaded window is involved.
+			page, err := a.store.codexHistoryPage(r.Context(), chat, before)
+			if errors.Is(err, errHistoryCursor) {
+				apiError(w, 400, "Invalid history cursor")
+			} else if err != nil {
+				apiError(w, 503, "Native session history is unavailable")
+			} else {
+				apiJSON(w, 200, transportSession(r, page))
+			}
+			return
+		}
+		current := a.snapshot(chat)
+		if current.History != nil && current.History.Error != "" {
 			apiError(w, 503, "Native session history is unavailable")
 			return
 		}
-		page, err := historyPage(chat, r.URL.Query().Get("before"))
+		page, err := historyPage(current, before)
 		if err != nil {
-			apiError(w, 400, "Invalid history cursor")
+			if errors.Is(err, errHistoryCursor) {
+				apiError(w, 400, "Invalid history cursor")
+			} else {
+				apiError(w, 503, "Native session history is unavailable")
+			}
 			return
 		}
 		apiJSON(w, 200, transportSession(r, page))
@@ -811,6 +854,10 @@ func (a *App) seedLiveTurn(chat chatmodel.Session, turn chatmodel.Turn) chatmode
 	a.liveMu.Lock()
 	delete(a.completed, chat.ID)
 	a.liveBase[chat.ID] = base
+	if a.liveHistory == nil {
+		a.liveHistory = map[string]*chatmodel.HistoryState{}
+	}
+	a.liveHistory[chat.ID] = chat.History
 	a.liveTurns[chat.ID] = append([]chatmodel.Turn(nil), chat.Turns...)
 	a.live[chat.ID] = turn
 	a.liveMu.Unlock()
@@ -898,6 +945,7 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 			pushStatus = terminal.Status
 			delete(a.live, id)
 			delete(a.liveBase, id)
+			delete(a.liveHistory, id)
 			delete(a.liveTurns, id)
 			finishedID := terminal.ID
 			finishedAt := terminal.FinishedAt
@@ -1039,6 +1087,12 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 				part = *event.Part
 			}
 			appendTurnPart(&current, part)
+		case "tool":
+			// A call announced earlier has finished; if it was never announced
+			// (an item that only completes), show it now.
+			if event.Part != nil && !updateTurnTool(&current, *event.Part) {
+				appendTurnPart(&current, *event.Part)
+			}
 		}
 		current.PartEnd = current.PartStart + len(current.Parts)
 		a.live[id] = current
@@ -1187,6 +1241,9 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 		a.liveMu.Lock()
 		current, live := a.live[id]
 		if live {
+			// Events rewrite and grow the turn's parts in place under liveMu; a
+			// frame is encoded outside it, from the parts as they are now.
+			current.Parts = ownedParts(current.Parts)
 			if hydrated, exists := a.liveBase[id]; exists {
 				baseTranscript = hydrated
 			}

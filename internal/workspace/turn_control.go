@@ -46,6 +46,7 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string, user string) (chat
 	a.liveMu.Lock()
 	if live, ok := a.live[chat.ID]; ok && live.ID == turnID {
 		current = live
+		current.Parts = ownedParts(live.Parts)
 	}
 	a.liveMu.Unlock()
 
@@ -85,6 +86,11 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string, user string) (chat
 		}
 		latest.Transcript = runningTranscript(base, live)
 		latest.Turns = append(append([]chatmodel.Turn(nil), a.liveTurns[chat.ID]...), live)
+		// These turns are the window the turn started from, so the cursor for
+		// older ones is that window's too, not the one of a newer read.
+		if history, exists := a.liveHistory[chat.ID]; exists {
+			latest.History = history
+		}
 		start := max(0, min(live.PartStart, len(latest.Transcript.Parts)))
 		live.PartStart = start
 		live.InputEnd = max(start, min(live.InputEnd, len(latest.Transcript.Parts)))
@@ -96,6 +102,7 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string, user string) (chat
 		a.completed[chat.ID] = completedTurn{turn: live}
 		delete(a.live, chat.ID)
 		delete(a.liveBase, chat.ID)
+		delete(a.liveHistory, chat.ID)
 		delete(a.liveTurns, chat.ID)
 	}
 	a.liveMu.Unlock()

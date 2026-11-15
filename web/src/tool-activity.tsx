@@ -28,7 +28,7 @@ import { firstToolDetailCursor, mergeToolDetailPage, requestToolDetail, toolDeta
 import { LocalFileContext } from "./local-file-context.js";
 import { UserMessage } from "./user-message.js";
 import { localFileTarget } from "./local-file-links.js";
-import { toolNameKind, toolCommand, shellCommandKind, shellOperations, shellSearchPath, type ActivityKind } from "./tool-kind.js";
+import { toolNameKind, toolCommand, shellCommandKind, shellOperations, shellTarget, type ActivityKind } from "./tool-kind.js";
 
 export { toolResultDiffs } from "./tool-diff.js";
 
@@ -44,6 +44,21 @@ type Activity = {
   noDetails?: boolean;
   input?: TranscriptPart[];
 };
+
+// What the provider reported about a call. Its use and its result can each
+// carry a status; a failure on either one is the call's outcome.
+export function activityOutcome(activity: Pick<Activity, "use" | "result">) {
+  const use = activity.use?.tool, result = activity.result?.tool;
+  const failed = [use?.status, result?.status].find(status => status === "failed" || status === "declined");
+  return { status: failed || result?.status || use?.status, exitCode: use?.exit_code ?? result?.exit_code };
+}
+
+function outcomeLabel(activity: Pick<Activity, "use" | "result">, t: Translator) {
+  const { status, exitCode } = activityOutcome(activity);
+  if (status === "declined") return t("Declined");
+  if (status !== "failed") return "";
+  return exitCode ? t("Exit code {code}", { code: exitCode }) : t("Failed");
+}
 
 type ActivityGroup = {
   kind: ActivityKind;
@@ -138,8 +153,14 @@ function classify(part: TranscriptPart, data: Record<string, unknown> | undefine
   return kind === "shell" ? shellCommandKind(toolCommand(part.text, data)) : kind;
 }
 
+function shellSummary(part: TranscriptPart, data: Record<string, unknown> | undefined) {
+  if (toolNameKind(part.name || "") !== "shell") return undefined;
+  const command = toolCommand(part.text, data);
+  return /^(read|list|search)$/.test(shellCommandKind(command)) ? shellTarget(command) : undefined;
+}
+
 function extractQuery(part: TranscriptPart, data: Record<string, unknown> | undefined) {
-  return stringField(data, [
+  return shellSummary(part, data)?.query || stringField(data, [
     "pattern",
     "query",
     "search_query",
@@ -150,15 +171,14 @@ function extractQuery(part: TranscriptPart, data: Record<string, unknown> | unde
 }
 
 function extractPath(part: TranscriptPart, data: Record<string, unknown> | undefined) {
+  const target = shellSummary(part, data)?.path;
+  if (target) return target;
   const direct = stringField(data, pathKeys);
   if (direct) return direct;
   const files = patchFiles(part);
   if (files.length === 1) return files[0].path;
   if (files.length > 1) return "";
-  if (toolNameKind(part.name || "") === "shell") {
-    const command = toolCommand(part.text, data);
-    return shellCommandKind(command) === "search" ? shellSearchPath(command) : "";
-  }
+  if (toolNameKind(part.name || "") === "shell") return "";
   const match = part.text.match(/(?:^|\s)([\w./~-]+\.[\w-]+)(?:\s|$)/);
   return match?.[1] || "";
 }
@@ -303,17 +323,33 @@ export function activitiesFromParts(
     if (part?.kind !== "tool_use" || activity.kind === "image") return [activity];
     const operations = part.tool ? part.tool.operations
       : toolNameKind(part.name || "") === "shell" ? shellOperations(toolCommand(part.text, payload(part.text))) : undefined;
-    if (!operations?.length) return [activity];
+    if (!operations?.length) {
+      if (["failed", "declined", "running"].includes(activityOutcome(activity).status || "")) {
+        const path = part.tool?.path || extractPath(part, payload(part.text));
+        const labels = {
+          write: path ? t("Edit {path}", { path: shortPath(path) }) : t("Edit files"),
+          create: path ? t("Create {path}", { path: shortPath(path) }) : t("Create files"),
+          delete: path ? t("Delete {path}", { path: shortPath(path) }) : t("Delete files"),
+        };
+        if (activity.kind in labels) activity.label = labels[activity.kind as keyof typeof labels];
+      }
+      return [activity];
+    }
     return operations.map((operation) => {
-      const display = displayActivity({ ...part, text: "", tool: { kind: operation.kind, path: operation.path, version: "", bytes: 0 } }, backend, t);
+      const display = displayActivity({ ...part, text: "", tool: { kind: operation.kind, path: operation.path, query: operation.query, version: "", bytes: 0 } }, backend, t);
       return { ...display, use: part, result: activity.result, detail: "", stats: "", noDetails: true,
-        label: operation.path ? display.label : `${display.label} · ${oneLine(operation.command)}` };
+        label: operation.path || operation.query ? display.label : `${display.label} · ${oneLine(operation.command)}` };
     });
   });
 }
 
 function groupLabel(group: Activity[], t: Translator) {
   if (group.length === 1) return group[0].label;
+  if (group.every(activity => ["failed", "declined", "running"].includes(activityOutcome(activity).status || ""))) {
+    if (group[0].kind === "write") return t("Edit files");
+    if (group[0].kind === "create") return t("Create files");
+    if (group[0].kind === "delete") return t("Delete files");
+  }
   if (group[0].kind === "image") return t("Viewed {count} images", { count: group.reduce((count, item) => count + (item.imageURLs?.length || item.images?.length || 0), 0) });
   return categoryLabel(group[0].kind, t);
 }
@@ -497,6 +533,8 @@ export function changeStats(activities: Activity[]) {
   let additions = 0;
   let deletions = 0;
   for (const activity of activities) {
+    // A change that failed or was declined did not happen.
+    if (/^(failed|declined)$/.test(activityOutcome(activity).status || "")) continue;
     const changes = activity.result?.tool?.changes || activity.use?.tool?.changes;
     if (changes) {
       additions += changes.additions;
@@ -656,6 +694,7 @@ function ActivityItem({
 }) {
   const Icon = iconFor(activity.kind);
   const stats = changeStats([activity]);
+  const outcome = activity.noDetails ? "" : outcomeLabel(activity, t);
   if (activity.noDetails) return (
     <div className="tool-activity-item">
       <div className="tool-activity-item-summary tool-activity-static" title={activity.label}>
@@ -675,6 +714,7 @@ function ActivityItem({
       >
         <Icon size={12} strokeWidth={1.6} />
         <ActivityLabel activity={activity} />
+        {outcome && <span className="tool-activity-outcome">{outcome}</span>}
         <span className="tool-activity-caret">
           {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
@@ -685,16 +725,32 @@ function ActivityItem({
   );
 }
 
+// The rows of a compound command describe its steps; they share one execution.
+// The complete command and its combined output stay available under the rows.
 function CompoundActivities({ group, t, open, onToggle }: { group: ActivityGroup; t: Translator; open: boolean; onToggle: () => void }) {
   const Icon = iconFor(group.kind);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const whole: Activity = { ...group.activities[0], kind: "shell", label: t("Command and output"), noDetails: false };
+  const outcome = outcomeLabel(whole, t);
   return <div className={`tool-activity tool-activity-compound${open ? " expanded" : ""}`}>
     <button type="button" className="tool-activity-summary" aria-expanded={open} onClick={onToggle}>
       <Icon size={13} strokeWidth={1.6} />
       <span>{group.label}</span>
+      {outcome && <span className="tool-activity-outcome">{outcome}</span>}
       <span className="tool-activity-caret">{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
     </button>
-    {open && <div className="tool-activity-items">{group.activities.map((activity, index) =>
-      <ActivityItem key={index} activity={activity} open={false} onToggle={() => {}} t={t} />)}</div>}
+    {open && <div className="tool-activity-items">
+      {group.activities.map((activity, index) =>
+        <ActivityItem key={index} activity={activity} open={false} onToggle={() => {}} t={t} />)}
+      <div className={"tool-activity-item tool-activity-whole " + (detailOpen ? "expanded" : "")}>
+        <button type="button" className="tool-activity-item-summary" aria-expanded={detailOpen} onClick={() => setDetailOpen(value => !value)}>
+          <Terminal size={12} strokeWidth={1.6} />
+          <span>{whole.label}</span>
+          <span className="tool-activity-caret">{detailOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
+        </button>
+        {detailOpen && <ActivityDetail activity={whole} t={t} />}
+      </div>
+    </div>}
   </div>;
 }
 
@@ -806,6 +862,7 @@ export function ToolActivityList({
             const expanded = openGroups.has(groupIndex);
             const Icon = iconFor(group.kind);
             const stats = changeStats(group.activities);
+            const failures = group.activities.filter(activity => /^(failed|declined)$/.test(activityOutcome(activity).status || "")).length;
             return (
               <div className={"tool-activity " + (expanded ? "expanded" : "")} key={groupIndex}>
                 <button
@@ -823,6 +880,7 @@ export function ToolActivityList({
                 >
                   <Icon size={13} strokeWidth={1.6} />
                   <span>{group.label}</span>
+                  {failures > 0 && <span className="tool-activity-outcome">{t("{count} failed", { count: failures })}</span>}
                   <span className="tool-activity-caret">
                     {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                   </span>

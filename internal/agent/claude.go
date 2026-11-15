@@ -461,7 +461,7 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				if diff := claudeToolResultDiff(value["toolUseResult"]); diff != "" {
 					part.Text = strings.TrimSpace(strings.TrimSpace(part.Text) + "\n" + diff)
 				}
-				if part.Text == "" {
+				if part.Text == "" && part.Native == nil && len(part.Images) == 0 {
 					continue
 				}
 				activity := "Tool result"

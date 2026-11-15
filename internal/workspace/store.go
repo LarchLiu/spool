@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -25,16 +26,26 @@ type Store struct {
 	desktopNotifications desktopNotificationHub
 	updateEvents         chan struct{}
 	historyCache         nativeHistoryCache
+	codexHistory         codexWindows
 	settingsMu           sync.Mutex
 	mu                   sync.Mutex
 	agentMu              sync.Mutex
-	localMu              sync.Mutex
-	localScanAt          time.Time
-	localIndex           agent.LocalSessionIndex
-	root                 string
-	db                   *sql.DB
-	runtimeMu            sync.Mutex
-	runtimeTurns         map[string]chatmodel.Turn
+	// localScanMu serializes provider discovery and owns localIndex,
+	// localClaude and localFailing. localMu guards localScanAt and the
+	// projection of discovered sessions; it is never held during discovery.
+	localScanMu  sync.Mutex
+	localMu      sync.Mutex
+	localScanAt  time.Time
+	localIndex   agent.LocalSessionIndex
+	localClaude  agent.ClaudeSessionLister
+	localFailing string
+	localSources map[chatmodel.Backend]agent.SessionLister
+	localContext context.Context
+	localCancel  context.CancelFunc
+	root         string
+	db           *sql.DB
+	runtimeMu    sync.Mutex
+	runtimeTurns map[string]chatmodel.Turn
 }
 
 const schema = `
@@ -128,7 +139,8 @@ func OpenStore(root string) (*Store, error) {
 	if _, err = db.Exec(`UPDATE user_avatars SET style=? WHERE style IN ('bottts-neutral','shapes','initials')`, DefaultAvatar().Style); err != nil {
 		return fail(err)
 	}
-	store := &Store{root: root, db: db, runtimeTurns: make(map[string]chatmodel.Turn), updateEvents: make(chan struct{}, 1)}
+	store := &Store{root: root, db: db, runtimeTurns: make(map[string]chatmodel.Turn), updateEvents: make(chan struct{}, 1), localClaude: agent.NewClaudeSessionLister()}
+	store.localContext, store.localCancel = context.WithCancel(context.Background())
 	settings, err := store.Settings()
 	if err != nil {
 		return fail(err)
@@ -137,15 +149,22 @@ func OpenStore(root string) (*Store, error) {
 		return fail(err)
 	}
 	store.historyCache.setMaxBytes(settings.HistoryCacheMiB * 1024 * 1024)
+	store.codexHistory.setMaxBytes(settings.HistoryCacheMiB * 1024 * 1024)
 	return store, nil
 }
 func (s *Store) Close() error {
+	s.localCancel()
+	s.localScanMu.Lock()
+	defer s.localScanMu.Unlock()
+	s.localMu.Lock()
+	defer s.localMu.Unlock()
 	// WAL/SHM files are expected while SQLite is open. Checkpoint on a clean
 	// shutdown so a stopped desktop process does not leave avoidable sidecars
 	// behind; SQLite will recreate them automatically on the next write.
 	_, checkpointErr := s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
 	closeErr := s.db.Close()
 	s.historyCache.clear()
+	s.codexHistory.close()
 	return errors.Join(checkpointErr, closeErr)
 }
 func (s *Store) Root() string         { return s.root }
@@ -186,6 +205,12 @@ func (s *Store) Get(id string) (chatmodel.Session, bool) {
 	}
 	stored := v
 	v = s.hydrateSession(v)
+	if stored.LocalSession {
+		// Discovery stores the same form, so the two never rewrite each other.
+		if v.Title = localSessionTitle(v.Title); v.Title == "" {
+			v.Title = stored.Title
+		}
+	}
 	if stored.AutomationChat {
 		// Issue chats deliberately retain their issue-number/title label.
 		v.Title = stored.Title
@@ -283,10 +308,24 @@ func (s *Store) beginTurnWithInput(id, prompt string, backend chatmodel.Backend,
 }
 
 func (s *Store) beginTurnBy(id, prompt string, backend chatmodel.Backend, permission string, files []uploadedAttachment, user string, options ...chatmodel.CodexOptions) (chatmodel.Turn, error) {
+	// Reading native history can wait for the provider. Do it before taking the
+	// store lock, which every other write and every new turn waits for.
+	history, ok := s.Get(id)
+	if !ok {
+		return chatmodel.Turn{}, os.ErrNotExist
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	v, ok := s.Get(id)
+	v, ok := s.getSession(id)
 	if !ok {
+		return chatmodel.Turn{}, os.ErrNotExist
+	}
+	if v.UpdatedAt == history.UpdatedAt && v.Backend == history.Backend && v.NativeSessionID == history.NativeSessionID && (v.NativeSessionPath == "" || v.NativeSessionPath == history.NativeSessionPath) {
+		// The state decided on below is the one read under the lock; only the
+		// native history comes from the earlier read of the same revision.
+		v.Turns, v.Transcript, v.History, v.NativeSessionPath = history.Turns, history.Transcript, history.History, history.NativeSessionPath
+	} else if v, ok = s.Get(id); !ok {
+		// The chat changed between the two reads, which is rare.
 		return chatmodel.Turn{}, os.ErrNotExist
 	}
 	if v.Status == chatmodel.StatusRunning {
@@ -334,6 +373,9 @@ func (s *Store) beginTurnBy(id, prompt string, backend chatmodel.Backend, permis
 		t.UserID = v.UserID
 	}
 	t.Prompt = prompt
+	// Where this request's records begin in the rollout, saved with its actor.
+	// It is unknown (-1) for a session resumed before its rollout was located;
+	// a new session's rollout holds nothing earlier.
 	sourceOffset := int64(-1)
 	if info, e := os.Stat(v.NativeSessionPath); e == nil {
 		t.SourceOffset = info.Size()
@@ -497,7 +539,31 @@ func (s *Store) finishTurn(id, turnID string, result agent.AgentResult, runErr e
 			nativePath = path
 		}
 	}
-	if nativePath != "" {
+	if nativePath != "" && v.Backend == chatmodel.BackendCodex && t.SourceOffset >= 0 {
+		// History is read back from the rollout, so the turn is known by the
+		// identity recorded there: the announced ID when the rollout names it,
+		// otherwise the turn begun after this request. Reading stops at that
+		// record, without indexing history.
+		identity, _ := agent.CodexTurnIdentity(nativePath, t.SourceOffset, t.NativeTurnID)
+		var requested int64
+		located := s.db.QueryRow(`SELECT source_offset FROM turn_actors WHERE session_id=? AND turn_id=?`, id, turnID).Scan(&requested) != nil || requested >= 0
+		if identity == "" {
+			// Legacy Codex turns have no explicit identity, whatever ID was
+			// announced for them. Index only records written after this
+			// request, and require an actual new user turn.
+			if index, e := agent.IndexSessionTurns(v.Backend, nativePath, t.SourceOffset); e == nil && len(index) > 0 {
+				if last := index[len(index)-1]; last.HasUserInput() {
+					t.NativeTurnID = nativeIdentity(v.NativeSessionID, last)
+				}
+			}
+		} else if located {
+			// A session resumed before its rollout was located has no request
+			// offset. The first turn found would be the session's first, not
+			// this request: what was announced, if anything, stays.
+			t.NativeTurnID = identity
+		}
+	}
+	if nativePath != "" && v.Backend != chatmodel.BackendCodex {
 		if index, e := s.indexHistory(v.Backend, nativePath); e == nil && len(index) > 0 {
 			last := index[len(index)-1]
 			if last.Start >= t.SourceOffset {
@@ -581,10 +647,30 @@ func appendSessionPart(transcript *chatmodel.Transcript, turn *chatmodel.Turn, p
 }
 
 func appendTurnPart(turn *chatmodel.Turn, part chatmodel.Part) {
+	// Command output may arrive as multiple deltas. Merge the chunks of one
+	// result so the live transcript keeps the same shape as native history.
+	// Calls that run at once interleave their output; a chunk naming its call
+	// joins that call's result wherever it is.
+	if part.Kind == "tool_result" && part.ID != "" && len(part.Images) == 0 {
+		for i := len(turn.Parts) - 1; i >= 0; i-- {
+			if existing := &turn.Parts[i]; existing.Kind == "tool_result" && existing.ID == part.ID && existing.Role == part.Role && len(existing.Images) == 0 {
+				if part.Replace {
+					part.Replace = false
+					*existing = part
+				} else {
+					existing.Text += part.Text
+					existing.Cut += part.Cut
+					if part.Native != nil {
+						existing.Native = part.Native
+					}
+				}
+				existing.Tool = summarizeTool(*existing)
+				return
+			}
+		}
+	}
 	transcript := chatmodel.Transcript{Parts: turn.Parts}
-	// Command output may arrive as multiple deltas. Merge adjacent result
-	// chunks so the live transcript keeps the same shape as native history.
-	if part.Kind == "tool_result" && len(part.Images) == 0 {
+	if part.Kind == "tool_result" && len(part.Images) == 0 && (part.Text != "" || part.Native == nil) {
 		chatmodel.AppendStreamText(&transcript, part)
 	} else {
 		chatmodel.AppendPart(&transcript, part)
@@ -596,7 +682,45 @@ func appendTurnPart(turn *chatmodel.Turn, part chatmodel.Part) {
 	turn.PartEnd = turn.PartStart + len(turn.Parts)
 }
 
+// updateTurnTool records what a provider reported once a call it had already
+// announced finished. It reports whether that call is part of the turn.
+func updateTurnTool(turn *chatmodel.Turn, update chatmodel.Part) bool {
+	if update.ID == "" {
+		return false
+	}
+	for i := len(turn.Parts) - 1; i >= 0; i-- {
+		part := &turn.Parts[i]
+		if part.Kind != "tool_use" || part.ID != update.ID {
+			continue
+		}
+		if update.Text != "" {
+			part.Text = update.Text
+		}
+		part.Native = update.Native
+		part.Tool = summarizeTool(*part)
+		return true
+	}
+	return false
+}
+
+// ownedParts copies a live turn's parts for use outside liveMu. Events rewrite
+// earlier parts and grow the last one in place, so anything that reads a live
+// turn after releasing the lock takes this copy while still holding it.
+func ownedParts(parts []chatmodel.Part) []chatmodel.Part {
+	return append([]chatmodel.Part(nil), parts...)
+}
+
 func appendTurnText(turn *chatmodel.Turn, part chatmodel.Part) {
+	if part.Replace {
+		// The provider's complete text for something it streamed differently.
+		part.Replace = false
+		for i := len(turn.Parts) - 1; i >= 0 && part.ID != ""; i-- {
+			if existing := &turn.Parts[i]; existing.ID == part.ID && existing.Role == part.Role && existing.Kind == part.Kind {
+				existing.Text, existing.Cut = part.Text, part.Cut
+				return
+			}
+		}
+	}
 	transcript := chatmodel.Transcript{Parts: turn.Parts}
 	chatmodel.AppendStreamText(&transcript, part)
 	turn.Parts = transcript.Parts

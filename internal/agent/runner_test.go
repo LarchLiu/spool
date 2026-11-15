@@ -158,9 +158,14 @@ func TestCodexLiveFileChangesMatchNormalizedHistoryShape(t *testing.T) {
 	if result.Text != "Hello world" {
 		t.Fatalf("unexpected result: %#v", result)
 	}
-	var toolUses, results []chatmodel.Part
+	var toolUses, results, outcomes []chatmodel.Part
 	for _, event := range events {
 		if event.Part == nil {
+			continue
+		}
+		if event.Type == "tool" {
+			// A completed item reports the outcome of a call that is already shown.
+			outcomes = append(outcomes, *event.Part)
 			continue
 		}
 		switch event.Part.Kind {
@@ -172,6 +177,9 @@ func TestCodexLiveFileChangesMatchNormalizedHistoryShape(t *testing.T) {
 	}
 	if len(toolUses) != 2 || len(results) != 2 {
 		t.Fatalf("live Codex parts = tool uses %d, results %d: %#v", len(toolUses), len(results), events)
+	}
+	if len(outcomes) != 1 || outcomes[0].ID == "" || outcomes[0].ID != toolUses[1].ID || results[1].ID != toolUses[1].ID {
+		t.Fatalf("a completed call and its output must name the started call: uses %#v results %#v outcomes %#v", toolUses, results, outcomes)
 	}
 	var foundDiff bool
 	for _, part := range results {

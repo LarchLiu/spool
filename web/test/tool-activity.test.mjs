@@ -75,10 +75,59 @@ test("compound summaries deduplicate kinds and keep original calls and progress 
 
 test("derived command rows retain original IDs through out-of-order results", () => {
   const one = { ...tool("Bash", '{"command":"git status; cat a.txt"}'), id: "one" };
-  const two = { ...tool("exec_command", '{"cmd":"rg TODO src | head -20"}'), id: "two" };
+  const two = { ...tool("exec_command", '{"cmd":"cat b.txt; rg TODO src | head -20"}'), id: "two" };
   const result = id => ({ role: "tool", kind: "tool_result", id, text: id + " output" });
   const activities = activitiesFromParts([one, two, result("two"), result("one")], "codex", t);
-  assert.deepEqual(activities.map(a => [a.use.id, a.result.id, a.noDetails]), [["one", "one", true], ["one", "one", true], ["two", "two", true]]);
+  assert.deepEqual(activities.map(a => [a.use.id, a.result.id, a.noDetails]), [["one", "one", true], ["one", "one", true], ["two", "two", true], ["two", "two", true]]);
+  assert.deepEqual(activities.map(a => a.label), ["Ran command · git status", "Read a.txt", "Read b.txt", "Searched for TODO in src"]);
+});
+
+test("a lone pipeline is one call with its own details, labelled by what it searched or read", () => {
+  const search = { ...tool("Bash", '{"command":"rg -n TODO src | head -20"}'), id: "search" };
+  const read = { ...tool("exec_command", '{"cmd":"sed -n \'1,40p\' src/a.go"}'), id: "read" };
+  const activities = activitiesFromParts([search, read], "claude", t);
+  assert.deepEqual(activities.map(a => [a.kind, a.label, a.noDetails]), [["search", "Searched for TODO in src", undefined], ["read", "Read src/a.go", undefined]]);
+});
+
+test("a compound command keeps its complete command and combined output under its rows", () => {
+  const operations = [{ kind: "read", command: "cat a.txt", path: "a.txt" }, { kind: "search", command: "rg TODO src", path: "src", query: "TODO" }];
+  const use = { ...tool("shell", ""), id: "call", tool: { kind: "shell", operations, version: "v1", bytes: 24, ref: "use", href: "/chats/chat/tool-detail?ref=use", status: "failed", exit_code: 2 } };
+  const result = { role: "tool", kind: "tool_result", id: "call", text: "", tool: { kind: "other", version: "v2", bytes: 9, ref: "result", href: "/chats/chat/tool-detail?ref=result" } };
+  const activities = activitiesFromParts([use, result], "codex", t);
+  assert.deepEqual(activities.map(a => a.label), ["Read a.txt", "Searched for TODO in src"]);
+  const collapsed = renderToStaticMarkup(createElement(ToolActivityList, { parts: [use, result], backend: "codex", t, live: true }));
+  assert.match(collapsed, /Read files, searched files<\/span><span class="tool-activity-outcome">Exit code 2</);
+  assert.doesNotMatch(collapsed, /Command and output/);
+});
+
+test("failed and declined calls say so and do not count as changes", () => {
+  const edit = (id, status) => ({ ...tool("fileChange", "*** Update File: a.go"), id, tool: { kind: "write", path: "a.go", version: id, bytes: 1, status, changes: { additions: 3, deletions: 1 } } });
+  const run = (id, summary) => ({ ...tool("shell", "npm test"), id, tool: { kind: "shell", version: id, bytes: 1, ...summary } });
+  const failedResult = { role: "tool", kind: "tool_result", id: "claude", text: "boom", tool: { kind: "other", version: "r", bytes: 4, status: "failed" } };
+  const cases = [
+    [[edit("ok", "completed")], "", "+3 -1"],
+    [[edit("declined", "declined")], "Declined", ""],
+    [[edit("failed", "failed")], "Failed", ""],
+    [[run("exit", { status: "failed", exit_code: 1 })], "Exit code 1", ""],
+    [[run("running", { status: "running" })], "", ""],
+    [[{ ...tool("Bash", '{"command":"npm test"}'), id: "claude" }, failedResult], "Failed", ""],
+  ];
+  for (const [parts, outcome, stats] of cases) {
+    const activities = activitiesFromParts(parts, "codex", t);
+    const html = renderToStaticMarkup(createElement(ToolActivityList, { parts, backend: "codex", t, live: true }));
+    assert.equal((html.match(/class="tool-activity-outcome">([^<]*)</) || [])[1] || "", outcome, parts[0].id);
+    assert.equal(changeStats(activities), stats, parts[0].id);
+    if (["failed", "declined"].includes(parts[0].tool?.status) && parts[0].name === "fileChange") {
+      assert.equal(activities[0].label, "Edit a.go");
+      assert.doesNotMatch(html, /Edited a\.go/);
+    }
+  }
+  const group = [edit("one", "completed"), edit("two", "failed"), edit("three", "completed")];
+  const html = renderToStaticMarkup(createElement(ToolActivityList, { parts: group, backend: "codex", t, live: true }));
+  assert.match(html, /Edited files<\/span><span class="tool-activity-outcome">1 failed</);
+  assert.match(html, /class="tool-activity-stats">\+6 -2</);
+  const rejected = [edit("one", "failed"), edit("two", "declined")];
+  assert.match(renderToStaticMarkup(createElement(ToolActivityList, { parts: rejected, backend: "codex", t, live: true })), /Edit files<\/span>/);
 });
 
 test("Codex and Claude tool classification matches server and native shared regression cases", () => {

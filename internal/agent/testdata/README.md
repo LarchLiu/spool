@@ -14,19 +14,30 @@ another checkout being present.
   safe fallback for a result without its preceding tool call.
 - `claude-native-replay.jsonl`: Claude assistant text replay.
 
-Activity categories use the normalized tool name and structured arguments.
+Activity categories come first from what the provider itself reported: Codex's
+command actions (`commandActions` live and in thread history, `parsed_cmd` in a
+rollout) and the files of a native file change. Calls without that use the
+normalized tool name and structured arguments.
+Codex reports one `unknown` action for a whole command as soon as any step is
+not a read, listing, or search. That says nothing about the other steps, so such
+a call is classified from its literal command like one without native actions.
 Shell tools inspect the executable and literal shell wrappers, rather than
 matching keywords in paths, descriptions, search patterns, or source code.
 Scripts, redirections, expansions, and mixed command categories use the generic
-command label. Content searches through shell commands such as `rg` and `grep`
-use the same read category as `cat`, including combinations and pipelines of
-these commands. `rg --files` is a file listing.
-Print-only `sed` commands such as `sed -n '1,140p' file` use the search category;
+command label. Categories follow Codex's own reading, so both providers label
+the same command alike: content searches such as `rg` and `grep` are searches
+with their pattern and path, `rg --files` is a file listing, and `find` with a
+name pattern is a search.
+Print-only `sed` commands such as `sed -n '1,140p' file` read that file;
 in-place edits, external scripts, and `e`/`w` commands keep the command category.
+A pipeline stage that only narrows or formats the previous stage's output
+(`head`, `wc`, a `grep` without a path) does not change the pipeline's category.
 
-Literal compound shell calls split into display-only operation summaries.
-Each pipeline stays together because providers return its combined output.
-Derived rows have no detail disclosure; ordinary single tool calls retain it.
+Literal compound shell calls split into display-only operation summaries, one
+per sequential step. Each pipeline stays together because providers return its
+combined output, and a lone pipeline is a single call with its own details.
+Derived rows have no detail disclosure. Their parent exposes the original
+command and combined output once; ordinary single tool calls retain details.
 The provider's original call/result IDs and bodies are preserved. Bounded
 operation metadata also travels in lazy historical summaries.
 

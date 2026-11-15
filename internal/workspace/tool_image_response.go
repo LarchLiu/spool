@@ -17,6 +17,10 @@ import (
 // on demand through the same chat authorization as tool details, even after the
 // original file has been removed. History responses carry only these URLs.
 func (a *App) toolImageResponse(w http.ResponseWriter, r *http.Request, chat chatmodel.Session) {
+	if chat.History != nil && chat.History.Error != "" {
+		apiError(w, 503, "Native session history is unavailable")
+		return
+	}
 	index, err := strconv.Atoi(r.URL.Query().Get("index"))
 	if err != nil || index < 0 {
 		apiError(w, 400, "Invalid tool image index")

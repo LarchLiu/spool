@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"spool/internal/agent"
 	chatmodel "spool/internal/model"
 )
 
@@ -21,10 +24,50 @@ func localSessionHomes(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(root, "claude"))
 }
 
+// Workspace tests exercise project policy against a deterministic provider.
+// Native Codex RPC and Claude SDK compatibility are covered in internal/agent.
+func fixtureLocalCodexSessions(ctx context.Context, _ agent.ListSessionsOptions) ([]agent.LocalSession, error) {
+	var sessions []agent.LocalSession
+	err := filepath.WalkDir(filepath.Join(os.Getenv("CODEX_HOME"), "sessions"), func(path string, entry fs.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".jsonl") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		line, _, _ := strings.Cut(string(body), "\n")
+		var record struct {
+			Payload   struct{ ID, Cwd, Title string }
+			Timestamp string
+		}
+		if json.Unmarshal([]byte(line), &record) != nil {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return nil
+		}
+		created, _ := time.Parse(time.RFC3339Nano, record.Timestamp)
+		sessions = append(sessions, agent.LocalSession{ID: record.Payload.ID, Path: path, Directory: record.Payload.Cwd,
+			Title: "prompt-000", Backend: chatmodel.BackendCodex, CreatedAt: created.UnixMilli(), UpdatedAt: info.ModTime().UnixMilli(), TitleAuthoritative: true})
+		return nil
+	})
+	if os.IsNotExist(err) {
+		err = nil
+	}
+	return sessions, err
+}
+
 func writeLocalSession(t *testing.T, backend chatmodel.Backend, id, directory string, order int) string {
 	t.Helper()
+	title := "Local " + id
 	path := filepath.Join(os.Getenv("CODEX_HOME"), "sessions", "2026", "10", "29", "rollout-"+id+".jsonl")
 	if backend == chatmodel.BackendClaude {
+		id = uuid.NewSHA1(uuid.NameSpaceOID, []byte(id)).String()
 		path = filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "projects", "test-project", id+".jsonl")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -37,7 +80,7 @@ func writeLocalSession(t *testing.T, backend chatmodel.Backend, id, directory st
 	} else {
 		appendTitleRecord(t, path, map[string]any{"type": "user", "uuid": "user-" + id, "sessionId": id, "cwd": directory, "timestamp": stamp.Format(time.RFC3339Nano), "message": map[string]any{"role": "user", "content": "Local request " + id}})
 		appendTitleRecord(t, path, map[string]any{"type": "assistant", "uuid": "reply-" + id, "parentUuid": "user-" + id, "sessionId": id, "timestamp": stamp.Add(time.Second).Format(time.RFC3339Nano), "message": map[string]any{"role": "assistant", "content": "Local response"}})
-		appendTitleRecord(t, path, map[string]any{"type": "custom-title", "customTitle": "Local " + id})
+		appendTitleRecord(t, path, map[string]any{"type": "custom-title", "customTitle": title})
 	}
 	if err := os.Chtimes(path, stamp, stamp); err != nil {
 		t.Fatal(err)
@@ -138,6 +181,60 @@ func TestLocalSharingLatestTwentyMixedProvidersAndRefresh(t *testing.T) {
 		t.Fatal("disabling project sharing retained local access", err)
 	}
 	assertNoTurnTables(t, s)
+}
+
+func TestLocalSharingUsesConfiguredNativeCodexList(t *testing.T) {
+	localSessionHomes(t)
+	s := testStore(t)
+	s.localSources = nil // exercise production dispatch, not the policy fixture
+	u := testUser(t, s, "owner")
+	p := testProject(t, s, u)
+	p.SharedChats, p.SharedLocalChats = true, true
+	if _, err := s.SaveProject(p); err != nil {
+		t.Fatal(err)
+	}
+	fixture := newAgentFixture(t, chatmodel.BackendCodex)
+	if err := s.saveAgent(AgentInfo{Backend: chatmodel.BackendCodex, Enabled: true, Executable: fixture.Binary}); err != nil {
+		t.Fatal(err)
+	}
+	path := writeLocalSession(t, chatmodel.BackendCodex, "native-from-server", p.Path, 1)
+	writePage := func(title string) {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{"": map[string]any{"data": []any{map[string]any{
+			"id": "native-from-server", "path": path, "cwd": p.Path, "name": title, "createdAt": 1, "updatedAt": 2,
+		}}, "nextCursor": nil}})
+		if err := os.WriteFile(filepath.Join(fixture.WorkingDirectory, "fixture-thread-pages.json"), body, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writePage("App-server title")
+	nav, err := s.UserNavigation(u.ID)
+	if err != nil || len(nav.Chats) != 1 || nav.Chats[0].Title != "App-server title" {
+		t.Fatalf("native dispatch: %+v %v", nav, err)
+	}
+	id := nav.Chats[0].ID
+	writePage("Renamed without transcript change")
+	if err := s.syncLocalSessions(true); err != nil {
+		t.Fatal(err)
+	}
+	renamed, _ := s.getSession(id)
+	if renamed.Title != "Renamed without transcript change" {
+		t.Fatalf("native rename ignored: %+v", renamed)
+	}
+	if err := os.Remove(filepath.Join(fixture.WorkingDirectory, "fixture-thread-pages.json")); err != nil {
+		t.Fatal(err)
+	}
+	writeLocalSession(t, chatmodel.BackendClaude, "healthy-claude", p.Path, 4)
+	if err := s.syncLocalSessions(true); err != nil {
+		t.Fatal(err)
+	}
+	nav, err = s.UserNavigation(u.ID)
+	if err != nil || len(nav.Chats) != 2 {
+		t.Fatalf("native outage hid healthy or retained sessions: %+v %v", nav, err)
+	}
+	if fixtureCount(t, fixture, "thread/start") != 0 || fixtureCount(t, fixture, "turn/start") != 0 {
+		t.Fatal("discovery started a chat")
+	}
 }
 
 func TestLocalSharingMatchesLinkedWorktreesAndProtectsNestedProjects(t *testing.T) {
