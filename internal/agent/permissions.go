@@ -199,6 +199,9 @@ func (p *agentProcess) awaitApproval(ctx context.Context, handler chatmodel.Appr
 			if !ok {
 				return chatmodel.ApprovalResponse{}, fmt.Errorf("agent exited while waiting for approval")
 			}
+			if p.steerResponse(value) {
+				continue
+			}
 			if cancelled(value) {
 				return chatmodel.ApprovalResponse{}, errApprovalResolved
 			}

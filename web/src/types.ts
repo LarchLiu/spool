@@ -244,6 +244,14 @@ export type Chat = {
   transcript: Transcript;
   turns: Turn[];
   updated_at: number;
+  queued_messages?: QueuedMessage[];
+};
+export type QueuedMessage = {
+  id: string;
+  user_id?: string;
+  message: string;
+  attachments?: string[];
+  created_at: number;
 };
 export type ChatMetadata = Pick<
   Chat,

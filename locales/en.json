@@ -1076,5 +1076,9 @@
   "Preflight succeeded. Apply changes to activate this configuration.": "Preflight succeeded. Apply changes to activate this configuration.",
   "Preflight succeeded.": "Preflight succeeded.",
   "The current Web listener was used. The new configuration will be checked again after applying.": "The current Web listener was used. The new configuration will be checked again after applying.",
-  "Proxy address found by preflight": "Proxy address found by preflight"
+  "Proxy address found by preflight": "Proxy address found by preflight",
+  "Queued messages": "Queued messages",
+  "Steer": "Steer",
+  "Send now": "Send now",
+  "Delete queued message": "Delete queued message"
 }

@@ -19,6 +19,8 @@ final class NativeComposerCommands {
     private final NativeUi.Composer composer;
     private boolean writable, posting, running, dismissed, hiding;
     private int handledKey;
+    /** While a turn runs, the draft waits for its end or is steered into it; set by the composer's owner. */
+    Runnable queue, steer;
     private String noticeText = "", errorText = "";
 
     NativeComposerCommands(NativeUi ui, NativeUi.Composer composer, Runnable submit) {
@@ -46,13 +48,24 @@ final class NativeComposerCommands {
                     && !event.isMetaPressed() && !event.isAltPressed() && !event.isShiftPressed());
             boolean navigation = menu.isShowing() && (key == KeyEvent.KEYCODE_DPAD_DOWN || key == KeyEvent.KEYCODE_DPAD_UP);
             boolean escape = menu.isShowing() && key == KeyEvent.KEYCODE_ESCAPE;
-            boolean send = key == KeyEvent.KEYCODE_ENTER && (event.isMetaPressed() || event.isAltPressed());
+            // Enter sends and Shift+Enter breaks the line. A touch keyboard has no
+            // Shift+Enter, so its Enter keeps the line break and the button sends.
+            boolean hardware = (event.getFlags() & KeyEvent.FLAG_SOFT_KEYBOARD) == 0
+                    && event.getDeviceId() != android.view.KeyCharacterMap.VIRTUAL_KEYBOARD;
+            boolean direct = event.isMetaPressed() || event.isCtrlPressed();
+            boolean send = key == KeyEvent.KEYCODE_ENTER && !event.isShiftPressed()
+                    && (direct || event.isAltPressed() || hardware);
             if (!complete && !navigation && !escape && !send) return false;
             handledKey = key;
             if (event.getRepeatCount() != 0) return true;
             if (complete) select();
             else if (escape) { dismissed = true; hide(); }
-            else if (send && writable && !posting && !running) submit.run();
+            else if (send && writable && !posting) {
+                // The key never stops a running turn; that is the button's job.
+                if (!running) submit.run();
+                else if (direct && steer != null) steer.run();
+                else if (queue != null) queue.run();
+            }
             return true;
         });
         composer.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {

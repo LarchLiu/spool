@@ -19,7 +19,9 @@ type messageInput struct {
 	Effort         string            `json:"reasoning_effort"`
 	Backend        chatmodel.Backend `json:"backend"`
 	PermissionMode string            `json:"permission_mode"`
-	files          []uploadedAttachment
+	// While a turn is running: "queue" waits for it to end, "steer" joins it.
+	Delivery string `json:"delivery"`
+	files    []uploadedAttachment
 	// Only trusted server-side automation can grant additional writable roots.
 	writableDirectories []string
 }
@@ -36,7 +38,7 @@ func readMessageInput(w http.ResponseWriter, r *http.Request) (messageInput, boo
 		apiError(w, 400, "Invalid attachment upload")
 		return input, false
 	}
-	fields := map[string]*string{"message": &input.Message, "model": &input.Model, "reasoning_effort": &input.Effort, "permission_mode": &input.PermissionMode}
+	fields := map[string]*string{"message": &input.Message, "model": &input.Model, "reasoning_effort": &input.Effort, "permission_mode": &input.PermissionMode, "delivery": &input.Delivery}
 	var backend string
 	fields["backend"] = &backend
 	seen := map[string]bool{}

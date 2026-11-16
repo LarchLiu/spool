@@ -106,6 +106,19 @@ public class NativeComposerCommandsTest {
             composer.commands.bind(true, true, false); key(composer, KeyEvent.KEYCODE_ENTER, KeyEvent.META_ALT_ON);
             composer.commands.bind(false, false, false); key(composer, KeyEvent.KEYCODE_ENTER, KeyEvent.META_META_ON);
             assertEquals("Keyboard send cannot stop a turn or bypass writable/posting state", 2, submits.get());
+            // While a turn runs, Alt+Enter queues the draft and Cmd/Ctrl+Enter steers it into the turn.
+            AtomicInteger queued = new AtomicInteger(), steered = new AtomicInteger();
+            composer.commands.queue = queued::incrementAndGet; composer.commands.steer = steered::incrementAndGet;
+            composer.commands.bind(true, false, true);
+            key(composer, KeyEvent.KEYCODE_ENTER, KeyEvent.META_ALT_ON); assertEquals(1, queued.get()); assertEquals(0, steered.get());
+            key(composer, KeyEvent.KEYCODE_ENTER, KeyEvent.META_META_ON); key(composer, KeyEvent.KEYCODE_ENTER, KeyEvent.META_CTRL_ON);
+            assertEquals(1, queued.get()); assertEquals(2, steered.get()); assertEquals(2, submits.get());
+            // A hardware Enter sends; the touch keyboard's Enter stays a line break, as does Shift+Enter.
+            composer.commands.bind(true, false, false);
+            KeyEvent hardware = new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0, 0, 7, 0);
+            assertTrue(composer.input.dispatchKeyEvent(hardware));
+            composer.input.dispatchKeyEvent(KeyEvent.changeAction(hardware, KeyEvent.ACTION_UP)); idle();
+            assertEquals(3, submits.get()); assertEquals("ordinary draft", composer.input.getText().toString());
         }
     }
 

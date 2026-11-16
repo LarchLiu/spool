@@ -36,9 +36,13 @@ type AgentRequest struct {
 }
 
 // AgentEvent types: session, turn, model, delta, message, retract, part,
-// activity, compaction, and tool (a call already shown, now with its outcome).
+// activity, compaction, tool (a call already shown, now with its outcome),
+// steered (the model is about to see a steering message) and unsteered (the
+// provider gave a steering message up; the model will not see it).
 type AgentEvent struct {
-	Type            string          `json:"type"`
+	Type string `json:"type"`
+	// SteerID names the message of a steered or unsteered event.
+	SteerID         string          `json:"steer_id,omitempty"`
 	Compacting      bool            `json:"compacting,omitempty"`
 	TurnID          string          `json:"turn_id,omitempty"`
 	Text            string          `json:"text,omitempty"`
@@ -57,6 +61,10 @@ type AgentResult struct {
 	Text            string
 	Activities      []string
 	Parts           []chatmodel.Part
+	// Steered counts the steering messages the model took in. A provider may
+	// record one as a turn of its own, so the native session holds up to that
+	// many turns after the one this request began.
+	Steered int
 }
 
 type AgentRunner interface {

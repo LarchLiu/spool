@@ -12,6 +12,7 @@ export type ChatTurnEvent = {
   model?: string;
   reasoning_effort?: string;
   permission_mode?: string;
+  queued_messages?: Chat["queued_messages"];
 };
 
 export function subscribeChatEvents(

@@ -175,12 +175,7 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 		// initial user turn, not an application-maintained execution loop.
 		request.Prompt = command.Objective
 	}
-	input := []any{map[string]any{"type": "text", "text": agentTextInput(request), "text_elements": []any{}}}
-	for _, file := range request.Attachments {
-		if file.Image() {
-			input = append(input, map[string]any{"type": "localImage", "path": file.Path})
-		}
-	}
+	input := codexUserInput(request)
 	params := map[string]any{
 		"threadId": p.sessionID, "cwd": request.WorkingDirectory,
 		"approvalPolicy": "on-request", "approvalsReviewer": reviewer,
@@ -202,6 +197,8 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 		return result, fmt.Errorf("Codex returned an invalid turn ID"), false
 	}
 	result.TurnID = turnID
+	p.beginSteering(turnID)
+	defer p.endSteering()
 	if err := emit(AgentEvent{Type: "turn", TurnID: turnID}); err != nil {
 		return result, err, false
 	}
@@ -224,6 +221,7 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 		return emit(AgentEvent{Type: "delta", Text: delta, Part: &part})
 	}
 	startedItems := make(map[string]bool)
+	steerItems := make(map[string]bool)
 	streamedThinking := make(map[string]string)
 	streamedToolOutput := make(map[string]string)
 	for {
@@ -235,6 +233,9 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 			if err != nil {
 				return result, err, false
 			}
+		}
+		if p.steerResponse(value) {
+			continue
 		}
 		method := stringValue(value["method"])
 		params, _ := value["params"].(map[string]any)
@@ -347,6 +348,24 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 			if codexCompactionItem(item) {
 				if err := emit(AgentEvent{Type: "compaction", Compacting: method == "item/started"}); err != nil {
 					return result, err, false
+				}
+				continue
+			}
+			if item["type"] == "userMessage" {
+				// A steering message joins the turn as a user message of its own,
+				// announced when it starts and again when it completes.
+				itemID := stringValue(item["id"])
+				if itemID != "" && steerItems[itemID] {
+					continue
+				}
+				for _, id := range p.codexSteerTaken(item) {
+					if itemID != "" {
+						steerItems[itemID] = true
+					}
+					result.Steered++
+					if err := emit(AgentEvent{Type: "steered", SteerID: id}); err != nil {
+						return result, err, false
+					}
 				}
 				continue
 			}

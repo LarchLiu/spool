@@ -1076,5 +1076,9 @@
   "Preflight succeeded. Apply changes to activate this configuration.": "事前確認に成功しました。変更を適用すると有効になります。",
   "Preflight succeeded.": "事前確認に成功しました。",
   "The current Web listener was used. The new configuration will be checked again after applying.": "現在の Web リスナーで確認しました。適用後に新しい設定で再確認します。",
-  "Proxy address found by preflight": "事前確認で見つかったプロキシアドレス"
+  "Proxy address found by preflight": "事前確認で見つかったプロキシアドレス",
+  "Queued messages": "待機中のメッセージ",
+  "Steer": "ステア",
+  "Send now": "今すぐ送信",
+  "Delete queued message": "待機中のメッセージを削除"
 }

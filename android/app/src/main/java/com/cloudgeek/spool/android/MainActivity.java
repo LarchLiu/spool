@@ -149,6 +149,8 @@ public final class MainActivity extends Activity {
     private NativeUi.IconButton send;
     private NativeUi.ChoiceButton modelButton, permissionButton;
     private NativeUi.Composer composerView;
+    private NativeQueuedMessages queuedView;
+    private boolean delivering;
     private NativeUi.Header workspaceHeader;
     private NativeAgentModelMenu modelMenu;
     private NativePopover modelPopover;
@@ -2153,6 +2155,10 @@ public final class MainActivity extends Activity {
         modelButton = composerView.model;
         permissionButton = composerView.permission;
         send = composerView.send;
+        queuedView = new NativeQueuedMessages(ui, id -> queueAction(id, "steer"), id -> queueAction(id, "delete"));
+        composerView.addView(queuedView, composerView.indexOfChild(composerView.box), new LinearLayout.LayoutParams(-1, -2));
+        composerView.commands.steer = () -> deliver(true);
+        composerView.commands.queue = composerView.queueSubmit = () -> deliver(false);
         composer.setText(draft().text);
         composer.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence value, int start, int count, int after) {}
@@ -2224,6 +2230,10 @@ public final class MainActivity extends Activity {
         send.setContentDescription(activeTurn == null ? ui.t("Send message") : ui.t(stopping ? "Stopping…" : "Stop response"));
         send.setEnabled(writable() && (activeTurn != null ? !stopping : !busy && selectedAgentAvailable() && permissionReady()
                 && (!NativeGoalCommand.trim(composer.getText().toString()).isEmpty() || !draft().files.isEmpty())));
+        // While the agent answers, the stop button stays and a typed message gets its own send button.
+        composerView.queue.setVisibility(writable() && queueingDraft(activeTurn) ? View.VISIBLE : View.GONE);
+        composerView.queue.setEnabled(!delivering);
+        if (queuedView != null) queuedView.bind(writable() && chat != null ? chat.optJSONArray("queued_messages") : null, activeTurn != null, delivering);
         String modelName = model.isEmpty() ? tr("CLI default", "CLI 默认") : model;
         for (int i = 0; i < agents.length(); i++) {
             JSONObject agent = at(agents, i);
@@ -2992,6 +3002,86 @@ public final class MainActivity extends Activity {
             updateComposer();
         }, this::loadPermissions);
         permissionMenu.show(permissionButton);
+    }
+
+    private boolean queueingDraft(JSONObject activeTurn) {
+        return activeTurn != null && pendingSend == null && composer != null
+                && (!NativeGoalCommand.trim(composer.getText().toString()).isEmpty() || !draft().files.isEmpty());
+    }
+
+    /** Queue the draft behind the running turn, or steer it into that turn. */
+    private void deliver(boolean steer) {
+        JSONObject activeTurn = NativeChatState.runningTurn(chat);
+        if (!writable() || delivering || !queueingDraft(activeTurn)) return;
+        captureDraft();
+        final Draft submitted = draft();
+        NativeGoalCommand command = NativeGoalCommand.parse(submitted.text);
+        if (command != null) {
+            String issue = command.validationError(!submitted.files.isEmpty());
+            if (!issue.isEmpty()) { goalError = ui.t(issue); updateComposer(); return; }
+            if (!command.action.equals("set")) return;
+        }
+        final String target = chatID, message = submitted.text, auth = csrf, loc = locale();
+        final List<Attachment> files = new ArrayList<>(submitted.files);
+        final Client captured = client;
+        final int token = generation, session = authEpoch, selected = selectionEpoch;
+        final JSONObject payload = object("message", message, "backend", chat.optString("backend", backend), "model", model,
+                "reasoning_effort", effort, "permission_mode", permission, "delivery", steer ? "steer" : "queue");
+        delivering = true; goalError = "";
+        submitted.text = ""; submitted.files.clear(); composer.setText("");
+        renderFiles(); updateComposer();
+        io.execute(() -> {
+            try {
+                if (token != generation || session != authEpoch || destroyed) return;
+                Object value;
+                if (files.isEmpty()) value = request(captured, "/chats/" + target + "/messages", payload, auth, loc);
+                else {
+                    JSONArray upload = new JSONArray();
+                    for (Attachment file : files)
+                        upload.put(object("name", file.name, "data", android.util.Base64.encodeToString(file.data, android.util.Base64.NO_WRAP)));
+                    value = decodeResponse(captured.upload(target, object("fields", payload, "files", upload).toString(), auth, loc));
+                }
+                final JSONObject result = (JSONObject) value;
+                post(token, () -> {
+                    if (session != authEpoch) return;
+                    delivering = false;
+                    if (selected == selectionEpoch && target.equals(chatID) && !result.optString("id").isEmpty()) {
+                        chat = NativeChatState.reconcile(chat, result); renderChat();
+                    }
+                    updateComposer();
+                });
+            } catch (Exception e) {
+                post(token, () -> {
+                    if (session != authEpoch) return;
+                    delivering = false;
+                    if (e instanceof ApiFailure && ((ApiFailure) e).status == 401) { expire(); return; }
+                    if (selected == selectionEpoch && target.equals(chatID)) {
+                        Draft restored = draft();
+                        if (restored.text.isEmpty() && restored.files.isEmpty()) {
+                            restored.text = message; restored.files.addAll(files); composer.setText(message); renderFiles();
+                        }
+                        goalError = e.getMessage() == null ? e.toString() : e.getMessage();
+                    }
+                    updateComposer();
+                });
+            }
+        });
+    }
+
+    private void queueAction(String id, String action) {
+        if (!writable() || delivering || chat == null || chatID.isEmpty()) return;
+        final String target = chatID;
+        final int selected = selectionEpoch;
+        delivering = true; goalError = ""; updateComposer();
+        api("/chats/" + Uri.encode(target) + "/queue", object("id", id, "action", action), value -> {
+            delivering = false;
+            if (selected == selectionEpoch && target.equals(chatID)) { chat = NativeChatState.reconcile(chat, (JSONObject) value); renderChat(); }
+            updateComposer();
+        }, failure -> {
+            delivering = false;
+            if (selected == selectionEpoch && target.equals(chatID)) goalError = failure.getMessage() == null ? failure.toString() : failure.getMessage();
+            updateComposer();
+        });
     }
 
     private void sendOrStop() {

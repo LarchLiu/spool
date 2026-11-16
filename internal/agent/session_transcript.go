@@ -462,6 +462,9 @@ func claudeSessionParts(record map[string]any) []chatmodel.Part {
 		return nil
 	}
 	typ := stringValue(record["type"])
+	if typ == "attachment" {
+		return claudeSteerParts(record)
+	}
 	if typ != "user" && typ != "assistant" {
 		return nil
 	}
@@ -503,6 +506,24 @@ func claudeSessionParts(record map[string]any) []chatmodel.Part {
 		parts = restoreCarryNotes(parts)
 	}
 	return parts
+}
+
+// claudeSteerParts is a message the user sent while a turn was running. Claude
+// Code keeps it as a queued command attached to that turn, not as a user
+// record. Other queued commands, such as task notifications and replies from
+// other agents, are not something the user said.
+func claudeSteerParts(record map[string]any) []chatmodel.Part {
+	attachment, _ := record["attachment"].(map[string]any)
+	if record["isSidechain"] == true || attachment["type"] != "queued_command" || attachment["isMeta"] == true {
+		return nil
+	}
+	if mode := stringValue(attachment["commandMode"]); mode != "" && mode != "prompt" {
+		return nil
+	}
+	if origin, known := attachment["origin"].(map[string]any); known && origin["kind"] != "human" {
+		return nil
+	}
+	return claudeTranscriptParts("user", attachment["prompt"], "")
 }
 
 func claudeMessagePhase(message map[string]any) string {

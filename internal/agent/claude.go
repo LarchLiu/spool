@@ -2,10 +2,8 @@ package agent
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -173,26 +171,19 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 	}
 	result.Model = p.model
 	result.ReasoningEffort = p.effort
-	var content any = agentTextInput(request)
-	if len(request.Attachments) > 0 {
-		parts := []any{map[string]any{"type": "text", "text": agentTextInput(request)}}
-		for _, file := range request.Attachments {
-			if !file.Image() {
-				continue
-			}
-			data, err := os.ReadFile(file.Path)
-			if err != nil {
-				return result, err, false
-			}
-			parts = append(parts, map[string]any{"type": "image", "source": map[string]any{"type": "base64", "media_type": file.MediaType, "data": base64.StdEncoding.EncodeToString(data)}})
-		}
-		content = parts
+	content, err := claudeUserContent(request)
+	if err != nil {
+		return result, err, false
 	}
 	if err := p.write(map[string]any{"type": "user", "session_id": p.sessionID,
 		"message": map[string]any{"role": "user", "content": content}, "parent_tool_use_id": nil}); err != nil {
 		return result, err, false
 	}
 	result.SessionID = p.sessionID
+	p.beginSteering("")
+	defer p.endSteering()
+	// Set once a result leaves a steering message for a turn of its own.
+	followup := false
 	if result.Model != "" {
 		if err := emit(AgentEvent{Type: "model", Model: result.Model, ReasoningEffort: p.effort}); err != nil {
 			return result, err, false
@@ -287,6 +278,31 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 			continue
 		}
 		switch stringValue(value["type"]) {
+		case "command_lifecycle":
+			id, started, remaining := p.claudeSteerLifecycle(value)
+			if started {
+				// The next model request carries the message: within this turn,
+				// or opening the one a result left it over for.
+				followup = false
+				result.Steered++
+				if err := emit(AgentEvent{Type: "steered", SteerID: id}); err != nil {
+					return result, err, false
+				}
+				continue
+			}
+			if id != "" {
+				// Cancelled, discarded or refused before any turn took it.
+				if err := emit(AgentEvent{Type: "unsteered", SteerID: id}); err != nil {
+					return result, err, false
+				}
+			}
+			if followup && remaining == 0 && p.claudeTurnSettled() {
+				// Nothing is left for a further turn to answer.
+				if strings.TrimSpace(result.Text) == "" {
+					return result, fmt.Errorf("Claude Code finished without an assistant message"), true
+				}
+				return result, nil, true
+			}
 		case "control_request":
 			if err := p.handleClaudeApproval(ctx, value, settleDialog); err != nil {
 				return result, err, false
@@ -520,7 +536,13 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				if strings.TrimSpace(message) == "" {
 					message = "turn failed without an error message"
 				}
-				return result, fmt.Errorf("Claude Code turn failed: %s", chatmodel.Clip(message, maxStderrBytes)), true
+				// A steering message this turn never took would start a turn nobody reads.
+				return result, fmt.Errorf("Claude Code turn failed: %s", chatmodel.Clip(message, maxStderrBytes)), p.claudeTurnSettled()
+			}
+			if !p.claudeTurnSettled() {
+				followup = true
+				currentMessage, messageStarted, streamedThinking = "", false, ""
+				continue
 			}
 			if strings.TrimSpace(result.Text) == "" {
 				return result, fmt.Errorf("Claude Code finished without an assistant message"), true

@@ -95,6 +95,16 @@ type Session struct {
 	Status            SessionStatus     `json:"status"`
 	Transcript        Transcript        `json:"transcript"`
 	Turns             []Turn            `json:"turns"`
+	// Messages waiting for the running turn to end, oldest first.
+	Queued []QueuedMessage `json:"queued_messages,omitempty"`
+}
+
+type QueuedMessage struct {
+	ID          string   `json:"id"`
+	UserID      string   `json:"user_id,omitempty"`
+	Message     string   `json:"message"`
+	Attachments []string `json:"attachments,omitempty"`
+	CreatedAt   int64    `json:"created_at"`
 }
 
 type HistoryState struct {

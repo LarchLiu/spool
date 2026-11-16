@@ -530,6 +530,44 @@ func Run(t *testing.T) {
 			_ = json.Unmarshal(scanner.Bytes(), &reply)
 			log(map[string]any{"method": "permission-reply", "value": reply})
 		}
+		lateSteer := ""
+		if strings.Contains(prompt, "steer-wait") || strings.Contains(prompt, "steer-late") || strings.Contains(prompt, "steer-hold") {
+			// The running turn takes one more user message before it ends.
+			if !scanner.Scan() {
+				os.Exit(8)
+			}
+			var steer map[string]any
+			_ = json.Unmarshal(scanner.Bytes(), &steer)
+			log(map[string]any{"method": "steer", "value": steer})
+			// A held message is accepted, and the model never gets to it.
+			hold := strings.Contains(prompt, "steer-hold")
+			if codex {
+				send(map[string]any{"id": steer["id"], "result": map[string]any{"turnId": turnID}})
+				// Codex adds the message to the turn once the model is about to see it.
+				steerParams, _ := steer["params"].(map[string]any)
+				item := map[string]any{"id": "steer-input", "type": "userMessage", "content": steerParams["input"]}
+				if !strings.Contains(prompt, "steer-unnamed") {
+					item["clientId"] = steerParams["clientUserMessageId"]
+				}
+				if !hold {
+					notify("item/started", map[string]any{"item": item})
+					notify("item/completed", map[string]any{"item": item})
+				}
+			} else {
+				send(map[string]any{"type": "command_lifecycle", "command_uuid": steer["uuid"], "state": "queued"})
+				if strings.Contains(prompt, "steer-late") {
+					lateSteer = StringValue(steer["uuid"])
+				} else if strings.Contains(prompt, "steer-cancelled") {
+					// The message leaves the queue without any turn taking it.
+					send(map[string]any{"type": "command_lifecycle", "command_uuid": steer["uuid"], "state": "cancelled"})
+				} else if !hold {
+					send(map[string]any{"type": "command_lifecycle", "command_uuid": steer["uuid"], "state": "started"})
+				}
+			}
+			if hold {
+				time.Sleep(time.Hour)
+			}
+		}
 		if codex && strings.Contains(prompt, "mcp-elicitation") {
 			requestParams := map[string]any{
 				"threadId": thread, "serverName": "computer-use", "mode": "form",
@@ -559,6 +597,12 @@ func Run(t *testing.T) {
 				subtype = "error_during_execution"
 			}
 			send(map[string]any{"type": "result", "subtype": subtype, "session_id": thread, "result": text, "errors": []string{"fixture failure"}})
+			if lateSteer != "" {
+				// Claude Code answers a message the turn never took in a turn of its own.
+				send(map[string]any{"type": "command_lifecycle", "command_uuid": lateSteer, "state": "started"})
+				send(map[string]any{"type": "stream_event", "event": map[string]any{"type": "content_block_delta", "delta": map[string]any{"type": "text_delta", "text": " Steered"}}})
+				send(map[string]any{"type": "result", "subtype": "success", "session_id": thread, "result": " Steered"})
+			}
 		}
 		if strings.Contains(prompt, "idle-chatter") {
 			chatter.Do(func() {

@@ -37,6 +37,11 @@ import { DesktopSettingsLink } from "./desktop-settings";
 import { DesktopWindowChrome } from "./desktop-window-chrome";
 import { LoginStory } from "./login-story";
 import { ComposerSendButton } from "./composer-send-button";
+import {
+  composerEnterAction,
+  inputMethodKey,
+  QueuedMessages,
+} from "./queued-messages";
 import { subscribeChatEvents } from "./chat-stream";
 import {
   mergeNavigationChats,
@@ -408,6 +413,8 @@ function App() {
   const selection = useRef({ project, chatID, draftVersion });
   const activeUser = useRef(user?.id);
   const submission = useRef(false);
+  const deliverRef = useRef(false);
+  const [delivering, setDelivering] = useState(false);
   const adoptedChatID = useRef("");
   selection.current = { project, chatID, draftVersion };
   activeUser.current = user?.id;
@@ -878,6 +885,7 @@ function App() {
               transcript: v.transcript,
               history: v.history,
               updated_at: v.updated_at,
+              queued_messages: v.queued_messages,
               turns,
             });
           });
@@ -1343,6 +1351,94 @@ function App() {
       if (!restoredFiles) releaseAttachments(attached);
       submission.current = false;
       setPosting(false);
+    }
+  }
+  // While the agent is answering, a message waits in the chat's queue or,
+  // steered, joins the running turn.
+  async function deliver(delivery: "queue" | "steer") {
+    if (
+      !chat ||
+      !composerWritable ||
+      (!draft.trim() && !files.length) ||
+      deliverRef.current ||
+      preparingFiles
+    )
+      return;
+    const command = parseGoalCommand(draft);
+    if (command && files.length) {
+      setError(t("Goal commands do not accept attachments"));
+      return;
+    }
+    if (command && command.action !== "set") return;
+    const message = draft,
+      attached = files,
+      owner = user?.id,
+      first = pendingSend.current;
+    let restored = false;
+    deliverRef.current = true;
+    setDelivering(true);
+    setDraft("");
+    setFiles([]);
+    setPreview(null);
+    setError("");
+    try {
+      // The turn being answered may still be waiting for its own chat ID.
+      const accepted = first ? await first.accepted : chat;
+      const id = accepted?.id;
+      if (!id || id.startsWith("pending-")) throw new Error("message was not sent");
+      const payload = {
+        message,
+        backend: accepted.backend,
+        model,
+        reasoning_effort: effort,
+        permission_mode: permissions.mode,
+        delivery,
+      };
+      let body: typeof payload | FormData = payload;
+      if (attached.length) {
+        body = new FormData();
+        for (const [key, value] of Object.entries(payload))
+          body.set(key, value);
+        for (const file of attached) body.append("files", file.file, file.name);
+      }
+      const v = await api<Chat>("/chats/" + id + "/messages", body);
+      if (activeUser.current === owner && activeID.current === v.id)
+        setChat((old) => reconcile(old, v));
+    } catch (e) {
+      if (activeUser.current === owner) {
+        setDraft((current) => current || message);
+        setFiles((current) => {
+          restored = !current.length;
+          return restored ? attached : current;
+        });
+        fail(e);
+      }
+    } finally {
+      if (!restored) releaseAttachments(attached);
+      deliverRef.current = false;
+      setDelivering(false);
+    }
+  }
+  function submitDraft(steer = false) {
+    if (activeTurn) void deliver(steer ? "steer" : "queue");
+    else void send();
+  }
+  async function queueAction(id: string, action: "steer" | "delete") {
+    if (!chat || deliverRef.current) return;
+    const target = chat.id,
+      owner = user?.id;
+    deliverRef.current = true;
+    setDelivering(true);
+    setError("");
+    try {
+      const v = await api<Chat>("/chats/" + target + "/queue", { id, action });
+      if (activeUser.current === owner && activeID.current === target)
+        setChat((old) => reconcile(old, v));
+    } catch (e) {
+      if (activeUser.current === owner && activeID.current === target) fail(e);
+    } finally {
+      deliverRef.current = false;
+      setDelivering(false);
     }
   }
   async function stop() {
@@ -1968,11 +2064,21 @@ function App() {
                 </button>
               </div>
             )}
+          {composerWritable && !!chat?.queued_messages?.length && (
+            <QueuedMessages
+              messages={chat.queued_messages}
+              running={!!activeTurn}
+              busy={delivering}
+              t={t}
+              onSteer={(id) => void queueAction(id, "steer")}
+              onDelete={(id) => void queueAction(id, "delete")}
+            />
+          )}
           <form
             className="composer"
             onSubmit={(e) => {
               e.preventDefault();
-              void send();
+              submitDraft();
             }}
           >
             {commandOpen && (
@@ -2027,7 +2133,7 @@ function App() {
                   setCommandFocused(false);
               }}
               onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing) return;
+                if (inputMethodKey(e.nativeEvent)) return;
                 if (
                   commandOpen &&
                   (e.key === "Tab" ||
@@ -2052,13 +2158,13 @@ function App() {
                   setCommandDismissed(true);
                   return;
                 }
-                if (
-                  e.key === "Enter" &&
-                  (e.metaKey || e.altKey) &&
-                  !e.nativeEvent.isComposing
-                ) {
+                const action = composerEnterAction(
+                  e.nativeEvent,
+                  matchMedia("(pointer: coarse)").matches,
+                );
+                if (action) {
                   e.preventDefault();
-                  void send();
+                  submitDraft(action === "steer");
                 }
               }}
               maxLength={131072}
@@ -2156,6 +2262,15 @@ function App() {
                       />
                     )}
                   </div>
+                )}
+                {activeTurn && (!!draft.trim() || !!files.length) && (
+                  <ComposerSendButton
+                    active={false}
+                    stopping={false}
+                    t={t}
+                    onStop={() => {}}
+                    disabled={!composerWritable || preparingFiles || delivering}
+                  />
                 )}
                 <ComposerSendButton
                   active={!!activeTurn}

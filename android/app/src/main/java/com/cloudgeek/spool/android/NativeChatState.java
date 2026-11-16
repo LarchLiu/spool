@@ -117,6 +117,8 @@ final class NativeChatState {
         if (!kind.equals("turn") || previous == null) return Merge.same(previous);
         JSONObject next = shallow(previous);
         for (String key : new String[] {"title", "backend", "model", "reasoning_effort", "permission_mode", "status", "transcript", "history", "updated_at"}) nullable(next, data, key);
+        // Older servers do not send the queue; keep whatever the snapshot held.
+        if (data.has("queued_messages")) nullable(next, data, "queued_messages");
         JSONArray supplied = data.optJSONArray("turns");
         JSONArray turns = supplied == null ? null : slice(supplied, 0, supplied.length());
         if (turns == null) {

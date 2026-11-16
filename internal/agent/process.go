@@ -338,6 +338,15 @@ type agentProcess struct {
 	queued              []map[string]any
 	permissionMode      string
 	approve             chatmodel.ApprovalHandler
+	// A steering request writes while the turn that owns the process reads.
+	writeMu      sync.Mutex
+	steerMu      sync.Mutex
+	steerActive  bool
+	steerTurn    string
+	steerThread  string
+	steerSeq     int
+	steerWaiters map[string]steerWaiter
+	steerPending []pendingSteer
 }
 
 func startAgentProcess(ctx context.Context, request AgentRequest) (*agentProcess, error) {
@@ -424,6 +433,8 @@ func (p *agentProcess) write(value any) error {
 	if err != nil {
 		return err
 	}
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
 	_, err = fmt.Fprintf(p.stdin, "%s\n", data)
 	return err
 }

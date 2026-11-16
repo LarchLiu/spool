@@ -38,6 +38,8 @@ type App struct {
 	realtimePing    time.Duration
 	realtimeTimeout time.Duration
 	turnMu          sync.Mutex
+	queueMu         sync.Mutex
+	queues          map[string][]*queuedMessage
 	closing         bool
 	updating        bool
 	runningTurns    int
@@ -54,6 +56,7 @@ type App struct {
 	liveTurns    map[string][]chatmodel.Turn
 	liveHistory  map[string]*chatmodel.HistoryState
 	completed    map[string]completedTurn
+	steering     map[string]*turnSteering
 	presence     *Presence
 	limiter      loginLimiter
 	assets       http.Handler
@@ -74,6 +77,9 @@ type App struct {
 
 type completedTurn struct {
 	turn chatmodel.Turn
+	// A provider may record a steering message as a turn of its own, so the
+	// native session can hold this many turns for the one that ran here.
+	spans int
 }
 
 type chatMetadata struct {
@@ -449,6 +455,7 @@ func (a *App) snapshot(chat chatmodel.Session) chatmodel.Session {
 	a.liveMu.Lock()
 	defer a.liveMu.Unlock()
 	if t, ok := a.live[chat.ID]; ok && chat.Status == chatmodel.StatusRunning {
+		t = a.withSteeringLocked(chat.ID, t)
 		base := a.liveBase[chat.ID]
 		chat.Transcript = runningTranscript(base, t)
 		chat.History = a.liveHistory[chat.ID]
@@ -468,6 +475,7 @@ func (a *App) snapshot(chat chatmodel.Session) chatmodel.Session {
 		}
 	}
 	chat.NativeSessionID = ""
+	chat.Queued = a.queuedMessages(chat.ID)
 	return chat
 }
 
@@ -476,19 +484,34 @@ func (a *App) snapshot(chat chatmodel.Session) chatmodel.Session {
 // response stays in memory only; once native history catches up, callers use
 // that source of truth instead.
 func mergeCompletedTurn(chat chatmodel.Session, finished completedTurn) (chatmodel.Session, bool) {
-	if len(chat.Turns) == 0 || chat.Turns[len(chat.Turns)-1].ID != finished.turn.ID {
+	index := -1
+	for i := len(chat.Turns) - 1; i >= 0 && i >= len(chat.Turns)-max(1, finished.spans); i-- {
+		if chat.Turns[i].ID == finished.turn.ID {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
 		return chat, false
 	}
-	index := len(chat.Turns) - 1
 	native := chat.Turns[index]
+	start := max(0, min(native.PartStart, len(chat.Transcript.Parts)))
+	if index < len(chat.Turns)-1 {
+		// The provider answered steering messages in turns of its own. The
+		// turn that ran here holds them all, so it is compared with them all.
+		native.Parts = chat.Transcript.Parts[start:]
+		populateTurnContent(&native)
+	}
 	replyCaughtUp := strings.HasPrefix(native.Reply, finished.turn.Reply)
 	inputCaughtUp := len(native.Parts) > 0 && strings.Contains(native.Prompt, finished.turn.Prompt)
-	if len(finished.turn.Parts) == 0 || (inputCaughtUp && replyCaughtUp && nativeOutputCovers(native.Parts, finished.turn.Parts)) {
+	// A turn still marked running was read before it finished: that is this
+	// process's own earlier state, not native history that has caught up.
+	caughtUp := native.Status != chatmodel.StatusRunning && inputCaughtUp && replyCaughtUp && nativeOutputCovers(native.Parts, finished.turn.Parts)
+	if len(finished.turn.Parts) == 0 || caughtUp {
 		return chat, false
 	}
 	// Native normalization can use different part boundaries than the live
 	// stream. Replace only this turn, leaving preceding turn ranges unchanged.
-	start := max(0, min(native.PartStart, len(chat.Transcript.Parts)))
 	turn := finished.turn
 	inputs := max(0, min(turn.InputEnd-turn.PartStart, len(turn.Parts)))
 	turn.PartStart, turn.InputEnd = start, start+inputs
@@ -499,7 +522,7 @@ func mergeCompletedTurn(chat chatmodel.Session, finished completedTurn) (chatmod
 	}
 	chat.Transcript.Parts = append(append([]chatmodel.Part(nil), chat.Transcript.Parts[:start]...), turn.Parts...)
 	turn.PartEnd = turn.PartStart + len(turn.Parts)
-	chat.Turns[index] = turn
+	chat.Turns = append(chat.Turns[:index:index], turn)
 	chat.Transcript.Captured = len(chat.Transcript.Parts)
 	chat.Status = turn.Status
 	return chat, true
@@ -673,6 +696,10 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		a.stopTurnResponse(w, r, chat, id.User.ID)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "queue" && r.Method == "POST" {
+		a.queueResponse(w, r, chat, id.User.ID)
+		return
+	}
 	if len(parts) == 2 && parts[1] == "goal" && r.Method == "POST" {
 		a.goalCommandResponse(w, r, chat)
 		return
@@ -718,6 +745,26 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		}
 		if err := catalog.Validate(input.PermissionMode); err != nil {
 			apiError(w, 400, err.Error())
+			return
+		}
+	}
+	if input.Delivery != "" && input.Delivery != "queue" && input.Delivery != "steer" {
+		apiError(w, 400, "Invalid message delivery")
+		return
+	}
+	// A busy chat keeps the message for later or passes it to the running
+	// turn. Switching agents and automation follow-ups still need an idle chat.
+	if input.Delivery != "" && chat.Backend == source.Backend && !chat.AutomationChat {
+		delivered, err := a.deliverWhileRunning(r.Context(), chat, input, options)
+		if err != nil {
+			apiError(w, 409, err.Error())
+			return
+		}
+		if delivered {
+			latest, _ := a.store.Get(chat.ID)
+			allowed := a.store.CanControlChat(id.User.ID, chat.ID)
+			latest.CanControl = &allowed
+			apiJSON(w, 202, transportWindow(r, a.snapshot(latest)))
 			return
 		}
 	}
@@ -840,6 +887,11 @@ func (a *App) startTurnWithCallback(chat chatmodel.Session, input messageInput, 
 		}
 		if err != nil {
 			log.Printf("chat %s: %v", chat.ID, err)
+			// A stopped or failed turn leaves its queue for the user to decide.
+			return
+		}
+		if err := a.startQueued(chat.ID, ""); err != nil {
+			log.Printf("chat %s: queued message: %v", chat.ID, err)
 		}
 	}()
 	return nil
@@ -910,12 +962,14 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 		err := a.store.FinishTurn(id, turn.ID, result, runErr, statusForAgentError(runErr))
 		pushStatus := chatmodel.StatusFailed
 		a.liveMu.Lock()
+		requeued := a.endSteeringLocked(id, turn.ID, runErr != nil)
 		if err == nil {
 			terminal := turn
+			spans := 1 + result.Steered
 			if current, ok := a.live[id]; ok && current.ID == turn.ID {
 				terminal = current
 			} else if stopped, ok := a.completed[id]; ok && stopped.turn.ID == turn.ID {
-				terminal = stopped.turn
+				terminal, spans = stopped.turn, max(spans, stopped.spans)
 			}
 			if persisted, ok := a.store.runtimeTurn(id); ok && persisted.ID == turn.ID {
 				terminal.NativeTurnID = persisted.NativeTurnID
@@ -941,7 +995,7 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 				}
 				terminal.Reply = result.Text
 			}
-			a.completed[id] = completedTurn{turn: terminal}
+			a.completed[id] = completedTurn{turn: terminal, spans: spans}
 			pushStatus = terminal.Status
 			delete(a.live, id)
 			delete(a.liveBase, id)
@@ -968,6 +1022,9 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 			a.live[id] = failed
 		}
 		a.liveMu.Unlock()
+		if requeued {
+			a.queueChanged(id)
+		}
 		if !errors.Is(err, errTurnChanged) && (pushStatus == chatmodel.StatusCompleted || pushStatus == chatmodel.StatusFailed) {
 			kind := "completed"
 			if pushStatus == chatmodel.StatusFailed {
@@ -1024,7 +1081,10 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 			a.liveMu.Unlock()
 			return errTurnChanged
 		}
+		requeued := false
 		switch event.Type {
+		case "steered", "unsteered":
+			requeued = a.settleSteeringLocked(id, &current, event.SteerID, event.Type == "steered")
 		case "compaction":
 			current.Compacting = event.Compacting
 		case "turn":
@@ -1097,6 +1157,9 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 		current.PartEnd = current.PartStart + len(current.Parts)
 		a.live[id] = current
 		a.liveMu.Unlock()
+		if requeued {
+			a.queueChanged(id)
+		}
 		if err := a.store.SaveRunningTurn(id, current); err != nil {
 			return err
 		}
@@ -1164,13 +1227,14 @@ func writeSSE(w http.ResponseWriter, event string, v any) error {
 	return controller.Flush()
 }
 
-func chatStreamSignature(turn chatmodel.Turn, status chatmodel.SessionStatus, parts []chatmodel.Part, updated int64) [sha256.Size]byte {
+func chatStreamSignature(turn chatmodel.Turn, status chatmodel.SessionStatus, parts []chatmodel.Part, updated int64, queued ...chatmodel.QueuedMessage) [sha256.Size]byte {
 	data, _ := json.Marshal(struct {
 		Turn      chatmodel.Turn
 		Status    chatmodel.SessionStatus
 		Parts     []chatmodel.Part
 		UpdatedAt int64
-	}{turn, status, parts, updated})
+		Queued    []chatmodel.QueuedMessage `json:",omitempty"`
+	}{turn, status, parts, updated, queued})
 	return sha256.Sum256(data)
 }
 
@@ -1214,7 +1278,7 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 	var cached chatmodel.Turn
 	if len(chat.Turns) > 0 {
 		cached = chat.Turns[len(chat.Turns)-1]
-		previous = chatStreamSignature(initial.Turns[len(initial.Turns)-1], initial.Status, initial.Transcript.Parts, initial.UpdatedAt)
+		previous = chatStreamSignature(initial.Turns[len(initial.Turns)-1], initial.Status, initial.Transcript.Parts, initial.UpdatedAt, initial.Queued...)
 	}
 	cachedUpdated := chat.UpdatedAt
 	cachedTitle := chat.Title
@@ -1244,6 +1308,7 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 			// Events rewrite and grow the turn's parts in place under liveMu; a
 			// frame is encoded outside it, from the parts as they are now.
 			current.Parts = ownedParts(current.Parts)
+			current = a.withSteeringLocked(id, current)
 			if hydrated, exists := a.liveBase[id]; exists {
 				baseTranscript = hydrated
 			}
@@ -1303,7 +1368,11 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 				current = window.Turns[len(window.Turns)-1]
 			}
 			// Resend at the new revision if metadata overtook an older turn event.
-			signature := chatStreamSignature(current, status, window.Transcript.Parts, meta.UpdatedAt)
+			queued := a.queuedMessages(id)
+			if queued == nil {
+				queued = []chatmodel.QueuedMessage{}
+			}
+			signature := chatStreamSignature(current, status, window.Transcript.Parts, meta.UpdatedAt, queued...)
 			if signature != previous {
 				value := struct {
 					Turn       chatmodel.Turn          `json:"turn"`
@@ -1317,7 +1386,9 @@ func (a *App) chatStream(w http.ResponseWriter, r *http.Request, user, id string
 					Model      string                  `json:"model,omitempty"`
 					Effort     string                  `json:"reasoning_effort,omitempty"`
 					Permission string                  `json:"permission_mode,omitempty"`
-				}{current, window.Turns, window.History, window.Transcript, status, meta.Title, meta.UpdatedAt, meta.Backend, meta.Model, meta.ReasoningEffort, meta.PermissionMode}
+					// Always present, so an emptied queue clears the copy a client holds.
+					Queued []chatmodel.QueuedMessage `json:"queued_messages"`
+				}{current, window.Turns, window.History, window.Transcript, status, meta.Title, meta.UpdatedAt, meta.Backend, meta.Model, meta.ReasoningEffort, meta.PermissionMode, queued}
 				if err := writeSSE(w, "turn", value); err != nil {
 					return
 				}

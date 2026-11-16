@@ -2345,6 +2345,62 @@ a.attachment-open {
   overflow-wrap: anywhere;
   font-size: 12px;
 }
+.queued-messages {
+  max-width: 868px;
+  max-height: 132px;
+  overflow-y: auto;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: var(--elevated);
+}
+.queued-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 2px 8px 2px 12px;
+  color: var(--muted);
+}
+.queued-message + .queued-message {
+  border-top: 1px solid var(--line);
+}
+.queued-message > svg {
+  flex-shrink: 0;
+}
+.queued-message-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--text);
+}
+.queued-message-steer {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.queued-message-steer:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.queued-message-steer:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .composer-bottom {
   min-height: 49px;
   display: flex;

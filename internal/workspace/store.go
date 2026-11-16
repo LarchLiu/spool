@@ -565,9 +565,17 @@ func (s *Store) finishTurn(id, turnID string, result agent.AgentResult, runErr e
 	}
 	if nativePath != "" && v.Backend != chatmodel.BackendCodex {
 		if index, e := s.indexHistory(v.Backend, nativePath); e == nil && len(index) > 0 {
-			last := index[len(index)-1]
-			if last.Start >= t.SourceOffset {
-				t.NativeTurnID = nativeIdentity(v.NativeSessionID, last)
+			// A steering message the provider recorded as a turn of its own
+			// follows the turn this request began, which is then not the last.
+			chosen := len(index) - 1
+			for i := max(0, chosen-result.Steered); i < len(index)-1; i++ {
+				if index[i].Start >= t.SourceOffset && index[i].StartedAt >= t.StartedAt {
+					chosen = i
+					break
+				}
+			}
+			if began := index[chosen]; began.Start >= t.SourceOffset {
+				t.NativeTurnID = nativeIdentity(v.NativeSessionID, began)
 			}
 		}
 	}

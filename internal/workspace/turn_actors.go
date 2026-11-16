@@ -179,6 +179,12 @@ func (s *Store) recordTurnAction(chat, turn, user, kind, approval, summary strin
 	return v, s.notify(tx.Commit(), changeNavigation)
 }
 
+// touchSession advances a chat's revision for state kept outside the store.
+func (s *Store) touchSession(chat string) error {
+	_, err := s.db.Exec(`UPDATE sessions SET updated_at=MAX(updated_at+1,?) WHERE id=?`, time.Now().UnixMilli(), chat)
+	return s.notify(err, changeNavigation)
+}
+
 // Batch only the already-authorized chat IDs; listing chats must not decode
 // native histories or expose users from unrelated projects. Include the owner
 // for legacy turns, plus everyone who actually sent, stopped or approved a turn.

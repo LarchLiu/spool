@@ -48,9 +48,10 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string, user string) (chat
 		current = live
 		current.Parts = ownedParts(live.Parts)
 	}
+	steered := a.steeredLocked(chat.ID, turnID)
 	a.liveMu.Unlock()
 
-	result := agent.AgentResult{}
+	result := agent.AgentResult{Steered: steered}
 	if current.ID != "" {
 		result = agent.AgentResult{
 			Text:            current.Reply,
@@ -58,6 +59,7 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string, user string) (chat
 			ReasoningEffort: current.ReasoningEffort,
 			Activities:      current.Activities,
 			Parts:           current.Parts,
+			Steered:         steered,
 		}
 	}
 	if err := a.store.finishTurn(chat.ID, turnID, result, context.Canceled, chatmodel.StatusStopped, user); err != nil {
@@ -99,14 +101,20 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string, user string) (chat
 		if len(latest.Turns) > 0 {
 			latest.Turns[len(latest.Turns)-1] = live
 		}
-		a.completed[chat.ID] = completedTurn{turn: live}
+		a.completed[chat.ID] = completedTurn{turn: live, spans: 1 + steered}
 		delete(a.live, chat.ID)
 		delete(a.liveBase, chat.ID)
 		delete(a.liveHistory, chat.ID)
 		delete(a.liveTurns, chat.ID)
 	}
+	// What the model never saw is the user's to send again, not lost.
+	requeued := a.endSteeringLocked(chat.ID, turnID, true)
 	a.liveMu.Unlock()
+	if requeued {
+		a.queueChanged(chat.ID)
+	}
 	latest.NativeSessionID = ""
+	latest.Queued = a.queuedMessages(chat.ID)
 	allowed := a.store.CanControlChat(user, chat.ID)
 	latest.CanControl = &allowed
 	return latest, nil
