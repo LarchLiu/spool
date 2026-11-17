@@ -26,8 +26,8 @@ func (a *App) renameChatResponse(w http.ResponseWriter, r *http.Request, user st
 	}
 	// Serialize renames without holding the store or turn admission locks
 	// while waiting on a provider. Running conversations can still be renamed.
-	a.renameMu.Lock()
-	defer a.renameMu.Unlock()
+	a.metadataMu.Lock()
+	defer a.metadataMu.Unlock()
 	chat, ok := a.store.getSession(chat.ID)
 	if !ok || !a.store.CanControlChat(user, chat.ID) {
 		apiError(w, 404, "聊天不存在")

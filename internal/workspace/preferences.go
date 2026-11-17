@@ -93,6 +93,9 @@ func (s *Store) UserNavigation(user string) (Navigation, error) {
 		if e != nil {
 			return Navigation{}, e
 		}
+		if s.nativeSessionArchived(chat.Backend, chat.NativeSessionID) {
+			continue
+		}
 		chat.NativeSessionID = ""
 		chats = append(chats, chat)
 	}

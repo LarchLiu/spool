@@ -462,8 +462,10 @@ func (s *Store) CanAccessProject(user, project string) bool {
 func (s *Store) CanAccessChat(user, chat string) bool {
 	var owner, project string
 	var shared bool
-	err := s.db.QueryRow(`SELECT COALESCE(s.user_id,''),s.project_id,p.shared_chats FROM sessions s JOIN projects p ON p.id=s.project_id LEFT JOIN users u ON u.id=s.user_id WHERE s.id=? AND p.archived=0 AND `+visibleSessionSQL+` AND (u.disabled=0 OR EXISTS(SELECT 1 FROM automation_chats WHERE session_id=s.id) OR EXISTS(SELECT 1 FROM local_sessions WHERE session_id=s.id))`, chat).Scan(&owner, &project, &shared)
-	if err != nil || !s.CanAccessProject(user, project) {
+	var backend chatmodel.Backend
+	var nativeID string
+	err := s.db.QueryRow(`SELECT COALESCE(s.user_id,''),s.project_id,p.shared_chats,s.backend,s.native_session_id FROM sessions s JOIN projects p ON p.id=s.project_id LEFT JOIN users u ON u.id=s.user_id WHERE s.id=? AND p.archived=0 AND `+visibleSessionSQL+` AND (u.disabled=0 OR EXISTS(SELECT 1 FROM automation_chats WHERE session_id=s.id) OR EXISTS(SELECT 1 FROM local_sessions WHERE session_id=s.id))`, chat).Scan(&owner, &project, &shared, &backend, &nativeID)
+	if err != nil || s.nativeSessionArchived(backend, nativeID) || !s.CanAccessProject(user, project) {
 		return false
 	}
 	if owner == user || shared {
@@ -541,6 +543,9 @@ func (s *Store) UserSessions(user, project string) ([]chatmodel.Session, error) 
 		v, e := scanSession(rows)
 		if e != nil {
 			return nil, e
+		}
+		if s.nativeSessionArchived(v.Backend, v.NativeSessionID) {
+			continue
 		}
 		out = append(out, v)
 	}

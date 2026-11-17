@@ -32,6 +32,9 @@ func (s *Store) createFork(id string, backend chatmodel.Backend, options chatmod
 	if !ok {
 		return source, os.ErrNotExist
 	}
+	if s.nativeSessionArchived(source.Backend, source.NativeSessionID) {
+		return source, fmt.Errorf("This chat is archived")
+	}
 	if len(owner) > 0 && !s.CanCreateChat(owner[0], source.ProjectID) {
 		return source, os.ErrPermission
 	}

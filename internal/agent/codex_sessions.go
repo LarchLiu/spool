@@ -16,6 +16,14 @@ import (
 type CodexSessionLister struct{ Binary string }
 
 func (l CodexSessionLister) ListSessions(ctx context.Context, options ListSessionsOptions) ([]LocalSession, error) {
+	return l.listSessions(ctx, options, false)
+}
+
+func (l CodexSessionLister) ListArchivedSessions(ctx context.Context) ([]LocalSession, error) {
+	return l.listSessions(ctx, ListSessionsOptions{}, true)
+}
+
+func (l CodexSessionLister) listSessions(ctx context.Context, options ListSessionsOptions, archived bool) ([]LocalSession, error) {
 	binary := l.Binary
 	var err error
 	if binary == "" {
@@ -56,7 +64,7 @@ func (l CodexSessionLister) ListSessions(ctx context.Context, options ListSessio
 	cursor, skipped := "", 0
 	for {
 		params := map[string]any{
-			"limit": 100, "sortKey": "updated_at", "archived": false,
+			"limit": 100, "sortKey": "updated_at", "archived": archived,
 			"modelProviders": []string{},
 			// An empty sourceKinds defaults to cli/vscode and would lose sessions
 			// created by other app-server clients. Subagents remain excluded.
@@ -104,7 +112,8 @@ func (l CodexSessionLister) ListSessions(ctx context.Context, options ListSessio
 				title = chatmodel.BackendCodex.Label()
 			}
 			sessions = append(sessions, LocalSession{ID: t.ID, Path: t.Path, Directory: t.Cwd,
-				Title: title, CustomTitle: t.Name, FirstPrompt: t.Preview, GitBranch: t.GitInfo.Branch,
+				Archived: archived,
+				Title:    title, CustomTitle: t.Name, FirstPrompt: t.Preview, GitBranch: t.GitInfo.Branch,
 				// Only a native name is confirmed when the chat is opened; a
 				// preview must not replace a title read from complete history.
 				Backend: chatmodel.BackendCodex, CreatedAt: t.CreatedAt * 1000, UpdatedAt: t.UpdatedAt * 1000, TitleAuthoritative: name != ""})

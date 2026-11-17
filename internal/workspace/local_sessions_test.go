@@ -232,6 +232,35 @@ func TestLocalSharingUsesConfiguredNativeCodexList(t *testing.T) {
 	if err != nil || len(nav.Chats) != 2 {
 		t.Fatalf("native outage hid healthy or retained sessions: %+v %v", nav, err)
 	}
+	// Native archive/unarchive changes must drive the projection, without any
+	// Spool mutation or persistent archive flag.
+	archivedPage, _ := json.Marshal(map[string]any{"": map[string]any{"data": []any{map[string]any{
+		"id": "native-from-server", "path": path, "cwd": p.Path, "name": "Archived native title", "createdAt": 1, "updatedAt": 2,
+	}}, "nextCursor": nil}})
+	if err := os.WriteFile(filepath.Join(fixture.WorkingDirectory, "fixture-archived-thread-pages.json"), archivedPage, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture.WorkingDirectory, "fixture-thread-pages.json"), []byte(`{"":{"data":[],"nextCursor":null}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.syncLocalSessions(true); err != nil {
+		t.Fatal(err)
+	}
+	nav, err = s.UserNavigation(u.ID)
+	if err != nil || len(nav.Chats) != 1 || s.CanAccessChat(u.ID, id) {
+		t.Fatalf("native archive was not reflected: %+v %v", nav, err)
+	}
+	writePage("Restored native title")
+	if err := os.WriteFile(filepath.Join(fixture.WorkingDirectory, "fixture-archived-thread-pages.json"), []byte(`{"":{"data":[],"nextCursor":null}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.syncLocalSessions(true); err != nil {
+		t.Fatal(err)
+	}
+	nav, err = s.UserNavigation(u.ID)
+	if err != nil || len(nav.Chats) != 2 || !s.CanAccessChat(u.ID, id) {
+		t.Fatalf("native unarchive was not reflected: %+v %v", nav, err)
+	}
 	if fixtureCount(t, fixture, "thread/start") != 0 || fixtureCount(t, fixture, "turn/start") != 0 {
 		t.Fatal("discovery started a chat")
 	}

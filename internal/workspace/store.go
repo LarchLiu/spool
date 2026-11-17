@@ -46,6 +46,9 @@ type Store struct {
 	db           *sql.DB
 	runtimeMu    sync.Mutex
 	runtimeTurns map[string]chatmodel.Turn
+	// A replaceable snapshot of provider metadata, never independent archive state.
+	nativeMu       sync.RWMutex
+	nativeSessions map[string]agent.LocalSession
 }
 
 const schema = `
@@ -319,6 +322,9 @@ func (s *Store) beginTurnBy(id, prompt string, backend chatmodel.Backend, permis
 	v, ok := s.getSession(id)
 	if !ok {
 		return chatmodel.Turn{}, os.ErrNotExist
+	}
+	if s.nativeSessionArchived(v.Backend, v.NativeSessionID) {
+		return chatmodel.Turn{}, fmt.Errorf("This chat is archived")
 	}
 	if v.UpdatedAt == history.UpdatedAt && v.Backend == history.Backend && v.NativeSessionID == history.NativeSessionID && (v.NativeSessionPath == "" || v.NativeSessionPath == history.NativeSessionPath) {
 		// The state decided on below is the one read under the lock; only the

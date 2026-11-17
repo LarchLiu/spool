@@ -163,9 +163,23 @@ func Run(t *testing.T) {
 					continue
 				}
 				send(map[string]any{"id": value["id"], "result": map[string]any{}})
+			case "thread/archive":
+				if _, err := os.Stat("unsupported-archive"); err == nil {
+					send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32601, "message": "archive is not supported"}})
+					continue
+				}
+				send(map[string]any{"id": value["id"], "result": map[string]any{}})
 			case "thread/list":
 				var pages map[string]json.RawMessage
-				body, err := os.ReadFile("fixture-thread-pages.json")
+				pageFile := "fixture-thread-pages.json"
+				if params["archived"] == true {
+					pageFile = "fixture-archived-thread-pages.json"
+				}
+				body, err := os.ReadFile(pageFile)
+				if os.IsNotExist(err) && params["archived"] == true {
+					send(map[string]any{"id": value["id"], "result": map[string]any{"data": []any{}, "nextCursor": nil}})
+					continue
+				}
 				if err != nil || json.Unmarshal(body, &pages) != nil {
 					send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32603, "message": "fixture list unavailable"}})
 					continue

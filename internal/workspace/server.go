@@ -38,7 +38,7 @@ type App struct {
 	realtimePing    time.Duration
 	realtimeTimeout time.Duration
 	turnMu          sync.Mutex
-	renameMu        sync.Mutex
+	metadataMu      sync.Mutex
 	queueMu         sync.Mutex
 	queues          map[string][]*queuedMessage
 	closing         bool
@@ -656,6 +656,10 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 	}
 	if len(parts) == 2 && parts[1] == "rename" && r.Method == "POST" {
 		a.renameChatResponse(w, r, id.User.ID, chat)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "archive" && r.Method == "POST" {
+		a.archiveChatResponse(w, r, id.User.ID, chat)
 		return
 	}
 	if len(parts) == 2 && parts[1] == "fork" && r.Method == "POST" {

@@ -83,8 +83,13 @@ func testStore(t *testing.T) *Store {
 	}
 	t.Cleanup(func() { s.Close() })
 	s.localSources = map[chatmodel.Backend]agent.SessionLister{
-		chatmodel.BackendCodex:  agent.SessionListerFunc(fixtureLocalCodexSessions),
-		chatmodel.BackendClaude: agent.ClaudeSessionLister{},
+		chatmodel.BackendCodex: agent.SessionListerFunc(fixtureLocalCodexSessions),
+		chatmodel.BackendClaude: agent.SessionListerFunc(func(ctx context.Context, options agent.ListSessionsOptions) ([]agent.LocalSession, error) {
+			if os.Getenv("CLAUDE_CONFIG_DIR") == "" {
+				return nil, nil // never inspect a developer's real provider home
+			}
+			return (agent.ClaudeSessionLister{}).ListSessions(ctx, options)
+		}),
 	}
 	return s
 }

@@ -21,6 +21,7 @@ type LocalSession struct {
 	Backend                    chatmodel.Backend
 	CreatedAt, UpdatedAt       int64
 	TitleAuthoritative         bool
+	Archived                   bool
 }
 
 type ListSessionsOptions struct {
@@ -40,6 +41,12 @@ type SessionLister interface {
 	ListSessions(context.Context, ListSessionsOptions) ([]LocalSession, error)
 }
 
+// Codex lists archives separately; Claude returns their native archived flag
+// in ListSessions. Both feed the same provider-owned catalogue.
+type ArchivedSessionLister interface {
+	ListArchivedSessions(context.Context) ([]LocalSession, error)
+}
+
 type SessionListerFunc func(context.Context, ListSessionsOptions) ([]LocalSession, error)
 
 func (f SessionListerFunc) ListSessions(ctx context.Context, options ListSessionsOptions) ([]LocalSession, error) {
@@ -52,8 +59,8 @@ type localSessionFile struct {
 }
 
 const (
-	// Providers list newest first and Spool shows a small per-project window,
-	// so discovery never pages through or samples an unbounded history.
+	// Bound recent-session discovery to the newest entries. Native archive
+	// metadata is listed separately so older archived chats stay hidden.
 	localSessionDiscoveryLimit = 2000
 	// A failing provider (missing, hung, or outdated CLI) is not retried on
 	// every refresh, and its last snapshot is withdrawn once it is this stale.
@@ -109,6 +116,11 @@ func (index *LocalSessionIndex) Discover(ctx context.Context, sources map[chatmo
 		}
 		if !now.Before(provider.retryAt) {
 			sessions, err := source.ListSessions(ctx, ListSessionsOptions{Limit: localSessionDiscoveryLimit, IncludeUntitled: true})
+			if archived, ok := source.(ArchivedSessionLister); ok && err == nil {
+				var archivedSessions []LocalSession
+				archivedSessions, err = archived.ListArchivedSessions(ctx)
+				sessions = append(sessions, archivedSessions...)
+			}
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
@@ -129,7 +141,7 @@ func (index *LocalSessionIndex) Discover(ctx context.Context, sources map[chatmo
 	var sessions []LocalSession
 	for backend, provider := range index.providers {
 		for _, v := range provider.sessions {
-			if !chatmodel.ValidID(v.ID) || !filepath.IsAbs(v.Directory) || (v.Path != "" && !filepath.IsAbs(v.Path)) {
+			if v.Archived || !chatmodel.ValidID(v.ID) || !filepath.IsAbs(v.Directory) || (v.Path != "" && !filepath.IsAbs(v.Path)) {
 				continue
 			}
 			if v.Title == "" {
@@ -163,4 +175,23 @@ func (index *LocalSessionIndex) Discover(ctx context.Context, sources map[chatmo
 		return sessions[i].ID < sessions[j].ID
 	})
 	return sessions, nil
+}
+
+// Snapshot returns native metadata, including archives, from the latest
+// successful provider listings. Callers serialize it with Discover.
+func (index *LocalSessionIndex) Snapshot() []LocalSession {
+	var sessions []LocalSession
+	for backend, provider := range index.providers {
+		for _, session := range provider.sessions {
+			session.Backend = backend
+			sessions = append(sessions, session)
+		}
+	}
+	return sessions
+}
+
+func (index *LocalSessionIndex) RetryNow() {
+	for _, provider := range index.providers {
+		provider.retryAt = time.Time{}
+	}
 }

@@ -1092,5 +1092,13 @@
   "Queued messages": "排队中的消息",
   "Steer": "引导",
   "Send now": "立即发送",
-  "Delete queued message": "删除排队消息"
+  "Delete queued message": "删除排队消息",
+  "Archive": "归档",
+  "Archiving…": "正在归档…",
+  "Could not archive chat": "归档失败，请重试",
+  "Wait for the running response before archiving this chat": "请等待当前回复结束后再归档此对话",
+  "Remove queued messages before archiving this chat": "请先移除排队消息，再归档此对话",
+  "Send a message before archiving this chat": "请先发送一条消息，再归档此对话",
+  "This chat is archived": "此对话已归档",
+  "Chat was archived, but the native session list could not be refreshed": "原生归档已完成，但会话列表刷新失败，请稍后刷新"
 }

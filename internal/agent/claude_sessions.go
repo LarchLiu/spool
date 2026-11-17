@@ -24,7 +24,7 @@ import (
 const claudeSessionSampleBytes = 64 * 1024
 
 // ClaudeSessionLister implements the local-filesystem listSessions contract of
-// @anthropic-ai/claude-agent-sdk 0.3.323 in Go. It enumerates project directories
+// @anthropic-ai/claude-agent-sdk 0.3.326 in Go. It enumerates project directories
 // on demand and samples transcript heads/tails; it needs neither a CLI nor a JS
 // runtime. SessionStore is an SDK-provided custom storage hook, not local history.
 //
@@ -53,6 +53,7 @@ type claudeFileStamp struct {
 type claudeCachedSession struct {
 	candidate              claudeSessionCandidate
 	sidecar                claudeFileStamp
+	archive                claudeFileStamp
 	programmatic, untitled bool
 	session                LocalSession
 	ok                     bool
@@ -77,10 +78,13 @@ func (l ClaudeSessionLister) read(candidate claudeSessionCandidate, options List
 	if info, err := os.Stat(claudeSidecarPath(candidate.path, candidate.id)); err == nil {
 		entry.sidecar = claudeFileStamp{true, info.Size(), info.ModTime()}
 	}
+	if info, err := os.Stat(claudeArchivePath(candidate.path, candidate.id)); err == nil {
+		entry.archive = claudeFileStamp{true, info.Size(), info.ModTime()}
+	}
 	l.cache.mu.Lock()
 	cached, hit := l.cache.entries[candidate.path]
 	l.cache.mu.Unlock()
-	if hit && cached.sidecar == entry.sidecar && cached.programmatic == entry.programmatic && cached.untitled == entry.untitled &&
+	if hit && cached.sidecar == entry.sidecar && cached.archive == entry.archive && cached.programmatic == entry.programmatic && cached.untitled == entry.untitled &&
 		cached.candidate.project == candidate.project && cached.candidate.verifyProject == candidate.verifyProject &&
 		cached.candidate.info.Size() == candidate.info.Size() && cached.candidate.info.ModTime().Equal(candidate.info.ModTime()) &&
 		os.SameFile(cached.candidate.info, candidate.info) {
@@ -214,6 +218,40 @@ func (l ClaudeSessionLister) ListSessions(ctx context.Context, options ListSessi
 		sessions = append(sessions, v)
 		if options.Limit > 0 && len(sessions) >= options.Limit {
 			break
+		}
+	}
+	return sessions, nil
+}
+
+// Archives can be older than the recent-session window. Enumerate their native
+// sidecars, then use the same cached SDK metadata reader (including prompt-based
+// unarchiving). Ordinary old transcripts are never sampled by this extra pass.
+func (l ClaudeSessionLister) ListArchivedSessions(ctx context.Context) ([]LocalSession, error) {
+	home, err := nativeSessionHome(chatmodel.BackendClaude)
+	if err != nil {
+		return nil, err
+	}
+	paths, err := filepath.Glob(filepath.Join(home, "projects", "*", "*", "archived.json"))
+	if err != nil {
+		return nil, err
+	}
+	var sessions []LocalSession
+	for _, mark := range paths {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		id := filepath.Base(filepath.Dir(mark))
+		if _, err := uuid.Parse(id); err != nil || len(id) != 36 {
+			continue
+		}
+		path := filepath.Join(filepath.Dir(filepath.Dir(mark)), id+".jsonl")
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		candidate := claudeSessionCandidate{path: path, id: id, mtime: info.ModTime().UnixMilli(), info: info}
+		if session, ok := l.read(candidate, ListSessionsOptions{IncludeUntitled: true}); ok && session.Archived {
+			sessions = append(sessions, session)
 		}
 	}
 	return sessions, nil
@@ -528,7 +566,7 @@ func readClaudeSession(candidate claudeSessionCandidate, options ListSessionsOpt
 	return LocalSession{ID: candidate.id, Path: candidate.path, Directory: cwd, Title: title,
 		CustomTitle: custom, FirstPrompt: prompt, GitBranch: branch, Tag: latest(trecords, "tag", "tag"),
 		FileSize: info.Size(), Backend: chatmodel.BackendClaude, CreatedAt: created, UpdatedAt: info.ModTime().UnixMilli(),
-		TitleAuthoritative: authoritative}, true, stable
+		TitleAuthoritative: authoritative, Archived: claudeSessionArchived(candidate.path, candidate.id, head, tail)}, true, stable
 }
 
 var (

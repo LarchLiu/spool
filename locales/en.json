@@ -1092,5 +1092,13 @@
   "Queued messages": "Queued messages",
   "Steer": "Steer",
   "Send now": "Send now",
-  "Delete queued message": "Delete queued message"
+  "Delete queued message": "Delete queued message",
+  "Archive": "Archive",
+  "Archiving…": "Archiving…",
+  "Could not archive chat": "Could not archive chat",
+  "Wait for the running response before archiving this chat": "Wait for the running response before archiving this chat",
+  "Remove queued messages before archiving this chat": "Remove queued messages before archiving this chat",
+  "Send a message before archiving this chat": "Send a message before archiving this chat",
+  "This chat is archived": "This chat is archived",
+  "Chat was archived, but the native session list could not be refreshed": "Chat was archived, but the native session list could not be refreshed"
 }

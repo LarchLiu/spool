@@ -90,6 +90,9 @@ func (a *App) queueChanged(chatID string) {
 func (a *App) queueWhileRunning(chat chatmodel.Session, input messageInput, options chatmodel.CodexOptions, front bool) (bool, error) {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
+	if a.nativeCommandRunning(chat.ID) {
+		return true, fmt.Errorf("a native session command is running")
+	}
 	if a.activeTurns[chat.ID] == nil {
 		return false, nil
 	}

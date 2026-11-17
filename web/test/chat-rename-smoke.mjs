@@ -84,7 +84,8 @@ try {
         const page = await context.newPage();
         page.setDefaultTimeout(8000);
         const errors = [],
-          requests = [];
+          requests = [],
+          archiveRequests = [];
         page.on("pageerror", (error) => errors.push(String(error)));
         const chats = [
           fixture("rename-chat", backend, "查询 Codex 和 Claude 原生会话支持"),
@@ -93,7 +94,10 @@ try {
         ];
         let fail = false,
           hold = false,
-          release;
+          release,
+          archiveFail = true,
+          archiveHold = false,
+          releaseArchive;
         try {
           await page.addInitScript(
             ({ theme, desktop }) => {
@@ -141,7 +145,7 @@ try {
                 projects: [
                   { id: "project", name: "Project", can_create: true },
                 ],
-                chats,
+                chats: chats.filter((chat) => !chat.archived),
               });
             if (endpoint === "/api/agents")
               return json([
@@ -173,6 +177,22 @@ try {
                 id: chat.id,
                 title: chat.title,
                 updated_at: chat.updated_at,
+              });
+            }
+            if (endpoint.endsWith("/archive")) {
+              archiveRequests.push(endpoint);
+              if (archiveHold)
+                await new Promise((resolve) => {
+                  releaseArchive = resolve;
+                });
+              if (archiveFail)
+                return json({ error: "Could not archive chat" }, 502);
+              chat.archived = true;
+              return json({
+                projects: [
+                  { id: "project", name: "Project", can_create: true },
+                ],
+                chats: chats.filter((item) => !item.archived),
               });
             }
             if (endpoint.endsWith("/events"))
@@ -344,6 +364,84 @@ try {
             await trigger.locator("strong").textContent(),
             "Other conversation",
           );
+
+          // Native failure remains visible; retry hides the chat only after success.
+          await click(trigger);
+          await page.keyboard.press("End");
+          const archive = page.getByRole("menuitem", {
+            name: "Archive",
+            exact: true,
+          });
+          assert.ok(
+            await archive.evaluate(
+              (element) => element === document.activeElement,
+            ),
+          );
+          await click(archive);
+          await page
+            .getByRole("alert")
+            .filter({ hasText: "Could not archive chat" })
+            .waitFor();
+          assert.equal(
+            await trigger.locator("strong").textContent(),
+            "Other conversation",
+          );
+          assert.equal(
+            await page
+              .locator(".nav-chat-title")
+              .filter({ hasText: "Other conversation" })
+              .count(),
+            2,
+          );
+          await page
+            .getByRole("button", { name: "Dismiss", exact: true })
+            .click();
+          archiveFail = false;
+          archiveHold = true;
+          await click(trigger);
+          await click(archive);
+          await page.getByRole("menuitem", { name: "Archiving…" }).waitFor();
+          assert.ok(await trigger.isDisabled());
+          assert.equal(
+            await page
+              .locator(".nav-chat-title")
+              .filter({ hasText: "Other conversation" })
+              .count(),
+            2,
+          );
+          await page
+            .locator(".nav-chat-open")
+            .filter({ hasText: "Delayed rename" })
+            .first()
+            .evaluate((element) => element.click());
+          await page.waitForFunction(
+            () =>
+              document.querySelector(".chat-title-trigger strong")
+                ?.textContent === "Delayed rename",
+          );
+          releaseArchive();
+          await page
+            .locator(".nav-chat-title")
+            .filter({ hasText: "Other conversation" })
+            .first()
+            .waitFor({ state: "detached" });
+          assert.equal(
+            await trigger.locator("strong").textContent(),
+            "Delayed rename",
+          );
+          archiveHold = false;
+          await click(trigger);
+          await click(archive);
+          await trigger.waitFor({ state: "detached" });
+          assert.equal(
+            await page
+              .locator(".nav-chat-title")
+              .filter({ hasText: "Delayed rename" })
+              .count(),
+            0,
+          );
+          assert.ok(!new URL(page.url()).searchParams.has("chat"));
+          await page.reload();
           await page
             .locator(".nav-chat-open")
             .filter({ hasText: "Read only conversation" })
@@ -355,6 +453,14 @@ try {
             .waitFor();
           assert.equal(await trigger.count(), 0);
           assert.equal(requests.length, 3);
+          assert.equal(archiveRequests.length, 3);
+          assert.equal(
+            await page
+              .locator(".nav-chat-title")
+              .filter({ hasText: /Other conversation|Delayed rename/ })
+              .count(),
+            0,
+          );
           assert.deepEqual(errors, []);
           reports.push({
             engine,
@@ -366,6 +472,9 @@ try {
             keyboardAndIME: true,
             navigation: true,
             readOnly: true,
+            archive: true,
+            archiveFailureRetry: true,
+            archiveNavigation: true,
           });
         } catch (error) {
           await page.screenshot({ path: path.join(output, "failure.png") });
@@ -380,6 +489,7 @@ try {
           throw error;
         } finally {
           release?.();
+          releaseArchive?.();
           await context.close();
         }
       }

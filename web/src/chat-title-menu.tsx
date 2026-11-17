@@ -1,22 +1,27 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Pencil, X } from "lucide-react";
+import { Archive, ChevronDown, Pencil, X } from "lucide-react";
 import type { Translator } from "./i18n";
 
 export function ChatTitleMenu({
   title,
   t,
   onRename,
+  onArchive,
+  onError,
 }: {
   title: string;
   t: Translator;
   onRename: (title: string) => Promise<void>;
+  onArchive: () => Promise<void>;
+  onError: (error: unknown) => void;
 }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number }>();
   function close(restoreFocus = false) {
     setOpen(false);
@@ -76,6 +81,7 @@ export function ChatTitleMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
+        disabled={archiving}
         onClick={() => setOpen(!open)}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -112,15 +118,31 @@ export function ChatTitleMenu({
               }
               if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
                 event.preventDefault();
-                menu.current
-                  ?.querySelector<HTMLButtonElement>("button")
-                  ?.focus();
+                const items = Array.from(
+                  menu.current?.querySelectorAll<HTMLButtonElement>(
+                    "button:not(:disabled)",
+                  ) || [],
+                );
+                const current = items.findIndex(
+                  (item) => item === document.activeElement,
+                );
+                const index =
+                  event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? items.length - 1
+                      : (current +
+                          (event.key === "ArrowDown" ? 1 : -1) +
+                          items.length) %
+                        items.length;
+                items[index]?.focus();
               }
             }}
           >
             <button
               type="button"
               role="menuitem"
+              disabled={archiving}
               onClick={() => {
                 close();
                 setRenaming(true);
@@ -128,6 +150,27 @@ export function ChatTitleMenu({
             >
               <Pencil size={15} aria-hidden="true" />
               {t("Rename")}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={archiving}
+              aria-busy={archiving}
+              onClick={async () => {
+                setArchiving(true);
+                try {
+                  await onArchive();
+                  close();
+                } catch (error) {
+                  close(true);
+                  onError(error);
+                } finally {
+                  setArchiving(false);
+                }
+              }}
+            >
+              <Archive size={15} aria-hidden="true" />
+              {t(archiving ? "Archiving…" : "Archive")}
             </button>
           </div>,
           document.body,

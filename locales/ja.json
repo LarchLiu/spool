@@ -1092,5 +1092,13 @@
   "Queued messages": "待機中のメッセージ",
   "Steer": "ステア",
   "Send now": "今すぐ送信",
-  "Delete queued message": "待機中のメッセージを削除"
+  "Delete queued message": "待機中のメッセージを削除",
+  "Archive": "アーカイブ",
+  "Archiving…": "アーカイブ中…",
+  "Could not archive chat": "アーカイブできませんでした。再試行してください",
+  "Wait for the running response before archiving this chat": "応答が完了してからアーカイブしてください",
+  "Remove queued messages before archiving this chat": "キュー内のメッセージを削除してからアーカイブしてください",
+  "Send a message before archiving this chat": "メッセージを送信してからアーカイブしてください",
+  "This chat is archived": "このチャットはアーカイブ済みです",
+  "Chat was archived, but the native session list could not be refreshed": "アーカイブは完了しましたが、セッション一覧を更新できませんでした。後でもう一度更新してください"
 }

@@ -6,10 +6,12 @@ in the provider history store. Spool applies project/worktree ownership, sharing
 permissions, exclusion of Spool-created sessions, and the latest-20 window across
 both providers after discovery. The existing 10-second refresh interval remains.
 
-Only enabled providers are listed. Discovery runs outside the lock used by page
+Only enabled providers are listed. Discovery also refreshes native metadata for
+Spool-created chats, even when sharing local sessions is disabled. Discovery runs outside the lock used by page
 requests: a request never waits for another caller's discovery, and a navigation
-event follows any change. Each provider returns at most its 2000 most recently
-updated sessions.
+event follows any change. The recent-session pass reads at most 2000 entries per
+provider. Archive metadata is read separately so an old archived
+chat cannot reappear when it falls outside that window.
 
 ## Codex
 
@@ -25,13 +27,14 @@ send a model request.
 
 Native names take precedence over previews; a preview title is provisional. Native timestamps in seconds are
 converted to milliseconds. Spool does not scan Codex rollout directories for
-listing. The server's default JSONL metadata-repair behavior is retained, so
+listing. A separate `thread/list(archived=true)` catalogue supplies archive state
+for Spool-created chats; the normal list uses `archived=false`. The server's default JSONL metadata-repair behavior is retained, so
 histories missing from its state database can still be discovered.
 
 ## Claude
 
 `ClaudeSessionLister` implements the local-filesystem behavior of
-`@anthropic-ai/claude-agent-sdk` **0.3.323** in Go. It does not require the Claude
+`@anthropic-ai/claude-agent-sdk` **0.3.326** in Go. It does not require the Claude
 CLI, a JavaScript runtime, or a watcher:
 
 - Resolve `CLAUDE_CONFIG_DIR` (default `~/.claude`) and enumerate project session
@@ -42,6 +45,10 @@ CLI, a JavaScript runtime, or a watcher:
   sidecars, title priority, relocation, and continuation records.
 - Filter sidechains, optionally exclude programmatic/daemon sessions, deduplicate
   IDs, and apply offset/limit after filtering.
+- Read the SDK's `archived.json` sidecar and return its `archived` metadata.
+  A newer human prompt unarchives the session; tool results and background output
+  do not. Spool excludes sessions using that native field. An extra sidecar pass
+  includes archives older than the recent-session window.
 
 The SDK's custom `sessionStore` hook is outside the local-filesystem adapter.
 Unknown optional creation times stay zero in the adapter; Spool uses the update
@@ -70,6 +77,22 @@ For large Claude histories, sampled AI titles remain provisional so they cannot
 replace a custom title confirmed by reading the complete history. Opening a chat
 also checks current tail/sidecar rename metadata independently of cached turns.
 
+## Native archive actions
+
+The chat-title menu posts to `/api/chats/:id/archive`. Codex uses `thread/archive`;
+Claude implements the SDK's local `archiveSession(sessionId)` contract, atomically
+writing `{archived:true,at,by:"sdk"}` beside every nonempty local copy of that
+session. Neither sends a model prompt or changes transcript contents. Claude Code
+versions are not checked.
+
+After native success, Spool refreshes the provider catalogue and returns the
+resulting navigation. It stores no independent archive flag or tombstone. Native
+unarchiving is reflected by subsequent refreshes. Provider failures keep the
+current view and show an error; a successful archive followed by a failed list
+refresh has a distinct error message. Chats with running work or queued messages
+must become idle before archiving. Archive operations reserve their chat during
+native I/O and participate in shutdown cancellation.
+
 ## Verification
 
 Opened history, native pagination and tool activity projection are described in
@@ -96,7 +119,7 @@ isolated `CODEX_HOME`, without model inference:
 ```sh
 sh tools/run.sh codex-list-smoke sh -eu -c '
   SPOOL_CODEX_LIST_SMOKE="$(command -v codex)" \
-    go test ./internal/agent -run TestCodexSessionListNativeSmoke -count=1
+    go test ./internal/agent -run "TestCodex(SessionList|Archive)NativeSmoke" -count=1
 '
 ```
 

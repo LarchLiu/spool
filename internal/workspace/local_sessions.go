@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -200,16 +201,36 @@ func (s *Store) syncLocalSessionsContext(ctx context.Context, force bool) error 
 		return nil
 	}
 	projects, err := s.Projects()
-	if err != nil || !sharesLocalSessions(projects) {
+	if err != nil {
 		return err
+	}
+	if !sharesLocalSessions(projects) {
+		var hasNative bool
+		if err = s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sessions WHERE native_session_id<>'')`).Scan(&hasNative); err != nil || !hasNative {
+			return err
+		}
 	}
 	sources, err := s.localSessionSources()
 	if err != nil {
 		return err
 	}
+	if force {
+		s.localIndex.RetryNow()
+	}
 	local, err := s.localIndex.Discover(ctx, sources)
 	if err != nil {
 		return err
+	}
+	native := make(map[string]agent.LocalSession)
+	for _, session := range s.localIndex.Snapshot() {
+		native[string(session.Backend)+":"+session.ID] = session
+	}
+	s.nativeMu.Lock()
+	changedNative := !maps.EqualFunc(s.nativeSessions, native, func(a, b agent.LocalSession) bool { return a.Archived == b.Archived })
+	s.nativeSessions = native
+	s.nativeMu.Unlock()
+	if changedNative {
+		s.changes.publish(changeNavigation)
 	}
 	var failing []string
 	for _, backend := range s.localIndex.Failing() {
@@ -226,6 +247,7 @@ func (s *Store) syncLocalSessionsContext(ctx context.Context, force bool) error 
 	}
 	s.localMu.Lock()
 	defer s.localMu.Unlock()
+	s.localScanAt = time.Now()
 	// Sharing may have changed while providers were listed.
 	if projects, err = s.Projects(); err != nil || !sharesLocalSessions(projects) {
 		return err

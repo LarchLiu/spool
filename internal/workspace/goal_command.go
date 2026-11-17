@@ -47,7 +47,7 @@ func (a *App) goalCommandResponse(w http.ResponseWriter, r *http.Request, chat c
 		return
 	}
 	chat = latest
-	if a.closing || a.updating || chat.Status == chatmodel.StatusRunning || a.activeTurns[chat.ID] != nil {
+	if a.closing || a.updating || chat.Status == chatmodel.StatusRunning || a.activeTurns[chat.ID] != nil || a.store.nativeSessionArchived(chat.Backend, chat.NativeSessionID) {
 		a.turnMu.Unlock()
 		apiError(w, 409, "Wait for the running response before using goal commands")
 		return
@@ -96,5 +96,5 @@ func (a *App) goalCommandResponse(w http.ResponseWriter, r *http.Request, chat c
 
 func (a *App) nativeCommandRunning(chatID string) bool {
 	control := a.activeTurns[chatID]
-	return control != nil && strings.HasPrefix(control.id, "goal:")
+	return control != nil && (strings.HasPrefix(control.id, "goal:") || strings.HasPrefix(control.id, "archive:"))
 }
