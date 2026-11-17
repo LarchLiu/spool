@@ -21,19 +21,14 @@ class NativePanelAction extends NativeTextView {
         setOnClickListener(view -> click.run()); ui.focusOnPress(this); ui.buttonKeys(this);
     }
     @Override protected void onDraw(Canvas canvas) {
-        if (isPressed() || isHovered() || (!tab || !underline) && isSelected()) {
-            background.setColor(isSelected() ? tab && !underline ? ui.soft : ui.selected : ui.hover);
+        if (!(tab && !underline) && (isPressed() || isHovered() || !tab && isSelected())) {
+            background.setColor(isSelected() ? ui.selected : ui.hover);
             canvas.drawRoundRect(0, 0, getWidth(), getHeight(), ui.dp(tab && underline ? 0 : 5), ui.dp(tab && underline ? 0 : 5), background);
         }
         if (tab && underline && isSelected()) {
             background.setColor(ui.primary); canvas.drawRect(0, getHeight() - ui.dp(2), getWidth(), getHeight(), background);
         }
         super.onDraw(canvas);
-        if (isFocused()) {
-            background.setColor(ui.primary); background.setStyle(Paint.Style.STROKE); background.setStrokeWidth(ui.dp(1));
-            canvas.drawRect(ui.dp(1), ui.dp(1), getWidth() - ui.dp(1), getHeight() - ui.dp(1), background);
-            background.setStyle(Paint.Style.FILL);
-        }
     }
     @Override protected void drawableStateChanged() { super.drawableStateChanged(); invalidate(); }
     @Override public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {

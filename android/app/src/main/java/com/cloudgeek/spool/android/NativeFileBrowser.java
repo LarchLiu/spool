@@ -339,7 +339,7 @@ final class NativeFileBrowser extends LinearLayout {
             ui.typography(this, 13, ui.text, 400); ui.cssLineHeight(this, 30f / 13); setText(data.entry.name);
             setPadding(ui.dp(32 + data.depth * 24), 0, ui.dp(10), 0);
             boolean selected = state.selected.equals(data.entry.path);
-            setTreeState(selected, (state.searchOpen || list.hasFocus()) && state.focused.equals(data.entry.path));
+            setTreeState(selected);
             setContentDescription(data.entry.path + (data.entry.directory ? "/" : ""));
             icon = NativeIcons.drawable(ui.context, data.entry.directory ? "tree-chevron" : NativeTreeIcons.file(data.entry.path), selected && data.entry.directory ? ui.text : 0xff84848a, ui.dp(16));
             if (android.os.Build.VERSION.SDK_INT >= 30) setStateDescription(data.entry.directory ? data.expanded ? ui.label("Expanded", "已展开") : ui.label("Collapsed", "已折叠") : selected ? ui.label("Selected", "已选择") : "");

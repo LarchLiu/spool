@@ -33,7 +33,7 @@ final class NativeToolDetails {
     void load(JSONObject summary, int offset, String prefix, Callback callback) {
         String href = summary.optString("href"), version = summary.optString("version");
         String kind = summary.optString("kind");
-        if (!href.matches("/chats/[a-zA-Z0-9_-]+/tool-detail\\?ref=[a-f0-9]{64}")) {
+        if (!href.matches("/chats/[a-zA-Z0-9_-]+/tool-detail\\?ref=(?:[a-f0-9]{64}|native-tool-[A-Za-z0-9_-]{1,16384})")) {
             callback.failed(new IllegalArgumentException("Invalid tool detail reference")); return;
         }
         String path = href + "&offset=" + offset + "&prefix=" + Uri.encode(prefix);

@@ -153,6 +153,25 @@ public class NativeSidebarTest {
         liveNavigationPaginationPermissionAndIndependentRowActionsStayNative();
     }
 
+    @Test @Config(sdk = {26, 35})
+    public void touchingBrandWhitespaceDoesNotPressProjectRows() throws Exception {
+        RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
+        for (boolean dark : new boolean[]{false, true}) try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), dark, "en"); List<String> actions = new ArrayList<>();
+            NativeSidebar sidebar = new NativeSidebar(ui, new NativeSidebarState(), id -> new JSONObject(), () -> actions.add("close"), actions::add, actions::add, () -> {}, () -> {}, () -> {});
+            JSONArray projects = new JSONArray().put(new JSONObject().put("id", "one").put("name", "Project one")).put(new JSONObject().put("id", "two").put("name", "Project two"));
+            sidebar.bind(new JSONObject().put("id", "viewer"), projects, new JSONArray(), "", "", "", false);
+            NativeDrawer drawer = new NativeDrawer(ui, false); drawer.sheet.addView(sidebar, new LinearLayout.LayoutParams(-1, -1));
+            controller.get().setContentView(drawer); drawer.show(false); layout(drawer, 360, 800); idle();
+            for (int action : new int[]{android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP}) {
+                android.view.MotionEvent event = android.view.MotionEvent.obtain(0, 0, action, 180, 24, 0);
+                try { assertTrue(drawer.dispatchTouchEvent(event)); } finally { event.recycle(); }
+                for (NativeProjectRow row : sidebar.projectRows) assertFalse("A blank header touch must not highlight a project", row.isPressed());
+            }
+            assertTrue(actions.isEmpty());
+        }
+    }
+
     @Test public void liveNavigationPaginationPermissionAndIndependentRowActionsStayNative() throws Exception {
         JSONObject fixture = fixtures(); JSONArray profiles = fixture.getJSONArray("peopleProfiles"), projects = fixture.getJSONArray("sidebarProjects"), chats = fixture.getJSONArray("sidebarChats"); RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
         try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {

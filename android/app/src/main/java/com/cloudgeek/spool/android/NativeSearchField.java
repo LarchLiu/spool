@@ -2,9 +2,7 @@ package com.cloudgeek.spool.android;
 
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
-import android.graphics.Paint;
 import android.graphics.PixelFormat;
-import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.text.Editable;
 import android.text.InputType;
@@ -13,21 +11,17 @@ import android.view.View;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 
-/** Native search input with a separate CSS border, focus-within outline and reserved UA clear slot. */
+/** Native search input with a stable border and reserved clear slot. */
 final class NativeSearchField extends NativeSurface {
     final EditText input;
     final View clear;
-    private final float density;
-    private final Paint outline = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final RectF ring = new RectF();
 
     NativeSearchField(NativeUi ui, String hint, String clearLabel) {
         super(ui, ui.elevated, ui.borderStrong, 8, 0, 0, 0);
-        density = getResources().getDisplayMetrics().density;
+        float density = getResources().getDisplayMetrics().density;
         int border = Math.round(density), borders = Math.round(2 * density);
         setPadding(border, border, borders - border, borders - border);
         setClipChildren(false); setClipToPadding(false);
-        outline.setColor(ui.focusColor()); outline.setStyle(Paint.Style.STROKE); outline.setStrokeWidth(density);
         FrameLayout body = new FrameLayout(ui.context); addView(body, new LayoutParams(-1, -1));
         input = ui.field(hint, false); ui.typography(input, 12, ui.text, 400);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -66,11 +60,4 @@ final class NativeSearchField extends NativeSurface {
         updateClear(); invalidate();
     }
 
-    @Override protected void onDraw(Canvas canvas) {
-        super.onDraw(canvas);
-        if (!input.hasFocus()) return;
-        float inset = 1.5f * density;
-        ring.set(-inset, -inset, getWidth() + inset, getHeight() + inset);
-        canvas.drawRoundRect(ring, 9.5f * density, 9.5f * density, outline);
-    }
 }

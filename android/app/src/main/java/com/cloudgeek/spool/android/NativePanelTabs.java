@@ -23,6 +23,15 @@ final class NativePanelTabs extends LinearLayout {
     }
     void add(String key, String label, String icon, Runnable choose) {
         NativePanelAction action = new NativePanelAction(ui, label, choose); action.tab = true; action.underline = underline;
+        if (!underline) {
+            action.setGravity(android.view.Gravity.CENTER);
+            android.graphics.drawable.StateListDrawable background = new android.graphics.drawable.StateListDrawable();
+            background.addState(new int[]{android.R.attr.state_pressed}, ui.shape(ui.controlActive, 5, 0));
+            background.addState(new int[]{android.R.attr.state_selected}, ui.shape(ui.selected, 5, 0));
+            background.addState(new int[]{android.R.attr.state_hovered}, ui.shape(ui.hover, 5, 0));
+            background.addState(new int[0], ui.shape(0, 5, 0));
+            action.setBackground(background);
+        }
         if (!icon.isEmpty()) {
             action.setCompoundDrawables(NativeIcons.drawable(ui.context, icon, ui.muted, ui.dp(14)), null, null, null);
             action.setCompoundDrawablePadding(ui.dp(6));

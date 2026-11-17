@@ -20,7 +20,12 @@ final class NativeDrawer extends FrameLayout {
     NativeDrawer(NativeUi ui, boolean right) {
         super(ui.context);
         this.right = right;
-        sheet = ui.column();
+        sheet = new LinearLayout(ui.context) {
+            // The blank sheet consumes taps, but its pressed state belongs only
+            // to that background; navigation rows handle their own feedback.
+            @Override protected void dispatchSetPressed(boolean pressed) {}
+        };
+        sheet.setOrientation(LinearLayout.VERTICAL);
         sheet.setBackgroundColor(right ? ui.elevated : ui.sidebar);
         sheet.setClickable(true);
         sheet.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);

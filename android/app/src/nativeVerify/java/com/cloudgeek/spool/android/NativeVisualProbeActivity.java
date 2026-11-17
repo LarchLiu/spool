@@ -33,6 +33,13 @@ public final class NativeVisualProbeActivity extends Activity {
     private volatile String syntaxError;
     private NativeFileBrowser pdfBrowser;
     private java.util.concurrent.ExecutorService pdfWorker;
+    private NativeFileBrowser panelBrowser;
+    private NativeDrawer panelDrawer;
+    private NativeUi.Header panelHeader;
+    private JSONObject pageBefore, pageAfter;
+    private int historyPages;
+    private boolean panelClosing, historyPending;
+    private NativeSidebar sidebarProbe;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -48,6 +55,8 @@ public final class NativeVisualProbeActivity extends Activity {
             else if (screen.equals("workspace")) workspace();
             else if (screen.equals("source")) source();
             else if (screen.equals("pdf")) pdf();
+            else if (screen.equals("panels")) panels();
+            else if (screen.equals("sidebar")) sidebar();
             else login();
         } catch (Exception error) { root.addView(ui.text(error.getClass().getSimpleName() + ": " + error.getMessage(), 14, ui.error)); }
         setContentView(root); root.requestApplyInsets();
@@ -160,6 +169,101 @@ public final class NativeVisualProbeActivity extends Activity {
         scroll.addView(source); page.addView(scroll, new LinearLayout.LayoutParams(-1, -2)); measured.put("source", source);
     }
 
+    private void panels() {
+        LinearLayout page = ui.workspace();
+        panelHeader = ui.new Header(ui.label("Review Android sidebar and Git history pagination", "检查 Android 右侧栏及 Git 历史分页显示效果"), "spool", () -> {}, () -> {}, this::openPanel);
+        panelHeader.bindPeople(java.util.List.of(new JSONObject(java.util.Map.of("id", "synthetic"))));
+        panelHeader.chatOptions(true, true, () -> {});
+        page.addView(panelHeader); page.addView(ui.divider());
+        page.addView(ui.welcome(ui.t("What shall we build today?"), "Synthetic panel verification", "spool", ""));
+        root.addView(page, new FrameLayout.LayoutParams(-1, -1));
+        measured.put("header", panelHeader); measured.put("title", panelHeader.title); measured.put("titleAction", panelHeader.titleAction);
+        measured.put("openFiles", panelHeader.getChildAt(panelHeader.getChildCount() - 1));
+        openPanel();
+    }
+
+    private void openPanel() {
+        if (panelDrawer != null || panelClosing) return;
+        NativeFileModel model = new NativeFileModel("synthetic");
+        try { model.workspace = new JSONObject().put("path", "/synthetic/spool").put("available", true).put("kind", "main"); }
+        catch (Exception error) { throw new IllegalStateException(error); }
+        panelBrowser = new NativeFileBrowser(ui, "spool", model, null, (path, done) -> {
+            try {
+                if (path.contains("/git?")) {
+                    if (!path.contains("view=history")) {
+                        JSONArray files = new JSONArray()
+                                .put(new JSONObject().put("path", "android/NativeGitPanel.java").put("status", "M").put("staged", true).put("additions", 12).put("deletions", 3))
+                                .put(new JSONObject().put("path", "web/git-panel.tsx").put("status", "M").put("unstaged", true).put("additions", 8).put("deletions", 2))
+                                .put(new JSONObject().put("path", "docs/ui.md").put("status", "??").put("untracked", true).put("additions", 4));
+                        done.done(new JSONObject().put("repository", true).put("branch", "feature/android-ui").put("commit", "a".repeat(40)).put("files", files)
+                                .put("remote", "origin").put("remote_branch", "feature/android-ui").put("upstream", "origin/feature/android-ui")
+                                .put("ahead", 2).put("behind", 1).put("remote_allowed", true).put("writable", true)
+                                .put("last_commit", new JSONObject().put("id", "a".repeat(40)).put("subject", "Polish Android Git panel").put("author", "Developer")), null);
+                        return;
+                    }
+                    int offset = path.contains("cursor=") ? 50 : 0;
+                    JSONObject result = new JSONObject().put("repository", true).put("branch", "main").put("commit", "a".repeat(40)).put("files", new JSONArray());
+                    JSONArray commits = new JSONArray();
+                    for (int i = offset; i < offset + 50; i++) commits.put(new JSONObject().put("id", String.format("%040x", i + 1))
+                            .put("subject", ui.label("Synthetic history commit ", "示例历史提交 ") + (i + 1)).put("author", "Developer").put("time", 1794900000 - i * 3600).put("unpushed", i < 3));
+                    result.put("commits", commits); if (offset == 0) result.put("next_cursor", "older");
+                    if (offset == 0) done.done(result, null);
+                    else {
+                        historyPending = true; report();
+                        root.postDelayed(() -> {
+                            if (destroyed || panelBrowser == null) return;
+                            try { pageBefore = panelViewport(); }
+                            catch (Exception error) { throw new IllegalStateException(error); }
+                            done.done(result, null); historyPages++; historyPending = false;
+                            NativeAfterPaint.schedule(panelBrowser.gitPanel.content, () -> {
+                                try { pageAfter = panelViewport(); report(); }
+                                catch (Exception error) { throw new IllegalStateException(error); }
+                            });
+                        }, 2500);
+                    }
+                } else {
+                    JSONArray files = new JSONArray();
+                    for (String name : new String[]{"android", "docs", "internal", "tools", "web"}) files.put(new JSONObject().put("name", name).put("path", name).put("kind", "directory"));
+                    files.put(new JSONObject().put("name", "README.md").put("path", "README.md").put("kind", "file"));
+                    done.done(new JSONObject().put("path", ".").put("entries", files), null);
+                }
+            } catch (Exception error) { done.done(null, error); }
+        }, file -> {}, url -> {}, this::closePanel, value -> {});
+        panelBrowser.gitPanel.write = (path, body, done) -> done.done(new JSONObject(), null);
+        panelDrawer = new NativeDrawer(ui, true); panelDrawer.sheet.addView(panelBrowser, new LinearLayout.LayoutParams(-1, -1));
+        root.addView(panelDrawer, new FrameLayout.LayoutParams(-1, -1)); panelDrawer.show(false); panelBrowser.start();
+        measured.put("projectTab", panelBrowser.panelTabs.action("project")); measured.put("gitTab", panelBrowser.panelTabs.action("git"));
+        measured.put("historyTab", panelBrowser.gitPanel.tabs.action("history")); measured.put("gitScroll", panelBrowser.gitPanel.scroll);
+        measured.put("closeFiles", panelBrowser.header.getChildAt(panelBrowser.header.getChildCount() - 1));
+    }
+
+    private void closePanel() {
+        panelClosing = true;
+        panelBrowser.deactivate(); panelDrawer.dismiss(); panelBrowser = null; panelDrawer = null;
+        root.postDelayed(() -> { panelClosing = false; report(); }, 250);
+    }
+
+    private void sidebar() throws Exception {
+        sidebarProbe = new NativeSidebar(ui, new NativeSidebarState(), id -> new JSONObject(), () -> {}, id -> {}, id -> {}, () -> {}, () -> {}, () -> {});
+        JSONArray projects = new JSONArray().put(new JSONObject().put("id", "one").put("name", "spool")).put(new JSONObject().put("id", "two").put("name", "Android UI"));
+        sidebarProbe.bind(new JSONObject().put("id", "viewer").put("nickname", "Developer"), projects, new JSONArray(), "", "", "", false);
+        panelDrawer = new NativeDrawer(ui, false); panelDrawer.sheet.addView(sidebarProbe, new LinearLayout.LayoutParams(-1, -1));
+        root.addView(panelDrawer, new FrameLayout.LayoutParams(-1, -1)); panelDrawer.show(false);
+        measured.put("brandWhitespace", sidebarProbe.brand.getChildAt(1));
+    }
+
+    private JSONObject panelViewport() throws Exception {
+        NativeGitPanel panel = panelBrowser.gitPanel; int offset = panel.scroll.getScrollY();
+        JSONObject result = new JSONObject().put("scrollY", offset);
+        for (int i = 0; i < panel.content.getChildCount(); i++) {
+            View row = panel.content.getChildAt(i);
+            if (row instanceof NativeGitHistoryRow && row.getBottom() > offset) {
+                result.put("anchor", row.getContentDescription()).put("anchorY", row.getTop() - offset); break;
+            }
+        }
+        return result;
+    }
+
     private void pdf() throws Exception {
         pdfWorker = java.util.concurrent.Executors.newSingleThreadExecutor();
         byte[] bytes;
@@ -194,6 +298,19 @@ public final class NativeVisualProbeActivity extends Activity {
                 int colors = text.getSpans(0, text.length(), android.text.style.ForegroundColorSpan.class).length;
                 data.put("syntaxColorSpans", colors).put("syntaxCharacters", text.length());
                 if (syntaxError != null) data.put("syntaxError", syntaxError);
+            }
+            if (panelHeader != null) {
+                data.put("panelOpen", panelBrowser != null || panelClosing).put("historyPages", historyPages).put("historyPending", historyPending)
+                        .put("titleVisibleCharacters", panelHeader.title.getLayout() == null ? 0 : panelHeader.title.getLayout().getEllipsisStart(0))
+                        .put("titleFocused", panelHeader.titleAction.hasFocus());
+                if (panelBrowser != null) data.put("viewport", panelViewport());
+                if (pageBefore != null) data.put("pageBefore", pageBefore);
+                if (pageAfter != null) data.put("pageAfter", pageAfter);
+            }
+            if (sidebarProbe != null) {
+                JSONArray pressed = new JSONArray();
+                for (NativeProjectRow row : sidebarProbe.projectRows) pressed.put(row.isPressed());
+                data.put("sidebarBackgroundPressed", panelDrawer.sheet.isPressed()).put("projectsPressed", pressed);
             }
             if (pdfBrowser != null) {
                 NativePdfPreview pdf = pdfBrowser.preview.pdf;
@@ -230,6 +347,7 @@ public final class NativeVisualProbeActivity extends Activity {
             if (!destroyed && source != null && syntaxError == null && ((android.text.Spanned) source.getText()).getSpans(0, source.length(), android.text.style.ForegroundColorSpan.class).length == 0)
                 root.postDelayed(this::report, 150);
             if (!destroyed && pdfBrowser != null) root.postDelayed(this::report, 150);
+            if (!destroyed && sidebarProbe != null) root.postDelayed(this::report, 150);
         } catch (Exception error) { android.util.Log.e("SpoolNativeVerify", "Cannot save synthetic layout report", error); }
     }
 
@@ -276,6 +394,7 @@ public final class NativeVisualProbeActivity extends Activity {
         if (settings != null) settings.dismiss(); if (avatars != null) avatars.clear();
         if (syntax != null) syntax.close(); if (codeWorker != null) codeWorker.shutdown();
         if (pdfBrowser != null) pdfBrowser.deactivate(); if (pdfWorker != null) pdfWorker.shutdown();
+        if (panelBrowser != null) panelBrowser.deactivate();
         if (ui != null) ui.dismissMenus(); super.onDestroy();
     }
 }

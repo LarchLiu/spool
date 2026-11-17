@@ -101,6 +101,35 @@ public class NativeToolDetailsTest {
         assertFalse(data.metrics().toString().contains("href"));
     }
 
+    @Test public void nativeHistoryLocatorsReachTheDetailEndpointAndCacheLikeHashReferences() throws Exception {
+        String locator = "native-tool-" + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+                "{\"chat\":\"chat\",\"turn\":\"turn-native\",\"item\":\"call-native\",\"kind\":\"tool_use\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        JSONObject summary = summary("native-v1").put("ref", locator).put("href", "/chats/chat/tool-detail?ref=" + locator);
+        List<String> paths = new ArrayList<>(); List<JSONObject> results = new ArrayList<>();
+        NativeToolDetails details = new NativeToolDetails(Runnable::run, Runnable::run, path -> {
+            paths.add(path); return page("native input", 0, 12).put("ref", locator);
+        });
+        details.load(summary, 0, "", receive(results)); details.load(summary, 0, "", receive(results));
+        assertEquals(List.of(summary.getString("href") + "&offset=0&prefix="), paths);
+        assertEquals(2, results.size()); assertEquals("native input", results.get(0).getString("text"));
+        details.load(summary, 12, "prefix-hash", receive(results));
+        assertEquals(summary.getString("href") + "&offset=12&prefix=prefix-hash", paths.get(1));
+    }
+
+    @Test public void invalidDetailReferencesNeverReachTheSource() throws Exception {
+        NativeToolDetails details = new NativeToolDetails(Runnable::run, Runnable::run, path -> { fail("Invalid reference reached transport"); return null; });
+        List<Exception> failures = new ArrayList<>();
+        for (String href : new String[]{"https://other.invalid/chats/chat/tool-detail?ref=" + "a".repeat(64),
+                "/chats/chat/tool-detail?ref=native-tool-", "/chats/chat/tool-detail?ref=native-tool-a&extra=true",
+                "/chats/chat/tool-detail?ref=native-tool-" + "a".repeat(16385), "/chats/chat/../tool-detail?ref=" + "a".repeat(64)}) {
+            details.load(summary("v1").put("href", href), 0, "", new NativeToolDetails.Callback() {
+                public void received(JSONObject page) { fail("Invalid reference was accepted"); }
+                public void failed(Exception error) { failures.add(error); }
+            });
+        }
+        assertEquals(5, failures.size());
+    }
+
     @Test public void appendReplaceAndOversizedBodiesStayWithinOneDisplayPage() throws Exception {
         JSONObject merged = NativeToolDetails.merge(page("abc", 0, 3), page("def", 3, 6));
         assertEquals("abcdef", merged.optString("text")); assertEquals(0, merged.optInt("offset"));

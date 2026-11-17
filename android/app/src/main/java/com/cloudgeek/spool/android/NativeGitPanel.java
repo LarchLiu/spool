@@ -49,6 +49,7 @@ final class NativeGitPanel extends LinearLayout {
     private JSONObject historyCache;
     private String historyMoreError = "";
     private boolean historyMorePending;
+    private final NativeKeyedViews historyViews;
     private final Runnable checkHistoryEnd = this::loadHistoryAtBottom;
 
     NativeGitPanel(NativeUi ui, NativeFileModel state, NativeFileBrowser.Read read, DoubleConsumer resize) {
@@ -57,7 +58,8 @@ final class NativeGitPanel extends LinearLayout {
         tabs = new NativePanelTabs(ui, ui.t("Git views"), false);
         tabs.add("changes", ui.t("Changes"), "", () -> chooseMode("changes"));
         tabs.add("history", ui.t("History"), "", () -> chooseMode("history")); tabs.select(mode); addView(tabs);
-        content = ui.column(); scroll = new ScrollView(ui.context); scroll.setFillViewport(true); scroll.addView(content);
+        content = ui.column(); historyViews = new NativeKeyedViews(content);
+        scroll = new ScrollView(ui.context); scroll.setFillViewport(true); scroll.addView(content);
         scroll.setOnScrollChangeListener((view, x, y, oldX, oldY) -> loadHistoryAtBottom());
         content.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             removeCallbacks(checkHistoryEnd); post(checkHistoryEnd);
@@ -195,60 +197,96 @@ final class NativeGitPanel extends LinearLayout {
         });
     }
     private NativePanelAction action(String label, Runnable click) { return new NativePanelAction(ui, label, click); }
-    private void notice(String value) {
+    private NativeTextView noticeView(String value) {
         NativeTextView text = new NativeTextView(ui.context); ui.typography(text, 12, ui.muted, 400);
-        text.setText(value); text.setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)); content.addView(text);
+        text.setText(value); text.setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)); return text;
     }
-    private void renderOperationError() {
+    private void notice(String value) { content.addView(noticeView(value)); }
+    private String branchLabel() {
+        String branch = data.optString("branch"), head = data.optString("commit");
+        return !branch.isEmpty() ? branch : !head.isEmpty() ? head.substring(0, Math.min(7, head.length())) : "HEAD";
+    }
+    private View summaryView(boolean showStats) {
+        LinearLayout summary = ui.row(); summary.setPadding(ui.dp(12), ui.dp(4), ui.dp(12), ui.dp(8));
+        NativeTextView branch = new NativeTextView(ui.context); ui.typography(branch, 11, ui.muted, 400);
+        branch.setText(branchLabel()); branch.setCompoundDrawablesRelative(NativeIcons.drawable(ui.context, "git_branch", ui.muted, ui.dp(13)), null, null, null);
+        branch.setCompoundDrawablePadding(ui.dp(6)); summary.addView(branch, new LayoutParams(0, -2, 1));
+        if (showStats) {
+            JSONArray files = data.optJSONArray("files"); int count = files == null ? 0 : files.length(), additions = 0, deletions = 0;
+            for (int i = 0; i < count; i++) { additions += files.optJSONObject(i).optInt("additions"); deletions += files.optJSONObject(i).optInt("deletions"); }
+            NativeDiffPalette palette = new NativeDiffPalette(ui.dark);
+            LinearLayout stats = ui.row();
+            String[] labels = {String.valueOf(count), "+" + additions, "−" + deletions};
+            int[] colors = {ui.muted, palette.added, palette.deleted};
+            for (int i = 0; i < labels.length; i++) {
+                NativeTextView text = new NativeTextView(ui.context); ui.typography(text, 11, colors[i], 400); text.setText(labels[i]);
+                LayoutParams at = new LayoutParams(-2, -2); if (i > 0) at.setMarginStart(ui.dp(6)); stats.addView(text, at);
+            }
+            LayoutParams at = new LayoutParams(-2, -2); at.setMarginStart(ui.dp(8)); summary.addView(stats, at);
+        }
+        return summary;
+    }
+    private View operationErrorView() {
         LinearLayout row = ui.row(); row.setGravity(Gravity.TOP); row.setPadding(ui.dp(14), ui.dp(6), ui.dp(8), ui.dp(6));
         NativeTextView text = new NativeTextView(ui.context); ui.typography(text, 11, ui.error, 400); ui.fixedLineHeight(text, 1.6f);
         text.setText(operationError); text.setPadding(0, ui.dp(4), 0, ui.dp(4)); text.setAccessibilityLiveRegion(ACCESSIBILITY_LIVE_REGION_ASSERTIVE);
         row.addView(text, new LayoutParams(0, -2, 1));
         NativeUi.IconButton close = ui.icon("close", 14, ui.t("Dismiss"), () -> { operationError = ""; content.removeView(row); });
         close.setPadding(ui.dp(7), ui.dp(7), ui.dp(7), ui.dp(7));
-        LayoutParams button = new LayoutParams(ui.dp(28), ui.dp(28)); button.setMarginStart(ui.dp(6)); row.addView(close, button); content.addView(row);
+        LayoutParams button = new LayoutParams(ui.dp(28), ui.dp(28)); button.setMarginStart(ui.dp(6)); row.addView(close, button); return row;
     }
     private void render() {
+        if (historyList() && state.ready() && (error == null || error.isEmpty()) && data != null && data.optBoolean("repository")) {
+            renderHistory(); renderPreview(); renderFooter(); return;
+        }
+        historyViews.begin(); historyViews.end();
         content.removeAllViews();
-        if (!operationError.isEmpty()) renderOperationError();
+        if (!operationError.isEmpty()) content.addView(operationErrorView());
         if (!state.ready()) notice(ui.t("Session directory is unavailable"));
         else if (error != null && !error.isEmpty()) { notice(error); content.addView(action(ui.t("Retry"), this::reload)); }
         else if (data == null) notice(ui.t("Loading Git information…"));
         else if (!data.optBoolean("repository")) notice(ui.t("This directory is not a Git repository."));
         else {
             JSONArray files = data.optJSONArray("files"); if (files == null) files = new JSONArray();
-            String branch = data.optString("branch", data.optString("commit")); if (branch.length() > 40) branch = branch.substring(0, 7);
-            int add = 0, del = 0;
-            for (int i = 0; i < files.length(); i++) { add += files.optJSONObject(i).optInt("additions"); del += files.optJSONObject(i).optInt("deletions"); }
-            notice(branch + (mode.equals("changes") || !commit.isEmpty() ? "    " + files.length() + "   +" + add + "  −" + del : ""));
+            content.addView(summaryView(mode.equals("changes") || !commit.isEmpty()));
             if (!commit.isEmpty()) renderCommitDetail();
-            if (mode.equals("history") && commit.isEmpty()) {
-                JSONArray commits = data.optJSONArray("commits");
-                if (commits == null || commits.length() == 0) notice(ui.t("No commits yet."));
-                else for (int i = 0; i < commits.length(); i++) {
-                    JSONObject item = commits.optJSONObject(i); String id = item.optString("id");
-                    NativeGitHistoryRow row = new NativeGitHistoryRow(ui, item, () -> {
-                        commit = id; selected = side = ""; data = diff = null; ++request; pending = historyMorePending = false; reload();
-                    });
-                    content.addView(row, new LayoutParams(-1, -2));
-                }
-                if (!historyMoreError.isEmpty()) { notice(historyMoreError); content.addView(action(ui.t("Retry"), () -> { historyMoreError = ""; loadMoreHistory(); })); }
-                else if (historyMorePending) notice(ui.t("Loading Git information…"));
-            } else {
-                if (!commit.isEmpty()) group(ui.t("Tracked"), files, false, "");
-                else { group(ui.t("Staged"), files, false, "staged"); group(ui.t("Unstaged"), files, false, "unstaged"); }
-                group(ui.t("Untracked"), files, true, commit.isEmpty() ? "unstaged" : "");
-                if (files.length() == 0) notice(ui.t("No changes."));
-                if (data.optBoolean("truncated")) notice(ui.t("Large directories show up to 2,000 entries."));
-            }
+            if (!commit.isEmpty()) group(ui.t("Tracked"), files, false, "");
+            else { group(ui.t("Staged"), files, false, "staged"); group(ui.t("Unstaged"), files, false, "unstaged"); }
+            group(ui.t("Untracked"), files, true, commit.isEmpty() ? "unstaged" : "");
+            if (files.length() == 0) notice(ui.t("No changes."));
+            if (data.optBoolean("truncated")) notice(ui.t("Large directories show up to 2,000 entries."));
         }
         renderPreview();
         renderFooter();
     }
+    private void renderHistory() {
+        // Keep mounted commits and their viewport positions while appending pages,
+        // showing a retry, or refreshing unchanged history in the background.
+        historyViews.begin();
+        if (!operationError.isEmpty()) historyViews.use("operation-error", operationError, this::operationErrorView);
+        historyViews.use("branch", branchLabel(), () -> summaryView(false));
+        JSONArray commits = data.optJSONArray("commits");
+        if (commits == null || commits.length() == 0) historyViews.use("empty", "", () -> noticeView(ui.t("No commits yet.")));
+        else for (int i = 0; i < commits.length(); i++) {
+            JSONObject item = commits.optJSONObject(i); String id = item.optString("id");
+            historyViews.use("commit:" + id, item, () -> {
+                NativeGitHistoryRow row = new NativeGitHistoryRow(ui, item, () -> {
+                    commit = id; selected = side = ""; data = diff = null; ++request; pending = historyMorePending = false; reload();
+                });
+                row.setLayoutParams(new LayoutParams(-1, -2)); return row;
+            });
+        }
+        if (!historyMoreError.isEmpty()) {
+            historyViews.use("page-error", historyMoreError, () -> noticeView(historyMoreError));
+            historyViews.use("retry", "", () -> action(ui.t("Retry"), () -> { historyMoreError = ""; loadMoreHistory(); }));
+        } else if (historyMorePending) historyViews.use("loading", "", () -> noticeView(ui.t("Loading Git information…")));
+        historyViews.end();
+    }
     private void renderCommitDetail() {
         LinearLayout detail = ui.column(); detail.setPadding(ui.dp(12), 0, ui.dp(12), ui.dp(12));
         LinearLayout heading = ui.row();
-        NativePanelAction back = action("‹ " + ui.t("History") + " · " + commit.substring(0, 7), () -> chooseMode("history"));
+        NativePanelAction back = action(ui.t("History") + " · " + commit.substring(0, 7), () -> chooseMode("history"));
+        back.setCompoundDrawablesRelative(NativeIcons.drawable(ui.context, "chevron_left", ui.text, ui.dp(14)), null, null, null); back.setCompoundDrawablePadding(ui.dp(6));
         back.setPadding(ui.dp(6), 0, ui.dp(6), 0);
         LayoutParams backLayout = new LayoutParams(-2, ui.dp(28)); backLayout.setMarginStart(-ui.dp(6)); heading.addView(back, backLayout);
         JSONObject item = data.optJSONObject("selected_commit");
@@ -308,8 +346,8 @@ final class NativeGitPanel extends LinearLayout {
         if (commitExpand == null) {
             remoteArea.addView(ui.divider());
             LinearLayout remoteRow = ui.row(); remoteRow.setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(4));
-            remoteTarget = new NativeTextView(ui.context); ui.typography(remoteTarget, 11, ui.muted, 400);
-            remoteTarget.setSingleLine(true); remoteTarget.setEllipsize(android.text.TextUtils.TruncateAt.END); remoteTarget.setPadding(ui.dp(4), 0, ui.dp(8), 0);
+            remoteTarget = new NativeTextView(ui.context); ui.typography(remoteTarget, 10, ui.muted, 400);
+            remoteTarget.setSingleLine(true); remoteTarget.setEllipsize(android.text.TextUtils.TruncateAt.END); remoteTarget.setPadding(0, 0, ui.dp(6), 0);
             LinearLayout targetRow = ui.row(); targetRow.addView(remoteTarget, new LayoutParams(-2, -2));
             remoteBehind = new NativeTextView(ui.context); ui.typography(remoteBehind, 10, ui.muted, 400);
             remoteBehind.setCompoundDrawablesRelative(NativeIcons.drawable(ui.context, "arrow_down", ui.muted, ui.dp(12)), null, null, null); remoteBehind.setCompoundDrawablePadding(ui.dp(2));
@@ -319,7 +357,7 @@ final class NativeGitPanel extends LinearLayout {
                 int maximum = Math.max(0, available);
                 if (remoteTarget.getMaxWidth() != maximum) remoteTarget.setMaxWidth(maximum);
             });
-            remoteRow.addView(targetRow, new LayoutParams(0, -2, 1));
+            LayoutParams targetLayout = new LayoutParams(0, -2, 1); targetLayout.setMarginEnd(ui.dp(8)); remoteRow.addView(targetRow, targetLayout);
             LinearLayout split = ui.row(); split.setBackground(ui.shape(ui.input, 4, ui.borderStrong));
             remoteButton = action(ui.t("Push"), () -> mutate(remoteAction, null)); remoteButton.setPadding(ui.dp(6), 0, ui.dp(6), 0); ui.typography(remoteButton, 11, ui.text, 400);
             remoteButton.setCompoundDrawablePadding(ui.dp(3)); split.addView(remoteButton, new LayoutParams(-2, ui.dp(26)));
@@ -454,7 +492,7 @@ final class NativeGitPanel extends LinearLayout {
         for (int i = 0; i < files.length(); i++) if (matches(files.optJSONObject(i), untracked, groupSide)) { count++; paths.put(files.optJSONObject(i).optString("path")); }
         if (count == 0) return;
         LinearLayout heading = ui.row();
-        heading.addView(action((collapsed.contains(name) ? "› " : "⌄ ") + name + "  " + count, () -> { if (!collapsed.remove(name)) collapsed.add(name); render(); }), new LayoutParams(0, ui.dp(28), 1));
+        heading.addView(new NativeGitGroupToggle(ui, name, count, collapsed.contains(name), () -> { if (!collapsed.remove(name)) collapsed.add(name); render(); }), new LayoutParams(0, ui.dp(28), 1));
         if (!groupSide.isEmpty()) {
             addBox(heading, ui.t(groupSide.equals("staged") ? "Unstage all" : "Stage all"), groupSide.equals("staged"), () -> mutate(groupSide.equals("staged") ? "unstage" : "stage", paths));
             if (groupSide.equals("unstaged")) addBox(heading, ui.t("Discard all changes"), true, () -> confirmDiscard(paths));
@@ -513,6 +551,21 @@ final class NativeGitPanel extends LinearLayout {
             && first.optBoolean("binary") == second.optBoolean("binary") && first.optBoolean("truncated") == second.optBoolean("truncated");
     }
 
+    private static final class NativeGitGroupToggle extends NativePanelAction {
+        private final Paint ink = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final String count;
+        NativeGitGroupToggle(NativeUi ui, String name, int count, boolean collapsed, Runnable click) {
+            super(ui, name, click); this.count = String.valueOf(count);
+            ui.typography(this, 11, ui.muted, 400); ink.setTextSize(ui.dp(10)); ink.setColor(ui.muted);
+            setPadding(ui.dp(12), 0, ui.dp(18) + (int) Math.ceil(ink.measureText(this.count)), 0);
+            setCompoundDrawablesRelative(NativeIcons.drawable(ui.context, collapsed ? "chevron_right" : "chevron_down", ui.muted, ui.dp(12)), null, null, null);
+            setCompoundDrawablePadding(ui.dp(6)); setContentDescription(name + " " + count);
+        }
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            canvas.drawText(count, getWidth() - ui.dp(12) - ink.measureText(count), (getHeight() - ink.ascent() - ink.descent()) / 2, ink);
+        }
+    }
     private static final class NativeGitFileRow extends NativePanelAction {
         final String stats; final Paint ink = new Paint(Paint.ANTI_ALIAS_FLAG); final NativeDiffPalette palette;
         final int addWidth;

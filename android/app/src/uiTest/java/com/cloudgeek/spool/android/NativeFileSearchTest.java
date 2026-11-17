@@ -216,7 +216,7 @@ public class NativeFileSearchTest {
                                 super.drawRoundRect(rect, rx, ry, paint);
                             }
                         }); surface.recycle();
-                        if (borders[0] != 1 || outlines[0] != (web.getBoolean("focused") ? 1 : 0)) issues.put("border/focus outline");
+                        if (borders[0] != 1 || outlines[0] != 0) issues.put("border/focus outline");
                     }
                     if (delta > 1) issues.put("geometry"); maximum = Math.max(maximum, delta); if (issues.length() > 0) failures++;
                     samples.put(new JSONObject().put("scene", c).put("id", id).put("density", density).put("width", width).put("locale", scene.getString("locale"))

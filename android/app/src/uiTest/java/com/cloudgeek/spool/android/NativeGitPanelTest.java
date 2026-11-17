@@ -112,7 +112,7 @@ public class NativeGitPanelTest {
             NativeUnifiedDiff preview = child(panel.preview, NativeUnifiedDiff.class); assertNotNull(preview);
             panel.reload(); selected.put("unpushed", false).put("tags", new JSONArray().put("v1.2.1")); take(requests, "view=changes").result.done(detail, null);
             assertNull(action(panel.content, "Not pushed · v1.2.0")); assertNotNull(action(panel.content, "v1.2.1")); assertSame(preview, child(panel.preview, NativeUnifiedDiff.class));
-            find(panel.content, "‹ History").performClick(); take(requests, "view=history").result.done(historyPage(0, true), null); assertEquals(50, historyRows(panel));
+            find(panel.content, "History · ").performClick(); take(requests, "view=history").result.done(historyPage(0, true), null); assertEquals(50, historyRows(panel));
             panel.activate(false);
         }
     }
@@ -129,10 +129,17 @@ public class NativeGitPanelTest {
             View first = panel.content.getChildAt(1); assertTrue(first.getContentDescription().toString().contains("Not pushed")); assertTrue(first.getContentDescription().toString().contains("v1.2.0"));
             screenshot(panel, "history-" + (dark ? "dark" : "light"));
             panel.scroll.scrollTo(0, panel.content.getHeight());
+            int offset = panel.scroll.getScrollY(); View last = panel.content.getChildAt(50);
+            int lastY = last.getTop() - offset;
+            layout(panel); assertSame(first, panel.content.getChildAt(1));
+            assertEquals(offset, panel.scroll.getScrollY()); assertEquals(lastY, last.getTop() - panel.scroll.getScrollY());
             take(requests, "cursor=").result.done(null, new Exception("History page temporarily unavailable"));
+            layout(panel); assertSame(last, panel.content.getChildAt(50)); assertEquals(offset, panel.scroll.getScrollY());
             assertEquals(50, historyRows(panel)); assertNotNull(find(panel.content, "History page temporarily unavailable"));
             find(panel.content, "Retry").performClick(); NativeFilesTest.Pending more = take(requests, "cursor="); assertTrue(more.path.contains("%3A50"));
             more.result.done(historyPage(50, false), null); layout(panel); assertEquals(100, historyRows(panel));
+            assertSame(first, panel.content.getChildAt(1)); assertSame(last, panel.content.getChildAt(50));
+            assertEquals(offset, panel.scroll.getScrollY()); assertEquals(lastY, last.getTop() - panel.scroll.getScrollY());
             assertNotNull(find(panel.content, "release/v1.1"));
             panel.scroll.scrollTo(0, panel.content.getHeight()); more = take(requests, "cursor="); assertTrue(more.path.contains("%3A100"));
             more.result.done(historyPage(100, false), null); layout(panel); assertEquals(105, historyRows(panel));

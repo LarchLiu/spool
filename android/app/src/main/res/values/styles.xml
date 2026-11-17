@@ -1,6 +1,7 @@
 <resources>
     <style name="SpoolBaseTheme" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
+        <item name="android:defaultFocusHighlightEnabled">false</item>
         <item name="android:colorAccent">#B74E2D</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:statusBarColor">#FFFFFF</item>
@@ -10,6 +11,7 @@
     </style>
     <style name="SpoolTheme" parent="SpoolBaseTheme" />
     <style name="SpoolDarkTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:defaultFocusHighlightEnabled">false</item>
         <item name="android:colorAccent">#CA7657</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:statusBarColor">#242423</item>

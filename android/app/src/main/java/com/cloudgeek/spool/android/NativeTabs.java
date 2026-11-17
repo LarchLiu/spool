@@ -96,7 +96,6 @@ class NativeTabs extends FrameLayout {
         background.addState(new int[] {-android.R.attr.state_enabled}, ui.shape(ui.controlActive, 4, border));
         background.addState(new int[] {android.R.attr.state_pressed}, ui.shape(selected ? fill : ui.hover, 4, border));
         background.addState(new int[] {android.R.attr.state_hovered}, ui.shape(selected ? fill : ui.controlHover, 4, border));
-        background.addState(new int[] {android.R.attr.state_focused}, ui.shape(selected ? fill : ui.hover, 4, ui.dark ? ui.borderStrong : ui.primary));
         background.addState(new int[0], ui.shape(fill, 4, border));
         return background;
     }

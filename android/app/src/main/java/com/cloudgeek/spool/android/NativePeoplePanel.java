@@ -54,7 +54,7 @@ final class NativePeoplePanel extends NativeFloatingWindow {
         history = new ScrollView(ui.context); history.setFillViewport(true); history.setVerticalScrollBarEnabled(false); history.setContentDescription(ui.t("Private messages"));
         log = ui.column(); log.setPadding(ui.dp(10), ui.dp(12), ui.dp(10), ui.dp(12)); history.addView(log, new ScrollView.LayoutParams(-1, -2)); main.addView(history, new LinearLayout.LayoutParams(-1, 0, 1));
         notices = ui.column(); main.addView(notices); main.addView(ui.divider());
-        composer = new LinearLayout(ui.context) { @Override protected void dispatchDraw(android.graphics.Canvas canvas) { super.dispatchDraw(canvas); ui.focusRing(canvas, editor, 9); } }; composer.setClipChildren(false); composer.setClipToPadding(false); composer.setGravity(Gravity.BOTTOM); composer.setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(10));
+        composer = new LinearLayout(ui.context); composer.setClipChildren(false); composer.setClipToPadding(false); composer.setGravity(Gravity.BOTTOM); composer.setPadding(ui.dp(10), ui.dp(10), ui.dp(10), ui.dp(10));
         editor = new EditText(ui.context) {
             @Override protected void onMeasure(int widthSpec, int heightSpec) { super.onMeasure(widthSpec, heightSpec); int rows = Math.max(1, Math.min(6, (int) ((NativePeoplePanel.this.bounds == null ? 520 : NativePeoplePanel.this.bounds.height) - 290) / 20)); setMeasuredDimension(getMeasuredWidth(), ui.dp(Math.min(rows, Math.max(1, getLineCount())) * 20 + 18)); }
             @Override public android.view.inputmethod.InputConnection onCreateInputConnection(EditorInfo attributes) {
@@ -69,7 +69,7 @@ final class NativePeoplePanel extends NativeFloatingWindow {
         };
         ui.typography(editor, 13, ui.text, 400); editor.setGravity(Gravity.TOP | Gravity.START); editor.setSingleLine(false); editor.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         ui.preciseText(editor); editor.setHorizontallyScrolling(false);
-        editor.setPadding(ui.dp(11), ui.dp(9), ui.dp(11), ui.dp(9)); editor.setBackground(ui.shape(ui.input, 9, ui.line)); editor.setOnFocusChangeListener((view, focused) -> composer.invalidate());
+        editor.setPadding(ui.dp(11), ui.dp(9), ui.dp(11), ui.dp(9)); editor.setBackground(ui.shape(ui.input, 9, ui.line));
         editor.setHintTextColor(ui.muted); editor.setImeOptions(EditorInfo.IME_ACTION_SEND); editor.setImportantForAutofill(IMPORTANT_FOR_AUTOFILL_NO);
         editor.setLineSpacing(ui.dp(20) - (editor.getPaint().getFontMetrics().descent - editor.getPaint().getFontMetrics().ascent), 1);
         composer.addView(editor, new LinearLayout.LayoutParams(0, -2, 1));

@@ -47,10 +47,10 @@ final class NativeGroupPicker extends Dialog {
         heading.addView(title, new LinearLayout.LayoutParams(0, -2, 1)); heading.addView(ui.icon("close", 18, ui.t("Close group chat"), this::dismiss)); content.addView(heading);
         heading.setFocusableInTouchMode(true);
         body = ui.column(); body.setPadding(ui.dp(padding), 0, ui.dp(padding), ui.dp(20)); body.setClipChildren(false);
-        LinearLayout naming = new LinearLayout(ui.context) { @Override protected void dispatchDraw(android.graphics.Canvas canvas) { super.dispatchDraw(canvas); ui.focusRing(canvas, name, 9); } }; naming.setOrientation(LinearLayout.VERTICAL); naming.setClipChildren(false); naming.setClipToPadding(false); naming.setPadding(0, 0, 0, ui.dp(12));
+        LinearLayout naming = ui.column(); naming.setClipChildren(false); naming.setClipToPadding(false); naming.setPadding(0, 0, 0, ui.dp(12));
         TextView nameLabel = ui.text(ui.t("Group name"), 12, ui.text); ui.typography(nameLabel, 12, ui.text, 500); ui.fixedLineHeight(nameLabel, 1.5f); naming.addView(nameLabel); naming.addView(ui.space(8));
         int inputSize = padding == 20 ? 16 : 14;
-        name = ui.field(ui.t("Group chat"), false); ui.typography(name, inputSize, ui.text, 400); ui.fixedLineHeight(name, 1.5f); name.setMinHeight(ui.dp(inputSize * 1.5f + 20)); name.setPadding(ui.dp(13), ui.dp(10), ui.dp(13), ui.dp(10)); name.setBackground(ui.shape(ui.input, 9, ui.line)); name.setFilters(new android.text.InputFilter[] {new android.text.InputFilter.LengthFilter(80)}); name.setOnFocusChangeListener((view, focused) -> naming.invalidate());
+        name = ui.field(ui.t("Group chat"), false); ui.typography(name, inputSize, ui.text, 400); ui.fixedLineHeight(name, 1.5f); name.setMinHeight(ui.dp(inputSize * 1.5f + 20)); name.setPadding(ui.dp(13), ui.dp(10), ui.dp(13), ui.dp(10)); name.setBackground(ui.shape(ui.input, 9, ui.line)); name.setFilters(new android.text.InputFilter[] {new android.text.InputFilter.LengthFilter(80)});
         naming.addView(name); naming.setVisibility(group == null ? View.VISIBLE : View.GONE); body.addView(naming);
         notice = ui.text(ui.t("Only selected members can see this group. No history is saved; the group closes when everyone disconnects."), 12, ui.muted); ui.fixedLineHeight(notice, 1.7f);
         LinearLayout.LayoutParams note = new LinearLayout.LayoutParams(-1, -2); note.bottomMargin = ui.dp(20); body.addView(notice, note);

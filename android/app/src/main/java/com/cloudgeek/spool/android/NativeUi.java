@@ -3,7 +3,6 @@ package com.cloudgeek.spool.android;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Canvas;
-import android.graphics.Paint;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
@@ -62,8 +61,8 @@ final class NativeUi extends WebPalette {
     void focusOnPress(View view) {
         view.setFocusable(true);
         view.setFocusableInTouchMode(true);
-        // Otherwise View.onTouchEvent can consume the first tap only to focus
-        // a custom action, leaving its click callback for a second tap.
+        view.setDefaultFocusHighlightEnabled(false);
+        // A custom action must click on its first tap, even when it can take focus.
         view.setOnTouchListener((target, event) -> {
             if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) target.requestFocus();
             return false;
@@ -141,21 +140,8 @@ final class NativeUi extends WebPalette {
         drawable.addState(new int[] {-android.R.attr.state_enabled}, shape(disabled, radius, border));
         drawable.addState(new int[] {android.R.attr.state_pressed}, shape(pressed, radius, border));
         drawable.addState(new int[] {android.R.attr.state_hovered}, shape(hovered, radius, border));
-        drawable.addState(new int[] {android.R.attr.state_focused}, shape(pressed, radius, primary));
         drawable.addState(new int[0], shape(color, radius, border));
         return drawable;
-    }
-
-    int focusColor() {
-        return android.graphics.Color.rgb(Math.round(android.graphics.Color.red(primary) * .74f + android.graphics.Color.red(surface) * .26f), Math.round(android.graphics.Color.green(primary) * .74f + android.graphics.Color.green(surface) * .26f), Math.round(android.graphics.Color.blue(primary) * .74f + android.graphics.Color.blue(surface) * .26f));
-    }
-
-    void focusRing(Canvas canvas, View child, float radius) {
-        if (child == null || !child.isFocused() || !child.isEnabled()) return;
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG); paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(dp(2));
-        paint.setColor(focusColor());
-        float offset = dp(4), rounding = dp(radius + 4);
-        canvas.drawRoundRect(child.getLeft() - offset, child.getTop() - offset, child.getRight() + offset, child.getBottom() + offset, rounding, rounding, paint);
     }
 
     Drawable workspaceBackground() {
@@ -336,6 +322,7 @@ final class NativeUi extends WebPalette {
         view.setMinimumWidth(0);
         view.setPadding(dp(13), dp(9), dp(13), dp(9));
         view.setStateListAnimator(null);
+        view.setDefaultFocusHighlightEnabled(false);
         view.setBackground(states(accent ? primary : soft, 9, 0,
                 accent ? primaryHover : controlActive, accent ? primary : soft));
         view.setOnClickListener(v -> click.run());
@@ -449,6 +436,7 @@ final class NativeUi extends WebPalette {
         IconButton view = new IconButton(this, kind, size, false);
         view.setContentDescription(label);
         view.setFocusable(true);
+        view.setDefaultFocusHighlightEnabled(false);
         view.setBackground(states(0x00000000, 50, 0, controlActive, 0x00000000));
         view.setOnClickListener(v -> click.run());
         view.setLayoutParams(new LinearLayout.LayoutParams(dp(32), dp(32)));
@@ -517,19 +505,25 @@ final class NativeUi extends WebPalette {
             subtitle.setEllipsize(TextUtils.TruncateAt.END);
             subtitle.setLetterSpacing(.02f);
             preciseText(title); preciseText(subtitle);
-            title.setMaxWidth(dp(getResources().getConfiguration().screenWidthDp * .45f));
-            titleAction = row();
+            titleAction = new LinearLayout(context) {
+                @Override protected void onMeasure(int widthSpec, int heightSpec) {
+                    int available = Math.max(0, MeasureSpec.getSize(widthSpec) - (titleChevron.getVisibility() == GONE ? 0 : dp(18)));
+                    if (title.getMaxWidth() != available) title.setMaxWidth(available);
+                    super.onMeasure(widthSpec, heightSpec);
+                }
+            };
+            titleAction.setGravity(Gravity.CENTER_VERTICAL);
             titleAction.setMinimumHeight(dp(24));
             titleAction.setBackground(states(0x00000000, 6, 0, controlActive, 0x00000000));
-            titleAction.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+            titleAction.addView(title, new LinearLayout.LayoutParams(-2, -2));
             titleChevron = decorativeIcon("chevron_down", 13);
             LinearLayout.LayoutParams arrow = new LinearLayout.LayoutParams(dp(13), dp(13));
             arrow.setMarginStart(dp(5));
             titleAction.addView(titleChevron, arrow);
             titleChevron.setVisibility(View.GONE);
-            titles.addView(titleAction, new LinearLayout.LayoutParams(-2, -2));
+            titles.addView(titleAction, new LinearLayout.LayoutParams(-1, -2));
             LinearLayout.LayoutParams sub = new LinearLayout.LayoutParams(-2, -2);
-            sub.topMargin = dp(4);
+            sub.topMargin = dp(1);
             titles.addView(subtitle, sub);
             LinearLayout.LayoutParams copy = new LinearLayout.LayoutParams(0, -2, 1);
             copy.setMarginStart(dp(10));
@@ -592,11 +586,6 @@ final class NativeUi extends WebPalette {
             online.setContentDescription(t("{count} online", "count", people.size()) + (unread > 0 ? ", " + t("{count} unread messages", "count", unread) : ""));
         }
 
-        @Override protected void onMeasure(int widthSpec, int heightSpec) {
-            int maximum = Math.round(MeasureSpec.getSize(widthSpec) * .45f);
-            if (title.getMaxWidth() != maximum) title.setMaxWidth(maximum);
-            super.onMeasure(widthSpec, heightSpec);
-        }
     }
 
     final class ChoiceButton extends LinearLayout {
@@ -638,7 +627,6 @@ final class NativeUi extends WebPalette {
             background.addState(new int[] {android.R.attr.state_activated}, shape(controlActive, 99, 0));
             background.addState(new int[] {android.R.attr.state_pressed}, shape(controlActive, 99, 0));
             background.addState(new int[] {android.R.attr.state_hovered}, shape(controlHover, 99, 0));
-            background.addState(new int[] {android.R.attr.state_focused}, shape(permission ? 0 : soft, 99, primary));
             background.addState(new int[0], shape(permission ? 0 : soft, 99, 0));
             setBackground(background);
             setOnClickListener(v -> click.run());

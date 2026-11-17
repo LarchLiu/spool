@@ -31,7 +31,7 @@ public class NativeFileFocusTest {
         view.layout(0, 0, width, height);
     }
 
-    @Test public void realSearchAndKeyboardFocusFollowTheActualWebTransitions() throws Exception {
+    @Test public void searchAndKeyboardKeepLogicalFocusWithoutPaintingRowOutlines() throws Exception {
         JSONArray cases;
         try (java.io.InputStream input = getClass().getResourceAsStream("/web-file-focus.json")) {
             assertNotNull(input);
@@ -117,7 +117,7 @@ public class NativeFileFocusTest {
                         image.recycle();
                     }
                     String ring = rings.length() == 1 ? rings.getString(0) : rings.length() == 0 ? "" : rings.toString();
-                    if (!paths.toString().equals(expected.getJSONArray("paths").toString()) || !ring.equals(expected.getString("focus"))
+                    if (!paths.toString().equals(expected.getJSONArray("paths").toString()) || !ring.isEmpty()
                             || !state.focused.equals(expected.getString("logicalFocus")) || state.searchOpen != expected.getBoolean("search")
                             || browser.search.hasFocus() != expected.getBoolean("searchFocused"))
                         failures.put(new JSONObject().put("id", id).put("density", scale).put("locale", sample.getString("locale"))
@@ -130,9 +130,9 @@ public class NativeFileFocusTest {
         }
         Path output = Path.of(System.getProperty("spool.ui.artifacts")); Files.createDirectories(output);
         Files.writeString(output.resolve("native-file-focus-api" + android.os.Build.VERSION.SDK_INT + ".json"), new JSONObject()
-                .put("purpose", "Actual production rows/search/keyboard versus real Web focus states and CSS outline geometry, not full raster/device parity")
+                .put("purpose", "Production rows retain Web logical focus and keyboard behavior without visual focus outlines")
                 .put("snapshots", snapshots).put("failures", failures).toString(2));
-        assertEquals("File focus must follow actual Web search/blur and physical CSS outlines", 0, failures.length());
+        assertEquals("Logical focus and search must remain usable without row outlines", 0, failures.length());
     }
 
     @Test public void lazyListingsAndCollapsedDescendantsUseActualWebFocusCandidates() throws Exception {

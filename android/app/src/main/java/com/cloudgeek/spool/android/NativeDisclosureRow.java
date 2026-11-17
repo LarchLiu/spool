@@ -138,11 +138,17 @@ final class NativeDisclosureRow extends FrameLayout {
 
     private CharSequence statisticsText(String statistics) {
         java.util.regex.Matcher match = CHANGE_STATS.matcher(statistics);
-        if (!match.find()) return statistics;
-        NativeDiffPalette palette = new NativeDiffPalette(ui.dark);
+        boolean changes = match.find();
         SpannableString text = new SpannableString(statistics);
-        text.setSpan(new ForegroundColorSpan(palette.added), match.start(1), match.end(1), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        text.setSpan(new ForegroundColorSpan(palette.deleted), match.start(2), match.end(2), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        // Tool rows put the unsuccessful outcome before optional change counts.
+        int outcomeEnd = changes ? match.start() : statistics.length();
+        while (outcomeEnd > 0 && Character.isWhitespace(statistics.charAt(outcomeEnd - 1))) outcomeEnd--;
+        if (outcomeEnd > 0) text.setSpan(new ForegroundColorSpan(ui.error), 0, outcomeEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (changes) {
+            NativeDiffPalette palette = new NativeDiffPalette(ui.dark);
+            text.setSpan(new ForegroundColorSpan(palette.added), match.start(1), match.end(1), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            text.setSpan(new ForegroundColorSpan(palette.deleted), match.start(2), match.end(2), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
         return text;
     }
 
