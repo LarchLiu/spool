@@ -121,6 +121,65 @@ func parseWorkspaceGitStatus(body []byte) []workspaceGitFile {
 	return files
 }
 
+func parseWorkspaceGitNameStatus(body []byte) []workspaceGitFile {
+	files := []workspaceGitFile{}
+	fields := strings.Split(string(body), "\x00")
+	for i := 0; i+1 < len(fields); i += 2 {
+		file := workspaceGitFile{Status: fields[i], Path: fields[i+1]}
+		if strings.HasPrefix(file.Status, "R") || strings.HasPrefix(file.Status, "C") {
+			if i+2 >= len(fields) {
+				break
+			}
+			file.PreviousPath, file.Path = file.Path, fields[i+2]
+			file.Status = file.Status[:1]
+			i++
+		}
+		files = append(files, file)
+	}
+	return files
+}
+
+func addWorkspaceGitNumstat(files []workspaceGitFile, directory, root string, body []byte, side string) {
+	fields := strings.Split(string(body), "\x00")
+	for i := 0; i < len(fields); i++ {
+		parts := strings.SplitN(fields[i], "\t", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		path := parts[2]
+		if path == "" {
+			// With -z, a rename has an empty path followed by old and new paths.
+			if i+2 >= len(fields) {
+				break
+			}
+			path = fields[i+2]
+			i += 2
+		}
+		relative, _ := filepath.Rel(directory, filepath.Join(root, path))
+		path = filepath.ToSlash(relative)
+		add, _ := strconv.Atoi(parts[0])
+		del, _ := strconv.Atoi(parts[1])
+		for i := range files {
+			file := &files[i]
+			if file.Path != path && file.PreviousPath != path {
+				continue
+			}
+			switch side {
+			case "staged":
+				file.StagedAdditions += add
+				file.StagedDeletions += del
+			case "unstaged":
+				file.UnstagedAdditions += add
+				file.UnstagedDeletions += del
+			default:
+				file.Additions += add
+				file.Deletions += del
+				file.Binary = file.Binary || parts[0] == "-"
+			}
+		}
+	}
+}
+
 // Missing/deleted paths can still be diffed, but existing symlink components
 // and protected/private subprojects must obey the file browser's boundaries.
 func workspaceGitPath(directory, path string, allowed func(string) bool) bool {
@@ -207,31 +266,25 @@ func (a *App) serveWorkspaceGit(w http.ResponseWriter, r *http.Request, director
 		var body []byte
 		body, err = run("status", "--porcelain=v1", "-z", "--untracked-files=all", "--", ".")
 		files = parseWorkspaceGitStatus(body)
-		root, _ := gitWorkspace(directory)
-		for i := range files {
-			path, _ := filepath.Rel(directory, filepath.Join(root, files[i].Path))
-			files[i].Path = filepath.ToSlash(path)
-			if files[i].PreviousPath != "" {
-				previous, _ := filepath.Rel(directory, filepath.Join(root, files[i].PreviousPath))
-				files[i].PreviousPath = filepath.ToSlash(previous)
-			}
-		}
 	} else {
 		var body []byte
-		body, err = run("diff-tree", "--root", "--no-commit-id", "--name-status", "-r", "-z", "--no-renames", commit, "--", ".")
-		fields := strings.Split(string(body), "\x00")
-		// diff-tree paths are repository relative; return directory-relative paths.
-		root, _ := gitWorkspace(directory)
-		for i := 0; i+1 < len(fields); i += 2 {
-			path, _ := filepath.Rel(directory, filepath.Join(root, fields[i+1]))
-			files = append(files, workspaceGitFile{Path: filepath.ToSlash(path), Status: fields[i]})
-		}
+		// Compare merges to their first parent in the list, statistics and patch.
+		body, err = run("diff-tree", "--root", "--no-commit-id", "--diff-merges=first-parent", "--name-status", "-r", "-z", "--find-renames", commit, "--", ".")
+		files = parseWorkspaceGitNameStatus(body)
 	}
 	if err != nil {
 		apiError(w, 500, "Git changes are unavailable")
 		return
 	}
+	root, _ := gitWorkspace(directory)
 	for _, file := range files {
+		// Git status and diff-tree paths are repository relative.
+		path, _ := filepath.Rel(directory, filepath.Join(root, file.Path))
+		file.Path = filepath.ToSlash(path)
+		if file.PreviousPath != "" {
+			previous, _ := filepath.Rel(directory, filepath.Join(root, file.PreviousPath))
+			file.PreviousPath = filepath.ToSlash(previous)
+		}
 		if !workspaceGitPath(directory, file.Path, allowed) || file.PreviousPath != "" && !workspaceGitPath(directory, file.PreviousPath, allowed) {
 			continue
 		}
@@ -265,20 +318,19 @@ func (a *App) serveWorkspaceGit(w http.ResponseWriter, r *http.Request, director
 	}
 	var stats []byte
 	if commit != "" {
-		stats, err = run("diff-tree", "--root", "--no-commit-id", "-r", "--numstat", "-z", "--no-renames", commit, "--", ".")
+		stats, err = run("diff-tree", "--root", "--no-commit-id", "--diff-merges=first-parent", "-r", "--numstat", "-z", "--find-renames", commit, "--", ".")
 	} else if headErr == nil {
-		stats, err = run("diff", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "--no-renames", "HEAD", "--", ".")
+		stats, err = run("diff", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "--find-renames", "HEAD", "--", ".")
 	} else {
-		stats, err = run("diff", "--cached", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "--no-renames", "--", ".")
+		stats, err = run("diff", "--cached", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "--find-renames", "--", ".")
 	}
 	if err != nil {
 		apiError(w, 500, "Git statistics are unavailable")
 		return
 	}
-	root, _ := gitWorkspace(directory)
 	if commit == "" {
 		for _, side := range []string{"staged", "unstaged"} {
-			args := []string{"diff", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "--no-renames"}
+			args := []string{"diff", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "--find-renames"}
 			if side == "staged" {
 				args = append(args, "--cached")
 			}
@@ -287,47 +339,10 @@ func (a *App) serveWorkspaceGit(w http.ResponseWriter, r *http.Request, director
 				apiError(w, 500, "Git statistics are unavailable")
 				return
 			}
-			for _, field := range strings.Split(string(body), "\x00") {
-				parts := strings.SplitN(field, "\t", 3)
-				if len(parts) != 3 {
-					continue
-				}
-				path, _ := filepath.Rel(directory, filepath.Join(root, parts[2]))
-				for i := range view.Files {
-					file := &view.Files[i]
-					if file.Path != filepath.ToSlash(path) && file.PreviousPath != filepath.ToSlash(path) {
-						continue
-					}
-					add, _ := strconv.Atoi(parts[0])
-					del, _ := strconv.Atoi(parts[1])
-					if side == "staged" {
-						file.StagedAdditions += add
-						file.StagedDeletions += del
-					} else {
-						file.UnstagedAdditions += add
-						file.UnstagedDeletions += del
-					}
-				}
-			}
+			addWorkspaceGitNumstat(view.Files, directory, root, body, side)
 		}
 	}
-	for _, field := range strings.Split(string(stats), "\x00") {
-		parts := strings.SplitN(field, "\t", 3)
-		if len(parts) != 3 {
-			continue
-		}
-		path, _ := filepath.Rel(directory, filepath.Join(root, parts[2]))
-		for i := range view.Files {
-			file := &view.Files[i]
-			if file.Path == filepath.ToSlash(path) || file.PreviousPath == filepath.ToSlash(path) {
-				add, _ := strconv.Atoi(parts[0])
-				del, _ := strconv.Atoi(parts[1])
-				file.Additions += add
-				file.Deletions += del
-				file.Binary = file.Binary || parts[0] == "-"
-			}
-		}
-	}
+	addWorkspaceGitNumstat(view.Files, directory, root, stats, "")
 	if len(view.Files) > maxDirectoryEntries {
 		view.Files = view.Files[:maxDirectoryEntries]
 		view.Truncated = true
@@ -385,7 +400,7 @@ func workspaceGitDiffSide(ctx context.Context, directory string, file workspaceG
 	}
 	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "--find-renames", "--unified=3"}
 	if commit != "" {
-		args = []string{"show", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", "--unified=3", commit}
+		args = []string{"show", "--format=", "--diff-merges=first-parent", "--no-ext-diff", "--no-textconv", "--no-color", "--find-renames", "--unified=3", commit}
 	} else if side == "staged" {
 		args = append(args, "--cached")
 	} else if side == "unstaged" {
@@ -407,5 +422,12 @@ func workspaceGitDiffSide(ctx context.Context, directory string, file workspaceG
 			body = body[:at+1]
 		}
 	}
-	return string(body), truncated, bytes.Contains(body, []byte("Binary files ")), err
+	binary := false
+	for line := range bytes.SplitSeq(body, []byte("\n")) {
+		if bytes.HasPrefix(line, []byte("Binary files ")) && bytes.HasSuffix(line, []byte(" differ")) {
+			binary = true
+			break
+		}
+	}
+	return string(body), truncated, binary, err
 }

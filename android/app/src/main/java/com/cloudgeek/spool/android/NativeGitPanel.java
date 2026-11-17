@@ -28,6 +28,8 @@ final class NativeGitPanel extends LinearLayout {
     private final Set<String> collapsed = new HashSet<>();
     private final Runnable poll = this::reload;
     private JSONObject data, diff;
+    private JSONObject renderedDiff;
+    private String renderedSelected, renderedSide, renderedCommit, renderedDiffError;
     private String mode = "changes", commit = "", selected = "", side = "", error = "", diffError = "", operation = "", operationError = "";
     private boolean composer;
     private NativePanelAction commitButton;
@@ -347,6 +349,10 @@ final class NativeGitPanel extends LinearLayout {
         }
     }
     private void renderPreview() {
+        // List polling and operation controls must not replace an unchanged diff's scroll views.
+        if (diff == renderedDiff && selected.equals(renderedSelected) && side.equals(renderedSide)
+                && commit.equals(renderedCommit) && java.util.Objects.equals(diffError, renderedDiffError)) return;
+        renderedDiff = diff; renderedSelected = selected; renderedSide = side; renderedCommit = commit; renderedDiffError = diffError;
         preview.removeAllViews();
         if (selected.isEmpty()) { split.preview(null); return; }
         LinearLayout header = ui.row();

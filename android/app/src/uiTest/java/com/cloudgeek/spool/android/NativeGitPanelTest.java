@@ -8,6 +8,8 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
+import android.widget.HorizontalScrollView;
+import android.widget.ScrollView;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -18,6 +20,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RuntimeEnvironment;
+import org.robolectric.Shadows;
 import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
@@ -98,6 +101,37 @@ public class NativeGitPanelTest {
             take(requests, "view=diff").result.done(new JSONObject().put("patch", PATCH), null);
             assertNotNull(child(browser.gitPanel.preview, NativeUnifiedDiff.class));
             assertTrue(requests.isEmpty()); browser.deactivate();
+        }
+    }
+    @Test public void listPollingPreservesBothDiffScrollPositions() throws Exception {
+        RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
+        try (ActivityController<Activity> activity = Robolectric.buildActivity(Activity.class).setup()) {
+            List<NativeFilesTest.Pending> requests = new ArrayList<>();
+            NativeGitPanel panel = new NativeGitPanel(new NativeUi(activity.get(), false, "en"), new NativeFileModel("p"),
+                (path, done) -> requests.add(new NativeFilesTest.Pending(path, done)), value -> {});
+            activity.get().setContentView(panel); panel.activate(true);
+            take(requests, "view=changes").result.done(changes(), null);
+            panel.select("src/file.txt");
+            StringBuilder patch = new StringBuilder("--- /dev/null\n+++ b/src/file.txt\n@@ -0,0 +1,100 @@\n");
+            for (int i = 0; i < 100; i++) patch.append("+line ").append(i).append(" long text".repeat(30)).append('\n');
+            take(requests, "view=diff").result.done(new JSONObject().put("patch", patch.toString()), null); layout(panel);
+            child(panel.preview, ScrollView.class).scrollTo(0, 200);
+            child(panel.preview, HorizontalScrollView.class).scrollTo(80, 0);
+            assertEquals(200, child(panel.preview, ScrollView.class).getScrollY());
+            assertEquals(80, child(panel.preview, HorizontalScrollView.class).getScrollX());
+            Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(10));
+            take(requests, "view=changes").result.done(changes().put("branch", "refreshed-branch"), null); layout(panel);
+            assertNotNull(find(panel.content, "refreshed-branch"));
+            assertEquals(200, child(panel.preview, ScrollView.class).getScrollY());
+            assertEquals(80, child(panel.preview, HorizontalScrollView.class).getScrollX());
+            assertTrue(requests.isEmpty());
+            action(panel.preview, "Refresh diff preview").performClick();
+            take(requests, "view=diff").result.done(new JSONObject().put("patch", PATCH), null); layout(panel);
+            assertEquals("new", child(panel.preview, NativeUnifiedDiff.class).rows.get(2).text);
+            action(panel.preview, "Close diff").performClick();
+            assertNull(child(panel.preview, NativeUnifiedDiff.class));
+            assertTrue(requests.isEmpty());
+            panel.activate(false);
         }
     }
     @Test public void customTabsOpenUnifiedDiffWithWorkingResizeAndFenceOldWorkspaceResponses() throws Exception {

@@ -173,3 +173,145 @@ func TestWorkspaceGitNonRepositoryUnbornAndBoundedDiff(t *testing.T) {
 		t.Fatalf("large diff: %d %d bytes", w.Code, w.Body.Len())
 	}
 }
+
+func TestWorkspaceGitDiffBinaryMetadata(t *testing.T) {
+	s := testStore(t)
+	u := testUser(t, s, "git-owner")
+	p := testProject(t, s, u)
+	sessionFileGit(t, p.Path, "init", "-b", "dev")
+	writeSessionFile(t, p.Path, "text.txt", "Binary files context differ\nBinary files original differ\n")
+	writeSessionFile(t, p.Path, "binary.dat", "original\x00data")
+	sessionFileGit(t, p.Path, "add", ".")
+	sessionFileGit(t, p.Path, "commit", "-m", "initial")
+	writeSessionFile(t, p.Path, "text.txt", "Binary files context differ\nBinary files staged differ\n")
+	writeSessionFile(t, p.Path, "binary.dat", "staged\x00data")
+	sessionFileGit(t, p.Path, "add", ".")
+	writeSessionFile(t, p.Path, "text.txt", "Binary files context differ\nBinary files working differ\n")
+	writeSessionFile(t, p.Path, "binary.dat", "working\x00data")
+	a := NewApp(s, &fakeRunner{}, "", "")
+	cookie, _ := loginRequest(t, a, u.Username)
+	check := func(values url.Values) {
+		t.Helper()
+		for _, path := range []string{"text.txt", "binary.dat"} {
+			values.Set("path", path)
+			w := apiRequest(a, "GET", "/api/projects/"+p.ID+"/git?"+values.Encode(), "", cookie, "")
+			var diff struct {
+				Patch  string `json:"patch"`
+				Binary bool   `json:"binary"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &diff); err != nil || w.Code != 200 {
+				t.Fatalf("diff %v: %d %s: %v", values, w.Code, w.Body.String(), err)
+			}
+			if diff.Binary != (path == "binary.dat") || path == "text.txt" && !strings.Contains(diff.Patch, "+Binary files ") {
+				t.Errorf("binary classification for %v: %+v", values, diff)
+			}
+		}
+	}
+	for _, side := range []string{"", "staged", "unstaged"} {
+		check(url.Values{"view": {"diff"}, "side": {side}})
+	}
+	sessionFileGit(t, p.Path, "commit", "-m", "staged changes")
+	check(url.Values{"view": {"diff"}, "commit": {sessionFileGit(t, p.Path, "rev-parse", "HEAD")}})
+}
+
+func TestWorkspaceGitMergeCommitUsesFirstParent(t *testing.T) {
+	s := testStore(t)
+	u := testUser(t, s, "git-owner")
+	p := testProject(t, s, u)
+	sessionFileGit(t, p.Path, "init", "-b", "dev")
+	writeSessionFile(t, p.Path, "src/file.txt", "initial\n")
+	sessionFileGit(t, p.Path, "add", ".")
+	sessionFileGit(t, p.Path, "commit", "-m", "initial")
+	sessionFileGit(t, p.Path, "checkout", "-b", "feature")
+	writeSessionFile(t, p.Path, "src/file.txt", "feature\n")
+	writeSessionFile(t, p.Path, "src/added.txt", "added\n")
+	sessionFileGit(t, p.Path, "add", ".")
+	sessionFileGit(t, p.Path, "commit", "-m", "feature")
+	sessionFileGit(t, p.Path, "checkout", "dev")
+	writeSessionFile(t, p.Path, "main.txt", "main branch\n")
+	sessionFileGit(t, p.Path, "add", ".")
+	sessionFileGit(t, p.Path, "commit", "-m", "main branch")
+	sessionFileGit(t, p.Path, "merge", "--no-ff", "feature", "-m", "Merge feature")
+	commit := sessionFileGit(t, p.Path, "rev-parse", "HEAD")
+	a := NewApp(s, &fakeRunner{}, "", "")
+	cookie, _ := loginRequest(t, a, u.Username)
+	base := "/api/projects/" + p.ID + "/git?"
+	w := apiRequest(a, "GET", base+"view=history", "", cookie, "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), commit) {
+		t.Fatalf("merge history: %d %s", w.Code, w.Body.String())
+	}
+	check := func(base, prefix string) {
+		t.Helper()
+		w := apiRequest(a, "GET", base+url.Values{"commit": {commit}}.Encode(), "", cookie, "")
+		var view workspaceGitView
+		if err := json.Unmarshal(w.Body.Bytes(), &view); err != nil || w.Code != 200 || len(view.Files) != 2 {
+			t.Errorf("merge changes: %d %s: %v", w.Code, w.Body.String(), err)
+			return
+		}
+		for _, file := range view.Files {
+			want := "+feature"
+			deletions := 1
+			if file.Path == prefix+"added.txt" {
+				want, deletions = "+added", 0
+			} else if file.Path != prefix+"file.txt" {
+				t.Fatalf("unexpected merge file: %+v", file)
+			}
+			if file.Additions != 1 || file.Deletions != deletions {
+				t.Errorf("merge statistics: %+v", file)
+			}
+			w = apiRequest(a, "GET", base+url.Values{"view": {"diff"}, "commit": {commit}, "path": {file.Path}}.Encode(), "", cookie, "")
+			if w.Code != 200 || !strings.Contains(w.Body.String(), want) || !strings.Contains(w.Body.String(), "@@ -") || strings.Contains(w.Body.String(), "@@@") {
+				t.Errorf("merge diff %q: %d %s", file.Path, w.Code, w.Body.String())
+			}
+		}
+	}
+	check(base, "src/")
+	sub, err := s.SaveProject(Project{Name: "Source", Path: filepath.Join(p.Path, "src"), Members: []string{u.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check("/api/projects/"+sub.ID+"/git?", "")
+}
+
+func TestWorkspaceGitRenameStatistics(t *testing.T) {
+	s := testStore(t)
+	u := testUser(t, s, "git-owner")
+	p := testProject(t, s, u)
+	sessionFileGit(t, p.Path, "init", "-b", "dev")
+	old, next := "src/old\t中文.txt", "src/renamed\t中文.txt"
+	writeSessionFile(t, p.Path, old, "one\ntwo\nthree\nfour\nfive\nsix\n")
+	sessionFileGit(t, p.Path, "add", ".")
+	sessionFileGit(t, p.Path, "commit", "-m", "initial")
+	sessionFileGit(t, p.Path, "mv", old, next)
+	a := NewApp(s, &fakeRunner{}, "", "")
+	cookie, _ := loginRequest(t, a, u.Username)
+	base := "/api/projects/" + p.ID + "/git?"
+	check := func(query string, add, del, stagedAdd, stagedDel, unstagedAdd, unstagedDel int) {
+		t.Helper()
+		w := apiRequest(a, "GET", base+query, "", cookie, "")
+		var view workspaceGitView
+		if err := json.Unmarshal(w.Body.Bytes(), &view); err != nil || w.Code != 200 || len(view.Files) != 1 {
+			t.Errorf("rename: %d %s: %v", w.Code, w.Body.String(), err)
+			return
+		}
+		file := view.Files[0]
+		if file.Path != next || file.PreviousPath != old || file.Additions != add || file.Deletions != del ||
+			file.StagedAdditions != stagedAdd || file.StagedDeletions != stagedDel || file.UnstagedAdditions != unstagedAdd || file.UnstagedDeletions != unstagedDel {
+			t.Errorf("rename statistics: %+v", file)
+		}
+	}
+	check("", 0, 0, 0, 0, 0, 0)
+	writeSessionFile(t, p.Path, next, "one\ntwo\nchanged\nfour\nfive\nsix\n")
+	check("", 1, 1, 0, 0, 1, 1)
+	sessionFileGit(t, p.Path, "add", next)
+	check("", 1, 1, 1, 1, 0, 0)
+	writeSessionFile(t, p.Path, next, "one\ntwo\nchanged\nfour\nfive\nsix\nadded\n")
+	check("", 2, 1, 1, 1, 1, 0)
+	sessionFileGit(t, p.Path, "commit", "-m", "Rename with edits")
+	commit := sessionFileGit(t, p.Path, "rev-parse", "HEAD")
+	check(url.Values{"commit": {commit}}.Encode(), 1, 1, 0, 0, 0, 0)
+	w := apiRequest(a, "GET", base+url.Values{"view": {"diff"}, "commit": {commit}, "path": {next}}.Encode(), "", cookie, "")
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "rename from") || !strings.Contains(w.Body.String(), "+changed") || strings.Contains(w.Body.String(), "+added") {
+		t.Fatalf("renamed historical diff: %d %s", w.Code, w.Body.String())
+	}
+}
