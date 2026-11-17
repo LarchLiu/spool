@@ -107,9 +107,12 @@ func TestSteeringAcknowledgementTimeoutKeepsTheMessage(t *testing.T) {
 		return fixtureCount(t, f.request, "steer") > 0
 	}}
 	f.run(t, "steer-wait steer-ack-gate")
-	waiting := f.post(t, "messages", map[string]string{"message": "change course", "delivery": "steer"}, 202)
+	waiting := f.post(t, "messages", map[string]string{"message": "change course", "delivery": "steer", "client_message_id": "client-steer"}, 202)
 	if got := messageTexts(waiting); !slices.Contains(got, "user:change course") || !waiting.Transcript.Parts[len(waiting.Transcript.Parts)-1].Pending {
 		t.Fatalf("unacknowledged message is not pending: %q", got)
+	}
+	if waiting.Transcript.Parts[len(waiting.Transcript.Parts)-1].ClientMessageID != "client-steer" {
+		t.Fatal("the provisional steer lost its client correlation")
 	}
 	f.releaseSteer(t)
 	done := f.settled(t, 1)
@@ -219,6 +222,26 @@ type queueFixture struct {
 	csrf    string
 }
 
+func TestMessageDeliveryCorrelationSurvivesUploadsAndStartingATurn(t *testing.T) {
+	f := newQueueFixture(t, chatmodel.BackendCodex)
+	f.post(t, "messages", map[string]string{"message": "steer-wait", "delivery": "queue", "client_message_id": "starting"}, 202)
+	live := waitLiveTurn(t, f.app, f.chat.ID, func(turn chatmodel.Turn) bool { return turn.Reply == "Hello world" })
+	if len(live.Parts) == 0 || live.Parts[0].ClientMessageID != "starting" {
+		t.Fatal("a message starting an idle turn lost its client correlation")
+	}
+	w := uploadRequest(t, f.app, f.chat.ID, f.cookie, f.csrf,
+		map[string]string{"message": "with file", "delivery": "queue", "client_message_id": "upload"},
+		uploadedAttachment{Attachment: chatmodel.Attachment{Name: "note.txt", MediaType: "text/plain"}, Data: []byte("note")})
+	var response chatmodel.Session
+	if w.Code != 202 || json.Unmarshal(w.Body.Bytes(), &response) != nil || len(response.Queued) != 1 || response.Queued[0].ClientMessageID != "upload" {
+		t.Fatalf("upload lost its client correlation: %d %s", w.Code, w.Body.String())
+	}
+	f.post(t, "messages", map[string]string{"message": "invalid", "delivery": "queue", "client_message_id": strings.Repeat("x", 129)}, 400)
+	if len(f.snapshot().Queued) != 1 {
+		t.Fatal("an invalid client message ID queued input")
+	}
+}
+
 func newQueueFixture(t *testing.T, backend chatmodel.Backend) *queueFixture {
 	t.Helper()
 	request := newAgentFixture(t, backend)
@@ -317,11 +340,14 @@ func TestBusyChatQueuesMessagesForTheNextTurn(t *testing.T) {
 		t.Run(string(backend), func(t *testing.T) {
 			f := newQueueFixture(t, backend)
 			f.run(t, "steer-wait")
-			queued := f.post(t, "messages", map[string]string{"message": "second", "delivery": "queue"}, 202)
+			queued := f.post(t, "messages", map[string]string{"message": "second", "delivery": "queue", "client_message_id": "client-queue"}, 202)
 			if got := queuedTexts(queued); !slices.Equal(got, []string{"second"}) || queued.Status != chatmodel.StatusRunning {
 				t.Fatalf("queued %q with status %s, want the message held while the turn runs", got, queued.Status)
 			}
 			queued = f.post(t, "messages", map[string]string{"message": "third", "delivery": "queue"}, 202)
+			if queued.Queued[0].ClientMessageID != "client-queue" || queued.Queued[1].ClientMessageID != "" {
+				t.Fatal("queued client correlation was lost or assigned to another message")
+			}
 			if got := queuedTexts(queued); !slices.Equal(got, []string{"second", "third"}) {
 				t.Fatalf("queue = %q, want messages in the order sent", got)
 			}

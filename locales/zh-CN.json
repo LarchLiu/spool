@@ -109,6 +109,8 @@
   "Message {agent}": "发送消息给 {agent}",
   "Create or choose a chat to begin": "创建或选择一个聊天以开始",
   "Send message": "发送消息",
+  "Sending…": "发送中…",
+  "Send failed": "发送失败",
   "Scroll to latest": "滚动到最新消息",
   "Choose Codex model and level": "选择 Codex model 和 level",
   "CLI default": "CLI 默认",

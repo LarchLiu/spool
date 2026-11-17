@@ -127,6 +127,7 @@ export type ApprovalField = {
   step?: number;
 };
 export type TranscriptPart = {
+  client_message_id?: string;
   id?: string;
   timestamp?: number;
   // A steering message its model has yet to take in; it may be withdrawn.
@@ -250,6 +251,8 @@ export type Chat = {
 };
 export type QueuedMessage = {
   id: string;
+  client_message_id?: string;
+  delivery_status?: "sending" | "failed";
   user_id?: string;
   message: string;
   attachments?: string[];

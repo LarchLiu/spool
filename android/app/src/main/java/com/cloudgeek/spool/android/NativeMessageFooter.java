@@ -20,6 +20,9 @@ final class NativeMessageFooter extends LinearLayout {
     private long timestamp;
     private String text;
     private String copyState = "idle";
+    private NativeDeliveryStatus delivery;
+    private String deliveryState = "";
+    private Runnable deliveryEdit;
 
     NativeMessageFooter(NativeUi ui, boolean mine, String name, String text, long timestamp) {
         this(ui, mine, name, text, timestamp, System.currentTimeMillis(), TimeZone.getDefault(), value -> {
@@ -76,7 +79,7 @@ final class NativeMessageFooter extends LinearLayout {
         if (!mine || author.getText().toString().equals(name)) return;
         author.setText(name);
         if (name.isEmpty()) removeView(author);
-        else if (author.getParent() == null) addView(author, 0, new LayoutParams(-2, -2));
+        else if (author.getParent() == null) addView(author, delivery == null ? 0 : 1, new LayoutParams(-2, -2));
         metadataMargins();
     }
 
@@ -97,6 +100,16 @@ final class NativeMessageFooter extends LinearLayout {
             params.setMarginStart(i == 0 ? 0 : ui.dp(7));
             getChildAt(i).setLayoutParams(params);
         }
+    }
+
+    void delivery(String status, Runnable edit) {
+        deliveryEdit = edit;
+        if (deliveryState.equals(status)) return;
+        deliveryState = status;
+        if (delivery != null) removeView(delivery);
+        delivery = status.isEmpty() ? null : new NativeDeliveryStatus(ui, status, () -> { if (deliveryEdit != null) deliveryEdit.run(); });
+        if (delivery != null) addView(delivery, 0, new LayoutParams(-2, -2));
+        metadataMargins();
     }
 
     private void add(View child, int width) {
@@ -120,6 +133,10 @@ final class NativeMessageFooter extends LinearLayout {
         if (author.getParent() == this && MeasureSpec.getMode(widthSpec) != MeasureSpec.UNSPECIFIED) {
             // CSS lets the ellipsized author shrink before the no-wrap timestamp and copy control.
             int fixed = getPaddingLeft() + getPaddingRight() + ui.dp(28 + 7 * (getChildCount() - 1));
+            if (delivery != null) {
+                delivery.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), heightSpec);
+                fixed += delivery.getMeasuredWidth();
+            }
             if (time.getParent() == this) {
                 time.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED), heightSpec);
                 fixed += time.getMeasuredWidth();

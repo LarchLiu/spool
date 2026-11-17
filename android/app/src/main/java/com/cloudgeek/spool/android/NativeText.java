@@ -386,11 +386,13 @@ final class NativeText {
             case "Select online people": value = "选择在线成员"; break;
             case "Select this chat's current agent to view or clear its goal": value = "请切回此聊天当前的 Agent，再查看或清除目标"; break;
             case "Send answers": value = "提交回答"; break;
+            case "Send failed": value = "发送失败"; break;
             case "Send group message": value = "发送群聊消息"; break;
             case "Send message": value = "发送消息"; break;
             case "Send now": value = "立即发送"; break;
             case "Send private message": value = "发送私聊消息"; break;
             case "Send status unknown. The message may have arrived; it will not be retried automatically.": value = "发送状态未知，消息可能已送达，系统不会自动重发。"; break;
+            case "Sending…": value = "发送中…"; break;
             case "Server connection": value = "服务器连接"; break;
             case "Server identity (SHA-256)": value = "服务器身份（SHA-256）"; break;
             case "Server name": value = "服务器名称"; break;
@@ -896,11 +898,13 @@ final class NativeText {
             case "Select online people": value = "オンラインのメンバーを選択"; break;
             case "Select this chat's current agent to view or clear its goal": value = "目標の表示・解除には、このチャットの現在のエージェントを選択してください"; break;
             case "Send answers": value = "回答を送信"; break;
+            case "Send failed": value = "送信失敗"; break;
             case "Send group message": value = "グループメッセージを送信"; break;
             case "Send message": value = "メッセージを送信"; break;
             case "Send now": value = "今すぐ送信"; break;
             case "Send private message": value = "プライベートメッセージを送信"; break;
             case "Send status unknown. The message may have arrived; it will not be retried automatically.": value = "送信状態が不明です。届いている可能性があるため、自動再送はしません。"; break;
+            case "Sending…": value = "送信中…"; break;
             case "Server connection": value = "サーバー接続"; break;
             case "Server identity (SHA-256)": value = "Server identity (SHA-256)"; break;
             case "Server name": value = "サーバー名"; break;

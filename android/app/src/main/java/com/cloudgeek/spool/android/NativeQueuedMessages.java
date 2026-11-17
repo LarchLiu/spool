@@ -205,6 +205,7 @@ final class NativeQueuedMessages extends ScrollView {
         for (int i = 0; i < ordered.size(); i++) {
             JSONObject message = ordered.get(i);
             final String id = message.optString("id");
+            String deliveryStatus = message.optString("delivery_status");
             String body = message.optString("message").trim();
             JSONArray files = message.optJSONArray("attachments");
             if (body.isEmpty() && files != null) body = files.optString(0);
@@ -222,8 +223,11 @@ final class NativeQueuedMessages extends ScrollView {
             if (count > 1) {
                 NativeUi.IconButton grip = ui.icon("grip_vertical", 15, ui.t("Drag to reorder"), () -> {});
                 grip.setPadding(ui.dp(5.5f), ui.dp(5.5f), ui.dp(5.5f), ui.dp(5.5f));
-                grip.setEnabled(!busy);
+                boolean provisional = false;
+                for (JSONObject entry : ordered) provisional |= !entry.optString("delivery_status").isEmpty();
+                grip.setEnabled(!busy && !provisional);
                 grip.setOnLongClickListener(view -> {
+                    if (!view.isEnabled()) return false;
                     draggedID = id;
                     boolean started = view.startDragAndDrop(ClipData.newPlainText("", ""), new View.DragShadowBuilder(row) {
                         @Override public void onProvideShadowMetrics(android.graphics.Point size, android.graphics.Point touch) {
@@ -244,7 +248,7 @@ final class NativeQueuedMessages extends ScrollView {
                 });
                 final int index = i;
                 grip.setOnKeyListener((view, code, event) -> {
-                    if (event.getAction() != android.view.KeyEvent.ACTION_DOWN || this.busy) return false;
+                    if (event.getAction() != android.view.KeyEvent.ACTION_DOWN || !view.isEnabled()) return false;
                     if (code == android.view.KeyEvent.KEYCODE_DPAD_UP && index > 0) {
                         moveMessage(id, ordered.get(index - 1).optString("id")); return true;
                     }
@@ -260,14 +264,25 @@ final class NativeQueuedMessages extends ScrollView {
             TextView text = ui.text(body, 13, ui.text);
             text.setSingleLine(true); text.setEllipsize(TextUtils.TruncateAt.END);
             row.addView(text, new LinearLayout.LayoutParams(0, -2, 1));
-            TextView action = ui.text("↳ " + ui.t(running ? "Steer" : "Send now"), 12, ui.muted);
-            action.setGravity(Gravity.CENTER); action.setPadding(ui.dp(8), 0, ui.dp(8), 0);
-            action.setFocusable(true); action.setEnabled(!busy); action.setAlpha(busy ? .45f : 1);
-            action.setOnClickListener(view -> steer.accept(id));
-            LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(-2, ui.dp(26));
-            actionParams.leftMargin = ui.dp(8); actionParams.rightMargin = ui.dp(8);
-            row.addView(action, actionParams);
-            NativeUi.IconButton remove = ui.icon("close", 15, ui.t("Delete queued message"), () -> delete.accept(id));
+            if (!deliveryStatus.isEmpty()) {
+                LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-2, -2);
+                statusParams.leftMargin = ui.dp(8);
+                row.addView(new NativeDeliveryStatus(ui, deliveryStatus, null), statusParams);
+            }
+            if (deliveryStatus.equals("sending")) {
+                list.addView(row, new LinearLayout.LayoutParams(-1, ui.dp(ROW_HEIGHT_DP)));
+                continue;
+            }
+            if (deliveryStatus.isEmpty()) {
+                TextView action = ui.text("↳ " + ui.t(running ? "Steer" : "Send now"), 12, ui.muted);
+                action.setGravity(Gravity.CENTER); action.setPadding(ui.dp(8), 0, ui.dp(8), 0);
+                action.setFocusable(true); action.setEnabled(!busy); action.setAlpha(busy ? .45f : 1);
+                action.setOnClickListener(view -> steer.accept(id));
+                LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(-2, ui.dp(26));
+                actionParams.leftMargin = ui.dp(8); actionParams.rightMargin = ui.dp(8);
+                row.addView(action, actionParams);
+            }
+            NativeUi.IconButton remove = ui.icon("trash", 15, ui.t("Delete queued message"), () -> delete.accept(id));
             remove.setPadding(ui.dp(5.5f), ui.dp(5.5f), ui.dp(5.5f), ui.dp(5.5f));
             remove.setEnabled(!busy);
             row.addView(remove, new LinearLayout.LayoutParams(ui.dp(26), ui.dp(26)));

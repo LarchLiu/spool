@@ -68,7 +68,7 @@ func (a *App) queuedMessages(chatID string) []chatmodel.QueuedMessage {
 	}
 	messages := make([]chatmodel.QueuedMessage, 0, len(queue))
 	for _, entry := range queue {
-		message := chatmodel.QueuedMessage{ID: entry.id, UserID: entry.input.userID, Message: entry.input.Message, CreatedAt: entry.createdAt}
+		message := chatmodel.QueuedMessage{ID: entry.id, ClientMessageID: entry.input.ClientMessageID, UserID: entry.input.userID, Message: entry.input.Message, CreatedAt: entry.createdAt}
 		for _, file := range entry.input.files {
 			message.Attachments = append(message.Attachments, file.Name)
 		}
@@ -289,6 +289,9 @@ func steeringParts(input messageInput, files []chatmodel.AgentAttachment, at int
 	}
 	for _, file := range files {
 		parts = append(parts, chatmodel.Part{Role: "user", Kind: "context", Name: file.Name, Text: file.Name, FilePath: file.Path, Timestamp: at})
+	}
+	for i := range parts {
+		parts[i].ClientMessageID = input.ClientMessageID
 	}
 	return parts
 }

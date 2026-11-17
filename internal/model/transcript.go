@@ -6,6 +6,8 @@ type Part struct {
 	ID        string `json:"id,omitempty"`
 	Phase     string `json:"phase,omitempty"`
 	Timestamp int64  `json:"timestamp,omitempty"`
+	// Correlates a client's optimistic message with its accepted input.
+	ClientMessageID string `json:"client_message_id,omitempty"`
 	// Pending marks a steering message its model has yet to take in. It is
 	// shown after the turn's output for now, and may still be withdrawn.
 	Pending  bool         `json:"pending,omitempty"`

@@ -109,6 +109,8 @@
   "Message {agent}": "{agent} にメッセージを送信",
   "Create or choose a chat to begin": "チャットを作成または選択してください",
   "Send message": "メッセージを送信",
+  "Sending…": "送信中…",
+  "Send failed": "送信失敗",
   "Scroll to latest": "最新メッセージへ移動",
   "Choose Codex model and level": "Codex のモデルとレベルを選択",
   "CLI default": "CLI の既定値",

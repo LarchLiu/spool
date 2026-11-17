@@ -109,6 +109,8 @@
   "Message {agent}": "Message {agent}",
   "Create or choose a chat to begin": "Create or choose a chat to begin",
   "Send message": "Send message",
+  "Sending…": "Sending…",
+  "Send failed": "Send failed",
   "Scroll to latest": "Scroll to latest",
   "Choose Codex model and level": "Choose Codex model and level",
   "CLI default": "CLI default",

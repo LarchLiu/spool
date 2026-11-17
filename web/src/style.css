@@ -2564,6 +2564,24 @@ a.attachment-open {
   font-size: 13px;
   color: var(--text);
 }
+.message-delivery-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 24px;
+}
+.message-delivery-status.sending > svg { animation: spin .8s linear infinite; }
+.message-delivery-status.failed { color: var(--error-text); }
+.message-footer .message-delivery-status { font-size: inherit; line-height: 1; }
+.message-delivery-status button { padding: 0 4px; border: 0; background: none; color: var(--muted); font-size: inherit; cursor: pointer; text-decoration: underline; }
+.local-delivery { margin-top: 16px; }
+@media (prefers-reduced-motion: reduce) {
+  .message-delivery-status.sending > svg { animation: none; }
+}
 .queued-message-steer {
   display: inline-flex;
   align-items: center;

@@ -100,11 +100,12 @@ type Session struct {
 }
 
 type QueuedMessage struct {
-	ID          string   `json:"id"`
-	UserID      string   `json:"user_id,omitempty"`
-	Message     string   `json:"message"`
-	Attachments []string `json:"attachments,omitempty"`
-	CreatedAt   int64    `json:"created_at"`
+	ID              string   `json:"id"`
+	ClientMessageID string   `json:"client_message_id,omitempty"`
+	UserID          string   `json:"user_id,omitempty"`
+	Message         string   `json:"message"`
+	Attachments     []string `json:"attachments,omitempty"`
+	CreatedAt       int64    `json:"created_at"`
 }
 
 type HistoryState struct {

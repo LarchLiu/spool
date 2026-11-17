@@ -154,6 +154,18 @@ public final class MainActivity extends Activity {
     // changes, its answer is dropped, so it must not go on counting as in flight.
     private boolean delivering, deliveringDraft, editingQueue;
     private int deliveryGeneration, deliveryAuth;
+    private static final class Delivery {
+        final String id = UUID.randomUUID().toString(), server, owner, chatID, turnID, message;
+        final boolean steer;
+        final long created = System.currentTimeMillis();
+        final List<Attachment> files;
+        String status = "sending";
+        Delivery(String server, String owner, String chatID, String turnID, String message, List<Attachment> files, boolean steer) {
+            this.server = server; this.owner = owner;
+            this.chatID = chatID; this.turnID = turnID; this.message = message; this.files = files; this.steer = steer;
+        }
+    }
+    private final List<Delivery> localDeliveries = new ArrayList<>();
     private NativeUi.Header workspaceHeader;
     private NativeChatMenu chatMenu;
     private String chatMenuTarget = "";
@@ -1128,6 +1140,7 @@ public final class MainActivity extends Activity {
         saveServerWorkspace(); closeDesktop(); stopStreams();
         // The draft was cleared when it was sent to the queue, and its answer will not arrive.
         final boolean unanswered = delivering() && deliveringDraft;
+        for (Delivery delivery : localDeliveries) if (delivery.status.equals("sending")) delivery.status = "failed";
         ++generation; ++authEpoch; sessionCheckBusy = false;
         monitor.stop(); recovery.stop();
         client = null; connected = false; connecting = true;
@@ -1149,6 +1162,7 @@ public final class MainActivity extends Activity {
         }
         saveServerWorkspace(); closeDesktop(); stopStreams();
         final boolean retained = user != null;
+        for (Delivery delivery : localDeliveries) if (delivery.status.equals("sending")) delivery.status = "failed";
         ++generation; ++authEpoch; sessionCheckBusy = false;
         monitor.stop(); recovery.stop();
         client = candidate.client; origin = candidate.endpoint.origin; connectionMode = candidate.endpoint.mode;
@@ -1426,6 +1440,7 @@ public final class MainActivity extends Activity {
         busy = false;
         pendingSend = null;
         optimisticSend = null;
+        localDeliveries.clear();
         stoppingTurns.clear();
         goalNotice = goalError = "";
         discardComposerDrafts();
@@ -2265,7 +2280,7 @@ public final class MainActivity extends Activity {
         send.setContentDescription(showStop ? ui.t(stopping ? "Stopping…" : "Stop response") : ui.t("Send message"));
         send.setEnabled(writable() && (activeTurn != null ? hasDraft ? queueingDraft(activeTurn) && !delivering() : !stopping
                 : !editing && !busy && selectedAgentAvailable() && permissionReady() && hasDraft));
-        if (queuedView != null) queuedView.bind(writable() && chat != null ? chat.optJSONArray("queued_messages") : null, activeTurn != null, delivering());
+        if (queuedView != null) queuedView.bind(writable() && chat != null ? deliveryQueue() : null, activeTurn != null, delivering());
         String modelName = model.isEmpty() ? tr("CLI default", "CLI 默认") : model;
         for (int i = 0; i < agents.length(); i++) {
             JSONObject agent = at(agents, i);
@@ -2654,6 +2669,7 @@ public final class MainActivity extends Activity {
     private void renderChat() { renderChat(null); }
 
     private void renderChat(NativeHistoryScroll.Anchor anchor) {
+        settleDeliveries();
         restoreEditedQueueDraft();
         java.util.Set<String> rebinds = pendingRebinds; pendingRebinds = null;
         updateChatRefresh();
@@ -2705,6 +2721,7 @@ public final class MainActivity extends Activity {
                 row.partCount = value.parts.length();
                 if (rebinds == null || id.isEmpty() || rebinds.contains(id) || !row.bound()) row.bind(children -> renderTurn(page, value, key, children, true));
             } else renderTurn(chat, value, key, transcriptViews, true);
+            renderLocalDeliveries(chat, value.turn, transcriptViews);
         }
         transcriptViews.end();
         historyScroll.changed();
@@ -2757,6 +2774,7 @@ public final class MainActivity extends Activity {
                         footer.bindText(value.answer); footer.bindTimestamp(turn.optLong("finished_at"));
                     }
                     renderTurnStatus(page, value, key, children);
+                    renderLocalDeliveries(page, turn, children);
                     children.use("gap", "", () -> ui.space(38));
                 });
             }
@@ -2797,6 +2815,7 @@ public final class MainActivity extends Activity {
             row.setVisibility(NativeUserRow.hasContent(text, new JSONArray(), value.parts, first, last) ? View.VISIBLE : View.GONE);
             row.bind(operator, text, NativeUserRow.timestamp(value.parts, first, last, value.turn.optLong("started_at")),
                     userFiles(page, value.turn, row, value.parts, first, last, false));
+            bindDeliveryStatus(row, value.parts, first, last);
         };
     }
 
@@ -2806,6 +2825,7 @@ public final class MainActivity extends Activity {
             NativeUserRow userRow = (NativeUserRow) transcriptViews.use(renderAnswer ? key + "/user" : "user", "user",
                     () -> new NativeUserRow(ui, operator, value.input, value.inputTimestamp, null, this::openMessageLink));
             userRow.bind(operator, value.input, value.inputTimestamp, userFiles(page, turn, userRow, value.parts, 0, value.inputEnd, true));
+            bindDeliveryStatus(userRow, value.parts, 0, value.inputEnd);
             transcriptViews.use(renderAnswer ? key + "/user-gap" : "user-gap", "", () -> ui.space(22));
         }
         NativeActivityList.State activityState = activityState(page, turn);
@@ -3212,6 +3232,84 @@ public final class MainActivity extends Activity {
 
     private boolean delivering() { return delivering && deliveryGeneration == generation && deliveryAuth == authEpoch; }
 
+    private boolean deliveryPresent(Delivery delivery, boolean acceptedOnly) {
+        if (chat == null || !ownsDelivery(delivery)) return false;
+        JSONArray queue = array(chat, "queued_messages"), parts = array(chat.optJSONObject("transcript"), "parts");
+        for (int i = 0; i < queue.length(); i++)
+            if (delivery.id.equals(at(queue, i).optString("client_message_id"))) return true;
+        for (int i = 0; i < parts.length(); i++) {
+            JSONObject part = at(parts, i);
+            if (part.optString("role").equals("user") && delivery.id.equals(part.optString("client_message_id"))
+                    && (!acceptedOnly || !part.optBoolean("pending"))) return true;
+        }
+        return false;
+    }
+
+    private void settleDeliveries() {
+        localDeliveries.removeIf(delivery -> deliveryPresent(delivery, true));
+    }
+
+    private boolean ownsDelivery(Delivery delivery) {
+        return delivery.server.equals(serverProfiles.selected) && user != null && delivery.owner.equals(user.optString("id")) && delivery.chatID.equals(chatID);
+    }
+
+    private JSONArray deliveryQueue() {
+        settleDeliveries();
+        JSONArray queue = new JSONArray(), existing = array(chat, "queued_messages");
+        for (int i = 0; i < existing.length(); i++) queue.put(existing.opt(i));
+        for (Delivery delivery : localDeliveries) if (ownsDelivery(delivery) && !delivery.steer && !deliveryPresent(delivery, false)) {
+            JSONArray names = new JSONArray(); for (Attachment file : delivery.files) names.put(file.name);
+            queue.put(object("id", delivery.id, "message", delivery.message, "attachments", names,
+                    "created_at", delivery.created, "delivery_status", delivery.status));
+        }
+        return queue;
+    }
+
+    private Delivery localDelivery(String id) {
+        for (Delivery delivery : localDeliveries) if (ownsDelivery(delivery) && delivery.id.equals(id)) return delivery;
+        return null;
+    }
+
+    private void editDelivery(Delivery delivery) {
+        if (!writable() || !ownsDelivery(delivery) || !delivery.status.equals("failed")) return;
+        captureDraft(); Draft current = draft();
+        List<Attachment> combined = new ArrayList<>(current.files); combined.addAll(delivery.files);
+        long bytes = 0; for (Attachment file : combined) bytes += file.data.length;
+        if (combined.size() > 6 || bytes > 16 * 1024 * 1024) { goalError = ui.t("Attach at most 6 files, up to 16 MB total"); updateComposer(); return; }
+        current.text = delivery.message + (current.text.isEmpty() ? "" : "\n\n" + current.text);
+        current.files.clear(); current.files.addAll(combined); localDeliveries.remove(delivery);
+        composer.setText(current.text); composer.setSelection(composer.length()); renderFiles(); renderChat(); composer.requestFocus();
+    }
+
+    private void bindDeliveryStatus(NativeUserRow row, JSONArray parts, int start, int end) {
+        for (int i = start; i < end; i++) {
+            Delivery delivery = localDelivery(at(parts, i).optString("client_message_id"));
+            if (delivery != null) { row.delivery(delivery.status, () -> editDelivery(delivery)); return; }
+        }
+        row.delivery("", null);
+    }
+
+    private void renderLocalDeliveries(JSONObject page, JSONObject turn, NativeKeyedViews children) {
+        JSONArray turns = array(page, "turns");
+        for (Delivery delivery : localDeliveries) {
+            if (!delivery.steer || !ownsDelivery(delivery) || deliveryPresent(delivery, false)) continue;
+            boolean found = false;
+            for (int i = 0; i < turns.length(); i++) found |= delivery.turnID.equals(at(turns, i).optString("id"));
+            if (!delivery.turnID.equals(turn.optString("id")) && (found || turn != at(turns, turns.length() - 1))) continue;
+            NativeUserRow row = (NativeUserRow) children.use("delivery/" + delivery.id, "user", () ->
+                    new NativeUserRow(ui, user, delivery.message, delivery.created, null, this::openMessageLink));
+            List<NativeAttachmentCards.Item> files = new ArrayList<>();
+            final int session = authEpoch, selected = selectionEpoch;
+            for (Attachment file : delivery.files) files.add(new NativeAttachmentCards.Item(file.id, file.name, file.file.mediaType,
+                    file.excerpt, "local:" + file.id, () -> {
+                        if (session != authEpoch || selected != selectionEpoch || !delivery.chatID.equals(chatID)) return;
+                        if (NativeFileData.image(file.file.mediaType)) previewLocalImage(file); else chooseDownload(file.file, file.name, session);
+                    }, image -> fileImages.local(image, file.id, file.file, Math.min(512, dp(120)), null)));
+            row.bind(user, delivery.message, delivery.created, files);
+            row.delivery(delivery.status, () -> editDelivery(delivery));
+        }
+    }
+
     private void beginDelivery(boolean draft) {
         editingQueue = false;
         delivering = true; deliveringDraft = draft; deliveryGeneration = generation; deliveryAuth = authEpoch;
@@ -3238,11 +3336,13 @@ public final class MainActivity extends Activity {
         final List<Attachment> files = new ArrayList<>(submitted.files);
         final Client captured = client;
         final int token = generation, session = authEpoch, selected = selectionEpoch;
+        final Delivery local = new Delivery(serverProfiles.selected, user.optString("id"), target, activeTurn.optString("id"), message, files, steer);
+        localDeliveries.add(local);
         final JSONObject payload = object("message", message, "backend", chat.optString("backend", backend), "model", model,
-                "reasoning_effort", effort, "permission_mode", permission, "delivery", steer ? "steer" : "queue");
+                "reasoning_effort", effort, "permission_mode", permission, "delivery", steer ? "steer" : "queue", "client_message_id", local.id);
         beginDelivery(true); goalError = "";
         submitted.text = ""; submitted.files.clear(); composer.setText("");
-        renderFiles(); updateComposer();
+        renderFiles(); renderChat();
         io.execute(() -> {
             try {
                 if (token != generation || session != authEpoch || destroyed) return;
@@ -3258,6 +3358,7 @@ public final class MainActivity extends Activity {
                 post(token, () -> {
                     if (session != authEpoch) return;
                     delivering = false;
+                    localDeliveries.remove(local);
                     if (selected == selectionEpoch && target.equals(chatID) && !result.optString("id").isEmpty()) {
                         chat = NativeChatState.reconcile(chat, result); renderChat();
                     }
@@ -3269,13 +3370,10 @@ public final class MainActivity extends Activity {
                     delivering = false;
                     if (e instanceof ApiFailure && ((ApiFailure) e).status == 401) { expire(); return; }
                     if (selected == selectionEpoch && target.equals(chatID)) {
-                        Draft restored = draft();
-                        if (restored.text.isEmpty() && restored.files.isEmpty()) {
-                            restored.text = message; restored.files.addAll(files); composer.setText(message); renderFiles();
-                        }
-                        goalError = e.getMessage() == null ? e.toString() : e.getMessage();
+                        if (localDeliveries.contains(local)) goalError = e.getMessage() == null ? e.toString() : e.getMessage();
                     }
-                    updateComposer();
+                    local.status = "failed";
+                    renderChat();
                 });
             }
         });
@@ -3287,6 +3385,11 @@ public final class MainActivity extends Activity {
 
     private void queueAction(String id, String action, String before) {
         if (!writable() || delivering() || chat == null || chatID.isEmpty()) return;
+        Delivery local = localDelivery(id);
+        if (local != null) {
+            if (action.equals("delete") && local.status.equals("failed")) { localDeliveries.remove(local); renderChat(); }
+            return;
+        }
         final String target = chatID;
         final int selected = selectionEpoch;
         beginDelivery(false); goalError = ""; updateComposer();
@@ -3303,6 +3406,8 @@ public final class MainActivity extends Activity {
 
     private void editQueuedMessage(String id) {
         if (!writable() || delivering() || chat == null || chatID.isEmpty()) return;
+        Delivery local = localDelivery(id);
+        if (local != null) { if (local.status.equals("failed")) editDelivery(local); return; }
         captureDraft();
         final String target = chatID, path = "/chats/" + Uri.encode(chatID) + "/queue";
         final int selected = selectionEpoch;

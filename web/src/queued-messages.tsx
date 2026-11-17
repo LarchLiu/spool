@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { Translator } from "./i18n";
 import type { QueuedMessage } from "./types";
+import { DeliveryStatus } from "./message-delivery";
 
 // Messages sent while the agent was still answering. Each waits for the
 // running turn to end unless it is steered into that turn or removed.
@@ -71,6 +72,8 @@ export function QueuedMessages({
     top: number;
   } | null>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
+  const canReorder =
+    !busy && !messages.some((message) => !!message.delivery_status);
   const popup = useRef<HTMLDivElement>(null);
   const closeMenu = () => {
     setMenu(null);
@@ -262,10 +265,11 @@ export function QueuedMessages({
               <button
                 type="button"
                 className="icon queued-message-grip"
-                disabled={busy}
+                disabled={!canReorder}
                 aria-label={t("Drag to reorder")}
                 title={t("Drag to reorder")}
                 onKeyDown={(event) => {
+                  if (!canReorder) return;
                   const at = orderedMessages.findIndex(
                     (item) => item.id === message.id,
                   );
@@ -283,7 +287,7 @@ export function QueuedMessages({
                   }
                 }}
                 onPointerDown={(event) => {
-                  if (event.button !== 0 || busy) return;
+                  if (event.button !== 0 || !canReorder) return;
                   setMenu(null);
                   for (const row of list.current!.querySelectorAll(
                     "[data-queue-id]",
@@ -333,52 +337,62 @@ export function QueuedMessages({
             <span className="queued-message-text">
               {message.message.trim() || message.attachments?.join(", ")}
             </span>
-            <button
-              type="button"
-              className="queued-message-steer"
-              disabled={busy}
-              onClick={() => onSteer(message.id)}
-            >
-              <CornerDownRight size={14} aria-hidden="true" />
-              {t(running ? "Steer" : "Send now")}
-            </button>
-            <button
-              type="button"
-              className="icon"
-              disabled={busy}
-              aria-label={t("Delete queued message")}
-              title={t("Delete queued message")}
-              onClick={() => onDelete(message.id)}
-            >
-              <Trash2 size={15} />
-            </button>
-            <button
-              type="button"
-              className="icon queued-message-more"
-              disabled={busy}
-              aria-label={t("Queued message actions")}
-              title={t("Queued message actions")}
-              aria-haspopup="menu"
-              aria-expanded={menu?.id === message.id}
-              onClick={(event) => {
-                if (menu?.id === message.id) {
-                  closeMenu();
-                  return;
-                }
-                trigger.current = event.currentTarget;
-                const bounds = event.currentTarget.getBoundingClientRect();
-                setMenu({
-                  id: message.id,
-                  left: Math.max(
-                    8,
-                    Math.min(innerWidth - 188, bounds.right - 180),
-                  ),
-                  top: bounds.top > 54 ? bounds.top - 48 : bounds.bottom + 4,
-                });
-              }}
-            >
-              <Ellipsis size={16} />
-            </button>
+            {message.delivery_status && (
+              <DeliveryStatus status={message.delivery_status} t={t} />
+            )}
+            {!message.delivery_status && (
+              <button
+                type="button"
+                className="queued-message-steer"
+                disabled={busy}
+                onClick={() => onSteer(message.id)}
+              >
+                <CornerDownRight size={14} aria-hidden="true" />
+                {t(running ? "Steer" : "Send now")}
+              </button>
+            )}
+            {message.delivery_status !== "sending" && (
+              <>
+                <button
+                  type="button"
+                  className="icon"
+                  disabled={busy}
+                  aria-label={t("Delete queued message")}
+                  title={t("Delete queued message")}
+                  onClick={() => onDelete(message.id)}
+                >
+                  <Trash2 size={15} />
+                </button>
+                <button
+                  type="button"
+                  className="icon queued-message-more"
+                  disabled={busy}
+                  aria-label={t("Queued message actions")}
+                  title={t("Queued message actions")}
+                  aria-haspopup="menu"
+                  aria-expanded={menu?.id === message.id}
+                  onClick={(event) => {
+                    if (menu?.id === message.id) {
+                      closeMenu();
+                      return;
+                    }
+                    trigger.current = event.currentTarget;
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    setMenu({
+                      id: message.id,
+                      left: Math.max(
+                        8,
+                        Math.min(innerWidth - 188, bounds.right - 180),
+                      ),
+                      top:
+                        bounds.top > 54 ? bounds.top - 48 : bounds.bottom + 4,
+                    });
+                  }}
+                >
+                  <Ellipsis size={16} />
+                </button>
+              </>
+            )}
           </li>
         ))}
       </ul>

@@ -66,6 +66,10 @@ final class NativeUserRow extends ViewGroup {
         } else if (ui.avatars != null) ui.avatars.bind(avatar, ui, operator, 28);
     }
 
+    void delivery(String status, Runnable edit) {
+        message.footer.delivery(status, edit);
+    }
+
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
         int available = MeasureSpec.getMode(widthSpec) == MeasureSpec.UNSPECIFIED ? ui.dp(680) : MeasureSpec.getSize(widthSpec);
         int avatarWidth = avatar == null ? 0 : ui.dp(38);

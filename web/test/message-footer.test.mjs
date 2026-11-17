@@ -44,6 +44,15 @@ test("user footers put time before copy, while agent footers put copy before tim
   }
 });
 
+test("delivery status precedes the author and timestamp in the same footer", () => {
+  const html = renderToStaticMarkup(createElement(MessageFooter, {
+    role: "user", author: "Owner", text: "Message", timestamp, locale: "en", t,
+    leading: createElement("span", { role: "status" }, "Sending…"),
+  }));
+  assert.ok(html.indexOf("Sending…") < html.indexOf('class="message-author"'));
+  assert.ok(html.indexOf('class="message-author"') < html.indexOf("<time"));
+});
+
 test("message times follow the viewer locale and omit missing or invalid timestamps", (context) => {
   context.mock.timers.enable({ apis: ["Date"], now: timestamp });
   for (const locale of ["en", "zh-CN", "ja"]) {

@@ -6,6 +6,7 @@ import {
   composerEnterAction,
   QueuedMessages,
 } from "../.test-build/components/web/src/queued-messages.js";
+import { deliveryReceipt } from "../.test-build/components/web/src/message-delivery.js";
 
 const key = (event = {}) => ({
   key: "Enter", shiftKey: false, metaKey: false, ctrlKey: false, altKey: false,
@@ -59,4 +60,28 @@ test("a queued message is sent rather than steered once nothing is running", () 
   assert.doesNotMatch(html, /Steer/);
   assert.equal(html.match(/disabled=""/g).length, 3);
   assert.doesNotMatch(html, /aria-label="Drag to reorder"/);
+});
+
+test("local queue entries expose sending or recovery actions before they get a server ID", () => {
+  const sending = render({ messages: [{ id: "local", message: "Immediate", created_at: 1, delivery_status: "sending" }] });
+  assert.match(sending, /role="status"/);
+  assert.match(sending, /Sending…/);
+  assert.doesNotMatch(sending, />Steer<|aria-label="Delete queued message"|aria-label="Queued message actions"/);
+  const failed = render({ messages: [{ id: "local", message: "Immediate", created_at: 1, delivery_status: "failed" }] });
+  assert.match(failed, /Send failed/);
+  assert.doesNotMatch(failed, /Edit message/);
+  assert.match(failed, /aria-label="Queued message actions"/);
+  assert.match(failed, /aria-label="Delete queued message"/);
+});
+
+test("receipt identity distinguishes identical messages and provisional provider input", () => {
+  const chat = { queued_messages: [{ message: "same", client_message_id: "other" }], transcript: { parts: [] } };
+  assert.deepEqual(deliveryReceipt(chat, "local"), { present: false, accepted: false });
+  chat.transcript.parts.push({ role: "user", text: "same", client_message_id: "local", pending: true });
+  assert.deepEqual(deliveryReceipt(chat, "local"), { present: true, accepted: false });
+  chat.transcript.parts[0].pending = false;
+  assert.deepEqual(deliveryReceipt(chat, "local"), { present: true, accepted: true });
+  chat.transcript.parts = [];
+  chat.queued_messages[0].client_message_id = "local";
+  assert.deepEqual(deliveryReceipt(chat, "local"), { present: true, accepted: true });
 });

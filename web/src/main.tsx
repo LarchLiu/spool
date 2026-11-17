@@ -37,6 +37,7 @@ import { DesktopSettingsLink } from "./desktop-settings";
 import { DesktopWindowChrome } from "./desktop-window-chrome";
 import { LoginStory } from "./login-story";
 import { ComposerSendButton } from "./composer-send-button";
+import { DeliveryStatus, deliveryReceipt, type LocalDelivery } from "./message-delivery";
 import {
   composerEnterAction,
   inputMethodKey,
@@ -365,6 +366,39 @@ function App() {
   const [install, setInstall] = useState<BeforeInstallPromptEvent | null>(null),
     [update, setUpdate] = useState(false);
   const [files, setFiles] = useState<DraftAttachment[]>([]);
+  const [localDeliveries, setLocalDeliveries] = useState<LocalDelivery[]>([]);
+  const localDeliveriesRef = useRef(localDeliveries);
+  localDeliveriesRef.current = localDeliveries;
+  function retireDelivery(value: LocalDelivery, keepFiles = false) {
+    if (value.retired) return;
+    value.retired = true;
+    if (!keepFiles) releaseAttachments(value.files);
+    setLocalDeliveries(current => current.filter(item => item !== value));
+  }
+  const visibleDeliveries = localDeliveries.filter(value => value.owner === user?.id && (value.first?.chatID || value.chatID) === chat?.id);
+  useEffect(() => {
+    if (!chat) return;
+    for (const value of visibleDeliveries) {
+      if (!deliveryReceipt(chat, value.id).accepted) continue;
+      retireDelivery(value);
+    }
+  }, [chat, localDeliveries]);
+  const queuedMessages = [
+    ...(chat?.queued_messages || []),
+    ...visibleDeliveries.filter(value => value.delivery === "queue" && !deliveryReceipt(chat!, value.id).present).map(value => ({
+      id: value.id, message: value.message, attachments: value.files.map(file => file.name),
+      created_at: value.createdAt, delivery_status: value.status,
+    })),
+  ];
+  function editLocalDelivery(value: LocalDelivery) {
+    if (!composerWritable || value.status !== "failed" || value.retired) return;
+    const issue = validateAttachments([...files, ...value.files]);
+    if (issue) { setError(t(issue as MessageKey)); return; }
+    setDraft(current => [value.message, current].filter(Boolean).join("\n\n"));
+    setFiles(current => [...current, ...value.files]);
+    retireDelivery(value, true);
+    requestAnimationFrame(() => document.getElementById("chat-message")?.focus());
+  }
   const [draftVersion, setDraftVersion] = useState(0);
   const [commandDismissed, setCommandDismissed] = useState(false);
   const [commandFocused, setCommandFocused] = useState(false);
@@ -421,6 +455,7 @@ function App() {
   filesRef.current = files;
   useEffect(() => () => {
     releaseAttachments(filesRef.current);
+    for (const value of localDeliveriesRef.current) releaseAttachments(value.files);
     for (const draft of editedQueueDrafts.current.values())
       releaseAttachments(draft.files);
   }, []);
@@ -469,6 +504,7 @@ function App() {
       .catch(() => {})
       .finally(() => setReady(true));
     const expire = () => {
+      for (const value of localDeliveriesRef.current) retireDelivery(value);
       for (const draft of editedQueueDrafts.current.values())
         releaseAttachments(draft.files);
       editedQueueDrafts.current.clear();
@@ -1392,6 +1428,7 @@ function App() {
   async function deliver(delivery: "queue" | "steer") {
     if (
       !chat ||
+      !activeTurn ||
       !composerWritable ||
       (!draft.trim() && !files.length) ||
       deliverRef.current ||
@@ -1408,15 +1445,13 @@ function App() {
       attached = files,
       owner = user?.id,
       first = activeSubmission,
-      origin = selection.current;
-    // The composer this message was written in. A first message's chat gets
-    // its ID while this waits; opening another chat or draft leaves it.
-    const isCurrent = () =>
-      activeUser.current === owner &&
-      activeID.current === (first ? first.chatID : chat.id) &&
-      selection.current.project === origin.project &&
-      selection.current.draftVersion === origin.draftVersion;
-    let restored = false;
+      turnID = activeTurn.id;
+    const local: LocalDelivery = {
+      id: crypto.randomUUID(), owner, chatID: chat.id, first: first || undefined,
+      turnID, delivery, message, files: attached, createdAt: Date.now(), status: "sending",
+    };
+    setLocalDeliveries(current => [...current, local]);
+    follow.current = true;
     deliverRef.current = true;
     setDelivering(true);
     setDraft("");
@@ -1435,6 +1470,7 @@ function App() {
         reasoning_effort: effort,
         permission_mode: permissions.mode,
         delivery,
+        client_message_id: local.id,
       };
       let body: typeof payload | FormData = payload;
       if (attached.length) {
@@ -1446,18 +1482,14 @@ function App() {
       const v = await api<Chat>("/chats/" + id + "/messages", body);
       if (activeUser.current === owner && activeID.current === v.id)
         setChat((old) => reconcile(old, v));
+      retireDelivery(local);
     } catch (e) {
-      // The draft of another chat is not this message's to replace or join.
-      if (isCurrent()) {
-        setDraft((current) => current || message);
-        setFiles((current) => {
-          restored = !current.length;
-          return restored ? attached : current;
-        });
-        fail(e);
+      if (!local.retired && activeUser.current === owner) {
+        local.status = "failed";
+        setLocalDeliveries(current => [...current]);
+        if (activeID.current === (first?.chatID || chat.id)) fail(e);
       }
     } finally {
-      if (!restored) releaseAttachments(attached);
       deliverRef.current = false;
       setDelivering(false);
     }
@@ -1472,6 +1504,11 @@ function App() {
     beforeID = "",
   ) {
     if (!chat || deliverRef.current) return;
+    const local = visibleDeliveries.find(value => value.id === id);
+    if (local) {
+      if (action === "delete" && local.status === "failed") retireDelivery(local);
+      return;
+    }
     const target = chat.id,
       owner = user?.id;
     deliverRef.current = true;
@@ -1491,6 +1528,8 @@ function App() {
     }
   }
   async function editQueuedMessage(id: string) {
+    const local = visibleDeliveries.find(value => value.id === id);
+    if (local) { if (local.status === "failed") editLocalDelivery(local); return; }
     if (!chat || !composerWritable || deliverRef.current || preparingFiles) return;
     const target = chat.id,
       owner = user?.id,
@@ -2097,6 +2136,9 @@ function App() {
                         {userText && <UserMessage text={userText} t={t} />}
                         <MessageFooter
                           role="user"
+                          leading={visibleDeliveries.filter(value => input.some(part => part.client_message_id === value.id)).map(value => (
+                            <DeliveryStatus key={value.id} status={value.status} t={t} onEdit={() => editLocalDelivery(value)} />
+                          ))}
                           text={userText}
                           timestamp={
                             input.find((part) => part.timestamp)?.timestamp ||
@@ -2163,6 +2205,18 @@ function App() {
                     )}
                     <TurnError turn={turn} t={t} />
                     {turn.status === "running" && <ChatStatusIndicator t={t} />}
+                    {visibleDeliveries.filter(value => value.delivery === "steer" &&
+                      !deliveryReceipt(chat, value.id).present &&
+                      (value.turnID === turn.id || (!chat.turns.some(item => item.id === value.turnID) && turn === chat.turns.at(-1)))
+                    ).map(value => <div className="user-row local-delivery" key={value.id}>
+                      <div className="user-message">
+                        {!!value.files.length && <AttachmentCards files={value.files} chatID={chat.id} t={t} onPreview={(file, url) => setPreview({ file, url })} />}
+                        {!!value.message.trim() && <UserMessage text={value.message} t={t} />}
+                        <MessageFooter role="user" text={value.message} author={displayUser?.nickname} timestamp={value.createdAt} locale={locale} t={t}
+                          leading={<DeliveryStatus status={value.status} t={t} onEdit={() => editLocalDelivery(value)} />} />
+                      </div>
+                      <TurnOperatorAvatar person={displayUser || undefined} />
+                    </div>)}
                   </article>
                 );
               })
@@ -2217,9 +2271,9 @@ function App() {
                 </button>
               </div>
             )}
-          {composerWritable && !!chat?.queued_messages?.length && (
+          {composerWritable && !!queuedMessages.length && (
             <QueuedMessages
-              messages={chat.queued_messages}
+              messages={queuedMessages}
               running={!!activeTurn}
               busy={delivering}
               t={t}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Check, Copy, CircleAlert } from "lucide-react";
 import type { Translator } from "./i18n.js";
 import type { Locale } from "./preferences.js";
@@ -35,6 +35,7 @@ export function MessageFooter({
   text,
   timestamp,
   locale = "en",
+  leading,
   t,
 }: {
   role: "user" | "assistant";
@@ -42,6 +43,7 @@ export function MessageFooter({
   text: string;
   timestamp?: number;
   locale?: Locale;
+  leading?: ReactNode;
   t: Translator;
 }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
@@ -73,6 +75,7 @@ export function MessageFooter({
         : Copy;
   return (
     <div className={`message-footer message-footer-${role}`}>
+      {leading}
       {role === "user" && author && (
         <span className="message-author">{author}</span>
       )}

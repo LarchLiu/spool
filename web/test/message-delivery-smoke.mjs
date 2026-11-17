@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { mkdir } from "node:fs/promises";
 import react from "@vitejs/plugin-react";
 import { requireRunTemp } from "../../tools/test-scratch.mjs";
 import { createTestViteServer } from "./vite-fixture.mjs";
@@ -35,11 +36,14 @@ try {
   await server.listen();
   browser = await chromium.launch({ channel: "chrome", headless: true });
   const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
-  for (const scenario of ["queue", "steer", "same-chat", "edit", "edit-conflict", "edit-error", "edit-navigation", "edit-limit"]) {
+  for (const scenario of ["queue", "steer", "same-chat", "queue-stream", "steer-stream", "steer-pending-error", "queue-error", "steer-error", "queue-attachment-error", "steer-attachment-error", "queue-navigation", "edit", "edit-conflict", "edit-error", "edit-navigation", "edit-limit"]) {
     const editing = scenario.startsWith("edit");
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: "block" });
     let releaseFirst;
     const acceptance = new Promise(resolve => { releaseFirst = resolve; });
+    let releaseDelivery;
+    const deliveryAcceptance = new Promise(resolve => { releaseDelivery = resolve; });
+    let delivered;
     try {
       const page = await context.newPage();
       const errors = [];
@@ -52,6 +56,11 @@ try {
           readyState = 0;
           send() {}
           close() { this.readyState = 3; }
+        };
+        const Source = window.EventSource;
+        window.__chatSources = [];
+        window.EventSource = class extends Source {
+          constructor(url, options) { super(url, options); window.__chatSources.push(this); }
         };
       });
       const a = fixture("chat-A"), b = fixture("chat-B", true);
@@ -81,13 +90,27 @@ try {
           return json(b);
         }
         if (request.method() === "POST" && endpoint.endsWith("/messages")) {
-          const payload = request.postDataJSON();
+          const form = request.headers()["content-type"]?.startsWith("multipart/")
+            ? await new Response(request.postDataBuffer(), { headers: { "Content-Type": request.headers()["content-type"] } }).formData() : null;
+          const payload = form ? Object.fromEntries([...form.entries()].filter(([, value]) => typeof value === "string")) : request.postDataJSON();
+          const attachments = form ? form.getAll("files").map(file => file.name) : [];
           requests.push({ endpoint, ...payload });
           if (!payload.delivery) {
             await acceptance;
             return json(accepted, 202);
           }
-          return json(endpoint.includes("chat-B") ? b : accepted, 202);
+          const current = endpoint.includes("chat-B") ? b : accepted;
+          delivered = structuredClone(current);
+          delivered.updated_at = 3;
+          if (payload.delivery === "queue") delivered.queued_messages = [{ id: "server-queued", client_message_id: payload.client_message_id, message: payload.message, attachments, created_at: 3 }];
+          else {
+            delivered.transcript.parts[0].timestamp = 1;
+            delivered.transcript.parts.push({ role: "user", kind: "text", text: payload.message, client_message_id: payload.client_message_id, timestamp: 3, ...(scenario === "steer-pending-error" ? { pending: true } : {}) });
+            delivered.turns[0].part_end = delivered.transcript.parts.length;
+          }
+          await deliveryAcceptance;
+          if (scenario.endsWith("error")) return json({ error: "Delivery failed" }, 500);
+          return json(delivered, 202);
         }
         if (endpoint.endsWith("/events")) {
           const chat = endpoint.includes("chat-B") ? b : a;
@@ -165,23 +188,82 @@ try {
       await assertAction("Stop response", "button");
       await composer.fill(followup);
       await assertAction("Send message", "submit");
-      const delivery = scenario === "steer" ? "steer" : "queue";
-      const posted = page.waitForRequest(request => request.url().includes("/messages") && request.postDataJSON().delivery === delivery, { timeout: 5000 });
-      const answered = page.waitForResponse(response => response.url().includes("/messages") && response.request().postDataJSON().delivery === delivery, { timeout: 5000 });
-      if (scenario === "queue") await action.click();
-      else await composer.press(scenario === "steer" ? "Control+Enter" : "Enter");
+      const delivery = scenario.startsWith("steer") ? "steer" : "queue";
+      if (scenario.includes("attachment")) {
+        releaseFirst();
+        await page.waitForFunction(() => !document.querySelector(".attachment-add").disabled);
+        await page.locator("input[type=file]").setInputFiles({ name: "retained.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a/nkAAAAASUVORK5CYII=", "base64") });
+        await page.getByRole("button", { name: "Remove retained.png", exact: true }).waitFor();
+      }
+      const matchesDelivery = request => request.url().includes("/messages") && request.method() === "POST" &&
+        (request.headers()["content-type"]?.startsWith("multipart/") ? request.postData().includes(`\r\n\r\n${delivery}\r\n`) : request.postDataJSON().delivery === delivery);
+      const posted = page.waitForRequest(matchesDelivery, { timeout: 5000 });
+      const answered = page.waitForResponse(response => matchesDelivery(response.request()), { timeout: 5000 });
+      if (delivery === "queue" && scenario !== "same-chat") await action.click();
+      else await composer.press(delivery === "steer" ? "Control+Enter" : "Enter");
       await assertAction("Stop response", "button");
       await originalAction.dispose();
+      const submittedMessage = () => delivery === "queue" ? page.locator(".queued-message").filter({ hasText: followup }) : page.locator(".user-message").filter({ hasText: followup });
+      await submittedMessage().getByText("Sending…", { exact: true }).waitFor();
+      assert.equal(await submittedMessage().count(), 1, "the message is visible before HTTP acceptance");
+      if (delivery === "steer") {
+        const order = await submittedMessage().locator(".message-footer").evaluate(footer => {
+          const status = footer.querySelector(".message-delivery-status"), author = footer.querySelector(".message-author"), time = footer.querySelector("time");
+          return !!status && !!author && !!time && !!(status.compareDocumentPosition(author) & Node.DOCUMENT_POSITION_FOLLOWING) && !!(author.compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING);
+        });
+        assert.equal(order, true, "sending comes before the name and time in the same footer");
+      }
       if (scenario === "same-chat") {
         await page.waitForFunction(() => document.querySelector("#chat-message").value === "");
         assert.equal(requests.length, 1, "same-chat follow-up must wait for the first acceptance");
         releaseFirst();
       }
       const request = await posted;
+      if (scenario.includes("stream") || scenario === "steer-pending-error") {
+        await page.evaluate(value => {
+          window.__chatSources.filter(source => source.url.includes(`/chats/${value.id}/`)).at(-1).dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(value) }));
+        }, delivered);
+        if (scenario === "steer-pending-error") await submittedMessage().getByText("Sending…", { exact: true }).waitFor();
+        else await page.waitForFunction(() => !document.querySelector(".message-delivery-status"));
+        assert.equal(await submittedMessage().count(), 1, "a server push replaces the provisional message");
+      }
+      if (["queue", "steer"].includes(scenario)) {
+        await page.evaluate(() => document.documentElement.dataset.theme = "dark");
+        await mkdir(path.join(root, "build/artifacts/message-delivery"), { recursive: true });
+        await page.screenshot({ path: path.join(root, `build/artifacts/message-delivery/web-${scenario}-sending.png`) });
+      }
+      if (scenario === "queue-navigation") {
+        await page.locator(".nav-chat").filter({ hasText: "Chat A" }).first().click();
+        await composer.fill("Other chat draft");
+        assert.equal(await page.locator(".message-delivery-status").count(), 0);
+      }
+      releaseDelivery();
       await answered;
+      if (scenario.endsWith("error")) {
+        await submittedMessage().getByText("Send failed", { exact: true }).waitFor();
+        if (scenario === "steer-pending-error") {
+          await page.evaluate(value => window.__chatSources.filter(source => source.url.includes(`/chats/${value.id}/`)).at(-1).dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify({ ...value, updated_at: 4 }) })), b);
+          await page.locator(".local-delivery").waitFor();
+        }
+        if (delivery === "queue") {
+          assert.equal(await submittedMessage().getByRole("button", { name: "Delete queued message", exact: true }).count(), 1);
+          await submittedMessage().getByRole("button", { name: "Queued message actions", exact: true }).click();
+          await page.getByRole("menuitem", { name: "Edit message", exact: true }).click();
+        } else await submittedMessage().getByRole("button", { name: "Edit message", exact: true }).click();
+        assert.equal(await composer.inputValue(), followup);
+        if (scenario.includes("attachment")) {
+          await page.getByRole("button", { name: "Remove retained.png", exact: true }).waitFor();
+          assert.equal(await page.locator(".composer .attachment-card img").evaluate(image => image.complete && image.naturalWidth > 0), true, "the failed message keeps its live local preview");
+        }
+        assert.equal(await page.locator(".message-delivery-status").count(), 0);
+      } else {
+        await page.waitForFunction(() => !document.querySelector(".message-delivery-status"));
+        if (scenario !== "queue-navigation") assert.equal(await submittedMessage().count(), 1);
+        else assert.equal(await composer.inputValue(), "Other chat draft");
+      }
       const target = scenario === "same-chat" ? "chat-A" : "chat-B";
       assert.equal(new URL(request.url()).pathname, `/api/chats/${target}/messages`);
-      assert.equal(request.postDataJSON().message, followup);
+      assert.equal(requests[1].message, followup);
       assert.equal(requests.length, 2);
       releaseFirst();
       if (scenario === "queue") {
@@ -198,6 +280,7 @@ try {
       console.log(`${scenario}: follow-up targeted ${target}`);
     } finally {
       releaseFirst();
+      releaseDelivery();
       await context.close();
     }
   }

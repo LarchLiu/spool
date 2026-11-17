@@ -751,6 +751,10 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		return
 	}
 	input.userID = id.User.ID
+	if len(input.ClientMessageID) > 128 {
+		apiError(w, 400, "Invalid client message ID")
+		return
+	}
 	if err := validateGoalInput(input); err != nil {
 		apiError(w, 400, err.Error())
 		return
@@ -916,6 +920,11 @@ func (a *App) startTurnWithCallback(chat chatmodel.Session, input messageInput, 
 	turn, err := a.store.beginTurnBy(chat.ID, input.Message, chat.Backend, input.PermissionMode, input.files, input.userID, options)
 	if err != nil {
 		return err
+	}
+	for i := range turn.Parts {
+		if turn.Parts[i].Role == "user" {
+			turn.Parts[i].ClientMessageID = input.ClientMessageID
+		}
 	}
 	turn = a.seedLiveTurn(chat, turn)
 	ctx, control := a.registerTurn(context.Background(), chat.ID, turn.ID)

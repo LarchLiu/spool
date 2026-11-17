@@ -66,6 +66,121 @@ public class MainActivityQueueTest {
         throw new AssertionError("Missing queue action " + name);
     }
 
+    private android.widget.TextView text(View view, String value) {
+        if (view.getVisibility() == View.GONE) return null;
+        if (view instanceof android.widget.TextView && value.contentEquals(((android.widget.TextView) view).getText())) return (android.widget.TextView) view;
+        if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++) {
+            android.widget.TextView found = text(((ViewGroup) view).getChildAt(i), value); if (found != null) return found;
+        }
+        return null;
+    }
+
+    private void screenshot(MainActivityGoalTest.Harness h, String name) throws Exception {
+        if (android.os.Build.VERSION.SDK_INT != 35) return;
+        java.io.File directory = new java.io.File(System.getProperty("spool.ui.artifacts"), "../message-delivery");
+        assertTrue(directory.isDirectory() || directory.mkdirs());
+        View root = h.get("root"); NativeMarkwonHistoryTest.layout(root);
+        android.graphics.Bitmap image = android.graphics.Bitmap.createBitmap(root.getWidth(), root.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
+        root.draw(new android.graphics.Canvas(image));
+        try (java.io.FileOutputStream output = new java.io.FileOutputStream(new java.io.File(directory, "android-" + name + ".png"))) {
+            assertTrue(image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output));
+        } finally { image.recycle(); }
+    }
+
+    @Test public void queueAppearsBeforeTheRequestRunsAndAStreamReceiptReplacesIt() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            h.set("theme", "dark"); h.call("render");
+            show(h, running(0));
+            h.composer().input.setText("Immediate queue"); h.composer().send.performClick();
+            NativeQueuedMessages queue = h.get("queuedView");
+            assertEquals(1, queue.rows()); assertNotNull(text(queue, "Immediate queue")); assertNotNull(text(queue, "Sending…"));
+            assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
+            screenshot(h, "queue-sending");
+            Object local = h.<List<?>>get("localDeliveries").get(0);
+            String id = ReflectionHelpers.getField(local, "id");
+            JSONObject accepted = running(0).put("updated_at", 21);
+            accepted.put("queued_messages", new JSONArray().put(new JSONObject().put("id", "server-queue")
+                    .put("client_message_id", id).put("message", "Immediate queue").put("created_at", 21)));
+            show(h, accepted);
+            assertEquals(1, queue.rows()); assertNull(text(queue, "Sending…"));
+            assertNotNull(action(h, 0, "Delete queued message"));
+            MainActivityGoalTest.ShadowClient.responder = call -> {
+                try { assertEquals(id, new JSONObject(call.get(2)).getString("client_message_id")); return envelope(accepted); }
+                catch (Exception error) { throw new AssertionError(error); }
+            };
+            h.io.run(); assertEquals(1, queue.rows()); assertTrue(h.<List<?>>get("localDeliveries").isEmpty());
+        }
+    }
+
+    @Test public void steeringIsImmediateAndAProvisionalServerInputStillShowsSending() throws Exception {
+        for (boolean recycler : new boolean[] {false, true}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, recycler)) {
+            h.set("theme", "dark"); h.call("render");
+            show(h, running(0));
+            h.composer().input.setText("Immediate steer");
+            ReflectionHelpers.callInstanceMethod(h.activity, "deliver", ReflectionHelpers.ClassParameter.from(boolean.class, true));
+            Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); NativeMarkwonHistoryTest.layout(h.get("root"));
+            assertNotNull(text(h.get("root"), "Immediate steer")); assertNotNull(text(h.get("root"), "Sending…"));
+            NativeMessageFooter footer = (NativeMessageFooter) text(h.get("root"), "Sending…").getParent().getParent();
+            assertTrue(footer.getChildAt(0) instanceof NativeDeliveryStatus);
+            assertTrue(footer.indexOfChild(footer.author) > 0);
+            assertTrue(footer.indexOfChild(footer.time) > footer.indexOfChild(footer.author));
+            assertEquals(0, h.<NativeQueuedMessages>get("queuedView").rows()); assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
+            if (recycler) screenshot(h, "steer-sending");
+            String id = ReflectionHelpers.getField(h.<List<?>>get("localDeliveries").get(0), "id");
+            JSONObject received = running(0).put("updated_at", 21);
+            received.getJSONObject("transcript").getJSONArray("parts").put(new JSONObject().put("role", "user").put("kind", "text")
+                    .put("text", "Immediate steer").put("timestamp", 21).put("client_message_id", id).put("pending", true));
+            received.getJSONArray("turns").getJSONObject(0).put("part_end", 3);
+            show(h, received);
+            assertNotNull(text(h.get("root"), "Sending…"));
+            assertEquals(1, h.<List<?>>get("localDeliveries").size());
+            MainActivityGoalTest.ShadowClient.responder = call -> envelope(received);
+            h.io.run(); NativeMarkwonHistoryTest.layout(h.get("root"));
+            assertNull(text(h.get("root"), "Sending…")); assertTrue(h.<List<?>>get("localDeliveries").isEmpty());
+            assertNotNull(text(h.get("root"), "Immediate steer"));
+        }
+    }
+
+    @Test public void failedDeliveriesRetainTheirTextAndAttachmentForEditing() throws Exception {
+        for (boolean steer : new boolean[] {false, true}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            show(h, running(0));
+            Class<?> type = Class.forName("com.cloudgeek.spool.android.MainActivity$Attachment");
+            Object file = ReflectionHelpers.callConstructor(type, ReflectionHelpers.ClassParameter.from(String.class, "note.txt"),
+                    ReflectionHelpers.ClassParameter.from(String.class, "text/plain"), ReflectionHelpers.ClassParameter.from(byte[].class, new byte[] {65}));
+            Object draft = ReflectionHelpers.callInstanceMethod(h.activity, "draft");
+            ReflectionHelpers.<List<Object>>getField(draft, "files").add(file);
+            h.composer().input.setText("Retained delivery");
+            ReflectionHelpers.callInstanceMethod(h.activity, "deliver", ReflectionHelpers.ClassParameter.from(boolean.class, steer));
+            MainActivityGoalTest.ShadowClient.responder = call -> NativeChatState.put(NativeChatState.put(new JSONObject(), "status", 500), "body", "{\"error\":\"Delivery failed\"}").toString();
+            h.io.run(); NativeMarkwonHistoryTest.layout(h.get("root"));
+            assertNotNull(text(h.get("root"), "Send failed"));
+            assertNotNull(text(h.get("root"), "Retained delivery")); assertEquals("", h.composer().input.getText().toString());
+            screenshot(h, (steer ? "steer" : "queue") + "-failed");
+            if (steer) text(h.get("root"), "Edit message").performClick();
+            else {
+                assertNotNull(action(h, 0, "Delete queued message"));
+                action(h, 0, "Queued message actions").performClick();
+                h.<NativeUi>get("ui").activePopover.content.getChildAt(0).performClick();
+            }
+            assertEquals("Retained delivery", h.composer().input.getText().toString());
+            assertSame(file, ReflectionHelpers.<List<Object>>getField(draft, "files").get(0));
+            assertTrue(h.<List<?>>get("localDeliveries").isEmpty());
+        }
+    }
+
+    @Test public void delayedDeliveryFailureDoesNotAlterAnotherChatsDraft() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            show(h, running(0)); h.composer().input.setText("Chat one delivery"); h.composer().send.performClick();
+            ReflectionHelpers.callInstanceMethod(h.activity, "selectChat", ReflectionHelpers.ClassParameter.from(String.class, "chat-two"));
+            show(h, running(0).put("id", "chat-two")); h.composer().input.setText("Other draft");
+            MainActivityGoalTest.ShadowClient.responder = call -> NativeChatState.put(NativeChatState.put(new JSONObject(), "status", 500), "body", "{\"error\":\"Delivery failed\"}").toString();
+            h.io.run();
+            assertEquals("Other draft", h.composer().input.getText().toString()); assertEquals(0, h.<NativeQueuedMessages>get("queuedView").rows());
+            ReflectionHelpers.callInstanceMethod(h.activity, "selectChat", ReflectionHelpers.ClassParameter.from(String.class, "chat-one"));
+            show(h, running(0)); assertNotNull(text(h.get("queuedView"), "Send failed"));
+        }
+    }
+
     @Test public void theSameComposerButtonSendsDraftsAndStopsOnlyWhenTheDraftIsEmpty() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             show(h, running(1));
