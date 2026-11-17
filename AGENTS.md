@@ -111,6 +111,28 @@ make test-tools TOOLS_TESTS=tools/run.test.mjs
 make test-web WEB_TESTS=./test/preferences.test.mjs
 ```
 
+The wrapper prints wall time and exit status. `test-go` and `test-race` collect
+package and test timings from the same `go test -json` execution and print the
+slowest entries, excluding cached results and duplicate subtest totals. Pass
+`GO_TEST_FLAGS=-v` to keep all test output. Timing does not disable Go caching;
+use `-count=1` only for an intentional fresh measurement.
+
+The Voxl test fixture prepares one immutable helper template per test process
+and copies it into each test's private directory. Its template belongs to the
+current run and is removed after `m.Run()`; databases and running helpers remain
+independent. Installation and upgrade tests still invoke the production installer.
+
+Agent fixture subprocesses skip the race runtime's default exit sleep while
+keeping race detection and explicit caller `GORACE` options. Independent Git
+tests may use `t.Parallel()` with private repositories and stores; tests that
+change process environment or global hooks must remain serial.
+
+Workspace `testStore(t)` reuses an empty schema generated once per test process
+through `OpenStore`. After checkpointing and closing, its bytes stay in memory
+and the template directory is removed. Each test gets a private database copy
+and normal `OpenStore` checks; first-start, migration and recovery tests call
+`OpenStore` directly. Do not share database connections or mutable fixture data.
+
 Run commands from the repository root with `sh tools/run.sh <task> <command>`.
 The wrapper creates a unique run in the system temporary directory, exports
 `SPOOL_RUN_ROOT`, `TMPDIR`, `TMP`, `TEMP`, and `GOTMPDIR`, and removes the run

@@ -300,7 +300,7 @@ test("workflow pins actions, keeps private keys out of builds and uploads assets
   const [beforePublish, publish] = workflow.split("\n  publish:\n");
   assert.doesNotMatch(beforePublish, /secrets\.MYGO_UPDATER_PRIVATE_KEY/);
   assert.equal((publish.match(/secrets\.MYGO_UPDATER_PRIVATE_KEY/g) ?? []).length, 1);
-  assert.match(beforePublish, /go test -race -v -timeout=10m/);
+  assert.match(beforePublish, /bun tools\/go-test\.mjs -race -v -timeout=10m/);
   assert.equal((publish.match(/gh release upload/g) ?? []).length, 1);
   assert.match(publish, /needs: \[prepare, build, android, smoke, relay\]/);
   for (const name of ["ANDROID_KEYSTORE_BASE64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_ALIAS", "ANDROID_KEY_PASSWORD"]) {

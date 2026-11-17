@@ -3,6 +3,7 @@
 package voxlfixture
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"spool/internal/voxl/macapp"
@@ -20,6 +22,25 @@ import (
 )
 
 const helperEnv = "SPOOL_TEST_VOXL_HELPER"
+
+var prepared struct {
+	sync.Once
+	root string
+	err  error
+}
+
+// Main owns the immutable fixture template until all tests and their child
+// processes have stopped. Helper subprocesses must call Run before Main.
+func Main(m *testing.M) int {
+	code := m.Run()
+	if prepared.root != "" {
+		if err := os.RemoveAll(prepared.root); err != nil {
+			fmt.Fprintln(os.Stderr, "remove helper fixture:", err)
+			return 1
+		}
+	}
+	return code
+}
 
 // Run must precede TestMain's normal temporary-home setup: subprocesses own no
 // untracked test roots and are reaped by the manager that starts them.
@@ -109,18 +130,41 @@ func Run() bool {
 func Install(t *testing.T, root string) {
 	t.Helper()
 	t.Setenv(helperEnv, "1")
+	if runtime.GOOS == "darwin" {
+		prepared.Do(func() {
+			prepared.root, prepared.err = os.MkdirTemp("", "spool-voxl-template-")
+			if prepared.err == nil {
+				prepared.err = install(context.Background(), prepared.root)
+			}
+		})
+		if prepared.err != nil {
+			t.Fatal(prepared.err)
+		}
+		// Copies keep signatures but share no mutable files or running helpers.
+		// Installation/upgrade tests call the production installer themselves.
+		if err := os.CopyFS(root, os.DirFS(prepared.root)); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	if err := install(t.Context(), root); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func install(ctx context.Context, root string) error {
 	path, err := os.Executable()
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	in, err := os.Open(path)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	defer in.Close()
 	dir := filepath.Join(root, "bin")
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatal(err)
+		return err
 	}
 	name := "voxl"
 	if runtime.GOOS == "windows" {
@@ -128,16 +172,18 @@ func Install(t *testing.T, root string) {
 	}
 	out, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_WRONLY, 0700)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	_, copyErr := io.Copy(out, in)
 	closeErr := out.Close()
-	if copyErr != nil || closeErr != nil {
-		t.Fatal(copyErr, closeErr)
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
 	}
 	if runtime.GOOS == "darwin" {
-		if err := macapp.Install(t.Context(), root, filepath.Join(dir, name)); err != nil {
-			t.Fatal(err)
-		}
+		return macapp.Install(ctx, root, filepath.Join(dir, name))
 	}
+	return nil
 }

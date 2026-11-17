@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"encoding/json"
+	"io"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -16,8 +17,14 @@ import (
 
 func sessionFileGit(t *testing.T, directory string, args ...string) string {
 	t.Helper()
+	return sessionFileGitInput(t, directory, nil, args...)
+}
+
+func sessionFileGitInput(t *testing.T, directory string, input io.Reader, args ...string) string {
+	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = directory
+	cmd.Stdin = input
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_AUTHOR_NAME=Spool Test", "GIT_AUTHOR_EMAIL=test@example.invalid", "GIT_COMMITTER_NAME=Spool Test", "GIT_COMMITTER_EMAIL=test@example.invalid")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

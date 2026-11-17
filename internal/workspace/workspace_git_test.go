@@ -13,6 +13,7 @@ import (
 )
 
 func TestWorkspaceGitChangesHistoryAndDiff(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	u := testUser(t, s, "git-owner")
 	p := testProject(t, s, u)
@@ -97,6 +98,7 @@ func TestWorkspaceGitChangesHistoryAndDiff(t *testing.T) {
 }
 
 func TestWorkspaceGitFollowsSelectedWorktreeAndSubdirectory(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	u, other := testUser(t, s, "git-owner"), testUser(t, s, "git-other")
 	p := testProject(t, s, u, other)
@@ -148,6 +150,7 @@ func TestWorkspaceGitFollowsSelectedWorktreeAndSubdirectory(t *testing.T) {
 }
 
 func TestWorkspaceGitNonRepositoryUnbornAndBoundedDiff(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	u := testUser(t, s, "git-owner")
 	p := testProject(t, s, u)
@@ -175,6 +178,7 @@ func TestWorkspaceGitNonRepositoryUnbornAndBoundedDiff(t *testing.T) {
 }
 
 func TestWorkspaceGitDiffBinaryMetadata(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	u := testUser(t, s, "git-owner")
 	p := testProject(t, s, u)
@@ -215,6 +219,7 @@ func TestWorkspaceGitDiffBinaryMetadata(t *testing.T) {
 }
 
 func TestWorkspaceGitMergeCommitUsesFirstParent(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	u := testUser(t, s, "git-owner")
 	p := testProject(t, s, u)
@@ -274,6 +279,7 @@ func TestWorkspaceGitMergeCommitUsesFirstParent(t *testing.T) {
 }
 
 func TestWorkspaceGitRenameStatistics(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	u := testUser(t, s, "git-owner")
 	p := testProject(t, s, u)

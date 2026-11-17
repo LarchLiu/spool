@@ -11,6 +11,7 @@ if (!task || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(task) || !command) {
   console.error("Usage: sh tools/run.sh <task-name> <command> [args...]");
   process.exit(2);
 }
+const started = performance.now();
 const run = await createScratch(task);
 let child, interrupted, killTimer;
 const signal = (name) => {
@@ -81,3 +82,4 @@ try {
   rmSync(run, { recursive: true, force: true });
 }
 process.exitCode = interrupted ? 128 + constants.signals[interrupted] : code;
+console.error(`[${task}] ${((performance.now() - started) / 1000).toFixed(2)}s (exit ${process.exitCode})`);

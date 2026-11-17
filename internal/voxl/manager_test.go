@@ -20,7 +20,53 @@ func TestMain(m *testing.M) {
 	if voxlfixture.Run() {
 		return
 	}
-	os.Exit(m.Run())
+	os.Exit(voxlfixture.Main(m))
+}
+
+func TestHelperFixtureCopiesKeepIndependentFiles(t *testing.T) {
+	first, second := t.TempDir(), t.TempDir()
+	voxlfixture.Install(t, first)
+	voxlfixture.Install(t, second)
+	name := "voxl"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	firstEngine, secondEngine := filepath.Join(first, "bin", name), filepath.Join(second, "bin", name)
+	a, err := os.Stat(firstEngine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.Stat(secondEngine)
+	if err != nil || os.SameFile(a, b) {
+		t.Fatal("fixture installs share a mutable engine", err)
+	}
+	if err := os.WriteFile(firstEngine, []byte("damaged only in this test"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "darwin" {
+		marker := filepath.Join(macapp.Bundle(first), "Contents", "Resources", "installation-format")
+		if err := os.WriteFile(marker, []byte("damaged"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if !macapp.Installed(second) {
+			t.Fatal("changing one bundle changed another install")
+		}
+	}
+	if err := os.RemoveAll(first); err != nil {
+		t.Fatal(err)
+	}
+	third := t.TempDir()
+	voxlfixture.Install(t, third)
+	for _, root := range []string{second, third} {
+		m := New(root, nil)
+		t.Cleanup(m.Stop)
+		m.SetEnabled(t.Context(), true)
+		_, _, _, release, err := m.Acquire(t.Context(), "/ws")
+		if err != nil {
+			t.Fatal("independent fixture cannot start:", err)
+		}
+		release()
+	}
 }
 
 func TestManagerOwnsAuthenticatedLoopbackHelperAndReapsIt(t *testing.T) {

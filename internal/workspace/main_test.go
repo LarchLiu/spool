@@ -27,7 +27,7 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 	}
-	code := m.Run()
+	code := voxlfixture.Main(m)
 	_ = os.RemoveAll(root)
 	os.Exit(code)
 }

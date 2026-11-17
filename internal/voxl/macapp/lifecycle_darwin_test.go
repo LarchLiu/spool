@@ -48,7 +48,7 @@ func TestMain(m *testing.M) {
 	if voxlfixture.Run() {
 		return
 	}
-	os.Exit(m.Run())
+	os.Exit(voxlfixture.Main(m))
 }
 
 type processes struct {

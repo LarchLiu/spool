@@ -79,7 +79,7 @@ test("manual build workflow resolves a branch or commit once and cannot publish 
   assert.doesNotMatch(prepare, /^        run: bun tools\/prepare-build\.mjs$/m);
   assert.match(prepare, /^        run: bun tools\/prepare-build\.mjs --check$/m);
   assert.match(prepare, /bun run --bun --cwd web test/);
-  assert.match(prepare, /go test -race -v -timeout=10m/);
+  assert.match(prepare, /bun tools\/go-test\.mjs -race -v -timeout=10m/);
   assert.match(prepare, /go vet \.\/\.\.\./);
   assert.match(build, /run: bun tools\/prepare-build\.mjs/);
   assert.match(build, /-skip-build-command -sign - -skip-notarize/);

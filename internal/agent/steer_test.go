@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	chatmodel "spool/internal/model"
@@ -74,6 +75,51 @@ func TestCodexSteerEndsOutstandingAcknowledgements(t *testing.T) {
 	p.steerResponse(map[string]any{"id": request, "result": map[string]any{}})
 	if len(p.steerWaiters) != 0 || len(p.codexSteerTaken(map[string]any{"clientId": id})) != 0 {
 		t.Fatal("a reply after turn end revived an outstanding message")
+	}
+}
+
+func TestCodexSteerAcknowledgementTimeout(t *testing.T) {
+	for _, outcome := range []string{"accepted", "rejected"} {
+		t.Run(outcome, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				reader, writer := io.Pipe()
+				defer reader.Close()
+				defer writer.Close()
+				p := &agentProcess{stdin: writer, done: make(chan struct{}), sessionID: "thread"}
+				p.beginSteering("turn")
+				id := NewSteerID()
+				finished := make(chan error, 1)
+				start := time.Now()
+				go func() { finished <- p.steerCodex(t.Context(), id, AgentRequest{Prompt: "change course"}) }()
+				var request map[string]any
+				if err := json.NewDecoder(reader).Decode(&request); err != nil {
+					t.Fatal(err)
+				}
+				// The real production timer advances only after the request is
+				// written and all goroutines are waiting inside the bubble.
+				if err := <-finished; !errors.Is(err, ErrSteerPending) {
+					t.Fatalf("timeout = %v, want ErrSteerPending", err)
+				}
+				if elapsed := time.Since(start); elapsed != 10*time.Second {
+					t.Fatalf("acknowledgement timeout = %s, want 10s", elapsed)
+				}
+				response := map[string]any{"id": request["id"], "result": map[string]any{}}
+				if outcome == "rejected" {
+					response = map[string]any{"id": request["id"], "error": map[string]any{"message": "no active turn"}}
+				}
+				p.steerResponse(response)
+				taken, rejected := p.codexSteerTaken(map[string]any{"clientId": id}), p.rejectedSteers()
+				if outcome == "accepted" && (len(taken) != 1 || taken[0] != id || len(rejected) != 0) {
+					t.Fatalf("late acceptance: taken=%q rejected=%q", taken, rejected)
+				}
+				if outcome == "rejected" && (len(rejected) != 1 || rejected[0] != id || len(taken) != 0) {
+					t.Fatalf("late rejection: taken=%q rejected=%q", taken, rejected)
+				}
+				if len(p.steerWaiters) != 0 {
+					t.Fatal("late response retained its waiter")
+				}
+			})
+		})
 	}
 }
 

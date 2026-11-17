@@ -100,6 +100,12 @@ func TestQueuedMessageEditRestoresOriginalInput(t *testing.T) {
 // A written steer is owned by the server even after its HTTP wait expires.
 func TestSteeringAcknowledgementTimeoutKeepsTheMessage(t *testing.T) {
 	f := newQueueFixture(t, chatmodel.BackendCodex)
+	// Agent tests exercise the actual acknowledgement timer with virtual time.
+	// Here the provider returns that outcome after writing the real request;
+	// this layer checks the HTTP snapshot and the later consumption event.
+	f.app.runner = &pendingSteerRunner{CLIRunner: f.app.runner.(*agent.CLIRunner), delivered: func() bool {
+		return fixtureCount(t, f.request, "steer") > 0
+	}}
 	f.run(t, "steer-wait steer-ack-gate")
 	waiting := f.post(t, "messages", map[string]string{"message": "change course", "delivery": "steer"}, 202)
 	if got := messageTexts(waiting); !slices.Contains(got, "user:change course") || !waiting.Transcript.Parts[len(waiting.Transcript.Parts)-1].Pending {
@@ -109,6 +115,34 @@ func TestSteeringAcknowledgementTimeoutKeepsTheMessage(t *testing.T) {
 	done := f.settled(t, 1)
 	if !slices.Contains(messageTexts(done), "user:change course") || len(done.Queued) != 0 {
 		t.Fatalf("late acknowledgement lost or duplicated the message: transcript %q, queue %q", messageTexts(done), queuedTexts(done))
+	}
+}
+
+type pendingSteerRunner struct {
+	*agent.CLIRunner
+	delivered func() bool
+}
+
+func (r *pendingSteerRunner) Steer(ctx context.Context, request agent.SteerRequest) error {
+	wait, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	finished := make(chan error, 1)
+	go func() { finished <- r.CLIRunner.Steer(wait, request) }()
+	// Cancellation after the fixture receives the request exercises the same
+	// pending-delivery contract without waiting for the production timeout.
+	// The turn continues on the runner's own context.
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case err := <-finished:
+			return err
+		case <-tick.C:
+			if r.delivered() {
+				cancel()
+				return <-finished
+			}
+		}
 	}
 }
 

@@ -77,7 +77,7 @@ func (f *fakeRunner) Run(_ context.Context, request agent.AgentRequest, emit fun
 }
 func testStore(t *testing.T) *Store {
 	t.Helper()
-	s, err := OpenStore(t.TempDir())
+	s, err := openTestStore(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

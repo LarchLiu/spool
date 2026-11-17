@@ -34,10 +34,10 @@ test-web:
 	sh tools/run.sh web-test sh -eu -c 'cd web; bun run --bun test:prepare; bun test --isolate "$$@"' web-tests $(WEB_TESTS)
 
 test-go:
-	sh tools/run.sh go-test go test $(GO_TEST_FLAGS) $(GO_PACKAGES)
+	sh tools/run.sh go-test bun tools/go-test.mjs $(GO_TEST_FLAGS) $(GO_PACKAGES)
 
 test-race:
-	sh tools/run.sh go-race go test -race $(GO_TEST_FLAGS) $(GO_PACKAGES)
+	sh tools/run.sh go-race bun tools/go-test.mjs -race $(GO_TEST_FLAGS) $(GO_PACKAGES)
 
 vet-go:
 	sh tools/run.sh go-vet go vet $(GO_PACKAGES)

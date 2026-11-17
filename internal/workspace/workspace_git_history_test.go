@@ -6,24 +6,32 @@ import (
 	"net/url"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
 func TestWorkspaceGitHistoryPagesTagsAndOutgoingCommits(t *testing.T) {
+	t.Parallel()
 	s := testStore(t)
 	u := testUser(t, s, "git-history")
 	p := testProject(t, s, u)
 	sessionFileGit(t, p.Path, "init", "-b", "dev")
-	ids := []string{}
+	// Import real Git objects in one process; staging and committing each
+	// revision is covered by the operation tests, not history pagination.
+	var history strings.Builder
 	for i := 0; i < 105; i++ {
-		writeSessionFile(t, p.Path, "file.txt", fmt.Sprintf("revision %d\n", i))
-		sessionFileGit(t, p.Path, "add", ".")
-		args := []string{"commit", "-m", fmt.Sprintf("History commit %d", i)}
+		message := fmt.Sprintf("History commit %d", i)
 		if i == 104 {
-			args = append(args, "-m", "Release details\nSecond line with 中文\n\nFinal paragraph")
+			message += "\n\nRelease details\nSecond line with 中文\n\nFinal paragraph"
 		}
-		sessionFileGit(t, p.Path, args...)
-		ids = append(ids, sessionFileGit(t, p.Path, "rev-parse", "HEAD"))
+		body := fmt.Sprintf("revision %d\n", i)
+		fmt.Fprintf(&history, "commit refs/heads/dev\nauthor Spool Test <test@example.invalid> %d +0000\ncommitter Spool Test <test@example.invalid> %d +0000\ndata %d\n%s\nM 100644 inline file.txt\ndata %d\n%s\n", 1700000000+i, 1700000000+i, len(message), message, len(body), body)
+	}
+	sessionFileGitInput(t, p.Path, strings.NewReader(history.String()), "fast-import", "--quiet")
+	sessionFileGit(t, p.Path, "reset", "--hard", "HEAD")
+	ids := strings.Fields(sessionFileGit(t, p.Path, "rev-list", "--reverse", "HEAD"))
+	if len(ids) != 105 {
+		t.Fatalf("imported %d commits, want 105", len(ids))
 	}
 	sessionFileGit(t, p.Path, "tag", "v1.0,release", ids[104])
 	sessionFileGit(t, p.Path, "tag", "-a", "release/v0.9", "-m", "Annotated release", ids[49])

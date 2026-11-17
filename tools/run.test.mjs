@@ -56,6 +56,7 @@ process.exit(${status});
         },
       );
       assert.equal(result.status, status, result.stderr);
+      assert.match(result.stderr, new RegExp(`\\[lifecycle-test\\] \\d+\\.\\d+s \\(exit ${status}\\)`));
       const state = JSON.parse(result.stdout);
       assert.equal(state.TMPDIR, join(state.SPOOL_RUN_ROOT, "tmp"));
       assert.equal(state.TMP, state.TMPDIR);

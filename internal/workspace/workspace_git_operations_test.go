@@ -71,6 +71,7 @@ func requireGitOperation(t *testing.T, response *httptest.ResponseRecorder) {
 }
 
 func TestWorkspaceGitOperationsStagePartialDiffCommitAndUnstage(t *testing.T) {
+	t.Parallel()
 	f := newGitOperationFixture(t)
 	writeSessionFile(t, f.directory, "a.txt", "initial\n")
 	requireGitOperation(t, f.operation("stage", "", "a.txt"))
@@ -86,6 +87,7 @@ func TestWorkspaceGitOperationsStagePartialDiffCommitAndUnstage(t *testing.T) {
 }
 
 func TestWorkspaceGitOperationsCompleteCommitWorkflow(t *testing.T) {
+	t.Parallel()
 	f := newGitOperationFixture(t)
 	writeSessionFile(t, f.directory, "a.txt", "initial\n")
 	requireGitOperation(t, f.operation("stage", "", "a.txt"))
@@ -135,6 +137,7 @@ func TestWorkspaceGitOperationsCompleteCommitWorkflow(t *testing.T) {
 }
 
 func TestWorkspaceGitOperationsRejectDirectoryReplacementsBeforeChangingIndex(t *testing.T) {
+	t.Parallel()
 	f := newGitOperationFixture(t)
 	writeSessionFile(t, f.directory, "node", "original\n")
 	writeSessionFile(t, f.directory, "other.txt", "original\n")
@@ -174,6 +177,7 @@ func TestWorkspaceGitOperationsRejectDirectoryReplacementsBeforeChangingIndex(t 
 }
 
 func TestWorkspaceGitOperationsRejectIndexAndHeadDescendants(t *testing.T) {
+	t.Parallel()
 	for _, action := range []string{"stage", "unstage"} {
 		t.Run(action, func(t *testing.T) {
 			f := newGitOperationFixture(t)
@@ -200,6 +204,7 @@ func TestWorkspaceGitOperationsRejectIndexAndHeadDescendants(t *testing.T) {
 }
 
 func TestWorkspaceGitOperationsUnstageCopyPreservesSource(t *testing.T) {
+	t.Parallel()
 	f := newGitOperationFixture(t)
 	original := "original first\noriginal second\noriginal third\noriginal fourth\n"
 	writeSessionFile(t, f.directory, "source.txt", original)
@@ -223,6 +228,7 @@ func TestWorkspaceGitOperationsUnstageCopyPreservesSource(t *testing.T) {
 }
 
 func TestWorkspaceGitOperationsSubmodulePointer(t *testing.T) {
+	t.Parallel()
 	f := newGitOperationFixture(t)
 	submodule := filepath.Join(f.directory, "module")
 	writeSessionFile(t, submodule, "a.txt", "initial\n")
@@ -255,6 +261,7 @@ func TestWorkspaceGitOperationsSubmodulePointer(t *testing.T) {
 }
 
 func TestWorkspaceGitOperationsSeparateFetchAndPushRemotes(t *testing.T) {
+	t.Parallel()
 	for _, setting := range []string{"branch.dev.pushRemote", "remote.pushDefault"} {
 		t.Run(setting, func(t *testing.T) {
 			f := newGitOperationFixture(t)
@@ -391,6 +398,7 @@ func TestWorkspaceGitOperationsCommitLocksReviewedIndex(t *testing.T) {
 }
 
 func TestWorkspaceGitOperationsIndexLockCleanup(t *testing.T) {
+	t.Parallel()
 	f := newGitOperationFixture(t)
 	writeSessionFile(t, f.directory, "a.txt", "reviewed\n")
 	lock := filepath.Join(f.directory, ".git", "index.lock")
@@ -480,6 +488,7 @@ func TestWorkspaceGitOperationsPushPinsReviewedCommit(t *testing.T) {
 }
 
 func TestWorkspaceGitLastCommitRespectsDirectoryAndProjectBoundaries(t *testing.T) {
+	t.Parallel()
 	f := newGitOperationFixture(t)
 	writeSessionFile(t, f.directory, "public/a.txt", "public\n")
 	requireGitOperation(t, f.operation("stage", "", "public/a.txt"))
@@ -523,6 +532,7 @@ func TestWorkspaceGitLastCommitRespectsDirectoryAndProjectBoundaries(t *testing.
 }
 
 func TestWorkspaceGitOperationsRecreatedStagedDeletion(t *testing.T) {
+	t.Parallel()
 	for _, action := range []string{"unstage", "stage", "discard"} {
 		t.Run(action, func(t *testing.T) {
 			f := newGitOperationFixture(t)
@@ -569,6 +579,7 @@ func TestWorkspaceGitOperationsRecreatedStagedDeletion(t *testing.T) {
 }
 
 func TestWorkspaceGitOperationsRejectStaleProtectedAndConcurrentWrites(t *testing.T) {
+	t.Parallel()
 	f := newGitOperationFixture(t)
 	writeSessionFile(t, f.directory, "visible.txt", "visible\n")
 	writeSessionFile(t, f.directory, ".env", "hidden\n")
@@ -605,6 +616,7 @@ func TestWorkspaceGitOperationsRejectStaleProtectedAndConcurrentWrites(t *testin
 }
 
 func TestWorkspaceGitOperationsFetchPublishAndRejectNonFastForward(t *testing.T) {
+	t.Parallel()
 	f := newGitOperationFixture(t)
 	remote := t.TempDir()
 	sessionFileGit(t, remote, "init", "--bare")
@@ -644,6 +656,7 @@ func TestWorkspaceGitOperationsFetchPublishAndRejectNonFastForward(t *testing.T)
 }
 
 func TestWorkspaceGitOperationsUseSelectedWorktreeAndProjectPermissions(t *testing.T) {
+	t.Parallel()
 	f := newGitOperationFixture(t)
 	writeSessionFile(t, f.directory, "a.txt", "initial\n")
 	requireGitOperation(t, f.operation("stage", "", "a.txt"))
@@ -675,6 +688,7 @@ func TestWorkspaceGitOperationsUseSelectedWorktreeAndProjectPermissions(t *testi
 }
 
 func TestWorkspaceGitOperationsLiteralPathsRenamesAndSubdirectoryCommitBoundary(t *testing.T) {
+	t.Parallel()
 	f := newGitOperationFixture(t)
 	original := "original first line\noriginal second line\noriginal third line\n"
 	writeSessionFile(t, f.directory, "src/file[1].txt", original)
@@ -712,6 +726,7 @@ func TestWorkspaceGitOperationsLiteralPathsRenamesAndSubdirectoryCommitBoundary(
 }
 
 func TestWorkspaceGitOperationsConcurrentLock(t *testing.T) {
+	t.Parallel()
 	app := &App{}
 	const count = 16
 	start, results := make(chan struct{}), make(chan error, count)
@@ -747,6 +762,7 @@ func TestWorkspaceGitOperationsConcurrentLock(t *testing.T) {
 }
 
 func TestWorkspaceGitDiscardPreservesIndexAndRemovesOnlySelectedUntrackedFiles(t *testing.T) {
+	t.Parallel()
 	f := newGitOperationFixture(t)
 	writeSessionFile(t, f.directory, "file[1].txt", "committed\n")
 	writeSessionFile(t, f.directory, "file1.txt", "other\n")
@@ -785,6 +801,7 @@ func TestWorkspaceGitDiscardPreservesIndexAndRemovesOnlySelectedUntrackedFiles(t
 }
 
 func TestWorkspaceGitDiscardRejectsChangedIndexAndValidatesWholeBatch(t *testing.T) {
+	t.Parallel()
 	f := newGitOperationFixture(t)
 	writeSessionFile(t, f.directory, "a.txt", "original\n")
 	requireGitOperation(t, f.operation("stage", "", "a.txt"))
@@ -836,6 +853,7 @@ func TestWorkspaceGitDiscardRejectsChangedIndexAndValidatesWholeBatch(t *testing
 }
 
 func TestWorkspaceGitDiscardUsesSelectedSubdirectory(t *testing.T) {
+	t.Parallel()
 	f := newGitOperationFixture(t)
 	writeSessionFile(t, f.directory, "src/a.txt", "initial\n")
 	writeSessionFile(t, f.directory, "outside.txt", "outside\n")

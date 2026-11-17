@@ -30,7 +30,10 @@ func New(t *testing.T) Fixture {
 	}
 	root := t.TempDir()
 	binary := filepath.Join(root, "fake-agent")
-	script := "#!/bin/sh\nexport SPOOL_TEST_AGENT=1\ncd '" + strings.ReplaceAll(root, "'", "'\\''") + "' || exit 2\nexec '" + strings.ReplaceAll(executable, "'", "'\\''") + "' -test.run=^TestAgentHelperProcess$ -- \"$@\"\n"
+	// Race-instrumented helpers otherwise sleep for a second on every normal
+	// exit. Keep race detection and caller options; only skip that default pause
+	// in this disposable child, whose lifetime is already awaited by its owner.
+	script := "#!/bin/sh\nexport SPOOL_TEST_AGENT=1\ncase \" ${GORACE-} \" in *atexit_sleep_ms=*) ;; *) export GORACE=\"${GORACE:+$GORACE }atexit_sleep_ms=0\" ;; esac\ncd '" + strings.ReplaceAll(root, "'", "'\\''") + "' || exit 2\nexec '" + strings.ReplaceAll(executable, "'", "'\\''") + "' -test.run=^TestAgentHelperProcess$ -- \"$@\"\n"
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
