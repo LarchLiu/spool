@@ -1,8 +1,12 @@
 package workspace
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -11,6 +15,85 @@ import (
 	"spool/internal/agent"
 	chatmodel "spool/internal/model"
 )
+
+// A written steer is owned by the server even after its HTTP wait expires.
+func TestSteeringAcknowledgementTimeoutKeepsTheMessage(t *testing.T) {
+	f := newQueueFixture(t, chatmodel.BackendCodex)
+	f.run(t, "steer-wait steer-ack-gate")
+	waiting := f.post(t, "messages", map[string]string{"message": "change course", "delivery": "steer"}, 202)
+	if got := messageTexts(waiting); !slices.Contains(got, "user:change course") || !waiting.Transcript.Parts[len(waiting.Transcript.Parts)-1].Pending {
+		t.Fatalf("unacknowledged message is not pending: %q", got)
+	}
+	f.releaseSteer(t)
+	done := f.settled(t, 1)
+	if !slices.Contains(messageTexts(done), "user:change course") || len(done.Queued) != 0 {
+		t.Fatalf("late acknowledgement lost or duplicated the message: transcript %q, queue %q", messageTexts(done), queuedTexts(done))
+	}
+}
+
+func (f *queueFixture) releaseSteer(t *testing.T) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(f.request.WorkingDirectory, "fixture-steer-release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCancelledSteeringRequestKeepsItsProviderOutcome(t *testing.T) {
+	for _, outcome := range []string{"accepted", "rejected", "stopped"} {
+		t.Run(outcome, func(t *testing.T) {
+			f := newQueueFixture(t, chatmodel.BackendCodex)
+			prompt := "steer-wait steer-ack-gate"
+			if outcome == "rejected" {
+				prompt += " steer-rejected"
+			}
+			turn := f.run(t, prompt)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			r := localRequest("POST", "/api/chats/"+f.chat.ID+"/messages", strings.NewReader(`{"message":"change course","delivery":"steer"}`)).WithContext(ctx)
+			r.AddCookie(f.cookie)
+			r.Header.Set("Content-Type", "application/json")
+			r.Header.Set("X-CSRF-Token", f.csrf)
+			finished := make(chan *httptest.ResponseRecorder, 1)
+			go func() {
+				w := httptest.NewRecorder()
+				f.app.ServeHTTP(w, r)
+				finished <- w
+			}()
+			deadline := time.Now().Add(5 * time.Second)
+			for fixtureCount(t, f.request, "steer") == 0 {
+				if time.Now().After(deadline) {
+					t.Fatal("provider did not receive the steering request")
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+			cancel()
+			select {
+			case w := <-finished:
+				if w.Code != 202 {
+					t.Fatalf("written steering request returned %d: %s", w.Code, w.Body.String())
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("cancelled HTTP wait did not finish")
+			}
+			if outcome == "stopped" {
+				stopped := f.post(t, "stop", map[string]string{"turn_id": turn.ID}, 200)
+				if got := queuedTexts(stopped); !slices.Equal(got, []string{"change course"}) {
+					t.Fatalf("stopped unacknowledged message = %q", got)
+				}
+				return
+			}
+			f.releaseSteer(t)
+			turns := 1
+			if outcome == "rejected" {
+				turns = 2
+			}
+			done := f.settled(t, turns)
+			if !slices.Contains(messageTexts(done), "user:change course") || len(done.Queued) != 0 {
+				t.Fatalf("%s steering lost or duplicated the message: transcript %q, queue %q", outcome, messageTexts(done), queuedTexts(done))
+			}
+		})
+	}
+}
 
 type queueFixture struct {
 	app     *App

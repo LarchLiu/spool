@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,70 @@ import (
 
 	chatmodel "spool/internal/model"
 )
+
+// End the HTTP wait after the request is on the wire, without stopping the
+// provider's turn. Its later answer must still belong to this message.
+func detachedCodexSteer(t *testing.T) (*agentProcess, string, string) {
+	t.Helper()
+	reader, writer := io.Pipe()
+	t.Cleanup(func() { _ = reader.Close(); _ = writer.Close() })
+	p := &agentProcess{stdin: writer, done: make(chan struct{}), sessionID: "thread"}
+	p.beginSteering("turn")
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	id := NewSteerID()
+	finished := make(chan error, 1)
+	go func() { finished <- p.steerCodex(ctx, id, AgentRequest{Prompt: "change course"}) }()
+	var request map[string]any
+	if err := json.NewDecoder(reader).Decode(&request); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	select {
+	case err := <-finished:
+		if !errors.Is(err, ErrSteerPending) {
+			t.Fatalf("written steering request = %v, want ErrSteerPending", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled HTTP wait did not return")
+	}
+	return p, stringValue(request["id"]), id
+}
+
+func TestCodexSteerKeepsLateAcknowledgementAfterCancellation(t *testing.T) {
+	p, request, id := detachedCodexSteer(t)
+	if !p.steerResponse(map[string]any{"id": request, "result": map[string]any{"turnId": "turn"}}) {
+		t.Fatal("late acknowledgement was not handled")
+	}
+	taken := p.codexSteerTaken(map[string]any{"clientId": id})
+	if len(taken) != 1 || taken[0] != id {
+		t.Fatalf("consumed messages = %q, want %s", taken, id)
+	}
+	if len(p.steerWaiters) != 0 || len(p.rejectedSteers()) != 0 {
+		t.Fatal("accepted message retained a waiter or was rejected")
+	}
+}
+
+func TestCodexSteerReportsLateRejectionToTheTurn(t *testing.T) {
+	p, request, id := detachedCodexSteer(t)
+	p.steerResponse(map[string]any{"id": request, "error": map[string]any{"message": "no active turn"}})
+	rejected := p.rejectedSteers()
+	if len(rejected) != 1 || rejected[0] != id || len(p.rejectedSteers()) != 0 {
+		t.Fatalf("rejections = %q, want exactly one for %s", rejected, id)
+	}
+	if len(p.codexSteerTaken(map[string]any{"clientId": id})) != 0 || len(p.steerWaiters) != 0 {
+		t.Fatal("rejected message remained pending")
+	}
+}
+
+func TestCodexSteerEndsOutstandingAcknowledgements(t *testing.T) {
+	p, request, id := detachedCodexSteer(t)
+	p.endSteering()
+	p.steerResponse(map[string]any{"id": request, "result": map[string]any{}})
+	if len(p.steerWaiters) != 0 || len(p.codexSteerTaken(map[string]any{"clientId": id})) != 0 {
+		t.Fatal("a reply after turn end revived an outstanding message")
+	}
+}
 
 type steeredTurn struct {
 	id      string

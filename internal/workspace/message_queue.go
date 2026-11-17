@@ -47,6 +47,9 @@ type steeringMessage struct {
 	// asking is set until the provider answers. A turn that ends meanwhile
 	// sets ended, and leaves the message to the request that is asking.
 	asking, ended, requeue bool
+	// An acknowledgement still outstanding when the HTTP request returned.
+	// Only consumption can retire this message; completion alone cannot.
+	unconfirmed bool
 }
 
 // The steering of one running turn, guarded by liveMu.
@@ -196,6 +199,15 @@ func (a *App) steerTurn(ctx context.Context, chat chatmodel.Session, entry *queu
 	a.liveMu.Lock()
 	steer.asking = false
 	requeued := false
+	if errors.Is(err, agent.ErrSteerPending) {
+		steer.unconfirmed = true
+		err = nil
+		if steer.ended && !steer.requeue {
+			// The turn ended before acknowledgement. Its request can now
+			// queue or start the message through the ordinary idle path.
+			err = agent.ErrNoActiveTurn
+		}
+	}
 	switch {
 	case err != nil:
 		state.pending = slices.DeleteFunc(state.pending, func(pending *steeringMessage) bool { return pending == steer })
@@ -301,11 +313,10 @@ func (a *App) steeredLocked(chatID, turnID string) int {
 	return 0
 }
 
-// endSteeringLocked closes the steering of a turn that has ended. A turn
-// that completed took every message its provider accepted. One that stopped
-// or failed may not have, and what the model never saw returns to the head
-// of the queue for the user to send again or remove. It reports whether the
-// queue changed. The caller holds liveMu.
+// endSteeringLocked closes the steering of a turn that has ended. A completed
+// turn took every message its provider acknowledged. An unconfirmed message,
+// or an unseen one on a stopped/failed turn, returns to the queue. It reports
+// whether the queue changed. The caller holds liveMu.
 func (a *App) endSteeringLocked(chatID, turnID string, requeue bool) bool {
 	state := a.steering[chatID]
 	if state == nil || state.turn != turnID {
@@ -316,7 +327,7 @@ func (a *App) endSteeringLocked(chatID, turnID string, requeue bool) bool {
 	for _, steer := range state.pending {
 		if steer.asking {
 			steer.ended, steer.requeue = true, requeue
-		} else if requeue {
+		} else if requeue || steer.unconfirmed {
 			unseen = append(unseen, steer.entry)
 		}
 	}

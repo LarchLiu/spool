@@ -1373,7 +1373,7 @@ function App() {
     const message = draft,
       attached = files,
       owner = user?.id,
-      first = pendingSend.current,
+      first = activeSubmission,
       origin = selection.current;
     // The composer this message was written in. A first message's chat gets
     // its ID while this waits; opening another chat or draft leaves it.

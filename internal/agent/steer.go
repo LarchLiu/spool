@@ -18,6 +18,11 @@ import (
 // a steering message. The message was not delivered and may start a new turn.
 var ErrNoActiveTurn = errors.New("no active turn to steer")
 
+// ErrSteerPending means the request was written, but its provider has not
+// answered yet. The runner still owns the request and will report consumption
+// or rejection through the running turn. Callers must keep the message.
+var ErrSteerPending = errors.New("steering acknowledgement pending")
+
 // SteerRequest adds a user message to the turn a chat is already running.
 type SteerRequest struct {
 	// ID names the message in the steered event sent once the model is about
@@ -34,8 +39,9 @@ type pendingSteer struct{ id, text string }
 
 // A turn/steer request Codex has yet to answer.
 type steerWaiter struct {
-	reply chan map[string]any
-	steer pendingSteer
+	reply    chan map[string]any
+	steer    pendingSteer
+	detached bool
 }
 
 // NewSteerID returns an identifier fit for SteerRequest.ID.
@@ -46,6 +52,9 @@ func NewSteerID() string { return newUUID() }
 // it is not yet showing it to the model; the turn reports that as a steered
 // event.
 func (r *CLIRunner) Steer(ctx context.Context, request SteerRequest) error {
+	if err := ctx.Err(); err != nil {
+		return contextError(ctx)
+	}
 	if (strings.TrimSpace(request.Prompt) == "" && len(request.Attachments) == 0) || len(request.Prompt) > chatmodel.MaxMessageBytes {
 		return fmt.Errorf("message must be nonempty and at most 128 KB")
 	}
@@ -108,7 +117,7 @@ func newUUID() string {
 // beginSteering opens the window in which the running turn takes messages.
 func (p *agentProcess) beginSteering(turnID string) {
 	p.steerMu.Lock()
-	p.steerActive, p.steerTurn, p.steerThread, p.steerPending = true, turnID, p.sessionID, nil
+	p.steerActive, p.steerTurn, p.steerThread, p.steerPending, p.steerRejected = true, turnID, p.sessionID, nil, nil
 	p.steerMu.Unlock()
 }
 
@@ -149,29 +158,48 @@ func (p *agentProcess) steerCodex(ctx context.Context, steerID string, request A
 		forget()
 		return err
 	}
+	// Once written, HTTP cancellation or a slow acknowledgement cannot undo
+	// delivery. Leave correlation with the turn's reader, which still handles
+	// a late success or rejection. Resolve an already-arrived reply under the
+	// same lock so a timeout cannot overtake a definitive answer.
+	detach := func() (map[string]any, error) {
+		p.steerMu.Lock()
+		defer p.steerMu.Unlock()
+		if current, waiting := p.steerWaiters[id]; waiting {
+			current.detached = true
+			p.steerWaiters[id] = current
+			return nil, ErrSteerPending
+		}
+		return <-waiter.reply, nil
+	}
 	timer := time.NewTimer(10 * time.Second)
 	defer timer.Stop()
+	var value map[string]any
 	select {
-	case value := <-waiter.reply:
-		rpcError, failed := value["error"].(map[string]any)
-		if !failed {
-			return nil
-		}
-		message := stringValue(rpcError["message"])
-		if strings.Contains(message, "no active turn") {
-			return ErrNoActiveTurn
-		}
-		return fmt.Errorf("Codex turn/steer: %s", chatmodel.Clip(message, maxStderrBytes))
+	case value = <-waiter.reply:
 	case <-ctx.Done():
-		forget()
-		return contextError(ctx)
+		var err error
+		if value, err = detach(); err != nil {
+			return err
+		}
 	case <-p.done:
 		forget()
 		return ErrNoActiveTurn
 	case <-timer.C:
-		forget()
-		return fmt.Errorf("Codex did not acknowledge the steering message")
+		var err error
+		if value, err = detach(); err != nil {
+			return err
+		}
 	}
+	rpcError, failed := value["error"].(map[string]any)
+	if !failed {
+		return nil
+	}
+	message := stringValue(rpcError["message"])
+	if strings.Contains(message, "no active turn") {
+		return ErrNoActiveTurn
+	}
+	return fmt.Errorf("Codex turn/steer: %s", chatmodel.Clip(message, maxStderrBytes))
 }
 
 // steerResponse routes a turn/steer reply to its caller. The turn's own
@@ -184,14 +212,28 @@ func (p *agentProcess) steerResponse(value map[string]any) bool {
 	}
 	p.steerMu.Lock()
 	if waiter, waiting := p.steerWaiters[id]; waiting {
-		if _, failed := value["error"].(map[string]any); !failed && p.steerActive {
+		_, failed := value["error"].(map[string]any)
+		if !failed && p.steerActive {
 			p.steerPending = append(p.steerPending, waiter.steer)
+		}
+		if failed && waiter.detached {
+			p.steerRejected = append(p.steerRejected, waiter.steer.id)
 		}
 		waiter.reply <- value
 		delete(p.steerWaiters, id)
 	}
 	p.steerMu.Unlock()
 	return true
+}
+
+// Rejections whose HTTP caller has already returned belong to the turn's
+// event stream, including responses read while an approval is open.
+func (p *agentProcess) rejectedSteers() []string {
+	p.steerMu.Lock()
+	defer p.steerMu.Unlock()
+	ids := p.steerRejected
+	p.steerRejected = nil
+	return ids
 }
 
 // codexSteerTaken matches a user message item of the running turn to the

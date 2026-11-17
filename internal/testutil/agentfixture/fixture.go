@@ -541,15 +541,28 @@ func Run(t *testing.T) {
 			log(map[string]any{"method": "steer", "value": steer})
 			// A held message is accepted, and the model never gets to it.
 			hold := strings.Contains(prompt, "steer-hold")
+			if strings.Contains(prompt, "steer-ack-gate") {
+				for {
+					if _, err := os.Stat("fixture-steer-release"); err == nil {
+						break
+					}
+					time.Sleep(5 * time.Millisecond)
+				}
+			}
 			if codex {
-				send(map[string]any{"id": steer["id"], "result": map[string]any{"turnId": turnID}})
+				rejected := strings.Contains(prompt, "steer-rejected")
+				if rejected {
+					send(map[string]any{"id": steer["id"], "error": map[string]any{"message": "no active turn"}})
+				} else {
+					send(map[string]any{"id": steer["id"], "result": map[string]any{"turnId": turnID}})
+				}
 				// Codex adds the message to the turn once the model is about to see it.
 				steerParams, _ := steer["params"].(map[string]any)
 				item := map[string]any{"id": "steer-input", "type": "userMessage", "content": steerParams["input"]}
 				if !strings.Contains(prompt, "steer-unnamed") {
 					item["clientId"] = steerParams["clientUserMessageId"]
 				}
-				if !hold {
+				if !hold && !rejected {
 					notify("item/started", map[string]any{"item": item})
 					notify("item/completed", map[string]any{"item": item})
 				}

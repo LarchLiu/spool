@@ -225,6 +225,11 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 	streamedThinking := make(map[string]string)
 	streamedToolOutput := make(map[string]string)
 	for {
+		for _, id := range p.rejectedSteers() {
+			if err := emit(AgentEvent{Type: "unsteered", SteerID: id}); err != nil {
+				return result, err, false
+			}
+		}
 		var value map[string]any
 		if len(p.queued) > 0 {
 			value, p.queued = p.queued[0], p.queued[1:]
