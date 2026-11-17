@@ -338,6 +338,8 @@ button:disabled {
   opacity: 1;
 }
 .nav-chat {
+  -webkit-user-select: none;
+  user-select: none;
   width: 100%;
   min-width: 0;
   height: 31px;
@@ -383,6 +385,24 @@ button:disabled {
 }
 .nav-chat.active {
   background: var(--selected);
+}
+.nav-chat-actions {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  margin: -3px -4px -3px -5px;
+}
+.nav-chat:hover .nav-chat-actions,
+.nav-chat:has(:focus-visible) .nav-chat-actions,
+.nav-chat.menu-open .nav-chat-actions {
+  display: flex;
+}
+.nav-chat-actions .icon {
+  width: 25px;
+  height: 25px;
+  padding: 5px;
+  border-radius: 6px;
 }
 .task-spinner {
   width: 11px;
@@ -593,6 +613,11 @@ button:disabled {
   flex: none;
   color: var(--muted);
 }
+.chat-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
 .chat-title-menu {
   position: fixed;
   z-index: 100;
@@ -602,6 +627,8 @@ button:disabled {
   border-radius: 12px;
   background: var(--elevated);
   box-shadow: 0 8px 28px var(--shadow);
+  -webkit-user-select: none;
+  user-select: none;
 }
 .chat-title-menu > button {
   display: flex;
@@ -2628,13 +2655,6 @@ a.attachment-open {
   height: 32px;
   border-radius: 50%;
 }
-.nav-chat-local {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  color: var(--muted);
-}
-
 .permission-picker {
   position: relative;
   min-width: 0;

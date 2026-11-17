@@ -96,6 +96,30 @@ public class NativeSidebarTest {
         }
     }
 
+    @Test public void longPressOpensOptionsWithoutSelectingAndCachedOrClosedRowsCannotAct() throws Exception {
+        JSONObject fixture = fixtures(); JSONArray profiles = fixture.getJSONArray("peopleProfiles"), projects = fixture.getJSONArray("sidebarProjects"), chats = fixture.getJSONArray("sidebarChats");
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false); List<String> actions = new ArrayList<>();
+            NativeSidebar sidebar = new NativeSidebar(ui, new NativeSidebarState(), id -> person(profiles, id), () -> {}, id -> actions.add("select:" + id), id -> {}, () -> {}, () -> {}, () -> {});
+            sidebar.chatOptions((value, anchor) -> actions.add("menu:" + value.optString("id")));
+            controller.get().setContentView(sidebar);
+            sidebar.bind(profiles.getJSONObject(0), projects, chats, "project-0", "chat-0", "codex", false);
+            layout(sidebar, 360, 800);
+            View open = sidebar.findViewWithTag("recent:chat-0");
+            assertTrue(open.isLongClickable()); assertTrue(open.performLongClick());
+            assertEquals(List.of("menu:chat-0"), actions);
+            sidebar.bind(profiles.getJSONObject(0), projects, chats, "project-0", "chat-0", "codex", false, true);
+            assertFalse(sidebar.findViewWithTag("recent:chat-0").isEnabled());
+            sidebar.findViewWithTag("recent:chat-0").performLongClick();
+            sidebar.deactivate(); open.performLongClick();
+            assertEquals(List.of("menu:chat-0"), actions);
+            JSONObject local = new JSONObject().put("id", "local").put("title", "Local conversation").put("backend", "codex").put("local_session", true);
+            NativeChatLink row = new NativeChatLink(ui, local, false, false, "", id -> new JSONObject(), () -> {});
+            assertEquals("Local sessions only show the agent and title", 2, row.open.getChildCount());
+            assertTrue(row.open.getContentDescription().toString().contains("Local session"));
+        }
+    }
+
     @Test public void mobileDrawersAndOperatorTooltipsRenderAtAllWidthsAndThemes() throws Exception {
         JSONObject fixture = fixtures(); JSONArray profiles = fixture.getJSONArray("peopleProfiles"), projects = fixture.getJSONArray("sidebarProjects"), chats = fixture.getJSONArray("sidebarChats");
         for (int width : new int[] {320,360,412}) { RuntimeEnvironment.setQualifiers("w" + width + "dp-h800dp-mdpi"); for (boolean dark : new boolean[] {false,true}) for (boolean empty : new boolean[] {false,true}) {
@@ -108,7 +132,7 @@ public class NativeSidebarTest {
                 String name = (empty ? "sidebar-empty-" : "sidebar-") + width + (dark ? "-dark" : "-light"); snapshot(sidebar, name);
                 List<View> footer = new ArrayList<>(), operators = new ArrayList<>(), open = new ArrayList<>(), titles = new ArrayList<>(), agents = new ArrayList<>(), locals = new ArrayList<>(), spinners = new ArrayList<>(), projectToggle = new ArrayList<>(), projectNew = new ArrayList<>();
                 for (int i = 0; i < sidebar.footer.getChildCount(); i++) footer.add(sidebar.footer.getChildAt(i));
-                for (NativeChatLink row : sidebar.chatRows) { if (row.operators != null) operators.add(row.operators); open.add(row.open); titles.add(row.title); if (row.agent != null) agents.add(row.agent); if (row.local != null) locals.add(row.local); if (row.spinner != null) spinners.add(row.spinner); }
+                for (NativeChatLink row : sidebar.chatRows) { if (row.operators != null) operators.add(row.operators); open.add(row.open); titles.add(row.title); if (row.agent != null) agents.add(row.agent); if (row.spinner != null) spinners.add(row.spinner); }
                 for (NativeProjectRow row : sidebar.projectRows) { projectToggle.add(row.toggle); projectNew.add(row.create); }
                 JSONObject brand = box(sidebar.brand, sidebar); brand.put("height", brand.getInt("height") + 1); JSONObject foot = box(sidebar.footer, sidebar); foot.put("y", foot.getInt("y") - 1).put("height", foot.getInt("height") + 1);
                 save(new JSONObject().put("panel", box(sidebar, sidebar)).put("brand", brand).put("scroll", box(sidebar.scroll, sidebar)).put("footer", foot).put("headings", boxes(sidebar.headings, sidebar)).put("projects", boxes(sidebar.projectRows, sidebar)).put("chats", boxes(sidebar.chatRows, sidebar)).put("more", boxes(sidebar.moreButtons, sidebar)).put("footerItems", boxes(footer, sidebar)).put("operators", boxes(operators, sidebar)).put("open", boxes(open, sidebar)).put("titles", boxes(titles, sidebar)).put("agents", boxes(agents, sidebar)).put("locals", boxes(locals, sidebar)).put("spinners", boxes(spinners, sidebar)).put("projectToggle", boxes(projectToggle, sidebar)).put("projectNew", boxes(projectNew, sidebar)), name);

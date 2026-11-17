@@ -12,6 +12,7 @@ import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -44,6 +45,9 @@ final class NativeSidebar extends LinearLayout {
     private NativeServerTabs serverTabs;
     private String serverSignature = "";
     private int epoch;
+    private BiConsumer<JSONObject, View> chatOptions = (value, anchor) -> {};
+
+    void chatOptions(BiConsumer<JSONObject, View> action) { chatOptions = action; }
 
     NativeSidebar(NativeUi ui, NativeSidebarState state, Function<String, JSONObject> person, Runnable close, Consumer<String> select, Consumer<String> create, Runnable avatar, Runnable settings, Runnable logout) {
         this(ui, state, person, close, select, create, avatar, settings, logout, () -> {});
@@ -135,6 +139,13 @@ final class NativeSidebar extends LinearLayout {
     private void chatRow(JSONObject value, boolean nested, String prefix) {
         String id = value.optString("id");
         NativeChatLink row = new NativeChatLink(ui, value, nested, chat.equals(id), backend, person, () -> { if (!active || cached) return; state.expanded.add(value.optString("project_id")); select.accept(id); }); row.open.setEnabled(!cached); row.open.setTag(prefix + id); navigation.addView(row, new LayoutParams(-1, ui.dp(31))); chatRows.add(row);
+        View.OnLongClickListener options = view -> {
+            if (!active || cached) return false;
+            chatOptions.accept(value, row.open);
+            return true;
+        };
+        row.open.setOnLongClickListener(options);
+        row.setOnLongClickListener(options);
     }
     private void render() {
         if (!active) return;
@@ -149,7 +160,7 @@ final class NativeSidebar extends LinearLayout {
         for (int i = 0; i < chats.length(); i++) {
             JSONObject value = chats.optJSONObject(i);
             next.append(new JSONArray().put(value.optString("id")).put(value.optString("project_id")).put(value.optString("title"))
-                    .put(value.optString("backend")).put(value.optString("status")).put(value.opt("updated_at")).put(value.optBoolean("local_session")));
+                    .put(value.optString("backend")).put(value.optString("status")).put(value.opt("updated_at")).put(value.optBoolean("local_session")).put(value.optBoolean("can_control")));
             JSONArray participants = value.optJSONArray("participants");
             if (participants != null) for (int j = 0; j < participants.length(); j++) next.append(ServerProfiles.displayAccount(person.apply(participants.optJSONObject(j).optString("id"))));
         }

@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
   Archive,
@@ -11,17 +12,7 @@ import {
 } from "lucide-react";
 import type { Translator } from "./i18n";
 
-export function ChatTitleMenu({
-  title,
-  t,
-  pinned,
-  onTogglePin,
-  canManage = true,
-  onRename,
-  onArchive,
-  onDelete,
-  onError,
-}: {
+type ChatActionProps = {
   title: string;
   t: Translator;
   pinned: boolean;
@@ -31,6 +22,59 @@ export function ChatTitleMenu({
   onArchive: () => Promise<void>;
   onDelete: () => Promise<void>;
   onError: (error: unknown) => void;
+};
+
+export function ChatTitleMenu(props: ChatActionProps) {
+  return (
+    <ChatActionMenu {...props}>
+      {({ trigger, id, open, archiving, show, close }) => (
+        <button
+          ref={trigger}
+          type="button"
+          className="chat-title-trigger"
+          title={props.title}
+          aria-label={`${props.t("Chat options")}: ${props.title}`}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={open ? id : undefined}
+          disabled={archiving}
+          onClick={() => (open ? close() : show())}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              show();
+            }
+          }}
+        >
+          <strong>{props.title}</strong>
+          <ChevronDown size={13} aria-hidden="true" />
+        </button>
+      )}
+    </ChatActionMenu>
+  );
+}
+
+export function ChatActionMenu({
+  title,
+  t,
+  pinned,
+  onTogglePin,
+  canManage = true,
+  onRename,
+  onArchive,
+  onDelete,
+  onError,
+  children,
+}: ChatActionProps & {
+  children: (controls: {
+    trigger: RefObject<HTMLButtonElement | null>;
+    id: string;
+    open: boolean;
+    archiving: boolean;
+    show: (point?: { left: number; top: number }) => void;
+    close: () => void;
+    archive: () => Promise<void>;
+  }) => ReactNode;
 }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -39,36 +83,58 @@ export function ChatTitleMenu({
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const archivePending = useRef(false);
+  const [point, setPoint] = useState<{ left?: number; top?: number }>({});
   const [position, setPosition] = useState<{ left: number; top: number }>();
+  function show(origin?: { left: number; top: number }) {
+    if (archivePending.current) return;
+    setPoint(origin ?? {});
+    setPosition(undefined);
+    setOpen(true);
+  }
   function close(restoreFocus = false) {
     setOpen(false);
     if (restoreFocus) trigger.current?.focus({ preventScroll: true });
+  }
+  async function archive() {
+    if (!canManage || archivePending.current) return;
+    archivePending.current = true;
+    setArchiving(true);
+    try {
+      await onArchive();
+      close();
+    } catch (error) {
+      close(true);
+      onError(error);
+    } finally {
+      archivePending.current = false;
+      setArchiving(false);
+    }
   }
   useLayoutEffect(() => {
     if (!open || !trigger.current || !menu.current) return;
     const anchor = trigger.current.getBoundingClientRect();
     const panel = menu.current.getBoundingClientRect();
     setPosition({
-      left: Math.max(8, Math.min(anchor.left, innerWidth - panel.width - 8)),
+      left: Math.max(
+        8,
+        Math.min(point?.left ?? anchor.left, innerWidth - panel.width - 8),
+      ),
       top: Math.max(
         8,
-        Math.min(anchor.bottom + 6, innerHeight - panel.height - 8),
+        Math.min(
+          point?.top ?? anchor.bottom + 6,
+          innerHeight - panel.height - 8,
+        ),
       ),
     });
-  }, [open]);
+  }, [open, point]);
   useLayoutEffect(() => {
     if (open && position)
       menu.current?.querySelector<HTMLButtonElement>("button")?.focus();
   }, [open, position]);
   useEffect(() => {
     if (!open) return;
-    const outside = (event: PointerEvent) => {
-      if (
-        !trigger.current?.contains(event.target as Node) &&
-        !menu.current?.contains(event.target as Node)
-      )
-        close();
-    };
     const escape = (event: KeyboardEvent) => {
       if (event.isComposing || event.key !== "Escape") return;
       event.preventDefault();
@@ -76,12 +142,10 @@ export function ChatTitleMenu({
       close(true);
     };
     const reposition = () => close();
-    document.addEventListener("pointerdown", outside, true);
     document.addEventListener("keydown", escape, true);
     window.addEventListener("resize", reposition);
     document.addEventListener("scroll", reposition, true);
     return () => {
-      document.removeEventListener("pointerdown", outside, true);
       document.removeEventListener("keydown", escape, true);
       window.removeEventListener("resize", reposition);
       document.removeEventListener("scroll", reposition, true);
@@ -89,145 +153,146 @@ export function ChatTitleMenu({
   }, [open]);
   return (
     <>
-      <button
-        ref={trigger}
-        type="button"
-        className="chat-title-trigger"
-        title={title}
-        aria-label={`${t("Chat options")}: ${title}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? id : undefined}
-        disabled={archiving}
-        onClick={() => setOpen(!open)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            event.preventDefault();
-            setOpen(true);
-          }
-        }}
-      >
-        <strong>{title}</strong>
-        <ChevronDown size={13} aria-hidden="true" />
-      </button>
+      {children({ trigger, id, open, archiving, show, close, archive })}
       {open &&
         createPortal(
-          <div
-            id={id}
-            ref={menu}
-            className="chat-title-menu"
-            role="menu"
-            aria-label={t("Chat options")}
-            style={{ ...position, visibility: position ? "visible" : "hidden" }}
-            onBlur={(event) => {
-              // WebKit blurs buttons without a new focus target on mouse down,
-              // before their click handler can open the rename dialog.
-              if (
-                event.relatedTarget &&
-                !event.currentTarget.contains(event.relatedTarget as Node)
-              )
-                close();
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Tab") {
-                close(true);
-                return;
-              }
-              if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+          <>
+            <div
+              className="chat-menu-backdrop"
+              aria-hidden="true"
+              onPointerDown={(event) => {
                 event.preventDefault();
-                const items = Array.from(
-                  menu.current?.querySelectorAll<HTMLButtonElement>(
-                    "button:not(:disabled)",
-                  ) || [],
-                );
-                const current = items.findIndex(
-                  (item) => item === document.activeElement,
-                );
-                const index =
-                  event.key === "Home"
-                    ? 0
-                    : event.key === "End"
-                      ? items.length - 1
-                      : (current +
-                          (event.key === "ArrowDown" ? 1 : -1) +
-                          items.length) %
-                        items.length;
-                items[index]?.focus();
-              }
-            }}
-          >
-            {canManage && (
-              <button
-                type="button"
-                role="menuitem"
-                disabled={archiving}
-                onClick={() => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                close();
+              }}
+              onTouchEnd={(event) => {
+                // WebKit can suppress click after a canceled pointerdown.
+                // Cancel the compatibility click before removing its target.
+                event.preventDefault();
+                event.stopPropagation();
+                close();
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                close();
+              }}
+            />
+            <div
+              id={id}
+              ref={menu}
+              className="chat-title-menu"
+              role="menu"
+              aria-label={t("Chat options")}
+              style={{
+                ...position,
+                visibility: position ? "visible" : "hidden",
+              }}
+              onBlur={(event) => {
+                // WebKit blurs buttons without a new focus target on mouse down,
+                // before their click handler can open the rename dialog.
+                if (
+                  event.relatedTarget &&
+                  !event.currentTarget.contains(event.relatedTarget as Node)
+                )
                   close();
-                  setRenaming(true);
-                }}
-              >
-                <Pencil size={15} aria-hidden="true" />
-                {t("Rename")}
-              </button>
-            )}
-            <button
-              type="button"
-              role="menuitem"
-              disabled={archiving}
-              onClick={() => {
-                onTogglePin();
-                close(true);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Tab") {
+                  close(true);
+                  return;
+                }
+                if (
+                  ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)
+                ) {
+                  event.preventDefault();
+                  const items = Array.from(
+                    menu.current?.querySelectorAll<HTMLButtonElement>(
+                      "button:not(:disabled)",
+                    ) || [],
+                  );
+                  const current = items.findIndex(
+                    (item) => item === document.activeElement,
+                  );
+                  const index =
+                    event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? items.length - 1
+                        : (current +
+                            (event.key === "ArrowDown" ? 1 : -1) +
+                            items.length) %
+                          items.length;
+                  items[index]?.focus();
+                }
               }}
             >
-              {pinned ? (
-                <PinOff size={15} aria-hidden="true" />
-              ) : (
-                <Pin size={15} aria-hidden="true" />
-              )}
-              {t(pinned ? "Unpin chat" : "Pin chat")}
-            </button>
-            {canManage && (
-              <div className="chat-title-menu-separator" role="separator" />
-            )}
-            {canManage && (
-              <button
-                type="button"
-                role="menuitem"
-                disabled={archiving}
-                aria-busy={archiving}
-                onClick={async () => {
-                  setArchiving(true);
-                  try {
-                    await onArchive();
+              {canManage && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={archiving}
+                  onClick={() => {
                     close();
-                  } catch (error) {
-                    close(true);
-                    onError(error);
-                  } finally {
-                    setArchiving(false);
-                  }
-                }}
-              >
-                <Archive size={15} aria-hidden="true" />
-                {t(archiving ? "Archiving…" : "Archive")}
-              </button>
-            )}
-            {canManage && (
+                    setRenaming(true);
+                  }}
+                >
+                  <Pencil size={15} aria-hidden="true" />
+                  {t("Rename")}
+                </button>
+              )}
               <button
                 type="button"
                 role="menuitem"
-                className="destructive"
                 disabled={archiving}
-                onClick={() => {
-                  close();
-                  setDeleting(true);
+                onClick={(event) => {
+                  onTogglePin();
+                  close(event.detail === 0);
                 }}
               >
-                <Trash2 size={15} aria-hidden="true" />
-                {t("Delete")}
+                {pinned ? (
+                  <PinOff size={15} aria-hidden="true" />
+                ) : (
+                  <Pin size={15} aria-hidden="true" />
+                )}
+                {t(pinned ? "Unpin chat" : "Pin chat")}
               </button>
-            )}
-          </div>,
+              {canManage && (
+                <div className="chat-title-menu-separator" role="separator" />
+              )}
+              {canManage && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={archiving}
+                  aria-busy={archiving}
+                  onClick={archive}
+                >
+                  <Archive size={15} aria-hidden="true" />
+                  {t(archiving ? "Archiving…" : "Archive")}
+                </button>
+              )}
+              {canManage && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="destructive"
+                  disabled={archiving}
+                  onClick={() => {
+                    close();
+                    setDeleting(true);
+                  }}
+                >
+                  <Trash2 size={15} aria-hidden="true" />
+                  {t("Delete")}
+                </button>
+              )}
+            </div>
+          </>,
           document.body,
         )}
       {deleting &&

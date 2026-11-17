@@ -1,11 +1,14 @@
 import { appURL } from "./app-path";
 import { useEffect, useMemo, useState } from "react";
 import {
+  Archive,
   Folder,
   FolderOpen,
   LogOut,
   PanelLeftClose,
   Plus,
+  Pin,
+  PinOff,
   X,
 } from "lucide-react";
 import type { Translator } from "./i18n";
@@ -17,6 +20,8 @@ import { ChatOperatorAvatars } from "./turn-identity";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { ChatSettingsControl } from "./desktop-settings";
 import { isMacDesktop } from "./runtime";
+import { canControlChat } from "./chat-state";
+import { ChatActionMenu } from "./chat-title-menu";
 import {
   sortedSidebarChats,
   revealSidebarProject,
@@ -26,11 +31,7 @@ import {
   type SidebarSection as Section,
 } from "./sidebar-state";
 import { SidebarSection } from "./sidebar-section";
-import {
-  INITIAL_CHAT_LIMIT,
-  LocalSessionIcon,
-  SidebarChatList,
-} from "./sidebar-chat-list";
+import { INITIAL_CHAT_LIMIT, SidebarChatList } from "./sidebar-chat-list";
 
 type Props = {
   user: User;
@@ -51,6 +52,11 @@ type Props = {
   onClose: () => void;
   onResize: (width: number) => void;
   onChat: (chat: Chat) => void;
+  onTogglePin: (id: string) => void;
+  onRename: (chat: Chat, title: string) => Promise<void>;
+  onArchive: (chat: Chat) => Promise<void>;
+  onDelete: (chat: Chat) => Promise<void>;
+  onError: (error: unknown) => void;
   onNew: (project?: string) => void;
   onSettings: () => void;
   onAvatar: () => void;
@@ -93,52 +99,112 @@ export function Sidebar(props: Props) {
     // Metadata refreshes must not reopen a project the user just collapsed.
   }, [project, chatID]);
   function chatButton(chat: Chat, nested: boolean) {
+    const title = chat.title === "New chat" ? t("New chat") : chat.title;
+    const pinned = props.pinned.includes(chat.id);
+    const canManage = canControlChat(chat, props.user.id);
     return (
-      <div
+      <ChatActionMenu
         key={chat.id}
-        className={
-          "nav-chat " +
-          (nested ? "nested " : "") +
-          (chat.id === chatID ? "active" : "")
-        }
+        title={title}
+        t={t}
+        pinned={pinned}
+        canManage={canManage}
+        onTogglePin={() => props.onTogglePin(chat.id)}
+        onRename={(title) => props.onRename(chat, title)}
+        onArchive={() => props.onArchive(chat)}
+        onDelete={() => props.onDelete(chat)}
+        onError={props.onError}
       >
-        {!!chat.participants?.length && (
-          <ChatOperatorAvatars chat={chat} resolve={props.resolveProfile} />
-        )}
-        <button
-          type="button"
-          className="nav-chat-open"
-          aria-current={chat.id === chatID ? "page" : undefined}
-          title={chat.title === "New chat" ? t("New chat") : chat.title}
-          onClick={() => {
-            setExpanded((old) => new Set([...old, chat.project_id]));
-            props.onChat(chat);
-          }}
-        >
-          {!chat.participants?.length && (
-            <span className="nav-chat-agent">
-              <AgentIcon
-                backend={
-                  chat.id === chatID && props.activeBackend
-                    ? props.activeBackend
-                    : chat.backend
+        {({ trigger, id, open, archiving, show, archive }) => (
+          <div
+            className={
+              "nav-chat " +
+              (nested ? "nested " : "") +
+              (chat.id === chatID ? "active " : "") +
+              (open ? "menu-open" : "")
+            }
+            onContextMenu={(event) => {
+              event.preventDefault();
+              show({ left: event.clientX, top: event.clientY });
+            }}
+            onPointerDown={(event) => {
+              if (event.button === 2) event.preventDefault();
+            }}
+          >
+            {!!chat.participants?.length && (
+              <ChatOperatorAvatars chat={chat} resolve={props.resolveProfile} />
+            )}
+            <button
+              ref={trigger}
+              type="button"
+              className="nav-chat-open"
+              aria-current={chat.id === chatID ? "page" : undefined}
+              title={title}
+              aria-haspopup="menu"
+              aria-expanded={open}
+              aria-controls={open ? id : undefined}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "ContextMenu" ||
+                  (event.shiftKey && event.key === "F10")
+                ) {
+                  event.preventDefault();
+                  show();
                 }
-              />
-            </span>
-          )}
-          <span className="nav-chat-title">
-            {chat.title === "New chat" ? t("New chat") : chat.title}
-          </span>
-          {chat.local_session && <LocalSessionIcon t={t} />}
-          {chat.status === "running" && (
-            <span
-              className="task-spinner"
-              role="status"
-              aria-label={t("Working")}
-            />
-          )}
-        </button>
-      </div>
+              }}
+              onClick={() => {
+                setExpanded((old) => new Set([...old, chat.project_id]));
+                props.onChat(chat);
+              }}
+            >
+              {!chat.participants?.length && (
+                <span className="nav-chat-agent">
+                  <AgentIcon
+                    backend={
+                      chat.id === chatID && props.activeBackend
+                        ? props.activeBackend
+                        : chat.backend
+                    }
+                  />
+                </span>
+              )}
+              <span className="nav-chat-title">{title}</span>
+              {chat.status === "running" && (
+                <span
+                  className="task-spinner"
+                  role="status"
+                  aria-label={t("Working")}
+                />
+              )}
+            </button>
+            <div className="nav-chat-actions">
+              <button
+                type="button"
+                className="icon"
+                title={t(pinned ? "Unpin chat" : "Pin chat")}
+                aria-label={t(pinned ? "Unpin chat" : "Pin chat")}
+                disabled={archiving}
+                onClick={() => props.onTogglePin(chat.id)}
+              >
+                {pinned ? <PinOff size={14} /> : <Pin size={14} />}
+              </button>
+              {canManage && (
+                <button
+                  type="button"
+                  className="icon"
+                  title={t("Archive")}
+                  aria-label={t("Archive")}
+                  disabled={archiving}
+                  aria-busy={archiving}
+                  onClick={archive}
+                >
+                  <Archive size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </ChatActionMenu>
     );
   }
   return (

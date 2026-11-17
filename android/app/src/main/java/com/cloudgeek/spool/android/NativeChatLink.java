@@ -17,7 +17,6 @@ final class NativeChatLink extends LinearLayout {
     final TextView title;
     final NativeChatOperators operators;
     final NativeSpinner spinner;
-    final View local;
     final FrameLayout agent;
 
     NativeChatLink(NativeUi ui, JSONObject chat, boolean nested, boolean selected, String activeBackend, Function<String, JSONObject> person, Runnable select) {
@@ -33,11 +32,9 @@ final class NativeChatLink extends LinearLayout {
         String label = chat.optString("title"); if (label.equals("New chat")) label = ui.t("New chat");
         title = ui.text(label, 13, ui.text); ui.fixedLineHeight(title, 21f / 13); ui.preciseText(title); title.setSingleLine(true); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         LayoutParams copy = new LayoutParams(0, -1, 1); if (operators == null) copy.setMarginStart(ui.dp(9)); open.addView(title, copy);
-        local = chat.optBoolean("local_session") ? ui.decorativeIcon("monitor", 13) : null;
-        if (local != null) { LayoutParams at = new LayoutParams(ui.dp(13), ui.dp(13)); at.setMarginStart(ui.dp(9)); open.addView(local, at); local.setContentDescription(ui.t("Local session")); }
         spinner = chat.optString("status").equals("running") ? new NativeSpinner(ui, 11, ui.t("Working"), true) : null;
         if (spinner != null) { LayoutParams at = new LayoutParams(ui.dp(11), ui.dp(11)); at.setMarginStart(ui.dp(13)); at.setMarginEnd(ui.dp(4)); open.addView(spinner, at); }
-        open.setContentDescription(label + (local == null ? "" : ", " + ui.t("Local session")) + (spinner == null ? "" : ", " + ui.t("Working")));
+        open.setContentDescription(label + (chat.optBoolean("local_session") ? ", " + ui.t("Local session") : "") + (spinner == null ? "" : ", " + ui.t("Working")));
         open.setAccessibilityDelegate(new View.AccessibilityDelegate() { @Override public void onInitializeAccessibilityNodeInfo(View view, android.view.accessibility.AccessibilityNodeInfo info) { super.onInitializeAccessibilityNodeInfo(view, info); info.setClassName("android.widget.Button"); info.setSelected(selected); } });
     }
 }

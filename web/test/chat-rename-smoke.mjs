@@ -271,7 +271,9 @@ try {
           await menu.waitFor({ state: "detached" });
           await trigger.press("ArrowDown");
           await menu.waitFor();
-          await page.locator(".history").click({ position: { x: 5, y: 5 } });
+          const outside = await page.locator(".history").boundingBox();
+          if (width < 500) await page.touchscreen.tap(outside.x + 5, outside.y + 5);
+          else await page.mouse.click(outside.x + 5, outside.y + 5);
           await menu.waitFor({ state: "detached" });
           await openRename();
           const dialog = page.getByRole("dialog", { name: "Rename chat" }),

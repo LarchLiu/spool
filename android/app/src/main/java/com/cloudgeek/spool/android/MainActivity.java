@@ -156,6 +156,7 @@ public final class MainActivity extends Activity {
     private int deliveryGeneration, deliveryAuth;
     private NativeUi.Header workspaceHeader;
     private NativeChatMenu chatMenu;
+    private String chatMenuTarget = "";
     private String chatActionPending = "";
     private NativeAgentModelMenu modelMenu;
     private NativePopover modelPopover;
@@ -2295,6 +2296,7 @@ public final class MainActivity extends Activity {
         drawer = overlay;
         sidebar = new NativeSidebar(ui, sidebarState, this::person, this::closeDrawer, this::openChat, this::newChat,
                 () -> { closeDrawer(); openAvatarPicker(); }, this::openSettings, this::logout, this::loginFromSidebar, this::openAppearance);
+        sidebar.chatOptions((value, anchor) -> openChatOptions(value, anchor, false));
         overlay.sheet.addView(sidebar, new LinearLayout.LayoutParams(-1, -1));
         root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
         renderNavigation();
@@ -2517,26 +2519,48 @@ public final class MainActivity extends Activity {
     private void closeChatMenu() {
         if (chatMenu != null) chatMenu.dismiss();
         chatMenu = null;
+        chatMenuTarget = "";
     }
 
     private void openChatOptions() {
         if (workspaceHeader == null || chat == null || user == null || routeLoginRequired || chatID.isEmpty() || !chatActionPending.isEmpty() || !connected) return;
+        openChatOptions(chat, workspaceHeader.titleAction, true);
+    }
+
+    private void openChatOptions(JSONObject targetChat, View anchor, boolean selectedOnly) {
+        if (user == null || routeLoginRequired || targetChat.optString("id").isEmpty() || !chatActionPending.isEmpty() || !connected) return;
         closeChatMenu();
         restoreSidebarPreferences();
-        final String target = chatID;
+        final String target = targetChat.optString("id");
         final int token = generation, session = authEpoch;
-        chatMenu = new NativeChatMenu(ui, chatTitle(), new NativeChatMenu.Actions() {
-            public boolean canManage() { return writable(); }
+        chatMenuTarget = target;
+        String title = targetChat.optString("title");
+        chatMenu = new NativeChatMenu(ui, title.equals("New chat") ? ui.t("New chat") : title, new NativeChatMenu.Actions() {
+            private JSONObject current() {
+                if (destroyed || token != generation || session != authEpoch || user == null || routeLoginRequired || !connected) return null;
+                if (target.equals(chatID)) return chat;
+                if (!selectedOnly) for (int i = 0; i < chats.length(); i++)
+                    if (target.equals(at(chats, i).optString("id"))) return at(chats, i);
+                return null;
+            }
+            public boolean canManage() {
+                JSONObject current = current();
+                if (current == null || !current.optBoolean("can_control")) return false;
+                if (target.equals(chatID)) return writable();
+                for (int i = 0; i < projects.length(); i++)
+                    if (at(projects, i).optString("id").equals(current.optString("project_id"))) return true;
+                return false;
+            }
             public boolean pinned() { return sidebarState.pinned.contains(target); }
             public void togglePin() {
-                if (destroyed || token != generation || session != authEpoch || !target.equals(chatID)) return;
+                if (current() == null || !chatActionPending.isEmpty()) return;
                 sidebarState.togglePin(target); renderNavigation();
             }
             public void rename(String title, java.util.function.Consumer<Exception> done) { mutate("rename", object("title", title), done); }
             public void archive(java.util.function.Consumer<Exception> done) { mutate("archive", object(), done); }
             public void delete(java.util.function.Consumer<Exception> done) { mutate("delete", object(), done); }
             private void mutate(String action, JSONObject body, java.util.function.Consumer<Exception> done) {
-                if (destroyed || token != generation || session != authEpoch || !target.equals(chatID) || !writable() || !chatActionPending.isEmpty()) {
+                if (!canManage() || !chatActionPending.isEmpty()) {
                     done.accept(new IOException(ui.t("Chat session changed. Try again.")));
                     return;
                 }
@@ -2564,7 +2588,7 @@ public final class MainActivity extends Activity {
                 });
             }
         }, this::toast);
-        chatMenu.show(workspaceHeader.titleAction);
+        chatMenu.show(anchor);
     }
 
     private void restoreSidebarPreferences() {
@@ -2588,9 +2612,9 @@ public final class MainActivity extends Activity {
             }
         }) : null, () -> {
             if (!destroyed && sidebarState.sync == target) {
-                boolean wasPinned = sidebarState.pinned.contains(chatID);
+                boolean wasPinned = sidebarState.pinned.contains(chatMenuTarget);
                 sidebarState.refreshPreferences();
-                if (wasPinned != sidebarState.pinned.contains(chatID) && chatMenu != null && chatMenu.popup.isShowing()) closeChatMenu();
+                if (wasPinned != sidebarState.pinned.contains(chatMenuTarget) && chatMenu != null && chatMenu.popup.isShowing()) closeChatMenu();
                 renderNavigation();
             }
         }, error -> {

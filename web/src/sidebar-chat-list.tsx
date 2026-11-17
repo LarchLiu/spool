@@ -1,22 +1,8 @@
 import type { ReactNode } from "react";
 import type { Translator } from "./i18n";
 import type { Chat } from "./types";
-import { Monitor } from "lucide-react";
 import { INITIAL_CHAT_LIMIT, nextSidebarChatLimit } from "./sidebar-state.js";
 export { INITIAL_CHAT_LIMIT } from "./sidebar-state.js";
-
-export function LocalSessionIcon({ t }: { t: Translator }) {
-  return (
-    <span
-      className="nav-chat-local"
-      title={t("Local session")}
-      role="img"
-      aria-label={t("Local session")}
-    >
-      <Monitor size={13} aria-hidden="true" />
-    </span>
-  );
-}
 
 type Props = {
   chats: Chat[];

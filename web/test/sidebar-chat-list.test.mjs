@@ -4,7 +4,6 @@ import { Children, createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   INITIAL_CHAT_LIMIT,
-  LocalSessionIcon,
   SidebarChatList,
 } from "../.test-build/components/web/src/sidebar-chat-list.js";
 import {
@@ -61,15 +60,6 @@ test("selection reveals an off-page project and chat without collapsing an expan
   assert.equal(revealSidebarProject(projects, "missing", 10), 10);
   assert.equal(revealSidebarChat(chats, "c-12", 5), 13);
   assert.equal(revealSidebarChat(chats, "c-2", 15), 15);
-});
-
-test("local sessions have a compact monitor icon with an accessible source label", () => {
-  const html = renderToStaticMarkup(
-    createElement(LocalSessionIcon, { t: (key) => `translated:${key}` }),
-  );
-  assert.match(html, /class="nav-chat-local"/);
-  assert.match(html, /aria-label="translated:Local session"/);
-  assert.match(html, /lucide-monitor/);
 });
 
 function fixture(count, options = {}) {

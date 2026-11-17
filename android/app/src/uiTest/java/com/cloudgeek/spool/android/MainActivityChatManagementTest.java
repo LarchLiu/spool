@@ -104,6 +104,91 @@ public class MainActivityChatManagementTest {
                 org.robolectric.util.ReflectionHelpers.ClassParameter.from(JSONObject.class, navigation(h, h.get("chats")).put("sidebar", snapshot)));
     }
 
+    private NativeChatMenu longPress(MainActivityGoalTest.Harness h, String prefix) {
+        h.call("openSidebar");
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(250));
+        View row = h.<NativeSidebar>get("sidebar").findViewWithTag(prefix + ":chat-two");
+        assertNotNull(row);
+        assertTrue(row.performLongClick());
+        Shadows.shadowOf(Looper.getMainLooper()).idle();
+        NativeChatMenu menu = h.get("chatMenu");
+        assertTrue(menu.popup.isShowing());
+        assertEquals("Long press never selects its target", "chat-one", h.<String>get("chatID"));
+        return menu;
+    }
+
+    @Test public void longPressPinsAndRenamesAnUnopenedLocalChatWithoutChangingTheCurrentDraft() throws Exception {
+        for (String backend : new String[] {"codex", "claude"}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            seed(h, backend); acceptSidebar(h, sidebar(1, false));
+            JSONObject other = h.chat("chat-two").put("title", "Local conversation").put("project_id", "project-one").put("backend", backend).put("local_session", true);
+            h.<JSONArray>get("chats").put(other);
+            h.composer().input.setText("Keep this draft");
+            NativeChatMenu menu = longPress(h, "recent");
+            assertEquals(5, menu.popup.content.getChildCount());
+            assertEquals("Rename", menu.popup.content.getChildAt(0).getContentDescription());
+            assertEquals("Pin chat", menu.popup.content.getChildAt(1).getContentDescription());
+            assertFalse(menu.popup.content.getChildAt(2).isFocusable());
+            assertEquals("Archive", menu.popup.content.getChildAt(3).getContentDescription());
+            assertEquals("Delete", menu.popup.content.getChildAt(4).getContentDescription());
+            menu.popup.content.getChildAt(1).performClick();
+            assertTrue(h.<NativeSidebarState>get("sidebarState").pinned.contains("chat-two"));
+            sidebarReply(h, new JSONObject().put("revision", 2).put("pinned", new JSONArray().put("chat-two")));
+            assertEquals("chat-two", new JSONObject(MainActivityGoalTest.ShadowClient.calls.get(0).get(2)).getString("chat_id"));
+            menu = longPress(h, "pinned");
+            assertEquals("Unpin chat", menu.popup.content.getChildAt(1).getContentDescription());
+            menu.popup.content.getChildAt(0).performClick();
+            assertEquals("Local conversation", menu.dialog.name.getText().toString());
+            menu.dialog.name.setText("Renamed local conversation"); menu.dialog.submit.performClick();
+            MainActivityGoalTest.ShadowClient.response = envelope(200, NativeChatState.copy(other).put("title", "Renamed local conversation"));
+            h.io.run();
+            assertEquals("/api/chats/chat-two/rename", MainActivityGoalTest.ShadowClient.calls.get(1).get(1));
+            assertEquals("Renamed local conversation", h.<JSONArray>get("chats").getJSONObject(1).getString("title"));
+            assertEquals("Original title", h.<NativeUi.Header>get("workspaceHeader").title.getText().toString());
+            assertEquals("chat-one", h.<String>get("chatID"));
+            assertEquals("Keep this draft", h.composer().input.getText().toString());
+        }
+    }
+
+    @Test public void longPressArchiveAndDeleteTargetTheRowAndKeepTheSelectedChat() throws Exception {
+        for (String action : new String[] {"archive", "delete"}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            seed(h, "codex");
+            JSONObject current = NativeChatState.copy(h.get("chat"));
+            h.<JSONArray>get("chats").put(h.chat("chat-two").put("title", "Other conversation").put("project_id", "project-one"));
+            h.composer().input.setText("Keep this draft");
+            NativeChatMenu menu = longPress(h, "project");
+            menu.popup.content.getChildAt(action.equals("archive") ? 3 : 4).performClick();
+            if (action.equals("delete")) {
+                assertTrue("Deletion still needs confirmation", h.io.jobs.isEmpty());
+                menu.dialog.submit.performClick();
+            }
+            MainActivityGoalTest.ShadowClient.response = envelope(200, navigation(h, new JSONArray().put(current)));
+            h.io.run();
+            assertEquals("/api/chats/chat-two/" + action, MainActivityGoalTest.ShadowClient.calls.get(0).get(1));
+            assertEquals("chat-one", h.<String>get("chatID"));
+            assertEquals(1, h.<JSONArray>get("chats").length());
+            assertEquals("Keep this draft", h.composer().input.getText().toString());
+        }
+    }
+
+    @Test public void longPressHonorsReadOnlyRowsAndRevokedManagementPermissions() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            seed(h, "codex");
+            JSONObject other = h.chat("chat-two").put("title", "Other conversation").put("project_id", "project-one").put("can_control", false);
+            h.<JSONArray>get("chats").put(other);
+            NativeChatMenu menu = longPress(h, "recent");
+            assertEquals(1, menu.popup.content.getChildCount());
+            assertEquals("Pin chat", menu.popup.content.getChildAt(0).getContentDescription());
+            menu.dismiss();
+            other.put("can_control", true);
+            menu = longPress(h, "recent"); menu.popup.content.getChildAt(0).performClick();
+            other.put("can_control", false);
+            menu.dialog.name.setText("No longer authorized"); menu.dialog.submit.performClick();
+            assertTrue(h.io.jobs.isEmpty());
+            assertTrue(menu.dialog.isShowing());
+            assertEquals(View.VISIBLE, menu.dialog.error.getVisibility());
+        }
+    }
+
     @Test public void renameHasAnEditableTitleValidatesAndUpdatesHeaderAndNavigationForBothAgents() throws Exception {
         for (String backend : new String[] {"codex", "claude"}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             seed(h, backend);

@@ -1633,6 +1633,13 @@ function App() {
     setChatID(chat.id);
     setSidebar(false);
   }
+  async function renameChat(chat: Chat, title: string) {
+    const owner = user!.id;
+    const renamed = await api<ChatMetadata>("/chats/" + chat.id + "/rename", { title });
+    if (activeUser.current !== owner) return;
+    setChat((old) => reconcileMetadata(old, renamed));
+    setChats((old) => old.map((item) => reconcileMetadata(item, renamed) ?? item));
+  }
   async function removeChat(chat: Chat, action: "archive" | "delete") {
     const owner = user!.id;
     const navigation = await api<Navigation>("/chats/" + chat.id + "/" + action, {});
@@ -1804,6 +1811,13 @@ function App() {
         }}
         onResize={(width) => setPanels((old) => ({ ...old, leftWidth: width }))}
         onChat={openChat}
+        onTogglePin={sidebarPreferences.togglePin}
+        onRename={renameChat}
+        onArchive={(chat) => removeChat(chat, "archive")}
+        onDelete={(chat) => removeChat(chat, "delete")}
+        onError={(error) => {
+          if (activeUser.current === user!.id) fail(error);
+        }}
         onNew={newChat}
         onSettings={() => setAppearanceOpen(true)}
         onAvatar={() => setAvatarOpen(true)}
@@ -1838,13 +1852,7 @@ function App() {
                     pinned={sidebarPreferences.pinned.includes(chat.id)}
                     onTogglePin={() => sidebarPreferences.togglePin(chat.id)}
                     canManage={canControlChat(chat, user!.id)}
-                    onRename={async (title) => {
-                      const owner = user!.id;
-                      const renamed = await api<ChatMetadata>("/chats/" + chat.id + "/rename", { title });
-                      if (activeUser.current !== owner) return;
-                      setChat((old) => reconcileMetadata(old, renamed));
-                      setChats((old) => old.map((item) => reconcileMetadata(item, renamed) ?? item));
-                    }}
+                    onRename={(title) => renameChat(chat, title)}
                     onArchive={() => removeChat(chat, "archive")}
                     onDelete={() => removeChat(chat, "delete")}
                     onError={(error) => {
