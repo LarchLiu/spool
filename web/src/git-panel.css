@@ -240,7 +240,7 @@
 .git-remote-actions {
   gap: 8px;
   min-height: 34px;
-  padding: 4px 8px;
+  padding: 4px 8px 4px 12px;
 }
 .git-remote-target {
   display: flex;

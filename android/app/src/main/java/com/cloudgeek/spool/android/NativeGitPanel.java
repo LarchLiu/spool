@@ -345,7 +345,7 @@ final class NativeGitPanel extends LinearLayout {
     private void renderFooter() {
         if (commitExpand == null) {
             remoteArea.addView(ui.divider());
-            LinearLayout remoteRow = ui.row(); remoteRow.setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(4));
+            LinearLayout remoteRow = ui.row(); remoteRow.setPadding(ui.dp(12), ui.dp(4), ui.dp(8), ui.dp(4));
             remoteTarget = new NativeTextView(ui.context); ui.typography(remoteTarget, 10, ui.muted, 400);
             remoteTarget.setSingleLine(true); remoteTarget.setEllipsize(android.text.TextUtils.TruncateAt.END); remoteTarget.setPadding(0, 0, ui.dp(6), 0);
             LinearLayout targetRow = ui.row(); targetRow.addView(remoteTarget, new LayoutParams(-2, -2));
