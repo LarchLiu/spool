@@ -377,6 +377,34 @@ public class NativeGitPanelTest {
         }
     }
 
+    @Test public void fetchAndPushDisplayAndSendTheirSeparateTargets() throws Exception {
+        RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
+        try (ActivityController<Activity> activity = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(activity.get(), false, "en"); NativeFileModel model = new NativeFileModel("p", "c");
+            model.workspace = workspace("/repo/tree");
+            JSONObject listing = changes().put("writable", true).put("remote_allowed", true).put("commit", "a".repeat(40))
+                .put("remote", "origin").put("remote_branch", "main").put("upstream", "origin/main")
+                .put("push_remote", "fork").put("push_remote_branch", "feature/git-panel").put("push_upstream", "").put("push_ahead", 0);
+            List<JSONObject> writes = new ArrayList<>();
+            NativeGitPanel panel = new NativeGitPanel(ui, model, (path, done) -> done.done(listing, null), value -> {});
+            panel.write = (path, body, done) -> { writes.add(body); done.done(new JSONObject(), null); };
+            activity.get().setContentView(panel); panel.activate(true); layout(panel);
+            assertNotNull(find(panel.remoteArea, "fork/feature/git-panel"));
+            action(panel.remoteArea, "Publish branch").performClick();
+            assertEquals("fork", writes.get(0).getString("remote")); assertEquals("feature/git-panel", writes.get(0).getString("remote_branch"));
+            layout(panel);
+            action(panel.remoteArea, "Git remote actions").performClick(); action(ui.activePopover.content, "Fetch").performClick();
+            assertNotNull(find(panel.remoteArea, "origin/main"));
+            action(panel.remoteArea, "Fetch").performClick();
+            assertEquals("origin", writes.get(1).getString("remote")); assertEquals("main", writes.get(1).getString("remote_branch"));
+            listing.put("push_remote", ""); panel.reload();
+            layout(panel);
+            action(panel.remoteArea, "Git remote actions").performClick();
+            assertFalse(action(ui.activePopover.content, "Publish branch").isEnabled()); ui.activePopover.dismiss();
+            assertTrue(action(panel.remoteArea, "Fetch").isEnabled()); panel.activate(false);
+        }
+    }
+
     @Test public void discardRequiresConfirmationAndGroupSquaresUseOnlyTheirOwnFiles() throws Exception {
         RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
         for (boolean dark : new boolean[]{false, true}) try (ActivityController<Activity> activity = Robolectric.buildActivity(Activity.class).setup()) {

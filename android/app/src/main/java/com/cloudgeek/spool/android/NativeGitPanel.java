@@ -353,16 +353,18 @@ final class NativeGitPanel extends LinearLayout {
         remoteArea.setVisibility(changes ? VISIBLE : GONE);
         if (!changes) dismissRemote();
         if (changes) {
-            String remote = data.optString("remote");
-            String target = remote.isEmpty() ? ui.t("No Git remote configured") : remote + "/" + data.optString("remote_branch");
+            boolean fetch = remoteAction.equals("fetch");
+            String remote = fetch ? data.optString("remote") : pushRemote();
+            String branch = fetch ? data.optString("remote_branch") : data.optString("push_remote_branch", data.optString("remote_branch"));
+            String target = remote.isEmpty() ? ui.t("No Git remote configured") : remote + "/" + branch;
             remoteTarget.setText(target);
             remoteTarget.setContentDescription(remoteTarget.getText());
-            boolean upstream = !data.optString("upstream").isEmpty(), fetch = remoteAction.equals("fetch");
-            remoteBehind.setVisibility(upstream ? VISIBLE : GONE); remoteBehind.setText(String.valueOf(data.optInt("behind")));
+            boolean upstream = !(fetch ? data.optString("upstream") : pushUpstream()).isEmpty();
+            remoteBehind.setVisibility(!data.optString("upstream").isEmpty() ? VISIBLE : GONE); remoteBehind.setText(String.valueOf(data.optInt("behind")));
             String label = ui.t(fetch ? "Fetch" : upstream ? "Push" : "Publish branch");
-            remoteButton.setText((upstream ? data.optInt(fetch ? "behind" : "ahead") + " " : "") + label); remoteButton.setContentDescription(label);
+            remoteButton.setText((upstream ? (fetch ? data.optInt("behind") : data.optInt("push_ahead", data.optInt("ahead"))) + " " : "") + label); remoteButton.setContentDescription(label);
             remoteButton.setCompoundDrawablesRelative(NativeIcons.drawable(ui.context, fetch ? "arrow_down" : "arrow_up", ui.text, ui.dp(12)), null, null, null);
-            remoteButton.setEnabled(fetch ? canRemote() : canPush()); remoteToggle.setEnabled(canRemote());
+            remoteButton.setEnabled(fetch ? canFetch() : canPush()); remoteToggle.setEnabled(canRemote());
             if (!canRemote()) dismissRemote();
             remoteNotice.setVisibility(!remote.isEmpty() && !data.optBoolean("remote_allowed") ? VISIBLE : GONE);
         }
@@ -376,15 +378,18 @@ final class NativeGitPanel extends LinearLayout {
         JSONObject latest = data == null ? null : data.optJSONObject("last_commit");
         lastCommit.bind(latest);
     }
-    private boolean canRemote() { return active && writable() && data.optBoolean("remote_allowed") && !data.optString("remote").isEmpty(); }
-    private boolean canPush() { return canRemote() && !data.optString("branch").isEmpty() && !data.optString("commit").isEmpty(); }
+    private String pushRemote() { return data == null ? "" : data.optString("push_remote", data.optString("remote")); }
+    private String pushUpstream() { return data == null ? "" : data.optString("push_upstream", data.optString("upstream")); }
+    private boolean canRemote() { return active && writable() && data.optBoolean("remote_allowed") && (!data.optString("remote").isEmpty() || !pushRemote().isEmpty()); }
+    private boolean canFetch() { return canRemote() && !data.optString("remote").isEmpty(); }
+    private boolean canPush() { return canRemote() && !pushRemote().isEmpty() && !data.optString("branch").isEmpty() && !data.optString("commit").isEmpty(); }
     private void dismissRemote() { if (remoteMenu != null) { remoteMenu.dismiss(); remoteMenu = null; } }
     private void showRemote() {
         if (!canRemote()) return;
         if (remoteMenu != null && remoteMenu.isShowing()) { dismissRemote(); return; }
         NativePopover menu = new NativePopover(ui, 180, 10, 5); remoteMenu = menu;
-        remoteOption(menu, "push", ui.t(data.optString("upstream").isEmpty() ? "Publish branch" : "Push"), "arrow_up", canPush());
-        remoteOption(menu, "fetch", ui.t("Fetch"), "arrow_down", true);
+        remoteOption(menu, "push", ui.t(pushUpstream().isEmpty() ? "Publish branch" : "Push"), "arrow_up", canPush());
+        remoteOption(menu, "fetch", ui.t("Fetch"), "arrow_down", canFetch());
         menu.dismissed = () -> { if (remoteMenu == menu) remoteMenu = null; };
         menu.showSelect(remoteToggle, remoteAction.equals("fetch") ? 1 : 0);
     }
@@ -403,7 +408,8 @@ final class NativeGitPanel extends LinearLayout {
         try {
             body.put("action", action).put("paths", paths).put("message", action.equals("commit") ? commitInput.getText().toString() : "")
                 .put("branch", snapshot.optString("branch")).put("head", snapshot.optString("commit")).put("index", snapshot.optString("index"))
-                .put("remote", snapshot.optString("remote")).put("remote_branch", snapshot.optString("remote_branch"));
+                .put("remote", action.equals("push") ? snapshot.optString("push_remote", snapshot.optString("remote")) : snapshot.optString("remote"))
+                .put("remote_branch", action.equals("push") ? snapshot.optString("push_remote_branch", snapshot.optString("remote_branch")) : snapshot.optString("remote_branch"));
         } catch (org.json.JSONException impossible) { throw new IllegalStateException(impossible); }
         operation = action; operationError = ""; int token = ++operationRequest, epoch = state.epoch;
         String address = path("changes"); render();

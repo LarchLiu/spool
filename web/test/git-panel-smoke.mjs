@@ -343,6 +343,41 @@ try {
       throw error;
     } finally { await context.close(); }
   }
+  {
+    const context = await browser.newContext({ viewport: { width: 390, height: 900 }, serviceWorkers: "block" });
+    const page = await context.newPage(), writes = [];
+    const listing = { repository: true, writable: true, remote_allowed: true, branch: "dev", commit, index: "snapshot", files: [], commits: [],
+      remote: "origin", remote_branch: "main", upstream: "origin/main", push_remote: "fork", push_remote_branch: "dev", push_upstream: "", push_ahead: 0 };
+    try {
+      page.setDefaultTimeout(10000);
+      await page.route("**/api/**", route => {
+        if (route.request().method() === "POST") {
+          writes.push(route.request().postDataJSON());
+          return route.fulfill({ json: { ok: true } });
+        }
+        return route.fulfill({ json: new URL(route.request().url()).pathname.endsWith("/git") ? listing : { entries: [] } });
+      });
+      await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__git-panel?theme=light`);
+      await page.getByRole("tab", { name: "Git panel", exact: true }).click();
+      await page.locator(".git-remote-name").getByText("fork/dev", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Publish branch", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector(".git-remote-split > button").disabled);
+      assert.equal(writes[0].remote, "fork"); assert.equal(writes[0].remote_branch, "dev");
+      await page.getByRole("button", { name: "Git remote actions", exact: true }).click();
+      await page.getByRole("option", { name: "Fetch", exact: true }).click();
+      await page.locator(".git-remote-name").getByText("origin/main", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Fetch", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector(".git-remote-split > button").disabled);
+      assert.equal(writes[1].remote, "origin"); assert.equal(writes[1].remote_branch, "main");
+      listing.push_remote = "";
+      await Promise.all([page.waitForResponse(response => new URL(response.url()).searchParams.get("view") === "changes"), page.getByRole("button", { name: "Refresh Git information", exact: true }).click()]);
+      await page.getByRole("button", { name: "Git remote actions", exact: true }).click();
+      assert.equal(await page.getByRole("option", { name: "Publish branch", exact: true }).isDisabled(), true);
+      await page.keyboard.press("Escape");
+      assert.equal(await page.getByRole("button", { name: "Fetch", exact: true }).isEnabled(), true);
+      reports.push({ remoteTargets: true, passed: true });
+    } finally { await context.close(); }
+  }
   for (const [width, theme] of [[390, "light"], [1280, "dark"]]) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: "block" });
     const page = await context.newPage(), pollRequests = [], errors = [];

@@ -400,15 +400,22 @@ export function GitPanel({
   const additions = files.reduce((sum, file) => sum + file.additions, 0);
   const deletions = files.reduce((sum, file) => sum + file.deletions, 0);
   const staged = files.filter((file) => file.staged);
+  const pushRemote = data?.push_remote ?? data?.remote;
+  const pushBranch = data?.push_remote_branch ?? data?.remote_branch;
+  const pushUpstream = data?.push_upstream ?? data?.upstream;
+  const targetRemote = remoteAction === "fetch" ? data?.remote : pushRemote;
+  const targetBranch =
+    remoteAction === "fetch" ? data?.remote_branch : pushBranch;
   const canRemote = !!(
     active &&
     !operation &&
     data?.writable &&
     data.remote_allowed &&
-    data.remote
+    (data.remote || pushRemote)
   );
-  const canPush = !!(canRemote && data?.branch && data.commit);
-  const pushLabel = t(data?.upstream ? "Push" : "Publish branch");
+  const canFetch = !!(canRemote && data?.remote);
+  const canPush = !!(canRemote && pushRemote && data?.branch && data.commit);
+  const pushLabel = t(pushUpstream ? "Push" : "Publish branch");
   const remoteLabel = remoteAction === "fetch" ? t("Fetch") : pushLabel;
   function isUnstaged(file: GitFile) {
     return (
@@ -429,8 +436,14 @@ export function GitPanel({
         branch: snapshot.branch || "",
         head: snapshot.commit || "",
         index: snapshot.index,
-        remote: snapshot.remote,
-        remote_branch: snapshot.remote_branch,
+        remote:
+          action === "push"
+            ? (snapshot.push_remote ?? snapshot.remote)
+            : snapshot.remote,
+        remote_branch:
+          action === "push"
+            ? (snapshot.push_remote_branch ?? snapshot.remote_branch)
+            : snapshot.remote_branch,
       });
       if (!mounted.current) return;
       if (action === "commit") {
@@ -940,14 +953,14 @@ export function GitPanel({
             <span
               className="git-remote-target"
               title={
-                data.remote
-                  ? `${data.remote}/${data.remote_branch || ""}`
+                targetRemote
+                  ? `${targetRemote}/${targetBranch || ""}`
                   : t("No Git remote configured")
               }
             >
               <span className="git-remote-name">
-                {data.remote
-                  ? `${data.remote}/${data.remote_branch || ""}`
+                {targetRemote
+                  ? `${targetRemote}/${targetBranch || ""}`
                   : t("No Git remote configured")}
               </span>
               {data.upstream && (
@@ -959,7 +972,7 @@ export function GitPanel({
             </span>
             <div className="git-remote-split">
               <FilePanelButton
-                disabled={remoteAction === "fetch" ? !canRemote : !canPush}
+                disabled={remoteAction === "fetch" ? !canFetch : !canPush}
                 aria-label={remoteLabel}
                 onClick={() => void mutate(remoteAction)}
               >
@@ -968,9 +981,11 @@ export function GitPanel({
                 ) : (
                   <ArrowUp size={12} aria-hidden="true" />
                 )}
-                {data.upstream && (
+                {(remoteAction === "fetch" ? data.upstream : pushUpstream) && (
                   <span aria-hidden="true">
-                    {(remoteAction === "fetch" ? data.behind : data.ahead) || 0}
+                    {(remoteAction === "fetch"
+                      ? data.behind
+                      : (data.push_ahead ?? data.ahead)) || 0}
                   </span>
                 )}
                 {remoteLabel}
@@ -989,6 +1004,7 @@ export function GitPanel({
                   {
                     value: "fetch",
                     label: t("Fetch"),
+                    disabled: !canFetch,
                     icon: <ArrowDown size={14} aria-hidden="true" />,
                   },
                 ]}

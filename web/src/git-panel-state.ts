@@ -33,6 +33,10 @@ export type GitView = {
   index?: string;
   remote?: string;
   remote_branch?: string;
+  push_remote?: string;
+  push_remote_branch?: string;
+  push_upstream?: string;
+  push_ahead?: number;
   upstream?: string;
   ahead?: number;
   behind?: number;

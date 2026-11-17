@@ -54,6 +54,10 @@ type workspaceGitView struct {
 	Index          string               `json:"index,omitempty"`
 	Remote         string               `json:"remote,omitempty"`
 	RemoteBranch   string               `json:"remote_branch,omitempty"`
+	PushRemote     string               `json:"push_remote"`
+	PushBranch     string               `json:"push_remote_branch"`
+	PushUpstream   string               `json:"push_upstream"`
+	PushAhead      int                  `json:"push_ahead"`
 	Upstream       string               `json:"upstream,omitempty"`
 	Ahead          int                  `json:"ahead"`
 	Behind         int                  `json:"behind"`

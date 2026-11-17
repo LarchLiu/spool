@@ -20,7 +20,7 @@ test("lazy tool summaries preserve labels, pairing, icons and change counts with
   const html = renderToStaticMarkup(createElement(ToolActivityList, { parts: [input, result], backend: "codex", t, live: true }));
   assert.match(html, /Created src\/a.go/);
   assert.match(html, /lucide-file-plus/);
-  assert.match(html, /\+20 -3/);
+  assert.match(html.replace(/<[^>]*>/g, ""), /\+20 -3/);
   assert.doesNotMatch(html, /tool-detail-block/);
   const detail = renderToStaticMarkup(createElement(ActivityDetail, { activity: activities[0], t }));
   assert.match(detail, /Command/); assert.match(detail, /Result/);

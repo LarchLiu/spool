@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -114,6 +115,138 @@ func workspaceGitMetadata(ctx context.Context, directory string, view *workspace
 		view.Remote = ""
 		view.RemoteBranch = ""
 	}
+	// A fork may fetch from its upstream and push to a different remote. Keep
+	// these targets separate, following Git's push-remote precedence.
+	view.PushRemote, view.PushBranch = view.Remote, view.RemoteBranch
+	pushRemote := run("config", "--get", "branch."+view.Branch+".pushRemote")
+	if pushRemote == "" {
+		pushRemote = run("config", "--get", "remote.pushDefault")
+	}
+	if pushRemote != "" {
+		view.PushRemote = ""
+		for _, remote := range remotes {
+			if remote == pushRemote {
+				view.PushRemote = remote
+			}
+		}
+		if pushRemote != view.Remote {
+			view.PushBranch = view.Branch
+		}
+	}
+	if view.PushRemote == "" {
+		view.PushBranch = ""
+	} else if view.PushBranch != "" {
+		tracking := "refs/remotes/" + view.PushRemote + "/" + view.PushBranch
+		if run("rev-parse", "--verify", tracking) != "" {
+			view.PushUpstream = view.PushRemote + "/" + view.PushBranch
+			view.PushAhead, _ = strconv.Atoi(run("rev-list", "--count", tracking+"..HEAD"))
+		}
+	}
+}
+
+// Hold Git's normal index lock across validation and the write. Git commands
+// operate on the lock file as an alternate index, then publish it by rename.
+// Ordinary external add/commit/checkout commands therefore cannot invalidate a
+// checked snapshot while metadata, filters or hooks are running.
+type workspaceGitIndexLock struct{ path, target string }
+
+func lockWorkspaceGitIndex(ctx context.Context, directory string) (*workspaceGitIndexLock, error) {
+	body, err := readWorkspaceGit(ctx, directory, 4096, "rev-parse", "--path-format=absolute", "--git-path", "index")
+	if err != nil {
+		return nil, fmt.Errorf("Git index is unavailable")
+	}
+	target := strings.TrimSpace(string(body))
+	lock := &workspaceGitIndexLock{target + ".lock", target}
+	file, err := os.OpenFile(lock.path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0666)
+	if err != nil {
+		return nil, fmt.Errorf("Git index is busy. Wait for other Git operations and refresh the panel.")
+	}
+	index, err := os.Open(target)
+	missing := os.IsNotExist(err)
+	if err == nil {
+		_, err = io.Copy(file, index)
+		_ = index.Close()
+	}
+	closeErr := file.Close()
+	if missing {
+		err = runWorkspaceGitOperationWithIndex(ctx, directory, "", lock.path, "read-tree", "--empty")
+	}
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		lock.close()
+		return nil, fmt.Errorf("Git index is unavailable: %w", err)
+	}
+	return lock, nil
+}
+
+func (lock *workspaceGitIndexLock) close() {
+	if lock.path != "" {
+		_ = os.Remove(lock.path + ".lock")
+		_ = os.Remove(lock.path)
+	}
+}
+
+func (lock *workspaceGitIndexLock) publish() error {
+	if err := os.Rename(lock.path, lock.target); err != nil {
+		return fmt.Errorf("Git index could not be updated. Refresh the Git panel: %w", err)
+	}
+	lock.path = ""
+	return nil
+}
+
+// Literal pathspecs still match directory descendants in the index and HEAD.
+// Validate their complete expansion, then allow physical directories only for
+// exact gitlink entries (a submodule pointer is one index item).
+func validateWorkspaceGitIndexPaths(ctx context.Context, directory, head string, paths []string) error {
+	changed := fmt.Errorf("The selected files changed. Choose individual files and refresh the Git panel.")
+	root, _ := gitWorkspace(directory)
+	selected, gitlinks := map[string]bool{}, map[string]bool{}
+	for _, path := range paths {
+		selected[path] = true
+	}
+	index, err := readWorkspaceGit(ctx, directory, 16*1024*1024, append([]string{"ls-files", "--stage", "--full-name", "-z", "--"}, paths...)...)
+	if err != nil {
+		return changed
+	}
+	check := func(body []byte) error {
+		for _, entry := range strings.Split(string(body), "\x00") {
+			if entry == "" {
+				continue
+			}
+			metadata, name, ok := strings.Cut(entry, "\t")
+			fields := strings.Fields(metadata)
+			relative, err := filepath.Rel(directory, filepath.Join(root, name))
+			path := filepath.ToSlash(relative)
+			if !ok || len(fields) != 3 || err != nil || !selected[path] {
+				return changed
+			}
+			if fields[0] == "160000" {
+				gitlinks[path] = true
+			}
+		}
+		return nil
+	}
+	if err := check(index); err != nil {
+		return err
+	}
+	if head != "" {
+		body, err := readWorkspaceGit(ctx, directory, 16*1024*1024, append([]string{"ls-tree", "-r", "--full-name", "-z", head, "--"}, paths...)...)
+		if err != nil {
+			return changed
+		}
+		if err := check(body); err != nil {
+			return err
+		}
+	}
+	for _, path := range paths {
+		info, err := os.Lstat(filepath.Join(directory, filepath.FromSlash(path)))
+		if err != nil && !os.IsNotExist(err) || info != nil && info.IsDir() && !gitlinks[path] {
+			return changed
+		}
+	}
+	return nil
 }
 
 type workspaceGitOperation struct {
@@ -185,6 +318,10 @@ func (out *gitOperationOutput) Write(p []byte) (int, error) {
 var gitCredentialURL = regexp.MustCompile(`(https?://)[^\s/@]+(?::[^\s/@]*)?@`)
 
 func runWorkspaceGitOperation(ctx context.Context, directory, message string, args ...string) error {
+	return runWorkspaceGitOperationWithIndex(ctx, directory, message, "", args...)
+}
+
+func runWorkspaceGitOperationWithIndex(ctx context.Context, directory, message, index string, args ...string) error {
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	base := []string{"-c", "color.ui=false", "-c", "credential.interactive=false"}
@@ -199,6 +336,9 @@ func runWorkspaceGitOperation(ctx context.Context, directory, message string, ar
 		}
 	}
 	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0", "GIT_LITERAL_PATHSPECS=1", "GIT_EDITOR=true", "SSH_ASKPASS_REQUIRE=never")
+	if index != "" {
+		cmd.Env = append(cmd.Env, "GIT_INDEX_FILE="+index)
+	}
 	if message != "" {
 		cmd.Stdin = strings.NewReader(message)
 	}
@@ -240,6 +380,17 @@ func (a *App) mutateWorkspaceGit(w http.ResponseWriter, r *http.Request, directo
 		return
 	}
 	defer release()
+	var indexLock *workspaceGitIndexLock
+	index := ""
+	if input.Action != "fetch" && input.Action != "push" {
+		indexLock, err = lockWorkspaceGitIndex(ctx, directory)
+		if err != nil {
+			apiError(w, 409, err.Error())
+			return
+		}
+		defer indexLock.close()
+		index = indexLock.path
+	}
 	view := workspaceGitView{}
 	_, view.Branch, _ = workspaceGitState(directory)
 	if head, err := readWorkspaceGit(ctx, directory, 1024, "rev-parse", "--verify", "HEAD"); err == nil {
@@ -297,7 +448,7 @@ func (a *App) mutateWorkspaceGit(w http.ResponseWriter, r *http.Request, directo
 				}
 				matched = true
 				names := []string{path}
-				if input.Action == "unstage" || input.Action == "stage" && !file.Staged {
+				if strings.Contains(file.Status, "R") && (input.Action == "unstage" || input.Action == "stage" && !file.Staged) {
 					names = append(names, file.PreviousPath)
 				}
 				for _, name := range names {
@@ -317,28 +468,23 @@ func (a *App) mutateWorkspaceGit(w http.ResponseWriter, r *http.Request, directo
 			return
 		}
 		if input.Action == "discard" {
-			if err := discardWorkspaceGit(ctx, directory, root, paths); err != nil {
+			if err := discardWorkspaceGit(ctx, directory, root, index, paths); err != nil {
 				apiError(w, 409, err.Error())
 				return
 			}
 			apiJSON(w, 200, map[string]bool{"ok": true})
 			return
 		}
-		// Git pathspecs recurse even in literal mode. Reject directory replacements
-		// (including rename sources) before any index write can touch descendants.
-		for _, path := range paths {
-			info, err := os.Lstat(filepath.Join(directory, filepath.FromSlash(path)))
-			if err != nil && !os.IsNotExist(err) || info != nil && info.IsDir() {
-				apiError(w, 409, "The selected files changed. Choose individual files and refresh the Git panel.")
-				return
-			}
+		if err := validateWorkspaceGitIndexPaths(ctx, directory, view.Commit, paths); err != nil {
+			apiError(w, 409, err.Error())
+			return
 		}
 		args = []string{"add", "--all", "--"}
 		if input.Action == "unstage" {
 			if view.Commit == "" {
 				args = []string{"rm", "--cached", "--force", "-r", "--ignore-unmatch", "--"}
 			} else {
-				args = []string{"reset", "--quiet", "HEAD", "--"}
+				args = []string{"reset", "--quiet", view.Commit, "--"}
 			}
 		}
 		args = append(args, paths...)
@@ -369,7 +515,11 @@ func (a *App) mutateWorkspaceGit(w http.ResponseWriter, r *http.Request, directo
 			apiError(w, 403, "This project does not grant access to the repository root")
 			return
 		}
-		if view.Remote == "" || input.Remote != view.Remote || input.RemoteBranch != view.RemoteBranch {
+		remote, branch := view.Remote, view.RemoteBranch
+		if input.Action == "push" {
+			remote, branch = view.PushRemote, view.PushBranch
+		}
+		if remote == "" || input.Remote != remote || input.RemoteBranch != branch {
 			apiError(w, 409, "The Git remote changed. Refresh the Git panel.")
 			return
 		}
@@ -380,16 +530,34 @@ func (a *App) mutateWorkspaceGit(w http.ResponseWriter, r *http.Request, directo
 				apiError(w, 409, "Choose a branch with commits before pushing")
 				return
 			}
-			args = []string{"push", "--porcelain", "--recurse-submodules=no", "--no-follow-tags"}
-			if view.Upstream == "" {
-				args = append(args, "--set-upstream")
-			}
-			args = append(args, "--", view.Remote, "HEAD:refs/heads/"+view.RemoteBranch)
+			args = []string{"push", "--porcelain", "--recurse-submodules=no", "--no-follow-tags", "--", remote, view.Commit + ":refs/heads/" + branch}
 		}
 	}
-	if err := runWorkspaceGitOperation(ctx, directory, input.Message, args...); err != nil {
+	// Metadata queries can be slow. Recheck refs after them; the index lock
+	// protects ordinary checkouts, and push additionally pins its source SHA.
+	_, branch, _ := workspaceGitState(directory)
+	head, _ := readWorkspaceGit(ctx, directory, 1024, "rev-parse", "--verify", "HEAD")
+	if branch != input.Branch || strings.TrimSpace(string(head)) != input.Head {
+		apiError(w, 409, "The Git branch changed. Refresh the Git panel and try again.")
+		return
+	}
+	if err := runWorkspaceGitOperationWithIndex(ctx, directory, input.Message, index, args...); err != nil {
 		apiError(w, 409, err.Error())
 		return
+	}
+	if indexLock != nil {
+		if err := indexLock.publish(); err != nil {
+			apiError(w, 409, err.Error())
+			return
+		}
+	}
+	if input.Action == "push" && view.Upstream == "" && view.PushRemote == view.Remote {
+		// The source refspec is an immutable SHA, so --set-upstream cannot infer
+		// the local branch. Name it explicitly, independent of the current HEAD.
+		if err := runWorkspaceGitOperation(ctx, directory, "", "branch", "--set-upstream-to="+view.PushRemote+"/"+view.PushBranch, "--", input.Branch); err != nil {
+			apiError(w, 409, "Push succeeded, but tracking could not be configured. Refresh the Git panel: "+err.Error())
+			return
+		}
 	}
 	apiJSON(w, 200, map[string]bool{"ok": true})
 }
@@ -397,7 +565,7 @@ func (a *App) mutateWorkspaceGit(w http.ResponseWriter, r *http.Request, directo
 // Restore tracked files from the index, preserving staged changes. Remove only
 // exact untracked files; never recurse through directories or nested repositories.
 // Validate the entire batch before touching any working files.
-func discardWorkspaceGit(ctx context.Context, directory, repository string, paths []string) error {
+func discardWorkspaceGit(ctx context.Context, directory, repository, index string, paths []string) error {
 	body, err := readWorkspaceGit(ctx, directory, 4*1024*1024, append([]string{"ls-files", "--stage", "--full-name", "-z", "--"}, paths...)...)
 	if err != nil {
 		return fmt.Errorf("Git index is unavailable")
@@ -439,7 +607,7 @@ func discardWorkspaceGit(ctx context.Context, directory, repository string, path
 		}
 	}
 	if len(restore) > 0 {
-		if err := runWorkspaceGitOperation(ctx, directory, "", append([]string{"restore", "--worktree", "--"}, restore...)...); err != nil {
+		if err := runWorkspaceGitOperationWithIndex(ctx, directory, "", index, append([]string{"restore", "--worktree", "--"}, restore...)...); err != nil {
 			return err
 		}
 	}

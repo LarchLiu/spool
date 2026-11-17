@@ -6,10 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	chatmodel "spool/internal/model"
 )
@@ -54,7 +57,11 @@ func (f gitOperationFixture) post(input workspaceGitOperation) *httptest.Respons
 }
 func (f gitOperationFixture) operation(action, message string, paths ...string) *httptest.ResponseRecorder {
 	view := f.view()
-	return f.post(workspaceGitOperation{Action: action, Message: message, Paths: paths, Branch: view.Branch, Head: view.Commit, Index: view.Index, Remote: view.Remote, RemoteBranch: view.RemoteBranch})
+	remote, branch := view.Remote, view.RemoteBranch
+	if action == "push" {
+		remote, branch = view.PushRemote, view.PushBranch
+	}
+	return f.post(workspaceGitOperation{Action: action, Message: message, Paths: paths, Branch: view.Branch, Head: view.Commit, Index: view.Index, Remote: remote, RemoteBranch: branch})
 }
 func requireGitOperation(t *testing.T, response *httptest.ResponseRecorder) {
 	t.Helper()
@@ -163,6 +170,312 @@ func TestWorkspaceGitOperationsRejectDirectoryReplacementsBeforeChangingIndex(t 
 	}
 	if got := f.view().Index; got != index {
 		t.Fatal("unstaging a rename changed protected descendants")
+	}
+}
+
+func TestWorkspaceGitOperationsRejectIndexAndHeadDescendants(t *testing.T) {
+	for _, action := range []string{"stage", "unstage"} {
+		t.Run(action, func(t *testing.T) {
+			f := newGitOperationFixture(t)
+			writeSessionFile(t, f.directory, "node/.env", "PRIVATE=synthetic\n")
+			writeSessionFile(t, f.directory, "node/visible.txt", "unselected\n")
+			writeSessionFile(t, f.directory, "other.txt", "original\n")
+			sessionFileGit(t, f.directory, "add", "-f", ".")
+			sessionFileGit(t, f.directory, "commit", "-m", "initial")
+			if err := os.RemoveAll(filepath.Join(f.directory, "node")); err != nil {
+				t.Fatal(err)
+			}
+			writeSessionFile(t, f.directory, "node", "replacement\n")
+			writeSessionFile(t, f.directory, "other.txt", "modified\n")
+			if action == "unstage" {
+				sessionFileGit(t, f.directory, "add", "--all", ".")
+			}
+			before := f.view().Index
+			response := f.operation(action, "", "other.txt", "node")
+			if response.Code != 409 || f.view().Index != before {
+				t.Fatalf("%s changed a rejected batch: %d %s", action, response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestWorkspaceGitOperationsUnstageCopyPreservesSource(t *testing.T) {
+	f := newGitOperationFixture(t)
+	original := "original first\noriginal second\noriginal third\noriginal fourth\n"
+	writeSessionFile(t, f.directory, "source.txt", original)
+	requireGitOperation(t, f.operation("stage", "", "source.txt"))
+	requireGitOperation(t, f.operation("commit", "initial"))
+	sessionFileGit(t, f.directory, "config", "status.renames", "copies")
+	writeSessionFile(t, f.directory, "copy.txt", original)
+	writeSessionFile(t, f.directory, "source.txt", original+"source-only change\n")
+	sessionFileGit(t, f.directory, "add", ".")
+	view := f.view()
+	if len(view.Files) != 2 || view.Files[0].Status != "C" {
+		t.Fatalf("copy was not detected: %+v", view.Files)
+	}
+	requireGitOperation(t, f.operation("unstage", "", "copy.txt"))
+	if got := sessionFileGit(t, f.directory, "diff", "--cached", "--name-status"); got != "M\tsource.txt" {
+		t.Fatalf("unstaging a copy affected its source: %s", got)
+	}
+	if got := sessionFileGit(t, f.directory, "show", ":source.txt"); got != strings.TrimSpace(original+"source-only change\n") {
+		t.Fatalf("source index content changed: %s", got)
+	}
+}
+
+func TestWorkspaceGitOperationsSubmodulePointer(t *testing.T) {
+	f := newGitOperationFixture(t)
+	submodule := filepath.Join(f.directory, "module")
+	writeSessionFile(t, submodule, "a.txt", "initial\n")
+	sessionFileGit(t, submodule, "init", "-b", "main")
+	sessionFileGit(t, submodule, "add", ".")
+	sessionFileGit(t, submodule, "commit", "-m", "initial")
+	original := sessionFileGit(t, submodule, "rev-parse", "HEAD")
+	sessionFileGit(t, f.directory, "update-index", "--add", "--cacheinfo", "160000,"+original+",module")
+	sessionFileGit(t, f.directory, "commit", "-m", "add submodule")
+	writeSessionFile(t, submodule, "a.txt", "updated\n")
+	sessionFileGit(t, submodule, "add", ".")
+	sessionFileGit(t, submodule, "commit", "-m", "update submodule")
+	updated := sessionFileGit(t, submodule, "rev-parse", "HEAD")
+	requireGitOperation(t, f.operation("stage", "", "module"))
+	if got := sessionFileGit(t, f.directory, "ls-files", "--stage", "module"); !strings.Contains(got, "160000 "+updated) {
+		t.Fatalf("submodule update not staged: %s", got)
+	}
+	requireGitOperation(t, f.operation("unstage", "", "module"))
+	if got := sessionFileGit(t, f.directory, "ls-files", "--stage", "module"); !strings.Contains(got, "160000 "+original) {
+		t.Fatalf("submodule update not unstaged: %s", got)
+	}
+	if got := sessionFileGit(t, submodule, "rev-parse", "HEAD"); got != updated {
+		t.Fatalf("unstage moved the submodule working copy: %s", got)
+	}
+	sessionFileGit(t, f.directory, "rm", "--cached", "module")
+	requireGitOperation(t, f.operation("unstage", "", "module"))
+	if got := sessionFileGit(t, f.directory, "ls-files", "--stage", "module"); !strings.Contains(got, "160000 "+original) {
+		t.Fatalf("submodule deletion not unstaged: %s", got)
+	}
+}
+
+func TestWorkspaceGitOperationsSeparateFetchAndPushRemotes(t *testing.T) {
+	for _, setting := range []string{"branch.dev.pushRemote", "remote.pushDefault"} {
+		t.Run(setting, func(t *testing.T) {
+			f := newGitOperationFixture(t)
+			origin, fork := t.TempDir(), t.TempDir()
+			sessionFileGit(t, origin, "init", "--bare")
+			sessionFileGit(t, fork, "init", "--bare")
+			sessionFileGit(t, f.directory, "remote", "add", "origin", origin)
+			sessionFileGit(t, f.directory, "remote", "add", "fork", fork)
+			writeSessionFile(t, f.directory, "a.txt", "initial\n")
+			sessionFileGit(t, f.directory, "add", ".")
+			sessionFileGit(t, f.directory, "commit", "-m", "initial")
+			sessionFileGit(t, f.directory, "push", "-u", "origin", "dev")
+			initial := f.view().Commit
+			sessionFileGit(t, f.directory, "config", setting, "fork")
+			if setting == "branch.dev.pushRemote" {
+				sessionFileGit(t, f.directory, "config", "remote.pushDefault", "origin")
+			}
+			writeSessionFile(t, f.directory, "a.txt", "update\n")
+			requireGitOperation(t, f.operation("stage", "", "a.txt"))
+			requireGitOperation(t, f.operation("commit", "update"))
+			view := f.view()
+			if view.Remote != "origin" || view.PushRemote != "fork" || view.PushBranch != "dev" {
+				t.Fatalf("incorrect remote targets: %+v", view)
+			}
+			response := f.post(workspaceGitOperation{Action: "push", Branch: view.Branch, Head: view.Commit, Remote: "origin", RemoteBranch: "dev"})
+			if response.Code != 409 {
+				t.Fatalf("accepted obsolete push target: %d %s", response.Code, response.Body.String())
+			}
+			requireGitOperation(t, f.operation("push", ""))
+			if got := sessionFileGit(t, origin, "rev-parse", "refs/heads/dev"); got != initial {
+				t.Fatal("fork push changed upstream repository")
+			}
+			if got := sessionFileGit(t, fork, "rev-parse", "refs/heads/dev"); got != view.Commit {
+				t.Fatalf("fork was not updated: %s", got)
+			}
+			if got := sessionFileGit(t, f.directory, "config", "branch.dev.remote"); got != "origin" {
+				t.Fatalf("push replaced fetch upstream: %s", got)
+			}
+			view = f.view()
+			if view.PushUpstream != "fork/dev" || view.PushAhead != 0 {
+				t.Fatalf("push tracking state: %+v", view)
+			}
+			// A commit present only at origin must be fetched from origin, even
+			// though the panel's default action now targets the fork.
+			other := t.TempDir()
+			sessionFileGit(t, other, "clone", "-b", "dev", origin, ".")
+			writeSessionFile(t, other, "upstream.txt", "upstream\n")
+			sessionFileGit(t, other, "add", ".")
+			sessionFileGit(t, other, "commit", "-m", "upstream update")
+			sessionFileGit(t, other, "push")
+			requireGitOperation(t, f.operation("fetch", ""))
+			if f.view().Behind != 1 {
+				t.Fatal("fetch did not use the original upstream")
+			}
+		})
+	}
+}
+
+// Pause a real Git command at an observable boundary. Other commands continue
+// normally, so tests exercise external Git against the actual index lock.
+func pauseGitOperation(t *testing.T, command string) (func(), func()) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Git command pause uses a POSIX shell")
+	}
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := t.TempDir()
+	entered, release := filepath.Join(tools, "entered"), filepath.Join(tools, "release")
+	script := "#!/bin/sh\ncase \" $* \" in *\" " + command + " \"*) touch \"$SPOOL_GIT_TEST_ENTERED\"; while [ ! -f \"$SPOOL_GIT_TEST_RELEASE\" ]; do sleep 0.02; done;; esac\nexec \"$SPOOL_GIT_TEST_BINARY\" \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(tools, "git"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SPOOL_GIT_TEST_BINARY", realGit)
+	t.Setenv("SPOOL_GIT_TEST_ENTERED", entered)
+	t.Setenv("SPOOL_GIT_TEST_RELEASE", release)
+	t.Setenv("PATH", tools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	unblock := func() { _ = os.WriteFile(release, nil, 0600) }
+	t.Cleanup(unblock)
+	return func() {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(entered); err == nil {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatal("Git operation did not reach the pause")
+	}, unblock
+}
+
+func TestWorkspaceGitOperationsCommitLocksReviewedIndex(t *testing.T) {
+	for _, pause := range []string{"log", "commit"} {
+		t.Run(pause, func(t *testing.T) {
+			f := newGitOperationFixture(t)
+			writeSessionFile(t, f.directory, "a.txt", "initial\n")
+			sessionFileGit(t, f.directory, "add", ".")
+			sessionFileGit(t, f.directory, "commit", "-m", "initial")
+			writeSessionFile(t, f.directory, "a.txt", "reviewed\n")
+			sessionFileGit(t, f.directory, "add", ".")
+			view := f.view()
+			wait, release := pauseGitOperation(t, pause)
+			body, _ := json.Marshal(workspaceGitOperation{Action: "commit", Message: "reviewed", Branch: view.Branch, Head: view.Commit, Index: view.Index})
+			done := make(chan *httptest.ResponseRecorder, 1)
+			finished := make(chan struct{})
+			go func() {
+				defer close(finished)
+				done <- apiRequest(f.app, "POST", f.base, string(body), f.cookie, f.csrf)
+			}()
+			t.Cleanup(func() { release(); <-finished })
+			wait()
+			writeSessionFile(t, f.directory, "a.txt", "unreviewed\n")
+			cmd := exec.Command("git", "add", "a.txt")
+			cmd.Dir = f.directory
+			if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "index.lock") {
+				t.Fatalf("external Git changed the locked index: %v %s", err, out)
+			}
+			release()
+			response := <-done
+			requireGitOperation(t, response)
+			if got := sessionFileGit(t, f.directory, "show", "HEAD:a.txt"); got != "reviewed" {
+				t.Fatalf("committed a different snapshot: %s", got)
+			}
+			if got, _ := os.ReadFile(filepath.Join(f.directory, "a.txt")); string(got) != "unreviewed\n" {
+				t.Fatal("commit changed the working file")
+			}
+			// Completion must release the real Git lock as well.
+			sessionFileGit(t, f.directory, "add", "a.txt")
+		})
+	}
+}
+
+func TestWorkspaceGitOperationsIndexLockCleanup(t *testing.T) {
+	f := newGitOperationFixture(t)
+	writeSessionFile(t, f.directory, "a.txt", "reviewed\n")
+	lock := filepath.Join(f.directory, ".git", "index.lock")
+	if err := os.WriteFile(lock, []byte("another Git operation"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	response := f.operation("stage", "", "a.txt")
+	if response.Code != 409 {
+		t.Fatalf("accepted an existing index lock: %d %s", response.Code, response.Body.String())
+	}
+	if body, _ := os.ReadFile(lock); string(body) != "another Git operation" {
+		t.Fatal("removed or modified another operation's lock")
+	}
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	requireGitOperation(t, f.operation("stage", "", "a.txt"))
+	if runtime.GOOS == "windows" {
+		return // The remaining check uses a POSIX Git hook.
+	}
+	hook := writeSessionFile(t, f.directory, ".git/hooks/pre-commit", "#!/bin/sh\nexit 1\n")
+	if err := os.Chmod(hook, 0700); err != nil {
+		t.Fatal(err)
+	}
+	before := f.view().Index
+	if response := f.operation("commit", "hook rejected"); response.Code != 409 || f.view().Index != before {
+		t.Fatalf("failed commit changed the index: %d %s", response.Code, response.Body.String())
+	}
+	for _, path := range []string{lock, lock + ".lock"} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("failed operation left its lock: %s: %v", path, err)
+		}
+	}
+	if err := os.Remove(hook); err != nil {
+		t.Fatal(err)
+	}
+	requireGitOperation(t, f.operation("commit", "retry after hook failure"))
+}
+
+func TestWorkspaceGitOperationsPushPinsReviewedCommit(t *testing.T) {
+	for _, pause := range []string{"log", "push"} {
+		t.Run(pause, func(t *testing.T) {
+			f := newGitOperationFixture(t)
+			remote := t.TempDir()
+			sessionFileGit(t, remote, "init", "--bare")
+			sessionFileGit(t, f.directory, "remote", "add", "origin", remote)
+			writeSessionFile(t, f.directory, "a.txt", "initial\n")
+			sessionFileGit(t, f.directory, "add", ".")
+			sessionFileGit(t, f.directory, "commit", "-m", "initial")
+			sessionFileGit(t, f.directory, "checkout", "-b", "unpublished")
+			writeSessionFile(t, f.directory, "private.txt", "synthetic private work\n")
+			sessionFileGit(t, f.directory, "add", ".")
+			sessionFileGit(t, f.directory, "commit", "-m", "private work")
+			sessionFileGit(t, f.directory, "checkout", "dev")
+			view := f.view()
+			wait, release := pauseGitOperation(t, pause)
+			body, _ := json.Marshal(workspaceGitOperation{Action: "push", Branch: view.Branch, Head: view.Commit, Remote: view.PushRemote, RemoteBranch: view.PushBranch})
+			done := make(chan *httptest.ResponseRecorder, 1)
+			finished := make(chan struct{})
+			go func() {
+				defer close(finished)
+				done <- apiRequest(f.app, "POST", f.base, string(body), f.cookie, f.csrf)
+			}()
+			t.Cleanup(func() { release(); <-finished })
+			wait()
+			sessionFileGit(t, f.directory, "checkout", "unpublished")
+			release()
+			response := <-done
+			if pause == "log" {
+				if response.Code != 409 || sessionFileGit(t, remote, "for-each-ref", "--format=%(refname)") != "" {
+					t.Fatalf("push accepted a changed branch: %d %s", response.Code, response.Body.String())
+				}
+			} else {
+				requireGitOperation(t, response)
+				if got := sessionFileGit(t, remote, "rev-parse", "refs/heads/dev"); got != view.Commit {
+					t.Fatalf("push published an unreviewed commit: %s", got)
+				}
+				if got := sessionFileGit(t, f.directory, "config", "branch.dev.merge"); got != "refs/heads/dev" {
+					t.Fatalf("wrong branch tracking configured: %s", got)
+				}
+				if got := sessionFileGit(t, f.directory, "config", "--get-regexp", "^branch\\."); strings.Contains(got, "branch.unpublished.") {
+					t.Fatalf("push configured the new HEAD: %s", got)
+				}
+			}
+		})
 	}
 }
 
