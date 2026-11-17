@@ -56,23 +56,42 @@ try {
       page.on("pageerror", error => errors.push(error.stack || String(error)));
       let fail = false, blocked;
       let fileRevision = 0, diffRevision = 0;
+      let staged = true, unstaged = true, notes = true, lastSubject = "Latest commit summary";
+      const mutations = [];
       await page.route("**/api/**", async route => {
         const url = new URL(route.request().url()), scope = url.searchParams.get("workspace"); requests.push(url.pathname + url.search);
         const json = (value, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
         if (url.pathname.endsWith("/files")) return json({ entries: [{ path: "readme.txt", name: "readme.txt", kind: "file" }], truncated: false });
         if (url.pathname.endsWith("/file")) return json({ path: "readme.txt", name: "readme.txt", kind: "text", media_type: "text/plain", content: `File preview contents ${fileRevision}`, size: 20 });
+        if (route.request().method() === "POST") {
+          const body = route.request().postDataJSON(); mutations.push(body);
+          assert.equal(body.branch, scope === "/repo/feature" ? "feature/git" : "dev");
+          assert.equal(body.head, commit);
+          if (body.action === "stage") { staged = true; unstaged = false; }
+          if (body.action === "unstage") { staged = false; unstaged = true; }
+          if (body.action === "commit") { lastSubject = body.message; staged = false; }
+          if (body.action === "discard") {
+            if (body.paths.includes("src/example.ts")) unstaged = false;
+            if (body.paths.includes("notes.txt")) notes = false;
+          }
+          if (body.action === "push") return json({ error: "Push rejected: remote branch is ahead" }, 409);
+          return json({ ok: true });
+        }
         if (fail) return json({ error: "Git temporarily unavailable" }, 500);
         if (url.searchParams.get("view") === "diff") {
           if (blocked) { await blocked; }
           if (url.searchParams.get("path") === "image.png") return json({ path: "image.png", binary: true, patch: "" });
           return json({ path: "src/example.ts", patch: `diff --git a/src/example.ts b/src/example.ts\n--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1,2 +1,3 @@\n first\n-old\n+new-${scope === "/repo/feature" ? "feature" : "main"}\n+revision-${diffRevision}\n`, truncated: false });
         }
-        const base = { repository: true, branch: scope === "/repo/feature" ? "feature/git" : "dev", files: [], commits: [] };
+        const base = { repository: true, writable: true, index: "index-snapshot", commit, remote: "origin", remote_branch: "dev", remote_allowed: true, upstream: "origin/dev", ahead: 2, behind: 0,
+          last_commit: { id: commit, subject: lastSubject, author: "Developer", time: 1794900000 },
+          branch: scope === "/repo/feature" ? "feature/git" : "dev", files: [], commits: [] };
         if (url.searchParams.get("view") === "history") return json({ ...base, commits: [{ id: commit, subject: "Fix Git panel preview", author: "Developer", time: 1794900000 }] });
         return json({ ...base, files: [
-          { path: "src/example.ts", status: "MM", staged: true, additions: 12, deletions: 4 },
+          { path: "src/example.ts", status: staged && unstaged ? "MM" : "M", staged, unstaged, additions: 12, deletions: 4,
+            staged_additions: 10, staged_deletions: 3, unstaged_additions: 2, unstaged_deletions: 1 },
           { path: "image.png", status: "M", binary: true, additions: 0, deletions: 0 },
-          { path: "notes.txt", status: "??", untracked: true, additions: 0, deletions: 0 },
+          ...(notes ? [{ path: "notes.txt", status: "??", untracked: true, additions: 0, deletions: 0 }] : []),
         ] });
       });
       await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__git-panel?theme=${theme}`);
@@ -93,8 +112,82 @@ try {
       assert.ok(requests.slice(offset).every(url => url.includes("/file?")), "File preview refresh must leave tree alone");
       await git.click();
       await page.getByRole("tab", { name: "Changes", exact: true }).click();
-      const row = page.locator(".git-file-row").filter({ hasText: "example.ts" }); await row.click();
+      const row = page.locator(".git-file-row").filter({ hasText: "example.ts" }).first();
+      assert.equal(await page.getByRole("button", { name: "Stage src/example.ts", exact: true }).textContent(), "+");
+      assert.equal(await page.getByRole("button", { name: "Unstage src/example.ts", exact: true }).textContent(), "−");
+      const stagedGroup = page.locator(".git-file-group").filter({ has: page.locator(".git-group-toggle", { hasText: /^Staged/ }) });
+      const unstagedGroup = page.locator(".git-file-group").filter({ has: page.locator(".git-group-toggle", { hasText: /^Unstaged/ }) });
+      const untrackedGroup = page.locator(".git-file-group").filter({ has: page.locator(".git-group-toggle", { hasText: /^Untracked/ }) });
+      assert.equal(await stagedGroup.getByRole("button", { name: "Unstage all", exact: true }).textContent(), "−");
+      assert.equal(await unstagedGroup.getByRole("button", { name: "Stage all", exact: true }).textContent(), "+");
+      assert.equal(await unstagedGroup.getByRole("button", { name: "Discard all changes", exact: true }).textContent(), "−");
+      await page.getByRole("button", { name: "Discard src/example.ts", exact: true }).click();
+      const confirmation = page.getByRole("dialog", { name: "Discard changes?", exact: true });
+      await confirmation.getByText("src/example.ts", { exact: true }).waitFor();
+      assert.match(await confirmation.innerText(), /Staged changes are kept/);
+      await page.screenshot({ path: path.join(output, `discard-${width}-${theme}.png`) });
+      await page.keyboard.press("Escape"); assert.equal(mutations.length, 0, "Cancel must not write to Git");
+      await page.locator(".git-last-commit").getByText("Latest commit summary", { exact: true }).waitFor();
+      const collapsedLabel = await page.locator(".git-commit-toggle").innerText();
+      const branchBounds = await page.locator(".git-summary").getByText("dev", { exact: true }).boundingBox();
+      const remoteBounds = await page.locator(".git-remote-area").boundingBox();
+      const commitBounds = await page.locator(".git-commit-area").boundingBox();
+      assert.ok(branchBounds.y < commitBounds.y && commitBounds.y + commitBounds.height <= remoteBounds.y + 1, "Branch stays above the list and the commit area sits above remote actions");
+      assert.equal(await page.getByRole("button", { name: "Fetch", exact: true }).count(), 0, "Fetch is in the remote dropdown");
+      await page.getByRole("button", { name: "Expand commit area", exact: true }).hover();
+      await page.locator(".file-sidebar").screenshot({ path: path.join(output, `collapsed-${width}-${theme}.png`) });
+      await page.getByRole("button", { name: "Git remote actions", exact: true }).click();
+      const remoteMenu = page.getByRole("listbox", { name: "Git remote actions", exact: true });
+      await remoteMenu.getByRole("option", { name: "Fetch", exact: true }).waitFor();
+      const menuBounds = await remoteMenu.boundingBox();
+      assert.ok(menuBounds.y < remoteBounds.y && menuBounds.y + menuBounds.height <= 900, "Bottom remote menu opens into the available viewport");
+      await page.screenshot({ path: path.join(output, `remote-menu-${width}-${theme}.png`) });
+      await remoteMenu.getByRole("option", { name: "Fetch", exact: true }).click();
+      await page.getByRole("button", { name: "Fetch", exact: true }).waitFor();
+      assert.equal(mutations.length, 0, "Selecting Fetch changes the main action without executing it");
+      await page.getByRole("button", { name: "Git remote actions", exact: true }).click();
+      assert.equal(await remoteMenu.getByRole("option", { name: "Fetch", exact: true }).getAttribute("aria-selected"), "true");
+      await remoteMenu.getByRole("option", { name: "Push", exact: true }).click();
+      await page.getByRole("button", { name: "Push", exact: true }).waitFor();
+      assert.equal(mutations.length, 0, "Selecting Push also leaves Git unchanged");
+      await page.locator(".git-commit-label").click();
+      assert.equal(await page.getByRole("textbox", { name: "Commit message", exact: true }).count(), 0, "Commit information is passive");
+      await page.getByRole("button", { name: "Expand commit area", exact: true }).click();
+      const commitInput = page.getByRole("textbox", { name: "Commit message", exact: true });
+      const inputHeight = async () => (await commitInput.boundingBox()).height;
+      const lineMessage = lines => Array.from({ length: lines }, (_, i) => `Commit line ${i + 1}`).join("\n");
+      const oneLineHeight = await inputHeight();
+      await commitInput.fill(lineMessage(3)); const threeLineHeight = await inputHeight();
+      assert.ok(threeLineHeight > oneLineHeight, "Commit input grows with its contents");
+      await commitInput.fill(lineMessage(6)); const maximumHeight = await inputHeight();
+      assert.ok(maximumHeight > threeLineHeight);
+      await commitInput.fill(lineMessage(12));
+      assert.equal(await inputHeight(), maximumHeight, "Commit input stops growing at the default six-line maximum");
+      assert.ok(await commitInput.evaluate(element => element.scrollHeight > element.clientHeight), "Long commit messages scroll inside the input");
+      await page.getByRole("button", { name: "Collapse commit area", exact: true }).hover();
+      await page.locator(".file-sidebar").screenshot({ path: path.join(output, `commit-max-${width}-${theme}.png`) });
+      await commitInput.fill("Commit from Git panel");
+      assert.equal(await inputHeight(), oneLineHeight, "Commit input shrinks when text is removed");
+      assert.equal(await page.locator(".git-commit-actions").getByRole("button", { name: "Commit staged changes (1)", exact: true }).innerText(), collapsedLabel);
+      assert.equal(await page.locator(".git-commit-area").getByRole("button", { name: "Cancel", exact: true }).count(), 0);
+      const collapseBounds = await page.getByRole("button", { name: "Collapse commit area", exact: true }).boundingBox();
+      const submitBounds = await page.locator(".git-commit-actions").getByRole("button", { name: "Commit staged changes (1)", exact: true }).boundingBox();
+      assert.ok(collapseBounds.x < submitBounds.x, "Collapse icon is to the left of the commit action");
+      await page.getByRole("button", { name: "Collapse commit area", exact: true }).click();
+      assert.equal(await page.getByRole("textbox", { name: "Commit message", exact: true }).count(), 0);
+      assert.equal(await page.locator(".git-commit-toggle").innerText(), collapsedLabel);
+      await page.getByRole("button", { name: "Expand commit area", exact: true }).click();
+      assert.equal(await page.getByRole("textbox", { name: "Commit message", exact: true }).inputValue(), "Commit from Git panel", "Collapsing preserves the draft");
+      await page.getByRole("textbox", { name: "Commit message", exact: true }).focus();
+      await page.keyboard.press("ControlOrMeta+A");
+      await page.locator(".file-sidebar").screenshot({ path: path.join(output, `staging-${width}-${theme}.png`) });
+      await row.click();
       await page.locator(".git-diff-source").getByText("new-main", { exact: true }).waitFor();
+      assert.equal(await page.locator(".git-commit-area").count(), 0, "Commit area is hidden during diff preview");
+      assert.ok(await page.locator(".git-last-commit").isVisible(), "Latest commit remains at the bottom during diff preview");
+      await page.getByRole("button", { name: "Close diff", exact: true }).click();
+      assert.equal(await page.getByRole("textbox", { name: "Commit message", exact: true }).inputValue(), "Commit from Git panel");
+      await row.click(); await page.locator(".git-diff-source").waitFor();
       const diffRefreshBox = await page.getByRole("button", { name: "Refresh diff preview", exact: true }).boundingBox();
       const diffCloseBox = await page.getByRole("button", { name: "Close diff", exact: true }).boundingBox();
       assert.ok(Math.abs(diffCloseBox.x - diffRefreshBox.x - diffRefreshBox.width) <= 1, "Diff refresh and close are adjacent");
@@ -135,6 +228,66 @@ try {
       await page.getByRole("button", { name: "Switch directory", exact: true }).click(); await page.getByRole("option").filter({ hasText: "Main checkout" }).click();
       release(); blocked = undefined;
       await row.click(); await page.locator(".git-diff-source").getByText("new-main", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Close diff", exact: true }).click();
+      await page.getByRole("button", { name: "Expand commit area", exact: true }).click();
+      await page.getByRole("textbox", { name: "Commit message", exact: true }).waitFor();
+      await page.getByRole("textbox", { name: "Commit message", exact: true }).fill("Commit from Git panel");
+      await page.getByRole("button", { name: "Unstage src/example.ts", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector('[aria-label="Unstage src/example.ts"]'));
+      await page.getByRole("button", { name: "Stage src/example.ts", exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('[aria-label="Unstage src/example.ts"]') && !document.querySelector('[aria-label="Stage src/example.ts"]'));
+      await page.getByRole("button", { name: "Commit staged changes (1)", exact: true }).click();
+      await page.locator(".git-last-commit").getByText("Commit from Git panel", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Git remote actions", exact: true }).click();
+      await page.getByRole("option", { name: "Fetch", exact: true }).click();
+      await page.getByRole("button", { name: "Fetch", exact: true }).waitFor();
+      assert.equal(mutations.length, 3, "Choosing Fetch must not start a request");
+      await page.getByRole("button", { name: "Fetch", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector('.git-remote-split > button').disabled);
+      assert.equal(await page.locator(".git-operation-notice").count(), 0, "Successful Git operations show no notice");
+      await page.getByRole("button", { name: "Git remote actions", exact: true }).click();
+      await page.getByRole("option", { name: "Push", exact: true }).click();
+      await page.getByRole("button", { name: "Push", exact: true }).waitFor();
+      assert.equal(mutations.length, 4, "Choosing Push must not start a request");
+      await page.getByRole("button", { name: "Push", exact: true }).click();
+      await page.getByRole("alert").getByText("Push rejected: remote branch is ahead", { exact: true }).waitFor();
+      assert.deepEqual(mutations.map(item => item.action), ["unstage", "stage", "commit", "fetch", "push"]);
+      assert.equal(mutations[2].message, "Commit from Git panel");
+      assert.equal(mutations[2].index, "index-snapshot");
+      const operationAlert = page.locator(".git-operation-notice");
+      await operationAlert.getByRole("button", { name: "Dismiss", exact: true }).click();
+      assert.equal(await operationAlert.count(), 0, "An operation error can be dismissed");
+      await Promise.all([page.waitForResponse(response => new URL(response.url()).searchParams.get("view") === "changes"), page.getByRole("button", { name: "Refresh Git information", exact: true }).click()]);
+      assert.equal(await operationAlert.count(), 0, "Refreshing the list does not restore a dismissed error");
+      await page.getByRole("button", { name: "Push", exact: true }).click();
+      await operationAlert.getByText("Push rejected: remote branch is ahead", { exact: true }).waitFor();
+      assert.equal(mutations.at(-1).action, "push", "The same error reappears after a new failed operation");
+      await page.locator(".file-sidebar").screenshot({ path: path.join(output, `operations-${width}-${theme}.png`) });
+      await operationAlert.getByRole("button", { name: "Dismiss", exact: true }).click();
+      const bulkOffset = mutations.length;
+      staged = true; unstaged = true;
+      await page.getByRole("button", { name: "Refresh Git information", exact: true }).click();
+      await page.getByRole("button", { name: "Discard src/example.ts", exact: true }).click();
+      await confirmation.getByRole("button", { name: "Discard changes", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector('[aria-label="Discard src/example.ts"]'));
+      assert.ok(await page.getByRole("button", { name: "Unstage src/example.ts", exact: true }).isVisible(), "Discard preserves staged content");
+      await stagedGroup.getByRole("button", { name: "Unstage all", exact: true }).click();
+      await page.getByRole("button", { name: "Stage src/example.ts", exact: true }).waitFor();
+      await unstagedGroup.getByRole("button", { name: "Stage all", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector('[aria-label="Stage src/example.ts"]'));
+      await untrackedGroup.getByRole("button", { name: "Discard all changes", exact: true }).click();
+      assert.deepEqual(await confirmation.locator("li").allTextContents(), ["notes.txt"]);
+      await confirmation.getByRole("button", { name: "Discard changes", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector('[aria-label="Discard notes.txt"]'));
+      await unstagedGroup.getByRole("button", { name: "Discard all changes", exact: true }).click();
+      assert.deepEqual(await confirmation.locator("li").allTextContents(), ["image.png"]);
+      await confirmation.getByRole("button", { name: "Discard changes", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector('.git-remote-split > button').disabled);
+      assert.equal(await operationAlert.count(), 0, "Later successful operations leave the error notice hidden");
+      assert.deepEqual(mutations.slice(bulkOffset).map(item => [item.action, item.paths]), [
+        ["discard", ["src/example.ts"]], ["unstage", ["src/example.ts"]],
+        ["stage", ["src/example.ts", "image.png"]], ["discard", ["notes.txt"]], ["discard", ["image.png"]],
+      ]);
       assert.deepEqual(errors, []); reports.push({ width, theme, passed: true });
     } catch (error) {
       await page.screenshot({ path: path.join(output, "failure.png") });

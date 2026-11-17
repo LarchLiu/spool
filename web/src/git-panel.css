@@ -110,6 +110,7 @@
 }
 .git-summary > span:last-child {
   flex-shrink: 0;
+  margin-left: auto;
 }
 .git-summary b,
 .git-file-stats b {
@@ -150,6 +151,241 @@
   padding: 0 8px;
   gap: 6px;
   white-space: nowrap;
+}
+.git-file-entry {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding-right: 10px;
+}
+.git-file-entry > .git-file-row {
+  flex: 1;
+  width: auto;
+  margin-right: 2px;
+}
+.git-stage-box.file-panel-button {
+  flex: 0 0 16px;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--input);
+  line-height: 14px;
+  font-size: 13px;
+}
+.git-group-header,
+.git-remote-actions,
+.git-commit-actions {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.git-group-header > .git-group-toggle {
+  flex: 1;
+  width: auto;
+}
+.git-group-actions,
+.git-file-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 6px;
+}
+.git-group-actions {
+  padding-right: 10px;
+}
+.git-discard-box:hover,
+.git-discard-dialog .destructive {
+  color: var(--error-text);
+}
+.git-discard-dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: 0 20px 100px #0004;
+}
+.git-discard-dialog::backdrop {
+  background: #0007;
+}
+.git-discard-dialog p {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.git-discard-dialog ul {
+  max-height: 240px;
+  overflow: auto;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.git-discard-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.git-remote-area {
+  flex-shrink: 0;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--soft) 40%, var(--elevated));
+}
+.git-remote-actions {
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 8px;
+}
+.git-remote-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+}
+.git-remote-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.git-remote-count {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+}
+.git-remote-split {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--input);
+}
+.git-remote-split > .file-panel-button {
+  padding: 2px 6px;
+  gap: 4px;
+  border-radius: 3px 0 0 3px;
+  font-size: 11px;
+}
+.git-remote-split .custom-select-trigger {
+  width: 25px;
+  min-height: 24px;
+  height: 100%;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--border-strong);
+  border-radius: 0 3px 3px 0;
+  background: transparent;
+}
+.git-remote-split .custom-select-trigger > span {
+  display: none;
+}
+.git-operation-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 4px 8px 4px 12px;
+  font-size: 11px;
+  color: var(--error-text);
+  border-bottom: 1px solid var(--line);
+}
+.git-operation-message {
+  flex: 1;
+  min-width: 0;
+  max-height: 100px;
+  overflow: auto;
+  padding: 4px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.git-operation-dismiss.file-panel-button {
+  flex-shrink: 0;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+.git-commit-area {
+  flex-shrink: 0;
+  border-top: 1px solid var(--line);
+  background: var(--elevated);
+}
+.git-commit-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+}
+.git-commit-label {
+  margin-left: auto;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: right;
+}
+.git-commit-message {
+  display: block;
+  appearance: none;
+  width: 100%;
+  resize: none;
+  overflow-y: hidden;
+  padding: 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.git-commit-message:focus {
+  outline: none;
+}
+.git-commit-actions {
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 4px 8px;
+}
+.git-commit-expand.file-panel-button,
+.git-commit-collapse.file-panel-button {
+  margin-right: auto;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+}
+.git-last-commit {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 11px;
+}
+.git-last-commit > span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.git-last-commit > code {
+  flex-shrink: 0;
+  font-size: 10px;
 }
 .git-file-row[aria-pressed="true"] {
   background: var(--selected);

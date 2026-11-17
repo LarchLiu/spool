@@ -62,6 +62,8 @@ type App struct {
 	limiter      loginLimiter
 	assets       http.Handler
 	filesMu      sync.Mutex
+	gitMu        sync.Mutex
+	gitBusy      map[string]*workspaceGitLock
 	filesRoot    string
 	uploads      map[string]temporaryAttachment
 	approvals    map[string]*pendingApproval
@@ -616,7 +618,11 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		apiJSON(w, 200, transportWindow(r, a.snapshot(chat)))
 		return
 	}
-	if len(parts) == 2 && (parts[1] == "workspace" || parts[1] == "files" || parts[1] == "file" || parts[1] == "git") && (r.Method == "GET" || r.Method == "HEAD") {
+	if len(parts) == 2 && (parts[1] == "workspace" || parts[1] == "files" || parts[1] == "file" || parts[1] == "git") && (r.Method == "GET" || r.Method == "HEAD" || parts[1] == "git" && r.Method == "POST") {
+		if r.Method == "POST" && !a.store.CanControlChat(id.User.ID, chat.ID) {
+			apiError(w, 403, "Chat is read-only")
+			return
+		}
 		a.sessionFilesResponse(w, r, chat, parts[1])
 		return
 	}

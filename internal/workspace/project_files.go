@@ -85,7 +85,7 @@ func projectFilePath(root, path string) (string, error) {
 
 func (a *App) projectFileRoute(w http.ResponseWriter, r *http.Request, user, route string) {
 	parts := strings.Split(strings.TrimPrefix(route, "/api/projects/"), "/")
-	if len(parts) != 2 || !chatmodel.ValidID(parts[0]) || (parts[1] != "files" && parts[1] != "file" && parts[1] != "git") || (r.Method != "GET" && r.Method != "HEAD") || !a.store.CanAccessProject(user, parts[0]) {
+	if len(parts) != 2 || !chatmodel.ValidID(parts[0]) || (parts[1] != "files" && parts[1] != "file" && parts[1] != "git") || (r.Method != "GET" && r.Method != "HEAD" && !(parts[1] == "git" && r.Method == "POST")) || !a.store.CanAccessProject(user, parts[0]) {
 		apiError(w, 404, "Project files are unavailable")
 		return
 	}
@@ -95,13 +95,18 @@ func (a *App) projectFileRoute(w http.ResponseWriter, r *http.Request, user, rou
 		return
 	}
 	if parts[1] == "git" {
+		writable := a.store.CanCreateChat(user, project.ID)
+		if r.Method == "POST" && !writable {
+			apiError(w, 403, "Project is read-only")
+			return
+		}
 		projects, err := a.store.Projects()
 		if err != nil {
 			apiError(w, 500, "Project files are unavailable")
 			return
 		}
 		mappings := localSessionProjects(projects)
-		a.serveWorkspaceGit(w, r, project.Path, func(path string) bool {
+		a.serveWorkspaceGit(w, r, project.Path, writable, func(path string) bool {
 			return matchLocalSessionProject(path, mappings).ID == project.ID
 		})
 		return

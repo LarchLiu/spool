@@ -18,10 +18,41 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/coder/websocket"
 )
+
+func TestGitOperationRequestsAllowRemoteWorkWhileOrdinaryCallsRemainBounded(t *testing.T) {
+	for _, test := range []struct {
+		method, path string
+		succeeds     bool
+	}{
+		{"POST", "/api/chats/chat/git?workspace=%2Frepo", true},
+		{"POST", "/api/projects/project/git", true},
+		{"GET", "/api/projects/project/git", false},
+		{"POST", "/api/preferences", false},
+	} {
+		t.Run(test.method+test.path, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				origin, _ := url.Parse("https://example.com")
+				client := &Client{ctx: context.Background(), origin: origin, http: &http.Client{Transport: nodeRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+					select {
+					case <-time.After(40 * time.Second):
+						return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"ok":true}`)), Request: request}, nil
+					case <-request.Context().Done():
+						return nil, request.Context().Err()
+					}
+				})}}
+				_, err := client.Request(test.method, test.path, `{}`, "csrf", "en")
+				if (err == nil) != test.succeeds {
+					t.Fatalf("request completion=%v, want success=%v", err, test.succeeds)
+				}
+			})
+		})
+	}
+}
 
 func nativeFixture(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()

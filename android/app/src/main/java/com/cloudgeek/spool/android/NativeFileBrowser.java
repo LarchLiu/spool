@@ -26,6 +26,7 @@ import org.json.JSONObject;
 final class NativeFileBrowser extends LinearLayout {
     interface Completion { void done(JSONObject value, Exception error); }
     interface Read { void read(String relativeAPIPath, Completion completion); }
+    interface Write { void write(String relativeAPIPath, JSONObject body, Completion completion); }
     final NativeFileModel state;
     final NativeFileHeader header;
     final LinearLayout treePane, notices;

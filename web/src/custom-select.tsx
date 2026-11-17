@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
 import { selectPopupLayout } from "./custom-select-layout.js";
@@ -9,6 +9,7 @@ export type SelectOption = {
   label: string;
   description?: string;
   disabled?: boolean;
+  icon?: ReactNode;
 };
 
 export function CustomSelect({
@@ -319,6 +320,7 @@ export function CustomSelect({
                     if (option.value !== value) onChange(option.value);
                   }}
                 >
+                  {option.icon}
                   <span>
                     {option.label}
                     {option.description && (

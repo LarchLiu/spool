@@ -3,6 +3,11 @@ export type GitFile = {
   previous_path?: string;
   status: string;
   staged: boolean;
+  unstaged?: boolean;
+  staged_additions?: number;
+  staged_deletions?: number;
+  unstaged_additions?: number;
+  unstaged_deletions?: number;
   untracked: boolean;
   additions: number;
   deletions: number;
@@ -21,6 +26,15 @@ export type GitView = {
   files: GitFile[];
   commits: GitCommit[];
   truncated?: boolean;
+  writable?: boolean;
+  index?: string;
+  remote?: string;
+  remote_branch?: string;
+  upstream?: string;
+  ahead?: number;
+  behind?: number;
+  remote_allowed?: boolean;
+  last_commit?: GitCommit;
 };
 export type GitDiff = {
   path: string;

@@ -18,14 +18,19 @@ import (
 )
 
 type workspaceGitFile struct {
-	Path         string `json:"path"`
-	PreviousPath string `json:"previous_path,omitempty"`
-	Status       string `json:"status"`
-	Staged       bool   `json:"staged"`
-	Untracked    bool   `json:"untracked"`
-	Additions    int    `json:"additions"`
-	Deletions    int    `json:"deletions"`
-	Binary       bool   `json:"binary,omitempty"`
+	Path              string `json:"path"`
+	PreviousPath      string `json:"previous_path,omitempty"`
+	Status            string `json:"status"`
+	Staged            bool   `json:"staged"`
+	Unstaged          bool   `json:"unstaged"`
+	StagedAdditions   int    `json:"staged_additions"`
+	StagedDeletions   int    `json:"staged_deletions"`
+	UnstagedAdditions int    `json:"unstaged_additions"`
+	UnstagedDeletions int    `json:"unstaged_deletions"`
+	Untracked         bool   `json:"untracked"`
+	Additions         int    `json:"additions"`
+	Deletions         int    `json:"deletions"`
+	Binary            bool   `json:"binary,omitempty"`
 }
 
 type workspaceGitCommit struct {
@@ -36,12 +41,21 @@ type workspaceGitCommit struct {
 }
 
 type workspaceGitView struct {
-	Repository bool                 `json:"repository"`
-	Branch     string               `json:"branch,omitempty"`
-	Commit     string               `json:"commit,omitempty"`
-	Files      []workspaceGitFile   `json:"files"`
-	Commits    []workspaceGitCommit `json:"commits"`
-	Truncated  bool                 `json:"truncated,omitempty"`
+	Repository    bool                 `json:"repository"`
+	Branch        string               `json:"branch,omitempty"`
+	Commit        string               `json:"commit,omitempty"`
+	Files         []workspaceGitFile   `json:"files"`
+	Commits       []workspaceGitCommit `json:"commits"`
+	Truncated     bool                 `json:"truncated,omitempty"`
+	Writable      bool                 `json:"writable"`
+	Index         string               `json:"index,omitempty"`
+	Remote        string               `json:"remote,omitempty"`
+	RemoteBranch  string               `json:"remote_branch,omitempty"`
+	Upstream      string               `json:"upstream,omitempty"`
+	Ahead         int                  `json:"ahead"`
+	Behind        int                  `json:"behind"`
+	RemoteAllowed bool                 `json:"remote_allowed"`
+	LastCommit    *workspaceGitCommit  `json:"last_commit,omitempty"`
 }
 
 var gitCommitID = regexp.MustCompile(`^[a-f0-9]{40,64}$`)
@@ -95,7 +109,7 @@ func parseWorkspaceGitStatus(body []byte) []workspaceGitFile {
 			continue
 		}
 		x, y := field[0], field[1]
-		file := workspaceGitFile{Path: field[3:], Status: strings.TrimSpace(field[:2]), Staged: x != ' ' && x != '?', Untracked: x == '?'}
+		file := workspaceGitFile{Path: field[3:], Status: strings.TrimSpace(field[:2]), Staged: x != ' ' && x != '?', Unstaged: y != ' ' || x == '?', Untracked: x == '?'}
 		if x == 'R' || x == 'C' || y == 'R' || y == 'C' {
 			i++
 			if i < len(fields) {
@@ -131,14 +145,23 @@ func workspaceGitPath(directory, path string, allowed func(string) bool) bool {
 	return true
 }
 
-func (a *App) serveWorkspaceGit(w http.ResponseWriter, r *http.Request, directory string, allowed func(string) bool) {
+func (a *App) serveWorkspaceGit(w http.ResponseWriter, r *http.Request, directory string, writable bool, allowed func(string) bool) {
 	w.Header().Set("Cache-Control", "no-store")
+	if r.Method == http.MethodPost {
+		if !writable {
+			apiError(w, 403, "Project is read-only")
+			return
+		}
+		a.mutateWorkspaceGit(w, r, directory, allowed)
+		return
+	}
 	view := workspaceGitView{Files: []workspaceGitFile{}, Commits: []workspaceGitCommit{}}
 	if _, common := gitWorkspace(directory); common == "" {
 		apiJSON(w, 200, view)
 		return
 	}
 	view.Repository = true
+	view.Writable = writable
 	_, view.Branch, view.Commit = workspaceGitState(directory)
 	ctx := r.Context()
 	run := func(args ...string) ([]byte, error) { return readWorkspaceGit(ctx, directory, 4*1024*1024, args...) }
@@ -155,9 +178,10 @@ func (a *App) serveWorkspaceGit(w http.ResponseWriter, r *http.Request, director
 		}
 	}
 	head, headErr := run("rev-parse", "--verify", "HEAD")
-	if headErr == nil && view.Commit == "" {
+	if headErr == nil {
 		view.Commit = strings.TrimSpace(string(head))
 	}
+	workspaceGitMetadata(ctx, directory, &view, allowed)
 	mode := r.URL.Query().Get("view")
 	if mode == "history" {
 		if headErr != nil {
@@ -219,7 +243,16 @@ func (a *App) serveWorkspaceGit(w http.ResponseWriter, r *http.Request, director
 			if file.Path != path {
 				continue
 			}
-			patch, truncated, binary, err := workspaceGitDiff(ctx, directory, file, commit, headErr == nil)
+			side := r.URL.Query().Get("side")
+			if side != "" && side != "staged" && side != "unstaged" {
+				apiError(w, 400, "Invalid diff side")
+				return
+			}
+			if commit == "" && (side == "staged" && !file.Staged || side == "unstaged" && !file.Unstaged) {
+				apiError(w, 404, "Git changes are unavailable")
+				return
+			}
+			patch, truncated, binary, err := workspaceGitDiffSide(ctx, directory, file, commit, headErr == nil, side)
 			if err != nil {
 				apiError(w, 500, "Git diff is unavailable")
 				return
@@ -243,6 +276,41 @@ func (a *App) serveWorkspaceGit(w http.ResponseWriter, r *http.Request, director
 		return
 	}
 	root, _ := gitWorkspace(directory)
+	if commit == "" {
+		for _, side := range []string{"staged", "unstaged"} {
+			args := []string{"diff", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "--no-renames"}
+			if side == "staged" {
+				args = append(args, "--cached")
+			}
+			body, readErr := run(append(args, "--", ".")...)
+			if readErr != nil {
+				apiError(w, 500, "Git statistics are unavailable")
+				return
+			}
+			for _, field := range strings.Split(string(body), "\x00") {
+				parts := strings.SplitN(field, "\t", 3)
+				if len(parts) != 3 {
+					continue
+				}
+				path, _ := filepath.Rel(directory, filepath.Join(root, parts[2]))
+				for i := range view.Files {
+					file := &view.Files[i]
+					if file.Path != filepath.ToSlash(path) && file.PreviousPath != filepath.ToSlash(path) {
+						continue
+					}
+					add, _ := strconv.Atoi(parts[0])
+					del, _ := strconv.Atoi(parts[1])
+					if side == "staged" {
+						file.StagedAdditions += add
+						file.StagedDeletions += del
+					} else {
+						file.UnstagedAdditions += add
+						file.UnstagedDeletions += del
+					}
+				}
+			}
+		}
+	}
 	for _, field := range strings.Split(string(stats), "\x00") {
 		parts := strings.SplitN(field, "\t", 3)
 		if len(parts) != 3 {
@@ -268,6 +336,10 @@ func (a *App) serveWorkspaceGit(w http.ResponseWriter, r *http.Request, director
 }
 
 func workspaceGitDiff(ctx context.Context, directory string, file workspaceGitFile, commit string, hasHead bool) (string, bool, bool, error) {
+	return workspaceGitDiffSide(ctx, directory, file, commit, hasHead, "")
+}
+
+func workspaceGitDiffSide(ctx context.Context, directory string, file workspaceGitFile, commit string, hasHead bool, side string) (string, bool, bool, error) {
 	if file.Untracked {
 		root, err := os.OpenRoot(directory)
 		if err != nil {
@@ -314,6 +386,10 @@ func workspaceGitDiff(ctx context.Context, directory string, file workspaceGitFi
 	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "--find-renames", "--unified=3"}
 	if commit != "" {
 		args = []string{"show", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", "--unified=3", commit}
+	} else if side == "staged" {
+		args = append(args, "--cached")
+	} else if side == "unstaged" {
+		// Default diff compares the worktree to the index, including unborn HEAD.
 	} else if hasHead {
 		args = append(args, "HEAD")
 	} else {

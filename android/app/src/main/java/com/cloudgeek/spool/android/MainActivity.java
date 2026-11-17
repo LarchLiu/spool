@@ -4271,6 +4271,7 @@ public final class MainActivity extends Activity {
                 this::readProjectFile, file -> downloadFile(ownerFiles.filePath(file.optString("path"), "download"), file.optString("name")),
                 this::openExternalLink, this::closeDrawer,
                 value -> getPreferences(MODE_PRIVATE).edit().putFloat("fileTreeFraction", (float) value).apply());
+        fileBrowser.gitPanel.write = this::requestProjectFile;
         overlay.sheet.addView(fileBrowser, new LinearLayout.LayoutParams(-1, -1));
         root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
         overlay.show();
@@ -4278,13 +4279,17 @@ public final class MainActivity extends Activity {
     }
 
     private void readProjectFile(String path, NativeFileBrowser.Completion completion) {
+        requestProjectFile(path, null, completion);
+    }
+
+    private void requestProjectFile(String path, JSONObject body, NativeFileBrowser.Completion completion) {
         Client captured = client;
         int token = generation, session = authEpoch;
         String auth = csrf, loc = locale();
         io.execute(() -> {
             try {
                 if (token != generation || session != authEpoch) return;
-                JSONObject value = (JSONObject) request(captured, path.substring(4), null, auth, loc);
+                JSONObject value = (JSONObject) request(captured, path.substring(4), body, auth, loc);
                 post(token, () -> { if (session == authEpoch) completion.done(value, null); });
             } catch (Exception error) {
                 post(token, () -> {

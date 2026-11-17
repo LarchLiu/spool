@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ChevronLeft,
+  ChevronUp,
   File,
   GitBranch,
   LoaderCircle,
@@ -13,6 +16,8 @@ import type { Translator } from "./i18n";
 import { FilePanelTabs } from "./file-panel-tabs";
 import { FilePreviewSplit } from "./file-preview-split";
 import { FilePanelButton } from "./file-panel-button";
+import { CustomSelect } from "./custom-select";
+import { AutosizeTextarea } from "./autosize-textarea";
 import {
   unifiedDiffLines,
   type GitView,
@@ -44,6 +49,65 @@ export function UnifiedDiff({ patch, t }: { patch: string; t: Translator }) {
   );
 }
 
+function DiscardGitDialog({
+  paths,
+  t,
+  onClose,
+  onConfirm,
+}: {
+  paths: string[];
+  t: Translator;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const id = useId();
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      className="git-discard-dialog"
+      aria-labelledby={id}
+      aria-describedby={`${id}-description`}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+    >
+      <div className="dialog-heading">
+        <h2 id={id}>{t("Discard changes?")}</h2>
+        <FilePanelButton
+          className="icon"
+          aria-label={t("Close")}
+          onClick={onClose}
+        >
+          <X size={18} />
+        </FilePanelButton>
+      </div>
+      <p id={`${id}-description`}>
+        {t(
+          "Tracked files will be restored to their staged version. Untracked files will be deleted. Staged changes are kept. This cannot be undone.",
+        )}
+      </p>
+      <ul>
+        {paths.map((path) => (
+          <li key={path}>{path}</li>
+        ))}
+      </ul>
+      <div className="git-discard-actions">
+        <FilePanelButton autoFocus onClick={onClose}>
+          {t("Cancel")}
+        </FilePanelButton>
+        <FilePanelButton className="destructive" onClick={onConfirm}>
+          {t("Discard changes")}
+        </FilePanelButton>
+      </div>
+    </dialog>
+  );
+}
+
 export function GitPanel({
   base,
   workspace,
@@ -65,17 +129,38 @@ export function GitPanel({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState("");
+  const [side, setSide] = useState<"staged" | "unstaged" | "">("");
   const [diff, setDiff] = useState<GitDiff>();
   const [diffError, setDiffError] = useState("");
   const [retry, setRetry] = useState(0);
   const [diffRefresh, setDiffRefresh] = useState(0);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [operation, setOperation] = useState("");
+  const [operationError, setOperationError] = useState("");
+  const [composer, setComposer] = useState(false);
+  const [remoteAction, setRemoteAction] = useState<"push" | "fetch">("push");
+  const [message, setMessage] = useState("");
+  const [discard, setDiscard] = useState<{
+    paths: string[];
+    snapshot: GitView;
+  }>();
+  useEffect(() => {
+    if (!active) setDiscard(undefined);
+  }, [active]);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const query = (view: string, path?: string) =>
     `${base}/git?${new URLSearchParams({
       view,
       ...(workspace ? { workspace } : {}),
       ...(commit ? { commit } : {}),
       ...(path ? { path } : {}),
+      ...(path && !commit && side ? { side } : {}),
     })}`;
   const listURL = query(mode === "history" && !commit ? "history" : "changes");
   const diffURL = selected ? query("diff", selected) : "";
@@ -93,7 +178,15 @@ export function GitPanel({
         setData(next);
         setError("");
         setSelected((path) =>
-          next.files.some((file) => file.path === path) ? path : "",
+          next.files.some(
+            (file) =>
+              file.path === path &&
+              (commit ||
+                !side ||
+                (side === "staged" ? file.staged : isUnstaged(file))),
+          )
+            ? path
+            : "",
         );
       } catch (err) {
         if (!controller.signal.aborted) {
@@ -137,74 +230,235 @@ export function GitPanel({
     setMode(next);
     setCommit("");
     setSelected("");
+    setSide("");
     setData(undefined);
     setDiff(undefined);
+    setDiscard(undefined);
   }
   const files = data?.files || [];
   const additions = files.reduce((sum, file) => sum + file.additions, 0);
   const deletions = files.reduce((sum, file) => sum + file.deletions, 0);
-  function group(label: string, items: GitFile[]) {
+  const staged = files.filter((file) => file.staged);
+  const canRemote = !!(
+    active &&
+    !operation &&
+    data?.writable &&
+    data.remote_allowed &&
+    data.remote
+  );
+  const canPush = !!(canRemote && data?.branch && data.commit);
+  const pushLabel = t(data?.upstream ? "Push" : "Publish branch");
+  const remoteLabel = remoteAction === "fetch" ? t("Fetch") : pushLabel;
+  function isUnstaged(file: GitFile) {
+    return (
+      file.unstaged ??
+      (!file.staged || (file.status.length === 2 && file.status[1] !== " "))
+    );
+  }
+  async function mutate(action: string, paths?: string[], snapshot = data) {
+    if (operation || !data?.writable) return;
+    if (!snapshot) return;
+    setOperation(action);
+    setOperationError("");
+    try {
+      await api(query("changes"), {
+        action,
+        paths,
+        message: action === "commit" ? message : undefined,
+        branch: snapshot.branch || "",
+        head: snapshot.commit || "",
+        index: snapshot.index,
+        remote: snapshot.remote,
+        remote_branch: snapshot.remote_branch,
+      });
+      if (!mounted.current) return;
+      if (action === "commit") {
+        setMessage("");
+        setComposer(false);
+      }
+    } catch (err) {
+      if (!mounted.current) return;
+      setOperationError(
+        err instanceof Error ? err.message : t("Request failed"),
+      );
+    } finally {
+      if (mounted.current) {
+        setOperation("");
+        setRetry((value) => value + 1);
+        setDiffRefresh((value) => value + 1);
+      }
+    }
+  }
+  function group(
+    label: string,
+    items: GitFile[],
+    groupSide: "staged" | "unstaged" | "" = "",
+  ) {
     if (!items.length) return null;
     return (
       <div className="git-file-group">
-        <FilePanelButton
-          className="git-group-toggle"
-          aria-expanded={!collapsed[label]}
-          onClick={() =>
-            setCollapsed((old) => ({ ...old, [label]: !old[label] }))
-          }
-        >
-          <ChevronDown
-            size={12}
-            className={collapsed[label] ? "collapsed" : ""}
-          />
-          {label}
-          <small>{items.length}</small>
-        </FilePanelButton>
+        <div className="git-group-header">
+          <FilePanelButton
+            className="git-group-toggle"
+            aria-expanded={!collapsed[label]}
+            onClick={() =>
+              setCollapsed((old) => ({ ...old, [label]: !old[label] }))
+            }
+          >
+            <ChevronDown
+              size={12}
+              className={collapsed[label] ? "collapsed" : ""}
+            />
+            {label}
+            <small>{items.length}</small>
+          </FilePanelButton>
+          {groupSide && (
+            <div className="git-group-actions">
+              <FilePanelButton
+                className="git-stage-box"
+                aria-label={t(
+                  groupSide === "staged" ? "Unstage all" : "Stage all",
+                )}
+                title={t(groupSide === "staged" ? "Unstage all" : "Stage all")}
+                disabled={!!operation || !data?.writable}
+                onClick={() =>
+                  void mutate(
+                    groupSide === "staged" ? "unstage" : "stage",
+                    items.map((file) => file.path),
+                  )
+                }
+              >
+                {groupSide === "staged" ? "−" : "+"}
+              </FilePanelButton>
+              {groupSide === "unstaged" && (
+                <FilePanelButton
+                  className="git-stage-box git-discard-box"
+                  aria-label={t("Discard all changes")}
+                  title={t("Discard all changes")}
+                  disabled={!!operation || !data?.writable}
+                  onClick={() =>
+                    data &&
+                    setDiscard({
+                      paths: items.map((file) => file.path),
+                      snapshot: data,
+                    })
+                  }
+                >
+                  −
+                </FilePanelButton>
+              )}
+            </div>
+          )}
+        </div>
         {!collapsed[label] &&
           items.map((file) => (
-            <FilePanelButton
-              key={file.path}
-              className="git-file-row"
-              aria-pressed={selected === file.path}
-              title={`${file.previous_path ? file.previous_path + " → " : ""}${file.path} · ${file.status}${file.staged ? " · " + t("Staged") : ""}`}
-              onClick={() => {
-                if (selected === file.path) return;
-                setSelected(file.path);
-                setDiff(undefined);
-                setDiffError("");
-              }}
-            >
-              <span
-                className={`git-file-status ${file.untracked ? "untracked" : ""}`}
+            <div className="git-file-entry" key={file.path}>
+              <FilePanelButton
+                className="git-file-row"
+                aria-pressed={selected === file.path && side === groupSide}
+                title={`${file.previous_path ? file.previous_path + " → " : ""}${file.path} · ${file.status}${file.staged ? " · " + t("Staged") : ""}`}
+                onClick={() => {
+                  if (selected === file.path && side === groupSide) return;
+                  setSelected(file.path);
+                  setSide(groupSide);
+                  setDiff(undefined);
+                  setDiffError("");
+                }}
               >
-                {file.untracked ? "+" : file.status}
-              </span>
-              <span className="git-file-name">
-                {file.path.split("/").pop()}
-              </span>
-              <span className="git-file-directory">
-                {file.path.includes("/")
-                  ? file.path.slice(0, file.path.lastIndexOf("/"))
-                  : ""}
-              </span>
-              <span className="git-file-stats">
-                {file.untracked ? null : file.binary ? (
-                  t("Binary file")
-                ) : (
-                  <>
-                    <b>+{file.additions}</b>
-                    <i>−{file.deletions}</i>
-                  </>
-                )}
-              </span>
-            </FilePanelButton>
+                <span
+                  className={`git-file-status ${file.untracked ? "untracked" : ""}`}
+                >
+                  {file.untracked ? "+" : file.status}
+                </span>
+                <span className="git-file-name">
+                  {file.path.split("/").pop()}
+                </span>
+                <span className="git-file-directory">
+                  {file.path.includes("/")
+                    ? file.path.slice(0, file.path.lastIndexOf("/"))
+                    : ""}
+                </span>
+                <span className="git-file-stats">
+                  {file.untracked ? null : file.binary ? (
+                    t("Binary file")
+                  ) : (
+                    <>
+                      <b>
+                        +
+                        {groupSide
+                          ? (file[`${groupSide}_additions`] ?? file.additions)
+                          : file.additions}
+                      </b>
+                      <i>
+                        −
+                        {groupSide
+                          ? (file[`${groupSide}_deletions`] ?? file.deletions)
+                          : file.deletions}
+                      </i>
+                    </>
+                  )}
+                </span>
+              </FilePanelButton>
+              {groupSide && (
+                <div className="git-file-actions">
+                  <FilePanelButton
+                    className="git-stage-box"
+                    aria-label={t(
+                      groupSide === "staged"
+                        ? "Unstage {path}"
+                        : "Stage {path}",
+                      { path: file.path },
+                    )}
+                    title={t(
+                      groupSide === "staged"
+                        ? "Unstage {path}"
+                        : "Stage {path}",
+                      { path: file.path },
+                    )}
+                    disabled={!!operation || !data?.writable}
+                    onClick={() =>
+                      void mutate(
+                        groupSide === "staged" ? "unstage" : "stage",
+                        [file.path],
+                      )
+                    }
+                  >
+                    {groupSide === "staged" ? "−" : "+"}
+                  </FilePanelButton>
+                  {groupSide === "unstaged" && (
+                    <FilePanelButton
+                      className="git-stage-box git-discard-box"
+                      aria-label={t("Discard {path}", { path: file.path })}
+                      title={t("Discard {path}", { path: file.path })}
+                      disabled={!!operation || !data?.writable}
+                      onClick={() =>
+                        data &&
+                        setDiscard({ paths: [file.path], snapshot: data })
+                      }
+                    >
+                      −
+                    </FilePanelButton>
+                  )}
+                </div>
+              )}
+            </div>
           ))}
       </div>
     );
   }
   return (
     <section className="git-panel" aria-label={t("Git panel")}>
+      {discard && (
+        <DiscardGitDialog
+          paths={discard.paths}
+          t={t}
+          onClose={() => setDiscard(undefined)}
+          onConfirm={() => {
+            setDiscard(undefined);
+            void mutate("discard", discard.paths, discard.snapshot);
+          }}
+        />
+      )}
       <FilePanelTabs
         label={t("Git views")}
         value={mode}
@@ -214,6 +468,19 @@ export function GitPanel({
           { value: "history", label: t("History") },
         ]}
       />
+      {operationError && (
+        <div className="git-operation-notice" role="alert">
+          <span className="git-operation-message">{operationError}</span>
+          <FilePanelButton
+            className="icon git-operation-dismiss"
+            aria-label={t("Dismiss")}
+            title={t("Dismiss")}
+            onClick={() => setOperationError("")}
+          >
+            <X size={14} aria-hidden="true" />
+          </FilePanelButton>
+        </div>
+      )}
       <FilePreviewSplit
         t={t}
         tree={
@@ -275,6 +542,7 @@ export function GitPanel({
                         key={item.id}
                         onClick={() => {
                           setCommit(item.id);
+                          setSide("");
                           setData(undefined);
                           setSelected("");
                         }}
@@ -293,13 +561,27 @@ export function GitPanel({
                   </div>
                 ) : (
                   <div className="git-change-list">
-                    {group(
-                      t("Tracked"),
-                      files.filter((file) => !file.untracked),
+                    {commit ? (
+                      group(
+                        t("Tracked"),
+                        files.filter((file) => !file.untracked),
+                      )
+                    ) : (
+                      <>
+                        {group(t("Staged"), staged, "staged")}
+                        {group(
+                          t("Unstaged"),
+                          files.filter(
+                            (file) => !file.untracked && isUnstaged(file),
+                          ),
+                          "unstaged",
+                        )}
+                      </>
                     )}
                     {group(
                       t("Untracked"),
                       files.filter((file) => file.untracked),
+                      commit ? "" : "unstaged",
                     )}
                     {!files.length && (
                       <p className="file-panel-empty">{t("No changes.")}</p>
@@ -325,6 +607,11 @@ export function GitPanel({
                 <span title={selected}>
                   <File size={14} />
                   {selected}
+                  {side && !commit && (
+                    <small>
+                      {t(side === "staged" ? "Staged" : "Unstaged")}
+                    </small>
+                  )}
                 </span>
                 <div className="file-preview-controls">
                   <FilePanelButton
@@ -375,6 +662,152 @@ export function GitPanel({
           ) : null
         }
       />
+      {mode === "changes" && data?.repository && !selected && (
+        <div className="git-commit-area">
+          {!composer ? (
+            <div className="git-commit-toggle">
+              <FilePanelButton
+                className="git-commit-expand"
+                aria-label={t("Expand commit area")}
+                title={t("Expand commit area")}
+                aria-expanded={false}
+                onClick={() => setComposer(true)}
+                disabled={!data.writable || !!operation}
+              >
+                <ChevronUp size={14} aria-hidden="true" />
+              </FilePanelButton>
+              <span className="git-commit-label">
+                {t("Commit staged changes")} ({staged.length})
+              </span>
+            </div>
+          ) : (
+            <>
+              <AutosizeTextarea
+                className="git-commit-message"
+                aria-label={t("Commit message")}
+                placeholder={t("Enter commit message")}
+                value={message}
+                maxLength={32768}
+                disabled={!!operation}
+                onChange={(event) => setMessage(event.target.value)}
+              />
+              <div className="git-commit-actions">
+                <FilePanelButton
+                  className="git-commit-collapse"
+                  aria-label={t("Collapse commit area")}
+                  title={t("Collapse commit area")}
+                  aria-expanded={true}
+                  onClick={() => setComposer(false)}
+                  disabled={!!operation}
+                >
+                  <ChevronDown size={14} aria-hidden="true" />
+                </FilePanelButton>
+                <FilePanelButton
+                  onClick={() => void mutate("commit")}
+                  disabled={
+                    !!operation ||
+                    !data.writable ||
+                    !staged.length ||
+                    !message.trim()
+                  }
+                >
+                  {t("Commit staged changes")} ({staged.length})
+                </FilePanelButton>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+      {mode === "changes" && data?.repository && (
+        <div className="git-remote-area">
+          <div className="git-remote-actions">
+            <span
+              className="git-remote-target"
+              title={
+                data.remote
+                  ? `${data.remote}/${data.remote_branch || ""}`
+                  : t("No Git remote configured")
+              }
+            >
+              <span className="git-remote-name">
+                {data.remote
+                  ? `${data.remote}/${data.remote_branch || ""}`
+                  : t("No Git remote configured")}
+              </span>
+              {data.upstream && (
+                <span className="git-remote-count">
+                  <ArrowDown size={12} aria-hidden="true" />
+                  {data.behind || 0}
+                </span>
+              )}
+            </span>
+            <div className="git-remote-split">
+              <FilePanelButton
+                disabled={remoteAction === "fetch" ? !canRemote : !canPush}
+                aria-label={remoteLabel}
+                onClick={() => void mutate(remoteAction)}
+              >
+                {remoteAction === "fetch" ? (
+                  <ArrowDown size={12} aria-hidden="true" />
+                ) : (
+                  <ArrowUp size={12} aria-hidden="true" />
+                )}
+                {data.upstream && (
+                  <span aria-hidden="true">
+                    {(remoteAction === "fetch" ? data.behind : data.ahead) || 0}
+                  </span>
+                )}
+                {remoteLabel}
+              </FilePanelButton>
+              <CustomSelect
+                value={remoteAction}
+                label={t("Git remote actions")}
+                disabled={!canRemote}
+                options={[
+                  {
+                    value: "push",
+                    label: pushLabel,
+                    disabled: !canPush,
+                    icon: <ArrowUp size={14} aria-hidden="true" />,
+                  },
+                  {
+                    value: "fetch",
+                    label: t("Fetch"),
+                    icon: <ArrowDown size={14} aria-hidden="true" />,
+                  },
+                ]}
+                onChange={(action) =>
+                  setRemoteAction(action as "push" | "fetch")
+                }
+              />
+            </div>
+          </div>
+          {data.remote && !data.remote_allowed && (
+            <p className="file-panel-notice">
+              {t("This project does not grant access to the repository root")}
+            </p>
+          )}
+        </div>
+      )}
+      {mode === "changes" && data?.repository && (
+        <div
+          className="git-last-commit"
+          title={
+            data.last_commit
+              ? `${data.last_commit.id} · ${data.last_commit.author}`
+              : ""
+          }
+        >
+          {data.last_commit ? (
+            <>
+              <span>{data.last_commit.subject}</span>
+              <code>{data.last_commit.id.slice(0, 7)}</code>
+            </>
+          ) : (
+            t("No commits yet.")
+          )}
+        </div>
+      )}
     </section>
   );
 }

@@ -258,7 +258,7 @@ func (a *App) sessionFilesResponse(w http.ResponseWriter, r *http.Request, chat 
 		return
 	}
 	if kind == "git" {
-		a.serveWorkspaceGit(w, r, directory, func(path string) bool {
+		a.serveWorkspaceGit(w, r, directory, chat.CanControl == nil || *chat.CanControl, func(path string) bool {
 			return matchLocalSessionProject(path, mappings).ID == chat.ProjectID
 		})
 		return

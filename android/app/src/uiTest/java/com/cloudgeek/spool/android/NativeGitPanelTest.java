@@ -22,6 +22,7 @@ import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
 import org.robolectric.annotation.LooperMode;
+import org.robolectric.shadows.ShadowDialog;
 
 @RunWith(org.robolectric.RobolectricTestRunner.class)
 @Config(sdk = {26, 35})
@@ -55,6 +56,15 @@ public class NativeGitPanelTest {
         if (description.contentEquals(view.getContentDescription() == null ? "" : view.getContentDescription())) return view;
         if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++) { View found = action(((ViewGroup) view).getChildAt(i), description); if (found != null) return found; }
         return null;
+    }
+    private static void paths(JSONObject write, String... expected) throws Exception {
+        JSONArray paths = write.getJSONArray("paths"); assertEquals(expected.length, paths.length());
+        for (int i = 0; i < expected.length; i++) assertEquals(expected[i], paths.getString(i));
+    }
+    private static void screenshot(View view, String name) throws Exception {
+        layout(view); File output = new File(System.getProperty("spool.ui.artifacts"), "git-panel"); assertTrue(output.isDirectory() || output.mkdirs());
+        Bitmap image = Bitmap.createBitmap(360, 800, Bitmap.Config.ARGB_8888); view.draw(new Canvas(image));
+        try (java.io.OutputStream stream = Files.newOutputStream(new File(output, name + "-api" + android.os.Build.VERSION.SDK_INT + ".png").toPath())) { image.compress(Bitmap.CompressFormat.PNG, 100, stream); } finally { image.recycle(); }
     }
     @Test public void headerRefreshOnlyReloadsCurrentListAndPreviewIconsOnlyReloadTheirContents() throws Exception {
         try (ActivityController<Activity> activity = Robolectric.buildActivity(Activity.class).setup()) {
@@ -123,6 +133,144 @@ public class NativeGitPanelTest {
             NativeFilesTest.Pending next = take(requests, "/git?"); assertTrue(next.path.contains("workspace=%2Frepo%2Ftree")); next.result.done(changes(), null);
             browser.gitPanel.select("src/file.txt"); NativeFilesTest.Pending stale = take(requests, "view=diff"); browser.deactivate();
             stale.result.done(new JSONObject().put("patch", PATCH), null); assertNull(child(browser.gitPanel.preview, NativeUnifiedDiff.class));
+        }
+    }
+
+    @Test public void partialStageControlsCommitFooterAndRemoteOperationsUseTheCurrentScope() throws Exception {
+        RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
+        for (boolean dark : new boolean[]{false, true}) try (ActivityController<Activity> activity = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(activity.get(), dark, "en"); NativeFileModel model = new NativeFileModel("p", "c");
+            JSONObject tree = workspace("/repo/tree"); model.workspace = tree; model.workspaces = new JSONArray().put(tree);
+            List<NativeFilesTest.Pending> requests = new ArrayList<>(); List<JSONObject> writes = new ArrayList<>();
+            List<NativeFileBrowser.Completion> completions = new ArrayList<>();
+            NativeGitPanel panel = new NativeGitPanel(ui, model, (path, done) -> requests.add(new NativeFilesTest.Pending(path, done)), value -> {});
+            panel.write = (path, body, done) -> { assertTrue(path.contains("workspace=%2Frepo%2Ftree")); writes.add(body); completions.add(done); };
+            activity.get().setContentView(panel); panel.activate(true);
+            String id = "b".repeat(40);
+            JSONObject listing = changes().put("writable", true).put("index", "snapshot").put("commit", id).put("remote", "origin").put("remote_branch", "feature/git-panel")
+                .put("remote_allowed", true).put("upstream", "origin/feature/git-panel").put("ahead", 2)
+                .put("last_commit", new JSONObject().put("id", id).put("subject", "Latest commit").put("author", "Developer"));
+            JSONObject file = listing.getJSONArray("files").getJSONObject(0); file.put("staged", true).put("unstaged", true).put("status", "MM");
+            take(requests, "view=changes").result.done(listing, null); layout(panel);
+            View stage = action(panel.content, "Stage src/file.txt"), unstage = action(panel.content, "Unstage src/file.txt");
+            assertNotNull(stage); assertNotNull(unstage);
+            assertFalse(stage.createAccessibilityNodeInfo().isCheckable()); assertEquals("android.widget.Button", stage.createAccessibilityNodeInfo().getClassName());
+            assertEquals(View.VISIBLE, panel.commitArea.getVisibility()); assertTrue(panel.lastCommit.getText().toString().contains("Latest commit"));
+            assertNotNull(find(panel.content, "feature/git-panel")); assertTrue(panel.commitArea.getTop() >= panel.split.getBottom());
+            assertTrue(panel.remoteArea.getTop() >= panel.commitArea.getBottom()); assertNull(action(panel.remoteArea, "Fetch"));
+            String collapsedLabel = ((TextView) find(panel.commitArea, "Commit staged changes")).getText().toString();
+            action(panel.commitArea, "Expand commit area").setHovered(true);
+            screenshot(panel, "collapsed-" + (dark ? "dark" : "light"));
+            action(panel.commitArea, "Expand commit area").setHovered(false);
+            TextView collapsedText = (TextView) find(panel.commitArea, "Commit staged changes");
+            assertTrue(collapsedText.isShown()); assertTrue(collapsedText.getWidth() >= collapsedText.getPaint().measureText(collapsedLabel));
+            Bitmap labelImage = Bitmap.createBitmap(collapsedText.getWidth(), collapsedText.getHeight(), Bitmap.Config.ARGB_8888);
+            try {
+                collapsedText.draw(new Canvas(labelImage)); int[] pixels = new int[labelImage.getWidth() * labelImage.getHeight()];
+                labelImage.getPixels(pixels, 0, labelImage.getWidth(), 0, 0, labelImage.getWidth(), labelImage.getHeight());
+                assertTrue("Collapsed commit information paints visible text", java.util.Arrays.stream(pixels).anyMatch(pixel -> (pixel >>> 24) > 0));
+            } finally { labelImage.recycle(); }
+            assertFalse(find(panel.commitArea, "Commit staged changes").performClick()); assertFalse(panel.commitInput.isShown());
+            action(panel.commitArea, "Expand commit area").performClick(); layout(panel);
+            int oneLineHeight = panel.commitInput.getHeight();
+            panel.commitInput.setText("Commit line 1\nCommit line 2\nCommit line 3"); layout(panel);
+            int threeLineHeight = panel.commitInput.getHeight(); assertTrue(threeLineHeight > oneLineHeight);
+            String sixLines = "Commit line 1\nCommit line 2\nCommit line 3\nCommit line 4\nCommit line 5\nCommit line 6";
+            panel.commitInput.setText(sixLines); layout(panel); int maximumHeight = panel.commitInput.getHeight(); assertTrue(maximumHeight > threeLineHeight);
+            panel.commitInput.setText(sixLines + "\n" + sixLines); layout(panel);
+            assertEquals(maximumHeight, panel.commitInput.getHeight()); assertTrue(panel.commitInput.canScrollVertically(1));
+            panel.commitInput.requestFocus(); action(panel.commitArea, "Collapse commit area").setHovered(true);
+            screenshot(panel, "commit-max-" + (dark ? "dark" : "light"));
+            action(panel.commitArea, "Collapse commit area").setHovered(false);
+            panel.commitInput.setText("Commit from Android"); layout(panel); assertEquals(oneLineHeight, panel.commitInput.getHeight());
+            assertNull(find(panel.commitArea, "Cancel"));
+            TextView expandedSubmit = (TextView) action(panel.commitArea, "Commit staged changes (1)");
+            assertEquals(collapsedLabel, expandedSubmit.getText().toString());
+            action(panel.commitArea, "Collapse commit area").performClick();
+            assertFalse(panel.commitInput.isShown());
+            assertEquals(collapsedLabel, ((TextView) find(panel.commitArea, "Commit staged changes")).getText().toString());
+            action(panel.commitArea, "Expand commit area").performClick(); assertEquals("Commit from Android", panel.commitInput.getText().toString());
+            panel.commitInput.requestFocus(); panel.commitInput.selectAll();
+            screenshot(panel, "staging-" + (dark ? "dark" : "light"));
+            find(panel.content, "file.txt").performClick();
+            NativeFilesTest.Pending diff = take(requests, "view=diff"); assertTrue(diff.path.contains("side=staged")); diff.result.done(new JSONObject().put("patch", PATCH), null);
+            assertEquals(View.GONE, panel.commitArea.getVisibility()); assertEquals(View.VISIBLE, panel.lastCommit.getVisibility()); assertEquals(View.VISIBLE, panel.remoteArea.getVisibility());
+            action(panel.preview, "Close diff").performClick(); assertEquals(View.VISIBLE, panel.commitArea.getVisibility()); assertEquals("Commit from Android", panel.commitInput.getText().toString());
+            unstage.performClick(); assertEquals("unstage", writes.get(0).getString("action")); assertEquals(id, writes.get(0).getString("head"));
+            assertNull(find(panel.content, "Running Git operation…"));
+            assertFalse(action(panel.content, "Stage src/file.txt").isEnabled());
+            completions.remove(0).done(new JSONObject().put("ok", true), null);
+            file.put("staged", false); take(requests, "view=changes").result.done(listing, null);
+            action(panel.content, "Stage src/file.txt").performClick(); assertEquals("stage", writes.get(1).getString("action"));
+            completions.remove(0).done(new JSONObject().put("ok", true), null);
+            file.put("staged", true).put("unstaged", false); take(requests, "view=changes").result.done(listing, null);
+            View submit = action(panel.commitArea, "Commit staged changes (1)"); assertTrue(submit.isShown()); assertTrue(submit.isEnabled()); submit.performClick();
+            assertEquals("commit", writes.get(2).getString("action")); assertEquals("Commit from Android", writes.get(2).getString("message")); assertEquals("snapshot", writes.get(2).getString("index"));
+            completions.remove(0).done(new JSONObject().put("ok", true), null);
+            file.put("staged", false); listing.getJSONObject("last_commit").put("subject", "Commit from Android"); take(requests, "view=changes").result.done(listing, null);
+            assertEquals("", panel.commitInput.getText().toString()); assertTrue(panel.lastCommit.getText().toString().contains("Commit from Android"));
+            action(panel.remoteArea, "Git remote actions").performClick(); assertNotNull(ui.activePopover); assertEquals(2, ui.activePopover.content.getChildCount());
+            action(ui.activePopover.content, "Fetch").performClick(); assertEquals(3, writes.size()); assertTrue(completions.isEmpty());
+            TextView fetch = (TextView) action(panel.remoteArea, "Fetch"); assertNotNull(fetch); assertNotNull(fetch.getCompoundDrawablesRelative()[0]);
+            assertFalse(fetch.getText().toString().contains("↓"));
+            action(panel.remoteArea, "Git remote actions").performClick(); assertTrue(action(ui.activePopover.content, "Fetch").isSelected());
+            ui.activePopover.dismiss(); fetch.performClick(); assertEquals("fetch", writes.get(3).getString("action")); assertEquals("origin", writes.get(3).getString("remote"));
+            completions.remove(0).done(new JSONObject().put("ok", true), null); take(requests, "view=changes").result.done(listing, null);
+            assertNull(find(panel.content, "Git operation completed.")); assertNull(action(panel.content, "Dismiss"));
+            action(panel.remoteArea, "Git remote actions").performClick(); action(ui.activePopover.content, "Push").performClick();
+            assertEquals(4, writes.size()); assertTrue(completions.isEmpty());
+            TextView push = (TextView) action(panel.remoteArea, "Push"); assertNotNull(push.getCompoundDrawablesRelative()[0]); assertFalse(push.getText().toString().contains("↑"));
+            push.performClick(); assertEquals("push", writes.get(4).getString("action")); completions.remove(0).done(null, new Exception("Push rejected"));
+            assertNotNull(find(panel.content, "Push rejected")); take(requests, "view=changes").result.done(listing, null);
+            action(panel.content, "Dismiss").performClick(); assertNull(find(panel.content, "Push rejected"));
+            panel.reload(); take(requests, "view=changes").result.done(listing, null); assertNull(find(panel.content, "Push rejected"));
+            action(panel.remoteArea, "Push").performClick(); assertEquals(6, writes.size());
+            completions.remove(0).done(null, new Exception("Push rejected")); take(requests, "view=changes").result.done(listing, null);
+            assertNotNull(find(panel.content, "Push rejected")); assertNotNull(action(panel.content, "Dismiss"));
+            screenshot(panel, "operations-" + (dark ? "dark" : "light"));
+            action(panel.content, "Dismiss").performClick(); assertNull(find(panel.content, "Push rejected"));
+            panel.activate(false);
+        }
+    }
+
+    @Test public void discardRequiresConfirmationAndGroupSquaresUseOnlyTheirOwnFiles() throws Exception {
+        RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
+        for (boolean dark : new boolean[]{false, true}) try (ActivityController<Activity> activity = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(activity.get(), dark, "en"); NativeFileModel model = new NativeFileModel("p", "c");
+            JSONObject tree = workspace("/repo/tree"); model.workspace = tree; model.workspaces = new JSONArray().put(tree);
+            JSONObject first = changes().put("writable", true).put("index", "confirmed-index");
+            first.getJSONArray("files").getJSONObject(0).put("staged", true).put("unstaged", true).put("status", "MM");
+            first.getJSONArray("files").put(new JSONObject().put("path", "notes.txt").put("untracked", true).put("unstaged", true).put("status", "??"));
+            JSONObject[] listing = {first}; List<JSONObject> writes = new ArrayList<>();
+            NativeGitPanel panel = new NativeGitPanel(ui, model, (path, done) -> done.done(listing[0], null), value -> {});
+            panel.write = (path, body, done) -> { writes.add(body); done.done(new JSONObject(), null); };
+            activity.get().setContentView(panel); panel.activate(true); layout(panel);
+            assertNotNull(action(panel.content, "Unstage all")); assertNotNull(action(panel.content, "Stage all"));
+            action(panel.content, "Discard src/file.txt").performClick();
+            NativeDialog dialog = (NativeDialog) ShadowDialog.getLatestDialog(); assertTrue(dialog.isShowing());
+            assertNotNull(find(dialog.body, "src/file.txt")); assertNull(find(dialog.body, "notes.txt"));
+            screenshot(dialog.getWindow().getDecorView(), "discard-confirmation-" + (dark ? "dark" : "light"));
+            assertTrue(writes.isEmpty()); find(dialog.actions, "Cancel").performClick(); assertTrue(writes.isEmpty());
+            action(panel.content, "Discard src/file.txt").performClick(); dialog = (NativeDialog) ShadowDialog.getLatestDialog();
+            // Polling may load a newer index while the file list is being confirmed.
+            listing[0] = new JSONObject(first.toString()).put("index", "new-index"); panel.reload();
+            find(dialog.actions, "Discard changes").performClick();
+            assertEquals("discard", writes.get(0).getString("action")); assertEquals("confirmed-index", writes.get(0).getString("index"));
+            paths(writes.get(0), "src/file.txt");
+            action(panel.content, "Discard notes.txt").performClick(); dialog = (NativeDialog) ShadowDialog.getLatestDialog();
+            assertNotNull(find(dialog.body, "notes.txt")); find(dialog.actions, "Discard changes").performClick();
+            paths(writes.get(1), "notes.txt");
+            // The first bulk discard is the Unstaged group, separate from Untracked.
+            action(panel.content, "Discard all changes").performClick(); dialog = (NativeDialog) ShadowDialog.getLatestDialog();
+            assertNotNull(find(dialog.body, "src/file.txt")); assertNull(find(dialog.body, "notes.txt"));
+            find(dialog.actions, "Discard changes").performClick(); paths(writes.get(2), "src/file.txt");
+            action(panel.content, "Unstage all").performClick(); assertEquals("unstage", writes.get(3).getString("action"));
+            action(panel.content, "Stage all").performClick(); assertEquals("stage", writes.get(4).getString("action"));
+            paths(writes.get(4), "src/file.txt");
+            screenshot(panel, "discard-actions-" + (dark ? "dark" : "light"));
+            action(panel.content, "Discard notes.txt").performClick(); dialog = (NativeDialog) ShadowDialog.getLatestDialog();
+            panel.scopeChanged(); assertFalse(dialog.isShowing()); assertEquals(5, writes.size());
+            panel.activate(false);
         }
     }
 }

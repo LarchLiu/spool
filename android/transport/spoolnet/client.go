@@ -134,7 +134,9 @@ func deviceHostname(model string) string {
 func nativeHTTPClient(dial func(context.Context, string, string) (net.Conn, error)) (*http.Client, *http.Transport) {
 	// No HTTP proxy is inherited. Each dialer enforces the selected origin and
 	// routing mode; TLS verifies the original URL hostname, not the dialed IP.
-	transport := &http.Transport{DialContext: dial, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 25 * time.Second, IdleConnTimeout: 60 * time.Second}
+	// Per-request contexts retain short deadlines for ordinary API calls; Git
+	// writes need time for remote authentication, hooks and network transfers.
+	transport := &http.Transport{DialContext: dial, TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 100 * time.Second, IdleConnTimeout: 60 * time.Second}
 	jar, _ := cookiejar.New(nil)
 	return &http.Client{Transport: transport, Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error {
 		return errors.New("redirects are not allowed")
@@ -248,7 +250,11 @@ func encodeResponse(resp *http.Response) (string, error) {
 
 // Request retains session cookies privately; credentials never cross the Go boundary.
 func (c *Client) Request(method, path, body, csrf, language string) (string, error) {
-	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
+	timeout := 30 * time.Second
+	if parsed, err := url.ParseRequestURI(path); err == nil && method == http.MethodPost && strings.HasSuffix(parsed.Path, "/git") {
+		timeout = 105 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(c.ctx, timeout)
 	defer cancel()
 	contentType := ""
 	if method == http.MethodPost {
