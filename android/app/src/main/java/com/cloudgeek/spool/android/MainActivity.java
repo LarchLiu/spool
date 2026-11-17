@@ -2341,6 +2341,7 @@ public final class MainActivity extends Activity {
 
     private void renderNavigation() {
         rememberAccount();
+        restoreSidebarPreferences();
         sidebarState.select(projectID, chatID, projects, chats);
         if (!panel.equals("sidebar") || sidebar == null) return;
         sidebar.servers(serverProfiles, serverConnectionStates(), this::selectServer, () -> editServer(true));
@@ -2503,7 +2504,7 @@ public final class MainActivity extends Activity {
 
     private void updateChatOptions() {
         if (workspaceHeader == null) return;
-        workspaceHeader.chatOptions(!chatID.isEmpty() && writable() && !routeLoginRequired,
+        workspaceHeader.chatOptions(!chatID.isEmpty() && chat != null && user != null && !routeLoginRequired,
                 chatActionPending.isEmpty() && connected, this::openChatOptions);
     }
 
@@ -2513,11 +2514,18 @@ public final class MainActivity extends Activity {
     }
 
     private void openChatOptions() {
-        if (workspaceHeader == null || !writable() || chatID.isEmpty() || !chatActionPending.isEmpty() || !connected) return;
+        if (workspaceHeader == null || chat == null || user == null || routeLoginRequired || chatID.isEmpty() || !chatActionPending.isEmpty() || !connected) return;
         closeChatMenu();
+        restoreSidebarPreferences();
         final String target = chatID;
         final int token = generation, session = authEpoch;
         chatMenu = new NativeChatMenu(ui, chatTitle(), new NativeChatMenu.Actions() {
+            public boolean canManage() { return writable(); }
+            public boolean pinned() { return sidebarState.pinned.contains(target); }
+            public void togglePin() {
+                if (destroyed || token != generation || session != authEpoch || !target.equals(chatID)) return;
+                sidebarState.togglePin(target); renderNavigation();
+            }
             public void rename(String title, java.util.function.Consumer<Exception> done) { mutate("rename", object("title", title), done); }
             public void archive(java.util.function.Consumer<Exception> done) { mutate("archive", object(), done); }
             public void delete(java.util.function.Consumer<Exception> done) { mutate("delete", object(), done); }
@@ -2551,6 +2559,12 @@ public final class MainActivity extends Activity {
             }
         }, this::toast);
         chatMenu.show(workspaceHeader.titleAction);
+    }
+
+    private void restoreSidebarPreferences() {
+        ServerProfiles.Server server = serverProfiles.active();
+        String owner = user != null ? user.optString("id") : server == null ? "" : server.account.optString("id");
+        sidebarState.bindPreferences(this, serverProfiles.selected, owner);
     }
 
     private void openChat(String id) {

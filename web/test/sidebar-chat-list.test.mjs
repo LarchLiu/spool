@@ -11,7 +11,30 @@ import {
   sortedSidebarChats,
   revealSidebarProject,
   revealSidebarChat,
+  parseSidebarPreferences,
+  pinnedSidebarChats,
 } from "../.test-build/components/web/src/sidebar-state.js";
+
+test("sidebar preferences validate stored pins and restore each section independently", () => {
+  const defaults = { pinned: [], collapsed: { pinned: false, projects: false, recents: false } };
+  for (const raw of [null, "broken", "null", "[]", '{"pinned":false,"collapsed":true}']) {
+    assert.deepEqual(parseSidebarPreferences(raw), defaults);
+  }
+  assert.deepEqual(parseSidebarPreferences(JSON.stringify({
+    pinned: ["second", 1, null, "first", "second", ""],
+    collapsed: { pinned: true, projects: "true", recents: true },
+  })), { pinned: ["second", "first"], collapsed: { pinned: true, projects: false, recents: true } });
+});
+
+test("pins retain the chosen order across activity updates and only show authorized navigation records", () => {
+  const chats = [{ id: "first", updated_at: 10 }, { id: "second", updated_at: 20 }];
+  const pins = ["first", "inaccessible", "second"];
+  assert.deepEqual(pinnedSidebarChats(chats, pins), chats);
+  chats[1].updated_at = 30;
+  assert.deepEqual(pinnedSidebarChats(chats, pins).map(chat => chat.id), ["first", "second"]);
+  assert.deepEqual(pinnedSidebarChats(chats.slice(1), pins).map(chat => chat.id), ["second"]);
+  assert.deepEqual(pins, ["first", "inaccessible", "second"]);
+});
 
 test("sidebar sort is newest-first, stable for equal timestamps and leaves navigation data untouched", () => {
   const chats = [

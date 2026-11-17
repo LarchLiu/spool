@@ -170,7 +170,13 @@ final class NativePopover {
                 dismiss();
                 return true;
             }
-            int count = content.getChildCount(), index = content.indexOfChild(row), next = -1;
+            java.util.List<View> items = new java.util.ArrayList<>();
+            for (int i = 0; i < content.getChildCount(); i++) {
+                View item = content.getChildAt(i);
+                if (item.isFocusable() && item.isEnabled()) items.add(item);
+            }
+            int count = items.size(), index = items.indexOf(row), next = -1;
+            if (count == 0) return false;
             if (code == android.view.KeyEvent.KEYCODE_DPAD_DOWN) next = (index + 1) % count;
             else if (code == android.view.KeyEvent.KEYCODE_DPAD_UP) next = (index - 1 + count) % count;
             else if (code == android.view.KeyEvent.KEYCODE_MOVE_HOME) next = 0;
@@ -184,7 +190,7 @@ final class NativePopover {
                     String query = search.codePoints().allMatch(ch -> ch == text.codePointAt(0)) ? text : search;
                     for (int offset = 1; offset <= count; offset++) {
                         int candidate = (index + offset) % count;
-                        if (content.getChildAt(candidate).getContentDescription().toString().toLowerCase(java.util.Locale.ROOT).startsWith(query)) {
+                        if (String.valueOf(items.get(candidate).getContentDescription()).toLowerCase(java.util.Locale.ROOT).startsWith(query)) {
                             next = candidate;
                             break;
                         }
@@ -192,7 +198,7 @@ final class NativePopover {
                 }
             }
             if (next < 0) return false;
-            content.getChildAt(next).requestFocus();
+            items.get(next).requestFocus();
             return true;
         });
         content.addView(row, new LinearLayout.LayoutParams(-1, -2));

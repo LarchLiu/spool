@@ -21,7 +21,11 @@ import {
   sortedSidebarChats,
   revealSidebarProject,
   revealSidebarChat,
+  pinnedSidebarChats,
+  type SidebarPreferences,
+  type SidebarSection as Section,
 } from "./sidebar-state";
+import { SidebarSection } from "./sidebar-section";
 import {
   INITIAL_CHAT_LIMIT,
   LocalSessionIcon,
@@ -32,6 +36,9 @@ type Props = {
   user: User;
   projects: Project[];
   chats: Chat[];
+  pinned: string[];
+  collapsed: SidebarPreferences["collapsed"];
+  onToggleSection: (section: Section) => void;
   resolveProfile: (id: string) => AvatarIdentity;
   project: string;
   chatID: string;
@@ -66,6 +73,10 @@ export function Sidebar(props: Props) {
     for (const [id, list] of groups) groups.set(id, sortedSidebarChats(list));
     return groups;
   }, [chats]);
+  const pinned = useMemo(
+    () => pinnedSidebarChats(chats, props.pinned),
+    [chats, props.pinned],
+  );
   const recents = useMemo(() => sortedSidebarChats(chats), [chats]);
   useEffect(() => {
     if (!project) return;
@@ -152,8 +163,23 @@ export function Sidebar(props: Props) {
         </button>
       </div>
       <nav className="sidebar-scroll" aria-label={t("Workspace")}>
-        <section className="nav-section" aria-labelledby="projects-label">
-          <h2 id="projects-label">{t("Projects")}</h2>
+        <SidebarSection
+          id="pinned"
+          title={t("Pinned")}
+          collapsed={props.collapsed.pinned}
+          onToggle={() => props.onToggleSection("pinned")}
+        >
+          {pinned.map((chat) => chatButton(chat, false))}
+          {!pinned.length && (
+            <p className="nav-empty">{t("No pinned chats")}</p>
+          )}
+        </SidebarSection>
+        <SidebarSection
+          id="projects"
+          title={t("Projects")}
+          collapsed={props.collapsed.projects}
+          onToggle={() => props.onToggleSection("projects")}
+        >
           {projects.slice(0, projectLimit).map((p) => {
             const isOpen = expanded.has(p.id);
             const list = byProject.get(p.id) || [];
@@ -225,12 +251,13 @@ export function Sidebar(props: Props) {
               {t("Show more")}
             </button>
           )}
-        </section>
-        <section
-          className="nav-section recents"
-          aria-labelledby="recents-label"
+        </SidebarSection>
+        <SidebarSection
+          id="recents"
+          title={t("Recents")}
+          collapsed={props.collapsed.recents}
+          onToggle={() => props.onToggleSection("recents")}
         >
-          <h2 id="recents-label">{t("Recents")}</h2>
           <SidebarChatList
             chats={recents}
             limit={recentLimit}
@@ -238,7 +265,7 @@ export function Sidebar(props: Props) {
             renderChat={(chat) => chatButton(chat, false)}
             onLimit={setRecentLimit}
           />
-        </section>
+        </SidebarSection>
       </nav>
       <div className="side-foot">
         <button

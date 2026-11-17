@@ -1,11 +1,22 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Archive, ChevronDown, Pencil, Trash2, X } from "lucide-react";
+import {
+  Archive,
+  ChevronDown,
+  Pencil,
+  Pin,
+  PinOff,
+  Trash2,
+  X,
+} from "lucide-react";
 import type { Translator } from "./i18n";
 
 export function ChatTitleMenu({
   title,
   t,
+  pinned,
+  onTogglePin,
+  canManage = true,
   onRename,
   onArchive,
   onDelete,
@@ -13,6 +24,9 @@ export function ChatTitleMenu({
 }: {
   title: string;
   t: Translator;
+  pinned: boolean;
+  onTogglePin: () => void;
+  canManage?: boolean;
   onRename: (title: string) => Promise<void>;
   onArchive: () => Promise<void>;
   onDelete: () => Promise<void>;
@@ -142,52 +156,77 @@ export function ChatTitleMenu({
               }
             }}
           >
-            <button
-              type="button"
-              role="menuitem"
-              disabled={archiving}
-              onClick={() => {
-                close();
-                setRenaming(true);
-              }}
-            >
-              <Pencil size={15} aria-hidden="true" />
-              {t("Rename")}
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={archiving}
-              aria-busy={archiving}
-              onClick={async () => {
-                setArchiving(true);
-                try {
-                  await onArchive();
+            {canManage && (
+              <button
+                type="button"
+                role="menuitem"
+                disabled={archiving}
+                onClick={() => {
                   close();
-                } catch (error) {
-                  close(true);
-                  onError(error);
-                } finally {
-                  setArchiving(false);
-                }
-              }}
-            >
-              <Archive size={15} aria-hidden="true" />
-              {t(archiving ? "Archiving…" : "Archive")}
-            </button>
+                  setRenaming(true);
+                }}
+              >
+                <Pencil size={15} aria-hidden="true" />
+                {t("Rename")}
+              </button>
+            )}
             <button
               type="button"
               role="menuitem"
-              className="destructive"
               disabled={archiving}
               onClick={() => {
-                close();
-                setDeleting(true);
+                onTogglePin();
+                close(true);
               }}
             >
-              <Trash2 size={15} aria-hidden="true" />
-              {t("Delete")}
+              {pinned ? (
+                <PinOff size={15} aria-hidden="true" />
+              ) : (
+                <Pin size={15} aria-hidden="true" />
+              )}
+              {t(pinned ? "Unpin chat" : "Pin chat")}
             </button>
+            {canManage && (
+              <div className="chat-title-menu-separator" role="separator" />
+            )}
+            {canManage && (
+              <button
+                type="button"
+                role="menuitem"
+                disabled={archiving}
+                aria-busy={archiving}
+                onClick={async () => {
+                  setArchiving(true);
+                  try {
+                    await onArchive();
+                    close();
+                  } catch (error) {
+                    close(true);
+                    onError(error);
+                  } finally {
+                    setArchiving(false);
+                  }
+                }}
+              >
+                <Archive size={15} aria-hidden="true" />
+                {t(archiving ? "Archiving…" : "Archive")}
+              </button>
+            )}
+            {canManage && (
+              <button
+                type="button"
+                role="menuitem"
+                className="destructive"
+                disabled={archiving}
+                onClick={() => {
+                  close();
+                  setDeleting(true);
+                }}
+              >
+                <Trash2 size={15} aria-hidden="true" />
+                {t("Delete")}
+              </button>
+            )}
           </div>,
           document.body,
         )}

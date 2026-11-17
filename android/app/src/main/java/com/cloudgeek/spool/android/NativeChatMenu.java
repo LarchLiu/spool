@@ -12,6 +12,9 @@ import java.util.function.Consumer;
 /** Chat management UI; mutations and navigation remain owned by the Activity/API. */
 final class NativeChatMenu {
     interface Actions {
+        boolean canManage();
+        boolean pinned();
+        void togglePin();
         void rename(String title, Consumer<Exception> done);
         void archive(Consumer<Exception> done);
         void delete(Consumer<Exception> done);
@@ -27,9 +30,17 @@ final class NativeChatMenu {
     NativeChatMenu(NativeUi ui, String title, Actions actions, Consumer<Exception> failed) {
         this.ui = ui; this.title = title; this.actions = actions; this.failed = failed;
         popup = new NativePopover(ui, 200, 8, 5, 16);
-        option("Rename", "pencil", false, this::rename);
-        option("Archive", "archive", false, () -> actions.archive(error -> { if (error != null) failed.accept(error); }));
-        option("Delete", "trash", true, this::delete);
+        if (actions.canManage()) option("Rename", "pencil", false, this::rename);
+        option(actions.pinned() ? "Unpin chat" : "Pin chat", actions.pinned() ? "pin-off" : "pin", false, actions::togglePin);
+        if (actions.canManage()) {
+            View separator = ui.divider();
+            separator.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            LinearLayout.LayoutParams spacing = new LinearLayout.LayoutParams(-1, ui.dp(1));
+            spacing.topMargin = spacing.bottomMargin = ui.dp(4);
+            popup.content.addView(separator, spacing);
+            option("Archive", "archive", false, () -> actions.archive(error -> { if (error != null) failed.accept(error); }));
+            option("Delete", "trash", true, this::delete);
+        }
     }
 
     private void option(String text, String icon, boolean danger, Runnable click) {

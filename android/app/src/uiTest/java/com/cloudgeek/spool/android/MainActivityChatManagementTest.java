@@ -42,8 +42,16 @@ public class MainActivityChatManagementTest {
         NativeChatMenu menu = h.get("chatMenu");
         Shadows.shadowOf(Looper.getMainLooper()).idle();
         assertTrue(menu.popup.isShowing());
-        assertEquals(3, menu.popup.content.getChildCount());
-        if (option >= 0) assertTrue(menu.popup.content.getChildAt(option).performClick());
+        assertEquals(5, menu.popup.content.getChildCount());
+        NativeUi ui = h.get("ui");
+        assertEquals(ui.t("Rename"), menu.popup.content.getChildAt(0).getContentDescription());
+        assertEquals(ui.t(h.<NativeSidebarState>get("sidebarState").pinned.contains(h.<String>get("chatID")) ? "Unpin chat" : "Pin chat"), menu.popup.content.getChildAt(1).getContentDescription());
+        assertFalse(menu.popup.content.getChildAt(2).isFocusable());
+        assertFalse(menu.popup.content.getChildAt(2).isClickable());
+        assertEquals(ui.dp(1), menu.popup.content.getChildAt(2).getHeight());
+        assertEquals(ui.t("Archive"), menu.popup.content.getChildAt(3).getContentDescription());
+        assertEquals(ui.t("Delete"), menu.popup.content.getChildAt(4).getContentDescription());
+        if (option >= 0) assertTrue(menu.popup.content.getChildAt(option < 2 ? option : option + 1).performClick());
         return menu;
     }
 
@@ -128,17 +136,17 @@ public class MainActivityChatManagementTest {
         for (String backend : new String[] {"codex", "claude"}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             seed(h, backend);
             MainActivityGoalTest.ShadowClient.response = envelope(409, new JSONObject().put("error", "Wait for the running response before archiving this chat"));
-            open(h, 1); assertEquals("chat-one", h.<String>get("chatID"));
+            open(h, 2); assertEquals("chat-one", h.<String>get("chatID"));
             assertFalse(h.<NativeUi.Header>get("workspaceHeader").titleAction.isEnabled());
             h.io.run();
             assertEquals("chat-one", h.<String>get("chatID")); assertEquals(1, h.<JSONArray>get("chats").length());
             assertEquals("Wait for the running response before archiving this chat", ShadowToast.getTextOfLatestToast());
             // A returned item must remain visible; the client never filters it optimistically.
             MainActivityGoalTest.ShadowClient.response = envelope(200, navigation(h, h.get("chats")));
-            open(h, 1); h.io.run();
+            open(h, 2); h.io.run();
             assertEquals("chat-one", h.<String>get("chatID"));
             MainActivityGoalTest.ShadowClient.response = envelope(200, navigation(h, new JSONArray()));
-            open(h, 1); h.io.run();
+            open(h, 2); h.io.run();
             assertEquals("", h.<String>get("chatID")); assertNull(h.get("chat"));
             assertEquals(0, h.<JSONArray>get("chats").length());
             assertEquals("/api/chats/chat-one/archive", MainActivityGoalTest.ShadowClient.calls.get(0).get(1));
@@ -148,10 +156,10 @@ public class MainActivityChatManagementTest {
     @Test public void deletionRequiresConfirmationAndOnlySuccessfulRefreshClearsSelection() throws Exception {
         for (String backend : new String[] {"codex", "claude"}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             seed(h, backend);
-            NativeChatMenu menu = open(h, 2);
+            NativeChatMenu menu = open(h, 3);
             assertTrue(h.io.jobs.isEmpty()); assertTrue(menu.dialog.cancel.hasFocus());
             menu.dialog.cancel.performClick(); assertTrue(h.io.jobs.isEmpty());
-            menu = open(h, 2); menu.dialog.submit.performClick(); menu.dialog.submit.performClick();
+            menu = open(h, 3); menu.dialog.submit.performClick(); menu.dialog.submit.performClick();
             assertFalse(menu.dialog.cancel.isEnabled()); assertEquals(1, h.io.jobs.size());
             MainActivityGoalTest.ShadowClient.response = envelope(502, new JSONObject().put("error", "Could not delete chat"));
             h.io.run();
@@ -165,17 +173,56 @@ public class MainActivityChatManagementTest {
         }
     }
 
-    @Test public void titleMenuIsUnavailableForUnsavedReadOnlyOrLoadingChats() throws Exception {
+    @Test public void titleMenuPinsReadOnlyChatsAndStaysUnavailableForUnsavedOrLoadingChats() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(false)) {
             assertEquals(View.GONE, h.<NativeUi.Header>get("workspaceHeader").titleChevron.getVisibility());
             assertFalse(h.<NativeUi.Header>get("workspaceHeader").titleAction.isClickable());
         }
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             seed(h, "codex"); h.<JSONObject>get("chat").put("can_control", false); h.call("updateComposer");
-            assertEquals(View.GONE, h.<NativeUi.Header>get("workspaceHeader").titleChevron.getVisibility());
+            assertEquals(View.VISIBLE, h.<NativeUi.Header>get("workspaceHeader").titleChevron.getVisibility());
+            h.<NativeUi.Header>get("workspaceHeader").titleAction.performClick();
+            NativeChatMenu menu = h.get("chatMenu");
+            assertEquals(1, menu.popup.content.getChildCount());
+            assertTrue(menu.popup.content.getChildAt(0).performClick());
+            assertTrue(h.<NativeSidebarState>get("sidebarState").pinned.contains("chat-one"));
             h.set("chat", null); h.call("updateComposer");
             assertEquals(View.GONE, h.<NativeUi.Header>get("workspaceHeader").titleChevron.getVisibility());
             assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
+        }
+    }
+
+    @Test public void titleMenuPinAndUnpinUpdateTheSidebarAndRestoreAfterRecreation() throws Exception {
+        for (String backend : new String[] {"codex", "claude"}) {
+            try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+                seed(h, backend);
+                NativeSidebarState state = h.get("sidebarState");
+                state.toggleSection("pinned");
+                NativeChatMenu menu = open(h, -1);
+                View pin = menu.popup.content.getChildAt(1), archive = menu.popup.content.getChildAt(3);
+                pin.requestFocus();
+                pin.dispatchKeyEvent(new android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_DPAD_DOWN));
+                assertTrue("Keyboard navigation skips the separator", archive.hasFocus());
+                archive.dispatchKeyEvent(new android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_DPAD_UP));
+                assertTrue(pin.hasFocus());
+                pin.performClick();
+                assertFalse(menu.popup.isShowing()); assertTrue(state.pinned.contains("chat-one"));
+                assertFalse(state.collapsed.contains("pinned")); assertTrue(h.io.jobs.isEmpty());
+                h.call("openSidebar");
+                NativeSidebar sidebar = h.get("sidebar");
+                assertNotNull(sidebar.findViewWithTag("pinned:chat-one")); assertNotNull(sidebar.findViewWithTag("recent:chat-one"));
+                h.call("closeDrawer");
+            }
+            try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+                seed(h, backend);
+                assertTrue(h.<NativeSidebarState>get("sidebarState").pinned.contains("chat-one"));
+                NativeChatMenu menu = open(h, 1);
+                assertFalse(menu.popup.isShowing()); assertFalse(h.<NativeSidebarState>get("sidebarState").pinned.contains("chat-one"));
+                h.call("openSidebar");
+                assertNull(h.<NativeSidebar>get("sidebar").findViewWithTag("pinned:chat-one"));
+                assertNotNull(h.<NativeSidebar>get("sidebar").findViewWithTag("recent:chat-one"));
+                assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
+            }
         }
     }
 
@@ -183,7 +230,7 @@ public class MainActivityChatManagementTest {
         for (boolean alreadySent : new boolean[] {false, true}) for (boolean server : new boolean[] {false, true})
             try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
                 seed(h, "claude");
-                NativeChatMenu menu = open(h, 2); menu.dialog.submit.performClick();
+                NativeChatMenu menu = open(h, 3); menu.dialog.submit.performClick();
                 MainActivityGoalTest.ShadowClient.response = envelope(200, navigation(h, new JSONArray()));
                 Runnable request = h.io.jobs.remove(0);
                 if (alreadySent) request.run();
@@ -213,15 +260,15 @@ public class MainActivityChatManagementTest {
                 assertEquals(13, header.titleChevron.getWidth());
                 assertTrue(header.titleChevron.getLeft() >= header.title.getRight());
                 assertTrue(header.titleChevron.getRight() <= header.titleAction.getWidth());
-                View last = menu.popup.content.getChildAt(2);
+                View last = menu.popup.content.getChildAt(4);
                 assertTrue(last.getHeight() >= 48);
-                assertTrue("All three menu actions fit without clipping", last.getBottom() <= ((View) menu.popup.content.getParent()).getHeight());
+                assertTrue("All four menu actions fit without clipping", last.getBottom() <= ((View) menu.popup.content.getParent()).getHeight());
                 if (language.equals("zh-CN")) {
                     snapshot(header, "header-320" + (dark ? "-dark" : "-light"));
                     snapshot(menu.popup.content, "menu-320" + (dark ? "-dark" : "-light"));
                     snapshotOpenMenu(h, menu, "dropdown-320" + (dark ? "-dark" : "-light"));
                 }
-                menu.popup.content.getChildAt(2).performClick();
+                menu.popup.content.getChildAt(4).performClick();
                 View modal = menu.dialog.modal;
                 modal.measure(View.MeasureSpec.makeMeasureSpec(320, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(600, View.MeasureSpec.AT_MOST));
                 modal.layout(0, 0, modal.getMeasuredWidth(), modal.getMeasuredHeight());
@@ -240,12 +287,12 @@ public class MainActivityChatManagementTest {
     }
 
     @Test public void lateResponsesUpdateOnlyTheTargetAndPreserveAnotherChatsDraft() throws Exception {
-        for (int option : new int[] {0, 1, 2}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+        for (int option : new int[] {0, 2, 3}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             seed(h, "codex");
             JSONObject other = h.chat("chat-two").put("title", "Other title").put("project_id", "project-one");
             h.<JSONArray>get("chats").put(other);
             NativeChatMenu menu = open(h, option);
-            if (option != 1) {
+            if (option != 2) {
                 if (option == 0) menu.dialog.name.setText("Renamed target");
                 menu.dialog.submit.performClick();
             }
@@ -264,7 +311,7 @@ public class MainActivityChatManagementTest {
     @Test public void deletionOfANewChatAbsentFromPreviousNavigationStillClearsItsSelection() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             MainActivityGoalTest.ShadowClient.response = envelope(200, navigation(h, new JSONArray()));
-            NativeChatMenu menu = open(h, 2); menu.dialog.submit.performClick(); h.io.run();
+            NativeChatMenu menu = open(h, 3); menu.dialog.submit.performClick(); h.io.run();
             assertEquals("", h.<String>get("chatID")); assertNull(h.get("chat"));
         }
     }

@@ -52,6 +52,50 @@ public class NativeSidebarTest {
         state.moreChats(null, 18); state.moreChats("project-0", 16); assertEquals(15, state.recentLimit); assertEquals(15, state.limit("project-0")); state.select("project-6", "missing", projects, chats); assertEquals(7, state.projectLimit); state.reset(); assertTrue(state.expanded.isEmpty()); assertEquals(5, state.recentLimit); assertEquals(5, state.projectLimit);
     }
 
+    @Test public void pinsAndSectionChoicesPersistPerServerAndAccountWithoutRestoringHiddenChats() throws Exception {
+        android.content.Context context = RuntimeEnvironment.getApplication();
+        NativeSidebarState state = new NativeSidebarState();
+        state.bindPreferences(context, "server-a", "alice");
+        state.togglePin("first"); state.togglePin("second"); state.toggleSection("projects"); state.toggleSection("recents");
+        JSONArray chats = new JSONArray("[{\"id\":\"first\",\"updated_at\":30},{\"id\":\"second\",\"updated_at\":10},{\"id\":\"third\",\"updated_at\":20}]");
+        assertEquals(List.of("second", "first"), new ArrayList<>(state.pinned));
+        assertEquals("second", state.pinnedChats(chats).get(0).getString("id"));
+        assertEquals("first", NativeSidebarState.sorted(chats, null).get(0).getString("id"));
+        assertEquals(1, state.pinnedChats(new JSONArray().put(chats.getJSONObject(0))).size());
+        NativeSidebarState restored = new NativeSidebarState(); restored.bindPreferences(context, "server-a", "alice");
+        assertEquals(state.pinned, restored.pinned); assertEquals(state.collapsed, restored.collapsed);
+        restored.bindPreferences(context, "server-b", "alice"); assertTrue(restored.pinned.isEmpty()); assertTrue(restored.collapsed.isEmpty());
+        restored.togglePin("third"); restored.bindPreferences(context, "server-a", "bob"); assertTrue(restored.pinned.isEmpty());
+        restored.bindPreferences(context, "server-a", "alice"); restored.toggleSection("pinned"); restored.togglePin("third");
+        assertFalse(restored.collapsed.contains("pinned")); assertTrue(restored.collapsed.contains("projects"));
+        restored.togglePin("first"); assertFalse(restored.pinned.contains("first")); assertEquals(3, NativeSidebarState.sorted(chats, null).size());
+        restored.reset(); restored.bindPreferences(context, "server-a", "alice"); assertEquals(List.of("third", "second"), new ArrayList<>(restored.pinned));
+    }
+
+    @Test public void sectionHeadersCollapseIndependentlyAndPinnedRowsNavigate() throws Exception {
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false); NativeSidebarState state = new NativeSidebarState();
+            state.togglePin("chat-0"); List<String> selected = new ArrayList<>();
+            JSONObject fixture = fixtures(); JSONArray people = fixture.getJSONArray("peopleProfiles");
+            NativeSidebar sidebar = new NativeSidebar(ui, state, id -> person(people, id), () -> {}, selected::add, id -> {}, () -> {}, () -> {}, () -> {});
+            controller.get().setContentView(sidebar);
+            sidebar.bind(people.getJSONObject(0), fixture.getJSONArray("sidebarProjects"), fixture.getJSONArray("sidebarChats"), "project-0", "chat-0", "codex", false);
+            layout(sidebar, 360, 800);
+            for (View heading : sidebar.headings) assertEquals(sidebar.chatRows.get(0).getHeight(), heading.getHeight());
+            assertEquals(3, sidebar.headings.size()); assertNotNull(sidebar.findViewWithTag("pinned:chat-0")); assertNotNull(sidebar.findViewWithTag("recent:chat-0"));
+            sidebar.findViewWithTag("pinned:chat-0").performClick(); assertEquals(List.of("chat-0"), selected);
+            sidebar.findViewWithTag("section:projects").performClick(); assertEquals(0, sidebar.projectRows.size()); assertNotNull(sidebar.findViewWithTag("pinned:chat-0"));
+            sidebar.findViewWithTag("section:pinned").performClick(); assertNull(sidebar.findViewWithTag("pinned:chat-0")); assertFalse(sidebar.chatRows.isEmpty());
+            sidebar.findViewWithTag("section:recents").performClick(); assertTrue(sidebar.chatRows.isEmpty());
+            View heading = sidebar.findViewWithTag("section:pinned"); android.view.accessibility.AccessibilityNodeInfo info = heading.createAccessibilityNodeInfo();
+            assertEquals("android.widget.Button", info.getClassName());
+            assertTrue(info.getActionList().contains(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_EXPAND));
+            heading.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_EXPAND, null);
+            assertNotNull(sidebar.findViewWithTag("pinned:chat-0")); assertEquals(0, sidebar.projectRows.size());
+            sidebar.deactivate();
+        }
+    }
+
     @Test public void mobileDrawersAndOperatorTooltipsRenderAtAllWidthsAndThemes() throws Exception {
         JSONObject fixture = fixtures(); JSONArray profiles = fixture.getJSONArray("peopleProfiles"), projects = fixture.getJSONArray("sidebarProjects"), chats = fixture.getJSONArray("sidebarChats");
         for (int width : new int[] {320,360,412}) { RuntimeEnvironment.setQualifiers("w" + width + "dp-h800dp-mdpi"); for (boolean dark : new boolean[] {false,true}) for (boolean empty : new boolean[] {false,true}) {

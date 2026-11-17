@@ -93,9 +93,27 @@ final class NativeSidebar extends LinearLayout {
         serverTabs = new NativeServerTabs(ui, profiles, online, id -> { if (active) choose.accept(id); }, true, () -> { if (active) add.run(); });
         addView(serverTabs, indexOfChild(brand) + 1, new LayoutParams(-1, -2));
     }
-    private void heading(String title) {
+    private boolean heading(String title, String section) {
+        boolean open = !state.collapsed.contains(section);
+        LinearLayout row = ui.row(); row.setPadding(ui.dp(8), 0, ui.dp(8), 0); row.setFocusable(true); row.setContentDescription(ui.t(title)); row.setTag("section:" + section);
+        row.setBackground(ui.states(0, 6, 0, ui.hover, 0));
         TextView text = ui.text(ui.t(title), 13, ui.muted); ui.typography(text, 13, ui.muted, 500); ui.fixedLineHeight(text, 22f / 13);
-        LayoutParams at = new LayoutParams(-1, ui.dp(22)); at.setMargins(ui.dp(8), 0, ui.dp(8), ui.dp(9)); navigation.addView(text, at); headings.add(text); if (android.os.Build.VERSION.SDK_INT >= 28) text.setAccessibilityHeading(true);
+        row.addView(text, new LayoutParams(0, -2, 1));
+        row.addView(ui.decorativeIcon(open ? "chevron-down" : "chevron-right", 14), new LayoutParams(ui.dp(14), ui.dp(14)));
+        row.setOnClickListener(view -> { if (active) { state.toggleSection(section); render(); } });
+        row.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(View view, android.view.accessibility.AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(view, info); info.setClassName("android.widget.Button");
+                if (android.os.Build.VERSION.SDK_INT >= 30) info.setStateDescription(ui.t(open ? "Expanded" : "Collapsed"));
+                info.addAction(open ? android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_COLLAPSE : android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_EXPAND);
+            }
+            @Override public boolean performAccessibilityAction(View view, int action, android.os.Bundle args) {
+                if (action == android.view.accessibility.AccessibilityNodeInfo.ACTION_EXPAND && !open || action == android.view.accessibility.AccessibilityNodeInfo.ACTION_COLLAPSE && open) return row.performClick();
+                return super.performAccessibilityAction(view, action, args);
+            }
+        });
+        LayoutParams at = new LayoutParams(-1, ui.dp(31)); at.bottomMargin = ui.dp(9); navigation.addView(row, at); headings.add(row); if (android.os.Build.VERSION.SDK_INT >= 28) row.setAccessibilityHeading(true);
+        return open;
     }
     private void more(String title, boolean nested, String tag, Runnable action) {
         Button button = ui.quietButton(ui.t(title), () -> { if (active) action.run(); }); ui.typography(button, 13, ui.muted, 400); ui.preciseText(button); button.setGravity(Gravity.START | Gravity.CENTER_VERTICAL); button.setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(6)); button.setBackground(ui.states(0, 7, 0, ui.hover, 0)); button.setTag(tag);
@@ -109,15 +127,19 @@ final class NativeSidebar extends LinearLayout {
     private void list(String project, boolean nested) {
         List<JSONObject> ordered = NativeSidebarState.sorted(chats, project); int limit = project == null ? state.recentLimit : state.limit(project);
         for (int i = 0; i < Math.min(ordered.size(), limit); i++) {
-            JSONObject value = ordered.get(i); String id = value.optString("id");
-            NativeChatLink row = new NativeChatLink(ui, value, nested, chat.equals(id), backend, person, () -> { if (!active || cached) return; state.expanded.add(value.optString("project_id")); select.accept(id); }); row.open.setEnabled(!cached); row.open.setTag((nested ? "project:" : "recent:") + id); navigation.addView(row, new LayoutParams(-1, ui.dp(31))); chatRows.add(row);
+            chatRow(ordered.get(i), nested, nested ? "project:" : "recent:");
         }
         if (ordered.isEmpty()) empty("No conversations yet.", nested);
         if (ordered.size() > 5) more(ordered.size() > limit ? "Show more" : "Show less", nested, "more:" + (project == null ? "recents" : project), () -> { state.moreChats(project, ordered.size()); render(); });
     }
+    private void chatRow(JSONObject value, boolean nested, String prefix) {
+        String id = value.optString("id");
+        NativeChatLink row = new NativeChatLink(ui, value, nested, chat.equals(id), backend, person, () -> { if (!active || cached) return; state.expanded.add(value.optString("project_id")); select.accept(id); }); row.open.setEnabled(!cached); row.open.setTag(prefix + id); navigation.addView(row, new LayoutParams(-1, ui.dp(31))); chatRows.add(row);
+    }
     private void render() {
         if (!active) return;
         StringBuilder next = new StringBuilder().append(serverID).append(serverLabel).append(ServerProfiles.displayAccount(user)).append(project).append('\0').append(chat).append('\0').append(backend).append(posting).append(cached).append(state.projectLimit).append(state.recentLimit).append(state.expanded).append(state.chatLimits);
+        next.append(state.pinned).append(state.collapsed);
         if (user.optString("id").isEmpty() && !cached) next.append(connectionAction);
         // Metadata signatures must never serialize transcript payloads or hidden agent catalogs.
         for (int i = 0; i < projects.length(); i++) {
@@ -140,15 +162,24 @@ final class NativeSidebar extends LinearLayout {
             empty(connectionAction.isEmpty() || connectionAction.equals("Sign in")
                     ? "Sign in to view this server’s workspace." : "Connect to view this server’s workspace.", false); footer(); return;
         }
-        heading("Projects");
-        for (int i = 0; i < Math.min(projects.length(), state.projectLimit); i++) {
-            JSONObject value = projects.optJSONObject(i); String id = value.optString("id"); boolean open = state.expanded.contains(id);
-            NativeProjectRow row = new NativeProjectRow(ui, () -> { if (!active) return; state.toggle(id); render(); }, () -> { if (active && !cached) create.accept(id); }); row.bind(value, open, posting || cached); row.toggle.setTag("project:" + id); row.create.setTag("new:" + id);
-            navigation.addView(row, new LayoutParams(-1, ui.dp(31))); projectRows.add(row); if (open) list(id, true); navigation.addView(ui.space(5));
+        if (heading("Pinned", "pinned")) {
+            List<JSONObject> pinned = state.pinnedChats(chats);
+            for (JSONObject value : pinned) chatRow(value, false, "pinned:");
+            if (pinned.isEmpty()) empty("No pinned chats", false);
         }
-        if (projects.length() == 0) empty("No authorized projects", false);
-        if (projects.length() > state.projectLimit) more("Show more", false, "more:projects", () -> { state.moreProjects(); render(); });
-        navigation.addView(ui.space(25)); heading("Recents"); list(null, false); if (chats.length() == 0) navigation.addView(ui.space(11)); footer();
+        navigation.addView(ui.space(25));
+        if (heading("Projects", "projects")) {
+            for (int i = 0; i < Math.min(projects.length(), state.projectLimit); i++) {
+                JSONObject value = projects.optJSONObject(i); String id = value.optString("id"); boolean open = state.expanded.contains(id);
+                NativeProjectRow row = new NativeProjectRow(ui, () -> { if (!active) return; state.toggle(id); render(); }, () -> { if (active && !cached) create.accept(id); }); row.bind(value, open, posting || cached); row.toggle.setTag("project:" + id); row.create.setTag("new:" + id);
+                navigation.addView(row, new LayoutParams(-1, ui.dp(31))); projectRows.add(row); if (open) list(id, true); navigation.addView(ui.space(5));
+            }
+            if (projects.length() == 0) empty("No authorized projects", false);
+            if (projects.length() > state.projectLimit) more("Show more", false, "more:projects", () -> { state.moreProjects(); render(); });
+        }
+        navigation.addView(ui.space(25));
+        if (heading("Recents", "recents")) { list(null, false); if (chats.length() == 0) navigation.addView(ui.space(11)); }
+        footer();
         View restore = focus.isEmpty() ? null : findViewWithTag(focus);
         scroll.post(() -> { if (!active || renderEpoch != epoch) return; if (restore != null) restore.requestFocus(); scroll.scrollTo(0, y); });
     }

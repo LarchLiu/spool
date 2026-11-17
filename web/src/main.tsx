@@ -93,6 +93,7 @@ import type { FloatingWindowBounds } from "./floating-window";
 import { PeopleGroupPicker } from "./people-group-picker";
 import { OnlinePeopleMenu } from "./online-people-menu";
 import { ChatTitleMenu } from "./chat-title-menu";
+import { useSidebarPreferences } from "./use-sidebar-preferences";
 import {
   createDirectInbox,
   formatUnreadCount,
@@ -175,6 +176,7 @@ function App() {
     [chats, setChats] = useState<Chat[]>([]),
     [chatID, setChatID] = useState(""),
     [chat, setChat] = useState<Chat | null>(null);
+  const sidebarPreferences = useSidebarPreferences(user?.id);
   const [online, setOnline] = useState<Online[]>([]),
     [draft, setDraft] = useState(""),
     [posting, setPosting] = useState(false),
@@ -1778,10 +1780,14 @@ function App() {
       }
     >
       <Sidebar
+        key={user!.id}
         user={displayUser!}
         resolveProfile={resolveProfile}
         projects={projects}
         chats={chats}
+        pinned={sidebarPreferences.pinned}
+        collapsed={sidebarPreferences.collapsed}
+        onToggleSection={sidebarPreferences.toggleSection}
         project={project}
         chatID={chatID}
         activeBackend={chat?.turns.length === 0 ? backend : undefined}
@@ -1822,11 +1828,14 @@ function App() {
             <div className={chat ? "heading-copy has-agent" : "heading-copy"}>
               <div className="chat-heading">
                 {chat && <AgentIcon backend={backend} size={14} />}
-                {chat && !chat.id.startsWith("pending-") && canControlChat(chat, user!.id) ? (
+                {chat && !chat.id.startsWith("pending-") ? (
                   <ChatTitleMenu
                     key={chat.id}
                     title={chat.title === "New chat" ? t("New chat") : chat.title}
                     t={t}
+                    pinned={sidebarPreferences.pinned.includes(chat.id)}
+                    onTogglePin={() => sidebarPreferences.togglePin(chat.id)}
+                    canManage={canControlChat(chat, user!.id)}
                     onRename={async (title) => {
                       const owner = user!.id;
                       const renamed = await api<ChatMetadata>("/chats/" + chat.id + "/rename", { title });

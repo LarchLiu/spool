@@ -552,6 +552,7 @@ try {
           await click(trigger);
           await page.keyboard.press("Home");
           await page.keyboard.press("ArrowDown");
+          await page.keyboard.press("ArrowDown");
           const archive = page.getByRole("menuitem", {
             name: "Archive",
             exact: true,
@@ -635,7 +636,11 @@ try {
             .locator(".chat-heading strong")
             .filter({ hasText: "Read only conversation" })
             .waitFor();
-          assert.equal(await trigger.count(), 0);
+          assert.equal(await trigger.count(), 1);
+          await trigger.evaluate(element => element.click());
+          await menu.waitFor();
+          assert.deepEqual(await page.getByRole("menuitem").allTextContents(), ["Pin chat"]);
+          await page.keyboard.press("Escape");
           assert.equal(requests.length, 3);
           assert.equal(archiveRequests.length, 3);
           assert.equal(deleteRequests.length, 3);

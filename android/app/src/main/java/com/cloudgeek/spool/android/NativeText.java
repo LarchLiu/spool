@@ -240,6 +240,7 @@ final class NativeText {
             case "No conversations yet.": value = "还没有聊天记录。"; break;
             case "No goal set.": value = "尚未设置目标。"; break;
             case "No other people online.": value = "暂无其他在线成员。"; break;
+            case "No pinned chats": value = "还没有置顶聊天"; break;
             case "No servers yet.": value = "尚未添加服务器。"; break;
             case "None": value = "无"; break;
             case "Not installed": value = "未安装"; break;
@@ -267,6 +268,8 @@ final class NativeText {
             case "Permission discovery is unavailable": value = "暂时无法读取权限模式，请检查 CLI 安装和项目配置。"; break;
             case "Permissions": value = "权限"; break;
             case "Picked by you": value = "你选择的头像"; break;
+            case "Pin chat": value = "置顶聊天"; break;
+            case "Pinned": value = "置顶"; break;
             case "Pixel Art": value = "Pixel Art"; break;
             case "Plain text": value = "纯文本"; break;
             case "Plan": value = "规划模式"; break;
@@ -417,6 +420,7 @@ final class NativeText {
             case "Tool input": value = "工具输入"; break;
             case "Tool result": value = "工具结果"; break;
             case "Toon Head": value = "Toon Head"; break;
+            case "Unpin chat": value = "取消置顶聊天"; break;
             case "Update v{version}": value = "更新 v{version}"; break;
             case "Updates automatically when your name changes": value = "名字变更后，头像会自动更新"; break;
             case "Updating presence…": value = "正在更新在线状态…"; break;
@@ -699,6 +703,7 @@ final class NativeText {
             case "No conversations yet.": value = "チャットはまだありません。"; break;
             case "No goal set.": value = "目標は設定されていません。"; break;
             case "No other people online.": value = "他にオンラインのメンバーはいません。"; break;
+            case "No pinned chats": value = "ピン留めされたチャットはありません"; break;
             case "No servers yet.": value = "サーバーがまだありません。"; break;
             case "None": value = "なし"; break;
             case "Not installed": value = "未インストール"; break;
@@ -726,6 +731,8 @@ final class NativeText {
             case "Permission discovery is unavailable": value = "権限モードを取得できません。CLIとプロジェクトの設定を確認してください。"; break;
             case "Permissions": value = "権限"; break;
             case "Picked by you": value = "選択したアバター"; break;
+            case "Pin chat": value = "チャットをピン留め"; break;
+            case "Pinned": value = "ピン留め"; break;
             case "Pixel Art": value = "Pixel Art"; break;
             case "Plain text": value = "プレーンテキスト"; break;
             case "Plan": value = "プランモード"; break;
@@ -876,6 +883,7 @@ final class NativeText {
             case "Tool input": value = "ツールの入力"; break;
             case "Tool result": value = "ツール結果"; break;
             case "Toon Head": value = "Toon Head"; break;
+            case "Unpin chat": value = "チャットのピン留めを解除"; break;
             case "Update v{version}": value = "更新 v{version}"; break;
             case "Updates automatically when your name changes": value = "名前の変更に合わせて自動更新"; break;
             case "Updating presence…": value = "オンライン状態を更新中…"; break;
