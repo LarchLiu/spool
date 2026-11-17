@@ -584,7 +584,13 @@ func projectUserParts(parts []chatmodel.Part) []chatmodel.Part {
 	for _, file := range clean.Files {
 		ext := strings.ToLower(path.Ext(file.Name))
 		paired := false
-		if images && (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp") {
+		for _, part := range out {
+			if part.Role == "user" && part.Kind == "image" && part.FilePath == file.FilePath {
+				paired = true
+				break
+			}
+		}
+		if !paired && images && (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp") {
 			for i := range out {
 				if out[i].Role == "user" && out[i].Kind == "image" && out[i].Name == "" && out[i].ImageURL != "" {
 					out[i].Name = file.Name

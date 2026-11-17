@@ -74,6 +74,15 @@ final class NativeFileData {
 
     static boolean image(String mediaType) { return mediaType != null && mediaType.startsWith("image/"); }
 
+    static String imageType(String name) {
+        String extension = name.substring(name.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
+        switch (extension) {
+            case "jpg": case "jpeg": return "image/jpeg";
+            case "png": case "gif": case "webp": return "image/" + extension;
+            default: return "";
+        }
+    }
+
     static boolean code(String name) { return name.toLowerCase(Locale.ROOT).matches(".*\\.(json|go|rs|ts|tsx|js|py|yaml|yml|toml)$"); }
 
     static String excerpt(String name, String mediaType, byte[] bytes) {

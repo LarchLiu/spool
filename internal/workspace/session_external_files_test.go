@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -11,6 +12,49 @@ import (
 
 	chatmodel "spool/internal/model"
 )
+
+func TestHistoricalUserImageAttachmentsHaveAuthorizedInlinePreviews(t *testing.T) {
+	s := testStore(t)
+	u, member := testUser(t, s, "owner"), testUser(t, s, "member")
+	p := testProject(t, s, u, member)
+	chat, err := s.CreateChat(u.ID, p.ID, chatmodel.BackendCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAABAAAAAICAIAAAB/FOjAAAAAFUlEQVR4nGMIKvAiCTGMaiigQSgBAKOChgFuUiZCAAAAAElFTkSuQmCC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := writeSessionFile(t, t.TempDir(), "codex-clipboard.png", string(png))
+	neighbor := writeSessionFile(t, filepath.Dir(file), "unattached.png", string(png))
+	native := filepath.Join(t.TempDir(), "native.jsonl")
+	prompt := fmt.Sprintf("# Files mentioned by the user:\n\n## %s: %s\nImage attachment: true\n\n## My request:\nReview the screenshot.", filepath.Base(file), file)
+	appendTitleRecord(t, native, map[string]any{"type": "response_item", "payload": map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": prompt}}}})
+	if err := s.SetNativeSessionPath(chat.ID, "image-attachment-native", native); err != nil {
+		t.Fatal(err)
+	}
+	a := NewApp(s, &fakeRunner{}, "", "")
+	t.Cleanup(func() { _ = a.Close() })
+	cookie, _ := loginRequest(t, a, u.Username)
+	other, _ := loginRequest(t, a, member.Username)
+	endpoint := "/api/chats/" + chat.ID + "/file?path=" + url.QueryEscape(file) + "&image=1"
+	w := apiRequest(a, "GET", endpoint, "", cookie, "")
+	if w.Code != 200 || w.Body.String() != string(png) || w.Header().Get("Content-Type") != "image/png" || !strings.HasPrefix(w.Header().Get("Content-Disposition"), "inline;") {
+		t.Fatalf("image preview: %d %s", w.Code, w.Body.String())
+	}
+	if w := apiRequest(a, "GET", endpoint, "", other, ""); w.Code != 404 {
+		t.Fatalf("image preview escaped chat access: %d", w.Code)
+	}
+	if w := apiRequest(a, "GET", "/api/chats/"+chat.ID+"/file?path="+url.QueryEscape(neighbor)+"&image=1", "", cookie, ""); w.Code < 400 {
+		t.Fatalf("image attachment granted access to a neighboring file: %d", w.Code)
+	}
+	for _, kind := range []string{"context", "image"} {
+		page := chatmodel.Session{Transcript: chatmodel.Transcript{Parts: []chatmodel.Part{{Role: "user", Kind: kind, FilePath: file, Name: filepath.Base(file)}}}}
+		if !sessionUserAttachment(page, file) || !sessionReferencesFile(page, file) || sessionUserAttachment(page, neighbor) {
+			t.Fatalf("attachment access differs for %s", kind)
+		}
+	}
+}
 
 func TestHistoricalUserAttachmentsKeepCardsAndAuthorizedDownloads(t *testing.T) {
 	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {

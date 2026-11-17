@@ -20,6 +20,7 @@ import java.util.function.Consumer;
 final class NativeActivityList extends LinearLayout {
     interface UserInput { void bind(NativeUserRow row, int start, int end); }
     static final class State {
+        final NativeTurnError.State error = new NativeTurnError.State();
         boolean open, live, initialized;
         int count = -1;
         final Set<Integer> groups = new HashSet<>();

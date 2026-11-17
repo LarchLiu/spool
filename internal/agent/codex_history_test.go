@@ -6,11 +6,55 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
 	chatmodel "spool/internal/model"
 )
+
+func TestCodexThreadPartsUserImages(t *testing.T) {
+	const file = "/tmp/codex-clipboard-screen.png"
+	const name = "codex-clipboard-screen.png"
+	const image = "data:image/png;base64,aGVsbG8="
+	mention := fmt.Sprintf("# Files mentioned by the user:\n\n## %s: %s\nImage attachment: true\n\n## My request:\nReview this screenshot.", name, file)
+	text := func(value string) map[string]any { return map[string]any{"type": "text", "text": value} }
+	local := map[string]any{"type": "localImage", "path": file}
+	for _, test := range []struct {
+		name    string
+		content []any
+		want    []chatmodel.Part
+	}{
+		{"local image only", []any{local}, []chatmodel.Part{{Role: "user", Kind: "image", Text: "[image]", Name: name, FilePath: file}}},
+		{"mentioned local image", []any{text(mention), text("<image name=[Image #1] path=" + strconv.Quote(file) + ">"), local, text("</image>")}, []chatmodel.Part{
+			{Role: "user", Kind: "text", Text: "Review this screenshot.\n"},
+			{Role: "user", Kind: "image", Text: "[image]", Name: name, FilePath: file},
+		}},
+		{"mentioned inline image", []any{text(mention), map[string]any{"type": "image", "url": image}}, []chatmodel.Part{
+			{Role: "user", Kind: "text", Text: "Review this screenshot."},
+			{Role: "user", Kind: "image", Text: "[image]", Name: name, ImageURL: image},
+		}},
+		{"mentioned image path", []any{text(mention)}, []chatmodel.Part{
+			{Role: "user", Kind: "text", Text: "Review this screenshot."},
+			{Role: "user", Kind: "context", Text: name, Name: name, FilePath: file},
+		}},
+		{"relative local image", []any{map[string]any{"type": "localImage", "path": "screen.png"}}, nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for i := range test.want {
+				test.want[i].Timestamp = 1234
+			}
+			parts := codexThreadParts([]any{map[string]any{"type": "userMessage", "content": test.content}}, 1234)
+			if !reflect.DeepEqual(parts, test.want) {
+				t.Fatalf("image projection = %#v, want %#v", parts, test.want)
+			}
+			if again := projectUserParts(parts); !reflect.DeepEqual(again, parts) {
+				t.Fatal("projecting the history twice changed its image attachments")
+			}
+		})
+	}
+}
 
 func TestCodexHistoryRPCReadsPagesAndLocatesItemsWithoutResume(t *testing.T) {
 	for _, fallback := range []bool{false, true} {

@@ -125,6 +125,7 @@ import { goalSuggestion, parseGoalCommand } from "./slash-commands";
 import { hasUserMessage, UserMessage } from "./user-message";
 import { MessageFooter } from "./message-footer";
 import { TurnActions, TurnOperatorAvatar } from "./turn-identity";
+import { TurnError } from "./turn-error";
 import { TurnResponse } from "./tool-activity";
 import { exchangeFiles, turnExchanges } from "./turn-exchanges";
 import { turnWorkLabel } from "./turn-presentation";
@@ -2159,9 +2160,7 @@ function App() {
                         onError={fail}
                       />
                     )}
-                    {turn.error && turn.status !== "stopped" && (
-                      <p className="error">{turn.error}</p>
-                    )}
+                    <TurnError turn={turn} t={t} />
                     {turn.status === "running" && <ChatStatusIndicator t={t} />}
                   </article>
                 );

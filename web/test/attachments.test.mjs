@@ -80,6 +80,28 @@ test("native Word file attachments open the file preview while standalone cards 
   assert.doesNotMatch(preview, /download=/);
 });
 
+test("native image file paths render image cards with authenticated inline previews", () => {
+  for (const kind of ["context", "image"]) {
+    for (const [extension, type] of [["png", "png"], ["JPG", "jpeg"], ["jpeg", "jpeg"], ["gif", "gif"], ["webp", "webp"]]) {
+      const name = `剪贴板 screen.${extension}`;
+      const path = "/tmp/attachments/" + name;
+      const [file] = exchangeFiles([{ role: "user", kind, name, file_path: path, text: name }], "turn", "chat/id", 0);
+      assert.equal(file.media_type, `image/${type}`);
+      assert.equal(file.file_path, path);
+      assert.equal(file.preview_url, `/api/chats/chat%2Fid/file?path=${encodeURIComponent(path)}&image=1`);
+      const html = renderToStaticMarkup(createElement(AttachmentCards, {
+        files: [file], chatID: "chat/id", t: key => key, onPreview: () => {},
+      }));
+      assert.match(html, /class="attachment-card image-card"/);
+      assert.ok(html.includes(`alt="${name}"`));
+      assert.doesNotMatch(html, /file-placeholder|download=/);
+    }
+  }
+  const image = "data:image/png;base64,AA==";
+  const [file] = exchangeFiles([{ role: "user", kind: "image", name: "screen.png", image_url: image, file_path: "/tmp/screen.png" }], "turn", "chat", 0);
+  assert.equal(file.preview_url, image, "embedded history images do not depend on a temporary file surviving");
+});
+
 test("first-send adoption keeps attachments and the chosen permission mode on screen", () => {
   const turn = {
     id: "pending-1",

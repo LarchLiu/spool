@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -351,7 +352,11 @@ func codexThreadParts(items []any, startedAt int64) []chatmodel.Part {
 				case "image":
 					input = append(input, chatmodel.Part{Role: "user", Kind: "image", Text: "[image]", ImageURL: nativeImageURL(stringValue(block["url"]))})
 				case "localImage":
-					input = append(input, chatmodel.Part{Role: "user", Kind: "image", Text: "[image]", FilePath: stringValue(block["path"])})
+					filePath := stringValue(block["path"])
+					name := path.Base(strings.ReplaceAll(filePath, "\\", "/"))
+					if validUserFile(name, filePath) {
+						input = append(input, chatmodel.Part{Role: "user", Kind: "image", Text: "[image]", Name: name, FilePath: filePath})
+					}
 				}
 			}
 			stamp := startedAt

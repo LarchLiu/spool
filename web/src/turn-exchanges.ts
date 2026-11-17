@@ -35,12 +35,17 @@ export function exchangeFiles(parts: readonly TranscriptPart[], turnID: string, 
       media_type: part.image_url.slice(5, part.image_url.indexOf(";")),
       size: 0, preview_url: part.image_url,
     }];
-    if (part.kind === "context" && part.name && part.file_path) return [{
-      id: `${turnID}-file-${start + index}`, name: part.name,
-      media_type: "application/octet-stream", size: 0,
-      file_path: part.file_path,
-      preview_url: `/api/chats/${encodeURIComponent(chatID)}/file?path=${encodeURIComponent(part.file_path)}&download=1`,
-    }];
+    if ((part.kind === "context" || part.kind === "image") && part.name && part.file_path) {
+      const extension = part.name.split(".").pop()?.toLowerCase();
+      const imageType = extension === "jpg" || extension === "jpeg" ? "jpeg"
+        : extension === "png" || extension === "gif" || extension === "webp" ? extension : "";
+      return [{
+        id: `${turnID}-file-${start + index}`, name: part.name,
+        media_type: imageType ? `image/${imageType}` : "application/octet-stream", size: 0,
+        file_path: part.file_path,
+        preview_url: `/api/chats/${encodeURIComponent(chatID)}/file?path=${encodeURIComponent(part.file_path)}&${imageType ? "image" : "download"}=1`,
+      }];
+    }
     return [];
   });
 }

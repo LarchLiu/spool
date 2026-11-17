@@ -122,7 +122,7 @@ func sessionReferencesFile(chat chatmodel.Session, path string) bool {
 		return false
 	}
 	for _, part := range chat.Transcript.Parts {
-		if part.Role == "user" && part.Kind == "context" && part.FilePath == path && part.Name == filepath.Base(path) {
+		if part.Role == "user" && (part.Kind == "context" || part.Kind == "image") && part.FilePath == path && part.Name == filepath.Base(path) {
 			return true
 		}
 		if part.Role != "assistant" && part.Role != "tool" {
@@ -141,7 +141,7 @@ func sessionReferencesFile(chat chatmodel.Session, path string) bool {
 
 func sessionUserAttachment(chat chatmodel.Session, path string) bool {
 	for _, part := range chat.Transcript.Parts {
-		if part.Role == "user" && part.Kind == "context" && part.FilePath == path && part.Name == filepath.Base(path) {
+		if part.Role == "user" && (part.Kind == "context" || part.Kind == "image") && part.FilePath == path && part.Name == filepath.Base(path) {
 			return true
 		}
 	}

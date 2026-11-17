@@ -20,16 +20,17 @@ const turns = source.slice(at, end) + "\n              })";
 const script = `import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';
 import {TurnResponse} from '/src/tool-activity.tsx';import {UserMessage,hasUserMessage} from '/src/user-message.tsx';
 import {MessageFooter} from '/src/message-footer.tsx';import {TurnOperatorAvatar,TurnActions} from '/src/turn-identity.tsx';
-import {turnOperator} from '/src/chat-state.ts';import {AttachmentCards} from '/src/attachments.tsx';
+import {turnOperator} from '/src/chat-state.ts';import {AttachmentCards,ImagePreview} from '/src/attachments.tsx';
+import {TurnError} from '/src/turn-error.tsx';
 import {turnExchanges,exchangeFiles} from '/src/turn-exchanges.ts';import {turnWorkLabel} from '/src/turn-presentation.ts';
 import {translator} from '/src/i18n.ts';import '/src/style.css';
 const displayUser={id:'alice',nickname:'Alice'},resolveProfile=()=>displayUser,t=translator('en'),locale='en',clock=6000,effortLabel=x=>x;
-const setPreview=()=>{},fail=()=>{},workSummary=(turn,t,now,_effort,answered)=>turnWorkLabel(turn,t,now,answered);
+const fail=()=>{},workSummary=(turn,t,now,_effort,answered)=>turnWorkLabel(turn,t,now,answered);
 function ChatStatusIndicator(){return <span role="status">Working</span>}function ApprovalCard(){return null}
-function Scene(){const [chat,setChat]=useState({turns:[]});window.bind=next=>flushSync(()=>setChat(next));
-return <div className="history-inner">{${turns}}</div>}
+function Scene(){const [chat,setChat]=useState({turns:[]}),[preview,setPreview]=useState(null);window.bind=next=>flushSync(()=>setChat(next));
+return <div className="history-inner">{${turns}}{preview&&<ImagePreview {...preview} t={t} onClose={()=>setPreview(null)}/>}</div>}
 createRoot(document.getElementById('root')).render(<Scene/>);`;
-const pixel = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jhP0AAAAASUVORK5CYII=";
+const pixel = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAICAIAAAB/FOjAAAAAFUlEQVR4nGMIKvAiCTGMaiigQSgBAKOChgFuUiZCAAAAAElFTkSuQmCC";
 const user = (text, timestamp) => ({ role: "user", kind: "text", text, timestamp });
 const answer = text => ({ role: "assistant", kind: "text", phase: "final_answer", text });
 const initial = backend => ({ id: "chat", user_id: "alice", project_id: "project", transcript: { parts: [
@@ -115,6 +116,49 @@ try {
   }
   for (const [name, width] of [["desktop", 1100], ["mobile", 390]]) {
     await page.setViewportSize({ width, height: 1000 });
+    const chat = initial("codex");
+    chat.turns[0].status = "failed"; chat.turns[0].finished_at = 6000;
+    chat.turns[0].error = "Codex thread/resume: this thread already has an active writer";
+    delete chat.turns[0].attachments;
+    chat.transcript.parts[0] = { role: "user", kind: "context", name: "codex-clipboard.png", file_path: "/tmp/剪贴板 screen.png", text: "codex-clipboard.png" };
+    await page.route("**/api/chats/chat/file?**", route => route.fulfill({ contentType: "image/png", body: Buffer.from(pixel.split(",")[1], "base64") }));
+    await page.evaluate(chat => window.bind(chat), chat);
+    const alert = page.getByRole("alert");
+    await alert.waitFor();
+    const image = page.locator(".user-row img[alt='codex-clipboard.png']").first();
+    await image.waitFor();
+    assert.ok((await image.getAttribute("src")).endsWith("&image=1"));
+    await page.waitForFunction(() => document.querySelector("img[alt='codex-clipboard.png']")?.naturalWidth > 0);
+    await image.click();
+    await page.getByRole("dialog").waitFor();
+    assert.equal(await page.getByRole("dialog").locator("img").getAttribute("src"), await image.getAttribute("src"));
+    await page.getByRole("button", { name: "Close preview", exact: true }).click();
+    await alert.getByRole("button", { name: "Dismiss", exact: true }).click();
+    assert.equal(await alert.count(), 0);
+    await page.evaluate(chat => window.bind(chat), chat);
+    assert.equal(await alert.count(), 0, "Repeated snapshots keep the same error dismissed");
+    chat.turns[0].error = "A new agent error";
+    await page.evaluate(chat => window.bind(chat), chat);
+    assert.equal(await alert.innerText(), "A new agent error");
+    await alert.getByRole("button", { name: "Dismiss", exact: true }).click();
+    chat.turns[0].finished_at++;
+    await page.evaluate(chat => window.bind(chat), chat);
+    await alert.waitFor();
+    await alert.getByRole("button", { name: "Dismiss", exact: true }).click();
+    chat.turns[0].error = "";
+    await page.evaluate(chat => window.bind(chat), chat);
+    chat.turns[0].error = "A new agent error";
+    await page.evaluate(chat => window.bind(chat), chat);
+    await alert.waitFor();
+    const next = { ...chat.turns[0], id: "next-turn", part_start: 6, part_end: 6 };
+    await alert.getByRole("button", { name: "Dismiss", exact: true }).click();
+    chat.turns.push(next);
+    await page.evaluate(chat => window.bind(chat), chat);
+    await alert.waitFor();
+    assert.equal(await alert.count(), 1, "The same error in a new turn remains visible");
+    chat.turns.pop();
+    chat.turns[0].error = "Codex thread/resume: this thread already has an active writer";
+    await page.evaluate(chat => window.bind(chat), chat);
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.screenshot({ path: path.join(output, name + ".png"), fullPage: true });
@@ -124,6 +168,6 @@ try {
     await page.locator(".turn").last().locator(".work-label-toggle").click();
   }
   assert.deepEqual(errors, []);
-  const report = { oneDisclosurePerTurn: true, collapsedShowsInitialInputAndFinalAnswer: true, orderedInputsAndResponses: true, attachmentsStayWithInput: true, workflowMatchesAnswerWidth: true, userMessagesShareRightEdge: true, liveAppendPreservesExistingMessages: true, historyPrependPreservesExistingMessages: true, codexAndClaude: true, javascriptErrors: errors };
+  const report = { oneDisclosurePerTurn: true, collapsedShowsInitialInputAndFinalAnswer: true, orderedInputsAndResponses: true, attachmentsStayWithInput: true, workflowMatchesAnswerWidth: true, userMessagesShareRightEdge: true, liveAppendPreservesExistingMessages: true, historyPrependPreservesExistingMessages: true, dismissibleTurnErrors: true, newErrorsReappear: true, nativeImagePathThumbnailAndPreview: true, codexAndClaude: true, javascriptErrors: errors };
   await fs.writeFile(path.join(output, "browser-report.json"), JSON.stringify(report, null, 2) + "\n"); console.log(report);
 } finally { if (browser) await browser.close(); if (server) await server.close(); }

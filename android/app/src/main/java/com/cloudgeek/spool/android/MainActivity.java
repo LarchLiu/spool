@@ -2829,7 +2829,9 @@ public final class MainActivity extends Activity {
         JSONObject approval = value.approval;
         if (approval != null) children.use(key + "/approval/" + approval.optString("id"),
                 new JSONArray().put(approval).put(writable()), () -> approvalCard(page.optString("id"), value.turn.optString("id"), approval));
-        if (!value.error.isEmpty()) children.use(key + "/error", value.error, () -> ui.text(value.error, 12, ui.error));
+        NativeTurnError.State error = activityState(page, value.turn).error;
+        error.update(value.error, value.turn.optLong("finished_at"));
+        if (!value.error.isEmpty()) children.use(key + "/error", new JSONArray().put(value.error).put(error.finishedAt), () -> new NativeTurnError(ui, error));
     }
 
     private List<NativeAttachmentCards.Item> userFiles(JSONObject page, JSONObject turn, NativeUserRow row, JSONArray parts, int start, int end, boolean first) {
@@ -2863,10 +2865,13 @@ public final class MainActivity extends Activity {
                 JSONObject part = at(parts, i);
                 if (!part.optString("role").equals("user")) continue;
                 String source = part.optString("image_url"), name = part.optString("name", "image");
-                if (part.optString("kind").equals("context") && !part.optString("name").isEmpty()) {
+                if ((part.optString("kind").equals("context") || part.optString("kind").equals("image") && !NativeFileData.inlineImage(source)) && !part.optString("name").isEmpty()) {
                     String filePath = part.optString("file_path");
-                    items.add(new NativeAttachmentCards.Item(ownerChat + ":" + turn.optString("id") + ":file:" + i, name, "application/octet-stream", "", "",
-                            () -> { if (current.getAsBoolean()) { if (filePath.isEmpty()) toast(new IOException(tr("File unavailable", "文件不可用"))); else openFile(new NativeFileTarget(filePath, 0, 0)); } }, null));
+                    String media = NativeFileData.imageType(name);
+                    String imagePath = media.isEmpty() || filePath.isEmpty() ? "" : NativeFileData.filePath(page.optString("project_id", projectID), ownerChat, filePath, "image");
+                    items.add(new NativeAttachmentCards.Item(ownerChat + ":" + turn.optString("id") + ":file:" + i, name, media.isEmpty() ? "application/octet-stream" : media, "", imagePath,
+                            () -> { if (current.getAsBoolean()) { if (!imagePath.isEmpty()) previewBinary(imagePath, name); else if (filePath.isEmpty()) toast(new IOException(tr("File unavailable", "文件不可用"))); else openFile(new NativeFileTarget(filePath, 0, 0)); } },
+                            imagePath.isEmpty() ? null : image -> fileImages.remote(image, imagePath, Math.min(512, dp(120)), null)));
                     continue;
                 }
                 if (!part.optString("kind").equals("image") || !NativeFileData.inlineImage(source)) continue;

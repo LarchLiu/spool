@@ -572,7 +572,7 @@ public class MainActivityTranscriptTest {
     @Test public void stoppedErrorsAreHiddenAndRetiredTurnViewsAreRemoved() throws Exception {
         try(MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value=chat(); value.getJSONArray("turns").getJSONObject(1).put("error","Failure text"); show(h,value); TextView error=text(h.get("historyContent"),"Failure text");
-            value.getJSONArray("turns").getJSONObject(1).put("status","stopped"); show(h,value); assertNull(error.getParent());
+            value.getJSONArray("turns").getJSONObject(1).put("status","stopped"); show(h,value); assertFalse(error.isAttachedToWindow());
             NativeUserRow retired=views(h.get("historyContent"),NativeUserRow.class).get(0); value.getJSONArray("turns").remove(0); show(h,value); assertNull(retired.getParent());
             assertEquals(1,views(h.get("historyContent"),NativeTurn.class).size());
         }
