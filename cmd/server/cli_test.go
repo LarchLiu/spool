@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -41,13 +41,21 @@ func TestMain(m *testing.M) {
 		}
 	}
 	code := m.Run()
-	_ = debug.SetCrashOutput(nil, debug.CrashOptions{})
+	if err := diagnostics.StopCrashCapture(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		code = 1
+	}
 	_ = os.RemoveAll(root)
 	os.Exit(code)
 }
 
 func invoke(t *testing.T, root string, args ...string) (string, error) {
 	t.Helper()
+	t.Cleanup(func() {
+		if err := diagnostics.StopCrashCapture(); err != nil {
+			t.Error(err)
+		}
+	})
 	var out, stderr bytes.Buffer
 	err := runCLI(context.Background(), append([]string{"--data-dir", root}, args...), &out, &stderr)
 	return out.String(), err

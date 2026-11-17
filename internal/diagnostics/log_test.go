@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +17,75 @@ func TestMain(m *testing.M) {
 	if RunCrashMonitor() {
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	code := m.Run()
+	if err := StopCrashCapture(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		code = 1
+	}
+	os.Exit(code)
+}
+
+func TestCrashMonitorStopsBeforeTemporaryLogsAreRemoved(t *testing.T) {
+	root := t.TempDir()
+	session, err := Start(root, "desktop", "test", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := StopCrashCapture(); err != nil {
+			t.Error(err)
+		}
+	})
+	crashCapture.Lock()
+	monitor := crashCapture.monitor
+	crashCapture.Unlock()
+	if monitor == nil {
+		t.Fatal("crash monitor was not started")
+	}
+	if err := session.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-monitor.done:
+		t.Fatal("ordinary log cleanup must preserve capture for a deferred panic")
+	default:
+	}
+	for range 2 {
+		if err := StopCrashCapture(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	select {
+	case <-monitor.done:
+	default:
+		t.Fatal("crash monitor is still running after explicit shutdown")
+	}
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal("monitor prevented removal of disposable application data:", err)
+	}
+}
+
+func TestReplacingCrashCaptureReapsThePreviousMonitor(t *testing.T) {
+	root := t.TempDir()
+	if err := captureCrashes(filepath.Join(root, "first-crash.log"), "desktop", "test"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := StopCrashCapture(); err != nil {
+			t.Error(err)
+		}
+	})
+	crashCapture.Lock()
+	previous := crashCapture.monitor
+	crashCapture.Unlock()
+	if err := captureCrashes(filepath.Join(root, "second-crash.log"), "desktop", "test"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-previous.done:
+	default:
+		t.Fatal("replaced crash monitor is still using the previous session's logs")
+	}
 }
 
 func TestApplicationLogsArePersistentPrivateAndRestoreLogger(t *testing.T) {
@@ -28,7 +95,11 @@ func TestApplicationLogsArePersistentPrivateAndRestoreLogger(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer debug.SetCrashOutput(nil, debug.CrashOptions{})
+	t.Cleanup(func() {
+		if err := StopCrashCapture(); err != nil {
+			t.Error(err)
+		}
+	})
 	log.Print("event=startup_failed error=unsupported_schema")
 	if err := session.Close(); err != nil {
 		t.Fatal(err)
@@ -102,7 +173,11 @@ func TestUnwritableDataRootFallsBackWithoutDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer debug.SetCrashOutput(nil, debug.CrashOptions{})
+	t.Cleanup(func() {
+		if err := StopCrashCapture(); err != nil {
+			t.Error(err)
+		}
+	})
 	defer session.Close()
 	if session.Warning == nil || filepath.Base(filepath.Dir(session.Path)) != "log" || strings.HasPrefix(session.Path, root) {
 		t.Fatalf("fallback log unavailable: %+v", session)

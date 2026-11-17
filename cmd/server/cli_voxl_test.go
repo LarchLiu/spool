@@ -15,6 +15,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"spool/internal/diagnostics"
 	"spool/internal/workspace"
 )
 
@@ -133,6 +134,9 @@ func startCLITestServer(t *testing.T, root string, options ...string) (string, f
 		case <-done:
 			if serveErr != nil {
 				t.Errorf("serve: %v\n%s\n%s", serveErr, &out, &stderr)
+			}
+			if err := diagnostics.StopCrashCapture(); err != nil {
+				t.Error(err)
 			}
 		case <-time.After(20 * time.Second):
 			t.Error("serve did not stop")

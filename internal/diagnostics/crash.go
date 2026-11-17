@@ -6,10 +6,42 @@ import (
 	"os"
 	"os/exec"
 	"runtime/debug"
+	"sync"
 	"time"
 )
 
 const monitorArgument = "--spool-crash-monitor"
+
+type crashMonitor struct {
+	done chan struct{}
+	err  error
+}
+
+// The runtime crash output is process-wide. Serialize replacement and shutdown
+// so every detached monitor is reaped before its owner can remove its logs.
+var crashCapture struct {
+	sync.Mutex
+	monitor *crashMonitor
+}
+
+// StopCrashCapture disables diagnostics crash output and waits for its monitor
+// to exit. Call it before deleting disposable application data. Session.Close
+// deliberately leaves capture installed for panics reported after deferred
+// cleanup; this explicit stop is for callers that have finished crash capture.
+func StopCrashCapture() error {
+	crashCapture.Lock()
+	defer crashCapture.Unlock()
+	if crashCapture.monitor == nil {
+		return nil
+	}
+	if err := debug.SetCrashOutput(nil, debug.CrashOptions{}); err != nil {
+		return err
+	}
+	monitor := crashCapture.monitor
+	<-monitor.done
+	crashCapture.monitor = nil
+	return monitor.err
+}
 
 // RunCrashMonitor must run at the start of each executable's main, before flag
 // parsing or GUI startup. A separate process can drain and rotate a fatal Go
@@ -53,6 +85,8 @@ func RunCrashMonitor() bool {
 }
 
 func captureCrashes(path, component, version string) error {
+	crashCapture.Lock()
+	defer crashCapture.Unlock()
 	file, err := privateLogFile(path)
 	if err != nil {
 		return err
@@ -79,6 +113,22 @@ func captureCrashes(path, component, version string) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	go func() { _ = cmd.Wait() }()
-	return debug.SetCrashOutput(writer, debug.CrashOptions{})
+	monitor := &crashMonitor{done: make(chan struct{})}
+	go func() {
+		monitor.err = cmd.Wait()
+		close(monitor.done)
+	}()
+	if err := debug.SetCrashOutput(writer, debug.CrashOptions{}); err != nil {
+		// No runtime-owned duplicate keeps the child alive on setup failure.
+		writer.Close()
+		<-monitor.done
+		return err
+	}
+	if previous := crashCapture.monitor; previous != nil {
+		// SetCrashOutput closed the previous pipe. Wait for EOF handling and
+		// file closure before returning control to either session's owner.
+		<-previous.done
+	}
+	crashCapture.monitor = monitor
+	return nil
 }
