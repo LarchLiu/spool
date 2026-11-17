@@ -320,6 +320,75 @@ try {
   }
   for (const [width, theme] of [[390, "light"], [1280, "dark"]]) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: "block" });
+    const page = await context.newPage(), pollRequests = [], errors = [];
+    let release;
+    try {
+      page.setDefaultTimeout(10000); page.on("pageerror", error => errors.push(String(error)));
+      const clockStart = new Date("2026-11-17T08:00:00Z");
+      await page.clock.install({ time: clockStart }); await page.clock.pauseAt(new Date(clockStart.getTime() + 1000));
+      let revision = 0, blocked, enteredBlocked, listRevision = 0, diffFailure = false, removed = false;
+      const patch = () => `--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1,100 +1,100 @@\n${Array.from({ length: 100 }, (_, i) => `+revision-${revision} line ${i} ${"long text ".repeat(40)}`).join("\n")}\n`;
+      await page.route("**/api/**", async route => {
+        const url = new URL(route.request().url()), view = url.searchParams.get("view");
+        if (!url.pathname.endsWith("/git")) return route.fulfill({ json: { entries: [] } });
+        pollRequests.push(url.pathname + url.search);
+        if (view === "diff") {
+          const body = patch();
+          if (blocked) { enteredBlocked?.(); await blocked; }
+          return route.fulfill(diffFailure ? { status: 500, json: { error: "Diff temporarily unavailable" } } : { json: { path: "src/example.ts", patch: body } });
+        }
+        return route.fulfill({ json: { repository: true, branch: `dev-${++listRevision}`, commit, files: removed ? [] : [
+          { path: "src/example.ts", status: "MM", staged: true, unstaged: true, additions: 100, deletions: 100 },
+        ], commits: [] } });
+      });
+      await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__git-panel?theme=${theme}`);
+      await page.getByRole("tab", { name: "Git panel", exact: true }).click();
+      const row = page.locator(".git-file-row").filter({ hasText: "example.ts" }); await row.first().waitFor();
+      const diffRequests = () => pollRequests.filter(url => url.includes("view=diff"));
+      const poll = async () => {
+        const response = page.waitForResponse(response => new URL(response.url()).searchParams.get("view") === "changes");
+        await page.clock.runFor(10_000); await response;
+        await page.locator(".git-summary").getByText(`dev-${listRevision}`, { exact: true }).waitFor();
+      };
+      await poll(); assert.equal(diffRequests().length, 0, "No preview means no automatic diff request");
+      await row.first().click(); await page.locator(".git-diff-source").getByText(/^revision-0 line 0 /).waitFor();
+      const preview = page.locator(".git-diff-preview .file-preview-scroll");
+      await preview.evaluate(element => { element.scrollTop = 220; element.scrollLeft = 120; window.__diffScroll = element; });
+      const assertScroll = async () => assert.deepEqual(await preview.evaluate(element => ({ same: element === window.__diffScroll, y: element.scrollTop, x: element.scrollLeft })), { same: true, y: 220, x: 120 });
+      revision = 1; await poll(); await page.locator(".git-diff-source").getByText(/^revision-1 line 0 /).waitFor(); await assertScroll();
+      assert.equal(new URL(diffRequests().at(-1), "http://fixture").searchParams.get("side"), "staged");
+      const beforeUnchanged = diffRequests().length;
+      const unchanged = page.waitForResponse(response => new URL(response.url()).searchParams.get("view") === "diff"); await poll(); await unchanged;
+      assert.equal(diffRequests().length, beforeUnchanged + 1); await assertScroll();
+      blocked = new Promise(resolve => { release = resolve; });
+      const blockedStarted = new Promise(resolve => { enteredBlocked = resolve; });
+      const slow = page.waitForRequest(request => new URL(request.url()).searchParams.get("view") === "diff");
+      await poll(); await slow; await blockedStarted; const beforeSlow = diffRequests().length;
+      await poll(); assert.equal(diffRequests().length, beforeSlow, "A slow automatic diff read is not duplicated");
+      const released = page.waitForResponse(response => new URL(response.url()).searchParams.get("view") === "diff");
+      revision = 2; release(); blocked = undefined; await released;
+      await poll(); await page.locator(".git-diff-source").getByText(/^revision-2 line 0 /).waitFor(); await assertScroll();
+      diffFailure = true; await poll(); await page.getByRole("alert").getByText("Diff temporarily unavailable", { exact: false }).waitFor(); await assertScroll();
+      diffFailure = false; await poll(); await page.waitForFunction(() => !document.querySelector(".git-diff-preview [role=alert]")); await assertScroll();
+      const selectedRead = page.waitForResponse(response => new URL(response.url()).searchParams.get("view") === "diff");
+      await row.nth(1).click(); await selectedRead; await page.locator(".git-diff-source").waitFor();
+      const unstaged = page.waitForResponse(response => new URL(response.url()).searchParams.get("view") === "diff");
+      await poll(); assert.equal(new URL((await unstaged).url()).searchParams.get("side"), "unstaged");
+      removed = true; const beforeRemoved = diffRequests().length; await poll();
+      await page.waitForFunction(() => !document.querySelector(".git-diff-preview"));
+      assert.equal(diffRequests().length, beforeRemoved, "A file removed from the list is not re-read");
+      await page.getByRole("tab", { name: "Project panel", exact: true }).click();
+      const inactiveRequests = pollRequests.length; await page.clock.runFor(20_000);
+      assert.equal(pollRequests.length, inactiveRequests, "Inactive Git panels stop polling");
+      assert.deepEqual(errors, []); reports.push({ width, theme, diffPolling: true, passed: true });
+    } catch (error) {
+      await page.screenshot({ path: path.join(output, "failure.png") });
+      await writeFile(path.join(output, "failure.json"), JSON.stringify({ errors, pollRequests, text: await page.locator("body").innerText() }, null, 2));
+      throw error;
+    } finally { release?.(); await context.close(); }
+  }
+  for (const [width, theme] of [[390, "light"], [1280, "dark"]]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: "block" });
     const page = await context.newPage(); const errors = [], historyRequests = [];
     let release;
     try {

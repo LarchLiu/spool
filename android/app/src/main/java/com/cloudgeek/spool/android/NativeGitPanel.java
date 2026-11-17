@@ -27,9 +27,11 @@ final class NativeGitPanel extends LinearLayout {
     private final NativeFileModel state;
     private final NativeFileBrowser.Read read;
     private final Set<String> collapsed = new HashSet<>();
-    private final Runnable poll = this::reload;
+    private final Runnable poll = () -> reload(true);
     private JSONObject data, diff;
     private JSONObject renderedDiff;
+    private ScrollView diffScroll;
+    private HorizontalScrollView diffHorizontal;
     private String renderedSelected, renderedSide, renderedCommit, renderedDiffError;
     private String mode = "changes", commit = "", selected = "", side = "", error = "", diffError = "", operation = "", operationError = "";
     private boolean composer;
@@ -42,7 +44,7 @@ final class NativeGitPanel extends LinearLayout {
     private NativePopover remoteMenu;
     private int operationRequest;
     private int request, diffRequest;
-    private boolean active, pending;
+    private boolean active, pending, diffPending;
     private NativeDialog discardDialog;
     private JSONObject historyCache;
     private String historyMoreError = "";
@@ -83,11 +85,11 @@ final class NativeGitPanel extends LinearLayout {
         if (value) {
             reload();
             if (!selected.isEmpty() && diff == null && diffError.isEmpty()) loadDiff();
-        } else { ++request; ++diffRequest; pending = historyMorePending = false; removeCallbacks(checkHistoryEnd); dismissDiscard(); dismissRemote(); }
+        } else { ++request; ++diffRequest; pending = diffPending = historyMorePending = false; removeCallbacks(checkHistoryEnd); dismissDiscard(); dismissRemote(); }
     }
     void scopeChanged() {
         dismissDiscard(); dismissRemote();
-        ++request; ++diffRequest; ++operationRequest; pending = false;
+        ++request; ++diffRequest; ++operationRequest; pending = diffPending = false;
         data = diff = null; selected = side = commit = error = diffError = operation = operationError = "";
         historyCache = null; historyMoreError = ""; historyMorePending = false; scroll.scrollTo(0, 0);
         composer = false; remoteAction = "push"; commitInput.setText(""); render();
@@ -99,6 +101,9 @@ final class NativeGitPanel extends LinearLayout {
             + (commit.isEmpty() ? "" : "&commit=" + android.net.Uri.encode(commit));
     }
     void reload() {
+        reload(false);
+    }
+    void reload(boolean updatePreview) {
         if (!active || pending) return;
         removeCallbacks(poll);
         if (!state.ready()) { data = diff = null; selected = ""; render(); return; }
@@ -113,8 +118,9 @@ final class NativeGitPanel extends LinearLayout {
                 JSONObject file = files.optJSONObject(i);
                 if (selected.equals(file.optString("path")) && (side.isEmpty() || !commit.isEmpty() || side.equals("staged") && file.optBoolean("staged") || side.equals("unstaged") && unstaged(file))) found = true;
             }
-            if (!found && failure == null) { selected = ""; diff = null; ++diffRequest; }
+            if (!found && failure == null) { selected = ""; diff = null; ++diffRequest; diffPending = false; }
             render();
+            if (failure == null && found && updatePreview) loadDiff(true);
             postDelayed(poll, 10_000);
         };
         if (historyList()) {
@@ -168,18 +174,24 @@ final class NativeGitPanel extends LinearLayout {
     }
     private void chooseMode(String next) {
         dismissDiscard(); dismissRemote();
-        mode = next; commit = selected = side = ""; data = diff = null; error = diffError = historyMoreError = ""; ++request; ++diffRequest; pending = historyMorePending = false;
+        mode = next; commit = selected = side = ""; data = diff = null; error = diffError = historyMoreError = ""; ++request; ++diffRequest; pending = diffPending = historyMorePending = false;
         scroll.scrollTo(0, 0);
         tabs.select(mode); reload();
     }
     void select(String file) { select(file, ""); }
     private void select(String file, String selectedSide) { selected = file; side = selectedSide; diff = null; diffError = ""; render(); loadDiff(); }
     private void loadDiff() {
-        if (!active || selected.isEmpty() || !state.ready()) return;
+        loadDiff(false);
+    }
+    private void loadDiff(boolean background) {
+        if (!active || selected.isEmpty() || !state.ready() || background && diffPending) return;
+        diffPending = true;
         int token = ++diffRequest, epoch = state.epoch;
         read.read(path("diff") + "&path=" + android.net.Uri.encode(selected) + (commit.isEmpty() && !side.isEmpty() ? "&side=" + side : ""), (value, failure) -> {
             if (!active || token != diffRequest || epoch != state.epoch) return;
-            diff = failure == null ? value : null; diffError = failure == null ? "" : failure.getMessage(); renderPreview();
+            diffPending = false;
+            if (failure == null) diff = value;
+            diffError = failure == null ? "" : failure.getMessage(); renderPreview();
         });
     }
     private NativePanelAction action(String label, Runnable click) { return new NativePanelAction(ui, label, click); }
@@ -455,9 +467,12 @@ final class NativeGitPanel extends LinearLayout {
         }
     }
     private void renderPreview() {
-        // List polling and operation controls must not replace an unchanged diff's scroll views.
-        if (diff == renderedDiff && selected.equals(renderedSelected) && side.equals(renderedSide)
-                && commit.equals(renderedCommit) && java.util.Objects.equals(diffError, renderedDiffError)) return;
+        boolean sameSelection = selected.equals(renderedSelected) && side.equals(renderedSide) && commit.equals(renderedCommit);
+        // Polling identical content must preserve the canvas and both scroll positions.
+        if (sameSelection && sameDiff(diff, renderedDiff) && java.util.Objects.equals(diffError, renderedDiffError)) return;
+        ScrollView previousScroll = sameSelection ? diffScroll : null;
+        HorizontalScrollView previousHorizontal = sameSelection ? diffHorizontal : null;
+        diffScroll = null; diffHorizontal = null;
         renderedDiff = diff; renderedSelected = selected; renderedSide = side; renderedCommit = commit; renderedDiffError = diffError;
         preview.removeAllViews();
         if (selected.isEmpty()) { split.preview(null); return; }
@@ -466,21 +481,30 @@ final class NativeGitPanel extends LinearLayout {
         header.setBackgroundColor(ui.soft);
         title.setGravity(Gravity.CENTER_VERTICAL); title.setText(selected + (side.isEmpty() || !commit.isEmpty() ? "" : " · " + ui.t(side.equals("staged") ? "Staged" : "Unstaged"))); title.setPadding(ui.dp(12), 0, 0, 0); header.addView(title, new LayoutParams(0, ui.dp(36), 1));
         header.addView(ui.icon("refresh", 14, ui.t("Refresh diff preview"), this::loadDiff), new LayoutParams(ui.dp(32), ui.dp(32)));
-        header.addView(ui.icon("close", 15, ui.t("Close diff"), () -> { selected = ""; ++diffRequest; render(); }), new LayoutParams(ui.dp(32), ui.dp(32))); preview.addView(header);
-        String message = diffError != null && !diffError.isEmpty() ? diffError : diff == null ? ui.t("Loading diff…") : diff.optBoolean("binary") ? ui.t("Binary file")
+        header.addView(ui.icon("close", 15, ui.t("Close diff"), () -> { selected = ""; ++diffRequest; diffPending = false; render(); }), new LayoutParams(ui.dp(32), ui.dp(32))); preview.addView(header);
+        boolean failed = diffError != null && !diffError.isEmpty();
+        if (failed && diff != null) preview.addView(action(diffError + "  " + ui.t("Retry"), this::loadDiff), new LayoutParams(-1, ui.dp(60)));
+        String message = diff == null ? failed ? diffError : ui.t("Loading diff…") : diff.optBoolean("binary") ? ui.t("Binary file")
             : diff.optString("patch").isEmpty() ? ui.t("No textual changes.") : "";
         if (!message.isEmpty()) {
             NativePanelAction note = action(message + (diffError != null && !diffError.isEmpty() ? "  " + ui.t("Retry") : ""), this::loadDiff);
             note.setSingleLine(false); preview.addView(note, new LayoutParams(-1, ui.dp(60)));
         } else {
-            ScrollView vertical = new ScrollView(ui.context); HorizontalScrollView horizontal = new HorizontalScrollView(ui.context); horizontal.setFillViewport(true);
+            ScrollView vertical = previousScroll == null ? new ScrollView(ui.context) : previousScroll;
+            HorizontalScrollView horizontal = previousHorizontal == null ? new HorizontalScrollView(ui.context) : previousHorizontal; horizontal.setFillViewport(true);
+            horizontal.removeAllViews();
             NativeUnifiedDiff code = new NativeUnifiedDiff(ui, diff.optString("patch"));
             if (code.rows.isEmpty()) preview.addView(action(ui.t("No textual changes."), () -> {}));
             else horizontal.addView(code, new android.widget.FrameLayout.LayoutParams(-2, -2));
-            vertical.addView(horizontal, new android.widget.FrameLayout.LayoutParams(-1, -2)); preview.addView(vertical, new LayoutParams(-1, 0, 1));
+            if (previousScroll == null) vertical.addView(horizontal, new android.widget.FrameLayout.LayoutParams(-1, -2));
+            preview.addView(vertical, new LayoutParams(-1, 0, 1)); diffScroll = vertical; diffHorizontal = horizontal;
         }
         if (diff != null && diff.optBoolean("truncated")) preview.addView(action(ui.t("Diff preview is truncated."), () -> {}));
         if (split.preview != preview) split.preview(preview);
+    }
+    private static boolean sameDiff(JSONObject first, JSONObject second) {
+        return first == second || first != null && second != null && first.optString("patch").equals(second.optString("patch"))
+            && first.optBoolean("binary") == second.optBoolean("binary") && first.optBoolean("truncated") == second.optBoolean("truncated");
     }
 
     private static final class NativeGitFileRow extends NativePanelAction {

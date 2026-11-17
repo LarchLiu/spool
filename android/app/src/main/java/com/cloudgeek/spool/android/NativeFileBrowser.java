@@ -196,7 +196,7 @@ final class NativeFileBrowser extends LinearLayout {
                 loadDirectory("."); loadExpanded();
                 if (state.file != null && !state.file.optBoolean("external")) reveal(state.file.optString("path"));
             }
-            if (state.gitPanel) gitPanel.reload();
+            if (state.gitPanel) gitPanel.reload(true);
             renderTree();
             postDelayed(workspacePoll, 10_000);
         });

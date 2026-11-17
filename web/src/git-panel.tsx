@@ -212,6 +212,8 @@ export function GitPanel({
   const [diffError, setDiffError] = useState("");
   const [retry, setRetry] = useState(0);
   const [diffRefresh, setDiffRefresh] = useState(0);
+  const [diffPoll, setDiffPoll] = useState(0);
+  const reloadDiff = useRef<(() => void) | undefined>(undefined);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [operation, setOperation] = useState("");
   const [operationError, setOperationError] = useState("");
@@ -290,7 +292,7 @@ export function GitPanel({
     if (!active || !ready || historyList) return;
     const controller = new AbortController();
     let pending = false;
-    const load = async () => {
+    const load = async (updatePreview = false) => {
       if (pending || controller.signal.aborted) return;
       pending = true;
       setLoading(true);
@@ -310,6 +312,7 @@ export function GitPanel({
             ? path
             : "",
         );
+        if (updatePreview) setDiffPoll((value) => value + 1);
       } catch (err) {
         if (!controller.signal.aborted) {
           setData(undefined);
@@ -321,32 +324,58 @@ export function GitPanel({
       }
     };
     void load();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load();
-    }, 10_000);
-    window.addEventListener("focus", load);
+    const poll = () => {
+      if (document.visibilityState === "visible") void load(true);
+    };
+    const timer = window.setInterval(poll, 10_000);
+    window.addEventListener("focus", poll);
     return () => {
       controller.abort();
       clearInterval(timer);
-      window.removeEventListener("focus", load);
+      window.removeEventListener("focus", poll);
     };
   }, [active, ready, historyList, listURL, refresh, retry, t]);
   useEffect(() => {
     if (!active || !ready || !diffURL) return;
     const controller = new AbortController();
     setDiffError("");
-    api<GitDiff>(diffURL, undefined, controller.signal)
-      .then((value) => {
-        if (!controller.signal.aborted) setDiff(value);
-      })
-      .catch((err) => {
+    let pending = false;
+    const load = async () => {
+      if (pending || controller.signal.aborted) return;
+      pending = true;
+      try {
+        const value = await api<GitDiff>(diffURL, undefined, controller.signal);
+        if (controller.signal.aborted) return;
+        setDiff((previous) =>
+          previous?.path === value.path &&
+          previous.patch === value.patch &&
+          previous.binary === value.binary &&
+          previous.truncated === value.truncated
+            ? previous
+            : value,
+        );
+        setDiffError("");
+      } catch (err) {
         if (!controller.signal.aborted)
           setDiffError(
             err instanceof Error ? err.message : t("Request failed"),
           );
-      });
-    return () => controller.abort();
+      } finally {
+        pending = false;
+      }
+    };
+    reloadDiff.current = () => {
+      void load();
+    };
+    void load();
+    return () => {
+      controller.abort();
+      reloadDiff.current = undefined;
+    };
   }, [active, ready, diffURL, diffRefresh, t]);
+  useEffect(() => {
+    reloadDiff.current?.();
+  }, [diffPoll]);
   function chooseMode(next: "changes" | "history") {
     if (next === mode && !commit) return;
     setMode(next);
@@ -805,7 +834,7 @@ export function GitPanel({
                   </FilePanelButton>
                 </div>
               </div>
-              {diffError ? (
+              {diffError && (
                 <p className="file-panel-notice" role="alert">
                   {diffError}
                   <FilePanelButton
@@ -814,10 +843,13 @@ export function GitPanel({
                     {t("Retry")}
                   </FilePanelButton>
                 </p>
-              ) : !diff ? (
-                <p className="file-panel-empty" role="status">
-                  {t("Loading diff…")}
-                </p>
+              )}
+              {!diff ? (
+                !diffError && (
+                  <p className="file-panel-empty" role="status">
+                    {t("Loading diff…")}
+                  </p>
+                )
               ) : diff.binary ? (
                 <p className="file-panel-notice">{t("Binary file")}</p>
               ) : diff.patch ? (
