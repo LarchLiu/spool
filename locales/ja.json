@@ -1158,5 +1158,8 @@
   "Tracked files will be restored to their staged version. Untracked files will be deleted. Staged changes are kept. This cannot be undone.": "追跡済みファイルをステージ済みの内容に戻し、未追跡ファイルを削除します。ステージ済みの変更は保持されます。この操作は元に戻せません。",
   "Git remote actions": "Git リモート操作",
   "Collapse commit area": "コミット欄を折りたたむ",
-  "Expand commit area": "コミット欄を展開"
+  "Expand commit area": "コミット欄を展開",
+  "Not pushed": "未プッシュ",
+  "Copy SHA": "SHA をコピー",
+  "Could not copy SHA": "SHA をコピーできませんでした"
 }

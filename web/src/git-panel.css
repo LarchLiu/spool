@@ -108,7 +108,7 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.git-summary > span:last-child {
+.git-summary > span + span {
   flex-shrink: 0;
   margin-left: auto;
 }
@@ -439,12 +439,90 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.git-history-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.git-history-title strong {
+  min-width: 0;
+}
+.git-history-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  padding: 1px 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 12px;
+  overflow-wrap: anywhere;
+}
+.git-history-badge svg {
+  flex-shrink: 0;
+}
+.git-history-end {
+  min-height: 1px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.git-history-end > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+}
 .git-history-list small {
   color: var(--muted);
   font-size: 10px;
 }
-.git-history-back {
-  margin: 0 6px 6px;
+.git-commit-detail {
+  padding: 0 12px 12px;
+}
+.git-commit-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0 0 6px -6px;
+}
+.git-commit-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.git-commit-sha {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 4px;
+  color: var(--muted);
+}
+.git-commit-sha code {
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.git-commit-sha .file-panel-button {
+  flex: 0 0 28px;
+  height: 28px;
+  justify-content: center;
+  color: var(--muted);
+}
+.git-commit-detail-message {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .git-diff-preview .file-preview-scroll {
   padding: 0;

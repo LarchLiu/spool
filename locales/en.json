@@ -1158,5 +1158,8 @@
   "Tracked files will be restored to their staged version. Untracked files will be deleted. Staged changes are kept. This cannot be undone.": "Tracked files will be restored to their staged version. Untracked files will be deleted. Staged changes are kept. This cannot be undone.",
   "Git remote actions": "Git remote actions",
   "Collapse commit area": "Collapse commit area",
-  "Expand commit area": "Expand commit area"
+  "Expand commit area": "Expand commit area",
+  "Not pushed": "Not pushed",
+  "Copy SHA": "Copy SHA",
+  "Could not copy SHA": "Could not copy SHA"
 }

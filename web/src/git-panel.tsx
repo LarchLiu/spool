@@ -2,13 +2,17 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronUp,
+  CircleAlert,
+  Copy,
   File,
   GitBranch,
   LoaderCircle,
   RefreshCw,
+  Tag,
   X,
 } from "lucide-react";
 import { api } from "./api";
@@ -18,12 +22,86 @@ import { FilePreviewSplit } from "./file-preview-split";
 import { FilePanelButton } from "./file-panel-button";
 import { CustomSelect } from "./custom-select";
 import { AutosizeTextarea } from "./autosize-textarea";
+import { useGitHistory } from "./git-history";
+import { copyMessageText } from "./copy-text";
 import {
   unifiedDiffLines,
   type GitView,
   type GitDiff,
   type GitFile,
+  type GitCommit,
 } from "./git-panel-state";
+
+function GitCommitBadges({ commit, t }: { commit: GitCommit; t: Translator }) {
+  return (
+    <>
+      {commit.unpushed && (
+        <span
+          className="git-history-badge"
+          aria-label={t("Not pushed")}
+          title={t("Not pushed")}
+        >
+          <ArrowUp size={11} aria-hidden="true" />
+        </span>
+      )}
+      {commit.tags?.map((tag) => (
+        <span className="git-history-badge" key={tag} title={tag}>
+          <Tag size={10} aria-hidden="true" />
+          {tag}
+        </span>
+      ))}
+    </>
+  );
+}
+
+function GitCommitSHA({ sha, t }: { sha: string; t: Translator }) {
+  const [feedback, setFeedback] = useState<"copied" | "failed">();
+  const request = useRef(0);
+  useEffect(
+    () => () => {
+      request.current++;
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = window.setTimeout(() => setFeedback(undefined), 2000);
+    return () => clearTimeout(timer);
+  }, [feedback]);
+  const label = t(
+    feedback === "copied"
+      ? "Copied"
+      : feedback === "failed"
+        ? "Could not copy SHA"
+        : "Copy SHA",
+  );
+  const Icon =
+    feedback === "copied" ? Check : feedback === "failed" ? CircleAlert : Copy;
+  return (
+    <div className="git-commit-sha">
+      <code>{sha}</code>
+      <FilePanelButton
+        className="icon"
+        aria-label={label}
+        title={label}
+        onClick={async () => {
+          const current = ++request.current;
+          try {
+            await copyMessageText(sha);
+            if (request.current === current) setFeedback("copied");
+          } catch {
+            if (request.current === current) setFeedback("failed");
+          }
+        }}
+      >
+        <Icon size={13} aria-hidden="true" />
+      </FilePanelButton>
+      <span className="message-copy-status" role="status">
+        {feedback ? label : ""}
+      </span>
+    </div>
+  );
+}
 
 export function UnifiedDiff({ patch, t }: { patch: string; t: Translator }) {
   const lines = useMemo(() => unifiedDiffLines(patch), [patch]);
@@ -125,9 +203,9 @@ export function GitPanel({
 }) {
   const [mode, setMode] = useState<"changes" | "history">("changes");
   const [commit, setCommit] = useState("");
-  const [data, setData] = useState<GitView>();
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [changesData, setData] = useState<GitView>();
+  const [changesError, setError] = useState("");
+  const [changesLoading, setLoading] = useState(false);
   const [selected, setSelected] = useState("");
   const [side, setSide] = useState<"staged" | "unstaged" | "">("");
   const [diff, setDiff] = useState<GitDiff>();
@@ -164,8 +242,52 @@ export function GitPanel({
     })}`;
   const listURL = query(mode === "history" && !commit ? "history" : "changes");
   const diffURL = selected ? query("diff", selected) : "";
+  const historyList = mode === "history" && !commit;
+  const history = useGitHistory(
+    query("history"),
+    active && ready && historyList,
+    refresh,
+    retry,
+    t,
+  );
+  const data = historyList ? history.data : changesData;
+  const error = historyList ? history.error : changesError;
+  const loading = historyList ? history.loading : changesLoading;
+  const historyEnd = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!active || !ready) return;
+    const marker = historyEnd.current;
+    if (
+      !active ||
+      !historyList ||
+      !marker ||
+      !data?.next_cursor ||
+      history.moreError ||
+      loading ||
+      history.moreLoading
+    )
+      return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) history.loadMore();
+      },
+      {
+        root: marker.closest(".file-tree-pane"),
+        rootMargin: "0px 0px 80px 0px",
+      },
+    );
+    observer.observe(marker);
+    return () => observer.disconnect();
+  }, [
+    active,
+    historyList,
+    data?.next_cursor,
+    history.moreError,
+    history.moreLoading,
+    history.loadMore,
+    loading,
+  ]);
+  useEffect(() => {
+    if (!active || !ready || historyList) return;
     const controller = new AbortController();
     let pending = false;
     const load = async () => {
@@ -208,7 +330,7 @@ export function GitPanel({
       clearInterval(timer);
       window.removeEventListener("focus", load);
     };
-  }, [active, ready, listURL, refresh, retry, t]);
+  }, [active, ready, historyList, listURL, refresh, retry, t]);
   useEffect(() => {
     if (!active || !ready || !diffURL) return;
     const controller = new AbortController();
@@ -523,17 +645,48 @@ export function GitPanel({
                   )}
                 </div>
                 {commit && (
-                  <FilePanelButton
-                    className="git-history-back"
-                    onClick={() => {
-                      setCommit("");
-                      setSelected("");
-                      setData(undefined);
-                    }}
-                  >
-                    <ChevronLeft size={14} />
-                    {t("History")} · {commit.slice(0, 7)}
-                  </FilePanelButton>
+                  <div className="git-commit-detail">
+                    <div className="git-commit-heading">
+                      <FilePanelButton
+                        className="git-history-back"
+                        title={commit}
+                        onClick={() => {
+                          setCommit("");
+                          setSelected("");
+                          setData(undefined);
+                        }}
+                      >
+                        <ChevronLeft size={14} />
+                        {t("History")} · {commit.slice(0, 7)}
+                      </FilePanelButton>
+                      {data.selected_commit && (
+                        <GitCommitBadges commit={data.selected_commit} t={t} />
+                      )}
+                    </div>
+                    <GitCommitSHA key={commit} sha={commit} t={t} />
+                    {data.selected_commit && (
+                      <>
+                        <div className="git-commit-metadata">
+                          <span>{data.selected_commit.author}</span>
+                          {!!data.selected_commit.time && (
+                            <time
+                              dateTime={new Date(
+                                data.selected_commit.time * 1000,
+                              ).toISOString()}
+                            >
+                              {new Date(
+                                data.selected_commit.time * 1000,
+                              ).toLocaleString()}
+                            </time>
+                          )}
+                        </div>
+                        <p className="git-commit-detail-message">
+                          {data.selected_commit.message ||
+                            data.selected_commit.subject}
+                        </p>
+                      </>
+                    )}
+                  </div>
                 )}
                 {mode === "history" && !commit ? (
                   <div className="git-history-list">
@@ -548,7 +701,10 @@ export function GitPanel({
                         }}
                         title={item.id}
                       >
-                        <strong>{item.subject}</strong>
+                        <span className="git-history-title">
+                          <strong>{item.subject}</strong>
+                          <GitCommitBadges commit={item} t={t} />
+                        </span>
                         <small>
                           {item.id.slice(0, 7)} · {item.author} ·{" "}
                           {new Date(item.time * 1000).toLocaleDateString()}
@@ -557,6 +713,24 @@ export function GitPanel({
                     ))}
                     {!data.commits.length && (
                       <p className="file-panel-empty">{t("No commits yet.")}</p>
+                    )}
+                    {data.next_cursor && (
+                      <div ref={historyEnd} className="git-history-end">
+                        {history.moreLoading && (
+                          <span role="status">
+                            <LoaderCircle size={14} className="stop-spinner" />
+                            {t("Loading Git information…")}
+                          </span>
+                        )}
+                        {history.moreError && (
+                          <p role="alert">
+                            {history.moreError}{" "}
+                            <FilePanelButton onClick={history.loadMore}>
+                              {t("Retry")}
+                            </FilePanelButton>
+                          </p>
+                        )}
+                      </div>
                     )}
                   </div>
                 ) : (

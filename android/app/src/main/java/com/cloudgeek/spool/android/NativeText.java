@@ -115,9 +115,12 @@ final class NativeText {
             case "Continue conversation": value = "继续会话"; break;
             case "Continue here": value = "在当前会话继续"; break;
             case "Continue in automatic mode": value = "以自动模式继续"; break;
+            case "Copied": value = "已复制"; break;
+            case "Copy SHA": value = "复制 SHA"; break;
             case "Copy code": value = "复制代码"; break;
             case "Copy message": value = "复制消息"; break;
             case "Could not check for updates. Try again.": value = "检查更新失败，请重试。"; break;
+            case "Could not copy SHA": value = "无法复制 SHA"; break;
             case "Could not copy code": value = "无法复制代码"; break;
             case "Could not copy message": value = "无法复制消息"; break;
             case "Could not download or verify the update. Try again.": value = "更新下载或验证失败，请重试。"; break;
@@ -270,6 +273,7 @@ final class NativeText {
             case "None": value = "无"; break;
             case "Not installed": value = "未安装"; break;
             case "Not now": value = "暂不处理"; break;
+            case "Not pushed": value = "尚未推送"; break;
             case "Notionists": value = "Notionists"; break;
             case "Offline": value = "离线"; break;
             case "Online": value = "在线"; break;
@@ -621,9 +625,12 @@ final class NativeText {
             case "Continue conversation": value = "会話を続行"; break;
             case "Continue here": value = "ここで続行"; break;
             case "Continue in automatic mode": value = "自動モードで続行"; break;
+            case "Copied": value = "コピーしました"; break;
+            case "Copy SHA": value = "SHA をコピー"; break;
             case "Copy code": value = "コードをコピー"; break;
             case "Copy message": value = "メッセージをコピー"; break;
             case "Could not check for updates. Try again.": value = "更新を確認できませんでした。もう一度お試しください。"; break;
+            case "Could not copy SHA": value = "SHA をコピーできませんでした"; break;
             case "Could not copy code": value = "コードをコピーできませんでした"; break;
             case "Could not copy message": value = "メッセージをコピーできませんでした"; break;
             case "Could not download or verify the update. Try again.": value = "更新のダウンロードまたは検証に失敗しました。もう一度お試しください。"; break;
@@ -776,6 +783,7 @@ final class NativeText {
             case "None": value = "なし"; break;
             case "Not installed": value = "未インストール"; break;
             case "Not now": value = "今はしない"; break;
+            case "Not pushed": value = "未プッシュ"; break;
             case "Notionists": value = "Notionists"; break;
             case "Offline": value = "オフライン"; break;
             case "Online": value = "オンライン"; break;

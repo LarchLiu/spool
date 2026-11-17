@@ -69,6 +69,89 @@ public class NativeGitPanelTest {
         Bitmap image = Bitmap.createBitmap(360, 800, Bitmap.Config.ARGB_8888); view.draw(new Canvas(image));
         try (java.io.OutputStream stream = Files.newOutputStream(new File(output, name + "-api" + android.os.Build.VERSION.SDK_INT + ".png").toPath())) { image.compress(Bitmap.CompressFormat.PNG, 100, stream); } finally { image.recycle(); }
     }
+    private static JSONObject historyPage(int offset, boolean updated) throws Exception {
+        JSONObject value = changes().put("files", new JSONArray()).put("commit", "a".repeat(40)); JSONArray commits = new JSONArray();
+        for (int i = offset; i < Math.min(offset + 50, 105); i++) {
+            JSONObject commit = new JSONObject().put("id", String.format("%040x", i + 1)).put("subject", "History row " + (i + 1)).put("author", "Developer").put("time", 1794900000 - i * 3600)
+                .put("unpushed", !updated && i < 3);
+            if (i == 0) commit.put("tags", new JSONArray().put(updated ? "v1.2.1" : "v1.2.0"));
+            if (i == 55) commit.put("tags", new JSONArray().put("release/v1.1"));
+            commits.put(commit);
+        }
+        value.put("commits", commits); if (offset + 50 < 105) value.put("next_cursor", "a".repeat(40) + ":" + (offset + 50)); return value;
+    }
+    private static int historyRows(NativeGitPanel panel) {
+        int count = 0; for (int i = 0; i < panel.content.getChildCount(); i++) if (panel.content.getChildAt(i) instanceof NativeGitHistoryRow) count++; return count;
+    }
+    @Test public void commitDetailsShowBadgesAuthorFullTimeAndMessageAndRefreshTheirState() throws Exception {
+        RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
+        for (boolean dark : new boolean[]{false, true}) try (ActivityController<Activity> activity = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(activity.get(), dark, "en"); NativeFileModel model = new NativeFileModel("p", "c"); model.workspace = workspace("/repo/main");
+            List<NativeFilesTest.Pending> requests = new ArrayList<>();
+            NativeGitPanel panel = new NativeGitPanel(ui, model, (path, done) -> requests.add(new NativeFilesTest.Pending(path, done)), value -> {});
+            activity.get().setContentView(panel); panel.activate(true); take(requests, "view=changes").result.done(changes(), null);
+            panel.tabs.action("history").performClick(); JSONObject history = historyPage(0, false); take(requests, "view=history").result.done(history, null);
+            find(panel.content, "History row 1").performClick();
+            JSONObject selected = new JSONObject(history.getJSONArray("commits").getJSONObject(0).toString());
+            String message = "History row 1\n\nPreserve the full commit message and its paragraphs.\n第二行提交说明\n\nFinal paragraph.";
+            selected.put("message", message); JSONObject detail = changes().put("selected_commit", selected);
+            NativeFilesTest.Pending load = take(requests, "view=changes"); assertTrue(load.path.contains("commit=" + selected.getString("id"))); load.result.done(detail, null); layout(panel);
+            assertNotNull(action(panel.content, "Not pushed · v1.2.0"));
+            String stamp = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.MEDIUM).format(new java.util.Date(selected.getLong("time") * 1000));
+            assertNotNull(find(panel.content, "Developer · " + stamp));
+            TextView body = (TextView) find(panel.content, "Final paragraph."); assertEquals(message, body.getText().toString()); assertTrue(body.getLineCount() >= 6);
+            assertTrue(body.getRight() <= panel.getWidth()); assertNull(child(panel, android.widget.Button.class));
+            assertNotNull(find(panel.content, selected.getString("id")));
+            View copy = action(panel.content, "Copy SHA"); assertNotNull(copy);
+            assertTrue(copy.getLeft() >= find(panel.content, selected.getString("id")).getRight());
+            screenshot(panel, "commit-detail-" + (dark ? "dark" : "light"));
+            copy.performClick(); assertNotNull(action(panel.content, "Copied"));
+            android.content.ClipboardManager clipboard = (android.content.ClipboardManager) ui.context.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+            assertEquals(selected.getString("id"), clipboard.getPrimaryClip().getItemAt(0).getText().toString());
+            find(panel.content, "file.txt").performClick(); take(requests, "view=diff").result.done(new JSONObject().put("patch", PATCH), null);
+            NativeUnifiedDiff preview = child(panel.preview, NativeUnifiedDiff.class); assertNotNull(preview);
+            panel.reload(); selected.put("unpushed", false).put("tags", new JSONArray().put("v1.2.1")); take(requests, "view=changes").result.done(detail, null);
+            assertNull(action(panel.content, "Not pushed · v1.2.0")); assertNotNull(action(panel.content, "v1.2.1")); assertSame(preview, child(panel.preview, NativeUnifiedDiff.class));
+            find(panel.content, "‹ History").performClick(); take(requests, "view=history").result.done(historyPage(0, true), null); assertEquals(50, historyRows(panel));
+            panel.activate(false);
+        }
+    }
+    @Test public void historyBadgesAndBottomPaginationPreserveRowsAndFenceOldDirectories() throws Exception {
+        RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
+        for (boolean dark : new boolean[]{false, true}) try (ActivityController<Activity> activity = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(activity.get(), dark, "en"); NativeFileModel model = new NativeFileModel("p", "c");
+            model.workspace = workspace("/repo/main"); model.workspaces = new JSONArray().put(model.workspace);
+            List<NativeFilesTest.Pending> requests = new ArrayList<>();
+            NativeGitPanel panel = new NativeGitPanel(ui, model, (path, done) -> requests.add(new NativeFilesTest.Pending(path, done)), value -> {});
+            activity.get().setContentView(panel); panel.activate(true); take(requests, "view=changes").result.done(changes(), null);
+            panel.tabs.action("history").performClick(); take(requests, "view=history").result.done(historyPage(0, false), null); layout(panel);
+            assertEquals(50, historyRows(panel)); assertTrue(requests.isEmpty());
+            View first = panel.content.getChildAt(1); assertTrue(first.getContentDescription().toString().contains("Not pushed")); assertTrue(first.getContentDescription().toString().contains("v1.2.0"));
+            screenshot(panel, "history-" + (dark ? "dark" : "light"));
+            panel.scroll.scrollTo(0, panel.content.getHeight());
+            take(requests, "cursor=").result.done(null, new Exception("History page temporarily unavailable"));
+            assertEquals(50, historyRows(panel)); assertNotNull(find(panel.content, "History page temporarily unavailable"));
+            find(panel.content, "Retry").performClick(); NativeFilesTest.Pending more = take(requests, "cursor="); assertTrue(more.path.contains("%3A50"));
+            more.result.done(historyPage(50, false), null); layout(panel); assertEquals(100, historyRows(panel));
+            assertNotNull(find(panel.content, "release/v1.1"));
+            panel.scroll.scrollTo(0, panel.content.getHeight()); more = take(requests, "cursor="); assertTrue(more.path.contains("%3A100"));
+            more.result.done(historyPage(100, false), null); layout(panel); assertEquals(105, historyRows(panel));
+            panel.scroll.scrollTo(0, panel.content.getHeight()); assertTrue(requests.isEmpty());
+            panel.reload(); take(requests, "view=history").result.done(historyPage(0, true), null);
+            take(requests, "cursor=").result.done(historyPage(50, true), null); take(requests, "cursor=").result.done(historyPage(100, true), null);
+            assertEquals(105, historyRows(panel)); assertNotNull(find(panel.content, "v1.2.1"));
+            assertFalse(panel.content.getChildAt(1).getContentDescription().toString().contains("Not pushed"));
+            // An append in flight belongs only to the directory that requested it.
+            panel.scopeChanged(); take(requests, "view=history").result.done(historyPage(0, false), null); layout(panel);
+            panel.scroll.scrollTo(0, panel.content.getHeight()); NativeFilesTest.Pending stale = take(requests, "cursor=");
+            model.workspace = workspace("/repo/tree"); model.epoch++; panel.scopeChanged();
+            NativeFilesTest.Pending next = take(requests, "view=history"); assertTrue(next.path.contains("workspace=%2Frepo%2Ftree"));
+            JSONObject feature = changes().put("commits", new JSONArray().put(new JSONObject().put("id", "f".repeat(40)).put("subject", "Feature-only history")));
+            next.result.done(feature, null); stale.result.done(historyPage(50, false), null);
+            assertEquals(1, historyRows(panel)); assertNotNull(find(panel.content, "Feature-only history")); assertNull(find(panel.content, "History row 51"));
+            panel.activate(false);
+        }
+    }
     @Test public void headerRefreshOnlyReloadsCurrentListAndPreviewIconsOnlyReloadTheirContents() throws Exception {
         try (ActivityController<Activity> activity = Robolectric.buildActivity(Activity.class).setup()) {
             NativeUi ui = new NativeUi(activity.get(), false); List<NativeFilesTest.Pending> requests = new ArrayList<>();

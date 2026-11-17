@@ -1158,5 +1158,8 @@
   "Tracked files will be restored to their staged version. Untracked files will be deleted. Staged changes are kept. This cannot be undone.": "已跟踪文件将恢复到暂存区的版本，未跟踪文件将被删除。已暂存的修改会保留。此操作无法撤销。",
   "Git remote actions": "Git 远端操作",
   "Collapse commit area": "收起提交区",
-  "Expand commit area": "展开提交区"
+  "Expand commit area": "展开提交区",
+  "Not pushed": "尚未推送",
+  "Copy SHA": "复制 SHA",
+  "Could not copy SHA": "无法复制 SHA"
 }

@@ -16,8 +16,11 @@ export type GitFile = {
 export type GitCommit = {
   id: string;
   subject: string;
+  message?: string;
   author: string;
   time: number;
+  tags?: string[];
+  unpushed?: boolean;
 };
 export type GitView = {
   repository: boolean;
@@ -35,6 +38,8 @@ export type GitView = {
   behind?: number;
   remote_allowed?: boolean;
   last_commit?: GitCommit;
+  selected_commit?: GitCommit;
+  next_cursor?: string;
 };
 export type GitDiff = {
   path: string;

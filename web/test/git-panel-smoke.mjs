@@ -15,6 +15,7 @@ const { chromium } = require("playwright");
 const output = path.join(root, "build/artifacts/git-panel");
 const cleanup = [], reports = [], requests = [];
 const commit = "a".repeat(40);
+const detailMessage = "Fix Git panel preview\n\nPreserve the full commit message and its paragraphs.\n第二行提交说明\n\nFinal paragraph.";
 const source = `
 import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
 import {FileSidebar} from '/src/file-sidebar.tsx';import {translator} from '/src/i18n.ts';import '/src/style.css';
@@ -56,7 +57,7 @@ try {
       page.on("pageerror", error => errors.push(error.stack || String(error)));
       let fail = false, blocked;
       let fileRevision = 0, diffRevision = 0;
-      let staged = true, unstaged = true, notes = true, lastSubject = "Latest commit summary";
+      let staged = true, unstaged = true, notes = true, lastSubject = "Latest commit summary", detailPushed = false;
       const mutations = [];
       await page.route("**/api/**", async route => {
         const url = new URL(route.request().url()), scope = url.searchParams.get("workspace"); requests.push(url.pathname + url.search);
@@ -87,7 +88,10 @@ try {
           last_commit: { id: commit, subject: lastSubject, author: "Developer", time: 1794900000 },
           branch: scope === "/repo/feature" ? "feature/git" : "dev", files: [], commits: [] };
         if (url.searchParams.get("view") === "history") return json({ ...base, commits: [{ id: commit, subject: "Fix Git panel preview", author: "Developer", time: 1794900000 }] });
-        return json({ ...base, files: [
+        return json({ ...base, ...(url.searchParams.has("commit") ? { selected_commit: {
+          id: commit, subject: "Fix Git panel preview", message: detailMessage, author: "Developer", time: 1794900000,
+          tags: [detailPushed ? "v1.2.1" : "v1.2.0"], unpushed: !detailPushed,
+        } } : {}), files: [
           { path: "src/example.ts", status: staged && unstaged ? "MM" : "M", staged, unstaged, additions: 12, deletions: 4,
             staged_additions: 10, staged_deletions: 3, unstaged_additions: 2, unstaged_deletions: 1 },
           { path: "image.png", status: "M", binary: true, additions: 0, deletions: 0 },
@@ -212,6 +216,25 @@ try {
       assert.ok(Number(await grip.getAttribute("aria-valuenow")) < before);
       await page.locator(".git-file-row").filter({ hasText: "image.png" }).click(); await page.locator(".git-diff-preview").getByText("Binary file", { exact: true }).waitFor();
       await page.getByRole("tab", { name: "History", exact: true }).click(); await page.getByText("Fix Git panel preview", { exact: true }).click();
+      const detail = page.locator(".git-commit-detail");
+      await detail.getByText("v1.2.0", { exact: true }).waitFor();
+      assert.equal(await detail.getByLabel("Not pushed", { exact: true }).count(), 1);
+      assert.equal(await detail.locator(".git-commit-metadata span").innerText(), "Developer");
+      assert.equal(await detail.locator("time").getAttribute("datetime"), new Date(1794900000 * 1000).toISOString());
+      assert.equal(await detail.locator("time").innerText(), await page.evaluate(time => new Date(time * 1000).toLocaleString(), 1794900000));
+      assert.equal(await detail.locator(".git-commit-detail-message").innerText(), detailMessage);
+      assert.ok(await detail.locator(".git-commit-detail-message").evaluate(element => element.getBoundingClientRect().height > parseFloat(getComputedStyle(element).lineHeight) * 5), "Commit message paragraphs remain visible");
+      assert.ok(await detail.evaluate(element => element.scrollWidth <= element.clientWidth), "Commit detail fits narrow panels");
+      assert.equal(await detail.locator(".git-commit-sha code").innerText(), commit);
+      await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: `http://127.0.0.1:${server.httpServer.address().port}` });
+      await page.locator(".file-sidebar").screenshot({ path: path.join(output, `commit-detail-${width}-${theme}.png`) });
+      await detail.getByRole("button", { name: "Copy SHA", exact: true }).click();
+      await detail.getByRole("button", { name: "Copied", exact: true }).waitFor();
+      assert.equal(await page.evaluate(() => navigator.clipboard.readText()), commit, "Copy writes the full SHA");
+      detailPushed = true;
+      await page.getByRole("button", { name: "Refresh Git information", exact: true }).click();
+      await detail.getByText("v1.2.1", { exact: true }).waitFor();
+      assert.equal(await detail.getByLabel("Not pushed", { exact: true }).count(), 0, "Commit details refresh tag and outgoing state");
       await row.click(); await page.locator(".git-diff-source").getByText("new-main", { exact: true }).waitFor();
       await page.getByRole("tab", { name: "Changes", exact: true }).click(); await row.waitFor();
       await page.getByRole("button", { name: "Switch directory", exact: true }).click();
@@ -294,6 +317,77 @@ try {
       await writeFile(path.join(output, "failure.json"), JSON.stringify({ errors, requests, text: await page.locator("body").innerText() }, null, 2));
       throw error;
     } finally { await context.close(); }
+  }
+  for (const [width, theme] of [[390, "light"], [1280, "dark"]]) {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: "block" });
+    const page = await context.newPage(); const errors = [], historyRequests = [];
+    let release;
+    try {
+      page.setDefaultTimeout(10000); page.on("pageerror", error => errors.push(String(error)));
+      let failMore = true, updated = false, generation = 0, blockedPage;
+      await page.route("**/api/**", async route => {
+        const url = new URL(route.request().url());
+        if (!url.pathname.endsWith("/git")) return route.fulfill({ json: { entries: [] } });
+        const feature = url.searchParams.get("workspace") === "/repo/feature";
+        const snapshot = { repository: true, branch: feature ? "feature/git" : "dev", commit: String(feature ? "f" : generation ? "b" : "a").repeat(40), files: [], commits: [] };
+        if (url.searchParams.get("view") !== "history") return route.fulfill({ json: snapshot });
+        const offset = Number(url.searchParams.get("cursor")?.split(":")[1] || 0);
+        historyRequests.push({ feature, offset, generation });
+        if (feature) return route.fulfill({ json: { ...snapshot, commits: [{ id: "f".repeat(40), subject: "Feature-only history", author: "Developer", time: 1794900000, tags: ["feature-release"] }] } });
+        if (offset && blockedPage) await blockedPage;
+        if (offset === 50 && failMore) { failMore = false; return route.fulfill({ status: 500, json: { error: "History page temporarily unavailable" } }); }
+        const commits = Array.from({ length: Math.min(50, 125 - offset) }, (_, i) => ({
+          id: (offset + i + 1).toString(16).padStart(40, "0"), subject: `History row ${offset + i + 1}`, author: "Developer", time: 1794900000 - (offset + i) * 3600,
+          unpushed: !updated && offset + i < 3, tags: offset + i === 0 ? [updated ? "v1.2.1" : "v1.2.0"] : offset + i === 55 ? ["release/v1.1"] : [],
+        }));
+        return route.fulfill({ json: { ...snapshot, commits, ...(offset + 50 < 125 ? { next_cursor: snapshot.commit + ":" + (offset + 50) } : {}) } });
+      });
+      await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__git-panel?theme=${theme}`);
+      await page.getByRole("tab", { name: "Git panel", exact: true }).click();
+      await page.getByRole("tab", { name: "History", exact: true }).click();
+      const rows = page.locator(".git-history-list > .file-panel-button");
+      await rows.nth(49).waitFor(); assert.equal(await rows.count(), 50);
+      assert.equal(await page.getByLabel("Not pushed", { exact: true }).count(), 3);
+      await rows.first().getByText("v1.2.0", { exact: true }).waitFor();
+      await page.locator(".file-sidebar").screenshot({ path: path.join(output, `history-${width}-${theme}.png`) });
+      const scrollBottom = () => page.locator(".git-panel .file-tree-pane").evaluate(element => { element.scrollTop = element.scrollHeight; });
+      await scrollBottom(); await page.getByRole("alert").getByText("History page temporarily unavailable", { exact: false }).waitFor();
+      assert.equal(await rows.count(), 50, "A failed next page preserves existing commits");
+      await page.getByRole("button", { name: "Retry", exact: true }).click();
+      await rows.nth(99).waitFor(); assert.equal(await rows.count(), 100);
+      await rows.nth(55).getByText("release/v1.1", { exact: true }).waitFor();
+      await scrollBottom(); await rows.nth(124).waitFor();
+      assert.equal(await rows.count(), 125);
+      assert.equal(new Set(await rows.locator("strong").allTextContents()).size, 125, "Pages append without duplicate rows");
+      assert.equal(await page.locator(".git-history-end").count(), 0, "Loading stops at the end of history");
+      updated = true;
+      await page.getByRole("button", { name: "Refresh Git information", exact: true }).click();
+      await page.getByText("v1.2.1", { exact: true }).waitFor();
+      assert.equal(await rows.count(), 125, "Refreshing retains the loaded history length");
+      assert.equal(await page.getByLabel("Not pushed", { exact: true }).count(), 0, "Refreshing updates outgoing markers");
+      await rows.first().click(); await page.locator(".git-history-back").waitFor();
+      await page.locator(".git-history-back").click(); await rows.nth(124).waitFor();
+      generation = 1;
+      blockedPage = new Promise(resolve => { release = resolve; });
+      const pendingPage = page.waitForRequest(request => new URL(request.url()).searchParams.get("cursor")?.startsWith("b".repeat(40)));
+      await page.getByRole("button", { name: "Refresh Git information", exact: true }).click();
+      await page.waitForFunction(() => document.querySelectorAll(".git-history-list > .file-panel-button").length === 50);
+      await scrollBottom();
+      await pendingPage;
+      await page.getByRole("button", { name: "Switch directory", exact: true }).click();
+      await page.getByRole("option").filter({ hasText: "feature/git" }).click();
+      await page.getByRole("tab", { name: "Git panel", exact: true }).click();
+      await page.getByRole("tab", { name: "History", exact: true }).click();
+      await page.getByText("Feature-only history", { exact: true }).waitFor();
+      release(); blockedPage = undefined;
+      await page.getByText("feature-release", { exact: true }).waitFor();
+      assert.equal(await rows.count(), 1, "A stale page cannot enter another directory's history");
+      assert.deepEqual(errors, []); reports.push({ width, theme, historyPagination: true, passed: true });
+    } catch (error) {
+      await page.screenshot({ path: path.join(output, "failure.png") });
+      await writeFile(path.join(output, "failure.json"), JSON.stringify({ errors, historyRequests, text: await page.locator("body").innerText() }, null, 2));
+      throw error;
+    } finally { release?.(); await context.close(); }
   }
   for (const width of [1280, 390]) for (const count of [2, 8]) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, serviceWorkers: "block" });

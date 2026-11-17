@@ -18,6 +18,7 @@ final class NativeGitPanel extends LinearLayout {
     final NativePanelTabs tabs;
     final NativeFileSplit split;
     final LinearLayout content, preview;
+    final ScrollView scroll;
     final LinearLayout remoteArea, commitArea;
     final NativeAutosizeInput commitInput;
     final NativeLastCommit lastCommit;
@@ -43,6 +44,10 @@ final class NativeGitPanel extends LinearLayout {
     private int request, diffRequest;
     private boolean active, pending;
     private NativeDialog discardDialog;
+    private JSONObject historyCache;
+    private String historyMoreError = "";
+    private boolean historyMorePending;
+    private final Runnable checkHistoryEnd = this::loadHistoryAtBottom;
 
     NativeGitPanel(NativeUi ui, NativeFileModel state, NativeFileBrowser.Read read, DoubleConsumer resize) {
         super(ui.context); this.ui = ui; this.state = state; this.read = read; setOrientation(VERTICAL); setBackgroundColor(ui.elevated);
@@ -50,7 +55,11 @@ final class NativeGitPanel extends LinearLayout {
         tabs = new NativePanelTabs(ui, ui.t("Git views"), false);
         tabs.add("changes", ui.t("Changes"), "", () -> chooseMode("changes"));
         tabs.add("history", ui.t("History"), "", () -> chooseMode("history")); tabs.select(mode); addView(tabs);
-        content = ui.column(); ScrollView scroll = new ScrollView(ui.context); scroll.setFillViewport(true); scroll.addView(content);
+        content = ui.column(); scroll = new ScrollView(ui.context); scroll.setFillViewport(true); scroll.addView(content);
+        scroll.setOnScrollChangeListener((view, x, y, oldX, oldY) -> loadHistoryAtBottom());
+        content.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            removeCallbacks(checkHistoryEnd); post(checkHistoryEnd);
+        });
         preview = ui.column();
         split = new NativeFileSplit(ui, scroll, state.split, value -> { state.split = value; resize.accept(value); });
         addView(split, new LayoutParams(-1, 0, 1));
@@ -74,12 +83,13 @@ final class NativeGitPanel extends LinearLayout {
         if (value) {
             reload();
             if (!selected.isEmpty() && diff == null && diffError.isEmpty()) loadDiff();
-        } else { ++request; ++diffRequest; pending = false; dismissDiscard(); dismissRemote(); }
+        } else { ++request; ++diffRequest; pending = historyMorePending = false; removeCallbacks(checkHistoryEnd); dismissDiscard(); dismissRemote(); }
     }
     void scopeChanged() {
         dismissDiscard(); dismissRemote();
         ++request; ++diffRequest; ++operationRequest; pending = false;
         data = diff = null; selected = side = commit = error = diffError = operation = operationError = "";
+        historyCache = null; historyMoreError = ""; historyMorePending = false; scroll.scrollTo(0, 0);
         composer = false; remoteAction = "push"; commitInput.setText(""); render();
         if (active) reload();
     }
@@ -94,7 +104,7 @@ final class NativeGitPanel extends LinearLayout {
         if (!state.ready()) { data = diff = null; selected = ""; render(); return; }
         pending = true; int token = ++request, epoch = state.epoch;
         if (data == null) render();
-        read.read(path(mode.equals("history") && commit.isEmpty() ? "history" : "changes"), (value, failure) -> {
+        NativeFileBrowser.Completion done = (value, failure) -> {
             if (!active || token != request || epoch != state.epoch) return;
             pending = false; data = failure == null ? value : null; error = failure == null ? "" : failure.getMessage();
             boolean found = false;
@@ -106,11 +116,60 @@ final class NativeGitPanel extends LinearLayout {
             if (!found && failure == null) { selected = ""; diff = null; ++diffRequest; }
             render();
             postDelayed(poll, 10_000);
+        };
+        if (historyList()) {
+            historyMoreError = "";
+            readHistoryPages("", null, 0, token, epoch, (value, failure) -> {
+                if (failure == null) historyCache = value;
+                done.done(value, failure);
+            });
+        } else read.read(path("changes"), done);
+    }
+    private boolean historyList() { return mode.equals("history") && commit.isEmpty(); }
+    private void readHistoryPages(String cursor, JSONObject combined, int desired, int token, int epoch, NativeFileBrowser.Completion done) {
+        read.read(path("history") + (cursor.isEmpty() ? "" : "&cursor=" + android.net.Uri.encode(cursor)), (value, failure) -> {
+            if (!active || token != request || epoch != state.epoch) return;
+            if (failure != null) { done.done(null, failure); return; }
+            try {
+                JSONObject next = combined == null ? new JSONObject(value.toString()) : appendHistory(combined, value);
+                int count = desired;
+                if (combined == null && historyCache != null && historyCache.optString("commit").equals(next.optString("commit"))) count = historyCache.getJSONArray("commits").length();
+                String more = next.optString("next_cursor");
+                if (!more.isEmpty() && next.getJSONArray("commits").length() < count) readHistoryPages(more, next, count, token, epoch, done);
+                else done.done(next, null);
+            } catch (org.json.JSONException error) { done.done(null, error); }
+        });
+    }
+    private static JSONObject appendHistory(JSONObject first, JSONObject page) throws org.json.JSONException {
+        JSONObject next = new JSONObject(first.toString()); JSONArray commits = next.getJSONArray("commits"); Set<String> ids = new HashSet<>();
+        for (int i = 0; i < commits.length(); i++) ids.add(commits.getJSONObject(i).getString("id"));
+        JSONArray more = page.getJSONArray("commits");
+        for (int i = 0; i < more.length(); i++) if (ids.add(more.getJSONObject(i).getString("id"))) commits.put(more.getJSONObject(i));
+        next.put("next_cursor", page.optString("next_cursor")); return next;
+    }
+    private void loadHistoryAtBottom() {
+        if (!active || pending || !historyList() || data == null || data.optString("next_cursor").isEmpty() || !historyMoreError.isEmpty()) return;
+        if (scroll.getHeight() > 0 && scroll.getScrollY() + scroll.getHeight() >= content.getHeight() - ui.dp(80)) loadMoreHistory();
+    }
+    private void loadMoreHistory() {
+        if (!active || pending || !historyList() || data == null || data.optString("next_cursor").isEmpty()) return;
+        pending = historyMorePending = true; historyMoreError = ""; removeCallbacks(poll);
+        int token = ++request, epoch = state.epoch; JSONObject previous = data; render();
+        read.read(path("history") + "&cursor=" + android.net.Uri.encode(previous.optString("next_cursor")), (value, failure) -> {
+            if (!active || token != request || epoch != state.epoch) return;
+            pending = historyMorePending = false;
+            if (failure == null) {
+                try { data = historyCache = appendHistory(previous, value); }
+                catch (org.json.JSONException invalid) { failure = invalid; }
+            }
+            if (failure != null) historyMoreError = failure.getMessage() == null ? ui.t("Request failed") : failure.getMessage();
+            render(); postDelayed(poll, 10_000);
         });
     }
     private void chooseMode(String next) {
         dismissDiscard(); dismissRemote();
-        mode = next; commit = selected = side = ""; data = diff = null; error = diffError = ""; ++request; ++diffRequest; pending = false;
+        mode = next; commit = selected = side = ""; data = diff = null; error = diffError = historyMoreError = ""; ++request; ++diffRequest; pending = historyMorePending = false;
+        scroll.scrollTo(0, 0);
         tabs.select(mode); reload();
     }
     void select(String file) { select(file, ""); }
@@ -150,17 +209,19 @@ final class NativeGitPanel extends LinearLayout {
             int add = 0, del = 0;
             for (int i = 0; i < files.length(); i++) { add += files.optJSONObject(i).optInt("additions"); del += files.optJSONObject(i).optInt("deletions"); }
             notice(branch + (mode.equals("changes") || !commit.isEmpty() ? "    " + files.length() + "   +" + add + "  −" + del : ""));
-            if (!commit.isEmpty()) content.addView(action("‹ " + ui.t("History") + " · " + commit.substring(0, 7), () -> chooseMode("history")));
+            if (!commit.isEmpty()) renderCommitDetail();
             if (mode.equals("history") && commit.isEmpty()) {
                 JSONArray commits = data.optJSONArray("commits");
                 if (commits == null || commits.length() == 0) notice(ui.t("No commits yet."));
                 else for (int i = 0; i < commits.length(); i++) {
                     JSONObject item = commits.optJSONObject(i); String id = item.optString("id");
-                    NativePanelAction row = action(item.optString("subject") + "\n" + id.substring(0, Math.min(7, id.length())) + " · " + item.optString("author"), () -> {
-                        commit = id; selected = side = ""; data = diff = null; ++request; pending = false; reload();
+                    NativeGitHistoryRow row = new NativeGitHistoryRow(ui, item, () -> {
+                        commit = id; selected = side = ""; data = diff = null; ++request; pending = historyMorePending = false; reload();
                     });
-                    row.setSingleLine(false); row.setMaxLines(2); row.setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6)); content.addView(row, new LayoutParams(-1, ui.dp(54)));
+                    content.addView(row, new LayoutParams(-1, -2));
                 }
+                if (!historyMoreError.isEmpty()) { notice(historyMoreError); content.addView(action(ui.t("Retry"), () -> { historyMoreError = ""; loadMoreHistory(); })); }
+                else if (historyMorePending) notice(ui.t("Loading Git information…"));
             } else {
                 if (!commit.isEmpty()) group(ui.t("Tracked"), files, false, "");
                 else { group(ui.t("Staged"), files, false, "staged"); group(ui.t("Unstaged"), files, false, "unstaged"); }
@@ -171,6 +232,51 @@ final class NativeGitPanel extends LinearLayout {
         }
         renderPreview();
         renderFooter();
+    }
+    private void renderCommitDetail() {
+        LinearLayout detail = ui.column(); detail.setPadding(ui.dp(12), 0, ui.dp(12), ui.dp(12));
+        LinearLayout heading = ui.row();
+        NativePanelAction back = action("‹ " + ui.t("History") + " · " + commit.substring(0, 7), () -> chooseMode("history"));
+        back.setPadding(ui.dp(6), 0, ui.dp(6), 0);
+        LayoutParams backLayout = new LayoutParams(-2, ui.dp(28)); backLayout.setMarginStart(-ui.dp(6)); heading.addView(back, backLayout);
+        JSONObject item = data.optJSONObject("selected_commit");
+        if (item != null) {
+            NativeTextView badges = NativeGitHistoryRow.heading(ui, item, "");
+            LayoutParams badgeLayout = new LayoutParams(0, -2, 1); badgeLayout.setMarginStart(ui.dp(5)); heading.addView(badges, badgeLayout);
+        }
+        detail.addView(heading, new LayoutParams(-1, -2));
+        LinearLayout shaRow = ui.row();
+        NativeTextView sha = new NativeTextView(ui.context); ui.typography(sha, 11, ui.muted, 400); ui.fixedLineHeight(sha, 1.6f);
+        sha.setTypeface(android.graphics.Typeface.MONOSPACE); sha.setText(commit);
+        shaRow.addView(sha, new LayoutParams(0, -2, 1));
+        NativeUi.IconButton copy = ui.icon("copy", 13, ui.t("Copy SHA"), () -> {}); ui.buttonKeys(copy);
+        Runnable copyPadding = () -> { int gap = ui.dp(28) - ui.dp(13); copy.setPadding(gap / 2, gap / 2, gap - gap / 2, gap - gap / 2); }; copyPadding.run();
+        String fullSHA = commit;
+        Runnable resetCopy = () -> { copy.setKind("copy"); copyPadding.run(); copy.setContentDescription(ui.t("Copy SHA")); copy.setTooltipText(ui.t("Copy SHA")); };
+        copy.setTooltipText(ui.t("Copy SHA"));
+        copy.setOnClickListener(view -> {
+            String label;
+            try {
+                android.content.ClipboardManager clipboard = (android.content.ClipboardManager) ui.context.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                if (clipboard == null) throw new IllegalStateException("Clipboard unavailable");
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("SHA", fullSHA)); copy.setKind("check"); label = ui.t("Copied");
+            } catch (RuntimeException failure) { copy.setKind("circle_alert"); label = ui.t("Could not copy SHA"); }
+            copyPadding.run(); copy.setContentDescription(label); copy.setTooltipText(label); copy.announceForAccessibility(label);
+            copy.removeCallbacks(resetCopy); copy.postDelayed(resetCopy, 2000);
+        });
+        copy.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(View view) {}
+            @Override public void onViewDetachedFromWindow(View view) { copy.removeCallbacks(resetCopy); }
+        });
+        shaRow.addView(copy, new LayoutParams(ui.dp(28), ui.dp(28))); detail.addView(shaRow, new LayoutParams(-1, -2));
+        if (item != null) {
+            long time = item.optLong("time"); String stamp = time == 0 ? "" : java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.MEDIUM).format(new java.util.Date(time * 1000));
+            NativeTextView metadata = new NativeTextView(ui.context); ui.typography(metadata, 11, ui.muted, 400); ui.fixedLineHeight(metadata, 1.6f);
+            metadata.setText(item.optString("author") + (stamp.isEmpty() ? "" : " · " + stamp)); metadata.setPadding(0, ui.dp(6), 0, 0); detail.addView(metadata, new LayoutParams(-1, -2));
+            NativeTextView message = new NativeTextView(ui.context); ui.typography(message, 12, ui.text, 400); ui.fixedLineHeight(message, 1.6f);
+            message.setText(item.optString("message", item.optString("subject"))); message.setPadding(0, ui.dp(8), 0, 0); detail.addView(message, new LayoutParams(-1, -2));
+        }
+        content.addView(detail, new LayoutParams(-1, -2));
     }
     private boolean unstaged(JSONObject file) { return file.optBoolean("unstaged", !file.optBoolean("staged") || file.optString("status").length() == 2); }
     private boolean matches(JSONObject file, boolean untracked, String groupSide) {

@@ -34,28 +34,33 @@ type workspaceGitFile struct {
 }
 
 type workspaceGitCommit struct {
-	ID      string `json:"id"`
-	Subject string `json:"subject"`
-	Author  string `json:"author"`
-	Time    int64  `json:"time"`
+	ID       string   `json:"id"`
+	Subject  string   `json:"subject"`
+	Message  string   `json:"message,omitempty"`
+	Author   string   `json:"author"`
+	Time     int64    `json:"time"`
+	Tags     []string `json:"tags,omitempty"`
+	Unpushed bool     `json:"unpushed,omitempty"`
 }
 
 type workspaceGitView struct {
-	Repository    bool                 `json:"repository"`
-	Branch        string               `json:"branch,omitempty"`
-	Commit        string               `json:"commit,omitempty"`
-	Files         []workspaceGitFile   `json:"files"`
-	Commits       []workspaceGitCommit `json:"commits"`
-	Truncated     bool                 `json:"truncated,omitempty"`
-	Writable      bool                 `json:"writable"`
-	Index         string               `json:"index,omitempty"`
-	Remote        string               `json:"remote,omitempty"`
-	RemoteBranch  string               `json:"remote_branch,omitempty"`
-	Upstream      string               `json:"upstream,omitempty"`
-	Ahead         int                  `json:"ahead"`
-	Behind        int                  `json:"behind"`
-	RemoteAllowed bool                 `json:"remote_allowed"`
-	LastCommit    *workspaceGitCommit  `json:"last_commit,omitempty"`
+	Repository     bool                 `json:"repository"`
+	Branch         string               `json:"branch,omitempty"`
+	Commit         string               `json:"commit,omitempty"`
+	Files          []workspaceGitFile   `json:"files"`
+	Commits        []workspaceGitCommit `json:"commits"`
+	Truncated      bool                 `json:"truncated,omitempty"`
+	Writable       bool                 `json:"writable"`
+	Index          string               `json:"index,omitempty"`
+	Remote         string               `json:"remote,omitempty"`
+	RemoteBranch   string               `json:"remote_branch,omitempty"`
+	Upstream       string               `json:"upstream,omitempty"`
+	Ahead          int                  `json:"ahead"`
+	Behind         int                  `json:"behind"`
+	RemoteAllowed  bool                 `json:"remote_allowed"`
+	LastCommit     *workspaceGitCommit  `json:"last_commit,omitempty"`
+	SelectedCommit *workspaceGitCommit  `json:"selected_commit,omitempty"`
+	NextCursor     string               `json:"next_cursor,omitempty"`
 }
 
 var gitCommitID = regexp.MustCompile(`^[a-f0-9]{40,64}$`)
@@ -247,15 +252,28 @@ func (a *App) serveWorkspaceGit(w http.ResponseWriter, r *http.Request, director
 			apiJSON(w, 200, view)
 			return
 		}
-		body, err := run("log", "-50", "-z", "--format=%H%x00%s%x00%an%x00%at", "--", ".")
-		if err != nil {
+		anchor, offset := view.Commit, 0
+		if cursor := r.URL.Query().Get("cursor"); cursor != "" {
+			parts := strings.Split(cursor, ":")
+			if len(parts) != 2 || !gitCommitID.MatchString(parts[0]) {
+				apiError(w, 400, "Invalid history cursor")
+				return
+			}
+			var err error
+			offset, err = strconv.Atoi(parts[1])
+			if err != nil || offset < 1 {
+				apiError(w, 400, "Invalid history cursor")
+				return
+			}
+			anchor = parts[0]
+			if _, err := run("merge-base", "--is-ancestor", anchor, "HEAD"); err != nil {
+				apiError(w, 409, "Git history changed; refresh the list")
+				return
+			}
+		}
+		if err := workspaceGitHistory(ctx, directory, &view, anchor, offset); err != nil {
 			apiError(w, 500, "Git history is unavailable")
 			return
-		}
-		fields := strings.Split(string(body), "\x00")
-		for i := 0; i+3 < len(fields); i += 4 {
-			stamp, _ := strconv.ParseInt(fields[i+3], 10, 64)
-			view.Commits = append(view.Commits, workspaceGitCommit{ID: strings.TrimSpace(fields[i]), Subject: fields[i+1], Author: fields[i+2], Time: stamp})
 		}
 		apiJSON(w, 200, view)
 		return
@@ -346,6 +364,13 @@ func (a *App) serveWorkspaceGit(w http.ResponseWriter, r *http.Request, director
 	if len(view.Files) > maxDirectoryEntries {
 		view.Files = view.Files[:maxDirectoryEntries]
 		view.Truncated = true
+	}
+	if commit != "" {
+		view.SelectedCommit, err = workspaceGitCommitDetail(ctx, directory, &view, commit)
+		if err != nil {
+			apiError(w, 500, "Git commit information is unavailable")
+			return
+		}
 	}
 	apiJSON(w, 200, view)
 }
