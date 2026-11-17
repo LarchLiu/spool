@@ -5,38 +5,45 @@ import { requireRunTemp } from "../../tools/test-scratch.mjs";
 
 requireRunTemp();
 
+// Docker Compose plugin startup on hosted runners can exceed Bun's 5s default.
+const composeTestTimeout = 30_000;
+
+function composeConfig(file, env) {
+  const command = [
+    "docker",
+    "compose",
+    "-f",
+    resolve("relay/" + file),
+    "config",
+    "--format",
+    "json",
+  ];
+  const result = Bun.spawnSync(command, {
+    env: { ...process.env, ...env },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expect(
+    result.exitCode,
+    `${command.join(" ")} (COMPOSE_PROFILES=${env.COMPOSE_PROFILES || "<none>"}) failed:\n${result.stderr.toString()}`,
+  ).toBe(0);
+  return JSON.parse(result.stdout.toString());
+}
+
 test("Compose profiles select optional Caddy and keep DNS secrets out of Relay", () => {
   for (const file of ["compose.yaml", "compose.image.yaml"]) {
     for (const enabled of [false, true]) {
-      const result = Bun.spawnSync(
-        [
-          "docker",
-          "compose",
-          "-f",
-          resolve("relay/" + file),
-          "config",
-          "--format",
-          "json",
-        ],
-        {
-          env: {
-            ...process.env,
-            COMPOSE_PROFILES: enabled ? "caddy" : "",
-            RELAY_IMAGE_TAG: "1.2.3",
-            SPOOL_RELAY_ADMIN_TOKEN: "synthetic-administrator-token-000000",
-            CLOUDFLARE_API_TOKEN: "synthetic-dns-token",
-            RELAY_TRAEFIK_RESOLVER: "spooldns",
-            CADDY_CERTIFICATE_MODE: "wildcard",
-            RELAY_BIND_ADDRESS: "0.0.0.0",
-            RELAY_TRUSTED_PROXIES: "0.0.0.0/0",
-            RELAY_WEB_DOMAIN: "custom.example.com",
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
-      expect(result.exitCode).toBe(0);
-      const config = JSON.parse(result.stdout.toString());
+      const config = composeConfig(file, {
+        COMPOSE_PROFILES: enabled ? "caddy" : "",
+        RELAY_IMAGE_TAG: "1.2.3",
+        SPOOL_RELAY_ADMIN_TOKEN: "synthetic-administrator-token-000000",
+        CLOUDFLARE_API_TOKEN: "synthetic-dns-token",
+        RELAY_TRAEFIK_RESOLVER: "spooldns",
+        CADDY_CERTIFICATE_MODE: "wildcard",
+        RELAY_BIND_ADDRESS: "0.0.0.0",
+        RELAY_TRUSTED_PROXIES: "0.0.0.0/0",
+        RELAY_WEB_DOMAIN: "custom.example.com",
+      });
       expect(config.services.relay).toBeDefined();
       expect(!!config.services.caddy).toBe(enabled);
       expect(
@@ -92,32 +99,14 @@ test("Compose profiles select optional Caddy and keep DNS secrets out of Relay",
       }
     }
   }
-});
+}, composeTestTimeout);
 
 test("prebuilt Compose preserves source deployment settings and data volumes", () => {
   const configurations = ["compose.yaml", "compose.image.yaml"].map((file) => {
-    const result = Bun.spawnSync(
-      [
-        "docker",
-        "compose",
-        "-f",
-        resolve("relay/" + file),
-        "config",
-        "--format",
-        "json",
-      ],
-      {
-        env: {
-          ...process.env,
-          COMPOSE_PROFILES: "caddy",
-          SPOOL_RELAY_ADMIN_TOKEN: "synthetic-administrator-token-000000",
-        },
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
-    expect(result.exitCode).toBe(0);
-    const config = JSON.parse(result.stdout.toString());
+    const config = composeConfig(file, {
+      COMPOSE_PROFILES: "caddy",
+      SPOOL_RELAY_ADMIN_TOKEN: "synthetic-administrator-token-000000",
+    });
     for (const service of Object.values(config.services)) {
       delete service.build;
       delete service.image;
@@ -125,7 +114,7 @@ test("prebuilt Compose preserves source deployment settings and data volumes", (
     return config;
   });
   expect(configurations[0]).toEqual(configurations[1]);
-});
+}, composeTestTimeout);
 
 test("bundled Caddy selects its own certificate mode independently of Relay", () => {
   const scratch = mkdtempSync(join(process.env.TMPDIR, "caddy-start-"));
