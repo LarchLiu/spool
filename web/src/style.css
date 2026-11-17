@@ -2432,6 +2432,7 @@ a.attachment-open {
   font-size: 12px;
 }
 .queued-messages {
+  width: calc(100% - 32px);
   max-width: 868px;
   max-height: 132px;
   overflow-y: auto;

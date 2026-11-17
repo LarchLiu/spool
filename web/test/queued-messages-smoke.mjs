@@ -50,7 +50,7 @@ try {
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__queued-messages`);
   await page.waitForFunction(() => typeof window.bind === "function");
   assert.equal(await page.locator(".queued-messages").count(), 0);
-  for (const [name, width] of [["desktop", 1100], ["mobile", 390]]) {
+  for (const [name, width] of [["desktop", 1100], ["tablet", 800], ["narrow", 320], ["mobile", 390]]) {
     await page.setViewportSize({ width, height: 420 });
     for (const [count, label] of [[1, "one"], [3, "several"]]) {
       await page.evaluate(state => window.bind(state), { messages: messages.slice(0, count), running: true });
@@ -66,8 +66,8 @@ try {
       });
       // The row sits on the composer's top edge, within its width.
       assert.ok(Math.abs(box.queue.bottom - box.composer.top) < 1, JSON.stringify(box));
-      assert.ok(box.queue.left >= box.composer.left && box.queue.right <= box.composer.right, JSON.stringify(box));
-      assert.ok(Math.abs((box.queue.left - box.composer.left) - (box.composer.right - box.queue.right)) < 1, JSON.stringify(box));
+      assert.ok(Math.abs(box.queue.left - box.composer.left - 16) < 1, JSON.stringify(box));
+      assert.ok(Math.abs(box.composer.right - box.queue.right - 16) < 1, JSON.stringify(box));
       assert.ok(box.overflow <= 0, JSON.stringify(box));
       assert.equal(box.rows.length, count);
       for (const row of box.rows) {

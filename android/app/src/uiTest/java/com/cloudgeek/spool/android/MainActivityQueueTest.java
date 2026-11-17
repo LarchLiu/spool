@@ -246,6 +246,8 @@ public class MainActivityQueueTest {
             show(h, running(2));
             NativeQueuedMessages queue = h.get("queuedView");
             assertEquals(2, queue.rows()); assertEquals(2 * ui.dp(NativeQueuedMessages.ROW_HEIGHT_DP), queue.getHeight());
+            assertEquals(ui.dp(16), queue.getLeft() - h.composer().box.getLeft());
+            assertEquals(ui.dp(16), h.composer().box.getRight() - queue.getRight());
             assertFalse("A short queue has nothing to scroll", queue.canScrollVertically(1));
             int[] at = new int[2]; h.composer().box.getLocationInWindow(at); int composerTop = at[1], composerHeight = h.composer().box.getHeight();
 
