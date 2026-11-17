@@ -1846,7 +1846,10 @@ public final class MainActivity extends Activity {
         }, cache.directory);
         feed.data.bind(key, path -> request(feed.client, path, null, feed.csrf, feed.locale), new NativeWorkspaceData.Listener() {
             public void navigation(JSONObject value) {
-                if (serverFeedCurrent(server, runtime, feed)) acceptServerNavigation(feed.cache, value);
+                if (serverFeedCurrent(server, runtime, feed)) {
+                    feed.cache.sidebar.bindPreferences(MainActivity.this, server.id, feed.userID);
+                    acceptServerNavigation(feed.cache, value);
+                }
             }
             public void agents(JSONArray value) {
                 if (serverFeedCurrent(server, runtime, feed)) feed.cache.agents = value;
@@ -1932,6 +1935,7 @@ public final class MainActivity extends Activity {
     }
 
     private void acceptServerNavigation(ServerWorkspace cache, JSONObject value) {
+        cache.sidebar.acceptPreferences(value.optJSONObject("sidebar"));
         cache.projects = array(value, "projects");
         JSONArray incoming = array(value, "chats");
         cache.chats = NativeNavigation.merge(cache.chats, incoming);
@@ -2420,6 +2424,8 @@ public final class MainActivity extends Activity {
     private void acceptNavigation(JSONObject value) { acceptNavigation(value, ""); }
 
     private void acceptNavigation(JSONObject value, String removedChat) {
+        restoreSidebarPreferences();
+        sidebarState.acceptPreferences(value.optJSONObject("sidebar"));
         workspaceCached = true;
         workspaceUserID = user == null ? workspaceUserID : user.optString("id");
         projects = array(value, "projects");
@@ -2565,6 +2571,33 @@ public final class MainActivity extends Activity {
         ServerProfiles.Server server = serverProfiles.active();
         String owner = user != null ? user.optString("id") : server == null ? "" : server.account.optString("id");
         sidebarState.bindPreferences(this, serverProfiles.selected, owner);
+        final NativeSidebarPreferences target = sidebarState.sync;
+        if (target == null) return;
+        final Client captured = client;
+        final String auth = csrf, language = locale();
+        final int token = generation, session = authEpoch;
+        boolean writable = user != null && !routeLoginRequired && captured != null && connected;
+        target.configure(writable ? (change, done, failed) -> io.execute(() -> {
+            // Keep an already authorized operation bound to its original client
+            // even when the user switches servers before the worker starts.
+            try {
+                JSONObject result = (JSONObject) request(captured, "/sidebar-preferences", change, auth, language);
+                main.post(() -> { if (!destroyed) done.accept(result); });
+            } catch (Exception error) {
+                main.post(() -> { if (!destroyed) failed.accept(error); });
+            }
+        }) : null, () -> {
+            if (!destroyed && sidebarState.sync == target) {
+                boolean wasPinned = sidebarState.pinned.contains(chatID);
+                sidebarState.refreshPreferences();
+                if (wasPinned != sidebarState.pinned.contains(chatID) && chatMenu != null && chatMenu.popup.isShowing()) closeChatMenu();
+                renderNavigation();
+            }
+        }, error -> {
+            if (destroyed || token != generation || session != authEpoch || sidebarState.sync != target) return;
+            if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
+            else toast(error);
+        });
     }
 
     private void openChat(String id) {

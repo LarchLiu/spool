@@ -9,7 +9,12 @@ import {
   type PeopleChatGroup,
 } from "./direct-messages.js";
 
-export type Navigation = { projects: Project[]; chats: Chat[] };
+import type { SidebarSnapshot } from "./sidebar-sync";
+export type Navigation = {
+  projects: Project[];
+  chats: Chat[];
+  sidebar?: SidebarSnapshot;
+};
 
 export function mergeNavigationChats(
   previous: Chat[],

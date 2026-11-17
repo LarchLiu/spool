@@ -87,6 +87,23 @@ public class MainActivityChatManagementTest {
         return new JSONObject().put("projects", h.<JSONArray>get("projects")).put("chats", chats);
     }
 
+    private JSONObject sidebar(long revision, boolean pinned) throws Exception {
+        return new JSONObject().put("revision", revision).put("pinned", pinned ? new JSONArray().put("chat-one") : new JSONArray());
+    }
+
+    private void sidebarReply(MainActivityGoalTest.Harness h, JSONObject snapshot) throws Exception {
+        assertEquals(1, h.io.jobs.size());
+        MainActivityGoalTest.ShadowClient.response = envelope(200, snapshot); h.io.run();
+        List<String> request = MainActivityGoalTest.ShadowClient.calls.get(MainActivityGoalTest.ShadowClient.calls.size() - 1);
+        assertEquals(List.of("POST", "/api/sidebar-preferences"), request.subList(0, 2));
+        assertEquals("test-csrf", request.get(3));
+    }
+
+    private void acceptSidebar(MainActivityGoalTest.Harness h, JSONObject snapshot) throws Exception {
+        org.robolectric.util.ReflectionHelpers.callInstanceMethod(h.activity, "acceptNavigation",
+                org.robolectric.util.ReflectionHelpers.ClassParameter.from(JSONObject.class, navigation(h, h.get("chats")).put("sidebar", snapshot)));
+    }
+
     @Test public void renameHasAnEditableTitleValidatesAndUpdatesHeaderAndNavigationForBothAgents() throws Exception {
         for (String backend : new String[] {"codex", "claude"}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             seed(h, backend);
@@ -179,16 +196,20 @@ public class MainActivityChatManagementTest {
             assertFalse(h.<NativeUi.Header>get("workspaceHeader").titleAction.isClickable());
         }
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
-            seed(h, "codex"); h.<JSONObject>get("chat").put("can_control", false); h.call("updateComposer");
+            seed(h, "codex");
+            acceptSidebar(h, sidebar(0, false));
+            h.<JSONObject>get("chat").put("can_control", false); h.call("updateComposer");
             assertEquals(View.VISIBLE, h.<NativeUi.Header>get("workspaceHeader").titleChevron.getVisibility());
             h.<NativeUi.Header>get("workspaceHeader").titleAction.performClick();
             NativeChatMenu menu = h.get("chatMenu");
             assertEquals(1, menu.popup.content.getChildCount());
             assertTrue(menu.popup.content.getChildAt(0).performClick());
             assertTrue(h.<NativeSidebarState>get("sidebarState").pinned.contains("chat-one"));
+            sidebarReply(h, sidebar(1, true));
+            assertTrue(new JSONObject(MainActivityGoalTest.ShadowClient.calls.get(0).get(2)).getBoolean("pinned"));
             h.set("chat", null); h.call("updateComposer");
             assertEquals(View.GONE, h.<NativeUi.Header>get("workspaceHeader").titleChevron.getVisibility());
-            assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
+            assertEquals(1, MainActivityGoalTest.ShadowClient.calls.size());
         }
     }
 
@@ -196,8 +217,10 @@ public class MainActivityChatManagementTest {
         for (String backend : new String[] {"codex", "claude"}) {
             try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
                 seed(h, backend);
+                acceptSidebar(h, sidebar(0, false));
                 NativeSidebarState state = h.get("sidebarState");
                 state.toggleSection("pinned");
+                assertTrue("Section state stays local", h.io.jobs.isEmpty());
                 NativeChatMenu menu = open(h, -1);
                 View pin = menu.popup.content.getChildAt(1), archive = menu.popup.content.getChildAt(3);
                 pin.requestFocus();
@@ -207,7 +230,8 @@ public class MainActivityChatManagementTest {
                 assertTrue(pin.hasFocus());
                 pin.performClick();
                 assertFalse(menu.popup.isShowing()); assertTrue(state.pinned.contains("chat-one"));
-                assertFalse(state.collapsed.contains("pinned")); assertTrue(h.io.jobs.isEmpty());
+                assertFalse(state.collapsed.contains("pinned"));
+                sidebarReply(h, sidebar(2, true));
                 h.call("openSidebar");
                 NativeSidebar sidebar = h.get("sidebar");
                 assertNotNull(sidebar.findViewWithTag("pinned:chat-one")); assertNotNull(sidebar.findViewWithTag("recent:chat-one"));
@@ -215,14 +239,42 @@ public class MainActivityChatManagementTest {
             }
             try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
                 seed(h, backend);
+                acceptSidebar(h, sidebar(2, true));
                 assertTrue(h.<NativeSidebarState>get("sidebarState").pinned.contains("chat-one"));
                 NativeChatMenu menu = open(h, 1);
                 assertFalse(menu.popup.isShowing()); assertFalse(h.<NativeSidebarState>get("sidebarState").pinned.contains("chat-one"));
+                sidebarReply(h, sidebar(3, false));
                 h.call("openSidebar");
                 assertNull(h.<NativeSidebar>get("sidebar").findViewWithTag("pinned:chat-one"));
                 assertNotNull(h.<NativeSidebar>get("sidebar").findViewWithTag("recent:chat-one"));
-                assertTrue(MainActivityGoalTest.ShadowClient.calls.isEmpty());
+                assertFalse(new JSONObject(MainActivityGoalTest.ShadowClient.calls.get(0).get(2)).getBoolean("pinned"));
             }
+        }
+    }
+
+    @Test public void sidebarPushesKeepLocalSectionsAndPinRepliesStayWithTheirOriginalAccount() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            seed(h, "codex"); acceptSidebar(h, sidebar(1, false));
+            NativeSidebarState state = h.get("sidebarState");
+            state.toggleSection("pinned"); state.toggleSection("projects");
+            assertTrue(h.io.jobs.isEmpty());
+            NativeChatMenu staleMenu = open(h, -1);
+            acceptSidebar(h, sidebar(2, true));
+            assertFalse("A live pin change dismisses an outdated menu action", staleMenu.popup.isShowing());
+            assertTrue(state.pinned.contains("chat-one"));
+            assertTrue("A remote pin does not expand this device's section", state.collapsed.contains("pinned"));
+            assertTrue(state.collapsed.contains("projects"));
+            acceptSidebar(h, sidebar(1, false));
+            assertTrue("Delayed fallback cannot erase a remote pin", state.pinned.contains("chat-one"));
+            open(h, 1); assertFalse(state.pinned.contains("chat-one"));
+            h.set("authEpoch", h.<Integer>get("authEpoch") + 1);
+            h.set("user", new JSONObject().put("id", "bob").put("nickname", "Bob"));
+            h.call("renderNavigation"); assertTrue(state.pinned.isEmpty()); assertTrue(state.collapsed.isEmpty());
+            sidebarReply(h, sidebar(3, false));
+            assertTrue("Alice's response cannot change Bob's local sections", state.collapsed.isEmpty());
+            NativeSidebarState alice = new NativeSidebarState();
+            alice.bindPreferences(h.activity, h.<ServerProfiles>get("serverProfiles").selected, "alice");
+            assertFalse(alice.pinned.contains("chat-one")); assertTrue(alice.collapsed.contains("projects"));
         }
     }
 

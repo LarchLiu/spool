@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { appBasePath } from "./app-path";
-import {
-  parseSidebarPreferences,
-  type SidebarPreferences,
-  type SidebarSection,
-} from "./sidebar-state";
+import { api } from "./api";
+import { parseSidebarPreferences } from "./sidebar-state";
+import { createSidebarSync, type SidebarSnapshot } from "./sidebar-sync";
 
 function read(key: string | null) {
   try {
@@ -14,13 +12,30 @@ function read(key: string | null) {
   }
 }
 
-export function useSidebarPreferences(user: string | undefined) {
+export function useSidebarPreferences(
+  user: string | undefined,
+  failed: (error: unknown) => void,
+) {
   const key = user
     ? appBasePath() + "spool.sidebar.v1:" + encodeURIComponent(user)
     : null;
-  const restored = useMemo(() => read(key), [key]);
-  const [state, setState] = useState({ key, value: restored });
-  const preferences = state.key === key ? state.value : restored;
+  const onError = useRef(failed);
+  onError.current = failed;
+  const sync = useMemo(
+    () =>
+      createSidebarSync(
+        read(key),
+        (change, signal) =>
+          api<SidebarSnapshot>("/sidebar-preferences", change, signal),
+        (error) => onError.current(error),
+      ),
+    [key],
+  );
+  const preferences = useSyncExternalStore(sync.subscribe, sync.snapshot);
+  useEffect(() => {
+    if (key) sync.start();
+    return () => sync.stop();
+  }, [key, sync]);
   useEffect(() => {
     if (!key) return;
     try {
@@ -30,33 +45,10 @@ export function useSidebarPreferences(user: string | undefined) {
     }
   }, [key, preferences]);
 
-  function update(change: (old: SidebarPreferences) => SidebarPreferences) {
-    setState((old) => ({
-      key,
-      value: change(old.key === key ? old.value : restored),
-    }));
-  }
-
   return {
     ...preferences,
-    togglePin(chat: string) {
-      update((old) => {
-        const pinned = old.pinned.includes(chat);
-        return {
-          pinned: pinned
-            ? old.pinned.filter((id) => id !== chat)
-            : [chat, ...old.pinned],
-          collapsed: pinned
-            ? old.collapsed
-            : { ...old.collapsed, pinned: false },
-        };
-      });
-    },
-    toggleSection(section: SidebarSection) {
-      update((old) => ({
-        ...old,
-        collapsed: { ...old.collapsed, [section]: !old.collapsed[section] },
-      }));
-    },
+    accept: sync.accept,
+    togglePin: sync.togglePin,
+    toggleSection: sync.toggleSection,
   };
 }

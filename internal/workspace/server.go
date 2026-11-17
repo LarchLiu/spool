@@ -310,6 +310,25 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		apiJSON(w, 200, preferences)
+	case path == "/api/sidebar-preferences" && r.Method == "POST":
+		var change SidebarPreferenceChange
+		if !decodeJSON(w, r, &change) {
+			return
+		}
+		if err := change.Validate(); err != nil {
+			apiError(w, 400, err.Error())
+			return
+		}
+		preferences, err := a.store.ChangeSidebarPreferences(id.User.ID, change)
+		if errors.Is(err, errSidebarChatAccess) {
+			apiError(w, 403, "chat access denied")
+			return
+		}
+		if err != nil {
+			apiError(w, 500, "Could not save preferences")
+			return
+		}
+		apiJSON(w, 200, preferences)
 	case path == "/api/navigation" && r.Method == "GET":
 		navigation, err := a.store.UserNavigation(id.User.ID)
 		if err != nil {

@@ -66,6 +66,7 @@ func (s *Store) SaveUIPreferences(user string, p UIPreferences) error {
 type Navigation struct {
 	Projects []Project           `json:"projects"`
 	Chats    []chatmodel.Session `json:"chats"`
+	Sidebar  SidebarPreferences  `json:"sidebar"`
 }
 
 func (s *Store) UserNavigation(user string) (Navigation, error) {
@@ -105,7 +106,11 @@ func (s *Store) UserNavigation(user string) (Navigation, error) {
 		err = populateParticipants(s.db, chats)
 		s.setSessionControls(user, chats)
 	}
-	return Navigation{Projects: projects, Chats: chats}, err
+	var sidebar SidebarPreferences
+	if err == nil {
+		sidebar, err = readSidebarPreferences(s.db, user)
+	}
+	return Navigation{Projects: projects, Chats: chats, Sidebar: sidebar}, err
 }
 
 const qualifiedSessionColumns = `s.id,COALESCE(s.user_id,''),COALESCE(s.project_id,''),s.title,s.backend,s.native_session_id,s.native_session_path,s.model,s.reasoning_effort,s.permission_mode,s.status,s.created_at,s.updated_at,EXISTS(SELECT 1 FROM local_sessions WHERE session_id=s.id)`

@@ -10,7 +10,7 @@ import java.util.Set;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/** Sidebar view state plus device preferences scoped to a server and account. */
+/** Sidebar view state plus a server-synced, locally cached account preference model. */
 final class NativeSidebarState {
     int projectLimit = 5, recentLimit = 5, scrollY;
     final Set<String> expanded = new LinkedHashSet<>();
@@ -18,6 +18,7 @@ final class NativeSidebarState {
     final Set<String> pinned = new LinkedHashSet<>(), collapsed = new LinkedHashSet<>();
     private android.content.SharedPreferences preferences;
     private String storageKey;
+    NativeSidebarPreferences sync;
     private String selectedProject, selectedChat;
 
     static List<JSONObject> sorted(JSONArray chats, String project) {
@@ -29,37 +30,38 @@ final class NativeSidebarState {
     static int nextLimit(int total, int limit) { return total > limit ? Math.min(limit + 10, total) : 5; }
     void bindPreferences(android.content.Context context, String server, String user) {
         String key = user.isEmpty() ? null : new JSONArray().put(server).put(user).toString();
-        if (java.util.Objects.equals(storageKey, key)) return;
+        if (java.util.Objects.equals(storageKey, key)) { refreshPreferences(); return; }
         preferences = context.getApplicationContext().getSharedPreferences("sidebar", android.content.Context.MODE_PRIVATE);
         storageKey = key; pinned.clear(); collapsed.clear();
+        sync = null;
         if (key == null) return;
+        JSONObject stored = new JSONObject();
         try {
-            JSONObject value = new JSONObject(preferences.getString(key, "{}"));
-            JSONArray ids = value.optJSONArray("pinned");
-            if (ids != null) for (int i = 0; i < ids.length(); i++) {
-                Object id = ids.opt(i); if (id instanceof String && !((String) id).isEmpty()) pinned.add((String) id);
-            }
-            JSONObject groups = value.optJSONObject("collapsed");
-            for (String section : new String[] {"pinned", "projects", "recents"})
-                if (groups != null && Boolean.TRUE.equals(groups.opt(section))) collapsed.add(section);
+            stored = new JSONObject(preferences.getString(key, "{}"));
         } catch (Exception ignored) { /* Corrupt device preferences restore expanded, unpinned navigation. */ }
+        final android.content.SharedPreferences storage = preferences;
+        sync = new NativeSidebarPreferences(stored, value -> storage.edit().putString(key, value.toString()).apply());
+        refreshPreferences();
     }
-    private void savePreferences() {
-        if (preferences == null || storageKey == null) return;
-        try {
-            JSONObject groups = new JSONObject();
-            for (String section : new String[] {"pinned", "projects", "recents"}) groups.put(section, collapsed.contains(section));
-            preferences.edit().putString(storageKey, new JSONObject().put("pinned", new JSONArray(pinned)).put("collapsed", groups).toString()).apply();
-        } catch (org.json.JSONException error) { throw new IllegalStateException(error); }
+    void refreshPreferences() {
+        if (sync == null) return;
+        JSONObject value = sync.snapshot(); pinned.clear(); collapsed.clear();
+        JSONArray ids = value.optJSONArray("pinned");
+        for (int i = 0; i < ids.length(); i++) pinned.add(ids.optString(i));
+        JSONObject groups = value.optJSONObject("collapsed");
+        for (String section : new String[] {"pinned", "projects", "recents"}) if (groups.optBoolean(section)) collapsed.add(section);
+    }
+    void acceptPreferences(JSONObject value) {
+        if (sync != null) { sync.accept(value); refreshPreferences(); }
     }
     void togglePin(String chat) {
+        if (sync != null) { sync.togglePin(chat); refreshPreferences(); return; }
         if (!pinned.remove(chat)) {
             Set<String> next = new LinkedHashSet<>(); next.add(chat); next.addAll(pinned); pinned.clear(); pinned.addAll(next);
             collapsed.remove("pinned");
         }
-        savePreferences();
     }
-    void toggleSection(String section) { if (!collapsed.add(section)) collapsed.remove(section); savePreferences(); }
+    void toggleSection(String section) { if (sync != null) { sync.toggleSection(section); refreshPreferences(); } else if (!collapsed.add(section)) collapsed.remove(section); }
     List<JSONObject> pinnedChats(JSONArray chats) {
         Map<String, JSONObject> available = new LinkedHashMap<>();
         for (int i = 0; i < chats.length(); i++) { JSONObject chat = chats.optJSONObject(i); if (chat != null) available.put(chat.optString("id"), chat); }
@@ -87,7 +89,7 @@ final class NativeSidebarState {
         expanded.clear(); expanded.addAll(other.expanded);
         chatLimits.clear(); chatLimits.putAll(other.chatLimits);
         pinned.clear(); pinned.addAll(other.pinned); collapsed.clear(); collapsed.addAll(other.collapsed);
-        preferences = other.preferences; storageKey = other.storageKey;
+        preferences = other.preferences; storageKey = other.storageKey; sync = other.sync; refreshPreferences();
     }
-    void reset() { projectLimit = recentLimit = 5; scrollY = 0; selectedProject = selectedChat = null; expanded.clear(); chatLimits.clear(); pinned.clear(); collapsed.clear(); storageKey = null; preferences = null; }
+    void reset() { projectLimit = recentLimit = 5; scrollY = 0; selectedProject = selectedChat = null; expanded.clear(); chatLimits.clear(); pinned.clear(); collapsed.clear(); storageKey = null; preferences = null; sync = null; }
 }

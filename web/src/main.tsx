@@ -176,7 +176,7 @@ function App() {
     [chats, setChats] = useState<Chat[]>([]),
     [chatID, setChatID] = useState(""),
     [chat, setChat] = useState<Chat | null>(null);
-  const sidebarPreferences = useSidebarPreferences(user?.id);
+  const sidebarPreferences = useSidebarPreferences(user?.id, fail);
   const [online, setOnline] = useState<Online[]>([]),
     [draft, setDraft] = useState(""),
     [posting, setPosting] = useState(false),
@@ -667,6 +667,7 @@ function App() {
     };
     const receiveNavigation = (navigation: Navigation) => {
       if (cancelled) return;
+      sidebarPreferences.accept(navigation.sidebar);
       navigationVersion++;
       const p = Array.isArray(navigation?.projects) ? navigation.projects : [];
       const navigationChats = Array.isArray(navigation?.chats)
@@ -1636,6 +1637,7 @@ function App() {
     const owner = user!.id;
     const navigation = await api<Navigation>("/chats/" + chat.id + "/" + action, {});
     if (activeUser.current !== owner) return;
+    sidebarPreferences.accept(navigation.sidebar);
     setProjects(navigation.projects);
     setChats((old) => mergeNavigationChats(old, navigation.chats));
     if (activeID.current === chat.id && !navigation.chats.some((item) => item.id === chat.id)) {
