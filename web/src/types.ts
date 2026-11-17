@@ -129,6 +129,8 @@ export type ApprovalField = {
 export type TranscriptPart = {
   id?: string;
   timestamp?: number;
+  // A steering message its model has yet to take in; it may be withdrawn.
+  pending?: boolean;
   phase?: "commentary" | "final_answer";
   role: "user" | "assistant" | "tool";
   kind: "text" | "thinking" | "tool_use" | "tool_result" | "context" | "image";

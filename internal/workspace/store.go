@@ -340,8 +340,8 @@ func (s *Store) beginTurnBy(id, prompt string, backend chatmodel.Backend, permis
 	if backend != v.Backend && (v.NativeSessionID != "" || v.Status != chatmodel.StatusReady) {
 		return chatmodel.Turn{}, errSessionConversion
 	}
-	if (strings.TrimSpace(prompt) == "" && len(files) == 0) || len(prompt) > chatmodel.MaxMessageBytes {
-		return chatmodel.Turn{}, fmt.Errorf("message must be nonempty and at most 128 KB")
+	if err := validateMessage(prompt, len(files)); err != nil {
+		return chatmodel.Turn{}, err
 	}
 	choice := chatmodel.CodexOptions{Model: v.Model, ReasoningEffort: v.ReasoningEffort}
 	if backend != v.Backend {

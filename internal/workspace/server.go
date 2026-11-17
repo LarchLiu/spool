@@ -756,6 +756,10 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 	// turn. Switching agents and automation follow-ups still need an idle chat.
 	if input.Delivery != "" && chat.Backend == source.Backend && !chat.AutomationChat {
 		delivered, err := a.deliverWhileRunning(r.Context(), chat, input, options)
+		if errors.Is(err, errInvalidMessage) {
+			apiError(w, 400, err.Error())
+			return
+		}
 		if err != nil {
 			apiError(w, 409, err.Error())
 			return

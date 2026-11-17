@@ -144,6 +144,34 @@ test("a same-revision snapshot cannot erase an already received final phase", ()
   );
 });
 
+test("a steering message the model has yet to take is the server's to move or withdraw", () => {
+  const steer = { role: "user", kind: "text", text: "Change course", timestamp: 15 };
+  const waiting = { ...steer, pending: true };
+  const texts = (value) => value.transcript.parts.map((part) => part.text);
+  const turn = (parts, status = "running") => ({ ...running, status, part_end: parts });
+  const shown = chat([turn(3)], 10, { parts: [userPart, answerPart, waiting] });
+  // It went back to the queue while the turn runs, or when the turn stopped.
+  for (const status of ["running", "stopped"]) {
+    const withdrawn = reconcile(shown, chat([turn(2, status)], 11, helloTranscript));
+    assert.deepEqual(texts(withdrawn), ["Hello", "Hi"], status);
+    assert.equal(withdrawn.turns[0].part_end, 2);
+    assert.equal(withdrawn.turns[0].input_end, 1);
+  }
+  // The model took it after more output: it is shown once, where it joined.
+  const more = { role: "assistant", kind: "text", text: " there" };
+  const taken = reconcile(shown, chat([turn(4)], 11, { parts: [userPart, answerPart, more, steer] }));
+  assert.deepEqual(texts(taken), ["Hello", "Hi", " there", "Change course"]);
+  assert.equal(taken.transcript.parts.some((part) => part.pending), false);
+  // A snapshot that lags the stream replaces neither the output nor the message.
+  const ahead = chat([turn(4)], 10, { parts: [userPart, answerPart, more, waiting] });
+  for (const parts of [[userPart, answerPart], [userPart, answerPart, waiting], []])
+    assert.deepEqual(texts(reconcile(ahead, chat([turn(parts.length)], 10, { parts }))), ["Hello", "Hi", " there", "Change course"]);
+  // Once the turn has ended nothing waits on it, even before its history is read.
+  const ended = reconcile(ahead, chat([{ ...running, status: "completed", part_end: 0, input_end: 0 }], 11));
+  assert.deepEqual(texts(ended), ["Hello", "Hi", " there"]);
+  assert.equal(ended.turns[0].input_end, 1);
+});
+
 test("live metadata updates PRs and task controls without replacing streamed content", () => {
   const previous = {
     ...chat([running], 10, helloTranscript),

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -170,6 +171,9 @@ func TestSteeringMessageJoinsTheTurnWhereTheModelTookIt(t *testing.T) {
 			if got := messageTexts(done); !slices.Equal(got, test.want) {
 				t.Fatalf("turn shows %q, want %q", got, test.want)
 			}
+			if slices.ContainsFunc(done.Transcript.Parts, func(part chatmodel.Part) bool { return part.Pending }) {
+				t.Fatal("a message the model took is still marked pending")
+			}
 			if len(done.Queued) != 0 || done.Status != chatmodel.StatusCompleted {
 				t.Fatalf("queue %q and status %s after steering", queuedTexts(done), done.Status)
 			}
@@ -214,6 +218,11 @@ func TestStoppedTurnReturnsUnseenSteeringToTheQueue(t *testing.T) {
 			if len(waiting.Queued) != 0 || len(texts) == 0 || texts[len(texts)-1] != "user:not yet" {
 				t.Fatalf("accepted message is shown as %q with queue %q, want it after the turn's output", texts, queuedTexts(waiting))
 			}
+			// Clients keep what a turn has shown them, except what is marked as
+			// still able to be withdrawn.
+			if parts := waiting.Transcript.Parts; !parts[len(parts)-1].Pending || parts[len(parts)-2].Pending {
+				t.Fatalf("only the unseen message may be marked pending: %+v", parts[len(parts)-2:])
+			}
 			stopped := f.post(t, "stop", map[string]string{"turn_id": turn.ID}, 200)
 			if got := queuedTexts(stopped); !slices.Equal(got, []string{"not yet"}) {
 				t.Fatalf("queue after stopping = %q, want the unseen message back", got)
@@ -243,6 +252,30 @@ func TestSteeringMessageNoTurnTookIsSentNext(t *testing.T) {
 	done := f.settled(t, 2)
 	if got := messageTexts(done); len(done.Queued) != 0 || len(got) == 0 || got[0] != "user:never mind" {
 		t.Fatalf("dropped message: queue %q, last turn %q", queuedTexts(done), got)
+	}
+}
+
+// A message no turn could start with would stay at the head of the queue and
+// hold back every message behind it, so it is refused when it is sent.
+func TestMessageThatCannotStartATurnIsNotQueued(t *testing.T) {
+	f := newQueueFixture(t, chatmodel.BackendCodex)
+	f.run(t, "steer-wait")
+	for _, delivery := range []string{"queue", "steer"} {
+		for name, message := range map[string]string{"empty": " \n", "too long": strings.Repeat("x", chatmodel.MaxMessageBytes+1)} {
+			f.post(t, "messages", map[string]string{"message": message, "delivery": delivery}, 400)
+			if got := queuedTexts(f.snapshot()); len(got) != 0 {
+				t.Fatalf("%s message sent to %s was queued (%d)", name, delivery, len(got))
+			}
+		}
+	}
+	if steered := fixtureCount(t, f.request, "steer"); steered != 0 {
+		t.Fatalf("the provider was handed %d messages it cannot take", steered)
+	}
+	f.post(t, "messages", map[string]string{"message": "next", "delivery": "queue"}, 202)
+	f.post(t, "messages", map[string]string{"message": "change course", "delivery": "steer"}, 202)
+	done := f.settled(t, 2)
+	if got := messageTexts(done); len(done.Queued) != 0 || len(got) == 0 || got[0] != "user:next" {
+		t.Fatalf("queue %q after the refused messages, last turn %q", queuedTexts(done), got)
 	}
 }
 

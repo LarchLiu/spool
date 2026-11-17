@@ -2001,6 +2001,765 @@
         "part_end": 1
       },
       "turnRunning": true
+    },
+    {
+      "id": "steering-withdrawn",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A complete answer",
+              "id": "part-one"
+            },
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Change course",
+              "timestamp": 15,
+              "pending": true
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 2,
+            "started_at": 10
+          }
+        ]
+      },
+      "next": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A complete answer",
+              "id": "part-one"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1,
+            "started_at": 10
+          }
+        ]
+      },
+      "expected": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A complete answer",
+              "id": "part-one"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1,
+            "started_at": 10
+          }
+        ]
+      },
+      "running": {
+        "id": "turn-one",
+        "status": "running",
+        "part_start": 0,
+        "input_end": 0,
+        "part_end": 1,
+        "started_at": 10
+      },
+      "turnRunning": true
+    },
+    {
+      "id": "steering-taken-later",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A",
+              "id": "part-one"
+            },
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Change course",
+              "timestamp": 15,
+              "pending": true
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 2,
+            "started_at": 10
+          }
+        ]
+      },
+      "next": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A",
+              "id": "part-one"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "B",
+              "id": "part-two"
+            },
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Change course",
+              "timestamp": 15
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 3,
+            "started_at": 10
+          }
+        ]
+      },
+      "expected": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A",
+              "id": "part-one"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "B",
+              "id": "part-two"
+            },
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Change course",
+              "timestamp": 15
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 3,
+            "started_at": 10
+          }
+        ]
+      },
+      "running": {
+        "id": "turn-one",
+        "status": "running",
+        "part_start": 0,
+        "input_end": 0,
+        "part_end": 3,
+        "started_at": 10
+      },
+      "turnRunning": true
+    },
+    {
+      "id": "steering-left-by-stopped-turn",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A complete answer",
+              "id": "part-one"
+            },
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Change course",
+              "timestamp": 15,
+              "pending": true
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 2,
+            "started_at": 10
+          }
+        ]
+      },
+      "next": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "stopped",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A",
+              "id": "part-one"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "stopped",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1,
+            "started_at": 10
+          }
+        ]
+      },
+      "expected": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "stopped",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A complete answer",
+              "id": "part-one"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "stopped",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1,
+            "started_at": 10
+          }
+        ]
+      },
+      "running": null,
+      "turnRunning": false
+    },
+    {
+      "id": "steering-kept-by-shorter-snapshot",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A",
+              "id": "part-one"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "B",
+              "id": "part-two"
+            },
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Change course",
+              "timestamp": 15,
+              "pending": true
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 3,
+            "started_at": 10
+          }
+        ]
+      },
+      "next": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A",
+              "id": "part-one"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1,
+            "started_at": 10
+          }
+        ]
+      },
+      "expected": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A",
+              "id": "part-one"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "B",
+              "id": "part-two"
+            },
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Change course",
+              "timestamp": 15,
+              "pending": true
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 3,
+            "started_at": 10
+          }
+        ]
+      },
+      "running": {
+        "id": "turn-one",
+        "status": "running",
+        "part_start": 0,
+        "input_end": 0,
+        "part_end": 3,
+        "started_at": 10
+      },
+      "turnRunning": true
+    },
+    {
+      "id": "steering-kept-by-empty-snapshot",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A",
+              "id": "part-one"
+            },
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Change course",
+              "timestamp": 15,
+              "pending": true
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 2,
+            "started_at": 10
+          }
+        ]
+      },
+      "next": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": []
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0,
+            "started_at": 10
+          }
+        ]
+      },
+      "expected": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A",
+              "id": "part-one"
+            },
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Change course",
+              "timestamp": 15,
+              "pending": true
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 2,
+            "started_at": 10
+          }
+        ]
+      },
+      "running": {
+        "id": "turn-one",
+        "status": "running",
+        "part_start": 0,
+        "input_end": 0,
+        "part_end": 2,
+        "started_at": 10
+      },
+      "turnRunning": true
+    },
+    {
+      "id": "steering-dropped-by-ended-empty-snapshot",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A",
+              "id": "part-one"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "B",
+              "id": "part-two"
+            },
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Change course",
+              "timestamp": 15,
+              "pending": true
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 3,
+            "started_at": 10
+          }
+        ]
+      },
+      "next": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "completed",
+        "updated_at": 20,
+        "transcript": {
+          "parts": []
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 0,
+            "started_at": 10
+          }
+        ]
+      },
+      "expected": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "completed",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A",
+              "id": "part-one"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "B",
+              "id": "part-two"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 2,
+            "started_at": 10
+          }
+        ]
+      },
+      "running": null,
+      "turnRunning": false
+    },
+    {
+      "id": "steering-shown-again",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A",
+              "id": "part-one"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "B",
+              "id": "part-two"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 2,
+            "started_at": 10
+          }
+        ]
+      },
+      "next": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A",
+              "id": "part-one"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "B",
+              "id": "part-two"
+            },
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Change course",
+              "timestamp": 15,
+              "pending": true
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 3,
+            "started_at": 10
+          }
+        ]
+      },
+      "expected": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "A",
+              "id": "part-one"
+            },
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "B",
+              "id": "part-two"
+            },
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "Change course",
+              "timestamp": 15,
+              "pending": true
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "turn-one",
+            "status": "running",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 3,
+            "started_at": 10
+          }
+        ]
+      },
+      "running": {
+        "id": "turn-one",
+        "status": "running",
+        "part_start": 0,
+        "input_end": 0,
+        "part_end": 3,
+        "started_at": 10
+      },
+      "turnRunning": true
     }
   ],
   "inputTranscripts": [

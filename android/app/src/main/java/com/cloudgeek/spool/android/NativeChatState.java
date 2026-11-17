@@ -239,11 +239,26 @@ final class NativeChatState {
         return !equivalent(a, b);
     }
 
+    /**
+     * A steering message its model has yet to take in is the server's to place: it may join the turn
+     * elsewhere, or return to the queue. Only the snapshot at hand says which are waiting.
+     */
+    private static JSONArray settled(JSONArray parts) {
+        JSONArray result = null;
+        for (int i = 0; i < parts.length(); i++) {
+            boolean pending = part(parts, i).optBoolean("pending");
+            if (pending && result == null) result = slice(parts, 0, i);
+            else if (!pending && result != null) result.put(parts.opt(i));
+        }
+        return result == null ? parts : result;
+    }
+
     private static JSONArray mergeParts(JSONArray old, JSONArray next) {
-        if (old.length() > next.length()) return old;
+        JSONArray kept = settled(old);
+        if (kept.length() > settled(next).length()) return old;
         JSONArray parts = slice(next, 0, next.length());
-        for (int i = 0; i < old.length(); i++) {
-            JSONObject before = part(old, i), after = part(parts, i);
+        for (int i = 0; i < kept.length(); i++) {
+            JSONObject before = part(kept, i), after = part(parts, i);
             if (equivalent(before, after)) {
                 try { parts.put(i, before); } catch (Exception error) { throw new IllegalArgumentException(error); }
                 continue;
@@ -298,8 +313,10 @@ final class NativeChatState {
             if (oldID != null && !oldID.equals(id)) { entries.remove(oldID); renamed.put(oldID, id); }
             JSONArray parts = slice(incomingParts, turn.optInt("part_start"), turn.optInt("part_end"));
             boolean complete = !turn.optString("status").equals("running") && nativeSource && parts.length() > 0;
-            if (old != null && !complete) parts = mergeParts(old.parts, parts);
-            int inputs = old != null && parts == old.parts ? old.turn.optInt("input_end") - old.turn.optInt("part_start") : turn.optInt("input_end") - turn.optInt("part_start");
+            // No message waits on a turn that has ended.
+            JSONArray shown = old == null ? null : turn.optString("status").equals("running") ? old.parts : settled(old.parts);
+            if (old != null && !complete) parts = mergeParts(shown, parts);
+            int inputs = old != null && parts == shown ?old.turn.optInt("input_end") - old.turn.optInt("part_start") : turn.optInt("input_end") - turn.optInt("part_start");
             JSONObject before = old == null ? null : put(shallow(old.turn), "id", id);
             JSONObject merged = shallow(mergeTurn(before, turn)); put(merged, "part_start", 0); put(merged, "input_end", inputs);
             // Rebased ranges are not data changes; renamed, new, re-sliced or edited turns are.

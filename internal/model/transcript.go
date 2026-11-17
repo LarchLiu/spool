@@ -2,20 +2,23 @@ package model
 
 // Part is one normalized piece of a session transcript.
 type Part struct {
-	Replace   bool         `json:"-"` // the complete live body of a tool or of reasoning, rather than a delta
-	ID        string       `json:"id,omitempty"`
-	Phase     string       `json:"phase,omitempty"`
-	Timestamp int64        `json:"timestamp,omitempty"`
-	Role      string       `json:"role"`
-	Kind      string       `json:"kind"`
-	Name      string       `json:"name,omitempty"`
-	Text      string       `json:"text"`
-	Cut       int          `json:"cut,omitempty"`
-	Model     string       `json:"model,omitempty"`
-	ImageURL  string       `json:"image_url,omitempty"`
-	FilePath  string       `json:"file_path,omitempty"`
-	Images    []string     `json:"images,omitempty"`
-	Tool      *ToolSummary `json:"tool,omitempty"`
+	Replace   bool   `json:"-"` // the complete live body of a tool or of reasoning, rather than a delta
+	ID        string `json:"id,omitempty"`
+	Phase     string `json:"phase,omitempty"`
+	Timestamp int64  `json:"timestamp,omitempty"`
+	// Pending marks a steering message its model has yet to take in. It is
+	// shown after the turn's output for now, and may still be withdrawn.
+	Pending  bool         `json:"pending,omitempty"`
+	Role     string       `json:"role"`
+	Kind     string       `json:"kind"`
+	Name     string       `json:"name,omitempty"`
+	Text     string       `json:"text"`
+	Cut      int          `json:"cut,omitempty"`
+	Model    string       `json:"model,omitempty"`
+	ImageURL string       `json:"image_url,omitempty"`
+	FilePath string       `json:"file_path,omitempty"`
+	Images   []string     `json:"images,omitempty"`
+	Tool     *ToolSummary `json:"tool,omitempty"`
 	// Native is what the provider itself said about a tool call. It never
 	// leaves the server: clients receive it through Tool.
 	Native *ToolNative `json:"-"`

@@ -1373,7 +1373,15 @@ function App() {
     const message = draft,
       attached = files,
       owner = user?.id,
-      first = pendingSend.current;
+      first = pendingSend.current,
+      origin = selection.current;
+    // The composer this message was written in. A first message's chat gets
+    // its ID while this waits; opening another chat or draft leaves it.
+    const isCurrent = () =>
+      activeUser.current === owner &&
+      activeID.current === (first ? first.chatID : chat.id) &&
+      selection.current.project === origin.project &&
+      selection.current.draftVersion === origin.draftVersion;
     let restored = false;
     deliverRef.current = true;
     setDelivering(true);
@@ -1405,7 +1413,8 @@ function App() {
       if (activeUser.current === owner && activeID.current === v.id)
         setChat((old) => reconcile(old, v));
     } catch (e) {
-      if (activeUser.current === owner) {
+      // The draft of another chat is not this message's to replace or join.
+      if (isCurrent()) {
         setDraft((current) => current || message);
         setFiles((current) => {
           restored = !current.length;

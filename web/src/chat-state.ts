@@ -95,15 +95,24 @@ export function adoptCreatedChat(pending: Chat, created: Chat): Chat {
   );
 }
 
+// A steering message its model has yet to take in is the server's to place:
+// it may join the turn elsewhere, or return to the queue. Only the snapshot
+// at hand says which are waiting, so they are never transcript to keep.
+function settledParts(parts: TranscriptPart[]): TranscriptPart[] {
+  return parts.some((part) => part.pending)
+    ? parts.filter((part) => !part.pending)
+    : parts;
+}
+
 function mergeTranscript(previous: Transcript, next: Transcript): Transcript {
   // Metadata-only snapshots are expected while a turn is running. They must
   // not erase the live transcript when a status refresh arrives before the
   // provider's native session has been hydrated.
-  if (previous.parts.length > 0 && next.parts.length === 0) return previous;
-  if (previous.parts.length > next.parts.length) return previous;
+  const kept = settledParts(previous.parts);
+  if (kept.length > settledParts(next.parts).length) return previous;
   const parts = next.parts.slice();
-  for (let i = 0; i < previous.parts.length; i++) {
-    const oldPart = previous.parts[i];
+  for (let i = 0; i < kept.length; i++) {
+    const oldPart = kept[i];
     const newPart = parts[i];
     if (
       oldPart.role === newPart.role &&
@@ -190,12 +199,15 @@ function reconcileTurns(previous: Chat, next: Chat, older = false): Chat {
       turn.status !== "running" &&
       next.transcript.source?.endsWith("-native") &&
       incoming.length > 0;
+    // No message waits on a turn that has ended.
+    const before =
+      old && turn.status !== "running" ? settledParts(old.parts) : old?.parts;
     const parts =
-      old && !nativeComplete
-        ? mergeTranscript({ parts: old.parts }, { parts: incoming }).parts
+      before && !nativeComplete
+        ? mergeTranscript({ parts: before }, { parts: incoming }).parts
         : incoming;
     const inputs =
-      old && parts === old.parts
+      old && parts === before
         ? old.turn.input_end - old.turn.part_start
         : turn.input_end - turn.part_start;
     const merged = mergeTurn(

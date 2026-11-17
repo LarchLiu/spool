@@ -44,6 +44,8 @@ export const sendButtonCases=[
  {id:'stopping',active:true,stopping:true,disabled:true},
 ];
 const statePart=(text,id='part-one')=>({role:'assistant',kind:'text',text,id});
+const takenPart={role:'user',kind:'text',text:'Change course',timestamp:15};
+const steeringPart={...takenPart,pending:true};
 const stateChat=(status='running',parts=[statePart('A complete answer')],turns)=>({id:'chat-one',project_id:'project-one',backend:'codex',status,updated_at:20,transcript:{parts},turns:turns||[{id:'turn-one',status,part_start:0,input_end:0,part_end:parts.length,started_at:10}]});
 const finishedChat=stateChat('completed');
 const pendingTurn={id:'pending-one',user_id:'alice',status:'running',started_at:30,backend:'codex',requested_model:'codex-model',reasoning_effort:'high',permission_mode:'ask'};
@@ -68,6 +70,14 @@ export const chatStateCases=[
  {id:'new-turn-removes-old-running',previous:stateChat(),next:stateChat('running',[statePart('New')],[{id:'turn-two',status:'running',part_start:0,input_end:0,part_end:1}])},
  {id:'new-turn-keeps-completed',previous:finishedChat,next:stateChat('running',[statePart('New')],[{id:'turn-two',status:'running',part_start:0,input_end:0,part_end:1}])},
  {id:'adopt-created-chat',operation:'adopt',previous:null,project:'project-one',turn:pendingTurn,input:[{role:'user',kind:'text',text:'First prompt'}],next:stateChat('idle',[],[])},
+ // A steering message its model has yet to take in is shown provisionally.
+ {id:'steering-withdrawn',previous:stateChat('running',[statePart('A complete answer'),steeringPart]),next:stateChat()},
+ {id:'steering-taken-later',previous:stateChat('running',[statePart('A'),steeringPart]),next:stateChat('running',[statePart('A'),statePart('B','part-two'),takenPart])},
+ {id:'steering-left-by-stopped-turn',previous:stateChat('running',[statePart('A complete answer'),steeringPart]),next:stateChat('stopped',[statePart('A')])},
+ {id:'steering-kept-by-shorter-snapshot',previous:stateChat('running',[statePart('A'),statePart('B','part-two'),steeringPart]),next:stateChat('running',[statePart('A')])},
+ {id:'steering-kept-by-empty-snapshot',previous:stateChat('running',[statePart('A'),steeringPart]),next:stateChat('running',[])},
+ {id:'steering-dropped-by-ended-empty-snapshot',previous:stateChat('running',[statePart('A'),statePart('B','part-two'),steeringPart]),next:stateChat('completed',[])},
+ {id:'steering-shown-again',previous:stateChat('running',[statePart('A'),statePart('B','part-two')]),next:stateChat('running',[statePart('A'),statePart('B','part-two'),steeringPart])},
 ];
 const permissionModes=(...ids)=>ids.map(id=>({id,available:id!=='dontAsk',...(id==='dontAsk'?{reason:'Permission discovery is unavailable'}:{})}));
 export const permissionCases=[

@@ -150,7 +150,10 @@ public final class MainActivity extends Activity {
     private NativeUi.ChoiceButton modelButton, permissionButton;
     private NativeUi.Composer composerView;
     private NativeQueuedMessages queuedView;
-    private boolean delivering;
+    // A queue request answers only over the connection and sign-in it was made with. Once either
+    // changes, its answer is dropped, so it must not go on counting as in flight.
+    private boolean delivering, deliveringDraft;
+    private int deliveryGeneration, deliveryAuth;
     private NativeUi.Header workspaceHeader;
     private NativeAgentModelMenu modelMenu;
     private NativePopover modelPopover;
@@ -1105,10 +1108,12 @@ public final class MainActivity extends Activity {
 
     private void beginNetworkHandoff() {
         saveServerWorkspace(); closeDesktop(); stopStreams();
+        // The draft was cleared when it was sent to the queue, and its answer will not arrive.
+        final boolean unanswered = delivering() && deliveringDraft;
         ++generation; ++authEpoch; sessionCheckBusy = false;
         monitor.stop(); recovery.stop();
         client = null; connected = false; connecting = true;
-        if (pendingSend != null) {
+        if (pendingSend != null || unanswered) {
             goalError = tr("Send status unknown. The message may have arrived; it will not be retried automatically.", "发送状态未知，消息可能已送达，不会自动重发。");
             pendingSend = null;
         }
@@ -2232,8 +2237,8 @@ public final class MainActivity extends Activity {
                 && (!NativeGoalCommand.trim(composer.getText().toString()).isEmpty() || !draft().files.isEmpty())));
         // While the agent answers, the stop button stays and a typed message gets its own send button.
         composerView.queue.setVisibility(writable() && queueingDraft(activeTurn) ? View.VISIBLE : View.GONE);
-        composerView.queue.setEnabled(!delivering);
-        if (queuedView != null) queuedView.bind(writable() && chat != null ? chat.optJSONArray("queued_messages") : null, activeTurn != null, delivering);
+        composerView.queue.setEnabled(!delivering());
+        if (queuedView != null) queuedView.bind(writable() && chat != null ? chat.optJSONArray("queued_messages") : null, activeTurn != null, delivering());
         String modelName = model.isEmpty() ? tr("CLI default", "CLI 默认") : model;
         for (int i = 0; i < agents.length(); i++) {
             JSONObject agent = at(agents, i);
@@ -3004,6 +3009,12 @@ public final class MainActivity extends Activity {
         permissionMenu.show(permissionButton);
     }
 
+    private boolean delivering() { return delivering && deliveryGeneration == generation && deliveryAuth == authEpoch; }
+
+    private void beginDelivery(boolean draft) {
+        delivering = true; deliveringDraft = draft; deliveryGeneration = generation; deliveryAuth = authEpoch;
+    }
+
     private boolean queueingDraft(JSONObject activeTurn) {
         return activeTurn != null && pendingSend == null && composer != null
                 && (!NativeGoalCommand.trim(composer.getText().toString()).isEmpty() || !draft().files.isEmpty());
@@ -3012,7 +3023,7 @@ public final class MainActivity extends Activity {
     /** Queue the draft behind the running turn, or steer it into that turn. */
     private void deliver(boolean steer) {
         JSONObject activeTurn = NativeChatState.runningTurn(chat);
-        if (!writable() || delivering || !queueingDraft(activeTurn)) return;
+        if (!writable() || delivering() || !queueingDraft(activeTurn)) return;
         captureDraft();
         final Draft submitted = draft();
         NativeGoalCommand command = NativeGoalCommand.parse(submitted.text);
@@ -3027,7 +3038,7 @@ public final class MainActivity extends Activity {
         final int token = generation, session = authEpoch, selected = selectionEpoch;
         final JSONObject payload = object("message", message, "backend", chat.optString("backend", backend), "model", model,
                 "reasoning_effort", effort, "permission_mode", permission, "delivery", steer ? "steer" : "queue");
-        delivering = true; goalError = "";
+        beginDelivery(true); goalError = "";
         submitted.text = ""; submitted.files.clear(); composer.setText("");
         renderFiles(); updateComposer();
         io.execute(() -> {
@@ -3069,10 +3080,10 @@ public final class MainActivity extends Activity {
     }
 
     private void queueAction(String id, String action) {
-        if (!writable() || delivering || chat == null || chatID.isEmpty()) return;
+        if (!writable() || delivering() || chat == null || chatID.isEmpty()) return;
         final String target = chatID;
         final int selected = selectionEpoch;
-        delivering = true; goalError = ""; updateComposer();
+        beginDelivery(false); goalError = ""; updateComposer();
         api("/chats/" + Uri.encode(target) + "/queue", object("id", id, "action", action), value -> {
             delivering = false;
             if (selected == selectionEpoch && target.equals(chatID)) { chat = NativeChatState.reconcile(chat, (JSONObject) value); renderChat(); }

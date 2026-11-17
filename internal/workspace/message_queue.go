@@ -16,6 +16,18 @@ import (
 
 const maxQueuedMessages = 20
 
+var errInvalidMessage = errors.New("message must be nonempty and at most 128 KB")
+
+// validateMessage is what any turn requires of its input. A message is held
+// to it before it is queued or steered: one that can never start a turn would
+// otherwise stay at the head of its queue, in front of every later message.
+func validateMessage(prompt string, files int) error {
+	if (strings.TrimSpace(prompt) == "" && files == 0) || len(prompt) > chatmodel.MaxMessageBytes {
+		return errInvalidMessage
+	}
+	return nil
+}
+
 // A message accepted while its chat was busy. The queue belongs to the chat,
 // not to a client, and lives only as long as this process: uploads are held
 // in memory until their turn starts.
@@ -234,15 +246,22 @@ func appendSteering(parts, message []chatmodel.Part, started int64) []chatmodel.
 }
 
 // withSteeringLocked shows the messages the model has yet to take in after
-// the parts of their turn. The caller holds liveMu.
+// the parts of their turn. They are marked pending: a later state of the turn
+// may hold one elsewhere, or not at all once it has gone back to the queue,
+// and a client must not keep the place it was first shown in. The caller
+// holds liveMu.
 func (a *App) withSteeringLocked(chatID string, turn chatmodel.Turn) chatmodel.Turn {
 	state := a.steering[chatID]
 	if state == nil || state.turn != turn.ID || len(state.pending) == 0 {
 		return turn
 	}
 	turn.Parts = ownedParts(turn.Parts)
+	settled := len(turn.Parts)
 	for _, steer := range state.pending {
 		turn.Parts = appendSteering(turn.Parts, steer.parts, turn.StartedAt)
+	}
+	for i := settled; i < len(turn.Parts); i++ {
+		turn.Parts[i].Pending = true
 	}
 	turn.PartEnd = turn.PartStart + len(turn.Parts)
 	return turn
@@ -315,6 +334,9 @@ func (a *App) turnRunning(chatID string) bool {
 // deliverWhileRunning queues or steers a message sent to a busy chat. It
 // reports false when the chat is idle and the message should start a turn.
 func (a *App) deliverWhileRunning(ctx context.Context, chat chatmodel.Session, input messageInput, options chatmodel.CodexOptions) (bool, error) {
+	if err := validateMessage(input.Message, len(input.files)); err != nil {
+		return true, err
+	}
 	front := false
 	if input.Delivery == "steer" && a.turnRunning(chat.ID) {
 		err := a.steerTurn(ctx, chat, &queuedMessage{id: chatmodel.NewID(), input: input, options: options, createdAt: time.Now().UnixMilli()})
