@@ -155,6 +155,8 @@ public final class MainActivity extends Activity {
     private boolean delivering, deliveringDraft, editingQueue;
     private int deliveryGeneration, deliveryAuth;
     private NativeUi.Header workspaceHeader;
+    private NativeChatMenu chatMenu;
+    private String chatActionPending = "";
     private NativeAgentModelMenu modelMenu;
     private NativePopover modelPopover;
     private NativePermissionMenu permissionMenu;
@@ -658,6 +660,7 @@ public final class MainActivity extends Activity {
             }
             return;
         }
+        closeChatMenu();
         if (ui != null) ui.dismissMenus();
         closeAvatarPicker();
         closeImagePreview();
@@ -1395,6 +1398,8 @@ public final class MainActivity extends Activity {
 
     /** Detach the visible workspace without altering a freshly validated server login. */
     private void clearWorkspaceData(boolean forget) {
+        closeChatMenu();
+        chatActionPending = "";
         if (forget) serverWorkspaces.remove(serverProfiles.selected);
         workspaceUserID = ""; workspaceCached = false;
         if (sidebar != null && !sidebarPageDeferred) sidebar.deactivate();
@@ -2230,6 +2235,7 @@ public final class MainActivity extends Activity {
     }
 
     private void updateComposer() {
+        updateChatOptions();
         renderNavigation();
         if (composer == null || composerView == null) return;
         JSONObject activeTurn = NativeChatState.runningTurn(chat);
@@ -2410,13 +2416,18 @@ public final class MainActivity extends Activity {
         if (!settingsOpen && (historyContent != null || markwonHistory != null)) renderChat();
     }
 
-    private void acceptNavigation(JSONObject value) {
+    private void acceptNavigation(JSONObject value) { acceptNavigation(value, ""); }
+
+    private void acceptNavigation(JSONObject value, String removedChat) {
         workspaceCached = true;
         workspaceUserID = user == null ? workspaceUserID : user.optString("id");
         projects = array(value, "projects");
         JSONArray incoming = array(value, "chats");
         chats = NativeNavigation.merge(chats, incoming);
         NativeNavigation.Selection selected = navigation.select(projectID, chatID, projects, incoming);
+        // A command response also covers a newly created chat that has not appeared in SSE yet.
+        if (!removedChat.isEmpty() && removedChat.equals(chatID) && !containsChat(incoming, removedChat))
+            selected = new NativeNavigation.Selection(selected.project, "");
         if (!selected.project.equals(projectID) || !selected.chat.equals(chatID)) {
             goalNotice = goalError = "";
             discardComposerDrafts();
@@ -2480,6 +2491,68 @@ public final class MainActivity extends Activity {
         loadPermissions();
     }
 
+    private static boolean containsChat(JSONArray values, String id) {
+        for (int i = 0; i < values.length(); i++) if (id.equals(values.optJSONObject(i).optString("id"))) return true;
+        return false;
+    }
+
+    private String chatTitle() {
+        String title = chat == null ? "" : chat.optString("title");
+        return title.isEmpty() ? ui.t(projectID.isEmpty() ? "Workspace" : "New chat") : title;
+    }
+
+    private void updateChatOptions() {
+        if (workspaceHeader == null) return;
+        workspaceHeader.chatOptions(!chatID.isEmpty() && writable() && !routeLoginRequired,
+                chatActionPending.isEmpty() && connected, this::openChatOptions);
+    }
+
+    private void closeChatMenu() {
+        if (chatMenu != null) chatMenu.dismiss();
+        chatMenu = null;
+    }
+
+    private void openChatOptions() {
+        if (workspaceHeader == null || !writable() || chatID.isEmpty() || !chatActionPending.isEmpty() || !connected) return;
+        closeChatMenu();
+        final String target = chatID;
+        final int token = generation, session = authEpoch;
+        chatMenu = new NativeChatMenu(ui, chatTitle(), new NativeChatMenu.Actions() {
+            public void rename(String title, java.util.function.Consumer<Exception> done) { mutate("rename", object("title", title), done); }
+            public void archive(java.util.function.Consumer<Exception> done) { mutate("archive", object(), done); }
+            public void delete(java.util.function.Consumer<Exception> done) { mutate("delete", object(), done); }
+            private void mutate(String action, JSONObject body, java.util.function.Consumer<Exception> done) {
+                if (destroyed || token != generation || session != authEpoch || !target.equals(chatID) || !writable() || !chatActionPending.isEmpty()) {
+                    done.accept(new IOException(ui.t("Chat session changed. Try again.")));
+                    return;
+                }
+                chatActionPending = target;
+                updateChatOptions();
+                api("/chats/" + Uri.encode(target) + "/" + action, body, value -> {
+                    chatActionPending = "";
+                    // Fence older fallback GETs before accepting the native mutation response.
+                    if (workspaceData != null) workspaceData.navigationChanged();
+                    if (action.equals("rename")) {
+                        JSONObject metadata = (JSONObject) value;
+                        if (chat != null && target.equals(chatID)) chat = NativeChatState.metadata(chat, metadata);
+                        for (int i = 0; i < chats.length(); i++) if (target.equals(at(chats, i).optString("id")))
+                            chats.put(i, NativeChatState.metadata(at(chats, i), metadata));
+                        if (heading != null) heading.setText(chatTitle());
+                        updateComposer();
+                    } else {
+                        acceptNavigation((JSONObject) value, target);
+                    }
+                    done.accept(null);
+                }, error -> {
+                    chatActionPending = "";
+                    updateChatOptions();
+                    done.accept(error);
+                });
+            }
+        }, this::toast);
+        chatMenu.show(workspaceHeader.titleAction);
+    }
+
     private void openChat(String id) {
         boolean deferred = sidebarPageDeferred;
         closeDrawer(false); sidebarPageDeferred = false;
@@ -2533,7 +2606,7 @@ public final class MainActivity extends Activity {
             transcriptViews.use("history-notice", new JSONArray().put(!cursor.error.isEmpty()).put(cursor.more).put(failed),
                     () -> new NativeHistoryNotice(ui, !cursor.error.isEmpty(), cursor.more, failed, this::loadEarlier));
         if (chat == null || array(chat, "turns").length() == 0) {
-            heading.setText(projectID.isEmpty() ? tr("Workspace", "工作空间") : tr("New chat", "新对话"));
+            heading.setText(chatTitle());
             subheading.setText(projectName());
             transcriptViews.use("welcome", projectID + "\n" + projectName(), () -> ui.welcome(
                     ui.t(projectID.isEmpty() ? "Prepare a project first." : "What shall we build today?"),
@@ -2579,7 +2652,7 @@ public final class MainActivity extends Activity {
             recycler.chrome("history-notice", true, children -> children.use("notice", new JSONArray().put(!cursor.error.isEmpty()).put(cursor.more).put(failed),
                     () -> new NativeHistoryNotice(ui, !cursor.error.isEmpty(), cursor.more, failed, this::loadEarlier)));
         if (chat == null || array(chat, "turns").length() == 0) {
-            heading.setText(projectID.isEmpty() ? tr("Workspace", "工作空间") : tr("New chat", "新对话"));
+            heading.setText(chatTitle());
             subheading.setText(projectName());
             recycler.chrome("welcome", true, children -> children.use("welcome", projectID + "\n" + projectName(), () -> ui.welcome(
                     ui.t(projectID.isEmpty() ? "Prepare a project first." : "What shall we build today?"),
@@ -4360,6 +4433,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onStop() {
+        closeChatMenu();
         foreground = false;
         if (relayDiscovery != null) relayDiscovery.close();
         if (connectionRouter != null) connectionRouter.cancel();
@@ -4387,6 +4461,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        closeChatMenu();
         if (devicePairingDialog != null) devicePairingDialog.dismiss();
         if (appUpdates != null) appUpdates.close();
         closeDesktop();

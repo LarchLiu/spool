@@ -28,7 +28,7 @@ function write(relative, contents) {
 }
 const icons = {
   menu:'Menu', close:'X', back:'ArrowLeft', send:'ArrowUp', stop:'Square', arrow_down:'ArrowDown',
-  more:'Ellipsis', grip_vertical:'GripVertical',
+  more:'Ellipsis', grip_vertical:'GripVertical', pencil:'Pencil', archive:'Archive', trash:'Trash2',
   files_close:'PanelRightClose', file:'File', info:'Info', folder_git:'FolderGit2', git_branch:'GitBranch', git_commit:'GitCommitHorizontal',
   plus:'Plus', folder:'Folder', folder_open:'FolderOpen', files:'PanelRightOpen',
   project_folder:'Folder', project_folder_open:'FolderOpen',

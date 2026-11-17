@@ -130,6 +130,19 @@ public class NativeWorkspaceDataTest {
         data.stop(); worker.flush(); ui.flush(); assertTrue(ui.timers.isEmpty()); assertEquals(1, sink.navigation.size());
     }
 
+    @Test public void mutationResponseFencesAnOlderFallbackSoItCannotRestoreRemovedChats() throws Exception {
+        NativeProfiles profiles = new NativeProfiles(); Sink sink = new Sink(profiles); Queue worker = new Queue(), ui = new Queue();
+        NativeWorkspaceData data = new NativeWorkspaceData(worker, ui, profiles);
+        data.bind("session", path -> path.equals("/agents") ? new JSONArray() : new JSONObject("{chats:[{id:'deleted-chat'}]}"), sink);
+        worker.flush();
+        data.navigationChanged();
+        ui.flush();
+        assertTrue("A pre-mutation response cannot resurrect old membership", sink.navigation.isEmpty());
+        data.reload(); worker.flush(); ui.flush();
+        assertEquals("Later refreshes still work", 1, sink.navigation.size());
+        data.stop();
+    }
+
     @Test public void stopAndRebindRevokeQueuedReadsPostedRepliesAndOldSameKeyScopes() {
         for (boolean alreadyRead : new boolean[] {false, true}) {
             NativeProfiles profiles = new NativeProfiles(); Queue worker = new Queue(), ui = new Queue(); Sink sink = new Sink(profiles);

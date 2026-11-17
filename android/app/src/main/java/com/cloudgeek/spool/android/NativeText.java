@@ -37,6 +37,7 @@ final class NativeText {
             case "Approve for me": value = "代我审批"; break;
             case "Approve this phone in Spool Desktop. Compare the device fingerprint on both screens.": value = "请在 Spool Desktop 中确认这台手机，并对比两边显示的设备指纹。"; break;
             case "Approved by {name}": value = "{name} 批准了操作"; break;
+            case "Archive": value = "归档"; break;
             case "Ask for approval": value = "询问审批"; break;
             case "Ask your desktop administrator to create a project and grant you access.": value = "请在桌面控制台创建项目，并将你的账号加入项目成员。"; break;
             case "Attach at most 6 files, up to 16 MB total": value = "最多添加 6 个文件，总大小不超过 16 MB"; break;
@@ -56,6 +57,9 @@ final class NativeText {
             case "Change default permission mode": value = "更改默认权限模式"; break;
             case "Chat commands": value = "聊天指令"; break;
             case "Chat disconnected. Wait for reconnection before sending.": value = "聊天连接已断开，请等待重连后再发送。"; break;
+            case "Chat options": value = "对话选项"; break;
+            case "Chat session changed. Try again.": value = "对话会话已变更，请重试。"; break;
+            case "Chat title": value = "对话标题"; break;
             case "Chat with {name}": value = "与 {name} 聊天"; break;
             case "Check for updates": value = "检查更新"; break;
             case "Checking for updates...": value = "正在检查更新…"; break;
@@ -122,11 +126,14 @@ final class NativeText {
             case "Dark": value = "深色"; break;
             case "Declined": value = "已拒绝"; break;
             case "Default": value = "默认"; break;
+            case "Delete": value = "删除"; break;
+            case "Delete chat": value = "删除对话"; break;
             case "Delete files": value = "删除文件"; break;
             case "Delete queued message": value = "删除排队消息"; break;
             case "Delete server": value = "删除服务器"; break;
             case "Deleted files": value = "删除文件"; break;
             case "Deleted {path}": value = "删除 {path}"; break;
+            case "Deleting…": value = "正在删除…"; break;
             case "Denied by {name}": value = "{name} 拒绝了操作"; break;
             case "Deny": value = "拒绝"; break;
             case "Deny and save network rule": value = "拒绝并保存网络规则"; break;
@@ -156,6 +163,7 @@ final class NativeText {
             case "Edited {path}": value = "编辑 {path}"; break;
             case "Enable bypass": value = "确认跳过检查"; break;
             case "Enable full screen": value = "启用全屏"; break;
+            case "Enter a chat title of 1–200 characters": value = "请输入 1–200 个字符的对话标题"; break;
             case "Enter a message of up to 2000 characters.": value = "请输入不超过 2000 字的消息。"; break;
             case "Enter a server name (1–80 characters).": value = "请输入 1–80 个字符的服务器名称。"; break;
             case "Enter workspace": value = "进入工作空间"; break;
@@ -298,6 +306,8 @@ final class NativeText {
             case "Remote connection": value = "远程连接"; break;
             case "Remote desktop": value = "远程桌面"; break;
             case "Remove {name}": value = "移除 {name}"; break;
+            case "Rename": value = "重命名"; break;
+            case "Rename chat": value = "重命名对话"; break;
             case "Rename server": value = "重命名服务器"; break;
             case "Request failed": value = "请求失败"; break;
             case "Requested form schema": value = "表单格式要求"; break;
@@ -324,6 +334,7 @@ final class NativeText {
             case "Running": value = "运行中"; break;
             case "Save avatar": value = "保存头像"; break;
             case "Save this authorization for future requests.": value = "保存授权，后续请求也会生效。"; break;
+            case "Saving…": value = "保存中…"; break;
             case "Say hello. Only the two of you can see these messages.": value = "打个招呼吧，消息仅你们双方可见。"; break;
             case "Scan pairing QR code": value = "扫描配对二维码"; break;
             case "Scroll to latest": value = "滚动到最新消息"; break;
@@ -388,6 +399,7 @@ final class NativeText {
             case "This file has no text preview. Download it to open locally.": value = "此文件不支持文本预览，请下载后在本地打开。"; break;
             case "This group is no longer available to you.": value = "此群聊已关闭或你不在群内。"; break;
             case "This model has no adjustable reasoning level.": value = "此模型未提供可调整的推理级别。"; break;
+            case "This permanently deletes this chat and its subagent history. This action cannot be undone.": value = "此操作将永久删除此对话及其子会话历史，无法撤销。"; break;
             case "This person is offline. Messages are not queued.": value = "对方已离线，消息不会排队或离线补发。"; break;
             case "This request contains an invalid form schema.": value = "请求的表单格式无效。"; break;
             case "This request contains an unsupported authorization link.": value = "此请求包含不支持的授权链接。"; break;
@@ -484,6 +496,7 @@ final class NativeText {
             case "Approve for me": value = "承認を任せる"; break;
             case "Approve this phone in Spool Desktop. Compare the device fingerprint on both screens.": value = "Spool Desktop でこのスマートフォンを承認してください。両画面の端末の指紋を比較してください。"; break;
             case "Approved by {name}": value = "{name} が操作を承認しました"; break;
+            case "Archive": value = "アーカイブ"; break;
             case "Ask for approval": value = "承認を求める"; break;
             case "Ask your desktop administrator to create a project and grant you access.": value = "デスクトップ管理者にプロジェクトの作成とアクセス許可を依頼してください。"; break;
             case "Attach at most 6 files, up to 16 MB total": value = "添付は最大6ファイル、合計16 MBまでです"; break;
@@ -503,6 +516,9 @@ final class NativeText {
             case "Change default permission mode": value = "既定の権限モードを変更"; break;
             case "Chat commands": value = "チャットコマンド"; break;
             case "Chat disconnected. Wait for reconnection before sending.": value = "チャットの接続が切れました。再接続してから送信してください。"; break;
+            case "Chat options": value = "チャットのオプション"; break;
+            case "Chat session changed. Try again.": value = "チャットのセッションが変更されました。もう一度お試しください。"; break;
+            case "Chat title": value = "チャットのタイトル"; break;
             case "Chat with {name}": value = "{name} とチャット"; break;
             case "Check for updates": value = "アップデートを確認"; break;
             case "Checking for updates...": value = "アップデートを確認中…"; break;
@@ -569,11 +585,14 @@ final class NativeText {
             case "Dark": value = "ダーク"; break;
             case "Declined": value = "拒否"; break;
             case "Default": value = "既定"; break;
+            case "Delete": value = "削除"; break;
+            case "Delete chat": value = "チャットを削除"; break;
             case "Delete files": value = "ファイルを削除"; break;
             case "Delete queued message": value = "待機中のメッセージを削除"; break;
             case "Delete server": value = "サーバーを削除"; break;
             case "Deleted files": value = "ファイルを削除"; break;
             case "Deleted {path}": value = "{path} を削除"; break;
+            case "Deleting…": value = "削除中…"; break;
             case "Denied by {name}": value = "{name} が操作を拒否しました"; break;
             case "Deny": value = "拒否"; break;
             case "Deny and save network rule": value = "拒否してネットワークルールを保存"; break;
@@ -603,6 +622,7 @@ final class NativeText {
             case "Edited {path}": value = "{path} を編集"; break;
             case "Enable bypass": value = "スキップを有効化"; break;
             case "Enable full screen": value = "全画面表示を有効化"; break;
+            case "Enter a chat title of 1–200 characters": value = "チャットのタイトルを1～200文字で入力してください"; break;
             case "Enter a message of up to 2000 characters.": value = "2000 文字以内のメッセージを入力してください。"; break;
             case "Enter a server name (1–80 characters).": value = "サーバー名を1～80文字で入力してください。"; break;
             case "Enter workspace": value = "ワークスペースを開く"; break;
@@ -745,6 +765,8 @@ final class NativeText {
             case "Remote connection": value = "リモート接続"; break;
             case "Remote desktop": value = "リモートデスクトップ"; break;
             case "Remove {name}": value = "{name}を削除"; break;
+            case "Rename": value = "名前を変更"; break;
+            case "Rename chat": value = "チャット名を変更"; break;
             case "Rename server": value = "サーバー名を変更"; break;
             case "Request failed": value = "リクエストに失敗しました"; break;
             case "Requested form schema": value = "フォームのスキーマ"; break;
@@ -771,6 +793,7 @@ final class NativeText {
             case "Running": value = "実行中"; break;
             case "Save avatar": value = "アバターを保存"; break;
             case "Save this authorization for future requests.": value = "この承認を今後のリクエストにも適用します。"; break;
+            case "Saving…": value = "保存中…"; break;
             case "Say hello. Only the two of you can see these messages.": value = "挨拶してみましょう。メッセージはお互いにのみ表示されます。"; break;
             case "Scan pairing QR code": value = "Scan pairing QR code"; break;
             case "Scroll to latest": value = "最新メッセージへ移動"; break;
@@ -835,6 +858,7 @@ final class NativeText {
             case "This file has no text preview. Download it to open locally.": value = "テキストプレビューはありません。ダウンロードして開いてください。"; break;
             case "This group is no longer available to you.": value = "このグループは閉じられたか、あなたはメンバーではありません。"; break;
             case "This model has no adjustable reasoning level.": value = "このモデルの推論レベルは変更できません。"; break;
+            case "This permanently deletes this chat and its subagent history. This action cannot be undone.": value = "このチャットとサブエージェントの履歴を完全に削除します。この操作は取り消せません。"; break;
             case "This person is offline. Messages are not queued.": value = "相手はオフラインです。メッセージは後で配信されません。"; break;
             case "This request contains an invalid form schema.": value = "フォームのスキーマが無効です。"; break;
             case "This request contains an unsupported authorization link.": value = "このリクエストには未対応の認証リンクが含まれています。"; break;

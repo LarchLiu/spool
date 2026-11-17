@@ -45,6 +45,7 @@ final class NativePopover {
     private boolean above;
     private boolean selectMode;
     private int selectMinimumWidth = 180;
+    private int selectRowHeight = 36;
     private boolean onlineMode;
     private boolean operatorMode;
     private boolean permissionMode;
@@ -202,8 +203,13 @@ final class NativePopover {
     }
 
     void showSelect(View anchor, int initial, int minimumWidth) {
+        showSelect(anchor, initial, minimumWidth, 36);
+    }
+
+    void showSelect(View anchor, int initial, int minimumWidth, int rowHeight) {
         selectMode = true;
         selectMinimumWidth = minimumWidth;
+        selectRowHeight = rowHeight;
         restyle(10, ui.borderStrong, 8, 28, 0x33000000);
         show(anchor, false);
         if (initial >= 0 && initial < content.getChildCount()) content.getChildAt(initial).requestFocus();
@@ -318,7 +324,7 @@ final class NativePopover {
             NativeSelectLayout layout = new NativeSelectLayout(position[0] / density, position[1] / density,
                     (position[0] + anchor.getWidth()) / density, (position[1] + anchor.getHeight()) / density,
                     anchor.getWidth() / density, viewport.left / density, viewport.top / density,
-                    viewport.width() / density, viewport.height() / density, content.getChildCount(), selectMinimumWidth);
+                    viewport.width() / density, viewport.height() / density, content.getChildCount(), selectMinimumWidth, selectRowHeight);
             width = ui.dp(layout.width);
             content.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                     View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));

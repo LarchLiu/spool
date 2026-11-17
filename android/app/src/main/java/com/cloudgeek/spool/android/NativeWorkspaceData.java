@@ -66,9 +66,12 @@ final class NativeWorkspaceData {
     void navigation(JSONObject value) {
         Scope captured = scope;
         if (captured == null) return;
-        captured.navigationVersion++;
+        navigationChanged();
         captured.listener.navigation(value);
     }
+
+    /** A mutation response supersedes any navigation GET that started before it. */
+    void navigationChanged() { if (scope != null) scope.navigationVersion++; }
 
     void missing(String key) {
         if (scope == null || scope.missing.equals(key)) return;

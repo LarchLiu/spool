@@ -498,6 +498,8 @@ final class NativeUi extends WebPalette {
 
     final class Header extends LinearLayout {
         final TextView title, subtitle;
+        final LinearLayout titleAction;
+        final ImageView titleChevron;
         final LinearLayout online;
         private Object peopleSignature;
         Header(String titleText, String subtitleText, Runnable menu, Runnable people, Runnable files) {
@@ -516,7 +518,16 @@ final class NativeUi extends WebPalette {
             subtitle.setLetterSpacing(.02f);
             preciseText(title); preciseText(subtitle);
             title.setMaxWidth(dp(getResources().getConfiguration().screenWidthDp * .45f));
-            titles.addView(title, new LinearLayout.LayoutParams(-2, -2));
+            titleAction = row();
+            titleAction.setMinimumHeight(dp(24));
+            titleAction.setBackground(states(0x00000000, 6, 0, controlActive, 0x00000000));
+            titleAction.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+            titleChevron = decorativeIcon("chevron_down", 13);
+            LinearLayout.LayoutParams arrow = new LinearLayout.LayoutParams(dp(13), dp(13));
+            arrow.setMarginStart(dp(5));
+            titleAction.addView(titleChevron, arrow);
+            titleChevron.setVisibility(View.GONE);
+            titles.addView(titleAction, new LinearLayout.LayoutParams(-2, -2));
             LinearLayout.LayoutParams sub = new LinearLayout.LayoutParams(-2, -2);
             sub.topMargin = dp(4);
             titles.addView(subtitle, sub);
@@ -536,6 +547,25 @@ final class NativeUi extends WebPalette {
             addView(icon("files", 18, label("Open file sidebar", "打开文件侧边栏"), files), file);
             // The separate divider completes the CSS 50px border box, also at fractional DPR.
             setLayoutParams(new LinearLayout.LayoutParams(-1, dp(50) - dp(1)));
+        }
+
+        void chatOptions(boolean visible, boolean enabled, Runnable open) {
+            titleChevron.setVisibility(visible ? View.VISIBLE : View.GONE);
+            titleAction.setEnabled(enabled);
+            titleAction.setFocusable(visible);
+            titleAction.setContentDescription(visible ? t("Chat options") + ": " + title.getText() : null);
+            titleAction.setOnClickListener(visible ? view -> open.run() : null);
+            titleAction.setClickable(visible);
+            titleAction.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+                @Override public void onInitializeAccessibilityNodeInfo(View view, android.view.accessibility.AccessibilityNodeInfo info) {
+                    super.onInitializeAccessibilityNodeInfo(view, info);
+                    if (visible) info.setClassName("android.widget.Button");
+                }
+            });
+            if (visible) {
+                focusOnPress(titleAction);
+                buttonKeys(titleAction);
+            }
         }
 
         void bindPeople(java.util.List<org.json.JSONObject> people) {
