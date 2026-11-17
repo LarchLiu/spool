@@ -21,7 +21,7 @@ function Scene(){const [state,setState]=useState({messages:[],running:true}),[dr
 return <main className="workspace" style={{display:'flex',flexDirection:'column',justifyContent:'flex-end',minHeight:'100vh'}}><div className="composer-wrap">
 <QueuedMessages messages={state.messages} running={state.running} busy={!!state.busy} t={t} onSteer={id=>window.actions.push('steer:'+id)} onDelete={id=>window.actions.push('delete:'+id)}
 onEdit={id=>{window.actions.push('edit:'+id);setDraft(state.messages.find(m=>m.id===id).message);setState({...state,messages:state.messages.filter(m=>m.id!==id)})}}
-onMove={(id,before)=>{window.actions.push('move:'+id+':'+before);setState(old=>{const messages=old.messages.filter(m=>m.id!==id),at=messages.findIndex(m=>m.id===before);messages.splice(at<0?messages.length:at,0,old.messages.find(m=>m.id===id));return {...old,messages}})}}/>
+onMove={(id,before)=>{window.actions.push('move:'+id+':'+before);const apply=()=>setState(old=>{const messages=old.messages.filter(m=>m.id!==id),at=messages.findIndex(m=>m.id===before);messages.splice(at<0?messages.length:at,0,old.messages.find(m=>m.id===id));return {...old,messages,busy:false}});if(window.deferMoves){setState(old=>({...old,busy:true}));window.acceptMove=apply}else apply()}}/>
 <form className="composer"><textarea id="chat-message" rows={1} placeholder="Message Codex" value={draft} onChange={e=>setDraft(e.target.value)}/>
 <div className="composer-bottom"><div className="composer-tools"/><div className="composer-actions">
 <ComposerSendButton active={state.running} stopping={false} disabled={false} t={t} onStop={()=>{}}/></div></div></form></div></main>}
@@ -50,39 +50,44 @@ try {
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__queued-messages`);
   await page.waitForFunction(() => typeof window.bind === "function");
   assert.equal(await page.locator(".queued-messages").count(), 0);
-  for (const [name, width] of [["desktop", 1100], ["tablet", 800], ["narrow", 320], ["mobile", 390]]) {
-    await page.setViewportSize({ width, height: 420 });
-    for (const [count, label] of [[1, "one"], [3, "several"]]) {
-      await page.evaluate(state => window.bind(state), { messages: messages.slice(0, count), running: true });
-      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      const box = await page.evaluate(() => {
-        const rect = selector => { const r = document.querySelector(selector).getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
-        const rows = [...document.querySelectorAll(".queued-message")].map(row => {
-          const r = row.getBoundingClientRect(), text = row.querySelector(".queued-message-text").getBoundingClientRect();
-          const steer = row.querySelector(".queued-message-steer").getBoundingClientRect(), remove = row.querySelector("[aria-label='Delete queued message']").getBoundingClientRect();
-          return { left: r.left, right: r.right, height: r.height, textRight: text.right, steerLeft: steer.left, steerRight: steer.right, removeLeft: remove.left, removeRight: remove.right };
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+    for (const [name, width] of [["desktop", 1100], ["tablet", 800], ["narrow", 320], ["mobile", 390]]) {
+      await page.setViewportSize({ width, height: 420 });
+      for (const [count, label] of [[1, "one"], [3, "several"]]) {
+        await page.evaluate(state => window.bind(state), { messages: messages.slice(0, count), running: true });
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const box = await page.evaluate(() => {
+          const rect = selector => { const r = document.querySelector(selector).getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+          const rows = [...document.querySelectorAll(".queued-message")].map(row => {
+            const r = row.getBoundingClientRect(), text = row.querySelector(".queued-message-text").getBoundingClientRect();
+            const steer = row.querySelector(".queued-message-steer").getBoundingClientRect(), remove = row.querySelector("[aria-label='Delete queued message']").getBoundingClientRect();
+            return { left: r.left, right: r.right, height: r.height, textRight: text.right, steerLeft: steer.left, steerRight: steer.right, removeLeft: remove.left, removeRight: remove.right };
+          });
+          return { queue: rect(".queued-messages"), composer: rect(".composer"), rows, overflow: document.documentElement.scrollWidth - innerWidth };
         });
-        return { queue: rect(".queued-messages"), composer: rect(".composer"), rows, overflow: document.documentElement.scrollWidth - innerWidth };
-      });
-      // The row sits on the composer's top edge, within its width.
-      assert.ok(Math.abs(box.queue.bottom - box.composer.top) < 1, JSON.stringify(box));
-      assert.ok(Math.abs(box.queue.left - box.composer.left - 16) < 1, JSON.stringify(box));
-      assert.ok(Math.abs(box.composer.right - box.queue.right - 16) < 1, JSON.stringify(box));
-      assert.ok(box.overflow <= 0, JSON.stringify(box));
-      assert.equal(box.rows.length, count);
-      for (const row of box.rows) {
-        // Long text gives way to the actions instead of pushing them out.
-        assert.ok(row.textRight <= row.steerLeft && row.steerRight <= row.removeLeft && row.removeRight <= row.right, JSON.stringify(row));
-        assert.ok(row.height < 44, JSON.stringify(row));
+        // The row sits on the composer's top edge, within its width.
+        assert.ok(Math.abs(box.queue.bottom - box.composer.top) < 1, JSON.stringify(box));
+        assert.ok(Math.abs(box.queue.left - box.composer.left - 16) < 1, JSON.stringify(box));
+        assert.ok(Math.abs(box.composer.right - box.queue.right - 16) < 1, JSON.stringify(box));
+        assert.ok(box.overflow <= 0, JSON.stringify(box));
+        assert.equal(box.rows.length, count);
+        for (const row of box.rows) {
+          // Long text gives way to the actions instead of pushing them out.
+          assert.ok(row.textRight <= row.steerLeft && row.steerRight <= row.removeLeft && row.removeRight <= row.right, JSON.stringify(row));
+          assert.ok(row.height < 44, JSON.stringify(row));
+        }
+        const borders = await page.evaluate(() => [".queued-messages", ".composer"].map(selector => getComputedStyle(document.querySelector(selector)).borderTopColor));
+        assert.equal(borders[0], borders[1], "queue and input share the same visible frame");
+        await page.screenshot({ path: path.join(output, `${theme === "dark" ? "dark-" : ""}${name}-${label}.png`) });
+        await page.locator(".queued-message").first().getByRole("button", { name: "Queued message actions" }).click();
+        await page.getByRole("menuitem", { name: "Edit message" }).waitFor();
+        const menu = await page.getByRole("menu").boundingBox();
+        assert.ok(menu.x >= 0 && menu.x + menu.width <= width && menu.y >= 0 && menu.y + menu.height <= 420);
+        if (count === 3) await page.screenshot({ path: path.join(output, `${theme === "dark" ? "dark-" : ""}${name}-menu.png`) });
+        await page.keyboard.press("Escape");
+        assert.equal(await page.getByRole("menu").count(), 0);
       }
-      await page.screenshot({ path: path.join(output, `${name}-${label}.png`) });
-      await page.locator(".queued-message").first().getByRole("button", { name: "Queued message actions" }).click();
-      await page.getByRole("menuitem", { name: "Edit message" }).waitFor();
-      const menu = await page.getByRole("menu").boundingBox();
-      assert.ok(menu.x >= 0 && menu.x + menu.width <= width && menu.y >= 0 && menu.y + menu.height <= 420);
-      if (count === 3) await page.screenshot({ path: path.join(output, `${name}-menu.png`) });
-      await page.keyboard.press("Escape");
-      assert.equal(await page.getByRole("menu").count(), 0);
     }
   }
   assert.deepEqual(await page.locator(".queued-message-text").allTextContents(), [messages[0].message, long, "notes.txt"]);
@@ -90,18 +95,41 @@ try {
   await page.locator(".queued-message").nth(1).getByRole("button", { name: "Steer" }).click();
   await page.locator(".queued-message").nth(2).getByRole("button", { name: "Delete queued message" }).click();
   assert.deepEqual(await page.evaluate(() => window.actions), ["steer:second", "delete:third"]);
-  const drag = async (id, target, after = false) => {
+  const settled = () => page.waitForFunction(() => [...document.querySelectorAll(".queued-message")].every(row => row.getAnimations().every(animation => animation.playState === "finished")));
+  const drag = async (id, target, after = false, inspect = false) => {
+    await settled();
     const grip = await page.locator(`[data-queue-id='${id}'] .queued-message-grip`).boundingBox();
     const row = await page.locator(`[data-queue-id='${target}']`).boundingBox();
     await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
     await page.mouse.down();
+    if (inspect) {
+      assert.equal(grip.width, grip.height, "pressed drag handles remain circular");
+      await page.screenshot({ path: path.join(output, "dark-grip-pressed.png") });
+    }
     await page.mouse.move(grip.x + grip.width / 2, row.y + (after ? row.height - 2 : 2), { steps: 8 });
+    if (inspect) {
+      await page.waitForFunction(() => new DOMMatrix(getComputedStyle(document.querySelector("[data-queue-id='first']")).transform).m42 > 1);
+      const moving = await page.locator(`[data-queue-id='${id}']`).boundingBox();
+      assert.ok(moving.y < grip.y - 30, "the dragged message follows the pointer");
+      assert.equal(await page.locator(".queued-message.dragging").count(), 1);
+      assert.equal(await page.locator(".queued-message.dragging").evaluate(row => getComputedStyle(row).opacity), "1");
+      await page.screenshot({ path: path.join(output, "dark-dragging.png") });
+    }
     await page.mouse.up();
+    await settled();
   };
-  await drag("third", "first");
+  await page.evaluate(() => { window.deferMoves = true; });
+  await drag("third", "first", false, true);
   assert.deepEqual(await page.locator(".queued-message").evaluateAll(rows => rows.map(row => row.dataset.queueId)), ["third", "first", "second"]);
+  assert.equal(await page.locator(".queued-message-grip:disabled").count(), 3, "the new order stays visible while the server accepts it");
+  await page.evaluate(() => { window.acceptMove(); window.deferMoves = false; });
+  await page.evaluate(() => { window.deferMoves = true; });
   await drag("third", "second", true);
   assert.deepEqual(await page.locator(".queued-message").evaluateAll(rows => rows.map(row => row.dataset.queueId)), ["first", "second", "third"]);
+  await page.evaluate(state => { window.bind(state); window.deferMoves = false; }, { messages: [messages[2], messages[0], messages[1]], running: true, busy: false });
+  await settled();
+  assert.deepEqual(await page.locator(".queued-message").evaluateAll(rows => rows.map(row => row.dataset.queueId)), ["third", "first", "second"], "a rejected reorder returns to the server's order");
+  await drag("third", "second", true);
   const touch = await page.context().newCDPSession(page);
   try {
     await touch.send("Emulation.setTouchEmulationEnabled", { enabled: true });
@@ -128,7 +156,13 @@ try {
   await page.mouse.move(handle.x + handle.width / 2, queue.y + queue.height - 3, { steps: 5 });
   await page.waitForFunction(() => { const queue = document.querySelector(".queued-messages"); return queue.scrollTop + queue.clientHeight >= queue.scrollHeight - 1; });
   await page.mouse.up();
+  await settled();
   assert.equal(await page.locator(".queued-message").last().getAttribute("data-queue-id"), "long-0");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.evaluate(state => window.bind(state), { messages, running: true });
+  await drag("third", "first");
+  assert.deepEqual(await page.locator(".queued-message").evaluateAll(rows => rows.map(row => row.dataset.queueId)), ["third", "first", "second"]);
+  assert.equal(await page.locator(".queued-message").evaluateAll(rows => rows.reduce((count, row) => count + row.getAnimations().length, 0)), 0);
   await page.evaluate(state => window.bind(state), { messages, running: true, busy: true });
   for (const button of await page.locator(".queued-message button").all()) assert.equal(await button.isDisabled(), true);
   // Once the turn has ended a remaining message can only be sent.
@@ -136,5 +170,5 @@ try {
   assert.equal(await page.getByRole("button", { name: "Steer" }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Send now" }).count(), 1);
   assert.deepEqual(errors, []);
-  console.log({ rowSitsOnComposer: true, actionsStayVisible: true, noHorizontalOverflow: true, javascriptErrors: errors });
+  console.log({ themes: ["light", "dark"], rowSitsOnComposer: true, circularGrip: true, animatedReordering: true, touchReordering: true, reducedMotion: true, actionsStayVisible: true, noHorizontalOverflow: true, javascriptErrors: errors });
 } finally { if (browser) await browser.close(); if (server) await server.close(); }

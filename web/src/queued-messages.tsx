@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   CornerDownRight,
@@ -38,10 +38,33 @@ export function QueuedMessages({
     x: number;
     y: number;
     latestY: number;
+    scrollTop: number;
     moved: boolean;
     before: string;
+    originalBefore: string;
   } | null>(null);
-  const [drag, setDrag] = useState<{ id: string; before: string } | null>(null);
+  const [drag, setDrag] = useState<{
+    id: string;
+    before: string;
+    offset: number;
+    height: number;
+  } | null>(null);
+  const [pendingMove, setPendingMove] = useState<{
+    id: string;
+    before: string;
+  } | null>(null);
+  const positions = useRef(new Map<string, number>());
+  const orderedMessages = useMemo(() => {
+    if (!pendingMove) return messages;
+    const moving = messages.find((message) => message.id === pendingMove.id);
+    if (!moving) return messages;
+    const ordered = messages.filter((message) => message.id !== moving.id);
+    const at = ordered.findIndex(
+      (message) => message.id === pendingMove.before,
+    );
+    ordered.splice(at < 0 ? ordered.length : at, 0, moving);
+    return ordered;
+  }, [messages, pendingMove]);
   const [menu, setMenu] = useState<{
     id: string;
     left: number;
@@ -53,6 +76,33 @@ export function QueuedMessages({
     setMenu(null);
     trigger.current?.focus({ preventScroll: true });
   };
+  const rememberPositions = () => {
+    const queue = list.current;
+    if (!queue) return;
+    const top = queue.getBoundingClientRect().top + queue.clientTop;
+    positions.current = new Map(
+      Array.from(
+        queue.querySelectorAll<HTMLElement>("[data-queue-id]"),
+        (row) => [
+          row.dataset.queueId!,
+          row.getBoundingClientRect().top - top + queue.scrollTop,
+        ],
+      ),
+    );
+  };
+  const move = (id: string, before: string) => {
+    setPendingMove({ id, before });
+    onMove(id, before);
+  };
+  const finishDrag = (commit: boolean) => {
+    const current = pointer.current;
+    if (!current) return;
+    rememberPositions();
+    pointer.current = null;
+    setDrag(null);
+    if (commit && current.moved && current.before !== current.originalBefore)
+      move(current.id, current.before);
+  };
   const updateDrag = () => {
     const current = pointer.current,
       queue = list.current;
@@ -63,18 +113,66 @@ export function QueuedMessages({
     const rows = Array.from(
       queue.querySelectorAll<HTMLElement>("[data-queue-id]"),
     );
+    const moving = rows.find((row) => row.dataset.queueId === current.id);
+    if (!moving) return;
+    const pointerY =
+      current.latestY - bounds.top - queue.clientTop + queue.scrollTop;
     current.before =
       rows.find(
         (row) =>
-          current.latestY <
-          row.getBoundingClientRect().top + row.offsetHeight / 2,
+          row !== moving && pointerY < row.offsetTop + row.offsetHeight / 2,
       )?.dataset.queueId || "";
+    const offset = Math.max(
+      queue.scrollTop - moving.offsetTop,
+      Math.min(
+        current.latestY - current.y + queue.scrollTop - current.scrollTop,
+        queue.scrollTop +
+          queue.clientHeight -
+          moving.offsetTop -
+          moving.offsetHeight,
+      ),
+    );
     setDrag((old) =>
-      old?.id === current.id && old.before === current.before
+      old?.id === current.id &&
+      old.before === current.before &&
+      old.offset === offset
         ? old
-        : { id: current.id, before: current.before },
+        : {
+            id: current.id,
+            before: current.before,
+            offset,
+            height: moving.offsetHeight,
+          },
     );
   };
+  useLayoutEffect(() => {
+    const queue = list.current;
+    if (!queue || drag) return;
+    const next = new Map<string, number>();
+    const reducedMotion = matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    for (const row of queue.querySelectorAll<HTMLElement>("[data-queue-id]")) {
+      const id = row.dataset.queueId!;
+      const previous = positions.current.get(id);
+      next.set(id, row.offsetTop);
+      if (previous === undefined || reducedMotion) continue;
+      const offset = previous - row.offsetTop;
+      if (Math.abs(offset) < 0.5) continue;
+      for (const animation of row.getAnimations()) animation.cancel();
+      row.animate(
+        [
+          { transform: `translateY(${offset}px)` },
+          { transform: "translateY(0)" },
+        ],
+        { duration: 180, easing: "cubic-bezier(0.2, 0, 0, 1)" },
+      );
+    }
+    positions.current = next;
+  }, [orderedMessages, drag?.id]);
+  useEffect(() => {
+    if (!busy) setPendingMove(null);
+  }, [busy, pendingMove]);
   useEffect(() => {
     if (!drag) return;
     let frame: number;
@@ -120,29 +218,42 @@ export function QueuedMessages({
       (pointer.current &&
         !messages.some((message) => message.id === pointer.current?.id))
     ) {
-      pointer.current = null;
-      setDrag(null);
+      finishDrag(false);
     }
   }, [messages, busy]);
+  const from = orderedMessages.findIndex((message) => message.id === drag?.id);
+  const before = orderedMessages.findIndex(
+    (message) => message.id === drag?.before,
+  );
+  const to =
+    before < 0 ? orderedMessages.length - 1 : before - (before > from ? 1 : 0);
   if (!messages.length) return null;
   return (
     <>
       <ul
         ref={list}
-        className="queued-messages"
+        className={"queued-messages" + (drag ? " reordering" : "")}
         aria-label={t("Queued messages")}
       >
-        {messages.map((message) => (
+        {orderedMessages.map((message, index) => (
           <li
             className={
-              "queued-message" +
-              (drag?.id === message.id ? " dragging" : "") +
-              (drag?.before === message.id && drag.id !== message.id
-                ? " drop-before"
-                : "") +
-              (drag && !drag.before && messages.at(-1)?.id === message.id
-                ? " drop-after"
-                : "")
+              "queued-message" + (drag?.id === message.id ? " dragging" : "")
+            }
+            style={
+              drag
+                ? {
+                    transform: `translateY(${
+                      index === from
+                        ? drag.offset
+                        : index > from && index <= to
+                          ? -drag.height
+                          : index < from && index >= to
+                            ? drag.height
+                            : 0
+                    }px)`,
+                  }
+                : undefined
             }
             key={message.id}
             data-queue-id={message.id}
@@ -155,30 +266,43 @@ export function QueuedMessages({
                 aria-label={t("Drag to reorder")}
                 title={t("Drag to reorder")}
                 onKeyDown={(event) => {
-                  const at = messages.findIndex(
+                  const at = orderedMessages.findIndex(
                     (item) => item.id === message.id,
                   );
                   if (event.key === "ArrowUp" && at > 0) {
                     event.preventDefault();
-                    onMove(message.id, messages[at - 1].id);
+                    rememberPositions();
+                    move(message.id, orderedMessages[at - 1].id);
                   } else if (
                     event.key === "ArrowDown" &&
-                    at < messages.length - 1
+                    at < orderedMessages.length - 1
                   ) {
                     event.preventDefault();
-                    onMove(message.id, messages[at + 2]?.id || "");
+                    rememberPositions();
+                    move(message.id, orderedMessages[at + 2]?.id || "");
                   }
                 }}
                 onPointerDown={(event) => {
                   if (event.button !== 0 || busy) return;
                   setMenu(null);
+                  for (const row of list.current!.querySelectorAll(
+                    "[data-queue-id]",
+                  ))
+                    for (const animation of row.getAnimations())
+                      animation.cancel();
+                  const at = orderedMessages.findIndex(
+                    (item) => item.id === message.id,
+                  );
+                  const before = orderedMessages[at + 1]?.id || "";
                   pointer.current = {
                     id: message.id,
                     x: event.clientX,
                     y: event.clientY,
                     latestY: event.clientY,
+                    scrollTop: list.current!.scrollTop,
                     moved: false,
-                    before: message.id,
+                    before,
+                    originalBefore: before,
                   };
                   event.currentTarget.setPointerCapture(event.pointerId);
                 }}
@@ -197,21 +321,9 @@ export function QueuedMessages({
                   current.latestY = event.clientY;
                   updateDrag();
                 }}
-                onPointerUp={() => {
-                  const current = pointer.current;
-                  pointer.current = null;
-                  setDrag(null);
-                  if (current?.moved && current.before !== current.id)
-                    onMove(current.id, current.before);
-                }}
-                onPointerCancel={() => {
-                  pointer.current = null;
-                  setDrag(null);
-                }}
-                onLostPointerCapture={() => {
-                  pointer.current = null;
-                  setDrag(null);
-                }}
+                onPointerUp={() => finishDrag(true)}
+                onPointerCancel={() => finishDrag(false)}
+                onLostPointerCapture={() => finishDrag(false)}
               >
                 <GripVertical size={15} aria-hidden="true" />
               </button>

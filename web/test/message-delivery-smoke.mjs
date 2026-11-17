@@ -145,12 +145,33 @@ try {
         await page.locator(".nav-chat").filter({ hasText: "Running B" }).first().click();
         await page.getByText("B is working", { exact: true }).waitFor();
       }
+      const action = page.locator(".composer-actions .send");
+      const assertAction = async (label, type) => {
+        assert.equal(await action.count(), 1, "the composer keeps a single send/stop button");
+        assert.equal(await action.getAttribute("aria-label"), label);
+        assert.equal(await action.getAttribute("type"), type);
+      };
+      await assertAction("Stop response", "button");
+      const originalAction = await action.elementHandle();
+      if (scenario === "queue") {
+        await composer.fill(" \n\t ");
+        await assertAction("Stop response", "button");
+      }
       const followup = `Follow-up for ${scenario === "same-chat" ? "A" : "B"}`;
       await composer.fill(followup);
+      await assertAction("Send message", "submit");
+      assert.equal(await action.evaluate((button, original) => button === original, originalAction), true, "typing reuses the original stop button");
+      await composer.fill("");
+      await assertAction("Stop response", "button");
+      await composer.fill(followup);
+      await assertAction("Send message", "submit");
       const delivery = scenario === "steer" ? "steer" : "queue";
       const posted = page.waitForRequest(request => request.url().includes("/messages") && request.postDataJSON().delivery === delivery, { timeout: 5000 });
       const answered = page.waitForResponse(response => response.url().includes("/messages") && response.request().postDataJSON().delivery === delivery, { timeout: 5000 });
-      await composer.press(scenario === "steer" ? "Control+Enter" : "Enter");
+      if (scenario === "queue") await action.click();
+      else await composer.press(scenario === "steer" ? "Control+Enter" : "Enter");
+      await assertAction("Stop response", "button");
+      await originalAction.dispose();
       if (scenario === "same-chat") {
         await page.waitForFunction(() => document.querySelector("#chat-message").value === "");
         assert.equal(requests.length, 1, "same-chat follow-up must wait for the first acceptance");
@@ -163,6 +184,16 @@ try {
       assert.equal(request.postDataJSON().message, followup);
       assert.equal(requests.length, 2);
       releaseFirst();
+      if (scenario === "queue") {
+        await page.waitForFunction(() => !document.querySelector(".attachment-add").disabled);
+        await page.locator("input[type=file]").setInputFiles({ name: "followup.txt", mimeType: "text/plain", buffer: Buffer.from("Attachment only") });
+        const remove = page.getByRole("button", { name: "Remove followup.txt", exact: true });
+        await remove.waitFor();
+        await assertAction("Send message", "submit");
+        assert.equal(await action.isEnabled(), true);
+        await remove.click();
+        await assertAction("Stop response", "button");
+      }
       assert.deepEqual(errors, []);
       console.log(`${scenario}: follow-up targeted ${target}`);
     } finally {

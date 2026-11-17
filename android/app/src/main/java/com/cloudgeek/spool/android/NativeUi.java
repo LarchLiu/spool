@@ -681,9 +681,7 @@ final class NativeUi extends WebPalette {
         final NativeAttachmentCards attachments;
         final android.widget.HorizontalScrollView attachmentScroll;
         final ChoiceButton model, permission;
-        final IconButton send, add, queue;
-        /** Sends the draft while the main button is stopping a turn. */
-        Runnable queueSubmit;
+        final IconButton send, add;
         final NativeSurface box;
         final NativeComposerControls bottom;
         final NativeComposerCommands commands;
@@ -709,10 +707,7 @@ final class NativeUi extends WebPalette {
             permission = new ChoiceButton(true, choosePermission);
             model = new ChoiceButton(false, chooseModel);
             send = sendButton(label("Send message", "发送消息"), submit);
-            queue = sendButton(t("Send message"), () -> { if (queueSubmit != null) queueSubmit.run(); });
-            queue.setVisibility(GONE);
             bottom = new NativeComposerControls(NativeUi.this, add, permission, model, send);
-            bottom.setExtra(queue);
             box.addView(bottom, new LinearLayout.LayoutParams(-1, dp(49)));
             addView(box, new LinearLayout.LayoutParams(-1, -2));
             commands = new NativeComposerCommands(NativeUi.this, this, submit);

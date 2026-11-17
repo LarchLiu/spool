@@ -2518,6 +2518,7 @@ a.attachment-open {
   font-size: 12px;
 }
 .queued-messages {
+  position: relative;
   width: calc(100% - 32px);
   max-width: 868px;
   max-height: 132px;
@@ -2525,10 +2526,15 @@ a.attachment-open {
   margin: 0 auto;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border-strong);
   border-bottom: 0;
   border-radius: 12px 12px 0 0;
   background: var(--elevated);
+  box-shadow: 0 8px 32px var(--shadow);
+}
+.queued-messages.reordering {
+  cursor: grabbing;
+  user-select: none;
 }
 .queued-message {
   position: relative;
@@ -2538,9 +2544,13 @@ a.attachment-open {
   min-height: 34px;
   padding: 2px 8px 2px 12px;
   color: var(--muted);
+  transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
 }
 .queued-message + .queued-message {
   border-top: 1px solid var(--line);
+}
+:root[data-theme="dark"] .queued-message + .queued-message {
+  border-top-color: color-mix(in srgb, var(--border-strong) 65%, var(--line));
 }
 .queued-message > svg {
   flex-shrink: 0;
@@ -2582,28 +2592,27 @@ a.attachment-open {
   padding: 0;
 }
 .queued-message .queued-message-grip {
-  width: 18px;
   touch-action: none;
   cursor: grab;
 }
+.queued-message .queued-message-grip:active,
+.queued-message.dragging .queued-message-grip {
+  cursor: grabbing;
+  background: var(--control-active);
+  color: var(--text);
+}
 .queued-message.dragging {
-  opacity: 0.5;
+  z-index: 1;
+  border-radius: 9px;
+  background: var(--elevated);
+  box-shadow: 0 4px 12px var(--shadow), inset 0 0 0 1px var(--border-strong);
+  transition: box-shadow 180ms ease;
 }
-.queued-message.drop-before::before,
-.queued-message.drop-after::after {
-  content: "";
-  position: absolute;
-  height: 2px;
-  left: 8px;
-  right: 8px;
-  background: var(--text);
-  pointer-events: none;
-}
-.queued-message.drop-before::before {
-  top: 0;
-}
-.queued-message.drop-after::after {
-  bottom: 0;
+@media (prefers-reduced-motion: reduce) {
+  .queued-message,
+  .queued-message.dragging {
+    transition: none;
+  }
 }
 .queued-message-menu {
   position: fixed;

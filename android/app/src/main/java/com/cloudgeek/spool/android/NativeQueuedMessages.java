@@ -14,6 +14,10 @@ import org.json.JSONObject;
 
 import java.util.function.Consumer;
 import java.util.function.BiConsumer;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Messages waiting for the running turn, attached to the top of the composer box. A long queue
@@ -27,7 +31,9 @@ final class NativeQueuedMessages extends ScrollView {
     private final BiConsumer<String, String> move;
     private boolean busy;
     private boolean dragging;
+    private String draggedID, pendingID, pendingBefore;
     private float dragY;
+    private Map<String, Float> positions;
     private final Runnable dragScroll = this::scrollDrag;
     private NativePopover menu;
     private String shown = "";
@@ -44,7 +50,9 @@ final class NativeQueuedMessages extends ScrollView {
         list = new LinearLayout(ui.context);
         list.setOrientation(LinearLayout.VERTICAL);
         addView(list, new LayoutParams(-1, -2));
-        setBackground(ui.shape(ui.elevated, 12, ui.line));
+        android.graphics.drawable.GradientDrawable surface = ui.shape(ui.elevated, 12, ui.borderStrong);
+        surface.setCornerRadii(new float[] {ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12), 0, 0, 0, 0});
+        setBackground(surface);
         setClipToOutline(true);
         setOverScrollMode(OVER_SCROLL_IF_CONTENT_SCROLLS);
         setContentDescription(ui.t("Queued messages"));
@@ -53,20 +61,27 @@ final class NativeQueuedMessages extends ScrollView {
             if (!(event.getLocalState() instanceof QueueDrag)) return false;
             QueueDrag drag = (QueueDrag) event.getLocalState();
             if (drag.owner != this) return false;
-            if (event.getAction() == DragEvent.ACTION_DRAG_ENDED || event.getAction() == DragEvent.ACTION_DRAG_EXITED) {
+            if (event.getAction() == DragEvent.ACTION_DRAG_ENDED) {
+                dragging = false; removeCallbacks(dragScroll);
+                markDrop(null); draggedID = null; return true;
+            }
+            if (event.getAction() == DragEvent.ACTION_DRAG_EXITED) {
                 dragging = false; removeCallbacks(dragScroll);
                 markDrop(null); return true;
             }
             if (this.busy) return false;
             if (event.getAction() == DragEvent.ACTION_DRAG_LOCATION) {
-                dragging = true; dragY = event.getY();
+                draggedID = drag.id; dragging = true; dragY = event.getY();
                 removeCallbacks(dragScroll); scrollDrag();
                 markDrop(before(event.getY()));
             } else if (event.getAction() == DragEvent.ACTION_DROP) {
                 dragging = false; removeCallbacks(dragScroll);
-                String before = before(event.getY());
-                markDrop(null);
-                if (!drag.id.equals(before)) move.accept(drag.id, before);
+                String before = before(event.getY()), originalBefore = "";
+                for (int i = 0; i < list.getChildCount() - 1; i++)
+                    if (drag.id.equals(list.getChildAt(i).getTag())) originalBefore = (String) list.getChildAt(i + 1).getTag();
+                if (!before.equals(originalBefore)) moveMessage(drag.id, before);
+                else markDrop(null);
+                draggedID = null;
             }
             return true;
         });
@@ -82,6 +97,8 @@ final class NativeQueuedMessages extends ScrollView {
 
     @Override protected void onDetachedFromWindow() {
         dragging = false; removeCallbacks(dragScroll);
+        draggedID = null; markDrop(null);
+        for (int i = 0; i < list.getChildCount(); i++) list.getChildAt(i).animate().cancel();
         if (menu != null) menu.dismiss();
         super.onDetachedFromWindow();
     }
@@ -89,17 +106,67 @@ final class NativeQueuedMessages extends ScrollView {
     private String before(float y) {
         for (int i = 0; i < list.getChildCount(); i++) {
             View row = list.getChildAt(i);
+            if (row.getTag().equals(draggedID)) continue;
             if (y + getScrollY() < row.getTop() + row.getHeight() / 2f) return (String) row.getTag();
         }
         return "";
     }
 
     private void markDrop(String id) {
+        int from = -1, to = list.getChildCount();
+        for (int i = 0; i < list.getChildCount(); i++) {
+            if (list.getChildAt(i).getTag().equals(draggedID)) from = i;
+            if (list.getChildAt(i).getTag().equals(id)) to = i;
+        }
+        if (to > from) to--;
         for (int i = 0; i < list.getChildCount(); i++) {
             View row = list.getChildAt(i);
-            boolean selected = id != null && (id.equals(row.getTag()) || id.isEmpty() && i == list.getChildCount() - 1);
-            row.setBackground(selected ? ui.shape(ui.controlHover, 4, ui.line) : null);
+            row.setAlpha(id != null && i == from ? .2f : 1);
+            float offset = id == null || from < 0 ? 0 : i > from && i <= to ? -row.getHeight()
+                    : i < from && i >= to ? row.getHeight() : 0;
+            if (android.animation.ValueAnimator.areAnimatorsEnabled())
+                row.animate().translationY(offset).setDuration(180).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+            else { row.animate().cancel(); row.setTranslationY(offset); }
         }
+    }
+
+    private void rememberPositions() {
+        positions = new HashMap<>();
+        for (int i = 0; i < list.getChildCount(); i++) {
+            View row = list.getChildAt(i);
+            positions.put((String) row.getTag(), row.getY());
+        }
+    }
+
+    private void moveMessage(String id, String before) {
+        rememberPositions();
+        pendingID = id; pendingBefore = before;
+        View moving = null;
+        for (int i = 0; i < list.getChildCount(); i++)
+            if (id.equals(list.getChildAt(i).getTag())) moving = list.getChildAt(i);
+        if (moving != null) {
+            list.removeView(moving);
+            int at = list.getChildCount();
+            for (int i = 0; i < list.getChildCount(); i++)
+                if (before.equals(list.getChildAt(i).getTag())) { at = i; break; }
+            list.addView(moving, at);
+        }
+        move.accept(id, before);
+    }
+
+    @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        super.onLayout(changed, left, top, right, bottom);
+        if (positions == null) return;
+        for (int i = 0; i < list.getChildCount(); i++) {
+            View row = list.getChildAt(i);
+            row.animate().cancel(); row.setAlpha(1);
+            Float previous = positions.get(row.getTag());
+            row.setTranslationY(previous == null ? 0 : previous - row.getTop());
+            if (android.animation.ValueAnimator.areAnimatorsEnabled())
+                row.animate().translationY(0).setDuration(180).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+            else row.setTranslationY(0);
+        }
+        positions = null;
     }
 
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
@@ -115,36 +182,80 @@ final class NativeQueuedMessages extends ScrollView {
         shown = state;
         this.busy = busy;
         dragging = false; removeCallbacks(dragScroll);
+        if (positions == null) rememberPositions();
+        if (!busy) { pendingID = null; pendingBefore = null; }
         if (menu != null) { menu.dismiss(); menu = null; }
-        list.removeAllViews();
-        setVisibility(count == 0 ? GONE : VISIBLE);
+        List<JSONObject> ordered = new ArrayList<>();
+        JSONObject moving = null;
         for (int i = 0; i < count; i++) {
             JSONObject message = messages.optJSONObject(i);
             if (message == null) continue;
+            if (message.optString("id").equals(pendingID)) moving = message;
+            else ordered.add(message);
+        }
+        if (moving != null) {
+            int at = ordered.size();
+            for (int i = 0; i < ordered.size(); i++)
+                if (ordered.get(i).optString("id").equals(pendingBefore)) { at = i; break; }
+            ordered.add(at, moving);
+        }
+        for (int i = 0; i < list.getChildCount(); i++) list.getChildAt(i).animate().cancel();
+        list.removeAllViews();
+        setVisibility(count == 0 ? GONE : VISIBLE);
+        for (int i = 0; i < ordered.size(); i++) {
+            JSONObject message = ordered.get(i);
             final String id = message.optString("id");
             String body = message.optString("message").trim();
             JSONArray files = message.optJSONArray("attachments");
             if (body.isEmpty() && files != null) body = files.optString(0);
             LinearLayout row = ui.row();
             row.setTag(id);
-            row.setPadding(ui.dp(count > 1 ? 4 : 12), ui.dp(1), ui.dp(4), ui.dp(1));
+            row.setPadding(ui.dp(12), ui.dp(2), ui.dp(8), ui.dp(2));
+            if (i > 0) {
+                int color = ui.dark ? androidx.core.graphics.ColorUtils.blendARGB(ui.line, ui.borderStrong, .65f) : ui.line;
+                android.graphics.drawable.LayerDrawable divider = new android.graphics.drawable.LayerDrawable(
+                        new android.graphics.drawable.Drawable[] {ui.shape(color, 0, 0)});
+                divider.setLayerHeight(0, ui.dp(1)); divider.setLayerGravity(0, Gravity.TOP);
+                divider.setLayerInset(0, ui.dp(1), 0, ui.dp(1), 0);
+                row.setBackground(divider);
+            }
             if (count > 1) {
                 NativeUi.IconButton grip = ui.icon("grip_vertical", 15, ui.t("Drag to reorder"), () -> {});
+                grip.setPadding(ui.dp(5.5f), ui.dp(5.5f), ui.dp(5.5f), ui.dp(5.5f));
                 grip.setEnabled(!busy);
-                grip.setOnLongClickListener(view -> view.startDragAndDrop(ClipData.newPlainText("", ""),
-                        new View.DragShadowBuilder(row), new QueueDrag(this, id), 0));
+                grip.setOnLongClickListener(view -> {
+                    draggedID = id;
+                    boolean started = view.startDragAndDrop(ClipData.newPlainText("", ""), new View.DragShadowBuilder(row) {
+                        @Override public void onProvideShadowMetrics(android.graphics.Point size, android.graphics.Point touch) {
+                            super.onProvideShadowMetrics(size, touch);
+                            touch.set(Math.round(view.getX() + view.getWidth() / 2f), row.getHeight() / 2);
+                        }
+                        @Override public void onDrawShadow(android.graphics.Canvas canvas) {
+                            android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+                            android.graphics.RectF bounds = new android.graphics.RectF(.5f, .5f, row.getWidth() - .5f, row.getHeight() - .5f);
+                            paint.setColor(ui.elevated); canvas.drawRoundRect(bounds, ui.dp(9), ui.dp(9), paint);
+                            paint.setStyle(android.graphics.Paint.Style.STROKE); paint.setStrokeWidth(ui.dp(1));
+                            paint.setColor(ui.borderStrong); canvas.drawRoundRect(bounds, ui.dp(9), ui.dp(9), paint);
+                            super.onDrawShadow(canvas);
+                        }
+                    }, new QueueDrag(this, id), 0);
+                    if (!started) draggedID = null;
+                    return started;
+                });
                 final int index = i;
                 grip.setOnKeyListener((view, code, event) -> {
                     if (event.getAction() != android.view.KeyEvent.ACTION_DOWN || this.busy) return false;
                     if (code == android.view.KeyEvent.KEYCODE_DPAD_UP && index > 0) {
-                        move.accept(id, messages.optJSONObject(index - 1).optString("id")); return true;
+                        moveMessage(id, ordered.get(index - 1).optString("id")); return true;
                     }
                     if (code == android.view.KeyEvent.KEYCODE_DPAD_DOWN && index < count - 1) {
-                        move.accept(id, index + 2 < count ? messages.optJSONObject(index + 2).optString("id") : ""); return true;
+                        moveMessage(id, index + 2 < count ? ordered.get(index + 2).optString("id") : ""); return true;
                     }
                     return false;
                 });
-                row.addView(grip, new LinearLayout.LayoutParams(ui.dp(24), ui.dp(32)));
+                LinearLayout.LayoutParams gripParams = new LinearLayout.LayoutParams(ui.dp(26), ui.dp(26));
+                gripParams.rightMargin = ui.dp(8);
+                row.addView(grip, gripParams);
             }
             TextView text = ui.text(body, 13, ui.text);
             text.setSingleLine(true); text.setEllipsize(TextUtils.TruncateAt.END);
@@ -153,18 +264,24 @@ final class NativeQueuedMessages extends ScrollView {
             action.setGravity(Gravity.CENTER); action.setPadding(ui.dp(8), 0, ui.dp(8), 0);
             action.setFocusable(true); action.setEnabled(!busy); action.setAlpha(busy ? .45f : 1);
             action.setOnClickListener(view -> steer.accept(id));
-            row.addView(action, new LinearLayout.LayoutParams(-2, ui.dp(32)));
+            LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(-2, ui.dp(26));
+            actionParams.leftMargin = ui.dp(8); actionParams.rightMargin = ui.dp(8);
+            row.addView(action, actionParams);
             NativeUi.IconButton remove = ui.icon("close", 15, ui.t("Delete queued message"), () -> delete.accept(id));
+            remove.setPadding(ui.dp(5.5f), ui.dp(5.5f), ui.dp(5.5f), ui.dp(5.5f));
             remove.setEnabled(!busy);
-            row.addView(remove, new LinearLayout.LayoutParams(ui.dp(32), ui.dp(32)));
+            row.addView(remove, new LinearLayout.LayoutParams(ui.dp(26), ui.dp(26)));
             NativeUi.IconButton more = ui.icon("more", 16, ui.t("Queued message actions"), () -> {});
+            more.setPadding(ui.dp(5), ui.dp(5), ui.dp(5), ui.dp(5));
             more.setEnabled(!busy);
             more.setOnClickListener(view -> {
                 menu = new NativePopover(ui, 180, 9, 4);
                 menu.selectOption(ui.t("Edit message"), false, () -> { menu.dismiss(); edit.accept(id); });
                 menu.show(more, true);
             });
-            row.addView(more, new LinearLayout.LayoutParams(ui.dp(32), ui.dp(32)));
+            LinearLayout.LayoutParams moreParams = new LinearLayout.LayoutParams(ui.dp(26), ui.dp(26));
+            moreParams.leftMargin = ui.dp(8);
+            row.addView(more, moreParams);
             list.addView(row, new LinearLayout.LayoutParams(-1, ui.dp(ROW_HEIGHT_DP)));
         }
     }

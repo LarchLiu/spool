@@ -66,6 +66,78 @@ public class MainActivityQueueTest {
         throw new AssertionError("Missing queue action " + name);
     }
 
+    @Test public void theSameComposerButtonSendsDraftsAndStopsOnlyWhenTheDraftIsEmpty() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            show(h, running(1));
+            NativeUi.IconButton button = h.composer().send;
+            assertEquals(4, h.composer().bottom.getChildCount());
+            assertEquals("Stop response", button.getContentDescription());
+            h.composer().input.setText("Follow-up");
+            assertSame(button, h.composer().send);
+            assertEquals("Send message", button.getContentDescription());
+            assertTrue(button.isEnabled());
+            h.composer().input.setText(" \n\t ");
+            assertEquals("Stop response", button.getContentDescription());
+
+            Class<?> type = Class.forName("com.cloudgeek.spool.android.MainActivity$Attachment");
+            Object file = ReflectionHelpers.callConstructor(type,
+                    ReflectionHelpers.ClassParameter.from(String.class, "note.txt"),
+                    ReflectionHelpers.ClassParameter.from(String.class, "text/plain"),
+                    ReflectionHelpers.ClassParameter.from(byte[].class, new byte[] {65}));
+            Object draft = ReflectionHelpers.callInstanceMethod(h.activity, "draft");
+            List<Object> files = ReflectionHelpers.getField(draft, "files");
+            files.add(file); h.call("updateComposer");
+            assertEquals("Send message", button.getContentDescription());
+            files.clear(); h.call("updateComposer");
+            assertEquals("Stop response", button.getContentDescription());
+
+            MainActivityGoalTest.ShadowClient.responder = call -> {
+                try { return envelope(running(2).put("updated_at", 21)); }
+                catch (Exception error) { throw new AssertionError(error); }
+            };
+            h.composer().input.setText("Click to queue"); button.performClick();
+            assertEquals("", h.composer().input.getText().toString());
+            assertEquals("Stop response", button.getContentDescription());
+            h.io.run();
+            List<String> request = MainActivityGoalTest.ShadowClient.calls.get(0);
+            assertEquals("/api/chats/chat-one/messages", request.get(1));
+            assertEquals("queue", new JSONObject(request.get(2)).getString("delivery"));
+            assertEquals("Click to queue", new JSONObject(request.get(2)).getString("message"));
+            assertEquals(1, MainActivityGoalTest.ShadowClient.calls.size());
+        }
+    }
+
+    @Test public void queueBordersMatchTheComposerAndPressedGripsStayCircularInBothThemes() throws Exception {
+        for (String theme : new String[] {"light", "dark"}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            h.set("theme", theme); h.call("render"); show(h, running(3));
+            NativeUi ui = h.get("ui"); NativeQueuedMessages queue = h.get("queuedView");
+            View grip = action(h, 1, "Drag to reorder");
+            assertEquals(ui.dp(26), grip.getWidth()); assertEquals(grip.getWidth(), grip.getHeight());
+            grip.setPressed(true);
+            android.graphics.Bitmap icon = android.graphics.Bitmap.createBitmap(grip.getWidth(), grip.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
+            grip.draw(new android.graphics.Canvas(icon));
+            assertEquals(0, android.graphics.Color.alpha(icon.getPixel(0, 0)));
+            assertEquals(ui.controlActive, icon.getPixel(grip.getWidth() / 2, ui.dp(2)));
+            icon.recycle();
+            android.graphics.Bitmap frame = android.graphics.Bitmap.createBitmap(queue.getWidth(), queue.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
+            queue.draw(new android.graphics.Canvas(frame));
+            assertEquals(ui.borderStrong, frame.getPixel(0, queue.getHeight() / 2));
+            int separator = ui.dark ? androidx.core.graphics.ColorUtils.blendARGB(ui.line, ui.borderStrong, .65f) : ui.line;
+            assertEquals(separator, frame.getPixel(queue.getWidth() / 2, ui.dp(NativeQueuedMessages.ROW_HEIGHT_DP)));
+            frame.recycle();
+            java.io.File directory = new java.io.File(System.getProperty("spool.ui.artifacts"), "../queued-messages");
+            assertTrue(directory.isDirectory() || directory.mkdirs());
+            View root = h.get("root");
+            android.graphics.Bitmap image = android.graphics.Bitmap.createBitmap(root.getWidth(), root.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
+            root.draw(new android.graphics.Canvas(image));
+            try (java.io.FileOutputStream output = new java.io.FileOutputStream(new java.io.File(directory,
+                    "android-api" + android.os.Build.VERSION.SDK_INT + "-" + theme + ".png"))) {
+                assertTrue(image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output));
+            }
+            image.recycle(); grip.setPressed(false);
+        }
+    }
+
     @Test public void editingRestoresTextAndAttachmentWithoutReplacingTheExistingDraft() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             show(h, running(1));
@@ -169,6 +241,25 @@ public class MainActivityQueueTest {
         }
     }
 
+    @Test public void aRejectedReorderReturnsToTheServerOrder() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            show(h, running(3));
+            MainActivityGoalTest.ShadowClient.responder = call -> {
+                try { return new JSONObject().put("status", 500).put("body", new JSONObject().put("error", "Move failed").toString()).toString(); }
+                catch (Exception error) { throw new AssertionError(error); }
+            };
+            View grip = action(h, 1, "Drag to reorder");
+            assertTrue(grip.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_UP)));
+            ViewGroup rows = (ViewGroup) h.<NativeQueuedMessages>get("queuedView").getChildAt(0);
+            assertEquals("queued-1", rows.getChildAt(0).getTag());
+            h.io.run(); NativeMarkwonHistoryTest.layout(h.get("root"));
+            rows = (ViewGroup) h.<NativeQueuedMessages>get("queuedView").getChildAt(0);
+            assertEquals("queued-0", rows.getChildAt(0).getTag());
+            assertEquals("Move failed", h.<String>get("goalError"));
+            assertTrue(action(h, 1, "Drag to reorder").isEnabled());
+        }
+    }
+
     @Test public void aLongPressDragDropsTheMessageAtTheSelectedPosition() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             show(h, running(3));
@@ -193,6 +284,14 @@ public class MainActivityQueueTest {
                 ReflectionHelpers.setField(event, "mY", 2f);
                 ReflectionHelpers.setField(event, "mLocalState", local);
                 assertTrue(queue.dispatchDragEvent(event)); ReflectionHelpers.callInstanceMethod(event, "recycle");
+                if (type == android.view.DragEvent.ACTION_DRAG_LOCATION) {
+                    Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(80));
+                    assertTrue("Neighbors make room while the native drag shadow follows the touch", queue.getChildAt(0) instanceof ViewGroup
+                            && ((ViewGroup) queue.getChildAt(0)).getChildAt(0).getTranslationY() > 0);
+                } else if (type == android.view.DragEvent.ACTION_DROP) {
+                    ViewGroup rows = (ViewGroup) queue.getChildAt(0);
+                    assertEquals("Drop shows the new order before the network response", "queued-2", rows.getChildAt(0).getTag());
+                }
             }
             h.io.run();
             assertEquals(1, MainActivityGoalTest.ShadowClient.calls.size());
@@ -203,11 +302,11 @@ public class MainActivityQueueTest {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             MainActivityConnectionTest.connectionQueue(h);
             show(h, running(0));
-            h.composer().input.setText("Queued while running"); h.composer().queueSubmit.run();
+            h.composer().input.setText("Queued while running"); h.composer().send.performClick();
             assertEquals(1, h.io.jobs.size()); assertEquals("", h.composer().input.getText().toString());
-            h.composer().input.setText("Typed meanwhile"); h.composer().queueSubmit.run();
+            h.composer().input.setText("Typed meanwhile"); h.composer().send.performClick();
             assertEquals("One queue request is in flight at a time", 1, h.io.jobs.size());
-            assertEquals(View.VISIBLE, h.composer().queue.getVisibility()); assertFalse(h.composer().queue.isEnabled());
+            assertEquals("Send message", h.composer().send.getContentDescription()); assertFalse(h.composer().send.isEnabled());
 
             h.call("beginNetworkHandoff");
             assertTrue("The cleared draft's fate is reported: " + h.<String>get("goalError"), h.<String>get("goalError").startsWith("Send status unknown"));
@@ -218,9 +317,9 @@ public class MainActivityQueueTest {
             h.set("client", new Client("unused", "https://fixture.invalid")); h.set("connected", true); h.set("connecting", false); h.set("busy", false);
             show(h, running(1));
             assertEquals("Typed meanwhile", h.composer().input.getText().toString());
-            assertTrue("The queue button must work again", h.composer().queue.isEnabled());
+            assertTrue("The send button must work again", h.composer().send.isEnabled());
             MainActivityGoalTest.ShadowClient.responder = call -> { try { return envelope(running(2)); } catch (Exception error) { throw new AssertionError(error); } };
-            h.composer().queueSubmit.run(); h.io.run();
+            h.composer().send.performClick(); h.io.run();
             List<String> call = MainActivityGoalTest.ShadowClient.calls.get(0);
             assertEquals("/api/chats/chat-one/messages", call.get(1));
             assertEquals("Typed meanwhile", new JSONObject(call.get(2)).getString("message")); assertEquals("queue", new JSONObject(call.get(2)).getString("delivery"));

@@ -1017,6 +1017,7 @@ function App() {
     !commandDismissed &&
     goalSuggestion(draft);
   const draftGoal = parseGoalCommand(draft);
+  const hasDraft = !!draft.trim() || !!files.length;
   const activeTurn = runningTurn(chat);
   const activeSubmission =
     pendingSend.current &&
@@ -2417,26 +2418,18 @@ function App() {
                     )}
                   </div>
                 )}
-                {activeTurn && (!!draft.trim() || !!files.length) && (
-                  <ComposerSendButton
-                    active={false}
-                    stopping={false}
-                    t={t}
-                    onStop={() => {}}
-                    disabled={!composerWritable || preparingFiles || delivering}
-                  />
-                )}
                 <ComposerSendButton
-                  active={!!activeTurn}
-                  stopping={stopping}
+                  active={!!activeTurn && !hasDraft}
+                  stopping={stopping && !hasDraft}
                   t={t}
                   onStop={() => void stop()}
                   disabled={
                     activeTurn
-                      ? !composerWritable || stopping
+                      ? !composerWritable ||
+                        (hasDraft ? preparingFiles || delivering : stopping)
                       : !composerWritable ||
                         !selectedAvailable ||
-                        (!draft.trim() && !files.length) ||
+                        !hasDraft ||
                         !permissions.ready ||
                         preparingFiles ||
                         posting

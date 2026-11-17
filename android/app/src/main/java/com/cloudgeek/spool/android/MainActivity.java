@@ -2189,7 +2189,7 @@ public final class MainActivity extends Activity {
                 this::editQueuedMessage, (id, before) -> queueAction(id, "move", before));
         composerView.addView(queuedView, composerView.indexOfChild(composerView.box), new LinearLayout.LayoutParams(-1, -2));
         composerView.commands.steer = () -> deliver(true);
-        composerView.commands.queue = composerView.queueSubmit = () -> deliver(false);
+        composerView.commands.queue = () -> deliver(false);
         composer.setText(draft().text);
         composer.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence value, int start, int count, int after) {}
@@ -2259,13 +2259,12 @@ public final class MainActivity extends Activity {
         permissionButton.setEnabled(!busy && !running && writable());
         modelButton.setVisibility(projectID.isEmpty() ? View.GONE : View.VISIBLE);
         permissionButton.setVisibility(projectID.isEmpty() ? View.GONE : View.VISIBLE);
-        send.setKind(activeTurn == null ? "send" : stopping ? "spinner" : "stop");
-        send.setContentDescription(activeTurn == null ? ui.t("Send message") : ui.t(stopping ? "Stopping…" : "Stop response"));
-        send.setEnabled(writable() && (activeTurn != null ? !stopping : !editing && !busy && selectedAgentAvailable() && permissionReady()
-                && (!NativeGoalCommand.trim(composer.getText().toString()).isEmpty() || !draft().files.isEmpty())));
-        // While the agent answers, the stop button stays and a typed message gets its own send button.
-        composerView.queue.setVisibility(writable() && queueingDraft(activeTurn) ? View.VISIBLE : View.GONE);
-        composerView.queue.setEnabled(!delivering());
+        boolean hasDraft = !NativeGoalCommand.trim(composer.getText().toString()).isEmpty() || !draft().files.isEmpty();
+        boolean showStop = activeTurn != null && !hasDraft;
+        send.setKind(showStop ? stopping ? "spinner" : "stop" : "send");
+        send.setContentDescription(showStop ? ui.t(stopping ? "Stopping…" : "Stop response") : ui.t("Send message"));
+        send.setEnabled(writable() && (activeTurn != null ? hasDraft ? queueingDraft(activeTurn) && !delivering() : !stopping
+                : !editing && !busy && selectedAgentAvailable() && permissionReady() && hasDraft));
         if (queuedView != null) queuedView.bind(writable() && chat != null ? chat.optJSONArray("queued_messages") : null, activeTurn != null, delivering());
         String modelName = model.isEmpty() ? tr("CLI default", "CLI 默认") : model;
         for (int i = 0; i < agents.length(); i++) {
@@ -3345,7 +3344,11 @@ public final class MainActivity extends Activity {
     private void sendOrStop() {
         if (!writable()) return;
         JSONObject activeTurn = NativeChatState.runningTurn(chat);
-        if (activeTurn != null) { stopResponse(activeTurn); return; }
+        if (activeTurn != null) {
+            if (!NativeGoalCommand.trim(composer.getText().toString()).isEmpty() || !draft().files.isEmpty()) deliver(false);
+            else stopResponse(activeTurn);
+            return;
+        }
         if (busy || chat != null && chat.optString("status").equals("running")) return;
         if (!selectedAgentAvailable()) return;
         captureDraft();
