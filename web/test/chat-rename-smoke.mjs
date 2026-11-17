@@ -85,19 +85,25 @@ try {
         page.setDefaultTimeout(8000);
         const errors = [],
           requests = [],
-          archiveRequests = [];
+          archiveRequests = [],
+          deleteRequests = [];
         page.on("pageerror", (error) => errors.push(String(error)));
         const chats = [
           fixture("rename-chat", backend, "查询 Codex 和 Claude 原生会话支持"),
           fixture("other-chat", backend, "Other conversation"),
           fixture("readonly-chat", backend, "Read only conversation", false),
+          fixture("delete-chat", backend, "Delete this conversation"),
+          fixture("delete-next", backend, "Delete next conversation"),
         ];
         let fail = false,
           hold = false,
           release,
           archiveFail = true,
           archiveHold = false,
-          releaseArchive;
+          releaseArchive,
+          deleteFail = true,
+          deleteHold = false,
+          releaseDelete;
         try {
           await page.addInitScript(
             ({ theme, desktop }) => {
@@ -145,7 +151,7 @@ try {
                 projects: [
                   { id: "project", name: "Project", can_create: true },
                 ],
-                chats: chats.filter((chat) => !chat.archived),
+                chats: chats.filter((chat) => !chat.archived && !chat.deleted),
               });
             if (endpoint === "/api/agents")
               return json([
@@ -192,7 +198,25 @@ try {
                 projects: [
                   { id: "project", name: "Project", can_create: true },
                 ],
-                chats: chats.filter((item) => !item.archived),
+                chats: chats.filter((item) => !item.archived && !item.deleted),
+              });
+            }
+            if (endpoint.endsWith("/delete")) {
+              deleteRequests.push(endpoint);
+              if (deleteHold)
+                await new Promise((resolve) => {
+                  releaseDelete = resolve;
+                });
+              if (deleteFail)
+                return json({ error: "Could not delete chat" }, 502);
+              chat.deleted = true;
+              if (chat.id === "delete-chat")
+                chats[4].title = "Refreshed native title";
+              return json({
+                projects: [
+                  { id: "project", name: "Project", can_create: true },
+                ],
+                chats: chats.filter((item) => !item.archived && !item.deleted),
               });
             }
             if (endpoint.endsWith("/events"))
@@ -365,9 +389,169 @@ try {
             "Other conversation",
           );
 
-          // Native failure remains visible; retry hides the chat only after success.
+          // Confirm deletion, preserve failures, then apply the returned native list.
+          await page
+            .locator(".nav-chat-open")
+            .filter({ hasText: "Delete this conversation" })
+            .first()
+            .evaluate((element) => element.click());
+          await page.waitForFunction(
+            () =>
+              document.querySelector(".chat-title-trigger strong")
+                ?.textContent === "Delete this conversation",
+          );
+          const openDelete = async () => {
+            await click(trigger);
+            await page.keyboard.press("End");
+            const item = page.getByRole("menuitem", {
+              name: "Delete",
+              exact: true,
+            });
+            assert.ok(
+              await item.evaluate(
+                (element) => element === document.activeElement,
+              ),
+            );
+            await click(item);
+          };
+          const deletion = page.getByRole("dialog", { name: "Delete chat" });
+          await openDelete();
+          await deletion.waitFor();
+          for (const button of await deletion
+            .locator(".rename-chat-actions button")
+            .all()) {
+            const bounds = await button.boundingBox();
+            assert.ok(
+              bounds.width >= 44 && bounds.height >= 36,
+              "delete dialog action is too small to use",
+            );
+          }
+          assert.ok(
+            await deletion
+              .getByRole("button", { name: "Cancel", exact: true })
+              .last()
+              .evaluate((element) => element === document.activeElement),
+          );
+          await page.keyboard.press("Escape");
+          await deletion.waitFor({ state: "detached" });
+          assert.equal(deleteRequests.length, 0);
+          await openDelete();
+          await deletion
+            .getByRole("button", { name: "Cancel", exact: true })
+            .last()
+            .click();
+          await deletion.waitFor({ state: "detached" });
+          assert.equal(deleteRequests.length, 0);
+          await openDelete();
+          await deletion
+            .getByRole("button", { name: "Delete", exact: true })
+            .click();
+          await page
+            .getByRole("alert")
+            .filter({ hasText: "Could not delete chat" })
+            .waitFor();
+          assert.equal(
+            await page
+              .locator(".nav-chat-title")
+              .filter({ hasText: "Delete this conversation" })
+              .count(),
+            2,
+          );
+          deleteFail = false;
+          deleteHold = true;
+          await page
+            .getByRole("button", { name: "Dismiss", exact: true })
+            .click();
+          await openDelete();
+          await deletion
+            .getByRole("button", { name: "Delete", exact: true })
+            .click();
+          await deletion
+            .getByRole("button", { name: "Deleting…", exact: true })
+            .waitFor();
+          assert.ok(
+            await deletion
+              .getByRole("button", { name: "Deleting…", exact: true })
+              .isDisabled(),
+          );
+          assert.ok(
+            await deletion
+              .getByRole("button", { name: "Cancel", exact: true })
+              .last()
+              .isDisabled(),
+          );
+          await page.keyboard.press("Escape");
+          assert.ok(await deletion.isVisible());
+          await page
+            .locator(".nav-chat-open")
+            .filter({ hasText: "Other conversation" })
+            .first()
+            .evaluate((element) => element.click());
+          await page.waitForFunction(
+            () =>
+              document.querySelector(".chat-title-trigger strong")
+                ?.textContent === "Other conversation",
+          );
+          releaseDelete();
+          await page
+            .locator(".nav-chat-title")
+            .filter({ hasText: "Delete this conversation" })
+            .first()
+            .waitFor({ state: "detached" });
+          assert.equal(
+            await trigger.locator("strong").textContent(),
+            "Other conversation",
+          );
+          await page
+            .locator(".nav-chat-title")
+            .filter({ hasText: "Refreshed native title" })
+            .first()
+            .waitFor({ state: "attached" });
+          deleteHold = false;
+          await page
+            .locator(".nav-chat-open")
+            .filter({ hasText: "Refreshed native title" })
+            .first()
+            .evaluate((element) => element.click());
+          await page.waitForFunction(
+            () =>
+              document.querySelector(".chat-title-trigger strong")
+                ?.textContent === "Refreshed native title",
+          );
+          await openDelete();
+          await page.screenshot({
+            path: path.join(
+              output,
+              `${engine}-${backend}-${width}-${theme}-delete.png`,
+            ),
+          });
+          await deletion
+            .getByRole("button", { name: "Delete", exact: true })
+            .click();
+          await trigger.waitFor({ state: "detached" });
+          assert.equal(
+            await page
+              .locator(".nav-chat-title")
+              .filter({ hasText: "Refreshed native title" })
+              .count(),
+            0,
+          );
+          assert.ok(!new URL(page.url()).searchParams.has("chat"));
+          await page
+            .locator(".nav-chat-open")
+            .filter({ hasText: "Other conversation" })
+            .first()
+            .evaluate((element) => element.click());
+          await page.waitForFunction(
+            () =>
+              document.querySelector(".chat-title-trigger strong")
+                ?.textContent === "Other conversation",
+          );
+
+          // Native archive failure remains visible; retry applies its refreshed list.
           await click(trigger);
-          await page.keyboard.press("End");
+          await page.keyboard.press("Home");
+          await page.keyboard.press("ArrowDown");
           const archive = page.getByRole("menuitem", {
             name: "Archive",
             exact: true,
@@ -454,6 +638,7 @@ try {
           assert.equal(await trigger.count(), 0);
           assert.equal(requests.length, 3);
           assert.equal(archiveRequests.length, 3);
+          assert.equal(deleteRequests.length, 3);
           assert.equal(
             await page
               .locator(".nav-chat-title")
@@ -475,6 +660,10 @@ try {
             archive: true,
             archiveFailureRetry: true,
             archiveNavigation: true,
+            delete: true,
+            deleteConfirmation: true,
+            deleteFailureRetry: true,
+            deleteNavigation: true,
           });
         } catch (error) {
           await page.screenshot({ path: path.join(output, "failure.png") });
@@ -490,6 +679,7 @@ try {
         } finally {
           release?.();
           releaseArchive?.();
+          releaseDelete?.();
           await context.close();
         }
       }

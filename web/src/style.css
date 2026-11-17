@@ -597,7 +597,8 @@ button:disabled {
 .chat-title-menu > button:focus-visible {
   background: var(--hover);
 }
-.rename-chat-dialog {
+.rename-chat-dialog,
+.delete-chat-dialog {
   width: min(400px, calc(100vw - 32px));
   padding: 22px;
   border: 1px solid var(--border-strong);
@@ -606,8 +607,27 @@ button:disabled {
   color: var(--text);
   box-shadow: 0 20px 100px #0004;
 }
-.rename-chat-dialog::backdrop {
+.rename-chat-dialog::backdrop,
+.delete-chat-dialog::backdrop {
   background: #0007;
+}
+.delete-chat-dialog p {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.delete-chat-title {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+.delete-chat-dialog .rename-chat-actions button {
+  min-height: 36px;
+  padding: 9px 16px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+.chat-title-menu .destructive,
+.delete-chat-dialog .destructive {
+  color: var(--error-text);
 }
 .rename-chat-dialog label {
   display: block;

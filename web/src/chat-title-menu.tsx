@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Archive, ChevronDown, Pencil, X } from "lucide-react";
+import { Archive, ChevronDown, Pencil, Trash2, X } from "lucide-react";
 import type { Translator } from "./i18n";
 
 export function ChatTitleMenu({
@@ -8,12 +8,14 @@ export function ChatTitleMenu({
   t,
   onRename,
   onArchive,
+  onDelete,
   onError,
 }: {
   title: string;
   t: Translator;
   onRename: (title: string) => Promise<void>;
   onArchive: () => Promise<void>;
+  onDelete: () => Promise<void>;
   onError: (error: unknown) => void;
 }) {
   const id = useId();
@@ -21,6 +23,7 @@ export function ChatTitleMenu({
   const menu = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [position, setPosition] = useState<{ left: number; top: number }>();
   function close(restoreFocus = false) {
@@ -172,7 +175,34 @@ export function ChatTitleMenu({
               <Archive size={15} aria-hidden="true" />
               {t(archiving ? "Archiving…" : "Archive")}
             </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="destructive"
+              disabled={archiving}
+              onClick={() => {
+                close();
+                setDeleting(true);
+              }}
+            >
+              <Trash2 size={15} aria-hidden="true" />
+              {t("Delete")}
+            </button>
           </div>,
+          document.body,
+        )}
+      {deleting &&
+        createPortal(
+          <DeleteChatDialog
+            title={title}
+            t={t}
+            onDelete={onDelete}
+            onError={onError}
+            onClose={() => {
+              setDeleting(false);
+              trigger.current?.focus({ preventScroll: true });
+            }}
+          />,
           document.body,
         )}
       {renaming &&
@@ -189,6 +219,91 @@ export function ChatTitleMenu({
           document.body,
         )}
     </>
+  );
+}
+
+function DeleteChatDialog({
+  title,
+  t,
+  onDelete,
+  onError,
+  onClose,
+}: {
+  title: string;
+  t: Translator;
+  onDelete: () => Promise<void>;
+  onError: (error: unknown) => void;
+  onClose: () => void;
+}) {
+  const id = useId();
+  const dialog = useRef<HTMLDialogElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    dialog.current?.showModal();
+    cancel.current?.focus();
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      className="delete-chat-dialog"
+      aria-labelledby={id}
+      aria-describedby={`${id}-description`}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!saving) onClose();
+      }}
+    >
+      <form
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (saving) return;
+          setSaving(true);
+          try {
+            await onDelete();
+            onClose();
+          } catch (error) {
+            onClose();
+            onError(error);
+          } finally {
+            setSaving(false);
+          }
+        }}
+      >
+        <div className="dialog-heading">
+          <h2 id={id}>{t("Delete chat")}</h2>
+          <button
+            className="icon"
+            type="button"
+            disabled={saving}
+            aria-label={t("Cancel")}
+            onClick={onClose}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+        <p className="delete-chat-title">{title}</p>
+        <p id={`${id}-description`}>
+          {t(
+            "This permanently deletes this chat and its subagent history. This action cannot be undone.",
+          )}
+        </p>
+        <div className="rename-chat-actions">
+          <button
+            ref={cancel}
+            type="button"
+            className="quiet"
+            disabled={saving}
+            onClick={onClose}
+          >
+            {t("Cancel")}
+          </button>
+          <button type="submit" className="quiet destructive" disabled={saving}>
+            {t(saving ? "Deleting…" : "Delete")}
+          </button>
+        </div>
+      </form>
+    </dialog>
   );
 }
 

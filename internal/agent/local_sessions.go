@@ -195,3 +195,23 @@ func (index *LocalSessionIndex) RetryNow() {
 		provider.retryAt = time.Time{}
 	}
 }
+
+// Forget evicts metadata after a successful native deletion, so an outage
+// cannot restore the deleted session from a previous discovery snapshot.
+func (index *LocalSessionIndex) Forget(backend chatmodel.Backend, id string) {
+	delete(index.files, string(backend)+":"+id)
+	if provider := index.providers[backend]; provider != nil {
+		kept := make([]LocalSession, 0, len(provider.sessions))
+		for _, session := range provider.sessions {
+			if session.ID != id {
+				kept = append(kept, session)
+			}
+		}
+		provider.sessions = kept
+	}
+}
+
+func (index *LocalSessionIndex) ListingSucceeded(backend chatmodel.Backend) bool {
+	provider := index.providers[backend]
+	return provider != nil && provider.failedAt.IsZero()
+}

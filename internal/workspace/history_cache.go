@@ -280,6 +280,14 @@ func (c *nativeHistoryCache) clear() {
 	}
 }
 
+func (c *nativeHistoryCache) forget(backend chatmodel.Backend, path string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if file := c.files[string(backend)+":"+path]; file != nil {
+		c.removeFile(file)
+	}
+}
+
 func (s *Store) indexHistory(backend chatmodel.Backend, path string) ([]agent.NativeTurn, error) {
 	var turns []agent.NativeTurn
 	err := s.historyCache.read(backend, path, func(file *nativeHistory) error {

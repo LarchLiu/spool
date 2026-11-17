@@ -1630,6 +1630,23 @@ function App() {
     setChatID(chat.id);
     setSidebar(false);
   }
+  async function removeChat(chat: Chat, action: "archive" | "delete") {
+    const owner = user!.id;
+    const navigation = await api<Navigation>("/chats/" + chat.id + "/" + action, {});
+    if (activeUser.current !== owner) return;
+    setProjects(navigation.projects);
+    setChats((old) => mergeNavigationChats(old, navigation.chats));
+    if (activeID.current === chat.id && !navigation.chats.some((item) => item.id === chat.id)) {
+      activeID.current = "";
+      setChat(null);
+      setChatID("");
+    }
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("chat") === chat.id) {
+      url.searchParams.delete("chat");
+      window.history.replaceState(null, "", url);
+    }
+  }
   function applyUpdate() {
     const waiting = serviceWorker.current?.waiting;
     if (!waiting) {
@@ -1817,23 +1834,8 @@ function App() {
                       setChat((old) => reconcileMetadata(old, renamed));
                       setChats((old) => old.map((item) => reconcileMetadata(item, renamed) ?? item));
                     }}
-                    onArchive={async () => {
-                      const owner = user!.id;
-                      const navigation = await api<Navigation>("/chats/" + chat.id + "/archive", {});
-                      if (activeUser.current !== owner) return;
-                      setProjects(navigation.projects);
-                      setChats((old) => mergeNavigationChats(old, navigation.chats));
-                      if (activeID.current === chat.id && !navigation.chats.some((item) => item.id === chat.id)) {
-                        activeID.current = "";
-                        setChat(null);
-                        setChatID("");
-                      }
-                      const url = new URL(window.location.href);
-                      if (url.searchParams.get("chat") === chat.id) {
-                        url.searchParams.delete("chat");
-                        window.history.replaceState(null, "", url);
-                      }
-                    }}
+                    onArchive={() => removeChat(chat, "archive")}
+                    onDelete={() => removeChat(chat, "delete")}
                     onError={(error) => {
                       if (activeUser.current === user!.id) fail(error);
                     }}

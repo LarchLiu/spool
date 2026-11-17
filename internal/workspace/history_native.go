@@ -90,6 +90,14 @@ func (c *codexWindows) close() {
 	c.threads = nil
 }
 
+func (c *codexWindows) forget(threadID string) {
+	c.reading.Lock()
+	defer c.reading.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.threads, threadID)
+}
+
 func turnBytes(turns []agent.CodexHistoryTurn) int {
 	size := 0
 	for _, turn := range turns {

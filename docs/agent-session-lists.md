@@ -93,6 +93,24 @@ refresh has a distinct error message. Chats with running work or queued messages
 must become idle before archiving. Archive operations reserve their chat during
 native I/O and participate in shutdown cancellation.
 
+## Native delete actions
+
+The chat-title menu asks for confirmation before posting to
+`/api/chats/:id/delete`. Codex calls `thread/delete`, which permanently removes
+the thread and its spawned descendants. Claude follows Agent SDK 0.3.326's local
+`deleteSession(sessionId)` contract: remove the first nonempty matching
+transcript and its session/subagent directory. Claude Code versions are not
+checked. A chat without a native session only has its Spool records removed.
+
+After native deletion, Spool reloads the provider catalogue, removes the chat's
+local metadata and cached history, and returns the resulting navigation. The
+client applies that navigation directly. Evicting the deleted session from the
+discovery cache prevents a provider outage from restoring an old projection;
+there is no persistent deletion flag. Native failures leave the chat intact and
+show an error. List-refresh failures after deletion receive a distinct message.
+Running work and queued messages must finish or be removed before deletion;
+deletion reserves the chat and participates in shutdown cancellation.
+
 ## Verification
 
 Opened history, native pagination and tool activity projection are described in

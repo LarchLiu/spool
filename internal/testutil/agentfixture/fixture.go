@@ -169,6 +169,12 @@ func Run(t *testing.T) {
 					continue
 				}
 				send(map[string]any{"id": value["id"], "result": map[string]any{}})
+			case "thread/delete":
+				if _, err := os.Stat("unsupported-delete"); err == nil {
+					send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32601, "message": "delete is not supported"}})
+					continue
+				}
+				send(map[string]any{"id": value["id"], "result": map[string]any{}})
 			case "thread/list":
 				var pages map[string]json.RawMessage
 				pageFile := "fixture-thread-pages.json"

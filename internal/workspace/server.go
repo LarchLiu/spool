@@ -662,6 +662,10 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		a.archiveChatResponse(w, r, id.User.ID, chat)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "delete" && r.Method == "POST" {
+		a.deleteChatResponse(w, r, id.User.ID, chat)
+		return
+	}
 	if len(parts) == 2 && parts[1] == "fork" && r.Method == "POST" {
 		if !a.store.CanCreateChat(id.User.ID, chat.ProjectID) {
 			apiError(w, 403, "无权在该项目创建聊天")

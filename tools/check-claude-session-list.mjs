@@ -26,7 +26,7 @@ async function run(argv, env = process.env) {
 }
 
 await run(["tar", "-xzf", archive, "-C", runRoot]);
-await run(["go", "test", "./internal/agent", "-run", "TestClaude(SessionList|Archive)", "-count=1"], {
+await run(["go", "test", "./internal/agent", "-run", "TestClaude(SessionList|Archive|Delete)", "-count=1"], {
   ...process.env,
   SPOOL_CLAUDE_SDK_MJS: join(runRoot, "package", "sdk.mjs"),
 });
