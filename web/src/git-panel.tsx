@@ -1,4 +1,11 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -288,6 +295,19 @@ export function GitPanel({
     history.loadMore,
     loading,
   ]);
+  const validateSelection = useEffectEvent((files: GitFile[]) => {
+    setSelected((path) =>
+      files.some(
+        (file) =>
+          file.path === path &&
+          (commit ||
+            !side ||
+            (side === "staged" ? file.staged : isUnstaged(file))),
+      )
+        ? path
+        : "",
+    );
+  });
   useEffect(() => {
     if (!active || !ready || historyList) return;
     const controller = new AbortController();
@@ -301,17 +321,7 @@ export function GitPanel({
         if (controller.signal.aborted) return;
         setData(next);
         setError("");
-        setSelected((path) =>
-          next.files.some(
-            (file) =>
-              file.path === path &&
-              (commit ||
-                !side ||
-                (side === "staged" ? file.staged : isUnstaged(file))),
-          )
-            ? path
-            : "",
-        );
+        validateSelection(next.files);
         if (updatePreview) setDiffPoll((value) => value + 1);
       } catch (err) {
         if (!controller.signal.aborted) {

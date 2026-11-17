@@ -25,6 +25,48 @@ func workspaceGitIndex(ctx context.Context, directory string) string {
 	return fmt.Sprintf("%x", sha256.Sum256(body))
 }
 
+// Commit subjects and authors follow the same file boundaries as previews.
+// Scan past commits that only touch protected files or nested private projects.
+func workspaceGitLastCommit(ctx context.Context, directory string, allowed func(string) bool) *workspaceGitCommit {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	root, _ := gitWorkspace(directory)
+	for offset := 0; ; offset += workspaceGitHistoryPage {
+		body, err := readWorkspaceGit(ctx, directory, 256*1024, "log", "-"+strconv.Itoa(workspaceGitHistoryPage), "--skip="+strconv.Itoa(offset), "-z", "--format=%H%x00%s%x00%an%x00%at", "--", ".")
+		if err != nil {
+			return nil
+		}
+		fields := strings.Split(string(body), "\x00")
+		count := 0
+		for i := 0; i+3 < len(fields); i += 4 {
+			count++
+			id := strings.TrimSpace(fields[i])
+			paths, err := readWorkspaceGit(ctx, directory, 4*1024*1024, "diff-tree", "--root", "--no-commit-id", "--diff-merges=first-parent", "--name-only", "--no-renames", "-r", "-z", id, "--", ".")
+			if err != nil {
+				return nil
+			}
+			visible := len(paths) == 0 && directory == root && (allowed == nil || allowed(root))
+			for _, path := range strings.Split(strings.TrimSuffix(string(paths), "\x00"), "\x00") {
+				if path == "" {
+					continue
+				}
+				relative, err := filepath.Rel(directory, filepath.Join(root, path))
+				if err == nil && workspaceGitPath(directory, filepath.ToSlash(relative), allowed) {
+					visible = true
+					break
+				}
+			}
+			if visible {
+				stamp, _ := strconv.ParseInt(fields[i+3], 10, 64)
+				return &workspaceGitCommit{ID: id, Subject: fields[i+1], Author: fields[i+2], Time: stamp}
+			}
+		}
+		if count < workspaceGitHistoryPage {
+			return nil
+		}
+	}
+}
+
 func workspaceGitMetadata(ctx context.Context, directory string, view *workspaceGitView, allowed func(string) bool) {
 	run := func(args ...string) string {
 		body, err := readWorkspaceGit(ctx, directory, 256*1024, args...)
@@ -34,13 +76,7 @@ func workspaceGitMetadata(ctx context.Context, directory string, view *workspace
 		return strings.TrimSpace(string(body))
 	}
 	view.Index = workspaceGitIndex(ctx, directory)
-	if body := run("log", "-1", "--format=%H%x00%s%x00%an%x00%at"); body != "" {
-		parts := strings.Split(body, "\x00")
-		if len(parts) == 4 {
-			stamp, _ := strconv.ParseInt(parts[3], 10, 64)
-			view.LastCommit = &workspaceGitCommit{ID: parts[0], Subject: parts[1], Author: parts[2], Time: stamp}
-		}
-	}
+	view.LastCommit = workspaceGitLastCommit(ctx, directory, allowed)
 	root, _ := gitWorkspace(directory)
 	view.RemoteAllowed = allowed == nil || allowed(root)
 	remotes := strings.Fields(run("remote"))
@@ -232,7 +268,9 @@ func (a *App) mutateWorkspaceGit(w http.ResponseWriter, r *http.Request, directo
 			apiError(w, 500, "Git changes are unavailable")
 			return
 		}
-		files := map[string]workspaceGitFile{}
+		// A staged deletion followed by a recreated untracked file produces two
+		// status entries for one path. Keep both and select the requested side.
+		files := map[string][]workspaceGitFile{}
 		for _, file := range parseWorkspaceGitStatus(body) {
 			path, _ := filepath.Rel(directory, filepath.Join(root, file.Path))
 			file.Path = filepath.ToSlash(path)
@@ -240,30 +278,38 @@ func (a *App) mutateWorkspaceGit(w http.ResponseWriter, r *http.Request, directo
 				previous, _ := filepath.Rel(directory, filepath.Join(root, file.PreviousPath))
 				file.PreviousPath = filepath.ToSlash(previous)
 			}
-			files[file.Path] = file
+			files[file.Path] = append(files[file.Path], file)
 		}
 		for _, path := range input.Paths {
-			file, found := files[path]
-			if !found || !workspaceGitPath(directory, path, allowed) || file.PreviousPath != "" && !workspaceGitPath(directory, file.PreviousPath, allowed) {
+			entries, found := files[path]
+			if !found || !workspaceGitPath(directory, path, allowed) {
 				apiError(w, 403, "Choose an accessible changed file")
 				return
 			}
-			if input.Action == "discard" && !file.Unstaged {
+			matched := false
+			for _, file := range entries {
+				if input.Action == "unstage" && !file.Staged || input.Action != "unstage" && !file.Unstaged {
+					continue
+				}
+				if file.PreviousPath != "" && !workspaceGitPath(directory, file.PreviousPath, allowed) {
+					apiError(w, 403, "Choose an accessible changed file")
+					return
+				}
+				matched = true
+				names := []string{path}
+				if input.Action == "unstage" || input.Action == "stage" && !file.Staged {
+					names = append(names, file.PreviousPath)
+				}
+				for _, name := range names {
+					if name != "" && !seen[name] {
+						paths = append(paths, name)
+						seen[name] = true
+					}
+				}
+			}
+			if input.Action == "discard" && !matched {
 				apiError(w, 409, "The selected files changed. Refresh the Git panel.")
 				return
-			}
-			if input.Action == "unstage" && !file.Staged || input.Action == "stage" && !file.Unstaged {
-				continue
-			}
-			names := []string{path}
-			if input.Action == "unstage" || input.Action == "stage" && !file.Staged {
-				names = append(names, file.PreviousPath)
-			}
-			for _, name := range names {
-				if name != "" && !seen[name] {
-					paths = append(paths, name)
-					seen[name] = true
-				}
 			}
 		}
 		if len(paths) == 0 {
@@ -277,6 +323,15 @@ func (a *App) mutateWorkspaceGit(w http.ResponseWriter, r *http.Request, directo
 			}
 			apiJSON(w, 200, map[string]bool{"ok": true})
 			return
+		}
+		// Git pathspecs recurse even in literal mode. Reject directory replacements
+		// (including rename sources) before any index write can touch descendants.
+		for _, path := range paths {
+			info, err := os.Lstat(filepath.Join(directory, filepath.FromSlash(path)))
+			if err != nil && !os.IsNotExist(err) || info != nil && info.IsDir() {
+				apiError(w, 409, "The selected files changed. Choose individual files and refresh the Git panel.")
+				return
+			}
 		}
 		args = []string{"add", "--all", "--"}
 		if input.Action == "unstage" {

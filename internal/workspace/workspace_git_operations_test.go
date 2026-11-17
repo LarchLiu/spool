@@ -127,6 +127,134 @@ func TestWorkspaceGitOperationsCompleteCommitWorkflow(t *testing.T) {
 	}
 }
 
+func TestWorkspaceGitOperationsRejectDirectoryReplacementsBeforeChangingIndex(t *testing.T) {
+	f := newGitOperationFixture(t)
+	writeSessionFile(t, f.directory, "node", "original\n")
+	writeSessionFile(t, f.directory, "other.txt", "original\n")
+	requireGitOperation(t, f.operation("stage", "", "node", "other.txt"))
+	requireGitOperation(t, f.operation("commit", "initial"))
+	if err := os.Remove(filepath.Join(f.directory, "node")); err != nil {
+		t.Fatal(err)
+	}
+	writeSessionFile(t, f.directory, "node/.env", "PRIVATE=synthetic\n")
+	writeSessionFile(t, f.directory, "node/visible.txt", "unselected\n")
+	writeSessionFile(t, f.directory, "other.txt", "modified\n")
+	index := f.view().Index
+	if response := f.operation("stage", "", "other.txt", "node"); response.Code != 409 {
+		t.Fatalf("directory replacement staged: %d %s", response.Code, response.Body.String())
+	}
+	if got := f.view().Index; got != index {
+		t.Fatal("rejected batch changed the index")
+	}
+	if got := sessionFileGit(t, f.directory, "ls-files", "--", "node"); got != "node" {
+		t.Fatalf("staged descendants of a replaced file: %s", got)
+	}
+	// Unstaging a renamed file must not recurse into a recreated source directory.
+	if err := os.RemoveAll(filepath.Join(f.directory, "node")); err != nil {
+		t.Fatal(err)
+	}
+	writeSessionFile(t, f.directory, "node", "original\n")
+	sessionFileGit(t, f.directory, "mv", "node", "renamed")
+	writeSessionFile(t, f.directory, "node/.env", "PRIVATE=synthetic\n")
+	sessionFileGit(t, f.directory, "add", "-f", "node/.env")
+	index = f.view().Index
+	if response := f.operation("unstage", "", "renamed"); response.Code != 409 {
+		t.Fatalf("directory source unstaged: %d %s", response.Code, response.Body.String())
+	}
+	if got := f.view().Index; got != index {
+		t.Fatal("unstaging a rename changed protected descendants")
+	}
+}
+
+func TestWorkspaceGitLastCommitRespectsDirectoryAndProjectBoundaries(t *testing.T) {
+	f := newGitOperationFixture(t)
+	writeSessionFile(t, f.directory, "public/a.txt", "public\n")
+	requireGitOperation(t, f.operation("stage", "", "public/a.txt"))
+	requireGitOperation(t, f.operation("commit", "Public project update"))
+	publicHead := f.view().Commit
+	writeSessionFile(t, f.directory, "private/secret.txt", "private\n")
+	sessionFileGit(t, f.directory, "add", "private/secret.txt")
+	sessionFileGit(t, f.directory, "commit", "-m", "Private sibling update")
+	user, _ := f.app.store.authenticate(f.cookie.Value)
+	public, err := f.app.store.SaveProject(Project{Name: "Public", Path: filepath.Join(f.directory, "public"), Members: []string{user.User.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A nested project and protected files are also outside the visible file set.
+	writeSessionFile(t, f.directory, "public/private/secret.txt", "private\n")
+	sessionFileGit(t, f.directory, "add", "public/private/secret.txt")
+	sessionFileGit(t, f.directory, "commit", "-m", "Private nested update")
+	if _, err := f.app.store.SaveProject(Project{Name: "Private", Path: filepath.Join(f.directory, "public", "private")}); err != nil {
+		t.Fatal(err)
+	}
+	writeSessionFile(t, f.directory, "public/.env", "PRIVATE=synthetic\n")
+	sessionFileGit(t, f.directory, "add", "-f", "public/.env")
+	sessionFileGit(t, f.directory, "commit", "-m", "Protected configuration update")
+	f.base = "/api/projects/" + public.ID + "/git"
+	view := f.view()
+	if view.LastCommit == nil || view.LastCommit.ID != publicHead || view.LastCommit.Subject != "Public project update" {
+		t.Fatalf("latest commit crossed the visible file boundary: %+v", view.LastCommit)
+	}
+	// A directory with no accessible committed files has no latest commit.
+	if err := os.Mkdir(filepath.Join(f.directory, "empty"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	empty, err := f.app.store.SaveProject(Project{Name: "Empty", Path: filepath.Join(f.directory, "empty"), Members: []string{user.User.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.base = "/api/projects/" + empty.ID + "/git"
+	if latest := f.view().LastCommit; latest != nil {
+		t.Fatalf("empty project exposed repository commit: %+v", latest)
+	}
+}
+
+func TestWorkspaceGitOperationsRecreatedStagedDeletion(t *testing.T) {
+	for _, action := range []string{"unstage", "stage", "discard"} {
+		t.Run(action, func(t *testing.T) {
+			f := newGitOperationFixture(t)
+			writeSessionFile(t, f.directory, "file.txt", "original\n")
+			requireGitOperation(t, f.operation("stage", "", "file.txt"))
+			requireGitOperation(t, f.operation("commit", "initial"))
+			if err := os.Remove(filepath.Join(f.directory, "file.txt")); err != nil {
+				t.Fatal(err)
+			}
+			requireGitOperation(t, f.operation("stage", "", "file.txt"))
+			writeSessionFile(t, f.directory, "file.txt", "recreated\n")
+			for side, want := range map[string]string{"staged": "-original", "unstaged": "+recreated"} {
+				response := apiRequest(f.app, "GET", f.base+"?view=diff&path=file.txt&side="+side, "", f.cookie, "")
+				var diff struct{ Patch string }
+				if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &diff) != nil || !strings.Contains(diff.Patch, want) {
+					t.Fatalf("recreated file %s diff: %d %s", side, response.Code, response.Body.String())
+				}
+			}
+			requireGitOperation(t, f.operation(action, "", "file.txt"))
+			staged := sessionFileGit(t, f.directory, "diff", "--cached", "--name-status")
+			switch action {
+			case "unstage":
+				if staged != "" || sessionFileGit(t, f.directory, "show", ":file.txt") != "original" {
+					t.Fatalf("recreated deletion was not unstaged: %s", staged)
+				}
+			case "stage":
+				if staged != "M\tfile.txt" || sessionFileGit(t, f.directory, "show", ":file.txt") != "recreated" {
+					t.Fatalf("recreated file was not staged: %s", staged)
+				}
+			case "discard":
+				if staged != "D\tfile.txt" {
+					t.Fatalf("discard changed staged deletion: %s", staged)
+				}
+				if _, err := os.Stat(filepath.Join(f.directory, "file.txt")); !os.IsNotExist(err) {
+					t.Fatalf("discard retained recreated file: %v", err)
+				}
+				return
+			}
+			if body, _ := os.ReadFile(filepath.Join(f.directory, "file.txt")); string(body) != "recreated\n" {
+				t.Fatalf("%s changed recreated working file: %q", action, body)
+			}
+		})
+	}
+}
+
 func TestWorkspaceGitOperationsRejectStaleProtectedAndConcurrentWrites(t *testing.T) {
 	f := newGitOperationFixture(t)
 	writeSessionFile(t, f.directory, "visible.txt", "visible\n")

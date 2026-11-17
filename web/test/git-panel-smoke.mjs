@@ -125,6 +125,31 @@ try {
       assert.equal(await stagedGroup.getByRole("button", { name: "Unstage all", exact: true }).textContent(), "−");
       assert.equal(await unstagedGroup.getByRole("button", { name: "Stage all", exact: true }).textContent(), "+");
       assert.equal(await unstagedGroup.getByRole("button", { name: "Discard all changes", exact: true }).textContent(), "−");
+      // A focus refresh must validate the currently selected side, even when the
+      // list request's effect was installed before that side was selected.
+      for (const selectedSide of ["staged", "unstaged"]) {
+        const group = selectedSide === "staged" ? stagedGroup : unstagedGroup;
+        const beforeSelection = requests.length;
+        await group.locator(".git-file-row").filter({ hasText: "example.ts" }).click();
+        await page.locator(".git-diff-source").waitFor();
+        assert.ok(requests.slice(beforeSelection).some(url => url.includes(`side=${selectedSide}`)));
+        assert.ok(requests.slice(beforeSelection).every(url => url.includes("view=diff")), "Selecting a side only loads its diff");
+        if (selectedSide === "staged") staged = false; else unstaged = false;
+        await Promise.all([
+          page.waitForResponse(response => new URL(response.url()).searchParams.get("view") === "changes"),
+          page.evaluate(() => window.dispatchEvent(new Event("focus"))),
+        ]);
+        await page.locator(".git-diff-preview").waitFor({ state: "detached" });
+        assert.equal(await page.locator('.git-file-row[aria-pressed="true"]').count(), 0, "A removed side cannot keep its old selection");
+        assert.ok(await page.locator(".git-file-row").filter({ hasText: "example.ts" }).isVisible(), "The other side remains available");
+        staged = unstaged = true;
+        await Promise.all([
+          page.waitForResponse(response => new URL(response.url()).searchParams.get("view") === "changes"),
+          page.evaluate(() => window.dispatchEvent(new Event("focus"))),
+        ]);
+        await page.getByRole("button", { name: "Unstage src/example.ts", exact: true }).waitFor();
+        await page.getByRole("button", { name: "Stage src/example.ts", exact: true }).waitFor();
+      }
       await page.getByRole("button", { name: "Discard src/example.ts", exact: true }).click();
       const confirmation = page.getByRole("dialog", { name: "Discard changes?", exact: true });
       await confirmation.getByText("src/example.ts", { exact: true }).waitFor();

@@ -310,18 +310,21 @@ func (a *App) serveWorkspaceGit(w http.ResponseWriter, r *http.Request, director
 	}
 	if mode == "diff" {
 		path := r.URL.Query().Get("path")
+		side := r.URL.Query().Get("side")
+		if side != "" && side != "staged" && side != "unstaged" {
+			apiError(w, 400, "Invalid diff side")
+			return
+		}
+		found := false
 		for _, file := range view.Files {
 			if file.Path != path {
 				continue
 			}
-			side := r.URL.Query().Get("side")
-			if side != "" && side != "staged" && side != "unstaged" {
-				apiError(w, 400, "Invalid diff side")
-				return
-			}
+			found = true
 			if commit == "" && (side == "staged" && !file.Staged || side == "unstaged" && !file.Unstaged) {
-				apiError(w, 404, "Git changes are unavailable")
-				return
+				// A staged deletion and its recreated untracked file share a path.
+				// Continue to the status entry for the requested side.
+				continue
 			}
 			patch, truncated, binary, err := workspaceGitDiffSide(ctx, directory, file, commit, headErr == nil, side)
 			if err != nil {
@@ -329,6 +332,10 @@ func (a *App) serveWorkspaceGit(w http.ResponseWriter, r *http.Request, director
 				return
 			}
 			apiJSON(w, 200, map[string]any{"path": path, "patch": patch, "binary": binary, "truncated": truncated})
+			return
+		}
+		if found {
+			apiError(w, 404, "Git changes are unavailable")
 			return
 		}
 		projectFileError(w, os.ErrPermission)
