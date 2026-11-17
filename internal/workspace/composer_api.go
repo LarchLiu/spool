@@ -118,6 +118,15 @@ func (a *App) permissionCatalog(ctx context.Context, chat chatmodel.Session) (ca
 	if chat.PermissionMode != "" {
 		catalog.Current = chat.PermissionMode
 	}
+	mode, err := a.store.projectPermissionMode(chat.ProjectID, chat.Backend)
+	if err != nil {
+		return catalog, err
+	}
+	if mode != "" {
+		// Keep the choice even when discovery now marks it unavailable. Clients
+		// must ask the user to choose an available mode, as for saved chat modes.
+		catalog.Default, catalog.Current = mode, mode
+	}
 	return catalog, nil
 }
 
@@ -152,10 +161,33 @@ func (a *App) permissionResponse(w http.ResponseWriter, r *http.Request, user st
 		apiError(w, 409, "agent 未启用或尚未安装")
 		return
 	}
+	var input struct {
+		Mode string `json:"mode"`
+	}
+	if r.Method == "POST" {
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		if input.Mode == "" || chatmodel.ValidatePermissionMode(chat.Backend, input.Mode) != nil {
+			apiError(w, 400, "Invalid permission mode")
+			return
+		}
+	}
 	catalog, err := a.permissionCatalog(r.Context(), chat)
 	if err != nil {
 		permissionDiscoveryUnavailable(w)
 		return
+	}
+	if r.Method == "POST" {
+		if err := catalog.Validate(input.Mode); err != nil {
+			apiError(w, 400, err.Error())
+			return
+		}
+		if err := a.store.saveProjectPermissionMode(chat.ProjectID, chat.Backend, input.Mode); err != nil {
+			apiError(w, 500, "Could not save preferences")
+			return
+		}
+		catalog.Default, catalog.Current = input.Mode, input.Mode
 	}
 	apiJSON(w, 200, catalog)
 }

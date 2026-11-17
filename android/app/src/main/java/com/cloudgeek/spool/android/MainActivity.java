@@ -158,7 +158,8 @@ public final class MainActivity extends Activity {
     private NativeAgentModelMenu modelMenu;
     private NativePopover modelPopover;
     private NativePermissionMenu permissionMenu;
-    private boolean permissionLoading, permissionFailed;
+    private boolean permissionLoading, permissionFailed, permissionSaving;
+    private int permissionSaveAuth, permissionSaveGeneration;
     private int permissionRequest;
     private NativeSettings settingsDialog, appearanceDialog;
     private NativeDesktopDialog desktopDialog;
@@ -2965,6 +2966,11 @@ public final class MainActivity extends Activity {
         permissionMenu = null;
     }
 
+    private String permissionPath() {
+        return "/permissions?project_id=" + Uri.encode(projectID) + "&backend=" + Uri.encode(backend)
+                + (chatID.isEmpty() ? "" : "&chat_id=" + Uri.encode(chatID));
+    }
+
     private void loadPermissions() {
         if (projectID.isEmpty() || !writable() || user == null) return;
         int selected = selectionEpoch, request = ++permissionRequest;
@@ -2975,16 +2981,12 @@ public final class MainActivity extends Activity {
         updatePermissionMenu();
         updateComposer();
         api(
-                "/permissions?project_id="
-                        + Uri.encode(projectID)
-                        + "&backend="
-                        + Uri.encode(backend)
-                        + (chatID.isEmpty() ? "" : "&chat_id=" + Uri.encode(chatID)),
+                permissionPath(),
                 null,
                 value -> {
                     if (request != permissionRequest || selected != selectionEpoch || !selectedBackend.equals(backend)) return;
                     permissionCatalog = value instanceof JSONObject ? (JSONObject) value : new JSONObject();
-                    if (permission.isEmpty()) permission = permissionCatalog.optString("current");
+                    permission = permissionCatalog.optString("current", permission);
                     if (permission.isEmpty()) permission = permissionCatalog.optString("default");
                     if (permission.isEmpty()) permission = backend.equals("claude") ? "acceptEdits" : "ask";
                     permissionLoading = false;
@@ -3000,7 +3002,12 @@ public final class MainActivity extends Activity {
                 });
     }
 
+    private boolean savingPermission() {
+        return permissionSaving && permissionSaveAuth == authEpoch && permissionSaveGeneration == generation;
+    }
+
     private boolean permissionReady() {
+        if (permissionLoading || savingPermission()) return false;
         for (int i = 0; i < array(permissionCatalog, "modes").length(); i++) {
             JSONObject mode = at(array(permissionCatalog, "modes"), i);
             if (mode.optString("id").equals(permission)) return mode.optBoolean("available");
@@ -3013,6 +3020,36 @@ public final class MainActivity extends Activity {
             permissionMenu.bind(permission, permissionCatalog, permissionLoading, permissionFailed);
     }
 
+    private void savePermission(String mode) {
+        if (permissionLoading || savingPermission()) return;
+        int selected = selectionEpoch, request = ++permissionRequest;
+        String selectedBackend = backend, selectedProject = projectID;
+        permissionLoading = permissionSaving = true;
+        permissionSaveAuth = authEpoch; permissionSaveGeneration = generation;
+        updatePermissionMenu();
+        updateComposer();
+        api(permissionPath(), object("mode", mode), value -> {
+            permissionSaving = false;
+            if (request != permissionRequest || selected != selectionEpoch || !selectedBackend.equals(backend)) {
+                if (selectedProject.equals(projectID) && selectedBackend.equals(backend)) loadPermissions();
+                else updateComposer();
+                return;
+            }
+            permissionCatalog = (JSONObject) value;
+            permission = permissionCatalog.optString("current");
+            permissionLoading = permissionFailed = false;
+            updatePermissionMenu();
+            updateComposer();
+        }, error -> {
+            permissionSaving = false;
+            if (request != permissionRequest || selected != selectionEpoch || !selectedBackend.equals(backend)) { updateComposer(); return; }
+            permissionLoading = false;
+            updatePermissionMenu();
+            updateComposer();
+            toast(error);
+        });
+    }
+
     private void choosePermission() {
         if (permissionMenu != null && permissionMenu.popover.isShowing()) { permissionMenu.popover.dismiss(); return; }
         if (permissionCatalog == null && !permissionLoading && !permissionFailed) loadPermissions();
@@ -3020,8 +3057,7 @@ public final class MainActivity extends Activity {
         int selected = selectionEpoch;
         permissionMenu = new NativePermissionMenu(ui, backend, permission, permissionCatalog, permissionLoading, permissionFailed, id -> {
             if (selected != selectionEpoch || !selectedBackend.equals(backend)) return;
-            permission = id;
-            updateComposer();
+            savePermission(id);
         }, this::loadPermissions);
         permissionMenu.show(permissionButton);
     }

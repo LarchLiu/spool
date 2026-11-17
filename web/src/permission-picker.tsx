@@ -51,6 +51,10 @@ export function usePermissionModes(
     failed?: boolean;
   }>({ key: "" });
   const [choice, setChoice] = useState({ key: "", mode: "" });
+  const [save, setSave] = useState({ key: "", pending: false, error: "" });
+  const saving = useRef(false);
+  const activeKey = useRef(key);
+  activeKey.current = key;
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     if (!project || !enabled) return;
@@ -94,19 +98,51 @@ export function usePermissionModes(
   }, [key, enabled, revision]);
   const catalog = result.key === key ? result.catalog : undefined;
   const mode =
-    choice.key === key
-      ? choice.mode
-      : savedMode ||
-        catalog?.current ||
-        catalog?.default ||
-        (backend === "claude" ? "acceptEdits" : "ask");
+    catalog?.current ||
+    (choice.key === key ? choice.mode : savedMode) ||
+    catalog?.default ||
+    (backend === "claude" ? "acceptEdits" : "ask");
   return {
     catalog,
     mode,
     loading: !catalog && !(result.key === key && result.failed),
     failed: result.key === key && !!result.failed,
-    ready: !!catalog?.modes?.some((item) => item.id === mode && item.available),
-    choose: (mode: string) => setChoice({ key, mode }),
+    saving: save.pending,
+    saveError: save.key === key ? save.error : "",
+    ready:
+      !save.pending &&
+      !!catalog?.modes?.some((item) => item.id === mode && item.available),
+    choose: async (mode: string) => {
+      if (saving.current) return false;
+      saving.current = true;
+      setSave({ key, pending: true, error: "" });
+      const params = new URLSearchParams({ project_id: project, backend });
+      if (chatID) params.set("chat_id", chatID);
+      try {
+        const updated = await api<PermissionCatalog>(`/permissions?${params}`, {
+          mode,
+        });
+        if (activeKey.current === key)
+          setResult({ key, catalog: normalizeCatalog(updated, backend) });
+        else {
+          // Navigation may have loaded the next chat before this save finished.
+          // Discover again in its own directory, using the newly saved default.
+          setResult({ key: "" });
+          setRevision((v) => v + 1);
+        }
+        setSave({ key, pending: false, error: "" });
+        return activeKey.current === key;
+      } catch (error) {
+        setSave({
+          key,
+          pending: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return false;
+      } finally {
+        saving.current = false;
+      }
+    },
     adoptChat: (id: string) =>
       setChoice({ key: `${project}/${id}/${backend}`, mode }),
     retry: () => setRevision((v) => v + 1),
@@ -122,7 +158,13 @@ export function PermissionStatus({
   t: Translator;
   onChoose: () => void;
 }) {
-  if (value.ready || value.loading) return null;
+  if (value.saveError)
+    return (
+      <div className="connection permission-status" role="alert">
+        {value.saveError}
+      </div>
+    );
+  if (value.ready || value.loading || value.saving) return null;
   return (
     <div className="connection permission-status" role="alert">
       {t(
@@ -195,7 +237,7 @@ export function PermissionPicker({
       <button
         type="button"
         className={`permission-summary${value.mode === "bypassPermissions" ? " danger" : ""}`}
-        disabled={disabled}
+        disabled={disabled || value.saving}
         aria-label={`${t("Permissions")}: ${label}`}
         aria-expanded={open}
         onClick={() => onOpen(!open)}
@@ -215,6 +257,7 @@ export function PermissionPicker({
             <small>{backend === "codex" ? "Codex" : "Claude"}</small>
           </h3>
           {value.loading && <p>{t("Checking project permissions…")}</p>}
+          {value.saving && <p>{t("Saving…")}</p>}
           {value.failed && (
             <p>
               {t("Permission discovery is unavailable")}{" "}
@@ -232,15 +275,14 @@ export function PermissionPicker({
                   ? "permission-option danger"
                   : "permission-option"
               }
-              disabled={!item.available}
+              disabled={!item.available || value.saving}
               aria-pressed={value.mode === item.id}
-              onClick={() => {
+              onClick={async () => {
                 if (item.id === "bypassPermissions" && value.mode !== item.id) {
                   setConfirmBypass(true);
                   return;
                 }
-                value.choose(item.id);
-                onOpen(false);
+                if (await value.choose(item.id)) onOpen(false);
               }}
             >
               <span>
@@ -274,9 +316,9 @@ export function PermissionPicker({
                 <button
                   type="button"
                   className="quiet danger"
-                  onClick={() => {
-                    value.choose("bypassPermissions");
-                    onOpen(false);
+                  disabled={value.saving}
+                  onClick={async () => {
+                    if (await value.choose("bypassPermissions")) onOpen(false);
                   }}
                 >
                   {t("Enable bypass")}

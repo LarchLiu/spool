@@ -14,7 +14,7 @@ requireRunTemp();
 const scratch = await mkdtemp(join(process.env.TMPDIR, "permission-browser-"));
 const output = join(root, "build/artifacts/permission-discovery");
 const reports = new Map();
-let scenario, requests, messages, failures;
+let scenario, requests, messages, failures, preference, saves, saveFailures, newChatReads;
 const chat = {
   id: "chat",
   project_id: "project",
@@ -46,7 +46,50 @@ window.addEventListener('unhandledrejection', event => errors.push(String(event.
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, 'Keep my draft');
     input.dispatchEvent(new Event('input', { bubbles: true }));
     const send = document.querySelector('.send');
-    if (scenario === 'unavailable') {
+    if (scenario === 'preferences') {
+      const summary = () => document.querySelector('.permission-summary');
+      const choose = async text => (await until(() => [...document.querySelectorAll('.permission-option')].find(button => !button.disabled && button.querySelector('strong')?.textContent === text))).click();
+      await until(() => !send.disabled && summary()?.textContent.includes('Ask for approval'));
+      summary().click();
+      await choose('Approve for me');
+      await until(() => document.querySelector('.permission-status')?.textContent.includes('Could not save preferences'));
+      report.failedSaveKeepsPreviousChoice = summary().textContent.includes('Ask for approval') && (await stats()).preference === '';
+      await choose('Approve for me');
+      await until(() => !document.querySelector('.permission-popover') && summary().textContent.includes('Approve for me'));
+      report.choiceSavesWithoutMessage = (await stats()).preference === 'auto' && (await stats()).messages === 0;
+      document.querySelector('[aria-label="Open sidebar"]')?.click();
+      document.querySelector('.project-new').click();
+      await until(async () => (await stats()).newChatReads > 0 && summary()?.textContent.includes('Approve for me'));
+      report.newChatUsesProjectChoice = summary().textContent.includes('Approve for me') && !document.querySelector('.permission-status');
+      const beforeExisting = (await stats()).requests;
+      document.querySelector('[aria-label="Open sidebar"]')?.click();
+      document.querySelector('.nav-chat-open[title="Permission recovery"]').click();
+      await until(async () => (await stats()).requests > beforeExisting && summary()?.textContent.includes('Approve for me'));
+      report.existingChatUsesProjectChoice = !document.querySelector('.permission-status');
+      summary().click();
+      await choose('Ask for approval');
+      await until(() => !document.querySelector('.permission-popover') && summary().textContent.includes('Ask for approval'));
+      const beforeNew = (await stats()).newChatReads;
+      document.querySelector('[aria-label="Open sidebar"]')?.click();
+      document.querySelector('.project-new').click();
+      await until(async () => (await stats()).newChatReads > beforeNew && summary()?.textContent.includes('Ask for approval'));
+      report.latestChoiceReplacesPreviousDefault = (await stats()).preference === 'ask' && (await stats()).saves === 3 && (await stats()).messages === 0;
+      const beforeReturn = (await stats()).requests;
+      document.querySelector('[aria-label="Open sidebar"]')?.click();
+      document.querySelector('.nav-chat-open[title="Permission recovery"]').click();
+      await until(async () => (await stats()).requests > beforeReturn && summary()?.textContent.includes('Ask for approval'));
+      const beforePending = (await stats()).newChatReads;
+      summary().click();
+      await choose('Approve for me');
+      document.querySelector('[aria-label="Open sidebar"]')?.click();
+      document.querySelector('.project-new').click();
+      await until(async () => (await stats()).newChatReads > beforePending && summary()?.textContent.includes('Approve for me'));
+      report.navigationDuringSaveUsesCommittedChoice = (await stats()).preference === 'auto' && (await stats()).messages === 0;
+      report.noJavascriptErrors = errors.length === 0;
+      report.noPageOverflow = document.documentElement.scrollWidth <= innerWidth;
+      await fetch('/smoke/report', { method: 'POST', body: JSON.stringify(report) });
+      return;
+    } else if (scenario === 'unavailable') {
       await until(() => document.querySelector('.permission-status')?.textContent.includes('Permission mode is unavailable'));
       report.blockedUnavailableMode = send.disabled;
       document.querySelector('.permission-status button').click();
@@ -97,7 +140,7 @@ const server = createServer(async (req, res) => {
     res.setHeader("Content-Type", "text/javascript");
     return res.end(probe);
   }
-  if (path === "/smoke/stats") return json({ requests, messages });
+  if (path === "/smoke/stats") return json({ requests, messages, preference, saves, newChatReads });
   if (path === "/smoke/recover") {
     failures = 0;
     return json({ ok: true });
@@ -134,6 +177,13 @@ const server = createServer(async (req, res) => {
       },
     ]);
   if (path === "/api/permissions") {
+    if (req.method === "POST") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      saves++;
+      if (saveFailures-- > 0) return json({ error: "Could not save preferences" }, 500);
+      preference = JSON.parse(body).mode;
+    } else if (!url.searchParams.has("chat_id")) newChatReads++;
     requests++;
     if (scenario === "denied") return json({ error: "Not authorized" }, 403);
     if (failures-- > 0)
@@ -146,11 +196,11 @@ const server = createServer(async (req, res) => {
       );
     return json({
       backend: "codex",
-      default: "ask",
-      current: chat.permission_mode,
+      default: preference || "ask",
+      current: preference || (url.searchParams.has("chat_id") ? chat.permission_mode : "ask"),
       modes: [
         { id: "ask", available: true },
-        { id: "auto", available: false },
+        { id: "auto", available: scenario === "preferences" },
       ],
     });
   }
@@ -210,9 +260,12 @@ try {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
-  for (const test of ["auto", "manual", "denied", "unavailable"]) {
+  for (const test of ["auto", "manual", "denied", "unavailable", "preferences"]) {
     scenario = test;
     requests = messages = 0;
+    preference = "";
+    saves = newChatReads = 0;
+    saveFailures = test === "preferences" ? 1 : 0;
     failures = test === "manual" ? Infinity : test === "auto" ? 1 : 0;
     chat.permission_mode = test === "unavailable" ? "auto" : "ask";
     await new Promise((resolve, reject) => {

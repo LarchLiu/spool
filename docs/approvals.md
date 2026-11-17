@@ -53,6 +53,17 @@ Protocol coverage uses installed Codex 0.166.0 and Claude Code 2.1.310 schemas.
 Tests use synthetic provider processes and isolated app data; no real inference
 or provider history is needed.
 
+## Project permission preferences
+
+Choosing a permission mode in Web or Android immediately saves it in Spool as
+the project's default for that agent, shared across the project's chats and
+users. Opening a new or existing chat uses this choice ahead of that chat's last
+used mode. Codex and Claude choices are stored separately. Sending messages does
+not overwrite the preference, and no provider configuration files are changed.
+Without a saved choice, the existing provider defaults and chat modes apply.
+Permission discovery still runs normally: a saved mode that becomes unavailable
+remains selected and blocks sending until the user chooses an available mode.
+
 ## Permission discovery failures
 
 Spool checks the selected CLI's permissions in the chat's working directory

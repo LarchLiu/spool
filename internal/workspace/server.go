@@ -335,7 +335,7 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		apiJSON(w, 200, projects)
 	case strings.HasPrefix(path, "/api/projects/"):
 		a.projectFileRoute(w, r, id.User.ID, path)
-	case path == "/api/permissions" && r.Method == "GET":
+	case path == "/api/permissions" && (r.Method == "GET" || r.Method == "POST"):
 		a.permissionResponse(w, r, id.User.ID)
 	case path == "/api/agents" && r.Method == "GET":
 		agents, err := a.store.Agents()

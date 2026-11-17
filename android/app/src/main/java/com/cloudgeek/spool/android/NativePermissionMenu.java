@@ -99,7 +99,7 @@ final class NativePermissionMenu extends FrameLayout implements NativeMarkdownFl
         if (modes != null) for (int i = 0; i < modes.length(); i++) {
             JSONObject mode = modes.optJSONObject(i); if (mode == null) continue;
             String id = mode.optString("id"), reason = mode.optString("reason");
-            Option row = new Option(id, reason.isEmpty() ? description(ui, id) : ui.t(reason), mode.optBoolean("available"));
+            Option row = new Option(id, reason.isEmpty() ? description(ui, id) : ui.t(reason), mode.optBoolean("available") && !loading);
             row.setTag("option:" + id); flow.add(row, 0, 0);
         }
         if (confirmBypass) {
