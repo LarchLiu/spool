@@ -8,7 +8,7 @@ import {
   type CSSProperties,
 } from "react";
 import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
-import { Download, File, LoaderCircle, X } from "lucide-react";
+import { Download, File, ListTree, GitBranch, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { api, APIError } from "./api";
 import type { Translator } from "./i18n";
 import type {
@@ -31,6 +31,9 @@ import { FileSource } from "./file-source";
 import { filePreviewKind, HtmlFilePreview } from "./file-preview";
 import { OfficePreview, type OfficeDocument } from "./office-preview";
 import { desktopFileAccessURL, subscribeDesktopFileAccess } from "./runtime";
+import { FilePanelTabs } from "./file-panel-tabs";
+import { GitPanel } from "./git-panel";
+import { FilePanelButton } from "./file-panel-button";
 
 const readOffice = (path: string, signal: AbortSignal) => api<OfficeDocument>(apiPath(path), undefined, signal);
 
@@ -60,6 +63,8 @@ type Props = {
 };
 
 export function FileSidebar(props: Props) {
+  const [panel, setPanel] = useState<"project" | "git">("project");
+  useEffect(() => { if (props.selection) setPanel("project"); }, [props.selection]);
   return (
     <aside
       className={`file-sidebar ${props.mobileOpen ? "open" : ""}`}
@@ -70,6 +75,8 @@ export function FileSidebar(props: Props) {
         <ProjectFiles
           key={`${props.project.id}:${props.chatID || ""}:${props.workspace?.path || ""}:${!!props.workspace?.available}`}
           {...props}
+          panel={panel}
+          onSelectPanel={setPanel}
           project={props.project}
         />
       ) : (
@@ -105,7 +112,9 @@ function ProjectFiles({
   onOpen,
   onClear,
   onClose,
-}: Props & { project: Project }) {
+  panel,
+  onSelectPanel,
+}: Props & { project: Project; panel: "project" | "git"; onSelectPanel: (panel: "project" | "git") => void }) {
   const ready = !chatID || !!workspace?.available;
   const workspacePath = workspace?.path;
   const [error, setError] = useState("");
@@ -115,6 +124,7 @@ function ProjectFiles({
   const [loaded, setLoaded] = useState<{
     file: ProjectFile;
     selection: FileSelection;
+    revision: number;
   } | null>(null);
   const file = loaded?.file;
   const [fileError, setFileError] = useState<{
@@ -122,6 +132,8 @@ function ProjectFiles({
     code?: string;
   } | null>(null);
   const [refresh, setRefresh] = useState(0);
+  const [gitRefresh, setGitRefresh] = useState(0);
+  const [previewRefresh, setPreviewRefresh] = useState(0);
   const accessURL =
     fileError?.code === "file_read_denied" && selection
       ? desktopFileAccessURL(chatID, selection.target.path)
@@ -219,7 +231,7 @@ function ProjectFiles({
     )
       .then(async (next) => {
         if (controller.signal.aborted) return;
-        setLoaded({ file: next, selection });
+        setLoaded({ file: next, selection, revision: previewRefresh });
         if (next.external) return;
         await loadDirectory(".");
         const segments = next.path.split("/");
@@ -260,7 +272,7 @@ function ProjectFiles({
     workspacePath,
     model,
     loadDirectory,
-    refresh,
+    previewRefresh,
     t,
   ]);
 
@@ -268,12 +280,16 @@ function ProjectFiles({
     () => subscribeDesktopFileAccess((result) => {
       if (!active || result.chat_id !== chatID || result.path !== selection?.target.path) return;
       if (result.error) setFileError({ message: result.error, code: "file_read_denied" });
-      else setRefresh((value) => value + 1);
+      else setPreviewRefresh((value) => value + 1);
     }),
     [active, chatID, selection],
   );
 
   function reload() {
+    if (panel === "git") {
+      setGitRefresh((value) => value + 1);
+      return;
+    }
     onRefreshWorkspace();
     for (const controller of controllers.current) controller.abort();
     controllers.current.clear();
@@ -306,15 +322,23 @@ function ProjectFiles({
         workspaceError={workspaceError}
         showWorkspaceInfo={!!chatID}
         t={t}
-        search={{
+        search={panel === "project" ? {
           isOpen: search.isOpen,
           onOpen: () => search.open(),
           onChange: search.setValue,
           onClose: search.close,
-        }}
+        } : undefined}
         onRefresh={reload}
+        refreshLabel={t(panel === "git" ? "Refresh Git information" : "Refresh files")}
         onClose={onClose}
       />
+      <FilePanelTabs variant="underline" label={t("Project panels")} value={panel} onChange={onSelectPanel} options={[
+        { value: "project", label: t("Project panel"), icon: <ListTree size={14} /> },
+        { value: "git", label: t("Git panel"), icon: <GitBranch size={14} /> },
+      ]} />
+      {panel === "git" && <GitPanel base={fileAPIBase(project.id, chatID).slice(4)} workspace={chatID ? workspacePath : undefined}
+        active={active} ready={ready} refresh={gitRefresh} t={t} />}
+      <div className="file-project-panel" hidden={panel !== "project"}>
       <FilePreviewSplit
         t={t}
         tree={
@@ -408,14 +432,24 @@ function ProjectFiles({
                       <Download size={14} />
                     </a>
                   )}
-                  <button
-                    className="icon"
-                    onClick={clearPreview}
-                    aria-label={t("Close file preview")}
-                    title={t("Close file preview")}
-                  >
-                    <X size={15} />
-                  </button>
+                  <div className="file-preview-controls">
+                    <FilePanelButton
+                      className="icon"
+                      onClick={() => setPreviewRefresh((value) => value + 1)}
+                      aria-label={t("Refresh file preview")}
+                      title={t("Refresh file preview")}
+                    >
+                      <RefreshCw size={14} />
+                    </FilePanelButton>
+                    <button
+                      className="icon"
+                      onClick={clearPreview}
+                      aria-label={t("Close file preview")}
+                      title={t("Close file preview")}
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
                 </div>
               </div>
               {fileError && (
@@ -428,7 +462,7 @@ function ProjectFiles({
               )}
               {loaded && (
                 <FileContent
-                  key={loaded.selection.request}
+                  key={`${loaded.selection.request}:${loaded.revision}`}
                   file={loaded.file}
                   project={project.id}
                   chatID={chatID}
@@ -443,6 +477,7 @@ function ProjectFiles({
           ) : null
         }
       />
+      </div>
     </>
   );
 }

@@ -31,6 +31,7 @@ final class NativeIcons {
             case "folder": resource = R.drawable.web_icon_folder; break;
             case "folder_open": resource = R.drawable.web_icon_folder_open; break;
             case "files": resource = R.drawable.web_icon_files; break;
+            case "file_list": resource = R.drawable.web_icon_file_list; break;
             case "project_folder": resource = R.drawable.web_icon_project_folder; break;
             case "project_folder_open": resource = R.drawable.web_icon_project_folder_open; break;
             case "people": resource = R.drawable.web_icon_people; break;

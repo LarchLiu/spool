@@ -6,7 +6,6 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.text.TextUtils;
-import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
@@ -19,7 +18,7 @@ import java.util.concurrent.FutureTask;
 import com.cloudgeek.spool.android.NativeDiffLayout.Cell;
 import com.cloudgeek.spool.android.NativeDiffLayout.Row;
 
-/** Native file diffs with paired, horizontally scrollable columns and complete selectable raw source. */
+/** Unified file diffs with custom viewport drawing and complete selectable raw source. */
 final class NativePatchView extends LinearLayout {
     static final class State {
         byte[] sourceHash;
@@ -45,7 +44,7 @@ final class NativePatchView extends LinearLayout {
         final NativePatch.File file;
         List<Row> rows;
         final List<Code> views = new ArrayList<>();
-        FileRender(NativePatch.File file) { this.file = file; rows = NativeDiffLayout.rows(file, ui.codeWorker == null); }
+        FileRender(NativePatch.File file) { this.file = file; rows = NativeDiffLayout.unifiedRows(NativeDiffLayout.rows(file, ui.codeWorker == null)); }
     }
 
     private static final class LayoutTask extends FutureTask<List<List<Row>>> {
@@ -63,7 +62,7 @@ final class NativePatchView extends LinearLayout {
                     catch (Exception unavailable) {
                         for (Row row : rows) { if (row.old != null) row.old.syntax = java.util.Collections.emptyList(); if (row.next != null) row.next.syntax = java.util.Collections.emptyList(); }
                     }
-                    result.add(rows);
+                    result.add(NativeDiffLayout.unifiedRows(rows));
                 }
                 return result;
             });
@@ -83,7 +82,7 @@ final class NativePatchView extends LinearLayout {
                     FileRender render = view.renders.get(file);
                     render.rows = result.get(file);
                     for (Code code : render.views) {
-                        // Similarity realignment preserves row counts, heights and each pane's maximum width.
+                        // Unified ordering preserves row counts, heights and maximum width after realignment.
                         code.rows = render.rows; code.invalidate();
                     }
                 }
@@ -195,18 +194,7 @@ final class NativePatchView extends LinearLayout {
         if (!file.hunks.isEmpty()) {
             FileRender render = new FileRender(file);
             renders.add(render);
-            LinearLayout body = ui.row();
-            body.setGravity(Gravity.TOP);
-            if (file.type.equals("new") || file.type.equals("deleted")) {
-                body.addView(new Pane(render, file.type.equals("new")), new LayoutParams(-1, -2));
-            } else {
-                Pane old = new Pane(render, false), next = new Pane(render, true);
-                old.peer = next;
-                next.peer = old;
-                body.addView(old, new LayoutParams(0, -2, 1));
-                body.addView(next, new LayoutParams(0, -2, 1));
-            }
-            card.addView(body, new LayoutParams(-1, -2));
+            card.addView(new Pane(render), new LayoutParams(-1, -2));
         }
         if (file.contentsUnavailable) {
             TextView note = ui.text(ui.t("File contents are not included in this patch."), 12, ui.subtle);
@@ -239,51 +227,36 @@ final class NativePatchView extends LinearLayout {
     private final class Pane extends FrameLayout {
         final Code code;
         final HorizontalScrollView scroll;
-        Pane peer;
-        boolean syncing;
-        Pane(FileRender render, boolean additions) {
+        Pane(FileRender render) {
             super(ui.context);
             setBackgroundColor(palette.bg);
-            code = new Code(render.file, render.rows, additions, false);
+            code = new Code(render.file, render.rows, false);
             render.views.add(code);
-            scroll = new HorizontalScrollView(ui.context) {
-                @Override protected void onScrollChanged(int x, int y, int oldX, int oldY) {
-                    super.onScrollChanged(x, y, oldX, oldY);
-                    if (peer != null && !syncing && peer.scroll.getScrollX() != x) {
-                        peer.syncing = true;
-                        peer.scroll.scrollTo(x, 0);
-                        peer.syncing = false;
-                    }
-                }
-            };
+            scroll = new HorizontalScrollView(ui.context);
             scroll.setFillViewport(true);
             scroll.setHorizontalScrollBarEnabled(false);
             scroll.addView(code, new FrameLayout.LayoutParams(-2, -2));
             FrameLayout.LayoutParams viewport = new FrameLayout.LayoutParams(-1, -2);
-            viewport.leftMargin = ui.dp(additions ? 1 : 0);
-            viewport.rightMargin = ui.dp(additions ? 0 : 1);
             addView(scroll, viewport);
-            Code gutter = new Code(render.file, render.rows, additions, true);
+            Code gutter = new Code(render.file, render.rows, true);
             render.views.add(gutter);
             FrameLayout.LayoutParams numbers = new FrameLayout.LayoutParams(gutter.gutterWidth, -2);
-            numbers.leftMargin = ui.dp(additions ? 1 : 0);
             addView(gutter, numbers);
-            setContentDescription((additions ? ui.label("Additions", "新增内容") : ui.label("Deletions", "删除内容")) + ": " + render.file.name);
+            setContentDescription(ui.t("Git diff") + ": " + render.file.name);
         }
     }
 
     /** Draw only visible lines; a 25,000-line tool patch must not allocate 25,000 Android views. */
     private final class Code extends View {
         List<Row> rows;
-        final boolean additions, gutter;
+        final boolean gutter;
         final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG), fill = new Paint();
-        final int lineHeight, gutterWidth, contentWidth;
+        final int lineHeight, gutterWidth, numberWidth, contentWidth;
         final int[] tops;
         final Rect clip = new Rect();
-        Code(NativePatch.File file, List<Row> rows, boolean additions, boolean gutter) {
+        Code(NativePatch.File file, List<Row> rows, boolean gutter) {
             super(ui.context);
             this.rows = rows;
-            this.additions = additions;
             this.gutter = gutter;
             text.setTypeface(Typeface.MONOSPACE);
             text.setLinearText(true); text.setSubpixelText(true);
@@ -291,16 +264,17 @@ final class NativePatchView extends LinearLayout {
             lineHeight = Math.round(text.getTextSize() * 20f / 13);
             int digits = 1;
             for (Row row : rows) {
-                Cell cell = additions ? row.next : row.old;
-                if (cell != null) digits = Math.max(digits, String.valueOf(cell.number).length());
+                if (row.old != null) digits = Math.max(digits, String.valueOf(row.old.number).length());
+                if (row.next != null) digits = Math.max(digits, String.valueOf(row.next.number).length());
             }
-            gutterWidth = file.lineNumbersUnavailable ? ui.dp(6) : Math.round(text.measureText("0") * (digits + 3)) + ui.dp(2);
+            numberWidth = file.lineNumbersUnavailable ? 0 : Math.round(text.measureText("0") * (digits + 1));
+            gutterWidth = numberWidth * 2 + Math.round(text.measureText("0") * 2) + ui.dp(6);
             tops = new int[rows.size() + 1];
             float width = 0;
             for (int i = 0; i < rows.size(); i++) {
                 Row row = rows.get(i);
-                tops[i + 1] = tops[i] + (row.separator != null ? ui.dp(row.simple ? 4 : 32) : lineHeight);
-                Cell cell = additions ? row.next : row.old;
+                tops[i + 1] = tops[i] + lineHeight;
+                Cell cell = row.next != null ? row.next : row.old;
                 if (cell != null) { String value = plain(cell.text); width = Math.max(width, NativeCodeTabs.width(text, value, value.length())); }
             }
             contentWidth = Math.round(width + text.measureText("0") * 2) + gutterWidth;
@@ -326,22 +300,12 @@ final class NativePatchView extends LinearLayout {
                     }
                     continue;
                 }
-                Cell cell = additions ? row.next : row.old;
+                Cell cell = row.next != null ? row.next : row.old;
                 int background = cell == null ? palette.bg : cell.kind == '+' ? gutter ? palette.additionGutter : palette.additionBg
                         : cell.kind == '-' ? gutter ? palette.deletionGutter : palette.deletionBg : palette.bg;
                 fill.setColor(background);
                 canvas.drawRect(0, y, getWidth(), bottom, fill);
-                if (cell == null) {
-                    if (!gutter) {
-                        canvas.save();
-                        canvas.clipRect(gutterWidth, y, getWidth(), bottom);
-                        fill.setColor(palette.buffer);
-                        fill.setStrokeWidth(ui.dp(1));
-                        for (int x = gutterWidth - lineHeight; x < getWidth(); x += ui.dp(8)) canvas.drawLine(x, bottom, x + lineHeight, y, fill);
-                        canvas.restore();
-                    }
-                    continue;
-                }
+                if (cell == null) continue;
                 float baseline = y + (lineHeight - text.ascent() - text.descent()) / 2;
                 if (gutter) {
                     if (cell.kind == '+') {
@@ -352,11 +316,10 @@ final class NativePatchView extends LinearLayout {
                         int stripe = Math.max(1, ui.dp(1));
                         for (int at = y; at < bottom; at += stripe * 2) canvas.drawRect(0, at, ui.dp(4), Math.min(at + stripe, bottom), fill);
                     }
-                    if (gutterWidth > ui.dp(6) && cell.number > 0) {
-                        String number = String.valueOf(cell.number);
-                        text.setColor(cell.kind == '+' ? palette.added : cell.kind == '-' ? palette.deleted : palette.number);
-                        canvas.drawText(number, gutterWidth - text.measureText("0") - ui.dp(2) - text.measureText(number), baseline, text);
-                    }
+                    text.setColor(cell.kind == '+' ? palette.added : cell.kind == '-' ? palette.deleted : palette.number);
+                    number(canvas, row.old, ui.dp(4) + numberWidth, baseline);
+                    number(canvas, row.next, ui.dp(4) + numberWidth * 2, baseline);
+                    if (cell.kind == '+' || cell.kind == '-') canvas.drawText(String.valueOf(cell.kind), gutterWidth - text.measureText("0") - ui.dp(2), baseline, text);
                     fill.setColor(palette.bg);
                     canvas.drawRect(getWidth() - ui.dp(2), y, getWidth(), bottom, fill);
                 } else {
@@ -371,6 +334,11 @@ final class NativePatchView extends LinearLayout {
                     NativeSyntax.draw(canvas, text, plain(cell.text), cell.syntax, gutterWidth + text.measureText("0"), baseline);
                 }
             }
+        }
+        private void number(Canvas canvas, Cell cell, int end, float baseline) {
+            if (numberWidth == 0 || cell == null || cell.number <= 0) return;
+            String number = String.valueOf(cell.number);
+            canvas.drawText(number, end - text.measureText(number), baseline, text);
         }
         private String plain(String value) { return NativeWordDiff.cleanLastNewline(value); }
     }

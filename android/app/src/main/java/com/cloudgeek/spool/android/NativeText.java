@@ -47,6 +47,7 @@ final class NativeText {
             case "Avatar style": value = "头像风格"; break;
             case "Away": value = "离开"; break;
             case "Back to start": value = "回到开头"; break;
+            case "Binary file": value = "二进制文件"; break;
             case "Bypass permissions": value = "跳过权限检查"; break;
             case "CLI default": value = "CLI 默认"; break;
             case "Cancel": value = "取消"; break;
@@ -55,6 +56,7 @@ final class NativeText {
             case "Cancelled by {name}": value = "{name} 取消了请求"; break;
             case "Change avatar": value = "更换头像"; break;
             case "Change default permission mode": value = "更改默认权限模式"; break;
+            case "Changes": value = "变更"; break;
             case "Chat commands": value = "聊天指令"; break;
             case "Chat disconnected. Wait for reconnection before sending.": value = "聊天连接已断开，请等待重连后再发送。"; break;
             case "Chat options": value = "对话选项"; break;
@@ -77,6 +79,7 @@ final class NativeText {
             case "Clear file search": value = "清空文件搜索"; break;
             case "Close": value = "关闭"; break;
             case "Close avatar picker": value = "关闭头像选择器"; break;
+            case "Close diff": value = "关闭差异预览"; break;
             case "Close file preview": value = "关闭文件预览"; break;
             case "Close file search": value = "关闭文件搜索"; break;
             case "Close group chat": value = "关闭群聊"; break;
@@ -142,6 +145,7 @@ final class NativeText {
             case "Describe your idea. Your agent takes it from here.": value = "描述你的想法，剩下的交给 agent。"; break;
             case "Detached HEAD · {commit}": value = "游离 HEAD · {commit}"; break;
             case "Device approval": value = "设备配对确认"; break;
+            case "Diff preview is truncated.": value = "差异预览已截断。"; break;
             case "Directory": value = "目录"; break;
             case "Disable plugin suggestions": value = "关闭插件推荐"; break;
             case "Disabled": value = "已停用"; break;
@@ -182,6 +186,9 @@ final class NativeText {
             case "Form values (JSON)": value = "表单内容（JSON）"; break;
             case "Generated from your name": value = "根据你的名字自动生成"; break;
             case "Generated on your device. Your name is never sent to DiceBear.": value = "在你的设备上生成，不会向 DiceBear 发送你的名字。"; break;
+            case "Git diff": value = "Git 差异"; break;
+            case "Git panel": value = "Git"; break;
+            case "Git views": value = "Git 视图"; break;
             case "Goal commands do not accept attachments": value = "目标指令不支持附件"; break;
             case "Goal conditions must be at most 4000 characters": value = "目标条件最多 4000 个字符"; break;
             case "Group chat": value = "群聊"; break;
@@ -189,6 +196,7 @@ final class NativeText {
             case "Group name": value = "群聊名称"; break;
             case "Group operation status unknown. Check your conversation list before trying again.": value = "群聊操作结果未知，请先检查聊天列表，避免重复操作。"; break;
             case "High": value = "高"; break;
+            case "History": value = "历史"; break;
             case "Ideas, brought to life.": value = "想法，在这里落地。"; break;
             case "Image unavailable: {name}": value = "图片不可用：{name}"; break;
             case "Information": value = "信息"; break;
@@ -207,6 +215,8 @@ final class NativeText {
             case "Listed files": value = "列出文件"; break;
             case "Listed files in {path}": value = "列出 {path} 中的文件"; break;
             case "Load next section": value = "加载下一段"; break;
+            case "Loading Git information…": value = "正在加载 Git 信息…"; break;
+            case "Loading diff…": value = "正在加载差异…"; break;
             case "Loading earlier messages…": value = "正在加载更早的消息…"; break;
             case "Loading files…": value = "正在加载文件…"; break;
             case "Loading file…": value = "正在加载文件…"; break;
@@ -237,11 +247,14 @@ final class NativeText {
             case "Next page": value = "下一页"; break;
             case "Next rows": value = "下一组行"; break;
             case "No authorized projects": value = "暂无授权项目"; break;
+            case "No changes.": value = "没有变更。"; break;
+            case "No commits yet.": value = "暂无提交。"; break;
             case "No conversations yet.": value = "还没有聊天记录。"; break;
             case "No goal set.": value = "尚未设置目标。"; break;
             case "No other people online.": value = "暂无其他在线成员。"; break;
             case "No pinned chats": value = "还没有置顶聊天"; break;
             case "No servers yet.": value = "尚未添加服务器。"; break;
+            case "No textual changes.": value = "没有文本变更。"; break;
             case "None": value = "无"; break;
             case "Not installed": value = "未安装"; break;
             case "Not now": value = "暂不处理"; break;
@@ -287,6 +300,8 @@ final class NativeText {
             case "Private messages": value = "私聊"; break;
             case "Project file tree": value = "项目文件树"; break;
             case "Project files": value = "项目文件"; break;
+            case "Project panel": value = "项目"; break;
+            case "Project panels": value = "项目面板"; break;
             case "Project sandbox · network access requires approval": value = "项目目录沙箱 · 网络访问需审批；代我审批不会取消沙箱"; break;
             case "Projects": value = "项目"; break;
             case "Public HTTPS": value = "公网 HTTPS"; break;
@@ -303,6 +318,9 @@ final class NativeText {
             case "Reasoning level": value = "推理级别"; break;
             case "Recents": value = "最近聊天"; break;
             case "Reconnecting…": value = "正在重连…"; break;
+            case "Refresh Git information": value = "刷新 Git 信息"; break;
+            case "Refresh diff preview": value = "刷新差异预览"; break;
+            case "Refresh file preview": value = "刷新文件预览"; break;
             case "Refresh files": value = "刷新文件"; break;
             case "Relay": value = "中继"; break;
             case "Relay HTTPS address": value = "中继 HTTPS 地址"; break;
@@ -398,6 +416,7 @@ final class NativeText {
             case "This Office file cannot be previewed. Download it to open locally.": value = "无法预览此 Office 文件，请下载后在本地打开。"; break;
             case "This PDF cannot be previewed. Download it to open locally.": value = "此 PDF 无法预览，请下载后在本地打开。"; break;
             case "This directory is empty.": value = "此目录为空。"; break;
+            case "This directory is not a Git repository.": value = "此目录不是 Git 仓库。"; break;
             case "This file cannot be previewed as an image": value = "此文件不支持图片预览"; break;
             case "This file has no text preview. Download it to open locally.": value = "此文件不支持文本预览，请下载后在本地打开。"; break;
             case "This group is no longer available to you.": value = "此群聊已关闭或你不在群内。"; break;
@@ -420,7 +439,9 @@ final class NativeText {
             case "Tool input": value = "工具输入"; break;
             case "Tool result": value = "工具结果"; break;
             case "Toon Head": value = "Toon Head"; break;
+            case "Tracked": value = "已跟踪"; break;
             case "Unpin chat": value = "取消置顶聊天"; break;
+            case "Untracked": value = "未跟踪"; break;
             case "Update v{version}": value = "更新 v{version}"; break;
             case "Updates automatically when your name changes": value = "名字变更后，头像会自动更新"; break;
             case "Updating presence…": value = "正在更新在线状态…"; break;
@@ -510,6 +531,7 @@ final class NativeText {
             case "Avatar style": value = "アバターのスタイル"; break;
             case "Away": value = "離席中"; break;
             case "Back to start": value = "先頭に戻る"; break;
+            case "Binary file": value = "バイナリファイル"; break;
             case "Bypass permissions": value = "権限チェックをスキップ"; break;
             case "CLI default": value = "CLI の既定値"; break;
             case "Cancel": value = "キャンセル"; break;
@@ -518,6 +540,7 @@ final class NativeText {
             case "Cancelled by {name}": value = "{name} がキャンセルしました"; break;
             case "Change avatar": value = "アバターを変更"; break;
             case "Change default permission mode": value = "既定の権限モードを変更"; break;
+            case "Changes": value = "変更"; break;
             case "Chat commands": value = "チャットコマンド"; break;
             case "Chat disconnected. Wait for reconnection before sending.": value = "チャットの接続が切れました。再接続してから送信してください。"; break;
             case "Chat options": value = "チャットのオプション"; break;
@@ -540,6 +563,7 @@ final class NativeText {
             case "Clear file search": value = "ファイル検索をクリア"; break;
             case "Close": value = "閉じる"; break;
             case "Close avatar picker": value = "アバター選択を閉じる"; break;
+            case "Close diff": value = "差分を閉じる"; break;
             case "Close file preview": value = "ファイルプレビューを閉じる"; break;
             case "Close file search": value = "ファイル検索を閉じる"; break;
             case "Close group chat": value = "グループチャットを閉じる"; break;
@@ -605,6 +629,7 @@ final class NativeText {
             case "Describe your idea. Your agent takes it from here.": value = "アイデアを伝えて、あとはエージェントに任せましょう。"; break;
             case "Detached HEAD · {commit}": value = "分離 HEAD · {commit}"; break;
             case "Device approval": value = "端末の承認"; break;
+            case "Diff preview is truncated.": value = "差分プレビューは省略されています。"; break;
             case "Directory": value = "ディレクトリ"; break;
             case "Disable plugin suggestions": value = "プラグインの提案を無効化"; break;
             case "Disabled": value = "無効"; break;
@@ -645,6 +670,9 @@ final class NativeText {
             case "Form values (JSON)": value = "フォームの値（JSON）"; break;
             case "Generated from your name": value = "名前から自動生成"; break;
             case "Generated on your device. Your name is never sent to DiceBear.": value = "お使いのデバイス上で生成され、名前は DiceBear に送信されません。"; break;
+            case "Git diff": value = "Git 差分"; break;
+            case "Git panel": value = "Git"; break;
+            case "Git views": value = "Git ビュー"; break;
             case "Goal commands do not accept attachments": value = "目標コマンドに添付ファイルは使用できません"; break;
             case "Goal conditions must be at most 4000 characters": value = "目標条件は 4000 文字以内で入力してください"; break;
             case "Group chat": value = "グループチャット"; break;
@@ -652,6 +680,7 @@ final class NativeText {
             case "Group name": value = "グループ名"; break;
             case "Group operation status unknown. Check your conversation list before trying again.": value = "グループ操作の結果が不明です。再試行する前にチャット一覧を確認してください。"; break;
             case "High": value = "高"; break;
+            case "History": value = "履歴"; break;
             case "Ideas, brought to life.": value = "アイデアを、かたちに。"; break;
             case "Image unavailable: {name}": value = "画像を表示できません: {name}"; break;
             case "Information": value = "情報"; break;
@@ -670,6 +699,8 @@ final class NativeText {
             case "Listed files": value = "ファイル一覧を取得"; break;
             case "Listed files in {path}": value = "{path} のファイル一覧を取得"; break;
             case "Load next section": value = "次の部分を読み込む"; break;
+            case "Loading Git information…": value = "Git 情報を読み込み中…"; break;
+            case "Loading diff…": value = "差分を読み込み中…"; break;
             case "Loading earlier messages…": value = "以前のメッセージを読み込み中…"; break;
             case "Loading files…": value = "ファイル一覧を読み込み中…"; break;
             case "Loading file…": value = "ファイルを読み込み中…"; break;
@@ -700,11 +731,14 @@ final class NativeText {
             case "Next page": value = "次のページ"; break;
             case "Next rows": value = "次の行"; break;
             case "No authorized projects": value = "アクセスできるプロジェクトがありません"; break;
+            case "No changes.": value = "変更はありません。"; break;
+            case "No commits yet.": value = "コミットはまだありません。"; break;
             case "No conversations yet.": value = "チャットはまだありません。"; break;
             case "No goal set.": value = "目標は設定されていません。"; break;
             case "No other people online.": value = "他にオンラインのメンバーはいません。"; break;
             case "No pinned chats": value = "ピン留めされたチャットはありません"; break;
             case "No servers yet.": value = "サーバーがまだありません。"; break;
+            case "No textual changes.": value = "テキストの変更はありません。"; break;
             case "None": value = "なし"; break;
             case "Not installed": value = "未インストール"; break;
             case "Not now": value = "今はしない"; break;
@@ -750,6 +784,8 @@ final class NativeText {
             case "Private messages": value = "プライベートメッセージ"; break;
             case "Project file tree": value = "プロジェクトのファイルツリー"; break;
             case "Project files": value = "プロジェクトファイル"; break;
+            case "Project panel": value = "プロジェクト"; break;
+            case "Project panels": value = "プロジェクトパネル"; break;
             case "Project sandbox · network access requires approval": value = "プロジェクト内のサンドボックス · ネットワーク接続には承認が必要です"; break;
             case "Projects": value = "プロジェクト"; break;
             case "Public HTTPS": value = "公開HTTPS"; break;
@@ -766,6 +802,9 @@ final class NativeText {
             case "Reasoning level": value = "推論レベル"; break;
             case "Recents": value = "最近のチャット"; break;
             case "Reconnecting…": value = "再接続中…"; break;
+            case "Refresh Git information": value = "Git 情報を更新"; break;
+            case "Refresh diff preview": value = "差分プレビューを更新"; break;
+            case "Refresh file preview": value = "ファイルプレビューを更新"; break;
             case "Refresh files": value = "ファイルを更新"; break;
             case "Relay": value = "リレー"; break;
             case "Relay HTTPS address": value = "Relay HTTPS address"; break;
@@ -861,6 +900,7 @@ final class NativeText {
             case "This Office file cannot be previewed. Download it to open locally.": value = "この Office ファイルはプレビューできません。ダウンロードしてローカルで開いてください。"; break;
             case "This PDF cannot be previewed. Download it to open locally.": value = "この PDF はプレビューできません。ダウンロードして開いてください。"; break;
             case "This directory is empty.": value = "このフォルダーは空です。"; break;
+            case "This directory is not a Git repository.": value = "このディレクトリは Git リポジトリではありません。"; break;
             case "This file cannot be previewed as an image": value = "このファイルは画像として表示できません"; break;
             case "This file has no text preview. Download it to open locally.": value = "テキストプレビューはありません。ダウンロードして開いてください。"; break;
             case "This group is no longer available to you.": value = "このグループは閉じられたか、あなたはメンバーではありません。"; break;
@@ -883,7 +923,9 @@ final class NativeText {
             case "Tool input": value = "ツールの入力"; break;
             case "Tool result": value = "ツール結果"; break;
             case "Toon Head": value = "Toon Head"; break;
+            case "Tracked": value = "追跡済み"; break;
             case "Unpin chat": value = "チャットのピン留めを解除"; break;
+            case "Untracked": value = "未追跡"; break;
             case "Update v{version}": value = "更新 v{version}"; break;
             case "Updates automatically when your name changes": value = "名前の変更に合わせて自動更新"; break;
             case "Updating presence…": value = "オンライン状態を更新中…"; break;

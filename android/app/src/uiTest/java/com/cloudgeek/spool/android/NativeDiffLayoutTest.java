@@ -115,13 +115,34 @@ public class NativeDiffLayoutTest {
     }
 
     private android.view.View code(android.view.View view, boolean additions) {
-        if (view.getClass().getSimpleName().equals("Code") && !(boolean) ReflectionHelpers.getField(view, "gutter")
-                && (boolean) ReflectionHelpers.getField(view, "additions") == additions) return view;
+        if (view.getClass().getSimpleName().equals("Code") && !(boolean) ReflectionHelpers.getField(view, "gutter")) return view;
         if (view instanceof android.view.ViewGroup) for (int i = 0; i < ((android.view.ViewGroup) view).getChildCount(); i++) {
             android.view.View found = code(((android.view.ViewGroup) view).getChildAt(i), additions);
             if (found != null) return found;
         }
         return null;
+    }
+
+    @Test public void toolDiffUsesOneFullWidthColumnWithDeletionsBeforeAdditionsAndBothSourceNumbers() {
+        try (ActivityController<android.app.Activity> controller = Robolectric.buildActivity(android.app.Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false);
+            android.view.View patch = NativePatchView.render(ui, "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -7,3 +7,4 @@\n context\n-old1\n-old2\n+new1\n+new2\n+new3\n", false);
+            controller.get().setContentView(patch);
+            patch.measure(android.view.View.MeasureSpec.makeMeasureSpec(360, android.view.View.MeasureSpec.EXACTLY), android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED));
+            patch.layout(0, 0, 360, patch.getMeasuredHeight());
+            android.view.View code = code(patch, true); assertNotNull(code);
+            assertSame("Both sides render through the same column", code, code(patch, false));
+            assertEquals(358, ((android.view.View) code.getParent()).getWidth());
+            List<NativeDiffLayout.Row> rows = ReflectionHelpers.getField(code, "rows");
+            assertEquals("⋯", rows.get(0).separator);
+            assertEquals(7, rows.get(1).old.number); assertEquals(7, rows.get(1).next.number);
+            assertEquals("old1\n", rows.get(2).old.text); assertNull(rows.get(2).next);
+            assertEquals("old2\n", rows.get(3).old.text); assertNull(rows.get(3).next);
+            assertEquals("new1\n", rows.get(4).next.text); assertNull(rows.get(4).old);
+            assertEquals("new3\n", rows.get(6).next.text);
+            android.view.View unknown = NativePatchView.render(ui, "*** Begin Patch\n*** Update File: a.ts\n@@\n-before\n+after\n*** End Patch", true);
+            assertEquals(0, (int) ReflectionHelpers.getField(code(unknown, false), "numberWidth"));
+        }
     }
     private JSONArray spanBoxes(android.view.View view, boolean additions) throws Exception {
         assertNotNull(view);

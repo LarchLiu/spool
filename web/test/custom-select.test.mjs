@@ -127,3 +127,11 @@ test("icon-only popup keeps inherited anchor coordinates while reserving room fo
     224,
   );
 });
+
+test("directory menu uses measured content height while respecting viewport space", () => {
+  const anchor = { left: 20, top: 50, bottom: 78, right: 48, width: 28 };
+  assert.equal(selectPopupLayout(anchor, view, 8, 300, 330).maxHeight, 330);
+  assert.equal(selectPopupLayout(anchor, view, 2, 300, 138).maxHeight, 138);
+  const short = selectPopupLayout(anchor, { ...view, height: 300 }, 8, 300, 330);
+  assert.equal(short.maxHeight, 210);
+});

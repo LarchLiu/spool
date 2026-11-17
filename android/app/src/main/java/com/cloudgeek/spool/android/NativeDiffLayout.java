@@ -64,6 +64,23 @@ final class NativeDiffLayout {
         return rows;
     }
 
+    /** Keep paired cells' syntax/word spans, but show each change block as deletions then additions. */
+    static List<Row> unifiedRows(List<Row> paired) {
+        List<Row> result = new ArrayList<>(), deletions = new ArrayList<>(), additions = new ArrayList<>();
+        for (Row row : paired) {
+            if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
+            if ((row.old != null && row.old.kind == '-') || (row.next != null && row.next.kind == '+')) {
+                if (row.old != null) deletions.add(new Row(row.old, null, false));
+                if (row.next != null) additions.add(new Row(null, row.next, false));
+            } else {
+                result.addAll(deletions); result.addAll(additions); deletions.clear(); additions.clear();
+                result.add(row.separator == null ? row : new Row("⋯", false));
+            }
+        }
+        result.addAll(deletions); result.addAll(additions);
+        return result;
+    }
+
     private static void append(List<Row> rows, List<Cell> old, List<Cell> next, boolean precise) {
         int pairs = Math.min(old.size(), next.size()), surplus = Math.abs(old.size() - next.size());
         boolean additionsLonger = next.size() > old.size();

@@ -140,9 +140,39 @@ try {
   assert.match(await page.locator(".tool-activity-history").textContent(), /Declined/);
   assert.equal(await page.locator(".tool-activity-stats").count(), 0);
   await page.screenshot({ path: path.join(output, "outcomes-mobile.png") });
+  // Summary counts keep their diff colors and precede the disclosure arrow,
+  // including grouped edits, narrow labels and counts updated in place.
+  const edit = (id, additions, deletions) => ({ id, role: "assistant", kind: "tool_use", name: "fileChange", text: "", tool: {
+    kind: "write", status: "completed", path: `${id}-long-file-name-for-a-narrow-summary.ts`, changes: { additions, deletions },
+  } });
+  let statsScenes = 0;
+  for (const theme of ["light", "dark"]) for (const width of [1100, 390]) {
+    await page.setViewportSize({ width, height: 700 });
+    await page.evaluate(theme => { document.documentElement.dataset.theme = theme; window.bind([]); }, theme);
+    await page.evaluate(parts => window.bind(parts), [edit("one", 3, 1), edit("two", 2, 0)]);
+    await page.waitForFunction(() => document.querySelectorAll(".tool-activity-stats").length === 3);
+    for (const counts of [["+5 -1", "+3 -1", "+2 -0"], ["+2 -4", "+0 -4", "+2 -0"]]) {
+      const rows = await page.locator(".tool-activity-stats").evaluateAll(nodes => nodes.map(stats => {
+        const row = stats.parentElement, label = row.children[1], caret = row.querySelector(".tool-activity-caret");
+        const addition = stats.firstElementChild, deletion = stats.lastElementChild;
+        return { text: stats.textContent, addition: getComputedStyle(addition).color, deletion: getComputedStyle(deletion).color,
+          ordered: label.getBoundingClientRect().right <= stats.getBoundingClientRect().left && stats.getBoundingClientRect().right <= caret.getBoundingClientRect().left,
+          fits: caret.getBoundingClientRect().right <= row.getBoundingClientRect().right };
+      }));
+      assert.deepEqual(rows.map(row => row.text), counts);
+      for (const row of rows) {
+        assert.equal(row.addition, theme === "dark" ? "rgb(7, 196, 128)" : "rgb(24, 164, 108)");
+        assert.equal(row.deletion, theme === "dark" ? "rgb(255, 46, 63)" : "rgb(213, 44, 54)");
+        assert.ok(row.ordered && row.fits, `${theme}/${width}: statistics precede the caret within the summary`);
+      }
+      await page.evaluate(parts => window.bind(parts), [edit("one", 0, 4), edit("two", 2, 0)]);
+    }
+    await page.screenshot({ path: path.join(output, `diff-stats-${width}-${theme}.png`) });
+    statsScenes++;
+  }
   assert.equal(apiRequests, 0);
   assert.deepEqual(errors, []);
-  const report = { fixtureProjections: count, compoundCallsInitiallyFolded: true, uniqueKindSummaries: true, independentCallGroups: true, expansionSurvivesLiveUpdates: true, staticRowsHaveNoButtonCaretOrDetails: true, staleExpansionSuppressed: true, ordinaryToolDetailsPreserved: true, detailRequests: apiRequests, javascriptErrors: errors };
+  const report = { fixtureProjections: count, compoundCallsInitiallyFolded: true, uniqueKindSummaries: true, independentCallGroups: true, expansionSurvivesLiveUpdates: true, staticRowsHaveNoButtonCaretOrDetails: true, staleExpansionSuppressed: true, ordinaryToolDetailsPreserved: true, diffStatsScenes: statsScenes, detailRequests: apiRequests, javascriptErrors: errors };
   await fs.writeFile(path.join(output, "operations-browser-report.json"), JSON.stringify(report, null, 2) + "\n");
   console.log(report);
 } finally {

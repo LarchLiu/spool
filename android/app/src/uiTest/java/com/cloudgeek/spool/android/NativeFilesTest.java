@@ -112,7 +112,7 @@ public class NativeFilesTest {
             browser.reload();
             directory.result.done(fixture.getJSONObject("fileDirectories").getJSONObject("src"), null);
             assertFalse(model.directories.containsKey("src"));
-            assertEquals(2, requests.size());
+            assertEquals("List refresh must not reload the file preview", 1, requests.size());
             browser.deactivate();
             for (Pending pending : requests) pending.result.done(new JSONObject("{entries:[]}"), null);
             assertTrue(model.directories.isEmpty());
@@ -348,7 +348,7 @@ public class NativeFilesTest {
                     assertTrue(browser.split.handle.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.getId(), progress));
                     assertEquals(.6, browser.split.current(), .0001); browser.split.update(.32);
                     double fraction = browser.split.current(); browser.split.handle.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_DOWN)); assertTrue(browser.split.current() > fraction);
-                    browser.split.handle.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MOVE_HOME)); assertEquals(NativeFileSplit.minimum(750), browser.split.current(), .0001);
+                    browser.split.handle.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MOVE_HOME)); assertEquals(NativeFileSplit.minimum(browser.split.getHeight() / controller.get().getResources().getDisplayMetrics().density), browser.split.current(), .0001);
                     browser.split.update(.32);
                     model.expanded.clear();
                     browser.select(new NativeFileTarget("README.md", 0, 0)); layout(browser, side, 800);

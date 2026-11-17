@@ -60,7 +60,7 @@ try {
       await page.route("**/api/chats/*/file?**", route => denied
         ? route.fulfill({ status: 403, json: { code: "file_read_denied", error: "The operating system denied Spool access to this file." } })
         : route.continue());
-      await page.getByRole("button", { name: "Refresh files", exact: true }).click();
+      await page.getByRole("button", { name: "Refresh file preview", exact: true }).click();
       await page.locator(".file-preview [role=alert]").filter({ hasText: "The operating system denied Spool access" }).waitFor();
       const allow = page.getByRole("link", { name: "Allow access to attached file", exact: true });
       assert.equal(await allow.count(), surface === "desktop" ? 1 : 0, surface + " authorization entry");

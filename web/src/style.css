@@ -2254,6 +2254,18 @@ a.attachment-open {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.tool-activity-additions {
+  color: #18a46c;
+}
+.tool-activity-deletions {
+  color: #d52c36;
+}
+:root[data-theme="dark"] .tool-activity-additions {
+  color: #07c480;
+}
+:root[data-theme="dark"] .tool-activity-deletions {
+  color: #ff2e3f;
+}
 .tool-activity-outcome {
   flex-shrink: 0;
   color: var(--error-text);
@@ -4402,6 +4414,11 @@ option {
 }
 .file-preview-header svg {
   flex-shrink: 0;
+}
+.file-preview-header .file-preview-controls {
+  display: flex;
+  align-items: center;
+  gap: 0;
 }
 .file-preview-header small {
   color: var(--muted);

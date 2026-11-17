@@ -41,7 +41,7 @@ final class NativeFileModel {
     JSONObject file;
     NativeFileTarget target;
     NativeFileTarget loadedTarget;
-    boolean searchOpen, truncated;
+    boolean searchOpen, truncated, gitPanel;
     int epoch, fileRequest;
     double split = .32;
 
@@ -177,6 +177,10 @@ final class NativeFileModel {
 
     void reset() {
         epoch++; fileRequest++;
+        resetDirectories();
+    }
+
+    void resetDirectories() {
         directories.clear(); requested.clear(); expanded.clear();
         error = ""; truncated = false;
         if (beforeSearch != null) beforeSearch.clear();

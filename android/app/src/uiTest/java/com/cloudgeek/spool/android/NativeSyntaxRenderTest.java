@@ -83,7 +83,7 @@ public class NativeSyntaxRenderTest {
         return lines;
     }
     private View code(View view, boolean additions) {
-        if (view.getClass().getSimpleName().equals("Code") && !(boolean) ReflectionHelpers.getField(view, "gutter") && (boolean) ReflectionHelpers.getField(view, "additions") == additions) return view;
+        if (view.getClass().getSimpleName().equals("Code") && !(boolean) ReflectionHelpers.getField(view, "gutter")) return view;
         if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++) { View result = code(((ViewGroup) view).getChildAt(i), additions); if (result != null) return result; }
         return null;
     }

@@ -1,0 +1,335 @@
+package workspace
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
+)
+
+type workspaceGitFile struct {
+	Path         string `json:"path"`
+	PreviousPath string `json:"previous_path,omitempty"`
+	Status       string `json:"status"`
+	Staged       bool   `json:"staged"`
+	Untracked    bool   `json:"untracked"`
+	Additions    int    `json:"additions"`
+	Deletions    int    `json:"deletions"`
+	Binary       bool   `json:"binary,omitempty"`
+}
+
+type workspaceGitCommit struct {
+	ID      string `json:"id"`
+	Subject string `json:"subject"`
+	Author  string `json:"author"`
+	Time    int64  `json:"time"`
+}
+
+type workspaceGitView struct {
+	Repository bool                 `json:"repository"`
+	Branch     string               `json:"branch,omitempty"`
+	Commit     string               `json:"commit,omitempty"`
+	Files      []workspaceGitFile   `json:"files"`
+	Commits    []workspaceGitCommit `json:"commits"`
+	Truncated  bool                 `json:"truncated,omitempty"`
+}
+
+var gitCommitID = regexp.MustCompile(`^[a-f0-9]{40,64}$`)
+var errGitOutputLimit = errors.New("Git output exceeded the preview limit")
+
+type gitOutput struct {
+	bytes.Buffer
+	limit    int
+	exceeded bool
+}
+
+func (b *gitOutput) Write(p []byte) (int, error) {
+	if len(p) > b.limit-b.Len() {
+		b.Buffer.Write(p[:b.limit-b.Len()])
+		b.exceeded = true
+		return 0, errGitOutputLimit
+	}
+	return b.Buffer.Write(p)
+}
+
+// Keep Git reads bounded and independent of inherited repository overrides,
+// user diff programs, hooks, fsmonitor and textconv filters.
+func readWorkspaceGit(ctx context.Context, directory string, limit int, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	base := []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=", "-c", "core.quotePath=false", "-c", "color.ui=false"}
+	cmd := exec.CommandContext(ctx, "git", append(base, args...)...)
+	cmd.Dir = directory
+	cmd.WaitDelay = time.Second
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, "GIT_") {
+			cmd.Env = append(cmd.Env, entry)
+		}
+	}
+	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0", "GIT_LITERAL_PATHSPECS=1")
+	out := &gitOutput{limit: limit}
+	cmd.Stdout = out
+	err := cmd.Run()
+	if out.exceeded {
+		err = errGitOutputLimit
+	}
+	return out.Bytes(), err
+}
+
+func parseWorkspaceGitStatus(body []byte) []workspaceGitFile {
+	files := []workspaceGitFile{}
+	fields := strings.Split(string(body), "\x00")
+	for i := 0; i < len(fields); i++ {
+		field := fields[i]
+		if len(field) < 4 {
+			continue
+		}
+		x, y := field[0], field[1]
+		file := workspaceGitFile{Path: field[3:], Status: strings.TrimSpace(field[:2]), Staged: x != ' ' && x != '?', Untracked: x == '?'}
+		if x == 'R' || x == 'C' || y == 'R' || y == 'C' {
+			i++
+			if i < len(fields) {
+				file.PreviousPath = fields[i]
+			}
+		}
+		files = append(files, file)
+	}
+	return files
+}
+
+// Missing/deleted paths can still be diffed, but existing symlink components
+// and protected/private subprojects must obey the file browser's boundaries.
+func workspaceGitPath(directory, path string, allowed func(string) bool) bool {
+	if !filepath.IsLocal(path) || path == "." || strings.ContainsAny(path, "\x00\r\n") || protectedProjectPath(path) {
+		return false
+	}
+	current := directory
+	for _, component := range strings.Split(filepath.FromSlash(path), string(filepath.Separator)) {
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if err == nil && info.Mode()&os.ModeSymlink != 0 {
+			return false
+		}
+		check := current
+		if err == nil && !info.IsDir() {
+			check = filepath.Dir(current)
+		}
+		if allowed != nil && !allowed(check) {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *App) serveWorkspaceGit(w http.ResponseWriter, r *http.Request, directory string, allowed func(string) bool) {
+	w.Header().Set("Cache-Control", "no-store")
+	view := workspaceGitView{Files: []workspaceGitFile{}, Commits: []workspaceGitCommit{}}
+	if _, common := gitWorkspace(directory); common == "" {
+		apiJSON(w, 200, view)
+		return
+	}
+	view.Repository = true
+	_, view.Branch, view.Commit = workspaceGitState(directory)
+	ctx := r.Context()
+	run := func(args ...string) ([]byte, error) { return readWorkspaceGit(ctx, directory, 4*1024*1024, args...) }
+	commit := r.URL.Query().Get("commit")
+	if commit != "" && !gitCommitID.MatchString(commit) {
+		apiError(w, 400, "Invalid commit")
+		return
+	}
+	// Require a reachable commit, rather than accepting arbitrary object IDs.
+	if commit != "" {
+		if _, err := run("merge-base", "--is-ancestor", commit, "HEAD"); err != nil {
+			apiError(w, 404, "Commit is unavailable")
+			return
+		}
+	}
+	head, headErr := run("rev-parse", "--verify", "HEAD")
+	if headErr == nil && view.Commit == "" {
+		view.Commit = strings.TrimSpace(string(head))
+	}
+	mode := r.URL.Query().Get("view")
+	if mode == "history" {
+		if headErr != nil {
+			apiJSON(w, 200, view)
+			return
+		}
+		body, err := run("log", "-50", "-z", "--format=%H%x00%s%x00%an%x00%at", "--", ".")
+		if err != nil {
+			apiError(w, 500, "Git history is unavailable")
+			return
+		}
+		fields := strings.Split(string(body), "\x00")
+		for i := 0; i+3 < len(fields); i += 4 {
+			stamp, _ := strconv.ParseInt(fields[i+3], 10, 64)
+			view.Commits = append(view.Commits, workspaceGitCommit{ID: strings.TrimSpace(fields[i]), Subject: fields[i+1], Author: fields[i+2], Time: stamp})
+		}
+		apiJSON(w, 200, view)
+		return
+	}
+	var files []workspaceGitFile
+	var err error
+	if commit == "" {
+		var body []byte
+		body, err = run("status", "--porcelain=v1", "-z", "--untracked-files=all", "--", ".")
+		files = parseWorkspaceGitStatus(body)
+		root, _ := gitWorkspace(directory)
+		for i := range files {
+			path, _ := filepath.Rel(directory, filepath.Join(root, files[i].Path))
+			files[i].Path = filepath.ToSlash(path)
+			if files[i].PreviousPath != "" {
+				previous, _ := filepath.Rel(directory, filepath.Join(root, files[i].PreviousPath))
+				files[i].PreviousPath = filepath.ToSlash(previous)
+			}
+		}
+	} else {
+		var body []byte
+		body, err = run("diff-tree", "--root", "--no-commit-id", "--name-status", "-r", "-z", "--no-renames", commit, "--", ".")
+		fields := strings.Split(string(body), "\x00")
+		// diff-tree paths are repository relative; return directory-relative paths.
+		root, _ := gitWorkspace(directory)
+		for i := 0; i+1 < len(fields); i += 2 {
+			path, _ := filepath.Rel(directory, filepath.Join(root, fields[i+1]))
+			files = append(files, workspaceGitFile{Path: filepath.ToSlash(path), Status: fields[i]})
+		}
+	}
+	if err != nil {
+		apiError(w, 500, "Git changes are unavailable")
+		return
+	}
+	for _, file := range files {
+		if !workspaceGitPath(directory, file.Path, allowed) || file.PreviousPath != "" && !workspaceGitPath(directory, file.PreviousPath, allowed) {
+			continue
+		}
+		view.Files = append(view.Files, file)
+	}
+	if mode == "diff" {
+		path := r.URL.Query().Get("path")
+		for _, file := range view.Files {
+			if file.Path != path {
+				continue
+			}
+			patch, truncated, binary, err := workspaceGitDiff(ctx, directory, file, commit, headErr == nil)
+			if err != nil {
+				apiError(w, 500, "Git diff is unavailable")
+				return
+			}
+			apiJSON(w, 200, map[string]any{"path": path, "patch": patch, "binary": binary, "truncated": truncated})
+			return
+		}
+		projectFileError(w, os.ErrPermission)
+		return
+	}
+	var stats []byte
+	if commit != "" {
+		stats, err = run("diff-tree", "--root", "--no-commit-id", "-r", "--numstat", "-z", "--no-renames", commit, "--", ".")
+	} else if headErr == nil {
+		stats, err = run("diff", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "--no-renames", "HEAD", "--", ".")
+	} else {
+		stats, err = run("diff", "--cached", "--no-ext-diff", "--no-textconv", "--numstat", "-z", "--no-renames", "--", ".")
+	}
+	if err != nil {
+		apiError(w, 500, "Git statistics are unavailable")
+		return
+	}
+	root, _ := gitWorkspace(directory)
+	for _, field := range strings.Split(string(stats), "\x00") {
+		parts := strings.SplitN(field, "\t", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		path, _ := filepath.Rel(directory, filepath.Join(root, parts[2]))
+		for i := range view.Files {
+			file := &view.Files[i]
+			if file.Path == filepath.ToSlash(path) || file.PreviousPath == filepath.ToSlash(path) {
+				add, _ := strconv.Atoi(parts[0])
+				del, _ := strconv.Atoi(parts[1])
+				file.Additions += add
+				file.Deletions += del
+				file.Binary = file.Binary || parts[0] == "-"
+			}
+		}
+	}
+	if len(view.Files) > maxDirectoryEntries {
+		view.Files = view.Files[:maxDirectoryEntries]
+		view.Truncated = true
+	}
+	apiJSON(w, 200, view)
+}
+
+func workspaceGitDiff(ctx context.Context, directory string, file workspaceGitFile, commit string, hasHead bool) (string, bool, bool, error) {
+	if file.Untracked {
+		root, err := os.OpenRoot(directory)
+		if err != nil {
+			return "", false, false, err
+		}
+		defer root.Close()
+		f, err := root.Open(file.Path)
+		if err != nil {
+			return "", false, false, err
+		}
+		defer f.Close()
+		info, err := f.Stat()
+		if err != nil || !info.Mode().IsRegular() {
+			return "", false, false, os.ErrPermission
+		}
+		body, err := io.ReadAll(io.LimitReader(f, maxFilePreviewBytes+1))
+		if err != nil {
+			return "", false, false, err
+		}
+		if bytes.IndexByte(body, 0) >= 0 || !utf8.Valid(body) {
+			return "", false, true, nil
+		}
+		truncated := len(body) > maxFilePreviewBytes
+		if truncated {
+			body = body[:maxFilePreviewBytes]
+			if at := bytes.LastIndexByte(body, '\n'); at >= 0 {
+				body = body[:at+1]
+			}
+		}
+		lines := strings.Split(strings.TrimSuffix(string(body), "\n"), "\n")
+		if len(body) == 0 {
+			return "", truncated, false, nil
+		}
+		var patch strings.Builder
+		fmt.Fprintf(&patch, "--- /dev/null\n+++ b/%s\n@@ -0,0 +1,%d @@\n", file.Path, len(lines))
+		for _, line := range lines {
+			patch.WriteString("+" + line + "\n")
+		}
+		if !truncated && body[len(body)-1] != '\n' {
+			patch.WriteString("\\ No newline at end of file\n")
+		}
+		return patch.String(), truncated, false, nil
+	}
+	args := []string{"diff", "--no-ext-diff", "--no-textconv", "--no-color", "--find-renames", "--unified=3"}
+	if commit != "" {
+		args = []string{"show", "--format=", "--no-ext-diff", "--no-textconv", "--no-color", "--unified=3", commit}
+	} else if hasHead {
+		args = append(args, "HEAD")
+	} else {
+		args = append(args, "--cached")
+	}
+	args = append(args, "--", file.Path)
+	if file.PreviousPath != "" {
+		args = append(args, file.PreviousPath)
+	}
+	body, err := readWorkspaceGit(ctx, directory, maxFilePreviewBytes, args...)
+	truncated := errors.Is(err, errGitOutputLimit)
+	if truncated {
+		err = nil
+		if at := bytes.LastIndexByte(body, '\n'); at >= 0 {
+			body = body[:at+1]
+		}
+	}
+	return string(body), truncated, bytes.Contains(body, []byte("Binary files ")), err
+}

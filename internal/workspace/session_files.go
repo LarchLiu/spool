@@ -257,6 +257,12 @@ func (a *App) sessionFilesResponse(w http.ResponseWriter, r *http.Request, chat 
 		apiError(w, 404, "Session directory is unavailable")
 		return
 	}
+	if kind == "git" {
+		a.serveWorkspaceGit(w, r, directory, func(path string) bool {
+			return matchLocalSessionProject(path, mappings).ID == chat.ProjectID
+		})
+		return
+	}
 	a.serveProjectFiles(w, r, directory, kind, func(path string) bool {
 		resolved, err := filepath.EvalSymlinks(path)
 		if err != nil {

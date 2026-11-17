@@ -39,9 +39,11 @@ final class NativeFileHeader extends LinearLayout {
         project = ui.bold(name.isEmpty() ? ui.t("Files") : name, 12);
         ui.typography(project, 12, ui.text, 700); project.setSingleLine(true); project.setEllipsize(TextUtils.TruncateAt.END);
         LayoutParams projectParams = new LayoutParams(-2, -2); projectParams.setMarginStart(ui.dp(8)); title.addView(project, projectParams);
-        workspaceToggle = ui.icon("chevron-down", 14, ui.t("Switch directory"), this::showWorkspaces);
+        workspaceToggle = ui.icon("chevron-down", 18, ui.t("Switch directory"), this::showWorkspaces);
         workspaceToggle.setVisibility(GONE); workspaceToggle.setMinimumWidth(0); workspaceToggle.setMinimumHeight(0);
-        LayoutParams workspaceParams = new LayoutParams(ui.dp(22), ui.dp(24)); workspaceParams.setMarginStart(ui.dp(8)); title.addView(workspaceToggle, workspaceParams);
+        workspaceToggle.setPadding(ui.dp(5), ui.dp(5), ui.dp(5), ui.dp(5));
+        workspaceToggle.setImageTintList(android.content.res.ColorStateList.valueOf(ui.text));
+        LayoutParams workspaceParams = new LayoutParams(ui.dp(28), ui.dp(28)); workspaceParams.setMarginStart(ui.dp(8)); title.addView(workspaceToggle, workspaceParams);
         workspaceInfo = new NativeSessionWorkspace(ui);
         info = ui.icon("info", 14, ui.t("Session directory"), this::showWorkspace);
         info.setMinimumWidth(0); info.setMinimumHeight(0); info.setVisibility(GONE);
@@ -82,13 +84,13 @@ final class NativeFileHeader extends LinearLayout {
                 row.setEnabled(false); row.setAlpha(.45f);
             }
         }
-        workspaceMenu.showSelect(workspaceToggle, selected, 300);
+        workspaceMenu.showSelect(workspaceToggle, selected, 300, 36, 5);
     }
 
     void dismiss() { workspaceInfo.popover.dismiss(); if (workspaceMenu != null) workspaceMenu.dismiss(); }
 
     private void measureTitle(int widthSpec) {
-        project.setMaxWidth(Math.max(0, MeasureSpec.getSize(widthSpec) - ui.dp(16 + 8 + (info.getVisibility() == GONE ? 0 : 8 + 22) + (workspaceToggle.getVisibility() == GONE ? 0 : 8 + 22))));
+        project.setMaxWidth(Math.max(0, MeasureSpec.getSize(widthSpec) - ui.dp(16 + 8 + (info.getVisibility() == GONE ? 0 : 8 + 22) + (workspaceToggle.getVisibility() == GONE ? 0 : 8 + 28))));
     }
 
     void workspace(NativeFileModel state) {

@@ -12,6 +12,7 @@ export function selectPopupLayout(
   viewport: Viewport,
   count: number,
   minimumWidth = 180,
+  preferredHeight?: number,
 ) {
   const margin = 8,
     gap = 4;
@@ -24,7 +25,7 @@ export function selectPopupLayout(
     viewport.y + viewport.height - margin - anchor.bottom - gap,
   );
   const above = Math.max(0, anchor.top - gap - viewport.y - margin);
-  const desired = Math.min(280, count * 36 + 10);
+  const desired = preferredHeight ?? Math.min(280, count * 36 + 10);
   const side =
     below >= Math.min(desired, 180) || below >= above ? "bottom" : "top";
   return {

@@ -125,7 +125,7 @@ test("failed and declined calls say so and do not count as changes", () => {
   const group = [edit("one", "completed"), edit("two", "failed"), edit("three", "completed")];
   const html = renderToStaticMarkup(createElement(ToolActivityList, { parts: group, backend: "codex", t, live: true }));
   assert.match(html, /Edited files<\/span><span class="tool-activity-outcome">1 failed</);
-  assert.match(html, /class="tool-activity-stats">\+6 -2</);
+  assert.match(html, /class="tool-activity-stats"><span class="tool-activity-additions">\+6<\/span> <span class="tool-activity-deletions">-2<\/span><\/span><span class="tool-activity-caret">/);
   const rejected = [edit("one", "failed"), edit("two", "declined")];
   assert.match(renderToStaticMarkup(createElement(ToolActivityList, { parts: rejected, backend: "codex", t, live: true })), /Edit files<\/span>/);
 });
@@ -613,5 +613,5 @@ test("converted patch input and result remain in expandable tool details in full
   );
   assert.match(list, /Created pong\.html/);
   assert.match(list, /title="apply_patch"/);
-  assert.match(list, /\+25000 -0/);
+  assert.match(list, /class="tool-activity-additions">\+25000<\/span> <span class="tool-activity-deletions">-0<\/span>/);
 });

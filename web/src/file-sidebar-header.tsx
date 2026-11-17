@@ -29,6 +29,7 @@ export function FileSidebarHeader({
   t,
   search,
   onRefresh,
+  refreshLabel,
   onClose,
 }: {
   name?: string;
@@ -40,6 +41,7 @@ export function FileSidebarHeader({
   t: Translator;
   search?: FileSearch;
   onRefresh?: () => void;
+  refreshLabel?: string;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -105,6 +107,7 @@ export function FileSidebarHeader({
               <div className="file-workspace-select">
                 <CustomSelect
                   iconOnly
+                  maxVisibleOptions={5}
                   label={t("Switch directory")}
                   value={workspace.path}
                   options={workspaces.map((item) => ({
@@ -149,8 +152,8 @@ export function FileSidebarHeader({
           <button
             className="icon"
             onClick={onRefresh}
-            title={t("Refresh files")}
-            aria-label={t("Refresh files")}
+            title={refreshLabel || t("Refresh files")}
+            aria-label={refreshLabel || t("Refresh files")}
           >
             <RefreshCw size={18} />
           </button>

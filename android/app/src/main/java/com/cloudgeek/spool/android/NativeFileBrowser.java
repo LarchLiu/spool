@@ -37,6 +37,8 @@ final class NativeFileBrowser extends LinearLayout {
     final NativeSearchField searchField;
     final NativeUi.IconButton searchToggle;
     final NativeFilePreview preview;
+    final NativePanelTabs panelTabs;
+    final NativeGitPanel gitPanel;
     private final NativeUi ui;
     private final Read read;
     private final LinearLayout title;
@@ -45,7 +47,7 @@ final class NativeFileBrowser extends LinearLayout {
     private final Set<String> pending = new LinkedHashSet<>();
     private List<NativeFileModel.Row> rows = new ArrayList<>();
     private boolean active = true, syncingSearch, started, workspacePending;
-    private int workspaceRequest;
+    private int workspaceRequest, directoryRequest;
     private final Runnable workspacePoll = this::refreshWorkspace;
     private String revealing = "";
     private final BaseAdapter adapter = new BaseAdapter() {
@@ -75,6 +77,10 @@ final class NativeFileBrowser extends LinearLayout {
         title = header.title; searchField = header.searchField; search = header.search; searchToggle = header.searchToggle;
         addView(header, new LayoutParams(-1, ui.dp(49)));
         addView(ui.divider(), new LayoutParams(-1, ui.dp(50) - ui.dp(49)));
+        panelTabs = new NativePanelTabs(ui, ui.t("Project panels"));
+        panelTabs.add("project", ui.t("Project panel"), "file-list", () -> selectPanel(false));
+        panelTabs.add("git", ui.t("Git panel"), "git-branch", () -> selectPanel(true));
+        addView(panelTabs);
         treePane = ui.column(); treePane.setPadding(0, ui.dp(58) - ui.dp(50), 0, 0);
         treeSection = new FrameLayout(ui.context);
         list = new ListView(ui.context); list.setDivider(null); list.setDividerHeight(0); list.setVerticalScrollBarEnabled(false);
@@ -93,10 +99,13 @@ final class NativeFileBrowser extends LinearLayout {
         addView(split, new LayoutParams(-1, 0, 1));
         preview = new NativeFilePreview(ui, state.project, state.chat, images, pdfFactory, this::select,
                 address -> { if (active) external.accept(address); }, file -> { if (active) download.accept(file); }, this::clearPreview);
+        preview.reload = () -> { if (state.target != null) { preview.releaseDocuments(); select(state.target); } };
         preview.officeReader = (address, completion) -> {
             int epoch = state.epoch;
             if (active) read.read(address, (value, error) -> { if (active && epoch == state.epoch) completion.done(value,error); });
         };
+        gitPanel = new NativeGitPanel(ui, state, read, resize); addView(gitPanel, new LayoutParams(-1, 0, 1));
+        selectPanel(state.gitPanel);
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence value, int start, int count, int after) {}
             public void onTextChanged(CharSequence value, int start, int before, int count) { if (!syncingSearch) { state.search(value.toString()); renderTree(); loadExpanded(); } }
@@ -108,6 +117,7 @@ final class NativeFileBrowser extends LinearLayout {
         });
         bindSearch(); renderTree(); bindPreview();
         if (state.project.isEmpty()) {
+            panelTabs.setVisibility(GONE); gitPanel.setVisibility(GONE);
             searchToggle.setVisibility(GONE); header.refresh.setVisibility(GONE);
             treePane.setPadding(0, 0, 0, 0);
             empty.setText(ui.t("Choose a project to browse its files."));
@@ -119,11 +129,13 @@ final class NativeFileBrowser extends LinearLayout {
         active = true; started = true;
         if (!state.chat.isEmpty()) refreshWorkspace();
         else { loadDirectory("."); loadExpanded(); }
-        if (state.target != null) select(state.target);
+        gitPanel.activate(state.gitPanel);
+        if (state.target != null && !state.gitPanel) select(state.target);
     }
     void resume() { if (!active) { started = false; start(); } else refreshWorkspace(); }
     void deactivate() {
         active = false; state.epoch++; state.fileRequest++;
+        gitPanel.activate(false);
         preview.releaseDocuments();
         workspaceRequest++; workspacePending = false; removeCallbacks(workspacePoll);
         header.dismiss();
@@ -141,16 +153,18 @@ final class NativeFileBrowser extends LinearLayout {
     }
     private void hideKeyboard() { ((android.view.inputmethod.InputMethodManager) ui.context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(search.getWindowToken(), 0); }
     private void bindSearch() {
-        title.setVisibility(state.searchOpen ? GONE : VISIBLE); searchField.setVisibility(state.searchOpen ? VISIBLE : GONE); search.setVisibility(state.searchOpen ? VISIBLE : GONE);
+        boolean showSearch = state.searchOpen && !state.gitPanel;
+        title.setVisibility(showSearch ? GONE : VISIBLE); searchField.setVisibility(showSearch ? VISIBLE : GONE); search.setVisibility(showSearch ? VISIBLE : GONE);
         searchToggle.setKind(state.searchOpen ? "close" : "search"); searchToggle.setContentDescription(state.searchOpen ? ui.t("Close file search") : ui.t("Search files"));
         if (!search.getText().toString().equals(state.query)) { syncingSearch = true; search.setText(state.query); syncingSearch = false; }
     }
 
     void reload() {
         if (!active) return;
-        state.reset(); pending.clear(); revealing = "";
+        if (state.gitPanel) { gitPanel.reload(); return; }
+        state.resetDirectories();
+        directoryRequest++; pending.clear(); revealing = "";
         refreshWorkspace(); loadDirectory(".");
-        if (state.target != null) select(state.target);
         renderTree();
     }
 
@@ -173,13 +187,15 @@ final class NativeFileBrowser extends LinearLayout {
                 header.dismiss();
                 NativeFileTarget target = previous == null || oldPath.equals(newPath) ? state.target : null;
                 state.clearScope(); pending.clear(); revealing = "";
+                gitPanel.scopeChanged();
                 bindSearch(); bindPreview();
-                if (target != null) select(target);
+                if (target != null && !state.gitPanel) select(target);
             }
-            if (state.ready()) {
+            if (state.ready() && !state.gitPanel) {
                 loadDirectory("."); loadExpanded();
                 if (state.file != null && !state.file.optBoolean("external")) reveal(state.file.optString("path"));
             }
+            if (state.gitPanel) gitPanel.reload();
             renderTree();
             postDelayed(workspacePoll, 10_000);
         });
@@ -187,6 +203,7 @@ final class NativeFileBrowser extends LinearLayout {
     void selectWorkspace(String path) {
         if (!active || state.workspace != null && path.equals(state.workspace.optString("path")) || !state.selectWorkspace(path)) return;
         state.clearScope(); pending.clear(); revealing = "";
+        gitPanel.scopeChanged();
         header.dismiss(); bindSearch(); bindPreview(); renderTree();
         loadDirectory(".");
     }
@@ -195,9 +212,9 @@ final class NativeFileBrowser extends LinearLayout {
         String path = NativeFileModel.key(input);
         if (!active || !state.ready() || state.requested.contains(path)) return;
         state.requested.add(path); pending.add(path); renderTree();
-        int epoch = state.epoch;
+        int epoch = state.epoch, generation = directoryRequest;
         read.read(state.directoryPath(path), (value, error) -> {
-            if (!active || epoch != state.epoch) return;
+            if (!active || epoch != state.epoch || generation != directoryRequest) return;
             pending.remove(path);
             if (error != null) state.error = error.getMessage() == null ? ui.t("Request failed") : error.getMessage();
             else state.accept(path, value);
@@ -209,6 +226,7 @@ final class NativeFileBrowser extends LinearLayout {
 
     void select(NativeFileTarget target) {
         if (!active) return;
+        if (state.gitPanel) selectPanel(false);
         state.target = target; state.selected = target.path; state.fileError = ""; revealing = "";
         int request = ++state.fileRequest, epoch = state.epoch;
         bindPreview(); renderTree();
@@ -236,10 +254,18 @@ final class NativeFileBrowser extends LinearLayout {
     private void clearPreview() { state.target = null; state.file = null; state.loadedTarget = null; state.selected = ""; state.fileError = ""; state.fileRequest++; revealing = ""; bindPreview(); renderTree(); }
     private void bindPreview() {
         if (state.target == null) { preview.releaseDocuments(); split.preview(null); return; }
-        String imageScope = (state.workspace == null ? "" : state.workspace.optString("path")) + "\n" + state.epoch;
+        String imageScope = (state.workspace == null ? "" : state.workspace.optString("path")) + "\n" + state.epoch + ":" + state.fileRequest;
         preview.workspacePath = state.workspacePath();
         preview.bind(state.file, state.file == null ? state.target : state.loadedTarget, state.fileError, imageScope);
         if (split.preview != preview) split.preview(preview);
+    }
+
+    void selectPanel(boolean git) {
+        state.gitPanel = git;
+        header.refresh.setContentDescription(ui.t(git ? "Refresh Git information" : "Refresh files"));
+        panelTabs.select(git ? "git" : "project"); split.setVisibility(git ? GONE : VISIBLE); gitPanel.setVisibility(git ? VISIBLE : GONE);
+        searchToggle.setVisibility(git ? GONE : VISIBLE); bindSearch();
+        if (started) gitPanel.activate(git);
     }
 
     private void activate(int position) {

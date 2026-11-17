@@ -559,6 +559,14 @@ export function changeStats(activities: Activity[]) {
   return additions || deletions ? `+${additions} -${deletions}` : "";
 }
 
+function ActivityChangeStats({ stats }: { stats: string }) {
+  const [additions, deletions] = stats.split(" ");
+  return <span className="tool-activity-stats">
+    <span className="tool-activity-additions">{additions}</span>{" "}
+    <span className="tool-activity-deletions">{deletions}</span>
+  </span>;
+}
+
 function inlineChangeStats(value: string) {
   const match = value.match(/(?:^|\s)(\+\d+)\s+(-\d+)\s*$/);
   return match ? `${match[1]} ${match[2]}` : "";
@@ -715,10 +723,10 @@ function ActivityItem({
         <Icon size={12} strokeWidth={1.6} />
         <ActivityLabel activity={activity} />
         {outcome && <span className="tool-activity-outcome">{outcome}</span>}
+        {stats && <ActivityChangeStats stats={stats} />}
         <span className="tool-activity-caret">
           {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
-        {stats && <span className="tool-activity-stats">{stats}</span>}
       </button>
       {open && <ActivityDetail activity={activity} t={t} />}
     </div>
@@ -881,10 +889,10 @@ export function ToolActivityList({
                   <Icon size={13} strokeWidth={1.6} />
                   <span>{group.label}</span>
                   {failures > 0 && <span className="tool-activity-outcome">{t("{count} failed", { count: failures })}</span>}
+                  {stats && <ActivityChangeStats stats={stats} />}
                   <span className="tool-activity-caret">
                     {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                   </span>
-                  {stats && <span className="tool-activity-stats">{stats}</span>}
                 </button>
                 {expanded && (
                   <div className="tool-activity-items">

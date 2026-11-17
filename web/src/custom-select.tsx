@@ -18,6 +18,7 @@ export function CustomSelect({
   disabled = false,
   onChange,
   iconOnly = false,
+  maxVisibleOptions,
 }: {
   value: string;
   options: readonly SelectOption[];
@@ -25,6 +26,7 @@ export function CustomSelect({
   disabled?: boolean;
   onChange: (value: string) => void;
   iconOnly?: boolean;
+  maxVisibleOptions?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [layout, setLayout] = useState<ReturnType<typeof selectPopupLayout>>();
@@ -83,15 +85,38 @@ export function CustomSelect({
         setOpen(false);
         return;
       }
-      setLayout(
-        selectPopupLayout(
-          // DOMRect coordinates are prototype getters, so keep it intact.
-          anchor,
-          view,
-          options.length,
-          iconOnly ? 300 : undefined,
-        ),
+      // Measure at the final width so wrapped directory names and descriptions
+      // count toward the five visible entries rather than being clipped mid-row.
+      const minimumWidth = iconOnly ? 300 : undefined;
+      const placement = selectPopupLayout(
+        anchor,
+        view,
+        options.length,
+        minimumWidth,
       );
+      let preferredHeight: number | undefined;
+      if (maxVisibleOptions && maxVisibleOptions > 0) {
+        list.style.width = `${placement.width}px`;
+        const style = getComputedStyle(list);
+        preferredHeight =
+          parseFloat(style.paddingTop) +
+          parseFloat(style.paddingBottom) +
+          parseFloat(style.borderTopWidth) +
+          parseFloat(style.borderBottomWidth);
+        for (const item of [...list.children].slice(0, maxVisibleOptions))
+          preferredHeight += item.getBoundingClientRect().height;
+      }
+      const nextLayout = selectPopupLayout(
+        anchor,
+        view,
+        options.length,
+        minimumWidth,
+        preferredHeight,
+      );
+      // Apply the viewport before focusing the selected entry so a selection
+      // beyond the fifth row scrolls into view on the initial opening as well.
+      list.style.maxHeight = `${nextLayout.maxHeight}px`;
+      setLayout(nextLayout);
     };
     update();
     const available = enabledOptions();
@@ -104,6 +129,7 @@ export function CustomSelect({
     );
     const observer = new ResizeObserver(update);
     observer.observe(button);
+    if (maxVisibleOptions) observer.observe(list);
     const disabledObserver = new MutationObserver(update);
     for (
       let parent = button.parentElement;
@@ -128,7 +154,7 @@ export function CustomSelect({
       window.visualViewport?.removeEventListener("scroll", update);
       if (list.hidePopover && list.matches(":popover-open")) list.hidePopover();
     };
-  }, [open, options.length]);
+  }, [open, options.length, iconOnly, maxVisibleOptions]);
 
   useEffect(() => {
     if (disabled) setOpen(false);

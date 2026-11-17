@@ -14,7 +14,8 @@ import org.json.JSONObject;
 final class NativeFilePreview extends LinearLayout {
     final LinearLayout header, mode;
     final ScrollView scroll;
-    final NativeUi.IconButton download, close;
+    final NativeUi.IconButton download, refresh, close;
+    Runnable reload = () -> {};
     final TextView name, size, externalFile;
     final LinearLayout notices;
     private final NativeUi ui;
@@ -60,8 +61,9 @@ final class NativeFilePreview extends LinearLayout {
         size = ui.text("", 10, ui.muted);
         LayoutParams sizeParams = new LayoutParams(-2, -2); sizeParams.setMarginStart(ui.dp(6)); sizeParams.setMarginEnd(ui.dp(6)); header.addView(size, sizeParams);
         download = ui.icon("download", 14, ui.t("Download file"), () -> { if (file != null) save.accept(file); });
+        refresh = ui.icon("refresh", 14, ui.t("Refresh file preview"), () -> reload.run());
         close = ui.icon("close", 15, ui.t("Close file preview"), clear);
-        header.addView(download); header.addView(close); addView(header);
+        header.addView(download); header.addView(refresh); header.addView(close); addView(header);
         mode = ui.row(); mode.setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8)); addView(mode);
         scroll = new ScrollView(ui.context); scroll.setFillViewport(false); scroll.setVerticalScrollBarEnabled(false);
         addView(scroll, new LayoutParams(-1, 0, 1));

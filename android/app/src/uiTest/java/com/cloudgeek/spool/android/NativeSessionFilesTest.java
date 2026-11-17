@@ -31,6 +31,34 @@ import org.robolectric.annotation.LooperMode;
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class NativeSessionFilesTest {
+    @Test public void directoryMenuFitsFiveMeasuredRowsAndShrinksForShortListsWithVisibleChevron() throws Exception {
+        RuntimeEnvironment.setQualifiers("w360dp-h900dp-mdpi");
+        for (int count : new int[] {2, 8}) for (boolean dark : new boolean[] {false, true}) {
+            try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+                NativeUi ui = new NativeUi(controller.get(), dark); NativeFileModel model = new NativeFileModel("p", "c");
+                JSONArray options = new JSONArray();
+                for (int i = 0; i < count; i++) options.put(workspace("/repo/worktrees/directory-" + i, true));
+                model.receiveWorkspace(new JSONObject(options.getJSONObject(count - 1).toString()).put("workspaces", options));
+                NativeFileBrowser browser = new NativeFileBrowser(ui, "Project", model, null, (path, result) -> {}, file -> {}, address -> {}, () -> {}, value -> {});
+                controller.get().setContentView(browser); layout(browser, 360, 900);
+                NativeUi.IconButton toggle = browser.header.workspaceToggle;
+                assertTrue("Chevron must have room for its full 18dp glyph", toggle.getWidth() - toggle.getPaddingLeft() - toggle.getPaddingRight() >= ui.dp(18));
+                assertEquals(ui.text, toggle.getImageTintList().getDefaultColor());
+                toggle.performClick(); Shadows.shadowOf(Looper.getMainLooper()).idle();
+                NativePopover menu = browser.header.workspaceMenu; assertTrue(menu.isShowing());
+                int desired = menu.content.getPaddingTop() + menu.content.getPaddingBottom();
+                for (int i = 0; i < Math.min(count, 5); i++) desired += menu.content.getChildAt(i).getMeasuredHeight();
+                assertEquals("Menu must show at most five full directory rows", desired, menu.panel().getHeight());
+                assertEquals(count > 5, menu.content.getHeight() > menu.panel().getHeight());
+                View selected = menu.content.getChildAt(count - 1);
+                android.graphics.Rect visible = new android.graphics.Rect(); assertTrue(selected.getLocalVisibleRect(visible));
+                assertEquals(selected.getHeight(), visible.height());
+                snapshot(menu.panel(), "directory-menu-" + count + (dark ? "-dark" : "-light"));
+                menu.dismiss(); snapshot(browser.header, "directory-header-" + count + (dark ? "-dark" : "-light"));
+                browser.deactivate();
+            }
+        }
+    }
     @Test public void chooserHidesForOneDirectoryAndManualChoiceFollowsTheNextTurn() throws Exception {
         List<NativeFilesTest.Pending> requests = new ArrayList<>();
         try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {

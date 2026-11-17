@@ -1,6 +1,9 @@
 package com.cloudgeek.spool.android;
 
 import android.text.TextUtils;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
@@ -10,6 +13,7 @@ import android.widget.TextView;
 
 /** CSS flex disclosure row: shrink the label, not the icon/caret/stats, without stretching the label. */
 final class NativeDisclosureRow extends FrameLayout {
+    private static final java.util.regex.Pattern CHANGE_STATS = java.util.regex.Pattern.compile("(?:^|\\s)(\\+\\d+)\\s+(-\\d+)$");
     final TextView label;
     private final NativeUi ui;
     private final ImageView icon, caret;
@@ -50,10 +54,8 @@ final class NativeDisclosureRow extends FrameLayout {
         addView(label, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
         caret = work ? null : ui.decorativeIcon(expanded ? "chevron-down" : "chevron-right", size);
         if (caret != null) addView(caret);
-        stats = statistics.isEmpty() ? null : ui.text(statistics, 11, ui.subtle);
+        stats = statistics.isEmpty() ? null : createStats(statistics);
         if (stats != null) {
-            stats.setSingleLine(true);
-            stats.setFontFeatureSettings("tnum");
             addView(stats, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
         }
         this.expanded = expanded;
@@ -117,13 +119,31 @@ final class NativeDisclosureRow extends FrameLayout {
             stats = null;
         } else {
             if (stats == null) {
-                stats = ui.text(statistics, 11, ui.subtle); stats.setSingleLine(true);
-                stats.setFontFeatureSettings("tnum"); stats.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+                stats = createStats(statistics);
                 addView(stats, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
                 changed = true;
-            } else if (!TextUtils.equals(stats.getText(), statistics)) { stats.setText(statistics); changed = true; }
+            } else if (!TextUtils.equals(stats.getText(), statistics)) { stats.setText(statisticsText(statistics)); changed = true; }
         }
         if (changed) requestLayout();
+    }
+
+    private TextView createStats(String statistics) {
+        TextView view = ui.text("", 11, ui.subtle);
+        view.setText(statisticsText(statistics));
+        view.setSingleLine(true);
+        view.setFontFeatureSettings("tnum");
+        view.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        return view;
+    }
+
+    private CharSequence statisticsText(String statistics) {
+        java.util.regex.Matcher match = CHANGE_STATS.matcher(statistics);
+        if (!match.find()) return statistics;
+        NativeDiffPalette palette = new NativeDiffPalette(ui.dark);
+        SpannableString text = new SpannableString(statistics);
+        text.setSpan(new ForegroundColorSpan(palette.added), match.start(1), match.end(1), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new ForegroundColorSpan(palette.deleted), match.start(2), match.end(2), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return text;
     }
 
     void setExpanded(boolean value) {
@@ -168,8 +188,8 @@ final class NativeDisclosureRow extends FrameLayout {
         int x = horizontal;
         x = position(icon, x) + gap;
         x = position(label, x) + gap;
+        if (stats != null) x = position(stats, x) + gap;
         if (caret != null && disclosureEnabled) x = position(caret, x) + gap;
-        if (stats != null) position(stats, x);
     }
 
     private int position(View view, int x) {
