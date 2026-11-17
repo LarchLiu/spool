@@ -38,6 +38,7 @@ type App struct {
 	realtimePing    time.Duration
 	realtimeTimeout time.Duration
 	turnMu          sync.Mutex
+	renameMu        sync.Mutex
 	queueMu         sync.Mutex
 	queues          map[string][]*queuedMessage
 	closing         bool
@@ -651,6 +652,10 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 	// stop, approvals, goals and agent conversion; client controls are not a gate.
 	if !a.store.CanControlChat(id.User.ID, chat.ID) {
 		apiError(w, 404, "聊天不存在")
+		return
+	}
+	if len(parts) == 2 && parts[1] == "rename" && r.Method == "POST" {
+		a.renameChatResponse(w, r, id.User.ID, chat)
 		return
 	}
 	if len(parts) == 2 && parts[1] == "fork" && r.Method == "POST" {

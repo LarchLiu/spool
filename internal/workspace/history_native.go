@@ -68,6 +68,18 @@ type codexWindow struct {
 	used        int64
 }
 
+func (c *codexWindows) rename(threadID, title string) {
+	c.reading.Lock()
+	defer c.reading.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if window := c.threads[threadID]; window != nil {
+		updated := *window
+		updated.thread.Name = title
+		c.threads[threadID] = &updated
+	}
+}
+
 func (c *codexWindows) close() {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -157,6 +157,12 @@ func Run(t *testing.T) {
 					cursor = nil
 				}
 				send(map[string]any{"id": value["id"], "result": map[string]any{"data": models, "nextCursor": cursor}})
+			case "thread/name/set":
+				if _, err := os.Stat("unsupported-rename"); err == nil {
+					send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32601, "message": "rename is not supported"}})
+					continue
+				}
+				send(map[string]any{"id": value["id"], "result": map[string]any{}})
 			case "thread/list":
 				var pages map[string]json.RawMessage
 				body, err := os.ReadFile("fixture-thread-pages.json")

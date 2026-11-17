@@ -68,6 +68,7 @@ import type {
   Project,
   Agent,
   Chat,
+  ChatMetadata,
   Turn,
   Online,
   Attachment,
@@ -91,6 +92,7 @@ import { DirectMessagePanel } from "./direct-message-panel";
 import type { FloatingWindowBounds } from "./floating-window";
 import { PeopleGroupPicker } from "./people-group-picker";
 import { OnlinePeopleMenu } from "./online-people-menu";
+import { ChatTitleMenu } from "./chat-title-menu";
 import {
   createDirectInbox,
   formatUnreadCount,
@@ -1803,10 +1805,25 @@ function App() {
             <div className={chat ? "heading-copy has-agent" : "heading-copy"}>
               <div className="chat-heading">
                 {chat && <AgentIcon backend={backend} size={14} />}
-                <strong>
-                  {(chat?.title === "New chat" ? t("New chat") : chat?.title) ||
-                    (project ? t("New chat") : t("Workspace"))}
-                </strong>
+                {chat && !chat.id.startsWith("pending-") && canControlChat(chat, user!.id) ? (
+                  <ChatTitleMenu
+                    key={chat.id}
+                    title={chat.title === "New chat" ? t("New chat") : chat.title}
+                    t={t}
+                    onRename={async (title) => {
+                      const owner = user!.id;
+                      const renamed = await api<ChatMetadata>("/chats/" + chat.id + "/rename", { title });
+                      if (activeUser.current !== owner) return;
+                      setChat((old) => reconcileMetadata(old, renamed));
+                      setChats((old) => old.map((item) => reconcileMetadata(item, renamed) ?? item));
+                    }}
+                  />
+                ) : (
+                  <strong>
+                    {(chat?.title === "New chat" ? t("New chat") : chat?.title) ||
+                      (project ? t("New chat") : t("Workspace"))}
+                  </strong>
+                )}
               </div>
               <span>
                 {projects.find((p) => p.id === project)?.name ||
