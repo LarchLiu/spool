@@ -35,7 +35,8 @@ try {
   await server.listen();
   browser = await chromium.launch({ channel: "chrome", headless: true });
   const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
-  for (const scenario of ["queue", "steer", "same-chat"]) {
+  for (const scenario of ["queue", "steer", "same-chat", "edit", "edit-conflict", "edit-error", "edit-navigation", "edit-limit"]) {
+    const editing = scenario.startsWith("edit");
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: "block" });
     let releaseFirst;
     const acceptance = new Promise(resolve => { releaseFirst = resolve; });
@@ -54,6 +55,7 @@ try {
         };
       });
       const a = fixture("chat-A"), b = fixture("chat-B", true);
+      if (editing) b.queued_messages = [{ id: "queued", message: "  Queued original\nmessage  ", attachments: ["notes.txt"], created_at: 2 }];
       const accepted = {
         ...a, status: "running", updated_at: 2,
         transcript: { parts: [{ role: "user", kind: "text", text: "First in A" }] },
@@ -68,6 +70,16 @@ try {
         if (endpoint === "/api/navigation") return json({ projects: [{ id: "project", name: "Project", can_create: true }], chats: [a, b] });
         if (endpoint === "/api/agents") return json([{ backend: "codex", enabled: true, installed: true, catalog: { models: [] } }]);
         if (endpoint === "/api/permissions") return json({ backend: "codex", default: "ask", modes: [{ id: "ask", available: true }] });
+        if (request.method() === "POST" && endpoint.endsWith("/queue")) {
+          const payload = request.postDataJSON();
+          requests.push({ endpoint, ...payload });
+          if (payload.action === "draft") return json({ message: b.queued_messages[0].message, files: [{ name: "notes.txt", media_type: "text/plain", data: Buffer.from("Original attachment\n").toString("base64") }] });
+          if (scenario === "edit-conflict") return json({ error: "This message is no longer queued" }, 409);
+          if (scenario === "edit-error") return json({ error: "Edit request failed" }, 500);
+          if (scenario === "edit-navigation") await acceptance;
+          b.queued_messages = []; b.updated_at = 3;
+          return json(b);
+        }
         if (request.method() === "POST" && endpoint.endsWith("/messages")) {
           const payload = request.postDataJSON();
           requests.push({ endpoint, ...payload });
@@ -88,6 +100,43 @@ try {
       });
       await page.goto(origin + "/?chat=chat-A");
       const composer = page.locator("#chat-message");
+      if (editing) {
+        await page.locator(".nav-chat").filter({ hasText: "Running B" }).first().click();
+        await page.getByText("B is working", { exact: true }).waitFor();
+        await composer.fill("Existing draft");
+        if (scenario === "edit-limit") {
+          await page.locator("input[type=file]").setInputFiles(Array.from({ length: 6 }, (_, i) => ({ name: `existing-${i}.txt`, mimeType: "text/plain", buffer: Buffer.from("existing") })));
+          await page.getByText("existing-5.txt", { exact: true }).waitFor();
+        }
+        const edited = page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/queue") && response.request().postDataJSON().action === (scenario === "edit-limit" ? "draft" : "edit"), { timeout: 10000 }).catch(async error => {
+          throw new Error(`${scenario}: ${error.message}; requests=${JSON.stringify(requests)}; composer=${await composer.inputValue()}; ui=${(await page.locator(".composer-wrap").innerText()).slice(-1200)}; errors=${JSON.stringify(errors)}`);
+        });
+        const editPosted = scenario === "edit-navigation" ? page.waitForRequest(request => new URL(request.url()).pathname.endsWith("/queue") && request.postDataJSON().action === "edit") : null;
+        await page.getByRole("button", { name: "Queued message actions" }).click();
+        await page.getByRole("menuitem", { name: "Edit message" }).click();
+        if (scenario === "edit-navigation") {
+          await editPosted;
+          await page.locator(".nav-chat").filter({ hasText: "Chat A" }).first().click();
+          releaseFirst(); await edited;
+          await page.waitForFunction(() => !document.querySelector("#chat-message").disabled);
+          await page.locator(".nav-chat").filter({ hasText: "Running B" }).first().click();
+        } else await edited;
+        if (["edit-conflict", "edit-error", "edit-limit"].includes(scenario)) {
+          await page.getByText(scenario === "edit-conflict" ? "This message is no longer queued" : scenario === "edit-error" ? "Edit request failed" : "Attach at most 6 files, up to 16 MB total", { exact: true }).waitFor();
+          assert.equal(await composer.inputValue(), "Existing draft");
+          assert.equal(await page.locator(".queued-message").count(), 1);
+          assert.deepEqual(requests.map(request => request.action), scenario === "edit-limit" ? ["draft"] : ["draft", "edit"]);
+        } else {
+          const expected = "  Queued original\nmessage  " + (scenario === "edit-navigation" ? "" : "\n\nExisting draft");
+          await page.waitForFunction(value => document.querySelector("#chat-message").value === value, expected);
+          assert.equal(await page.locator(".queued-message").count(), 0);
+          await page.locator(".composer-wrap").getByText("notes.txt", { exact: true }).waitFor();
+          assert.deepEqual(requests.map(request => request.action), ["draft", "edit"]);
+        }
+        assert.deepEqual(errors, []);
+        console.log(`${scenario}: queued draft preserved through edit outcome`);
+        continue;
+      }
       await composer.fill("First in A");
       const firstPosted = page.waitForRequest(request => request.url().includes("/chat-A/messages"));
       await page.getByRole("button", { name: "Send message", exact: true }).click();

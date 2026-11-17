@@ -3,6 +3,26 @@ import type { Attachment } from "./types";
 
 export type DraftAttachment = Attachment & { file: File };
 
+export type QueuedDraft = {
+  message: string;
+  files: { name: string; media_type: string; data: string }[];
+};
+
+export function queuedDraftFiles(draft: QueuedDraft): File[] {
+  return draft.files.map(
+    (file) =>
+      new File(
+        [
+          Uint8Array.from(atob(file.data), (character) =>
+            character.charCodeAt(0),
+          ),
+        ],
+        file.name,
+        { type: file.media_type },
+      ),
+  );
+}
+
 export function pasteAttachments(
   event: {
     clipboardData: DataTransfer | null;
@@ -39,7 +59,7 @@ export function validateAttachments(files: { size: number }[]): string | null {
 export function attachmentURL(chatID: string, file: Attachment): string {
   return appURL(
     file.preview_url ||
-    `/api/chats/${encodeURIComponent(chatID)}/attachments?id=${encodeURIComponent(file.id)}`
+      `/api/chats/${encodeURIComponent(chatID)}/attachments?id=${encodeURIComponent(file.id)}`,
   );
 }
 

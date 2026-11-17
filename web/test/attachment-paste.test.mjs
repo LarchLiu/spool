@@ -5,7 +5,18 @@ import {
   prepareAttachments,
   releaseAttachments,
   validateAttachments,
+  queuedDraftFiles,
 } from "../.test-build/attachment-selection.js";
+
+test("editing a queued draft restores original attachment names, types and bytes", async () => {
+  const bytes = new Uint8Array([0, 255, 42, 13, 10]);
+  const [file] = queuedDraftFiles({ message: "", files: [{
+    name: "原图.png", media_type: "image/png", data: btoa(String.fromCharCode(...bytes)),
+  }] });
+  assert.equal(file.name, "原图.png");
+  assert.equal(file.type, "image/png");
+  assert.deepEqual(new Uint8Array(await file.arrayBuffer()), bytes);
+});
 
 function paste(clipboardData) {
   const batches = [];

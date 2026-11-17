@@ -133,6 +133,34 @@ func TestNativeResponseBoundsAndBinary(t *testing.T) {
 	}
 }
 
+func TestNativeQueueDraftCanRestoreTheFullUploadBudget(t *testing.T) {
+	files := make([]map[string]string, 4)
+	data := base64.StdEncoding.EncodeToString(make([]byte, 4<<20))
+	for i := range files {
+		files[i] = map[string]string{"name": fmt.Sprintf("file-%d.bin", i), "media_type": "application/octet-stream", "data": data}
+	}
+	body, err := json.Marshal(map[string]any{"message": "original", "files": files})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := nativeFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	})
+	raw, err := client.Request("POST", "/api/chats/fixture/queue", `{"id":"queued","action":"draft"}`, "csrf", "en")
+	var result apiResponse
+	if err != nil || json.Unmarshal([]byte(raw), &result) != nil || result.Body != string(body) {
+		t.Fatalf("full queued upload could not be recovered: %v", err)
+	}
+	if _, err := client.Request("GET", "/api/me", "", "", "en"); err == nil {
+		t.Fatal("unrelated API response exceeded its ordinary budget")
+	}
+	request, _ := http.NewRequest("POST", "https://example.com/api/chats/fixture/queue", nil)
+	if _, err := encodeResponse(&http.Response{Request: request, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(strings.Repeat("x", 24<<20+1)))}); err == nil {
+		t.Fatal("queue response exceeded its bounded budget")
+	}
+}
+
 func TestNativeFilePayloadsKeepEveryByteIncludingLegacyTextEncodings(t *testing.T) {
 	for _, media := range []string{"text/plain; charset=iso-8859-1", "application/json", "application/octet-stream"} {
 		const data = "caf\xe9\r\n\x00\xff"

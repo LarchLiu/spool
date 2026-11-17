@@ -152,7 +152,7 @@ public final class MainActivity extends Activity {
     private NativeQueuedMessages queuedView;
     // A queue request answers only over the connection and sign-in it was made with. Once either
     // changes, its answer is dropped, so it must not go on counting as in flight.
-    private boolean delivering, deliveringDraft;
+    private boolean delivering, deliveringDraft, editingQueue;
     private int deliveryGeneration, deliveryAuth;
     private NativeUi.Header workspaceHeader;
     private NativeAgentModelMenu modelMenu;
@@ -176,6 +176,7 @@ public final class MainActivity extends Activity {
             presence = new JSONArray(),
             groups = new JSONArray();
     private final Map<String, Draft> drafts = new HashMap<>();
+    private final Map<String, Draft> editedQueueDrafts = new HashMap<>();
     private final Map<String, NativeActivityList.State> activityStates = new java.util.LinkedHashMap<>() {
         @Override protected boolean removeEldestEntry(Map.Entry<String, NativeActivityList.State> entry) { return size() > 200; }
     };
@@ -519,6 +520,18 @@ public final class MainActivity extends Activity {
         pickerDraft = null;
         for (Draft value : drafts.values()) { value.text = ""; value.files.clear(); }
         drafts.clear();
+    }
+
+    private void restoreEditedQueueDraft() {
+        Draft restored = editedQueueDrafts.remove(chatID);
+        if (restored == null) return;
+        Draft current = draft();
+        current.text = restored.text + (restored.text.isEmpty() || current.text.isEmpty() ? "" : "\n\n") + current.text;
+        current.files.addAll(restored.files);
+        if (composer != null) {
+            composer.setText(current.text); composer.setSelection(current.text.length());
+            renderFiles(); composer.requestFocus();
+        }
     }
 
     private void post(int token, Runnable task) {
@@ -1409,6 +1422,7 @@ public final class MainActivity extends Activity {
         stoppingTurns.clear();
         goalNotice = goalError = "";
         discardComposerDrafts();
+        editedQueueDrafts.clear();
         activityStates.clear();
         sidebarState.reset();
         inbox.reset();
@@ -2160,7 +2174,8 @@ public final class MainActivity extends Activity {
         modelButton = composerView.model;
         permissionButton = composerView.permission;
         send = composerView.send;
-        queuedView = new NativeQueuedMessages(ui, id -> queueAction(id, "steer"), id -> queueAction(id, "delete"));
+        queuedView = new NativeQueuedMessages(ui, id -> queueAction(id, "steer"), id -> queueAction(id, "delete"),
+                this::editQueuedMessage, (id, before) -> queueAction(id, "move", before));
         composerView.addView(queuedView, composerView.indexOfChild(composerView.box), new LinearLayout.LayoutParams(-1, -2));
         composerView.commands.steer = () -> deliver(true);
         composerView.commands.queue = composerView.queueSubmit = () -> deliver(false);
@@ -2223,17 +2238,18 @@ public final class MainActivity extends Activity {
         composerView.commands.bind(writable(), busy, running);
         composerView.commands.notice(goalNotice, () -> { goalNotice = ""; updateComposer(); });
         composerView.commands.error(goalError, () -> { goalError = ""; updateComposer(); });
-        composer.setEnabled(writable());
+        boolean editing = delivering() && editingQueue;
+        composer.setEnabled(writable() && !editing);
         String hint = composerHint();
         if (!TextUtils.equals(composer.getHint(), hint)) composer.setHint(hint);
-        composerView.add.setEnabled(!busy && writable());
+        composerView.add.setEnabled(!busy && writable() && !editing);
         modelButton.setEnabled(!busy && !running && writable());
         permissionButton.setEnabled(!busy && !running && writable());
         modelButton.setVisibility(projectID.isEmpty() ? View.GONE : View.VISIBLE);
         permissionButton.setVisibility(projectID.isEmpty() ? View.GONE : View.VISIBLE);
         send.setKind(activeTurn == null ? "send" : stopping ? "spinner" : "stop");
         send.setContentDescription(activeTurn == null ? ui.t("Send message") : ui.t(stopping ? "Stopping…" : "Stop response"));
-        send.setEnabled(writable() && (activeTurn != null ? !stopping : !busy && selectedAgentAvailable() && permissionReady()
+        send.setEnabled(writable() && (activeTurn != null ? !stopping : !editing && !busy && selectedAgentAvailable() && permissionReady()
                 && (!NativeGoalCommand.trim(composer.getText().toString()).isEmpty() || !draft().files.isEmpty())));
         // While the agent answers, the stop button stays and a typed message gets its own send button.
         composerView.queue.setVisibility(writable() && queueingDraft(activeTurn) ? View.VISIBLE : View.GONE);
@@ -2494,6 +2510,7 @@ public final class MainActivity extends Activity {
     private void renderChat() { renderChat(null); }
 
     private void renderChat(NativeHistoryScroll.Anchor anchor) {
+        restoreEditedQueueDraft();
         java.util.Set<String> rebinds = pendingRebinds; pendingRebinds = null;
         updateChatRefresh();
         updateMissingProfiles();
@@ -3012,6 +3029,7 @@ public final class MainActivity extends Activity {
     private boolean delivering() { return delivering && deliveryGeneration == generation && deliveryAuth == authEpoch; }
 
     private void beginDelivery(boolean draft) {
+        editingQueue = false;
         delivering = true; deliveringDraft = draft; deliveryGeneration = generation; deliveryAuth = authEpoch;
     }
 
@@ -3080,11 +3098,15 @@ public final class MainActivity extends Activity {
     }
 
     private void queueAction(String id, String action) {
+        queueAction(id, action, "");
+    }
+
+    private void queueAction(String id, String action, String before) {
         if (!writable() || delivering() || chat == null || chatID.isEmpty()) return;
         final String target = chatID;
         final int selected = selectionEpoch;
         beginDelivery(false); goalError = ""; updateComposer();
-        api("/chats/" + Uri.encode(target) + "/queue", object("id", id, "action", action), value -> {
+        api("/chats/" + Uri.encode(target) + "/queue", object("id", id, "action", action, "before_id", before), value -> {
             delivering = false;
             if (selected == selectionEpoch && target.equals(chatID)) { chat = NativeChatState.reconcile(chat, (JSONObject) value); renderChat(); }
             updateComposer();
@@ -3093,6 +3115,46 @@ public final class MainActivity extends Activity {
             if (selected == selectionEpoch && target.equals(chatID)) goalError = failure.getMessage() == null ? failure.toString() : failure.getMessage();
             updateComposer();
         });
+    }
+
+    private void editQueuedMessage(String id) {
+        if (!writable() || delivering() || chat == null || chatID.isEmpty()) return;
+        captureDraft();
+        final String target = chatID, path = "/chats/" + Uri.encode(chatID) + "/queue";
+        final int selected = selectionEpoch;
+        beginDelivery(false); editingQueue = true; goalError = ""; updateComposer();
+        java.util.function.Consumer<Exception> failed = failure -> {
+            delivering = false; editingQueue = false;
+            if (target.equals(chatID) && selected == selectionEpoch) goalError = failure.getMessage();
+            updateComposer();
+        };
+        api(path, object("id", id, "action", "draft"), value -> {
+            if (!target.equals(chatID) || selected != selectionEpoch) { delivering = false; updateComposer(); return; }
+            final Draft restored = new Draft();
+            try {
+                JSONObject data = (JSONObject) value;
+                restored.text = data.optString("message");
+                JSONArray files = array(data, "files");
+                for (int i = 0; i < files.length(); i++) {
+                    JSONObject file = files.getJSONObject(i);
+                    restored.files.add(new Attachment(file.getString("name"), file.getString("media_type"),
+                            android.util.Base64.decode(file.getString("data"), android.util.Base64.DEFAULT)));
+                }
+                int bytes = 0;
+                for (Attachment file : draft().files) bytes += file.data.length;
+                for (Attachment file : restored.files) bytes += file.data.length;
+                if (draft().files.size() + restored.files.size() > 6 || bytes > 16 * 1024 * 1024)
+                    throw new IOException(ui.t("Attach at most 6 files, up to 16 MB total"));
+            } catch (Exception error) { failed.accept(error); return; }
+            api(path, object("id", id, "action", "edit"), next -> {
+                delivering = false; editingQueue = false;
+                editedQueueDrafts.put(target, restored);
+                if (target.equals(chatID)) {
+                    chat = NativeChatState.reconcile(chat, (JSONObject) next); renderChat();
+                }
+                updateComposer();
+            }, failed);
+        }, failed);
     }
 
     private void sendOrStop() {

@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -15,6 +16,86 @@ import (
 	"spool/internal/agent"
 	chatmodel "spool/internal/model"
 )
+
+func TestQueuedMessageMovePreservesTheQueue(t *testing.T) {
+	f := newQueueFixture(t, chatmodel.BackendCodex)
+	for _, id := range []string{"a", "b", "c", "d"} {
+		f.app.restoreQueued(f.chat.ID, &queuedMessage{id: id, input: messageInput{Message: id}})
+	}
+	// restoreQueued prepends, so begin with d,c,b,a. Relative moves keep newer entries.
+	for _, step := range []struct {
+		id, before string
+		want       []string
+	}{
+		{"a", "c", []string{"d", "a", "c", "b"}},
+		{"d", "b", []string{"a", "c", "d", "b"}},
+		{"a", "", []string{"c", "d", "b", "a"}},
+		{"d", "d", []string{"c", "d", "b", "a"}},
+	} {
+		next := f.post(t, "queue", map[string]string{"id": step.id, "action": "move", "before_id": step.before}, 200)
+		if got := queuedTexts(next); !slices.Equal(got, step.want) {
+			t.Fatalf("move %s before %s: %q, want %q", step.id, step.before, got, step.want)
+		}
+	}
+	for _, body := range []map[string]string{
+		{"id": "missing", "action": "move"},
+		{"id": "c", "action": "move", "before_id": "missing"},
+		{"action": "move"},
+	} {
+		f.post(t, "queue", body, 409)
+	}
+	for _, want := range []string{"c", "d", "b", "a"} {
+		if next := f.app.takeQueued(f.chat.ID, ""); next == nil || next.input.Message != want {
+			t.Fatalf("next queued = %+v, want %s", next, want)
+		}
+	}
+}
+
+func TestQueuedMessageMoveChangesAutomaticSendOrder(t *testing.T) {
+	f := newQueueFixture(t, chatmodel.BackendCodex)
+	f.run(t, "steer-wait")
+	f.post(t, "messages", map[string]string{"message": "second", "delivery": "queue"}, 202)
+	queued := f.post(t, "messages", map[string]string{"message": "third", "delivery": "queue"}, 202)
+	moved := f.post(t, "queue", map[string]string{"id": queued.Queued[0].ID, "action": "move"}, 200)
+	if got := queuedTexts(moved); !slices.Equal(got, []string{"third", "second"}) {
+		t.Fatalf("queue = %q", got)
+	}
+	f.post(t, "messages", map[string]string{"message": "finish", "delivery": "steer"}, 202)
+	done := f.settled(t, 3)
+	if got := messageTexts(done); len(got) == 0 || got[0] != "user:second" || len(done.Queued) != 0 {
+		t.Fatalf("last turn = %q, queue = %q", got, queuedTexts(done))
+	}
+}
+
+func TestQueuedMessageEditRestoresOriginalInput(t *testing.T) {
+	f := newQueueFixture(t, chatmodel.BackendCodex)
+	data := []byte{0, 255, 42, 13, 10}
+	f.app.restoreQueued(f.chat.ID, &queuedMessage{id: "edit", input: messageInput{Message: "  Original\nmessage  ", files: []uploadedAttachment{
+		{Attachment: chatmodel.Attachment{Name: "image.png", MediaType: "image/png"}, Data: data},
+	}}}, &queuedMessage{id: "keep", input: messageInput{Message: "later"}})
+	w := apiRequest(f.app, "POST", "/api/chats/"+f.chat.ID+"/queue", `{"id":"edit","action":"draft"}`, f.cookie, f.csrf)
+	var draft queuedDraft
+	if err := json.Unmarshal(w.Body.Bytes(), &draft); err != nil || w.Code != 200 {
+		t.Fatalf("draft returned %d: %s (%v)", w.Code, w.Body.String(), err)
+	}
+	if draft.Message != "  Original\nmessage  " || len(draft.Files) != 1 || draft.Files[0].Name != "image.png" || draft.Files[0].MediaType != "image/png" || !bytes.Equal(draft.Files[0].Data, data) {
+		t.Fatalf("original input not preserved: %+v", draft)
+	}
+	if len(f.snapshot().Queued) != 2 {
+		t.Fatal("reading a draft removed it before the client was ready")
+	}
+	edited := f.post(t, "queue", map[string]string{"id": "edit", "action": "edit"}, 200)
+	if got := queuedTexts(edited); !slices.Equal(got, []string{"later"}) {
+		t.Fatalf("edit removed another entry: %q", got)
+	}
+	for _, action := range []string{"draft", "edit", "move"} {
+		f.post(t, "queue", map[string]string{"id": "edit", "action": action}, 409)
+	}
+	f.post(t, "queue", map[string]string{"action": "edit"}, 409)
+	// A turn can claim the entry while a client is preparing the editor.
+	f.app.takeQueued(f.chat.ID, "keep")
+	f.post(t, "queue", map[string]string{"id": "keep", "action": "edit"}, 409)
+}
 
 // A written steer is owned by the server even after its HTTP wait expires.
 func TestSteeringAcknowledgementTimeoutKeepsTheMessage(t *testing.T) {

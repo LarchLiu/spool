@@ -17,10 +17,12 @@ const script = `import React,{useState} from 'react';import {createRoot} from 'r
 import {QueuedMessages} from '/src/queued-messages.tsx';import {ComposerSendButton} from '/src/composer-send-button.tsx';
 import {translator} from '/src/i18n.ts';import '/src/style.css';
 const t=translator('en');window.actions=[];
-function Scene(){const [state,setState]=useState({messages:[],running:true});window.bind=next=>flushSync(()=>setState(next));
+function Scene(){const [state,setState]=useState({messages:[],running:true}),[draft,setDraft]=useState('');window.bind=next=>flushSync(()=>setState(next));
 return <main className="workspace" style={{display:'flex',flexDirection:'column',justifyContent:'flex-end',minHeight:'100vh'}}><div className="composer-wrap">
-<QueuedMessages messages={state.messages} running={state.running} busy={false} t={t} onSteer={id=>window.actions.push('steer:'+id)} onDelete={id=>window.actions.push('delete:'+id)}/>
-<form className="composer"><textarea id="chat-message" rows={1} placeholder="Message Codex" defaultValue=""/>
+<QueuedMessages messages={state.messages} running={state.running} busy={!!state.busy} t={t} onSteer={id=>window.actions.push('steer:'+id)} onDelete={id=>window.actions.push('delete:'+id)}
+onEdit={id=>{window.actions.push('edit:'+id);setDraft(state.messages.find(m=>m.id===id).message);setState({...state,messages:state.messages.filter(m=>m.id!==id)})}}
+onMove={(id,before)=>{window.actions.push('move:'+id+':'+before);setState(old=>{const messages=old.messages.filter(m=>m.id!==id),at=messages.findIndex(m=>m.id===before);messages.splice(at<0?messages.length:at,0,old.messages.find(m=>m.id===id));return {...old,messages}})}}/>
+<form className="composer"><textarea id="chat-message" rows={1} placeholder="Message Codex" value={draft} onChange={e=>setDraft(e.target.value)}/>
 <div className="composer-bottom"><div className="composer-tools"/><div className="composer-actions">
 <ComposerSendButton active={state.running} stopping={false} disabled={false} t={t} onStop={()=>{}}/></div></div></form></div></main>}
 createRoot(document.getElementById('root')).render(<Scene/>);`;
@@ -57,7 +59,7 @@ try {
         const rect = selector => { const r = document.querySelector(selector).getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
         const rows = [...document.querySelectorAll(".queued-message")].map(row => {
           const r = row.getBoundingClientRect(), text = row.querySelector(".queued-message-text").getBoundingClientRect();
-          const steer = row.querySelector(".queued-message-steer").getBoundingClientRect(), remove = row.querySelector("button.icon").getBoundingClientRect();
+          const steer = row.querySelector(".queued-message-steer").getBoundingClientRect(), remove = row.querySelector("[aria-label='Delete queued message']").getBoundingClientRect();
           return { left: r.left, right: r.right, height: r.height, textRight: text.right, steerLeft: steer.left, steerRight: steer.right, removeLeft: remove.left, removeRight: remove.right };
         });
         return { queue: rect(".queued-messages"), composer: rect(".composer"), rows, overflow: document.documentElement.scrollWidth - innerWidth };
@@ -74,6 +76,13 @@ try {
         assert.ok(row.height < 44, JSON.stringify(row));
       }
       await page.screenshot({ path: path.join(output, `${name}-${label}.png`) });
+      await page.locator(".queued-message").first().getByRole("button", { name: "Queued message actions" }).click();
+      await page.getByRole("menuitem", { name: "Edit message" }).waitFor();
+      const menu = await page.getByRole("menu").boundingBox();
+      assert.ok(menu.x >= 0 && menu.x + menu.width <= width && menu.y >= 0 && menu.y + menu.height <= 420);
+      if (count === 3) await page.screenshot({ path: path.join(output, `${name}-menu.png`) });
+      await page.keyboard.press("Escape");
+      assert.equal(await page.getByRole("menu").count(), 0);
     }
   }
   assert.deepEqual(await page.locator(".queued-message-text").allTextContents(), [messages[0].message, long, "notes.txt"]);
@@ -81,6 +90,47 @@ try {
   await page.locator(".queued-message").nth(1).getByRole("button", { name: "Steer" }).click();
   await page.locator(".queued-message").nth(2).getByRole("button", { name: "Delete queued message" }).click();
   assert.deepEqual(await page.evaluate(() => window.actions), ["steer:second", "delete:third"]);
+  const drag = async (id, target, after = false) => {
+    const grip = await page.locator(`[data-queue-id='${id}'] .queued-message-grip`).boundingBox();
+    const row = await page.locator(`[data-queue-id='${target}']`).boundingBox();
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + grip.width / 2, row.y + (after ? row.height - 2 : 2), { steps: 8 });
+    await page.mouse.up();
+  };
+  await drag("third", "first");
+  assert.deepEqual(await page.locator(".queued-message").evaluateAll(rows => rows.map(row => row.dataset.queueId)), ["third", "first", "second"]);
+  await drag("third", "second", true);
+  assert.deepEqual(await page.locator(".queued-message").evaluateAll(rows => rows.map(row => row.dataset.queueId)), ["first", "second", "third"]);
+  const touch = await page.context().newCDPSession(page);
+  try {
+    await touch.send("Emulation.setTouchEmulationEnabled", { enabled: true });
+    const grip = await page.locator("[data-queue-id='third'] .queued-message-grip").boundingBox();
+    const first = await page.locator("[data-queue-id='first']").boundingBox();
+    await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 }] });
+    await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: grip.x + grip.width / 2, y: first.y + 2 }] });
+    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    assert.equal(await page.locator(".queued-message").first().getAttribute("data-queue-id"), "third");
+  } finally { await touch.detach(); }
+  await drag("third", "second", true);
+  await page.locator("[data-queue-id='second'] .queued-message-grip").press("ArrowUp");
+  assert.equal(await page.locator(".queued-message").first().getAttribute("data-queue-id"), "second");
+  await page.locator("[data-queue-id='second'] .queued-message-more").click();
+  await page.getByRole("menuitem", { name: "Edit message" }).click();
+  assert.equal(await page.locator("#chat-message").inputValue(), long);
+  assert.equal(await page.locator("[data-queue-id='second']").count(), 0);
+  const longQueue = Array.from({ length: 20 }, (_, i) => ({ id: `long-${i}`, message: `Message ${i}`, created_at: i }));
+  await page.evaluate(messages => window.bind({ messages, running: true }), longQueue);
+  const handle = await page.locator("[data-queue-id='long-0'] .queued-message-grip").boundingBox();
+  const queue = await page.locator(".queued-messages").boundingBox();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2, queue.y + queue.height - 3, { steps: 5 });
+  await page.waitForFunction(() => { const queue = document.querySelector(".queued-messages"); return queue.scrollTop + queue.clientHeight >= queue.scrollHeight - 1; });
+  await page.mouse.up();
+  assert.equal(await page.locator(".queued-message").last().getAttribute("data-queue-id"), "long-0");
+  await page.evaluate(state => window.bind(state), { messages, running: true, busy: true });
+  for (const button of await page.locator(".queued-message button").all()) assert.equal(await button.isDisabled(), true);
   // Once the turn has ended a remaining message can only be sent.
   await page.evaluate(state => window.bind(state), { messages: messages.slice(0, 1), running: false });
   assert.equal(await page.getByRole("button", { name: "Steer" }).count(), 0);

@@ -39,6 +39,7 @@ final class NativeText {
             case "Approved by {name}": value = "{name} 批准了操作"; break;
             case "Ask for approval": value = "询问审批"; break;
             case "Ask your desktop administrator to create a project and grant you access.": value = "请在桌面控制台创建项目，并将你的账号加入项目成员。"; break;
+            case "Attach at most 6 files, up to 16 MB total": value = "最多添加 6 个文件，总大小不超过 16 MB"; break;
             case "Attachments": value = "附件"; break;
             case "Auto": value = "自动审批"; break;
             case "Automatic review billing notice": value = "自动审核费用说明"; break;
@@ -147,7 +148,9 @@ final class NativeText {
             case "Download v{version}": value = "下载 v{version}"; break;
             case "Download {name}": value = "下载 {name}"; break;
             case "Downloading update: {percent}%": value = "正在下载更新：{percent}%"; break;
+            case "Drag to reorder": value = "拖动调整顺序"; break;
             case "Edit files": value = "编辑文件"; break;
+            case "Edit message": value = "编辑消息"; break;
             case "Edit prompt": value = "修改提示词"; break;
             case "Edited files": value = "编辑文件"; break;
             case "Edited {path}": value = "编辑 {path}"; break;
@@ -277,6 +280,7 @@ final class NativeText {
             case "Projects": value = "项目"; break;
             case "Public HTTPS": value = "公网 HTTPS"; break;
             case "Public HTTPS address": value = "公网 HTTPS 地址"; break;
+            case "Queued message actions": value = "排队消息操作"; break;
             case "Queued messages": value = "排队中的消息"; break;
             case "Ran command": value = "运行命令"; break;
             case "Ran commands": value = "运行命令"; break;
@@ -482,6 +486,7 @@ final class NativeText {
             case "Approved by {name}": value = "{name} が操作を承認しました"; break;
             case "Ask for approval": value = "承認を求める"; break;
             case "Ask your desktop administrator to create a project and grant you access.": value = "デスクトップ管理者にプロジェクトの作成とアクセス許可を依頼してください。"; break;
+            case "Attach at most 6 files, up to 16 MB total": value = "添付は最大6ファイル、合計16 MBまでです"; break;
             case "Attachments": value = "添付ファイル"; break;
             case "Auto": value = "自動承認"; break;
             case "Automatic review billing notice": value = "自動審査の料金に関するお知らせ"; break;
@@ -590,7 +595,9 @@ final class NativeText {
             case "Download v{version}": value = "ダウンロード v{version}"; break;
             case "Download {name}": value = "{name}をダウンロード"; break;
             case "Downloading update: {percent}%": value = "更新をダウンロード中：{percent}%"; break;
+            case "Drag to reorder": value = "ドラッグして並べ替え"; break;
             case "Edit files": value = "ファイルを編集"; break;
+            case "Edit message": value = "メッセージを編集"; break;
             case "Edit prompt": value = "プロンプトを編集"; break;
             case "Edited files": value = "ファイルを編集"; break;
             case "Edited {path}": value = "{path} を編集"; break;
@@ -720,6 +727,7 @@ final class NativeText {
             case "Projects": value = "プロジェクト"; break;
             case "Public HTTPS": value = "公開HTTPS"; break;
             case "Public HTTPS address": value = "公開HTTPSアドレス"; break;
+            case "Queued message actions": value = "待機メッセージの操作"; break;
             case "Queued messages": value = "待機中のメッセージ"; break;
             case "Ran command": value = "コマンドを実行"; break;
             case "Ran commands": value = "コマンドを実行"; break;

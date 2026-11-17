@@ -35,7 +35,7 @@ test("Enter that confirms an input method choice does not send", () => {
 
 const render = (props) => renderToStaticMarkup(createElement(QueuedMessages, {
   messages: [], running: true, busy: false, t: (text) => text,
-  onSteer: () => {}, onDelete: () => {}, ...props,
+  onSteer: () => {}, onDelete: () => {}, onEdit: () => {}, onMove: () => {}, ...props,
 }));
 
 test("queued messages are listed in order with their actions", () => {
@@ -48,6 +48,8 @@ test("queued messages are listed in order with their actions", () => {
   assert.ok(html.indexOf("first") < html.indexOf("notes.txt, plan.png"));
   assert.equal(html.match(/Steer/g).length, 2);
   assert.equal(html.match(/aria-label="Delete queued message"/g).length, 2);
+  assert.equal(html.match(/aria-label="Queued message actions"/g).length, 2);
+  assert.equal(html.match(/aria-label="Drag to reorder"/g).length, 2);
   assert.doesNotMatch(html, /disabled/);
 });
 
@@ -55,5 +57,6 @@ test("a queued message is sent rather than steered once nothing is running", () 
   const html = render({ running: false, busy: true, messages: [{ id: "a", message: "first", created_at: 1 }] });
   assert.match(html, /Send now/);
   assert.doesNotMatch(html, /Steer/);
-  assert.equal(html.match(/disabled=""/g).length, 2);
+  assert.equal(html.match(/disabled=""/g).length, 3);
+  assert.doesNotMatch(html, /aria-label="Drag to reorder"/);
 });

@@ -127,6 +127,61 @@ func (a *App) takeQueued(chatID, id string) *queuedMessage {
 	return nil
 }
 
+// moveQueued changes only the selected entry's position. A concurrent enqueue
+// is kept, and a message already taken by a turn cannot be put back by a drag.
+func (a *App) moveQueued(chatID, id, before string) bool {
+	a.queueMu.Lock()
+	defer a.queueMu.Unlock()
+	queue := a.queues[chatID]
+	from := slices.IndexFunc(queue, func(entry *queuedMessage) bool { return entry.id == id })
+	to := len(queue)
+	if before != "" {
+		to = slices.IndexFunc(queue, func(entry *queuedMessage) bool { return entry.id == before })
+	}
+	if from < 0 || to < 0 {
+		return false
+	}
+	if from == to {
+		return true
+	}
+	entry := queue[from]
+	queue = slices.Delete(queue, from, from+1)
+	if from < to {
+		to--
+	}
+	a.queues[chatID] = slices.Insert(queue, to, entry)
+	return true
+}
+
+// Read uploads before cancelling an entry, so a client can prepare the editor
+// and check its attachment limits without risking the queued message.
+type queuedDraftFile struct {
+	Name      string `json:"name"`
+	MediaType string `json:"media_type"`
+	Data      []byte `json:"data"`
+}
+
+type queuedDraft struct {
+	Message string            `json:"message"`
+	Files   []queuedDraftFile `json:"files"`
+}
+
+func (a *App) queuedDraft(chatID, id string) (queuedDraft, bool) {
+	a.queueMu.Lock()
+	defer a.queueMu.Unlock()
+	for _, entry := range a.queues[chatID] {
+		if entry.id != id {
+			continue
+		}
+		draft := queuedDraft{Message: entry.input.Message, Files: make([]queuedDraftFile, 0, len(entry.input.files))}
+		for _, file := range entry.input.files {
+			draft.Files = append(draft.Files, queuedDraftFile{Name: file.Name, MediaType: file.MediaType, Data: file.Data})
+		}
+		return draft, true
+	}
+	return queuedDraft{}, false
+}
+
 // restoreQueued puts messages back at the head of the queue, in their order.
 func (a *App) restoreQueued(chatID string, entries ...*queuedMessage) {
 	if len(entries) == 0 {
@@ -370,8 +425,9 @@ func (a *App) deliverWhileRunning(ctx context.Context, chat chatmodel.Session, i
 // queueResponse steers, sends or removes one queued message.
 func (a *App) queueResponse(w http.ResponseWriter, r *http.Request, chat chatmodel.Session, user string) {
 	var input struct {
-		ID     string `json:"id"`
-		Action string `json:"action"`
+		ID       string `json:"id"`
+		Action   string `json:"action"`
+		BeforeID string `json:"before_id"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
@@ -383,6 +439,27 @@ func (a *App) queueResponse(w http.ResponseWriter, r *http.Request, chat chatmod
 		apiJSON(w, 200, transportWindow(r, a.snapshot(latest)))
 	}
 	switch input.Action {
+	case "draft":
+		draft, ok := a.queuedDraft(chat.ID, input.ID)
+		if !ok {
+			apiError(w, 409, "This message is no longer queued")
+			return
+		}
+		apiJSON(w, 200, draft)
+	case "edit":
+		if input.ID == "" || a.takeQueued(chat.ID, input.ID) == nil {
+			apiError(w, 409, "This message is no longer queued")
+			return
+		}
+		a.queueChanged(chat.ID)
+		respond()
+	case "move":
+		if !a.moveQueued(chat.ID, input.ID, input.BeforeID) {
+			apiError(w, 409, "This message is no longer queued")
+			return
+		}
+		a.queueChanged(chat.ID)
+		respond()
 	case "delete":
 		if a.takeQueued(chat.ID, input.ID) != nil {
 			a.queueChanged(chat.ID)

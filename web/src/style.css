@@ -550,6 +550,92 @@ button:disabled {
   gap: 8px;
   min-width: 0;
 }
+.chat-title-trigger {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 7px;
+  margin: -5px -7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+}
+.chat-title-trigger:hover,
+.chat-title-trigger[aria-expanded="true"] {
+  background: var(--hover);
+}
+.chat-title-trigger > svg {
+  flex: none;
+  color: var(--muted);
+}
+.chat-title-menu {
+  position: fixed;
+  z-index: 100;
+  width: 190px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--elevated);
+  box-shadow: 0 8px 28px var(--shadow);
+}
+.chat-title-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+  font-size: 12px;
+}
+.chat-title-menu > button:hover,
+.chat-title-menu > button:focus-visible {
+  background: var(--hover);
+}
+.rename-chat-dialog {
+  width: min(400px, calc(100vw - 32px));
+  padding: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: 0 20px 100px #0004;
+}
+.rename-chat-dialog::backdrop {
+  background: #0007;
+}
+.rename-chat-dialog label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.rename-chat-dialog input {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--input);
+  font-size: 14px;
+}
+.rename-chat-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 22px;
+}
+.rename-chat-actions .primary {
+  width: auto;
+  margin: 0;
+  padding: 9px 16px;
+  font-size: 12px;
+}
 .agent-icon {
   display: block;
   flex: none;
@@ -2358,6 +2444,7 @@ a.attachment-open {
   background: var(--elevated);
 }
 .queued-message {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2400,6 +2487,64 @@ a.attachment-open {
 .queued-message-steer:disabled {
   opacity: 0.5;
   cursor: default;
+}
+.queued-message .icon {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+.queued-message .queued-message-grip {
+  width: 18px;
+  touch-action: none;
+  cursor: grab;
+}
+.queued-message.dragging {
+  opacity: 0.5;
+}
+.queued-message.drop-before::before,
+.queued-message.drop-after::after {
+  content: "";
+  position: absolute;
+  height: 2px;
+  left: 8px;
+  right: 8px;
+  background: var(--text);
+  pointer-events: none;
+}
+.queued-message.drop-before::before {
+  top: 0;
+}
+.queued-message.drop-after::after {
+  bottom: 0;
+}
+.queued-message-menu {
+  position: fixed;
+  z-index: 1000;
+  width: 180px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--elevated);
+  box-shadow: 0 6px 24px #0002;
+}
+.queued-message-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+}
+.queued-message-menu button:hover,
+.queued-message-menu button:focus-visible {
+  background: var(--hover);
 }
 .composer-bottom {
   min-height: 49px;

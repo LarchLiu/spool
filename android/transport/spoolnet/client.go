@@ -223,11 +223,17 @@ type apiResponse struct {
 
 func encodeResponse(resp *http.Response) (string, error) {
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	limit := int64(maxResponseBytes)
+	// Queue editing returns up to 16 MB of original uploads as base64, plus
+	// their names and message. Keep this larger budget confined to that route.
+	if resp.Request != nil && strings.HasPrefix(resp.Request.URL.Path, "/api/chats/") && strings.HasSuffix(resp.Request.URL.Path, "/queue") {
+		limit = 24 << 20
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return "", err
 	}
-	if len(data) > maxResponseBytes {
+	if int64(len(data)) > limit {
 		return "", errors.New("API response is too large")
 	}
 	mediaType := resp.Header.Get("Content-Type")

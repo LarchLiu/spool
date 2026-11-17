@@ -3,6 +3,8 @@ package com.cloudgeek.spool.android;
 import static org.junit.Assert.*;
 
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.KeyEvent;
 import java.util.ArrayList;
 import java.util.List;
 import org.json.JSONArray;
@@ -14,13 +16,25 @@ import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
 import org.robolectric.annotation.LooperMode;
 import spoolnet.Client;
+import org.robolectric.util.ReflectionHelpers;
 
 /** Queued messages in the real Activity, with a deterministic gomobile boundary. */
 @RunWith(org.robolectric.RobolectricTestRunner.class)
-@Config(sdk = {26, 35}, shadows = {MainActivityGoalTest.ShadowClient.class, MainActivityGoalTest.ShadowSeq.class})
+@Config(sdk = {26, 35}, shadows = {MainActivityGoalTest.ShadowClient.class, MainActivityGoalTest.ShadowSeq.class, MainActivityQueueTest.ShadowQueueDrag.class})
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class MainActivityQueueTest {
+    // Robolectric has no system drag service. Capture the real handle's OS call,
+    // then deliver the framework events back to the production queue View.
+    @org.robolectric.annotation.Implements(View.class)
+    public static class ShadowQueueDrag extends org.robolectric.shadows.ShadowView {
+        static Object local;
+        @org.robolectric.annotation.Implementation
+        protected boolean startDragAndDrop(android.content.ClipData data, View.DragShadowBuilder shadow, Object state, int flags) {
+            local = state; return true;
+        }
+        @org.robolectric.annotation.Resetter public static void resetDrag() { local = null; }
+    }
     private JSONObject running(int queued) throws Exception {
         JSONArray parts = new JSONArray().put(new JSONObject().put("role", "user").put("kind", "text").put("text", "Hello"))
                 .put(new JSONObject().put("role", "assistant").put("kind", "text").put("text", "Partial reply"));
@@ -40,6 +54,149 @@ public class MainActivityQueueTest {
     private void show(MainActivityGoalTest.Harness h, JSONObject chat) {
         h.set("chat", chat); h.call("renderChat");
         Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); NativeMarkwonHistoryTest.layout(h.get("root"));
+    }
+
+    private View action(MainActivityGoalTest.Harness h, int index, String name) {
+        NativeQueuedMessages queue = h.get("queuedView");
+        ViewGroup row = (ViewGroup) ((ViewGroup) queue.getChildAt(0)).getChildAt(index);
+        for (int i = 0; i < row.getChildCount(); i++) {
+            View child = row.getChildAt(i);
+            if (name.contentEquals(child.getContentDescription() == null ? "" : child.getContentDescription())) return child;
+        }
+        throw new AssertionError("Missing queue action " + name);
+    }
+
+    @Test public void editingRestoresTextAndAttachmentWithoutReplacingTheExistingDraft() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            show(h, running(1));
+            h.composer().input.setText("Existing draft");
+            MainActivityGoalTest.ShadowClient.responder = call -> {
+                try {
+                    JSONObject payload = new JSONObject(call.get(2));
+                    assertEquals("queued-0", payload.getString("id"));
+                    if (payload.getString("action").equals("draft")) return envelope(new JSONObject().put("message", "  Original\nmessage  ")
+                            .put("files", new JSONArray().put(new JSONObject().put("name", "notes.txt").put("media_type", "text/plain").put("data", "AP8qDQo="))));
+                    assertEquals("edit", payload.getString("action"));
+                    return envelope(running(0).put("updated_at", 21));
+                } catch (Exception error) { throw new AssertionError(error); }
+            };
+            action(h, 0, "Queued message actions").performClick();
+            NativeUi ui = h.get("ui");
+            assertNotNull(ui.activePopover);
+            assertEquals("Edit message", ui.activePopover.content.getChildAt(0).getContentDescription());
+            ui.activePopover.content.getChildAt(0).performClick();
+            assertFalse(h.composer().input.isEnabled());
+            h.io.run();
+            assertEquals("Existing draft", h.composer().input.getText().toString());
+            h.io.run();
+            assertEquals("  Original\nmessage  \n\nExisting draft", h.composer().input.getText().toString());
+            assertTrue(h.composer().input.isEnabled());
+            assertEquals(0, h.<NativeQueuedMessages>get("queuedView").rows());
+            assertEquals(1, h.composer().attachments.getChildCount());
+            Object draft = ReflectionHelpers.callInstanceMethod(h.activity, "draft");
+            List<?> files = ReflectionHelpers.getField(draft, "files");
+            assertArrayEquals(new byte[] {0, (byte) 255, 42, 13, 10}, ReflectionHelpers.getField(files.get(0), "data"));
+            assertEquals(2, MainActivityGoalTest.ShadowClient.calls.size());
+        }
+    }
+
+    @Test public void anEditConflictKeepsTheCurrentDraftAndDoesNotRestoreADuplicate() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            show(h, running(1)); h.composer().input.setText("Keep this");
+            MainActivityGoalTest.ShadowClient.responder = call -> {
+                try {
+                    if (new JSONObject(call.get(2)).getString("action").equals("draft"))
+                        return envelope(new JSONObject().put("message", "Already sent").put("files", new JSONArray()));
+                    return new JSONObject().put("status", 409).put("body", new JSONObject().put("error", "This message is no longer queued").toString()).toString();
+                } catch (Exception error) { throw new AssertionError(error); }
+            };
+            action(h, 0, "Queued message actions").performClick();
+            h.<NativeUi>get("ui").activePopover.content.getChildAt(0).performClick();
+            h.io.run(); h.io.run();
+            assertEquals("Keep this", h.composer().input.getText().toString());
+            assertEquals("This message is no longer queued", h.<String>get("goalError"));
+            assertTrue(h.composer().input.isEnabled());
+            assertEquals(0, h.composer().attachments.getChildCount());
+        }
+    }
+
+    @Test public void anEditCompletedAfterNavigationReturnsToItsOwnChat() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            JSONObject original = running(1), other = h.chat("chat-two").put("project_id", "project-one");
+            h.set("chats", new JSONArray().put(original).put(other));
+            show(h, original);
+            MainActivityGoalTest.ShadowClient.responder = call -> {
+                try {
+                    if (new JSONObject(call.get(2)).getString("action").equals("draft"))
+                        return envelope(new JSONObject().put("message", "Recovered for chat one").put("files", new JSONArray()));
+                    return envelope(running(0).put("updated_at", 21));
+                } catch (Exception error) { throw new AssertionError(error); }
+            };
+            action(h, 0, "Queued message actions").performClick();
+            h.<NativeUi>get("ui").activePopover.content.getChildAt(0).performClick();
+            h.io.run(); // The cancellation has been sent when the user navigates.
+            ReflectionHelpers.callInstanceMethod(h.activity, "selectChat", ReflectionHelpers.ClassParameter.from(String.class, "chat-two"));
+            show(h, other);
+            h.composer().input.setText("Chat two draft");
+            h.io.run();
+            assertEquals("Chat two draft", h.composer().input.getText().toString());
+            ReflectionHelpers.callInstanceMethod(h.activity, "selectChat", ReflectionHelpers.ClassParameter.from(String.class, "chat-one"));
+            show(h, running(0).put("updated_at", 21));
+            assertEquals("Recovered for chat one", h.composer().input.getText().toString());
+            assertTrue(h.<java.util.Map<?, ?>>get("editedQueueDrafts").isEmpty());
+        }
+    }
+
+    @Test public void queueHandlesMoveTheSelectedMessageRelativeToItsNeighbor() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            show(h, running(3));
+            MainActivityGoalTest.ShadowClient.responder = call -> {
+                try {
+                    JSONObject payload = new JSONObject(call.get(2));
+                    assertEquals("move", payload.getString("action"));
+                    assertEquals("queued-1", payload.getString("id"));
+                    assertEquals("queued-0", payload.getString("before_id"));
+                    JSONObject result = running(3).put("updated_at", 21);
+                    JSONArray messages = result.getJSONArray("queued_messages");
+                    result.put("queued_messages", new JSONArray().put(messages.get(1)).put(messages.get(0)).put(messages.get(2)));
+                    return envelope(result);
+                } catch (Exception error) { throw new AssertionError(error); }
+            };
+            View grip = action(h, 1, "Drag to reorder");
+            assertTrue(grip.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_UP)));
+            h.io.run();
+            assertEquals("queued-1", h.<JSONObject>get("chat").getJSONArray("queued_messages").getJSONObject(0).getString("id"));
+        }
+    }
+
+    @Test public void aLongPressDragDropsTheMessageAtTheSelectedPosition() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            show(h, running(3));
+            MainActivityGoalTest.ShadowClient.responder = call -> {
+                try {
+                    JSONObject payload = new JSONObject(call.get(2));
+                    assertEquals("move", payload.getString("action"));
+                    assertEquals("queued-2", payload.getString("id"));
+                    assertEquals("queued-0", payload.getString("before_id"));
+                    return envelope(running(3).put("updated_at", 21));
+                } catch (Exception error) { throw new AssertionError(error); }
+            };
+            View grip = action(h, 2, "Drag to reorder");
+            grip.performLongClick();
+            Object local = ShadowQueueDrag.local;
+            assertNotNull("The native drag retains its queue message", local);
+            NativeQueuedMessages queue = h.get("queuedView");
+            for (int type : new int[] {android.view.DragEvent.ACTION_DRAG_STARTED, android.view.DragEvent.ACTION_DRAG_LOCATION,
+                    android.view.DragEvent.ACTION_DROP, android.view.DragEvent.ACTION_DRAG_ENDED}) {
+                android.view.DragEvent event = ReflectionHelpers.callStaticMethod(android.view.DragEvent.class, "obtain");
+                ReflectionHelpers.setField(event, "mAction", type);
+                ReflectionHelpers.setField(event, "mY", 2f);
+                ReflectionHelpers.setField(event, "mLocalState", local);
+                assertTrue(queue.dispatchDragEvent(event)); ReflectionHelpers.callInstanceMethod(event, "recycle");
+            }
+            h.io.run();
+            assertEquals(1, MainActivityGoalTest.ShadowClient.calls.size());
+        }
     }
 
     @Test public void aQueueRequestLeftBehindByANetworkHandoffNoLongerBlocksTheQueue() throws Exception {
@@ -70,13 +227,13 @@ public class MainActivityQueueTest {
 
             // A queued row's action left behind the same way does not disable the rows either.
             NativeQueuedMessages queue = h.get("queuedView");
-            ((android.view.ViewGroup) ((android.view.ViewGroup) queue.getChildAt(0)).getChildAt(0)).getChildAt(1).performClick();
+            ((android.view.ViewGroup) ((android.view.ViewGroup) queue.getChildAt(0)).getChildAt(0)).getChildAt(2).performClick();
             assertEquals(1, h.io.jobs.size());
             h.call("beginNetworkHandoff"); h.io.run();
             h.set("client", new Client("unused", "https://fixture.invalid")); h.set("connected", true); h.set("connecting", false); h.set("busy", false);
             show(h, running(2));
             queue = h.get("queuedView");
-            View steer = ((android.view.ViewGroup) ((android.view.ViewGroup) queue.getChildAt(0)).getChildAt(0)).getChildAt(1);
+            View steer = ((android.view.ViewGroup) ((android.view.ViewGroup) queue.getChildAt(0)).getChildAt(0)).getChildAt(2);
             assertTrue(steer.isEnabled()); steer.performClick(); h.io.run();
             call = MainActivityGoalTest.ShadowClient.calls.get(MainActivityGoalTest.ShadowClient.calls.size() - 1);
             assertEquals("/api/chats/chat-one/queue", call.get(1)); assertEquals("steer", new JSONObject(call.get(2)).getString("action"));
@@ -113,7 +270,7 @@ public class MainActivityQueueTest {
             };
             View last = ((android.view.ViewGroup) list).getChildAt(19);
             assertTrue("The last row is in view", last.getBottom() - queue.getScrollY() <= queue.getHeight());
-            ((android.view.ViewGroup) last).getChildAt(2).performClick(); h.io.run();
+            action(h, 19, "Delete queued message").performClick(); h.io.run();
             assertEquals(List.of("queued-19"), ids);
         }
     }

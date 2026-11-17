@@ -134,9 +134,11 @@ import { AttachmentCards, ImagePreview } from "./attachments";
 import {
   pasteAttachments,
   prepareAttachments,
+  queuedDraftFiles,
   releaseAttachments,
   validateAttachments,
   type DraftAttachment,
+  type QueuedDraft,
 } from "./attachment-selection";
 import {
   PermissionPicker,
@@ -367,6 +369,23 @@ function App() {
     text: string;
   } | null>(null);
   const [preparingFiles, setPreparingFiles] = useState(false);
+  const [editingQueue, setEditingQueue] = useState(false);
+  const editedQueueDrafts = useRef(
+    new Map<string, { message: string; files: DraftAttachment[] }>(),
+  );
+  const editedDraftKey = (owner: string | undefined, id: string) =>
+    `${owner}/${id}`;
+  function restoreEditedQueueDraft(id: string) {
+    const key = editedDraftKey(activeUser.current, id);
+    const restored = editedQueueDrafts.current.get(key);
+    if (!restored) return;
+    editedQueueDrafts.current.delete(key);
+    setDraft(current => [restored.message, current].filter(Boolean).join("\n\n"));
+    setFiles(current => [...current, ...restored.files]);
+    requestAnimationFrame(() =>
+      document.getElementById("chat-message")?.focus(),
+    );
+  }
   const [stoppingTurns, setStoppingTurns] = useState<Set<string>>(new Set());
   const stopRequests = useRef(new Set<string>());
   const pendingSend = useRef<{
@@ -395,7 +414,11 @@ function App() {
   const fileInput = useRef<HTMLInputElement>(null);
   const filesRef = useRef(files);
   filesRef.current = files;
-  useEffect(() => () => releaseAttachments(filesRef.current), []);
+  useEffect(() => () => {
+    releaseAttachments(filesRef.current);
+    for (const draft of editedQueueDrafts.current.values())
+      releaseAttachments(draft.files);
+  }, []);
   const history = useRef<HTMLDivElement>(null),
     content = useRef<HTMLDivElement>(null),
     pickerRef = useRef<HTMLDivElement>(null),
@@ -441,6 +464,9 @@ function App() {
       .catch(() => {})
       .finally(() => setReady(true));
     const expire = () => {
+      for (const draft of editedQueueDrafts.current.values())
+        releaseAttachments(draft.files);
+      editedQueueDrafts.current.clear();
       directInbox.reset();
       setGroupPicker(null);
       profileCache.reset();
@@ -849,6 +875,7 @@ function App() {
       {
         snapshot: (v) => {
           if (activeID.current !== chatID) return;
+          restoreEditedQueueDraft(chatID);
           setChat((old) => reconcile(old, v));
           setChats((old) =>
             old.map((item) =>
@@ -1432,7 +1459,11 @@ function App() {
     if (activeTurn) void deliver(steer ? "steer" : "queue");
     else void send();
   }
-  async function queueAction(id: string, action: "steer" | "delete") {
+  async function queueAction(
+    id: string,
+    action: "steer" | "delete" | "move",
+    beforeID = "",
+  ) {
     if (!chat || deliverRef.current) return;
     const target = chat.id,
       owner = user?.id;
@@ -1440,7 +1471,9 @@ function App() {
     setDelivering(true);
     setError("");
     try {
-      const v = await api<Chat>("/chats/" + target + "/queue", { id, action });
+      const v = await api<Chat>("/chats/" + target + "/queue", {
+        id, action, before_id: beforeID,
+      });
       if (activeUser.current === owner && activeID.current === target)
         setChat((old) => reconcile(old, v));
     } catch (e) {
@@ -1448,6 +1481,59 @@ function App() {
     } finally {
       deliverRef.current = false;
       setDelivering(false);
+    }
+  }
+  async function editQueuedMessage(id: string) {
+    if (!chat || !composerWritable || deliverRef.current || preparingFiles) return;
+    const target = chat.id,
+      owner = user?.id,
+      origin = selection.current;
+    const isCurrent = () =>
+      activeUser.current === owner &&
+      activeID.current === target &&
+      selection.current.draftVersion === origin.draftVersion;
+    let prepared: DraftAttachment[] = [],
+      retained = false;
+    deliverRef.current = true;
+    setDelivering(true);
+    setEditingQueue(true);
+    setPreparingFiles(true);
+    setError("");
+    try {
+      const restored = await api<QueuedDraft>("/chats/" + target + "/queue", {
+        id, action: "draft",
+      });
+      if (!isCurrent()) return;
+      const sourceFiles = queuedDraftFiles(restored);
+      const validation = validateAttachments([...filesRef.current, ...sourceFiles]);
+      if (validation) throw new Error(t(validation as MessageKey));
+      prepared = await prepareAttachments(sourceFiles);
+      if (!isCurrent()) return;
+      const next = await api<Chat>("/chats/" + target + "/queue", {
+        id, action: "edit",
+      });
+      if (activeUser.current !== owner) return;
+      const key = editedDraftKey(owner, target);
+      const earlier = editedQueueDrafts.current.get(key);
+      editedQueueDrafts.current.set(key, {
+        message: [earlier?.message, restored.message]
+          .filter(Boolean)
+          .join("\n\n"),
+        files: [...(earlier?.files || []), ...prepared],
+      });
+      retained = true;
+      if (isCurrent()) {
+        setChat((old) => reconcile(old, next));
+        restoreEditedQueueDraft(target);
+      }
+    } catch (error) {
+      if (isCurrent()) fail(error);
+    } finally {
+      if (!retained) releaseAttachments(prepared);
+      deliverRef.current = false;
+      setDelivering(false);
+      setEditingQueue(false);
+      setPreparingFiles(false);
     }
   }
   async function stop() {
@@ -2081,6 +2167,8 @@ function App() {
               t={t}
               onSteer={(id) => void queueAction(id, "steer")}
               onDelete={(id) => void queueAction(id, "delete")}
+              onEdit={(id) => void editQueuedMessage(id)}
+              onMove={(id, beforeID) => void queueAction(id, "move", beforeID)}
             />
           )}
           <form
@@ -2127,7 +2215,7 @@ function App() {
                     : t("Waiting for project access")
               }
               value={draft}
-              disabled={!composerWritable}
+              disabled={!composerWritable || editingQueue}
               onPaste={(event) => pasteAttachments(event, addFiles)}
               onChange={(e) => {
                 setDraft(e.target.value);
