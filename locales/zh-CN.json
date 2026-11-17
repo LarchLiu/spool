@@ -460,6 +460,7 @@
   "The next message creates a new chat with the selected agent and converted context.": "下一条消息将在新聊天中由所选 Agent 继续，并携带转换后的上下文。",
   "Only sending with another agent creates a new chat. The original chat stays unchanged.": "仅选择不会创建聊天；使用另一个 Agent 发送消息时才创建新聊天，原聊天保持不变。",
   "Native session history is unavailable": "原始会话历史暂不可用",
+  "Loading conversation…": "正在加载对话…",
   "Loading earlier messages…": "正在加载更早的消息…",
   "Retry loading earlier messages": "重试加载更早的消息",
   "Invalid history cursor": "历史分页位置无效",

@@ -178,6 +178,10 @@ function App() {
     [chats, setChats] = useState<Chat[]>([]),
     [chatID, setChatID] = useState(""),
     [chat, setChat] = useState<Chat | null>(null);
+  const selectedChat = !chatID || chat?.id === chatID
+    ? chat
+    : chats.find((item) => item.id === chatID);
+  const chatLoading = !!chatID && chat?.id !== chatID;
   const sidebarPreferences = useSidebarPreferences(user?.id, fail);
   const [online, setOnline] = useState<Online[]>([]),
     [draft, setDraft] = useState(""),
@@ -1882,28 +1886,28 @@ function App() {
                 {narrowLayout ? <Menu size={18} /> : <PanelLeftOpen size={18} />}
               </button>
             )}
-            <div className={chat ? "heading-copy has-agent" : "heading-copy"}>
+            <div className={selectedChat ? "heading-copy has-agent" : "heading-copy"}>
               <div className="chat-heading">
-                {chat && <AgentIcon backend={backend} size={14} />}
-                {chat && !chat.id.startsWith("pending-") ? (
+                {selectedChat && <AgentIcon backend={selectedChat.backend} size={14} />}
+                {selectedChat && !selectedChat.id.startsWith("pending-") ? (
                   <ChatTitleMenu
-                    key={chat.id}
-                    title={chat.title === "New chat" ? t("New chat") : chat.title}
+                    key={selectedChat.id}
+                    title={selectedChat.title === "New chat" ? t("New chat") : selectedChat.title}
                     t={t}
-                    pinned={sidebarPreferences.pinned.includes(chat.id)}
-                    onTogglePin={() => sidebarPreferences.togglePin(chat.id)}
-                    canManage={canControlChat(chat, user!.id)}
-                    onRename={(title) => renameChat(chat, title)}
-                    onArchive={() => removeChat(chat, "archive")}
-                    onDelete={() => removeChat(chat, "delete")}
+                    pinned={sidebarPreferences.pinned.includes(selectedChat.id)}
+                    onTogglePin={() => sidebarPreferences.togglePin(selectedChat.id)}
+                    canManage={canControlChat(selectedChat, user!.id)}
+                    onRename={(title) => renameChat(selectedChat, title)}
+                    onArchive={() => removeChat(selectedChat, "archive")}
+                    onDelete={() => removeChat(selectedChat, "delete")}
                     onError={(error) => {
                       if (activeUser.current === user!.id) fail(error);
                     }}
                   />
                 ) : (
                   <strong>
-                    {(chat?.title === "New chat" ? t("New chat") : chat?.title) ||
-                      (project ? t("New chat") : t("Workspace"))}
+                    {(selectedChat?.title === "New chat" ? t("New chat") : selectedChat?.title) ||
+                      (chatID ? t("Loading conversation…") : project ? t("New chat") : t("Workspace"))}
                   </strong>
                 )}
               </div>
@@ -2055,7 +2059,9 @@ function App() {
                 {t("Retry loading earlier messages")}
               </button>
             )}
-            {!chat?.turns.length ? (
+            {chatLoading ? (
+              <p role="status" className="history-error">{t("Loading conversation…")}</p>
+            ) : !chat?.turns.length ? (
               <section className="welcome">
                 <img className="welcome-mark" src={appURL("/logo.png")} alt="Spool" />
                 <span className="eyebrow">

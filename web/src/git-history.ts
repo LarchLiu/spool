@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { api } from "./api";
 import type { GitView } from "./git-panel-state";
 import type { Translator } from "./i18n";
@@ -17,6 +17,8 @@ function appendPage(first: GitView, page: GitView): GitView {
 
 /** One directory-scoped history snapshot, with refresh and pagination serialized. */
 export function useGitHistory(
+  base: string,
+  scope: string,
   url: string,
   active: boolean,
   refresh: number,
@@ -28,9 +30,17 @@ export function useGitHistory(
   const [error, setError] = useState("");
   const [moreLoading, setMoreLoading] = useState(false);
   const [moreError, setMoreError] = useState("");
-  const cache = useRef<{ url: string; data: GitView } | undefined>(undefined);
+  const cache = useRef<{ key: string; data: GitView } | undefined>(undefined);
   const more = useRef<(() => void) | undefined>(undefined);
   const loadMore = useCallback(() => more.current?.(), []);
+  const key = JSON.stringify([scope, url]);
+  const request = useEffectEvent((cursor: string | undefined, signal: AbortSignal) =>
+    api<GitView>(
+      base + url + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""),
+      undefined,
+      signal,
+    ),
+  );
 
   useEffect(() => {
     setLoading(false);
@@ -38,21 +48,15 @@ export function useGitHistory(
     if (!active) return;
     const controller = new AbortController();
     let pending = false;
-    let snapshot = cache.current?.url === url ? cache.current.data : undefined;
+    let snapshot = cache.current?.key === key ? cache.current.data : undefined;
     setData(snapshot);
     setError("");
     setMoreError("");
     const accept = (next: GitView) => {
       snapshot = next;
-      cache.current = { url, data: next };
+      cache.current = { key, data: next };
       setData(next);
     };
-    const request = (cursor?: string) =>
-      api<GitView>(
-        url + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""),
-        undefined,
-        controller.signal,
-      );
     const load = async (additional = false) => {
       if (
         pending ||
@@ -68,6 +72,7 @@ export function useGitHistory(
       try {
         let next = await request(
           additional ? snapshot?.next_cursor : undefined,
+          controller.signal,
         );
         if (controller.signal.aborted) return;
         if (additional && snapshot) next = appendPage(snapshot, next);
@@ -76,7 +81,7 @@ export function useGitHistory(
           // older visible rows, while retaining their scroll position.
           const loadedCount = snapshot.commits.length;
           while (next.next_cursor && next.commits.length < loadedCount) {
-            const page = await request(next.next_cursor);
+            const page = await request(next.next_cursor, controller.signal);
             if (controller.signal.aborted) return;
             next = appendPage(next, page);
           }
@@ -114,7 +119,7 @@ export function useGitHistory(
       clearInterval(timer);
       window.removeEventListener("focus", poll);
     };
-  }, [url, active, refresh, retry, t]);
+  }, [key, active, refresh, retry, t]);
 
   return { data, loading, error, moreLoading, moreError, loadMore };
 }

@@ -195,6 +195,7 @@ function DiscardGitDialog({
 
 export function GitPanel({
   base,
+  scope,
   workspace,
   active,
   ready,
@@ -202,6 +203,7 @@ export function GitPanel({
   t,
 }: {
   base: string;
+  scope: string;
   workspace?: string;
   active: boolean;
   ready: boolean;
@@ -242,7 +244,7 @@ export function GitPanel({
     };
   }, []);
   const query = (view: string, path?: string) =>
-    `${base}/git?${new URLSearchParams({
+    `/git?${new URLSearchParams({
       view,
       ...(workspace ? { workspace } : {}),
       ...(commit ? { commit } : {}),
@@ -253,6 +255,8 @@ export function GitPanel({
   const diffURL = selected ? query("diff", selected) : "";
   const historyList = mode === "history" && !commit;
   const history = useGitHistory(
+    base,
+    scope,
     query("history"),
     active && ready && historyList,
     refresh,
@@ -308,6 +312,13 @@ export function GitPanel({
         : "",
     );
   });
+  // Chat changes update the transport without invalidating directory data.
+  const readChanges = useEffectEvent((url: string, signal: AbortSignal) =>
+    api<GitView>(base + url, undefined, signal),
+  );
+  const readDiff = useEffectEvent((url: string, signal: AbortSignal) =>
+    api<GitDiff>(base + url, undefined, signal),
+  );
   useEffect(() => {
     if (!active || !ready || historyList) return;
     const controller = new AbortController();
@@ -317,7 +328,7 @@ export function GitPanel({
       pending = true;
       setLoading(true);
       try {
-        const next = await api<GitView>(listURL, undefined, controller.signal);
+        const next = await readChanges(listURL, controller.signal);
         if (controller.signal.aborted) return;
         setData(next);
         setError("");
@@ -344,7 +355,7 @@ export function GitPanel({
       clearInterval(timer);
       window.removeEventListener("focus", poll);
     };
-  }, [active, ready, historyList, listURL, refresh, retry, t]);
+  }, [scope, active, ready, historyList, listURL, refresh, retry, t]);
   useEffect(() => {
     if (!active || !ready || !diffURL) return;
     const controller = new AbortController();
@@ -354,7 +365,7 @@ export function GitPanel({
       if (pending || controller.signal.aborted) return;
       pending = true;
       try {
-        const value = await api<GitDiff>(diffURL, undefined, controller.signal);
+        const value = await readDiff(diffURL, controller.signal);
         if (controller.signal.aborted) return;
         setDiff((previous) =>
           previous?.path === value.path &&
@@ -382,7 +393,7 @@ export function GitPanel({
       controller.abort();
       reloadDiff.current = undefined;
     };
-  }, [active, ready, diffURL, diffRefresh, t]);
+  }, [scope, active, ready, diffURL, diffRefresh, t]);
   useEffect(() => {
     reloadDiff.current?.();
   }, [diffPoll]);
@@ -429,7 +440,7 @@ export function GitPanel({
     setOperation(action);
     setOperationError("");
     try {
-      await api(query("changes"), {
+      await api(base + query("changes"), {
         action,
         paths,
         message: action === "commit" ? message : undefined,

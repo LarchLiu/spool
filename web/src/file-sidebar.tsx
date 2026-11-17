@@ -64,17 +64,44 @@ type Props = {
 
 export function FileSidebar(props: Props) {
   const [panel, setPanel] = useState<"project" | "git">("project");
+  const context = {
+    projectID: props.project?.id,
+    chatID: props.chatID,
+    workspace: props.workspace,
+    workspaces: props.workspaces,
+  };
+  const [resolved, setResolved] = useState(context);
+  const pending = !!props.chatID && !props.workspace && !props.workspaceError;
+  // Keep the directory mounted until the next chat's workspace is known.
+  const retain = pending && resolved.projectID === context.projectID;
+  const directory = retain ? resolved : context;
+  if (
+    !retain &&
+    (resolved.projectID !== context.projectID ||
+      resolved.chatID !== context.chatID ||
+      resolved.workspace !== context.workspace ||
+      resolved.workspaces !== context.workspaces)
+  ) setResolved(context);
+  const directoryScope = JSON.stringify([
+    props.project?.id,
+    directory.workspace?.path,
+    !!directory.workspace?.available,
+  ]);
   useEffect(() => { if (props.selection) setPanel("project"); }, [props.selection]);
   return (
     <aside
       className={`file-sidebar ${props.mobileOpen ? "open" : ""}`}
-      inert={!props.active}
+      inert={!props.active || pending}
       aria-label={props.t("Project files")}
     >
       {props.project ? (
         <ProjectFiles
-          key={`${props.project.id}:${props.chatID || ""}:${props.workspace?.path || ""}:${!!props.workspace?.available}`}
+          key={directoryScope}
           {...props}
+          chatID={directory.chatID}
+          workspace={directory.workspace}
+          workspaces={directory.workspaces}
+          directoryScope={directoryScope}
           panel={panel}
           onSelectPanel={setPanel}
           project={props.project}
@@ -114,7 +141,8 @@ function ProjectFiles({
   onClose,
   panel,
   onSelectPanel,
-}: Props & { project: Project; panel: "project" | "git"; onSelectPanel: (panel: "project" | "git") => void }) {
+  directoryScope,
+}: Props & { project: Project; panel: "project" | "git"; onSelectPanel: (panel: "project" | "git") => void; directoryScope: string }) {
   const ready = !chatID || !!workspace?.available;
   const workspacePath = workspace?.path;
   const [error, setError] = useState("");
@@ -215,7 +243,19 @@ function ProjectFiles({
   }, [active, ready, loadDirectory, model, refresh]);
 
   useEffect(() => {
-    if (!active || !selection) return;
+    if (!selection) {
+      setLoaded(null);
+      setFileError(null);
+      suppressSelection.current = true;
+      try {
+        for (const path of model.getSelectedPaths())
+          model.getItem(path)?.deselect();
+      } finally {
+        suppressSelection.current = false;
+      }
+      return;
+    }
+    if (!active || !ready) return;
     const controller = new AbortController();
     setFileError(null);
     api<ProjectFile>(
@@ -336,7 +376,7 @@ function ProjectFiles({
         { value: "project", label: t("Project panel"), icon: <ListTree size={14} /> },
         { value: "git", label: t("Git panel"), icon: <GitBranch size={14} /> },
       ]} />
-      {panel === "git" && <GitPanel base={fileAPIBase(project.id, chatID).slice(4)} workspace={chatID ? workspacePath : undefined}
+      {panel === "git" && <GitPanel base={fileAPIBase(project.id, chatID).slice(4)} scope={directoryScope} workspace={chatID ? workspacePath : undefined}
         active={active} ready={ready} refresh={gitRefresh} t={t} />}
       <div className="file-project-panel" hidden={panel !== "project"}>
       <FilePreviewSplit
