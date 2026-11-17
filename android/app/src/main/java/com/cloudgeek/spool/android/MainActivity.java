@@ -2889,7 +2889,7 @@ public final class MainActivity extends Activity {
         final String ownerChat = page.optString("id", chatID), ownerProject = page.optString("project_id", projectID);
         return new NativeTranscriptImages() {
             private String apiPath(String path, String source) {
-                if (source.matches("^/api/chats/" + java.util.regex.Pattern.quote(android.net.Uri.encode(ownerChat)) + "/tool-image\\?ref=[a-f0-9]{64}&index=\\d+$")) return source;
+                if (NativeFileData.toolImagePath(source) && source.startsWith("/api/chats/" + android.net.Uri.encode(ownerChat) + "/")) return source;
                 NativeFileTarget target = NativeFileTarget.parse(path);
                 if (target != null && !ownerProject.isEmpty() && !ownerChat.isEmpty()) return NativeFileData.filePath(ownerProject, ownerChat, target.path, "image");
                 return "";

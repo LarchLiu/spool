@@ -6,10 +6,12 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"spool/internal/agent"
 	chatmodel "spool/internal/model"
 )
 
@@ -30,10 +32,28 @@ func (a *App) toolImageResponse(w http.ResponseWriter, r *http.Request, chat cha
 	for _, turn := range chat.Turns {
 		for i := max(0, turn.PartStart); i < min(turn.PartEnd, len(chat.Transcript.Parts)); i++ {
 			part := chat.Transcript.Parts[i]
-			if !toolPart(part) || toolPartRef(chat.ID, turn, i, part) != ref || index >= len(part.Images) {
+			if !toolPart(part) || toolPartRef(chat.ID, turn, i, part) != ref {
 				continue
 			}
-			_, encoded, ok := strings.Cut(part.Images[index], ";base64,")
+			images := part.Images
+			paths := viewedImagePaths(part.Name, part.Text)
+			if len(images) == 0 && turn.NativeHistory && part.Kind == "tool_use" && index < len(paths) && chat.NativeSessionPath != "" {
+				images, err = agent.ReadCodexToolImages(r.Context(), chat.NativeSessionPath, turn.NativeTurnID, part.ID)
+				if err != nil {
+					apiError(w, 503, "Native session history is unavailable")
+					return
+				}
+				if len(images) == 0 {
+					fileRequest := r.Clone(r.Context())
+					fileRequest.URL.RawQuery = url.Values{"path": {paths[index]}, "image": {"1"}}.Encode()
+					a.sessionFilesResponse(w, fileRequest, chat, "file")
+					return
+				}
+			}
+			if index >= len(images) {
+				break
+			}
+			_, encoded, ok := strings.Cut(images[index], ";base64,")
 			if !ok {
 				break
 			}

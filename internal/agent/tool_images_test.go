@@ -1,12 +1,57 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	chatmodel "spool/internal/model"
 )
+
+func TestReadCodexToolImagesKeepsTheCallAndTurnIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rollout.jsonl")
+	image := "data:image/png;base64,aGVsbG8="
+	output := func(id, image string) map[string]any {
+		return map[string]any{"type": "response_item", "payload": map[string]any{"type": "function_call_output", "call_id": id, "output": []any{map[string]any{"type": "input_image", "image_url": image}}}}
+	}
+	writeTitleRecords(t, path,
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "other-turn"}},
+		output("image-call", "data:image/png;base64,b3RoZXI="),
+		map[string]any{"type": "event_msg", "payload": map[string]any{"type": "task_started", "turn_id": "wanted-turn"}},
+		map[string]any{"type": "response_item", "payload": map[string]any{"type": "function_call_output", "call_id": "large-other-call", "output": strings.Repeat("x", 256*1024)}},
+		output("other-image-call", "data:image/png;base64,b3RoZXI="), output("image-call", image))
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		turn, call string
+		want       []string
+	}{
+		{"wanted-turn", "image-call", []string{image}},
+		{"missing-turn", "image-call", nil},
+		{"wanted-turn", "missing-call", nil},
+	} {
+		got, err := ReadCodexToolImages(context.Background(), path, test.turn, test.call)
+		if err != nil || !reflect.DeepEqual(got, test.want) {
+			t.Fatalf("%s/%s: got %v, %v", test.turn, test.call, got, err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ReadCodexToolImages(ctx, path, "wanted-turn", "image-call"); !errors.Is(err, context.Canceled) {
+		t.Fatal("canceled image request continued", err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("image read changed the native rollout")
+	}
+}
 
 func TestImageToolsNormalizeNativeCodexAndClaudeRecords(t *testing.T) {
 	for _, typ := range []string{"imageView", "image_view"} {

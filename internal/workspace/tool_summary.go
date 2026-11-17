@@ -263,7 +263,11 @@ func slimToolDetails(chat chatmodel.Session) chatmodel.Session {
 			part.Tool.Ref = toolPartRef(chat.ID, turn, i, *part)
 			part.Tool.Href = "/chats/" + chat.ID + "/tool-detail?ref=" + part.Tool.Ref
 			part.Tool.ImageURLs = nil
-			for index := range part.Images {
+			imageCount := len(part.Images)
+			if turn.NativeHistory && part.Kind == "tool_use" && part.Tool.Kind == "image" {
+				imageCount = max(imageCount, len(part.Tool.ImagePaths))
+			}
+			for index := range imageCount {
 				part.Tool.ImageURLs = append(part.Tool.ImageURLs, "/api/chats/"+chat.ID+"/tool-image?ref="+part.Tool.Ref+"&index="+strconv.Itoa(index))
 			}
 			part.Tool.SourceText = ""

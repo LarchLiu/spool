@@ -79,6 +79,12 @@ public class NativeAttachmentsTest {
         assertTrue(NativeFileData.code("NativeUi.TSX"));
         assertFalse(NativeFileData.code("notes.md"));
         assertTrue(NativeFileData.allowedPath("/api/chats/chat/tool-image?ref=" + "a".repeat(64) + "&index=0"));
+        String nativeImage = "/api/chats/chat/tool-image?ref=native-tool-eyJjIjoiY2hhdCJ9&index=0";
+        assertTrue(NativeFileData.allowedPath(nativeImage));
+        assertFalse(NativeFileData.allowedPath(nativeImage.replace("native-tool-eyJjIjoiY2hhdCJ9", "native-tool-")));
+        assertFalse(NativeFileData.allowedPath(nativeImage.replace("native-tool-eyJjIjoiY2hhdCJ9", "native-tool-" + "a".repeat(16385))));
+        assertFalse(NativeFileData.allowedPath(nativeImage.replace("native-tool-eyJjIjoiY2hhdCJ9", "native-tool-invalid%2Fref")));
+        assertFalse(NativeFileData.allowedPath(nativeImage + "&redirect=1"));
         assertFalse(NativeFileData.allowedPath("/api/chats/chat/tool-image?ref=invalid&index=0"));
         assertFalse(NativeFileData.allowedPath("/api/chats/chat/tool-image?ref=" + "a".repeat(64) + "&index=0&redirect=1"));
         assertArrayEquals(new byte[] {1,2,3}, NativeFileData.inline("data:image/png;base64,AQID").bytes);

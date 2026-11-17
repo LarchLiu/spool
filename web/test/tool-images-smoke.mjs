@@ -22,8 +22,10 @@ for (const backend of ["codex", "claude"]) {
   parts.push({ role: "user", kind: "text", text: `Inspect ${backend} screenshots` });
   for (let i = 0; i < (backend === "codex" ? 6 : 2); i++) {
     const path = `/work/build/artifacts/${backend} page ${i + 1}.png`;
+    const nativeRef = "native-tool-" + Buffer.from(JSON.stringify({ c: "image-chat", t: "codex", i: `codex-${i}`, k: "tool_use" })).toString("base64url");
     parts.push({ id: `${backend}-${i}`, role: "assistant", kind: "tool_use", name: backend === "codex" ? "functions.view_image" : "Read", text: "", tool: {
       kind: "image", image_paths: [path], version: "v1", bytes: 70, ref: `${backend}-${i}`, href: `/chats/image-chat/tool-detail?ref=${backend}-${i}`,
+      ...(backend === "codex" ? { image_urls: [`/api/chats/image-chat/tool-image?ref=${nativeRef}&index=0`] } : {}),
     } });
   }
   // Claude can complete parallel Reads in a different order. Persisted pixels
@@ -71,7 +73,7 @@ window.addEventListener('unhandledrejection', event => errors.push(String(event.
     group.querySelector('.viewed-image').click();
     const dialog = await until(() => document.querySelector('dialog.image-preview[open]'));
     report.clickOpensPreview = dialog.querySelector('.image-preview-toolbar span').textContent === 'codex page 1.png';
-    report.downloadUsesAuthorizedEndpoint = dialog.querySelector('a[download]').getAttribute('href').startsWith('/api/chats/image-chat/file?');
+    report.downloadUsesAuthorizedEndpoint = dialog.querySelector('a[download]').getAttribute('href').startsWith('/api/chats/image-chat/tool-image?ref=native-tool-');
     dialog.querySelector('[aria-label="Close preview"]').click();
     await until(() => !document.querySelector('dialog.image-preview'));
     claude.querySelector('.viewed-image').click();
@@ -115,7 +117,8 @@ const server = createServer(async (req, res) => {
   if (path.endsWith("/tool-detail")) { requests.push("unexpected tool body"); return json({ text: "raw input should stay unloaded" }); }
   if (path === "/api/chats/image-chat/tool-image" || path === "/api/chats/image-chat/file" && url.searchParams.get("image") === "1") {
     requests.push(url.pathname + url.search);
-    if (url.searchParams.get("path")?.endsWith("codex page 6.png")) { res.writeHead(404); return res.end(); }
+    const ref = url.searchParams.get("ref") || "";
+    if (ref.startsWith("native-tool-") && JSON.parse(Buffer.from(ref.slice(12), "base64url").toString()).i === "codex-5") { res.writeHead(404); return res.end(); }
     res.setHeader("Content-Type", "image/png");
     return res.end(image);
   }
@@ -149,6 +152,7 @@ try {
     for (const [key, value] of Object.entries(report)) assert.equal(value, true, `${mode}: ${key}`);
   }
   assert.ok(!requests.includes("unexpected tool body"));
+  assert.ok(!requests.some(path => path.startsWith("/api/chats/image-chat/file?")), "Saved images must not reopen their original filesystem paths");
   console.log(JSON.stringify(Object.fromEntries(reports), null, 2));
 } finally {
   server.closeAllConnections();

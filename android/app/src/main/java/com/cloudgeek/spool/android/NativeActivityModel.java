@@ -92,7 +92,7 @@ final class NativeActivityModel {
                 List<String> urls = strings(summary == null ? part.optJSONArray("images") : summary.optJSONArray("image_urls"));
                 if (last != null && last.result == null) {
                     last.result = part;
-                    if (!urls.isEmpty()) { last.kind = "image"; last.imageURLs.addAll(urls); last.label = imageLabel(ui, urls.size()); }
+                    if (!urls.isEmpty()) { last.kind = "image"; last.imageURLs.clear(); last.imageURLs.addAll(urls); last.label = imageLabel(ui, urls.size()); }
                 } else {
                     Activity item = new Activity();
                     item.kind = urls.isEmpty() ? "other" : "image";
@@ -174,6 +174,7 @@ final class NativeActivityModel {
                 item.label = name.isEmpty() ? ui.t("Used tool") : ui.t("Used {tool}", "tool", name);
         }
         Matcher stats = STATS.matcher(item.detail);
+        if (summary != null) item.imageURLs.addAll(strings(summary.optJSONArray("image_urls")));
         item.stats = summary != null ? summary.optString("stats") : stats.find() ? stats.group(1) + " " + stats.group(2) : "";
         return item;
     }

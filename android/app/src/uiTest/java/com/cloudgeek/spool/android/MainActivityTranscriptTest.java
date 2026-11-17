@@ -204,6 +204,37 @@ public class MainActivityTranscriptTest {
         }
     }
 
+    @Test public void nativeToolImagesPreviewSavedPixelsAfterTheOriginalFileWasRemoved() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
+            android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(16, 8, android.graphics.Bitmap.Config.ARGB_8888);
+            bitmap.eraseColor(0xff52704a); java.io.ByteArrayOutputStream encoded = new java.io.ByteArrayOutputStream();
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, encoded); bitmap.recycle();
+            String ref = "native-tool-" + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    "{\"c\":\"chat-one\",\"t\":\"native-turn\",\"i\":\"image-call\",\"k\":\"tool_result\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            String source = "/api/chats/chat-one/tool-image?ref=" + ref + "&index=0";
+            List<Runnable> jobs = new ArrayList<>(); List<String> requests = new ArrayList<>();
+            h.set("fileImages", new NativeImages(jobs::add, path -> {
+                assertEquals("Saved tool pixels must take precedence over the removed file", source, path);
+                requests.add(path); return new NativeFileData("image/png", encoded.toByteArray());
+            }));
+            JSONObject page = chat(); JSONArray parts = page.getJSONObject("transcript").getJSONArray("parts");
+            parts.put(3, new JSONObject().put("role", "assistant").put("kind", "tool_use").put("id", "image-call").put("name", "functions.view_image").put("text", "")
+                    .put("tool", new JSONObject().put("kind", "image").put("image_paths", new JSONArray().put("/removed/temp/screenshot.png")).put("image_urls", new JSONArray().put(source))));
+            page.getJSONArray("turns").getJSONObject(1).put("part_end", 4);
+            show(h, page); NativeViewedImages grid = views(h.get("historyContent"), NativeViewedImages.class).get(0);
+            assertEquals(1, jobs.size()); jobs.remove(0).run(); Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertNotNull(views(grid, android.widget.ImageView.class).get(0).getDrawable());
+            grid.getChildAt(0).performClick(); NativeImagePreview preview = h.get("imagePreview"); assertNotNull(preview);
+            assertEquals(1, jobs.size()); jobs.remove(0).run(); Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertNotNull(preview.content.image.getDrawable()); assertEquals(View.GONE, preview.content.status.getVisibility());
+            assertEquals(List.of(source, source), requests); h.call("closeImagePreview");
+            parts.getJSONObject(3).getJSONObject("tool").put("image_paths", new JSONArray());
+            parts.getJSONObject(3).getJSONObject("tool").put("image_urls", new JSONArray().put(source.replace("chat-one", "foreign-chat")));
+            show(h, page); assertTrue(jobs.isEmpty());
+            views(h.get("historyContent"), NativeViewedImages.class).get(0).getChildAt(0).performClick(); assertNull(h.get("imagePreview"));
+        }
+    }
+
     @Test public void providerOnlyInputHasNoEmptyUserRowAndCompactionRebindsWithoutTextChanges() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
             JSONObject value = chat();

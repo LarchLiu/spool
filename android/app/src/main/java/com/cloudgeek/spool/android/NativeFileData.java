@@ -55,8 +55,12 @@ final class NativeFileData {
 
     static boolean allowedPath(String path) {
         return path != null && (path.matches("^/api/chats/[^/?#]+/attachments\\?id=[^&#]+$")
-                || path.matches("^/api/chats/[^/?#]+/tool-image\\?ref=[a-f0-9]{64}&index=\\d+$")
+                || toolImagePath(path)
                 || path.matches("^/api/(?:projects|chats)/[^/?#]+/file\\?path=[^&#]+(?:&(?:image|download)=1)?(?:&workspace=[^&#]+)?$"));
+    }
+
+    static boolean toolImagePath(String path) {
+        return path != null && path.matches("^/api/chats/[^/?#]+/tool-image\\?ref=(?:[a-f0-9]{64}|native-tool-[A-Za-z0-9_-]{1,16384})&index=\\d+$");
     }
 
     static boolean inlineImage(String source) {

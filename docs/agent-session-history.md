@@ -70,6 +70,13 @@ app-servers fall back to `thread/items/list` filtered to that turn. Neither
 requires walking earlier turns or loading the whole session. Chat access is
 checked before these reads.
 
+Codex `imageView` items contain only the original path. Their lazy summaries
+also include a chat-scoped image URL: on preview or download, Spool reads the
+matching call's saved image output from the rollout, checking both turn and
+call IDs. Other tool bodies are skipped, and base64 pixels stay out of history
+responses. Images remain viewable after temporary files are removed, without
+granting access to their original directory or changing external-file policy.
+
 The rollout parser (`session_transcript.go`, `session_turns.go`) remains the
 reader for everything native paging cannot serve, chosen per thread:
 

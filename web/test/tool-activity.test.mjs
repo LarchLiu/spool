@@ -179,6 +179,17 @@ test("Claude parallel image results pair by tool_use_id and prefer persisted ima
   assert.doesNotMatch(html, /disabled|<pre>|attachments/);
 });
 
+test("native Codex imageView summaries preview saved pixels without reopening the original file", () => {
+  const source = "/api/chats/chat/tool-image?ref=native-tool-eyJjIjoiY2hhdCJ9&index=0";
+  const part = { ...tool("view_image", ""), id: "image-call", tool: { kind: "image", image_paths: ["/removed/screenshot.png"], image_urls: [source] } };
+  const html = renderToStaticMarkup(createElement(LocalFileContext.Provider, { value: {
+    imageURL() { throw new Error("Removed screenshot must use saved tool pixels"); }, previewImage() {},
+  } }, createElement(ToolActivityList, { parts: [part], backend: "codex", t, live: true })));
+  assert.match(html, /Viewed 1 image/);
+  assert.match(html, /tool-image\?ref=native-tool-eyJjIjoiY2hhdCJ9&amp;index=0/);
+  assert.doesNotMatch(html, /disabled|<pre>|\/file\?/);
+});
+
 test("lazy image summaries and parallel batches retain thumbnails without loading raw tool bodies", () => {
   const batch = tool("multi_tool_use.parallel", JSON.stringify({ tool_uses: ["a.png", "b.png"].map((path) => ({ recipient_name: "functions.view_image", parameters: { path } })) }));
   assert.deepEqual(viewedImagePaths(batch), ["a.png", "b.png"]);

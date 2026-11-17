@@ -266,7 +266,7 @@ export function displayActivity(
       label = name ? t("Used {tool}", { tool: titleName(name) }) : t("Used tool");
       break;
   }
-  return { use: part, kind, label, detail: part.text, images, stats: part.tool?.stats || inlineChangeStats(part.text) };
+  return { use: part, kind, label, detail: part.text, images, imageURLs: part.tool?.image_urls, stats: part.tool?.stats || inlineChangeStats(part.text) };
 }
 
 export function activitiesFromParts(

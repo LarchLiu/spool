@@ -53,6 +53,8 @@ public class NativeViewedImagesTest {
             assertEquals("已查看 4 张图片", NativeActivityModel.groups(new NativeUi(controller.get(), false, "zh-CN"), values).get(0).label);
             List<NativeActivityModel.Activity> orphan = NativeActivityModel.fromParts(ui, parts("[{role:'assistant',kind:'tool_use',id:'x',name:'Read',text:'{}'},{role:'tool',kind:'tool_result',id:'unknown',images:['pixels'],text:''}]"), "claude");
             assertNull(orphan.get(0).result); assertEquals("image", orphan.get(1).kind);
+            List<NativeActivityModel.Activity> nativeImages = NativeActivityModel.fromParts(ui, parts("[{role:'assistant',kind:'tool_use',id:'native',tool:{kind:'image',image_paths:['/removed.png'],image_urls:['saved-pixels']}},{role:'tool',kind:'tool_result',id:'native',tool:{image_urls:['result-pixels']}}]"), "codex");
+            assertEquals(List.of("result-pixels"), nativeImages.get(0).imageURLs);
         }
     }
     @Test public void thumbnailsWrapPreviewCollapseAndShowMissingImageWithoutRawToolDetails() throws Exception {

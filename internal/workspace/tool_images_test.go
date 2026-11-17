@@ -2,17 +2,139 @@ package workspace
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"spool/internal/agent"
 	chatmodel "spool/internal/model"
 )
+
+type imageCodexHistory struct {
+	fakeCodexHistory
+	path string
+	hide bool
+}
+
+func (f *imageCodexHistory) imagePart() chatmodel.Part {
+	body, _ := json.Marshal(map[string]string{"path": f.path})
+	return chatmodel.Part{ID: "image-call", Role: "assistant", Kind: "tool_use", Name: "view_image", Text: string(body)}
+}
+
+func (f *imageCodexHistory) Turns(context.Context, string, string, int) (agent.CodexTurnPage, error) {
+	turn := agent.CodexHistoryTurn{ID: "image-turn", Status: chatmodel.StatusCompleted, Parts: []chatmodel.Part{{Role: "user", Kind: "text", Text: "Inspect the screenshot"}, f.imagePart()}}
+	if f.hide {
+		turn.ID, turn.Parts = "later-turn", []chatmodel.Part{{Role: "user", Kind: "text", Text: "Next task"}}
+	}
+	return agent.CodexTurnPage{Turns: []agent.CodexHistoryTurn{turn}}, nil
+}
+
+func (f *imageCodexHistory) Item(_ context.Context, _ string, turn, item string) ([]chatmodel.Part, error) {
+	f.items++
+	if turn == "image-turn" && item == "image-call" {
+		return []chatmodel.Part{f.imagePart()}, nil
+	}
+	return nil, nil
+}
+
+func TestCodexNativeImageViewPreviewsSavedPixelsAfterFileRemovalAndWindowEviction(t *testing.T) {
+	s := testStore(t)
+	owner, member := testUser(t, s, "owner"), testUser(t, s, "member")
+	project := testProject(t, s, owner, member)
+	project.AllowExternalFiles = false
+	if _, err := s.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	chat, err := s.CreateChat(owner.ID, project.ID, chatmodel.BackendCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image := imageFixture(t)
+	encoded := base64.StdEncoding.EncodeToString(image)
+	removed := filepath.Join(t.TempDir(), "removed.png")
+	native := filepath.Join(t.TempDir(), "rollout.jsonl")
+	appendTitleRecord(t, native, map[string]any{"type": "event_msg", "payload": map[string]any{"type": "task_started", "turn_id": "image-turn"}})
+	appendTitleRecord(t, native, map[string]any{"type": "response_item", "payload": map[string]any{"type": "function_call_output", "call_id": "image-call", "output": []any{map[string]any{"type": "input_image", "image_url": "data:image/png;base64," + encoded}}}})
+	appendTitleRecord(t, native, map[string]any{"type": "event_msg", "payload": map[string]any{"type": "task_started", "turn_id": "later-turn"}})
+	if err := s.SetNativeSessionPath(chat.ID, "native-image-thread", native); err != nil {
+		t.Fatal(err)
+	}
+	fake := &imageCodexHistory{path: removed}
+	s.codexHistory.reader, s.codexHistory.threads = fake, nil
+	indexes, reads := countNativeHistoryReads(s)
+	a := NewApp(s, &fakeRunner{}, "", "")
+	t.Cleanup(func() { _ = a.Close() })
+	cookie, _ := loginRequest(t, a, owner.Username)
+	other, _ := loginRequest(t, a, member.Username)
+	w := apiRequest(a, "GET", "/api/chats/"+chat.ID+"?tool_details=lazy", "", cookie, "")
+	var page chatmodel.Session
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil || w.Code != 200 || len(page.Transcript.Parts) != 2 {
+		t.Fatalf("native history: %d %s (%v)", w.Code, w.Body.String(), err)
+	}
+	summary := page.Transcript.Parts[1].Tool
+	if summary == nil || len(summary.ImageURLs) != 1 || !strings.Contains(summary.ImageURLs[0], "ref=native-tool-") || strings.Contains(w.Body.String(), encoded) {
+		t.Fatalf("native image view lost its lazy image URL: %+v", summary)
+	}
+	endpoint := summary.ImageURLs[0]
+	for range 2 {
+		w = apiRequest(a, "GET", endpoint, "", cookie, "")
+		if w.Code != 200 || !bytes.Equal(w.Body.Bytes(), image) || w.Header().Get("Content-Type") != "image/png" {
+			t.Fatalf("saved image: %d %s", w.Code, w.Body.String())
+		}
+		fake.hide = true
+		s.codexHistory.forget("native-image-thread")
+	}
+	if fake.items == 0 || indexes.Load() != 0 || reads.Load() != 0 {
+		t.Fatalf("image access failed to use the item locator, or decoded unrelated turns: items=%d indexes=%d reads=%d", fake.items, indexes.Load(), reads.Load())
+	}
+	for _, test := range []struct {
+		endpoint string
+		cookie   *http.Cookie
+		status   int
+	}{
+		{endpoint, other, 404}, {endpoint, nil, 401},
+		{strings.Replace(endpoint, "index=0", "index=1", 1), cookie, 404},
+		{"/api/chats/" + chat.ID + "/file?path=" + url.QueryEscape(removed) + "&image=1", cookie, 404},
+	} {
+		if w := apiRequest(a, "GET", test.endpoint, "", test.cookie, ""); w.Code != test.status {
+			t.Fatalf("access boundary: got %d, want %d: %s", w.Code, test.status, w.Body.String())
+		}
+	}
+	if _, err := os.Stat(removed); !os.IsNotExist(err) {
+		t.Fatal("preview unexpectedly depended on the original file", err)
+	}
+	// Old rollouts can omit pixels. Their fallback retains the normal file policy.
+	for _, test := range []struct {
+		path   string
+		status int
+	}{
+		{writeSessionFile(t, project.Path, "available.png", string(image)), 200},
+		{writeSessionFile(t, t.TempDir(), "external.png", string(image)), 403},
+		{writeSessionFile(t, project.Path, ".env.screen.png", string(image)), 403},
+	} {
+		part := fake.imagePart()
+		part.ID = "call-without-saved-output"
+		body, _ := json.Marshal(map[string]string{"path": test.path})
+		part.Text = string(body)
+		turn := chatmodel.Turn{NativeHistory: true, NativeTurnID: "image-turn", PartEnd: 1}
+		chat.NativeSessionPath, chat.Turns = native, []chatmodel.Turn{turn}
+		chat.Transcript.Parts = []chatmodel.Part{part}
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/?index=0&ref="+url.QueryEscape(toolPartRef(chat.ID, turn, 0, part)), nil)
+		a.toolImageResponse(w, r, chat)
+		if w.Code != test.status || w.Code == 200 && !bytes.Equal(w.Body.Bytes(), image) {
+			t.Fatalf("file fallback: %d, want %d: %s", w.Code, test.status, w.Body.String())
+		}
+	}
+}
 
 func TestViewedImagePathsPreserveFullNativePathsAndRecognizeBothProviders(t *testing.T) {
 	path := "/work/project/build/artifacts/render/page 1.png"
