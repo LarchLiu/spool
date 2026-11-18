@@ -547,13 +547,18 @@ func (p *panel) serviceView(c *ui.Context) {
 		ui.Text(c, p.status.Voxl.Application).Selectable().Wrap().FontSize(12)
 	}
 	ui.Text(c, p.tr("Only authorized users can connect while Spool is running. voxl starts on demand and stops when the last connection closes. Turning this off disconnects everyone.")).Wrap().FontSize(12)
-	if !p.status.Voxl.Installed {
-		if ui.Button(c, p.tr("Install voxl")).Disabled(p.busy || p.status.Voxl.Installing).Clicked() {
+	if !p.status.Voxl.Installed || p.status.Voxl.UpgradeAvailable {
+		label := "Install voxl"
+		if p.status.Voxl.UpgradeAvailable {
+			label = "Upgrade voxl"
+		}
+		if ui.Button(c, p.tr(label)).Disabled(p.busy || p.status.Voxl.Installing || p.status.Voxl.Running).Clicked() {
 			p.action(func() error { return p.service.BeginVoxlInstall() })
 		}
-	} else {
+	}
+	if p.status.Voxl.Installed {
 		enabled := p.settings.RemoteDesktopEnabled
-		if ui.Checkbox(c, &enabled, p.tr("Enable remote desktop")).Disabled(p.busy).Changed() {
+		if ui.Checkbox(c, &enabled, p.tr("Enable remote desktop")).Disabled(p.busy || p.status.Voxl.Installing).Changed() {
 			p.action(func() error { return p.service.SetRemoteDesktopEnabled(enabled) })
 		}
 	}
@@ -565,6 +570,8 @@ func (p *panel) serviceView(c *ui.Context) {
 		ui.Text(c, p.tr(step)).Wrap()
 	} else if p.status.Voxl.Running {
 		ui.Text(c, p.tr("Running")).Wrap()
+	} else if !p.status.Voxl.Installed && p.status.Voxl.UpgradeAvailable {
+		ui.Text(c, p.tr("Upgrade required")).Wrap()
 	} else if p.settings.RemoteDesktopEnabled && p.status.Running && p.status.Voxl.Installed {
 		ui.Text(c, p.tr("Waiting for connection")).Wrap()
 	}

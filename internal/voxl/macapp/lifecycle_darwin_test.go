@@ -383,6 +383,39 @@ func TestInstallationPreservesIdentityAndSharedData(t *testing.T) {
 			t.Fatal("installation left scratch data")
 		}
 	}
+	marker := filepath.Join(macapp.Bundle(root), "Contents", "Resources", "installation-format")
+	if err := os.WriteFile(marker, []byte("2\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("/usr/bin/codesign", "--force", "--sign", "-", macapp.Bundle(root)).CombinedOutput(); err != nil {
+		t.Fatal(err, string(output))
+	}
+	before = snapshot()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	engine := filepath.Join(root, "bin", "voxl")
+	if err := macapp.Install(ctx, root, engine); !errors.Is(err, context.Canceled) {
+		t.Fatal("canceled replacement was accepted", err)
+	}
+	bad := filepath.Join(t.TempDir(), "bad-engine")
+	if err := os.WriteFile(bad, []byte("not a runnable engine"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := macapp.Install(t.Context(), root, bad); err == nil {
+		t.Fatal("unusable replacement was accepted")
+	}
+	if !reflect.DeepEqual(before, snapshot()) {
+		t.Fatal("failed replacement changed the current helper")
+	}
+	if err := macapp.Install(t.Context(), root, engine); err != nil {
+		t.Fatal("explicit replacement of a current helper failed", err)
+	}
+	if reflect.DeepEqual(before, snapshot()) || !macapp.Installed(root) || macapp.NeedsUpgrade(root) {
+		t.Fatal("explicit update did not publish a current replacement")
+	}
+	if data, err := os.ReadFile(shared); err != nil || string(data) != "unchanged" {
+		t.Fatal("replacement changed shared data", err)
+	}
 }
 
 func TestHelperRefusesCaptureWithoutAuthenticatedStart(t *testing.T) {

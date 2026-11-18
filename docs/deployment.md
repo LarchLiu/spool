@@ -318,12 +318,30 @@ Existing macOS installations containing only `bin/voxl` need one local
 without downloading or rebuilding Rust. The old binary is retained; shared
 files remain outside the app in `voxl/shared/`. A complete helper app is reused
 unchanged across ordinary Spool upgrades, including its signature. Replacing
-or rebuilding the helper itself can require new macOS authorization. The
-original helper (installation format 1) needs one local **Upgrade voxl**
-action to apply the startup cleanup fix. This reuses its bundled engine and
-atomically replaces the app after verification; a failed upgrade keeps the old
-app intact. Grant the replacement helper access again if macOS requests it.
-Windows and Linux continue to run voxl directly with the same on-demand lifetime.
+or rebuilding the helper itself can require new macOS authorization.
+
+An older helper version shows one **Upgrade voxl** button. Installation format 1
+requires an upgrade before connecting because it lacks the startup cleanup fix;
+it remains unavailable after a canceled or failed upgrade. Format 2 and later
+include the fix and remain available for connections while an upgrade is optional,
+including after a failed upgrade. The same upgrade runs through `voxl install`
+in the CLI.
+Without `--binary`, it checks crates.io for the latest stable, non-yanked engine
+release and compares it with the bundled engine. A newer release is built at
+that exact version; otherwise the existing engine is reused without rebuilding
+Rust or downgrading a newer local build. The engine and new helper are verified
+and published together by an atomic bundle replacement. A failed check, build,
+or verification leaves the old bundle and shared files intact and the upgrade
+available to retry; format 1 stays blocked until the helper upgrade succeeds.
+`--binary` imports the specified local engine without an
+upstream check. Grant the replacement helper access again if macOS requests it.
+
+The helper version determines whether an upgrade is offered; ordinary Spool
+releases, status polling and desktop connections do not check or replace the
+installed helper, even when an upgrade is available.
+Maintainers bump the helper version for a helper change or an intentional engine
+refresh. Windows and Linux continue to run voxl directly with the same on-demand
+lifetime.
 
 Remote desktop uses the existing Spool HTTPS/Tailscale/Relay entry, while the voxl
 helper listens only on loopback. Its file panel uses `<data-dir>/voxl/shared/`;

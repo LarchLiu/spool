@@ -174,6 +174,25 @@ func (b *buildEnvironment) prepare(ctx context.Context) (string, error) {
 	}
 }
 
+// Build exactly the selected release into an empty staging root. Cargo owns and
+// reuses its normal registry cache; the current installation is never mutated.
+func (b *buildEnvironment) buildRelease(ctx context.Context, cargo, stage, version string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	args := []string{"install", "voxl-server", "--version", "=" + version, "--locked", "--registry", "crates-io", "--root", stage, "--target-dir", filepath.Join(stage, "target")}
+	cmd := b.command(ctx, cargo, args...)
+	cmd.Stdout, cmd.Stderr = b.log, b.log
+	if err := b.run(cmd); err != nil {
+		return "", err
+	}
+	name := "voxl-server"
+	if b.goos == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(stage, "bin", name), nil
+}
+
 func dependencyError(message string, missing []string) error {
 	return fmt.Errorf("%s\n%s", message, strings.Join(missing, ", "))
 }

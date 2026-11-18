@@ -26,14 +26,14 @@ import (
 const Version = "0.3.3"
 
 type Status struct {
-	Installed       bool   `json:"installed"`
-	UpgradeRequired bool   `json:"upgrade_required,omitempty"`
-	Installing      bool   `json:"installing"`
-	Running         bool   `json:"running"`
-	Directory       string `json:"directory"`
-	Error           string `json:"error,omitempty"`
-	InstallStep     string `json:"install_step,omitempty"`
-	Application     string `json:"application,omitempty"`
+	Installed        bool   `json:"installed"`
+	UpgradeAvailable bool   `json:"upgrade_available,omitempty"`
+	Installing       bool   `json:"installing"`
+	Running          bool   `json:"running"`
+	Directory        string `json:"directory"`
+	Error            string `json:"error,omitempty"`
+	InstallStep      string `json:"install_step,omitempty"`
+	Application      string `json:"application,omitempty"`
 }
 
 type Manager struct {
@@ -51,6 +51,7 @@ type Manager struct {
 	parent         context.Context
 	active         *connections // guarded by op; releases belong to one helper process
 	connectTimeout time.Duration
+	latestRelease  func(context.Context) (string, error)
 }
 
 type connections struct {
@@ -60,7 +61,7 @@ type connections struct {
 }
 
 func New(root string, changed func()) *Manager {
-	return &Manager{root: root, changed: changed, connectTimeout: 10 * time.Second}
+	return &Manager{root: root, changed: changed, connectTimeout: 10 * time.Second, latestRelease: latestVoxlRelease}
 }
 
 func (m *Manager) executable() string {
@@ -84,7 +85,7 @@ func (m *Manager) Status() Status {
 	if runtime.GOOS == "darwin" {
 		v.Application = macapp.Bundle(m.root)
 		v.Installed = macapp.Installed(m.root)
-		v.UpgradeRequired = !v.Installed && macapp.NeedsUpgrade(m.root)
+		v.UpgradeAvailable = macapp.NeedsUpgrade(m.root)
 	}
 	return v
 }
@@ -135,7 +136,8 @@ func (m *Manager) Available() bool {
 	m.mu.Lock()
 	allowed := m.allowed && m.parent != nil && m.parent.Err() == nil
 	m.mu.Unlock()
-	return allowed && m.Status().Installed
+	status := m.Status()
+	return allowed && status.Installed && !status.Installing
 }
 
 // Acquire is called only for authorized viewer resources. A page or WebSocket
@@ -368,18 +370,20 @@ func (m *Manager) fail(message string) error {
 // Install imports an existing binary, or downloads a pinned crates.io release
 // and builds it locally. macOS fills missing dependencies with Homebrew, Linux
 // checks system libraries, and Windows prepares libraries with vcpkg. Remote
-// clients cannot invoke installation.
+// clients cannot invoke installation. A helper version upgrade also checks for
+// a newer upstream engine before packaging the replacement.
 func (m *Manager) Install(ctx context.Context, source ...string) (installErr error) {
 	if !m.install.TryLock() {
 		return errors.New("voxl is busy. Try again shortly.")
 	}
 	defer m.install.Unlock()
 	m.op.Lock()
-	if m.Status().Running {
+	status := m.Status()
+	if status.Running {
 		m.op.Unlock()
-		return errors.New("Disable remote desktop before installing voxl.")
+		return m.fail("Disable remote desktop before installing voxl.")
 	}
-	if m.Status().Installed {
+	if status.Installed && !status.UpgradeAvailable {
 		m.op.Unlock()
 		return nil
 	}
@@ -401,6 +405,9 @@ func (m *Manager) Install(ctx context.Context, source ...string) (installErr err
 	if len(source) > 0 && source[0] != "" {
 		return m.installBinary(ctx, source[0])
 	}
+	if runtime.GOOS == "darwin" && macapp.NeedsUpgrade(m.root) {
+		return m.upgradeHelper(ctx)
+	}
 	home, _ := os.UserHomeDir()
 	name := "voxl"
 	if runtime.GOOS == "windows" {
@@ -411,9 +418,6 @@ func (m *Manager) Install(ctx context.Context, source ...string) (installErr err
 		// Complete an old installation locally without rebuilding Rust or
 		// launching capture. Remote connection requests never install helpers.
 		candidates = append([]string{filepath.Join(m.root, "bin", "voxl")}, candidates...)
-		if macapp.NeedsUpgrade(m.root) {
-			candidates = append([]string{macapp.Executable(m.root)}, candidates...)
-		}
 	}
 	if path, err := exec.LookPath(name); err == nil {
 		candidates = append(candidates, path)
@@ -423,6 +427,10 @@ func (m *Manager) Install(ctx context.Context, source ...string) (installErr err
 			return m.installBinary(ctx, candidate)
 		}
 	}
+	return m.buildRelease(ctx, Version)
+}
+
+func (m *Manager) buildRelease(ctx context.Context, version string) error {
 	if err := os.MkdirAll(m.root, 0700); err != nil {
 		return err
 	}
@@ -460,19 +468,14 @@ func (m *Manager) Install(ctx context.Context, source ...string) (installErr err
 		return err
 	}
 	m.installStep("Building voxl…")
-	cmd := exec.CommandContext(ctx, cargo, "install", "voxl-server", "--version", "="+Version, "--locked", "--registry", "crates-io", "--root", stage, "--target-dir", filepath.Join(stage, "target"))
-	cmd.Env = tools.env
-	cmd.Dir = tools.get("TMPDIR")
-	configureCommand(cmd)
-	cmd.Stdout, cmd.Stderr = log, log
-	err = cmd.Run()
+	binary, err := tools.buildRelease(ctx, cargo, stage, version)
 	if err != nil {
 		if ctx.Err() != nil {
 			return m.fail("voxl installation was canceled.")
 		}
 		return m.fail("Could not build voxl. Check Rust, the native libraries, esbuild and access to crates.io, then retry.")
 	}
-	return m.finishInstall(ctx, filepath.Join(stage, "bin"))
+	return m.finishInstall(ctx, binary)
 }
 
 func (m *Manager) installStep(step string) {
@@ -514,25 +517,25 @@ func (m *Manager) installBinary(ctx context.Context, source string) error {
 	if err = errors.Join(copyErr, closeErr); err != nil {
 		return err
 	}
-	// Probe the installed copy, so executable format and library loading are
-	// checked at the destination. --version never starts desktop capture.
-	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(probeCtx, target, "--version")
-	configureCommand(cmd)
-	if err = cmd.Run(); err != nil {
-		return m.fail("Could not run the local voxl executable. Check its executable format and runtime libraries.")
-	}
-	return m.finishInstall(ctx, dir)
+	return m.finishInstall(ctx, target)
 }
 
 // Publish only the prepared executable. The bin directory can already contain
 // renamed helpers or other files, which must survive an installation retry.
 // Both binary imports and Cargo builds use this path.
-func (m *Manager) finishInstall(ctx context.Context, dir string) error {
+func (m *Manager) finishInstall(ctx context.Context, binary string) error {
+	// Probe both imported and freshly built engines before publication. --version
+	// loads runtime libraries without starting desktop capture.
+	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(probeCtx, binary, "--version")
+	configureCommand(cmd)
+	if err := cmd.Run(); err != nil {
+		return m.fail("Could not run the local voxl executable. Check its executable format and runtime libraries.")
+	}
 	if runtime.GOOS == "darwin" {
 		m.installStep("Preparing Voxl Helper…")
-		if err := macapp.Install(ctx, m.root, filepath.Join(dir, "voxl")); err != nil {
+		if err := macapp.Install(ctx, m.root, binary); err != nil {
 			if ctx.Err() != nil {
 				return errors.New("voxl installation was canceled.")
 			}
@@ -540,10 +543,13 @@ func (m *Manager) finishInstall(ctx context.Context, dir string) error {
 		}
 		return nil
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(m.executable()), 0700); err != nil {
 		return fmt.Errorf("Could not finish installing voxl. %w", err)
 	}
-	if err := os.Rename(filepath.Join(dir, filepath.Base(m.executable())), m.executable()); err != nil {
+	if err := os.Rename(binary, m.executable()); err != nil {
 		return fmt.Errorf("Could not finish installing voxl. %w", err)
 	}
 	return nil

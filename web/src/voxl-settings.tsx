@@ -10,24 +10,24 @@ export function VoxlSettings({ data, run, t }: PageProps) {
   const working = pending || voxl.installing;
   const state = voxl.installing
     ? voxl.install_step ||
-      (voxl.upgrade_required ? "Upgrading voxl…" : "Installing voxl…")
+      (voxl.upgrade_available ? "Upgrading voxl…" : "Installing voxl…")
     : voxl.running
       ? "Running"
       : voxl.installed
         ? enabled && data.status.Running
           ? "Waiting for connection"
           : "Installed"
-        : voxl.upgrade_required
+        : voxl.upgrade_available
           ? "Upgrade required"
           : "Not installed";
   return (
     <Card title={t("Remote desktop")}>
       <Row title="voxl" help={voxl.directory}>
         <span role="status">{knownMessage(state, t)}</span>
-        {!voxl.installed && (
+        {(!voxl.installed || voxl.upgrade_available) && (
           <button
             type="button"
-            disabled={working}
+            disabled={working || voxl.running}
             onClick={() => {
               setPending(true);
               void run({ kind: "install-voxl" }).finally(() =>
@@ -35,7 +35,7 @@ export function VoxlSettings({ data, run, t }: PageProps) {
               );
             }}
           >
-            {t(voxl.upgrade_required ? "Upgrade voxl" : "Install voxl")}
+            {t(voxl.upgrade_available ? "Upgrade voxl" : "Install voxl")}
           </button>
         )}
       </Row>
@@ -86,6 +86,10 @@ export function VoxlSettings({ data, run, t }: PageProps) {
           <>
             {t(
               "The component is installed on this computer and started on demand by Spool.",
+            )}
+            <br />
+            {t(
+              "Helper upgrades are optional for supported versions. A helper shown as Upgrade required must be upgraded before connecting. Upgrading also checks crates.io for a newer engine. It builds a newer stable release when available, otherwise reuses the current engine. macOS may ask for permissions again after upgrading.",
             )}
             <br />
             {t(

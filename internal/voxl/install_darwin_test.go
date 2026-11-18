@@ -1,6 +1,7 @@
 package voxl
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -27,7 +28,7 @@ func TestMacOSMigratesExistingBinaryWithoutStartingOrRebuilding(t *testing.T) {
 	original, _ := os.ReadFile(legacy)
 	m := New(root, nil)
 	m.SetEnabled(t.Context(), true)
-	if m.Status().Installed || m.Status().UpgradeRequired || m.Available() {
+	if m.Status().Installed || m.Status().UpgradeAvailable || m.Available() {
 		t.Fatal("legacy binary bypassed local helper installation")
 	}
 	// No Cargo, Rust or Homebrew on PATH: migration must only use the existing
@@ -36,7 +37,7 @@ func TestMacOSMigratesExistingBinaryWithoutStartingOrRebuilding(t *testing.T) {
 	if err := m.Install(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if !m.Available() || m.Status().Running || m.Status().UpgradeRequired || m.Status().Application != macapp.Bundle(root) {
+	if !m.Available() || m.Status().Running || m.Status().UpgradeAvailable || m.Status().Application != macapp.Bundle(root) {
 		t.Fatal("migration did not finish without launching", m.Status())
 	}
 	retained, _ := os.ReadFile(legacy)
@@ -67,13 +68,163 @@ func TestMacOSCanceledPackagingPublishesNothing(t *testing.T) {
 	}
 }
 
-func TestMacOSUpgradesOriginalHelperUsingItsBundledEngine(t *testing.T) {
+func TestMacOSSupportedOlderHelperCanConnectWithoutUpgrading(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "voxl")
 	voxlfixture.Install(t, root)
+	marker := filepath.Join(macapp.Bundle(root), "Contents", "Resources", "installation-format")
+	if err := os.WriteFile(marker, []byte("2\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("/usr/bin/codesign", "--force", "--sign", "-", macapp.Bundle(root)).CombinedOutput(); err != nil {
+		t.Fatal(err, string(output))
+	}
+	m := New(root, nil)
+	m.latestRelease = func(context.Context) (string, error) {
+		t.Fatal("connecting with an older helper must not check upstream")
+		return "", nil
+	}
+	m.SetEnabled(t.Context(), true)
+	t.Cleanup(m.Stop)
+	if status := m.Status(); !status.Installed || !status.UpgradeAvailable || status.Running || !m.Available() {
+		t.Fatal("supported older helper must remain usable with an optional upgrade", status)
+	}
+	for range 2 {
+		_, _, _, release, err := m.Acquire(t.Context(), "/ws")
+		if err != nil {
+			t.Fatal("older helper cannot connect without upgrading", err)
+		}
+		if !m.Status().Running || !m.Status().UpgradeAvailable {
+			t.Fatal("older helper lost connection or optional upgrade state", m.Status())
+		}
+		release()
+	}
+	if data, err := os.ReadFile(marker); err != nil || string(data) != "2\n" {
+		t.Fatal("connecting replaced the older helper", err)
+	}
+}
+
+func TestMacOSOriginalHelperRequiresUpgradeBeforeConnecting(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "voxl")
+	voxlfixture.Install(t, root)
+	// Compile the actual original helper, rather than relabeling a helper that
+	// already has the startup cleanup fix. It must stay blocked until replaced.
+	app := macapp.Bundle(root)
+	launcher := filepath.Join(app, "Contents", "MacOS", "voxl-helper")
+	source, err := filepath.Abs("testdata/helper-format1.m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(t.Context(), "/usr/bin/xcrun", "--sdk", "macosx", "clang", "-O2", "-fobjc-arc", "-Wall", "-Wextra", "-Werror", "-mmacosx-version-min=12.0", "-framework", "AppKit", "-framework", "Foundation", source, "-o", launcher)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatal("compile original helper:", err, string(output))
+	}
+	marker := filepath.Join(app, "Contents", "Resources", "installation-format")
+	if err := os.WriteFile(marker, []byte("1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	plist := filepath.Join(app, "Contents", "Info.plist")
+	info, err := os.ReadFile("testdata/helper-format1.plist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plist, info, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.CommandContext(t.Context(), "/usr/bin/codesign", "--force", "--sign", "-", app).CombinedOutput(); err != nil {
+		t.Fatal(err, string(output))
+	}
+	before, err := os.ReadFile(launcher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := os.ReadFile(macapp.Executable(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture := filepath.Join(t.TempDir(), "capture-started")
+	t.Setenv("SPOOL_TEST_VOXL_STARTED", capture)
+	t.Setenv("PATH", "/usr/bin:/bin")
 	m := New(root, nil)
 	m.SetEnabled(t.Context(), true)
 	t.Cleanup(m.Stop)
-	if !m.Status().Installed || m.Status().UpgradeRequired {
+	checks := 0
+	m.latestRelease = func(context.Context) (string, error) {
+		checks++
+		return "", errors.New("offline")
+	}
+	assertBlocked := func() {
+		t.Helper()
+		if status := m.Status(); status.Installed || !status.UpgradeAvailable || status.Running || status.Installing || m.Available() {
+			t.Fatal("original helper must require a local upgrade before connecting", status)
+		}
+		for _, resource := range []string{"/", "/ws", "/files/download"} {
+			if _, _, _, release, err := m.Acquire(t.Context(), resource); err == nil {
+				release()
+				t.Fatal("unsafe original helper accepted a connection", resource)
+			}
+		}
+		if _, err := os.Stat(capture); !os.IsNotExist(err) {
+			t.Fatal("blocked helper started the engine", err)
+		}
+	}
+	assertBlocked()
+	if checks != 0 {
+		t.Fatal("checking availability or connecting checked upstream", checks)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := m.Install(ctx); err == nil {
+		t.Fatal("canceled original helper upgrade succeeded")
+	}
+	assertBlocked()
+	if err := m.Install(t.Context()); err == nil {
+		t.Fatal("offline original helper upgrade succeeded")
+	}
+	assertBlocked()
+	if data, err := os.ReadFile(launcher); err != nil || !bytes.Equal(data, before) {
+		t.Fatal("failed upgrade changed the original launcher", err)
+	}
+	if data, err := os.ReadFile(marker); err != nil || string(data) != "1\n" {
+		t.Fatal("failed upgrade changed the original installation format", err)
+	}
+	m.latestRelease = func(context.Context) (string, error) { checks++; return Version, nil }
+	if err := m.Install(t.Context()); err != nil {
+		t.Fatal("original helper could not upgrade using its bundled engine", err)
+	}
+	if status := m.Status(); !status.Installed || status.UpgradeAvailable || status.Running || status.Error != "" || !m.Available() {
+		t.Fatal("upgraded helper is not available", status)
+	}
+	if data, err := os.ReadFile(launcher); err != nil || bytes.Equal(data, before) {
+		t.Fatal("upgrade did not replace the unsafe launcher", err)
+	}
+	if data, err := os.ReadFile(macapp.Executable(root)); err != nil || !bytes.Equal(data, engine) {
+		t.Fatal("helper-only upgrade changed the bundled engine", err)
+	}
+	if _, err := os.Stat(capture); !os.IsNotExist(err) {
+		t.Fatal("upgrade started the engine", err)
+	}
+	if err := m.Install(t.Context()); err != nil || checks != 2 {
+		t.Fatal("current helper repeated an upstream check", checks, err)
+	}
+	_, _, _, release, err := m.Acquire(t.Context(), "/ws")
+	if err != nil {
+		t.Fatal("upgraded original helper cannot connect", err)
+	}
+	release()
+}
+
+func TestMacOSHelperUpgradeReusesEngineWhenNoNewerReleaseExists(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "voxl")
+	voxlfixture.Install(t, root)
+	m := New(root, nil)
+	checks := 0
+	m.latestRelease = func(context.Context) (string, error) {
+		checks++
+		return "0.3.3", nil
+	}
+	m.SetEnabled(t.Context(), true)
+	t.Cleanup(m.Stop)
+	if !m.Status().Installed || m.Status().UpgradeAvailable {
 		t.Fatal("current helper needs no upgrade", m.Status())
 	}
 	// Cargo installations have no legacy bin/voxl outside the application.
@@ -81,12 +232,12 @@ func TestMacOSUpgradesOriginalHelperUsingItsBundledEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 	marker := filepath.Join(macapp.Bundle(root), "Contents", "Resources", "installation-format")
-	for _, version := range []string{"3\n", "1\n"} {
+	for _, version := range []string{"99\n", "2\n"} {
 		if err := os.WriteFile(marker, []byte(version), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if m.Status().Installed || !m.Status().UpgradeRequired || m.Available() {
-			t.Fatal("incompatible helper must require an upgrade", version, m.Status())
+		if !m.Status().Installed || !m.Status().UpgradeAvailable || !m.Available() {
+			t.Fatal("installed helper must stay usable with an optional upgrade", version, m.Status())
 		}
 	}
 	if output, err := exec.Command("/usr/bin/codesign", "--force", "--sign", "-", macapp.Bundle(root)).CombinedOutput(); err != nil {
@@ -114,24 +265,24 @@ func TestMacOSUpgradesOriginalHelperUsingItsBundledEngine(t *testing.T) {
 	if err := os.WriteFile(fallback, []byte("must use the bundled engine"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if m.Status().Installed || m.Available() || !macapp.NeedsUpgrade(root) {
-		t.Fatal("original helper was accepted without the startup fix")
+	if !m.Status().Installed || !m.Available() || !macapp.NeedsUpgrade(root) {
+		t.Fatal("original helper must stay available before an optional upgrade")
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if err := m.Install(ctx); err == nil {
 		t.Fatal("canceled upgrade succeeded")
 	}
-	if data, err := os.ReadFile(marker); err != nil || string(data) != "1\n" {
+	if data, err := os.ReadFile(marker); err != nil || string(data) != "2\n" {
 		t.Fatal("failed upgrade changed the old app", err)
 	}
-	if !m.Status().UpgradeRequired {
-		t.Fatal("canceled upgrade must remain available to retry", m.Status())
+	if !m.Status().UpgradeAvailable || !m.Available() {
+		t.Fatal("canceled upgrade must preserve availability and allow retry", m.Status())
 	}
 	if err := m.Install(t.Context()); err != nil {
 		t.Fatal("upgrade without Cargo or a legacy binary failed", err)
 	}
-	if !m.Available() || m.Status().Running || m.Status().UpgradeRequired || macapp.NeedsUpgrade(root) {
+	if !m.Available() || m.Status().Running || m.Status().UpgradeAvailable || macapp.NeedsUpgrade(root) {
 		t.Fatal("upgrade did not publish the fixed helper without launching", m.Status())
 	}
 	if data, err := os.ReadFile(macapp.Executable(root)); err != nil || sha256.Sum256(data) != sha256.Sum256(engine) {
@@ -139,6 +290,12 @@ func TestMacOSUpgradesOriginalHelperUsingItsBundledEngine(t *testing.T) {
 	}
 	if data, err := os.ReadFile(shared); err != nil || string(data) != "unchanged" {
 		t.Fatal("upgrade changed shared data", err)
+	}
+	if checks != 1 {
+		t.Fatal("helper upgrade did not check upstream exactly once", checks)
+	}
+	if err := m.Install(t.Context()); err != nil || checks != 1 {
+		t.Fatal("current helper repeated an upstream check or upgrade", checks, err)
 	}
 	if output, err := exec.Command("/usr/bin/codesign", "--verify", "--deep", "--strict", macapp.Bundle(root)).CombinedOutput(); err != nil {
 		t.Fatal("upgraded bundle has an invalid signature", err, string(output))

@@ -12,15 +12,23 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
 const bundleName = "Voxl Helper.app"
 
-// This is an installation format, not the Spool version. Do not bump it for
-// ordinary application releases: replacing an ad-hoc signed app loses identity.
-const format = "2\n"
+// This helper version also triggers an upstream engine check during a local
+// upgrade. Bump it for helper changes or an intentional engine refresh, not for
+// ordinary Spool releases: replacing an ad-hoc signed app loses identity.
+const format = "3\n"
+
+// Format 2 added the startup gate and cleanup that prevent an orphaned engine
+// from capturing after its helper crashes. Older helpers must be upgraded even
+// when later helper updates are optional.
+const minimumSafeFormat = 2
 
 //go:embed native/helper.m
 var source []byte
@@ -37,11 +45,12 @@ func launcher(root string) string {
 }
 
 func Installed(root string) bool {
-	return installedFormat(root) == format
+	version, err := strconv.Atoi(strings.TrimSpace(installedFormat(root)))
+	return err == nil && version >= minimumSafeFormat
 }
 
-// NeedsUpgrade distinguishes a complete helper with an incompatible installation
-// format from a missing installation. Only an explicit local action replaces it.
+// NeedsUpgrade reports an update for a complete helper with a different version.
+// Installed determines whether it stays usable before the explicit local upgrade.
 func NeedsUpgrade(root string) bool {
 	installed := installedFormat(root)
 	return installed != "" && installed != format
@@ -63,7 +72,7 @@ func installedFormat(root string) string {
 // Install publishes one complete application atomically. Nothing launches or
 // captures a screen during installation. The caller has already probed voxl.
 func Install(ctx context.Context, root, voxl string) error {
-	if Installed(root) {
+	if installedFormat(root) == format {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0700); err != nil {

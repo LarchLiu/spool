@@ -126,7 +126,7 @@ automatically verified trust is managed separately and bound to its public URL.
 | Command | Purpose |
 | --- | --- |
 | `config show`, `config set` | HTTP, public origin, idle timeout, history cache, proxy, Tailscale, Relay and remote desktop settings |
-| `voxl status/install` | Local remote desktop helper installation and saved enablement |
+| `voxl status/install` | Local remote desktop helper installation, upgrades and saved enablement |
 | `user list/add/update/enable/disable` | Login accounts, password resets and remote desktop grants |
 | `project list/show/add/update/archive/unarchive` | Local directories, sharing and file access |
 | `project member set/remove` | Individual membership and shared/personal chat permissions |
@@ -230,6 +230,13 @@ saved enablement when omitted; explicit enablement requires an installed helper.
 `voxl status` reports the installation directory, helper app path on macOS, and
 saved `enabled` state as JSON. It is an offline check: the service must be stopped,
 so `running` is false. Installation and enablement do not start screen capture.
+`voxl install` also upgrades an older macOS helper. Installation format 1 requires
+an upgrade before connecting to apply the startup cleanup fix. For format 2 and
+later, upgrading is optional and the installed helper remains available. Unless
+`--binary` is supplied, that upgrade checks crates.io and builds a newer stable engine if available,
+otherwise reuses the bundled engine. A current helper is reused without an
+upstream check; failures preserve the old installation for retry, with format 1
+remaining unavailable until the helper upgrade succeeds.
 During `serve`, authorized users can connect through the existing Web/PWA or
 Android desktop channel using the same HTTPS, Tailscale or Relay entry. voxl
 starts on demand, stops after the last connection closes, and stops on service
