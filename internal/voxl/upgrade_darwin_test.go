@@ -78,8 +78,8 @@ case "$tool" in
     done
     [ -n "$destination" ] || exit 1
     /bin/mkdir -p "$destination/bin"
-    /bin/cp "$SPOOL_TEST_UPDATE_ENGINE" "$destination/bin/voxl-server"
-    /bin/chmod 700 "$destination/bin/voxl-server" ;;
+    /bin/cp "$SPOOL_TEST_UPDATE_ENGINE" "$destination/bin/voxl"
+    /bin/chmod 700 "$destination/bin/voxl" ;;
   *) exit 1 ;;
 esac
 `

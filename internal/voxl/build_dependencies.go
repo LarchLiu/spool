@@ -186,7 +186,8 @@ func (b *buildEnvironment) buildRelease(ctx context.Context, cargo, stage, versi
 	if err := b.run(cmd); err != nil {
 		return "", err
 	}
-	name := "voxl-server"
+	// The voxl-server crate declares its executable as [[bin]] name = "voxl".
+	name := "voxl"
 	if b.goos == "windows" {
 		name += ".exe"
 	}

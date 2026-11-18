@@ -182,7 +182,7 @@ func TestBuildReleaseUsesSelectedVersionAndCargoBinaryName(t *testing.T) {
 				f := newDependencyFixture(t, goos)
 				f.ready()
 				cargo := filepath.Join(f.bin, "cargo")
-				name := "voxl-server"
+				name := "voxl"
 				if goos == "windows" {
 					cargo += ".exe"
 					name += ".exe"
@@ -191,17 +191,23 @@ func TestBuildReleaseUsesSelectedVersionAndCargoBinaryName(t *testing.T) {
 				calls := 0
 				f.b.run = func(cmd *exec.Cmd) error {
 					calls++
-					if cmd.Path != cargo || cmd.Dir != f.b.get("TMPDIR") || !slices.Contains(cmd.Args, "--locked") || !slices.Contains(cmd.Args, "crates-io") || !slices.Contains(cmd.Args, stage) {
+					if cmd.Path != cargo || cmd.Dir != f.b.get("TMPDIR") || !slices.Equal(cmd.Args[1:3], []string{"install", "voxl-server"}) || !slices.Contains(cmd.Args, "--locked") || !slices.Contains(cmd.Args, "crates-io") || !slices.Contains(cmd.Args, stage) {
 						t.Fatalf("build escaped its registry/staging contract: %v (dir=%s)", cmd.Args, cmd.Dir)
 					}
 					if !slices.Contains(cmd.Args, "--version") || !slices.Contains(cmd.Args, "="+version) {
 						t.Fatalf("wrong release selection for %q: %v", version, cmd.Args)
 					}
+					// Cargo installs the crate's [[bin]] target, named voxl, rather
+					// than using the voxl-server package name as the filename.
+					f.file(filepath.Join(stage, "bin", name))
 					return nil
 				}
 				binary, err := f.b.buildRelease(t.Context(), cargo, stage, version)
 				if err != nil || binary != filepath.Join(stage, "bin", name) || calls != 1 {
 					t.Fatalf("Cargo output not selected: %q, calls=%d, err=%v", binary, calls, err)
+				}
+				if _, err := os.Stat(binary); err != nil {
+					t.Fatal("returned build output does not exist:", err)
 				}
 			})
 		}
