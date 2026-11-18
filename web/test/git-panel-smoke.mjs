@@ -87,7 +87,7 @@ try {
         const base = { repository: true, writable: true, index: "index-snapshot", commit, remote: "origin", remote_branch: "dev", remote_allowed: true, upstream: "origin/dev", ahead: 2, behind: 0,
           last_commit: { id: commit, subject: lastSubject, author: "Developer", time: 1794900000 },
           branch: scope === "/repo/feature" ? "feature/git" : "dev", files: [], commits: [] };
-        if (url.searchParams.get("view") === "history") return json({ ...base, commits: [{ id: commit, subject: "Fix Git panel preview", author: "Developer", time: 1794900000 }] });
+        if (url.searchParams.get("view") === "history") return json({ ...base, commits: [{ id: commit, subject: "Fix Git panel preview", author: "Developer", time: 1794900000, tags: ["v1.2.0"], unpushed: true }] });
         return json({ ...base, ...(url.searchParams.has("commit") ? { selected_commit: {
           id: commit, subject: "Fix Git panel preview", message: detailMessage, author: "Developer", time: 1794900000,
           tags: [detailPushed ? "v1.2.1" : "v1.2.0"], unpushed: !detailPushed,
@@ -240,10 +240,15 @@ try {
       await grip.focus(); const before = Number(await grip.getAttribute("aria-valuenow")); await page.keyboard.press("ArrowUp");
       assert.ok(Number(await grip.getAttribute("aria-valuenow")) < before);
       await page.locator(".git-file-row").filter({ hasText: "image.png" }).click(); await page.locator(".git-diff-preview").getByText("Binary file", { exact: true }).waitFor();
-      await page.getByRole("tab", { name: "History", exact: true }).click(); await page.getByText("Fix Git panel preview", { exact: true }).click();
+      await page.getByRole("tab", { name: "History", exact: true }).click();
+      await page.locator(".git-history-list").getByText("v1.2.0", { exact: true }).waitFor();
+      assert.deepEqual(await page.locator(".git-history-list .git-history-badge").evaluateAll(badges => badges.map(badge => badge.getAttribute("aria-label") || badge.textContent)), ["v1.2.0", "Not pushed"]);
+      await page.locator(".file-sidebar").screenshot({ path: path.join(output, `history-${width}-${theme}.png`) });
+      await page.getByText("Fix Git panel preview", { exact: true }).click();
       const detail = page.locator(".git-commit-detail");
       await detail.getByText("v1.2.0", { exact: true }).waitFor();
       assert.equal(await detail.getByLabel("Not pushed", { exact: true }).count(), 1);
+      assert.deepEqual(await detail.locator(".git-history-badge").evaluateAll(badges => badges.map(badge => badge.getAttribute("aria-label") || badge.textContent)), ["v1.2.0", "Not pushed"]);
       assert.equal(await detail.locator(".git-commit-metadata span").innerText(), "Developer");
       assert.equal(await detail.locator("time").getAttribute("datetime"), new Date(1794900000 * 1000).toISOString());
       assert.equal(await detail.locator("time").innerText(), await page.evaluate(time => new Date(time * 1000).toLocaleString(), 1794900000));

@@ -325,7 +325,7 @@ button:disabled {
   text-overflow: ellipsis;
 }
 .project-new {
-  opacity: 1;
+  opacity: 0;
   width: 27px;
   height: 27px;
   margin-right: 4px;

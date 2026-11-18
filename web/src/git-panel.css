@@ -464,6 +464,13 @@
 .git-history-badge svg {
   flex-shrink: 0;
 }
+.git-history-tag {
+  border-color: currentColor;
+  color: #18794e;
+}
+:root[data-theme="dark"] .git-history-tag {
+  color: #6bcf9a;
+}
 .git-history-end {
   min-height: 1px;
   color: var(--muted);

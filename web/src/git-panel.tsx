@@ -42,6 +42,12 @@ import {
 function GitCommitBadges({ commit, t }: { commit: GitCommit; t: Translator }) {
   return (
     <>
+      {commit.tags?.map((tag) => (
+        <span className="git-history-badge git-history-tag" key={tag} title={tag}>
+          <Tag size={10} aria-hidden="true" />
+          {tag}
+        </span>
+      ))}
       {commit.unpushed && (
         <span
           className="git-history-badge"
@@ -51,12 +57,6 @@ function GitCommitBadges({ commit, t }: { commit: GitCommit; t: Translator }) {
           <ArrowUp size={11} aria-hidden="true" />
         </span>
       )}
-      {commit.tags?.map((tag) => (
-        <span className="git-history-badge" key={tag} title={tag}>
-          <Tag size={10} aria-hidden="true" />
-          {tag}
-        </span>
-      ))}
     </>
   );
 }

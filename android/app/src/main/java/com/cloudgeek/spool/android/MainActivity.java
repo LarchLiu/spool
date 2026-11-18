@@ -2851,6 +2851,7 @@ public final class MainActivity extends Activity {
         NativeTurnError.State error = activityState(page, value.turn).error;
         error.update(value.error, value.turn.optLong("finished_at"));
         if (!value.error.isEmpty()) children.use(key + "/error", new JSONArray().put(value.error).put(error.finishedAt), () -> new NativeTurnError(ui, error));
+        if (value.running) children.use(key + "/working", "", () -> new NativeChatStatus(ui));
     }
 
     private List<NativeAttachmentCards.Item> userFiles(JSONObject page, JSONObject turn, NativeUserRow row, JSONArray parts, int start, int end, boolean first) {

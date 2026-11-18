@@ -96,7 +96,8 @@ public class NativeGitPanelTest {
             String message = "History row 1\n\nPreserve the full commit message and its paragraphs.\n第二行提交说明\n\nFinal paragraph.";
             selected.put("message", message); JSONObject detail = changes().put("selected_commit", selected);
             NativeFilesTest.Pending load = take(requests, "view=changes"); assertTrue(load.path.contains("commit=" + selected.getString("id"))); load.result.done(detail, null); layout(panel);
-            assertNotNull(action(panel.content, "Not pushed · v1.2.0"));
+            assertNotNull(action(panel.content, "v1.2.0 · Not pushed"));
+            assertEquals("v1.2.0 ↑", ((TextView) action(panel.content, "v1.2.0 · Not pushed")).getText().toString());
             String stamp = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.MEDIUM).format(new java.util.Date(selected.getLong("time") * 1000));
             assertNotNull(find(panel.content, "Developer · " + stamp));
             TextView body = (TextView) find(panel.content, "Final paragraph."); assertEquals(message, body.getText().toString()); assertTrue(body.getLineCount() >= 6);
@@ -111,7 +112,7 @@ public class NativeGitPanelTest {
             find(panel.content, "file.txt").performClick(); take(requests, "view=diff").result.done(new JSONObject().put("patch", PATCH), null);
             NativeUnifiedDiff preview = child(panel.preview, NativeUnifiedDiff.class); assertNotNull(preview);
             panel.reload(); selected.put("unpushed", false).put("tags", new JSONArray().put("v1.2.1")); take(requests, "view=changes").result.done(detail, null);
-            assertNull(action(panel.content, "Not pushed · v1.2.0")); assertNotNull(action(panel.content, "v1.2.1")); assertSame(preview, child(panel.preview, NativeUnifiedDiff.class));
+            assertNull(action(panel.content, "v1.2.0 · Not pushed")); assertNotNull(action(panel.content, "v1.2.1")); assertSame(preview, child(panel.preview, NativeUnifiedDiff.class));
             find(panel.content, "History · ").performClick(); take(requests, "view=history").result.done(historyPage(0, true), null); assertEquals(50, historyRows(panel));
             panel.activate(false);
         }
@@ -127,6 +128,7 @@ public class NativeGitPanelTest {
             panel.tabs.action("history").performClick(); take(requests, "view=history").result.done(historyPage(0, false), null); layout(panel);
             assertEquals(50, historyRows(panel)); assertTrue(requests.isEmpty());
             View first = panel.content.getChildAt(1); assertTrue(first.getContentDescription().toString().contains("Not pushed")); assertTrue(first.getContentDescription().toString().contains("v1.2.0"));
+            assertEquals("History row 1 v1.2.0 ↑", child(first, NativeTextView.class).getText().toString());
             screenshot(panel, "history-" + (dark ? "dark" : "light"));
             panel.scroll.scrollTo(0, panel.content.getHeight());
             int offset = panel.scroll.getScrollY(); View last = panel.content.getChildAt(50);

@@ -28,6 +28,7 @@ final class NativeIcons {
             case "folder_git": resource = R.drawable.web_icon_folder_git; break;
             case "git_branch": resource = R.drawable.web_icon_git_branch; break;
             case "git_commit": resource = R.drawable.web_icon_git_commit; break;
+            case "tag": resource = R.drawable.web_icon_tag; break;
             case "plus": resource = R.drawable.web_icon_plus; break;
             case "folder": resource = R.drawable.web_icon_folder; break;
             case "folder_open": resource = R.drawable.web_icon_folder_open; break;
