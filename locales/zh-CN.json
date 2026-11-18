@@ -25,6 +25,8 @@
   "Viewed 1 image": "已查看 1 张图片",
   "Viewed {count} images": "已查看 {count} 张图片",
   "Image unavailable: {name}": "图片不可用：{name}",
+  "Image access denied": "无权读取此图片",
+  "Image could not be loaded. Try again.": "图片加载失败，请重试。",
   "Read {path}": "读取 {path}",
   "Edited files": "编辑文件",
   "Edit files": "编辑文件",

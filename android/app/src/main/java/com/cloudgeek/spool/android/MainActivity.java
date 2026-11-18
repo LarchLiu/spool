@@ -2863,11 +2863,12 @@ public final class MainActivity extends Activity {
                 && selected == selectionEpoch && ownerChat.equals(chatID) && row.isAttachedToWindow();
         if (first && optimisticSend != null && optimisticSend.turnID.equals(turn.optString("id")) && !optimisticSend.files.isEmpty()) {
             for (Attachment file : optimisticSend.files) {
+                NativeImageResource resource = NativeImageResource.local(file.name, file.id, file.file);
                 items.add(new NativeAttachmentCards.Item(file.id, file.name, file.file.mediaType, file.excerpt, "local:" + file.id,
                         () -> { if (current.getAsBoolean()) {
                             if (NativeFileData.image(file.file.mediaType)) previewLocalImage(file);
                             else chooseDownload(file.file, file.name, session);
-                        } }, image -> fileImages.local(image, file.id, file.file, Math.min(512, dp(120)), null)));
+                        } }, image -> resource.load(fileImages, image, Math.min(512, dp(120)), null)));
             }
         } else if (files.length() > 0) {
             for (int i = 0; i < files.length(); i++) {
@@ -2875,10 +2876,11 @@ public final class MainActivity extends Activity {
                 if (ownerChat.isEmpty() || file.optString("id").isEmpty()) continue;
                 String path = NativeFileData.attachmentPath(ownerChat, file.optString("id"));
                 String name = file.optString("name"), media = file.optString("media_type");
+                NativeImageResource resource = NativeImageResource.source(name, path);
                 items.add(new NativeAttachmentCards.Item(file.optString("id"), name, media, file.optString("excerpt"), "remote:" + path,
                         () -> { if (current.getAsBoolean()) {
-                            if (NativeFileData.image(media)) previewBinary(path, name); else downloadFile(path, name);
-                        } }, image -> fileImages.remote(image, path, Math.min(512, dp(120)), null)));
+                            if (NativeFileData.image(media)) previewImage(resource); else downloadFile(path, name);
+                        } }, image -> { if (resource != null) resource.load(fileImages, image, Math.min(512, dp(120)), null); }));
             }
         } else {
             for (int i = start; i < end; i++) {
@@ -2889,16 +2891,18 @@ public final class MainActivity extends Activity {
                     String filePath = part.optString("file_path");
                     String media = NativeFileData.imageType(name);
                     String imagePath = media.isEmpty() || filePath.isEmpty() ? "" : NativeFileData.filePath(page.optString("project_id", projectID), ownerChat, filePath, "image");
+                    NativeImageResource resource = NativeImageResource.source(name, imagePath);
                     items.add(new NativeAttachmentCards.Item(ownerChat + ":" + turn.optString("id") + ":file:" + i, name, media.isEmpty() ? "application/octet-stream" : media, "", imagePath,
-                            () -> { if (current.getAsBoolean()) { if (!imagePath.isEmpty()) previewBinary(imagePath, name); else if (filePath.isEmpty()) toast(new IOException(tr("File unavailable", "文件不可用"))); else openFile(new NativeFileTarget(filePath, 0, 0)); } },
-                            imagePath.isEmpty() ? null : image -> fileImages.remote(image, imagePath, Math.min(512, dp(120)), null)));
+                            () -> { if (current.getAsBoolean()) { if (resource != null) previewImage(resource); else if (filePath.isEmpty()) toast(new IOException(tr("File unavailable", "文件不可用"))); else openFile(new NativeFileTarget(filePath, 0, 0)); } },
+                            resource == null ? null : image -> resource.load(fileImages, image, Math.min(512, dp(120)), null)));
                     continue;
                 }
                 if (!part.optString("kind").equals("image") || !NativeFileData.inlineImage(source)) continue;
                 String id = ownerChat + ":" + turn.optString("id") + ":image:" + i;
-                items.add(new NativeAttachmentCards.Item(id, name, "image/png", "", source,
-                        () -> { if (current.getAsBoolean()) previewInlineImage(source, name); },
-                        image -> fileImages.inline(image, source, Math.min(512, dp(120)), null)));
+                NativeImageResource resource = NativeImageResource.source(name, source);
+                items.add(new NativeAttachmentCards.Item(id, name, source.substring(5, source.indexOf(';')), "", source,
+                        () -> { if (current.getAsBoolean()) previewImage(resource); },
+                        image -> resource.load(fileImages, image, Math.min(512, dp(120)), null)));
             }
         }
         return items;
@@ -2908,29 +2912,16 @@ public final class MainActivity extends Activity {
         final int session = authEpoch, selected = selectionEpoch;
         final String ownerChat = page.optString("id", chatID), ownerProject = page.optString("project_id", projectID);
         return new NativeTranscriptImages() {
-            private String apiPath(String path, String source) {
-                if (NativeFileData.toolImagePath(source) && source.startsWith("/api/chats/" + android.net.Uri.encode(ownerChat) + "/")) return source;
-                NativeFileTarget target = NativeFileTarget.parse(path);
-                if (target != null && !ownerProject.isEmpty() && !ownerChat.isEmpty()) return NativeFileData.filePath(ownerProject, ownerChat, target.path, "image");
-                return "";
-            }
             private boolean ownsChat() { return !destroyed && user != null && session == authEpoch && selected == selectionEpoch && ownerChat.equals(chatID); }
             @Override public void load(android.widget.ImageView image, String path, String source, int edge, java.util.function.Consumer<Exception> completion) {
                 if (!ownsChat()) { completion.accept(new IOException("Session changed")); return; }
-                if (NativeFileData.inlineImage(source)) fileImages.inline(image, source, edge, completion);
-                else {
-                    String api = apiPath(path, source);
-                    if (api.isEmpty()) completion.accept(new IOException("Image unavailable"));
-                    else fileImages.remote(image, api, edge, completion);
-                }
+                NativeImageResource resource = NativeImageResource.transcript(ownerProject, ownerChat, path, source, "image");
+                if (resource == null) completion.accept(new NativeImageFailure(404));
+                else resource.load(fileImages, image, edge, completion);
             }
             @Override public void preview(String path, String source, String name) {
                 if (!foreground || !ownsChat()) return;
-                if (NativeFileData.inlineImage(source)) previewInlineImage(source, name);
-                else {
-                    String api = apiPath(path, source);
-                    if (!api.isEmpty()) previewBinary(api, name);
-                }
+                previewImage(NativeImageResource.transcript(ownerProject, ownerChat, path, source, name));
             }
         };
     }
@@ -4382,7 +4373,7 @@ public final class MainActivity extends Activity {
         Client fileClient = client;
         fileBrowser = new NativeFileBrowser(ui, projectID.isEmpty() ? "" : projectName(), fileState, fileImages,
                 (viewUi, apiPath) -> new NativePdfPreview(viewUi, imageWorker, address -> loadBinary(fileClient, address), apiPath),
-                this::readProjectFile, file -> downloadFile(ownerFiles.filePath(file.optString("path"), "download"), file.optString("name")),
+                this::readProjectFile, file -> downloadFile(NativeFileData.imageAction(ownerFiles.project, ownerFiles.chat, file, "download", ownerFiles.workspacePath()), file.optString("name")),
                 this::openExternalLink, this::closeDrawer,
                 value -> getPreferences(MODE_PRIVATE).edit().putFloat("fileTreeFraction", (float) value).apply());
         fileBrowser.gitPanel.write = this::requestProjectFile;
@@ -4421,17 +4412,10 @@ public final class MainActivity extends Activity {
         fileBrowser.select(target);
     }
 
-    private void previewBinary(String path, String title) {
-        if (!NativeFileData.allowedPath(path)) { toast(new IOException("Invalid image API path")); return; }
-        NativeImagePreview preview = showImagePreview(title, () -> downloadFile(path, title));
-        fileImages.remote(preview.content.image, path, previewEdge(), preview.completion());
-    }
-
     private NativeFileData loadBinary(Client captured, String path) throws Exception {
         if (!NativeFileData.allowedPath(path)) throw new IOException("Invalid file API path");
         if (captured == null) throw new IOException("No file server configured");
         JSONObject response = new JSONObject(captured.request("GET", path, "", "", ""));
-        if (response.optInt("status") != 200) throw new ApiFailure(response.optInt("status"), tr("File unavailable", "文件不可用"));
         return NativeFileData.response(response);
     }
 
@@ -4449,22 +4433,23 @@ public final class MainActivity extends Activity {
     }
 
     private void previewLocalImage(Attachment file) {
-        NativeImagePreview preview = showImagePreview(file.name, () -> chooseDownload(file.file, file.name, authEpoch));
-        fileImages.local(preview.content.image, file.id, file.file, previewEdge(), preview.completion());
+        previewImage(NativeImageResource.local(file.name, file.id, file.file));
     }
 
-    private void previewInlineImage(String source, String name) {
+    private void previewImage(NativeImageResource resource) {
+        if (resource == null) { toast(new IOException(tr("File unavailable", "文件不可用"))); return; }
         final int session = authEpoch;
-        NativeImagePreview preview = showImagePreview(name, () -> {
+        final Client captured = client;
+        NativeImagePreview preview = showImagePreview(resource.name, () -> {
             if (downloading) return;
             downloading = true;
             int token = generation, request = ++downloadRequest;
             io.execute(() -> {
                 try {
-                    NativeFileData data = NativeFileData.inline(source);
+                    NativeFileData data = resource.read(path -> loadBinary(captured, path));
                     post(token, () -> {
                         if (session != authEpoch || request != downloadRequest) return;
-                        downloading = false; chooseDownload(data, name, session);
+                        downloading = false; chooseDownload(data, resource.name, session);
                     });
                 } catch (Exception error) { post(token, () -> {
                     if (session != authEpoch || request != downloadRequest) return;
@@ -4472,7 +4457,12 @@ public final class MainActivity extends Activity {
                 }); }
             });
         });
-        fileImages.inline(preview.content.image, source, previewEdge(), preview.completion());
+        final int selected = selectionEpoch;
+        preview.content.reload = () -> {
+            if (!destroyed && user != null && session == authEpoch && selected == selectionEpoch && preview.isShowing())
+                resource.load(fileImages, preview.content.image, previewEdge(), preview.completion());
+        };
+        preview.content.reload.run();
     }
 
     private void closeImagePreview() {
@@ -4499,7 +4489,7 @@ public final class MainActivity extends Activity {
                 post(token, () -> {
                     if (session != authEpoch || request != downloadRequest) return;
                     downloading = false;
-                    if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
+                    if (error instanceof ApiFailure && ((ApiFailure) error).status == 401 || error instanceof NativeImageFailure && ((NativeImageFailure) error).status == 401) expire();
                     else toast(error);
                 });
             }

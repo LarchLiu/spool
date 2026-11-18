@@ -46,6 +46,8 @@ final class NativeImagePreview extends Dialog {
         final ImageView image;
         final NativeUi.IconButton close, download;
         final TextView status;
+        final android.widget.Button retry;
+        Runnable reload;
         final LinearLayout toolbar;
         private final NativeUi ui;
         Content(NativeUi ui, String name, Runnable save, Runnable dismiss) {
@@ -78,6 +80,9 @@ final class NativeImagePreview extends Dialog {
             status.setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(16));
             status.setAccessibilityLiveRegion(ACCESSIBILITY_LIVE_REGION_POLITE);
             addView(status);
+            retry = ui.button(ui.t("Retry"), false, () -> { if (reload != null) { loading(); reload.run(); } });
+            retry.setVisibility(GONE);
+            addView(retry);
             image = new NativeContainedImage(ui, true);
             image.setContentDescription(name);
             image.setOnClickListener(view -> {});
@@ -89,8 +94,14 @@ final class NativeImagePreview extends Dialog {
             boolean success = error == null && image.getDrawable() != null;
             image.setVisibility(success ? VISIBLE : GONE);
             status.setVisibility(success ? GONE : VISIBLE);
-            if (!success) { status.setText(ui.t("This file cannot be previewed as an image")); status.setTextColor(ui.error); }
+            retry.setVisibility(!success && reload != null ? VISIBLE : GONE);
+            if (!success) { status.setText(ui.t(NativeImageFailure.message(error))); status.setTextColor(ui.error); }
             requestLayout();
+        }
+
+        void loading() {
+            image.setVisibility(GONE); status.setVisibility(VISIBLE); retry.setVisibility(GONE);
+            status.setText(ui.t("Loading file…")); status.setTextColor(ui.muted);
         }
 
     }

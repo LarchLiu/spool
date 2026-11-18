@@ -34,6 +34,8 @@ import { desktopFileAccessURL, subscribeDesktopFileAccess } from "./runtime";
 import { FilePanelTabs } from "./file-panel-tabs";
 import { GitPanel } from "./git-panel";
 import { FilePanelButton } from "./file-panel-button";
+import { imageSource } from "./image-resource";
+import { ResourceImage } from "./resource-image";
 
 const readOffice = (path: string, signal: AbortSignal) => api<OfficeDocument>(apiPath(path), undefined, signal);
 
@@ -458,7 +460,7 @@ function ProjectFiles({
                   {file && (
                     <a
                       className="icon"
-                      href={projectFileURL(
+                      href={(file.download_url && imageSource(file.download_url, chatID)) || projectFileURL(
                         project.id,
                         file.path,
                         "download",
@@ -593,10 +595,12 @@ function FileContent({
             />
           ))}
         {file.kind === "image" && (
-          <img
+          <ResourceImage
+            key={file.path}
             className="project-file-image"
-            src={projectFileURL(project, file.path, "image", chatID, workspacePath)}
-            alt={file.name}
+            url={(file.preview_url && imageSource(file.preview_url, chatID)) || projectFileURL(project, file.path, "image", chatID, workspacePath)}
+            name={file.name}
+            t={t}
           />
         )}
         {file.kind === "binary" && previewKind !== "pdf" && !office && (

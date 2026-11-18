@@ -25,6 +25,8 @@
   "Viewed 1 image": "Viewed 1 image",
   "Viewed {count} images": "Viewed {count} images",
   "Image unavailable: {name}": "Image unavailable: {name}",
+  "Image access denied": "Image access denied",
+  "Image could not be loaded. Try again.": "Image could not be loaded. Try again.",
   "Read {path}": "Read {path}",
   "Edited files": "Edited files",
   "Edit files": "Edit files",

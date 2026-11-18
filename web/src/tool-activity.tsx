@@ -1,4 +1,5 @@
-import { appURL } from "./app-path";
+import { imageSource } from "./image-resource";
+import { ResourceImage } from "./resource-image";
 import { Component, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDown,
@@ -445,8 +446,7 @@ function iconFor(kind: ActivityKind) {
 function ViewedImage({ path = "", source, t }: { path?: string; source?: string; t: Translator }) {
   const { imageURL, previewImage, openFile } = useContext(LocalFileContext);
   const target = localFileTarget(path);
-  const safeSource = source && (/^data:image\/(?:png|jpeg|gif|webp);base64,/.test(source) || /^\/api\/chats\/[^/?#]+\/tool-image\?ref=[a-zA-Z0-9_-]+&index=\d+$/.test(source)) ? source : undefined;
-  const url = (safeSource && appURL(safeSource)) || (target && imageURL?.(target)) || undefined;
+  const url = (source && imageSource(source)) || (target && imageURL?.(target)) || undefined;
   const name = path.replaceAll("\\", "/").split("/").pop() || "image";
   const [failedURL, setFailedURL] = useState<string>();
   const available = url && failedURL !== url;
@@ -463,7 +463,7 @@ function ViewedImage({ path = "", source, t }: { path?: string; source?: string;
       }}
     >
       {available ? (
-        <img src={url} alt={name} loading="lazy" decoding="async" onError={() => setFailedURL(url)} />
+        <ResourceImage key={url} url={url} name={name} t={t} loading="lazy" compact onFailure={() => setFailedURL(url)} />
       ) : (
         <span className="viewed-image-unavailable"><ImageOff size={20} /><span>{name}</span></span>
       )}

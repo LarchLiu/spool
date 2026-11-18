@@ -117,7 +117,7 @@ final class NativeOfficePreview extends LinearLayout implements AutoCloseable {
                     NativeFileData data = NativeFileData.inline(run.optString("image"));
                     BitmapFactory.Options options = new BitmapFactory.Options(); options.inJustDecodeBounds=true; BitmapFactory.decodeByteArray(data.bytes,0,data.bytes.length,options);
                     if (options.outWidth <= 0 || options.outHeight <= 0 || (long)options.outWidth*options.outHeight > 4_000_000) continue;
-                    Bitmap bitmap = BitmapFactory.decodeByteArray(data.bytes,0,data.bytes.length);
+                    Bitmap bitmap = NativeImages.decode(data,1024);
                     NativeContainedImage image = new NativeContainedImage(ui,false); image.setContentDescription(run.optString("alt")); image.setImageBitmap(bitmap); body.addView(image,new LayoutParams(-2,-2));
                 } catch (Exception ignored) { text.append(run.optString("alt")); }
                 continue;

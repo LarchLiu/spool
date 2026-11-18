@@ -511,9 +511,10 @@ final class NativeMarkdown {
             if (normalWhitespace) literal = literal.replaceAll("[ \\t\\r\\n\\f]+", " ");
             out.append(preview ? literal.replaceAll("\\s+", " ") : literal);
         } else if (node instanceof Code) {
-            out.append(((Code) node).getLiteral());
+            String literal = ((Code) node).getLiteral();
+            out.append(literal);
             // A ReplacementSpan is atomic; long code must remain line-breakable like CSS break-spaces.
-            if (out.length() - start <= 18) span(out, new InlineCode(ui), start, out.length());
+            if (out.length() - start <= 18) span(out, new InlineCode(ui, literal), start, out.length());
             else {
                 span(out, new android.text.style.TypefaceSpan("monospace"), start, out.length());
                 span(out, new android.text.style.RelativeSizeSpan(.88f), start, out.length());
@@ -577,7 +578,8 @@ final class NativeMarkdown {
 
     private static final class InlineCode extends ReplacementSpan {
         private final NativeUi ui;
-        InlineCode(NativeUi ui) { this.ui = ui; }
+        private final String literal;
+        InlineCode(NativeUi ui, String literal) { this.ui = ui; this.literal = literal; }
         private Paint paint(Paint original) {
             Paint paint = new Paint(original);
             paint.setTypeface(Typeface.MONOSPACE);
@@ -586,7 +588,7 @@ final class NativeMarkdown {
         }
         @Override public int getSize(Paint original, CharSequence text, int start, int end, Paint.FontMetricsInt metrics) {
             Paint code = paint(original);
-            return Math.round(code.measureText(text, start, end) + original.getTextSize() * .7f);
+            return Math.round(code.measureText(literal) + original.getTextSize() * .7f);
         }
         @Override public void draw(Canvas canvas, CharSequence text, int start, int end, float x, int top, int y, int bottom, Paint original) {
             Paint code = paint(original);
@@ -605,7 +607,9 @@ final class NativeMarkdown {
                 link.code(canvas, x + original.getTextSize() * .35f, x + width - original.getTextSize() * .35f, y);
                 code.setColor(link.color());
             }
-            canvas.drawText(text, start, end, x + original.getTextSize() * .35f, y, code);
+            // BoringLayout ellipsizes a measured buffer whose replacement runs contain U+FFFC.
+            // Keep the parsed code literal so single-line previews never paint those placeholders.
+            canvas.drawText(literal, x + original.getTextSize() * .35f, y, code);
         }
     }
 }

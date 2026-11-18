@@ -246,6 +246,10 @@ func (a *App) serveOpenFile(w http.ResponseWriter, r *http.Request, f *os.File, 
 				return
 			}
 		}
+		if r.URL.Query().Get("image") == "1" && disposition == "inline" {
+			serveImageContent(w, r, info.Name(), mediaType, info.ModTime(), f)
+			return
+		}
 		w.Header().Set("Content-Type", mediaType)
 		w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": info.Name()}))
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -281,7 +285,8 @@ func (a *App) serveOpenFile(w http.ResponseWriter, r *http.Request, f *os.File, 
 	kind := "binary"
 	var content *string
 	if safeProjectImage(mediaType) {
-		kind = "image"
+		apiJSON(w, 200, imageFileMetadata(r, path, info.Name(), mediaType, info.Size(), external))
+		return
 	} else if mediaType != "application/pdf" && utf8.Valid(data) && !strings.ContainsRune(string(data), 0) {
 		kind = "text"
 		text := string(data)

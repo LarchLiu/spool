@@ -33,7 +33,7 @@ func TestCodexThreadPartsUserImages(t *testing.T) {
 		}},
 		{"mentioned inline image", []any{text(mention), map[string]any{"type": "image", "url": image}}, []chatmodel.Part{
 			{Role: "user", Kind: "text", Text: "Review this screenshot."},
-			{Role: "user", Kind: "image", Text: "[image]", Name: name, ImageURL: image},
+			{Role: "user", Kind: "image", Text: "[image]", Name: name, FilePath: file, ImageURL: image},
 		}},
 		{"mentioned image path", []any{text(mention)}, []chatmodel.Part{
 			{Role: "user", Kind: "text", Text: "Review this screenshot."},

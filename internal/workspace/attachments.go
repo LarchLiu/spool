@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	_ "golang.org/x/image/webp"
@@ -65,11 +66,17 @@ func (a *App) attachmentResponse(w http.ResponseWriter, r *http.Request, chat ch
 	rootPath := a.filesRoot
 	a.filesMu.Unlock()
 	if !ok || file.chatID != chat.ID {
+		if !ok && a.archivedUploadResponse(w, r, chat, id) {
+			return
+		}
 		apiError(w, 404, "Attachment not found")
 		return
 	}
 	root, err := os.OpenRoot(rootPath)
 	if err != nil {
+		if os.IsNotExist(err) && a.archivedUploadResponse(w, r, chat, id) {
+			return
+		}
 		apiError(w, 404, "Attachment not found")
 		return
 	}
@@ -81,6 +88,9 @@ func (a *App) attachmentResponse(w http.ResponseWriter, r *http.Request, chat ch
 	}
 	f, err := root.Open(relative)
 	if err != nil {
+		if os.IsNotExist(err) && a.archivedUploadResponse(w, r, chat, id) {
+			return
+		}
 		apiError(w, 404, "Attachment not found")
 		return
 	}
@@ -91,10 +101,16 @@ func (a *App) attachmentResponse(w http.ResponseWriter, r *http.Request, chat ch
 		return
 	}
 	name, mediaType := file.file.Name, file.file.MediaType
-	disposition := "attachment"
 	if strings.HasPrefix(mediaType, "image/") {
-		disposition = "inline"
+		mediaType = http.DetectContentType(data)
+		if !safeProjectImage(mediaType) {
+			apiError(w, 400, errImagePreview.Error())
+			return
+		}
+		serveImageContent(w, r, name, mediaType, time.Time{}, bytes.NewReader(data))
+		return
 	}
+	disposition := "attachment"
 	w.Header().Set("Content-Type", mediaType)
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": name}))
 	w.Header().Set("Content-Length", fmt.Sprint(len(data)))

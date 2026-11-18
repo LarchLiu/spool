@@ -25,6 +25,8 @@
   "Viewed 1 image": "1枚の画像を表示",
   "Viewed {count} images": "{count}枚の画像を表示",
   "Image unavailable: {name}": "画像を表示できません: {name}",
+  "Image access denied": "この画像へのアクセスが拒否されました",
+  "Image could not be loaded. Try again.": "画像を読み込めませんでした。再試行してください。",
   "Read {path}": "{path} を読み取り",
   "Edited files": "ファイルを編集",
   "Edit files": "ファイルを編集",

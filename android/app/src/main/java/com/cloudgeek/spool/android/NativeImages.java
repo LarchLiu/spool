@@ -98,12 +98,14 @@ final class NativeImages {
             Exception error = null;
             try {
                 NativeFileData file = load.load();
-                if (!NativeFileData.image(file.mediaType)) throw new IOException("File is not an image");
-                NativeImageSequence sequence = NativeImageSequence.parse(file.bytes);
-                Bitmap first;
-                if (sequence == null) first = decode(file, edge);
-                else try (NativeImageSequence.Renderer renderer = sequence.renderer(edge)) { renderer.render(0); first = renderer.snapshot(); }
-                asset = new Asset(first, sequence != null && sequence.frames.size() > 1 ? sequence : null);
+                try {
+                    if (!NativeFileData.image(file.mediaType)) throw new NativeImageFailure(400);
+                    NativeImageSequence sequence = NativeImageSequence.parse(file.bytes);
+                    Bitmap first;
+                    if (sequence == null) first = decode(file, edge);
+                    else try (NativeImageSequence.Renderer renderer = sequence.renderer(edge)) { renderer.render(0); first = renderer.snapshot(); }
+                    asset = new Asset(first, sequence != null && sequence.frames.size() > 1 ? sequence : null);
+                } catch (IOException invalid) { throw new NativeImageFailure(400); }
             }
             catch (Exception failure) { error = failure; }
             Asset result = asset;

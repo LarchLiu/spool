@@ -112,7 +112,7 @@ func TestAttachmentsStayTemporaryWithOwnerScopedPreviews(t *testing.T) {
 	}
 	path := "/api/chats/" + chat.ID + "/attachments?id=" + files[0].ID
 	w = apiRequest(a, "GET", path, "", cookie, csrf)
-	if w.Code != 200 || !bytes.Equal(w.Body.Bytes(), image.Data) || w.Header().Get("Content-Type") != "image/png" || !strings.HasPrefix(w.Header().Get("Content-Disposition"), "inline") || w.Header().Get("Cache-Control") != "no-store" {
+	if w.Code != 200 || !bytes.Equal(w.Body.Bytes(), image.Data) || w.Header().Get("Content-Type") != "image/png" || !strings.HasPrefix(w.Header().Get("Content-Disposition"), "inline") || w.Header().Get("Cache-Control") != "private, no-store" {
 		t.Fatal("image preview did not serve private original bytes")
 	}
 	w = apiRequest(a, "GET", "/api/chats/"+chat.ID+"/attachments?id="+files[1].ID, "", cookie, csrf)

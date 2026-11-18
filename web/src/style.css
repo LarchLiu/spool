@@ -1959,6 +1959,25 @@ a.attachment-open {
   max-height: calc(92dvh - 58px);
   object-fit: contain;
 }
+.image-load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+.attachment-open .image-load-error {
+  height: 100%;
+}
+.image-preview > img[hidden],
+.attachment-open > img[hidden],
+.project-file-image[hidden] {
+  display: none;
+}
 .assistant-text {
   font-size: 14px;
   line-height: 1.85;

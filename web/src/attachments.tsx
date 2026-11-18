@@ -4,6 +4,8 @@ import type { Attachment } from "./types";
 import type { Translator } from "./i18n";
 import { attachmentURL } from "./attachment-selection.js";
 import { LocalFileContext } from "./local-file-context.js";
+import { imageResource } from "./image-resource";
+import { ResourceImage } from "./resource-image";
 
 export function AttachmentCards({
   files,
@@ -24,13 +26,15 @@ export function AttachmentCards({
       {files.map((file) => {
         const image = file.media_type.startsWith("image/");
         const url = attachmentURL(chatID, file);
+        const resource = image ? imageResource(file.name, url) : undefined;
         const code = /\.(json|go|rs|ts|tsx|js|py|yaml|yml|toml)$/i.test(
           file.name,
         );
         const contents = (
           <>
             {image ? (
-              <img src={url} alt={file.name} />
+              resource ? <ResourceImage key={resource.url} url={resource.url} name={file.name} t={t} compact />
+                : <span className="image-load-error">{t("Image unavailable: {name}", { name: file.name })}</span>
             ) : (
               <>
                 <div
@@ -59,6 +63,7 @@ export function AttachmentCards({
               <button
                 type="button"
                 className="attachment-open"
+                disabled={!resource}
                 onClick={() => onPreview(file, url)}
                 aria-label={t("Preview {name}", { name: file.name })}
               >
@@ -116,6 +121,7 @@ export function ImagePreview({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const resource = imageResource(file.name, url, file.download_url);
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
@@ -136,7 +142,7 @@ export function ImagePreview({
         <span>{file.name}</span>
         <a
           className="icon"
-          href={url}
+          href={resource?.downloadURL}
           download={file.name}
           aria-label={t("Download {name}", { name: file.name })}
         >
@@ -152,11 +158,8 @@ export function ImagePreview({
           <X size={20} />
         </button>
       </div>
-      <img
-        src={url}
-        alt={file.name}
-        onClick={(event) => event.stopPropagation()}
-      />
+      {resource ? <ResourceImage key={resource.url} url={resource.url} name={resource.name} t={t} />
+        : <span className="image-load-error" role="status">{t("This file cannot be previewed as an image")}</span>}
     </dialog>
   );
 }

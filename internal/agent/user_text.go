@@ -594,6 +594,7 @@ func projectUserParts(parts []chatmodel.Part) []chatmodel.Part {
 			for i := range out {
 				if out[i].Role == "user" && out[i].Kind == "image" && out[i].Name == "" && out[i].ImageURL != "" {
 					out[i].Name = file.Name
+					out[i].FilePath = file.FilePath
 					paired = true
 					break
 				}

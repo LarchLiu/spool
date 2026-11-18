@@ -21,7 +21,7 @@ final class NativeFileData {
     }
 
     static NativeFileData response(JSONObject response) throws IOException {
-        if (response.optInt("status") != 200) throw new IOException("File unavailable (" + response.optInt("status") + ")");
+        if (response.optInt("status") != 200) throw new NativeImageFailure(response.optInt("status"));
         String body = response.optString("body");
         boolean base64 = response.optBoolean("base64");
         if (body.length() > (base64 ? ((MAX_BYTES + 2L) / 3) * 4 + 8 : MAX_BYTES)) throw new IOException("File exceeded its size budget");
@@ -53,10 +53,27 @@ final class NativeFileData {
                 + (chat.isEmpty() || workspace.isEmpty() ? "" : "&workspace=" + Uri.encode(workspace));
     }
 
+    static String imageAction(String project, String chat, JSONObject file, String mode, String workspace) {
+        String address = file.optString(mode.equals("download") ? "download_url" : "preview_url");
+        if (allowedPath(address) && address.startsWith(apiBase(project, chat) + "/")) return address;
+        return filePath(project, chat, file.optString("path"), mode, workspace);
+    }
+
     static boolean allowedPath(String path) {
-        return path != null && (path.matches("^/api/chats/[^/?#]+/attachments\\?id=[^&#]+$")
-                || toolImagePath(path)
-                || path.matches("^/api/(?:projects|chats)/[^/?#]+/file\\?path=[^&#]+(?:&(?:image|download)=1)?(?:&workspace=[^&#]+)?$"));
+        if (path == null) return false;
+        if (toolImagePath(path)) return true;
+        if (!path.matches("^/api/(?:projects|chats)/[^/?#]+/(?:file|attachments)\\?[^#]+$")) return false;
+        try {
+            Uri uri = Uri.parse(path);
+            java.util.Set<String> keys = uri.getQueryParameterNames();
+            for (String key : keys) if (uri.getQueryParameters(key).size() != 1) return false;
+            if (uri.getPath().endsWith("/attachments"))
+                return keys.equals(java.util.Set.of("id")) && !uri.getQueryParameter("id").isEmpty();
+            if (!keys.contains("path") || uri.getQueryParameter("path").isEmpty()) return false;
+            if (!java.util.Set.of("path", "image", "download", "workspace").containsAll(keys)) return false;
+            for (String key : new String[]{"image", "download"}) if (keys.contains(key) && !"1".equals(uri.getQueryParameter(key))) return false;
+            return true;
+        } catch (RuntimeException invalid) { return false; }
     }
 
     static boolean toolImagePath(String path) {
@@ -70,10 +87,10 @@ final class NativeFileData {
     }
 
     static NativeFileData inline(String source) throws IOException {
-        if (!inlineImage(source)) throw new IOException("Invalid inline image");
+        if (!inlineImage(source)) throw new NativeImageFailure(400);
         int comma = source.indexOf(',');
         try { return new NativeFileData(source.substring(5, comma - 7), java.util.Base64.getDecoder().decode(source.substring(comma + 1))); }
-        catch (IllegalArgumentException error) { throw new IOException("Invalid image encoding", error); }
+        catch (IllegalArgumentException error) { throw new NativeImageFailure(400); }
     }
 
     static boolean image(String mediaType) { return mediaType != null && mediaType.startsWith("image/"); }

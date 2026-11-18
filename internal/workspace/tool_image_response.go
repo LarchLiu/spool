@@ -1,15 +1,9 @@
 package workspace
 
 import (
-	"bytes"
-	"encoding/base64"
-	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
-	"time"
 
 	"spool/internal/agent"
 	chatmodel "spool/internal/model"
@@ -53,23 +47,7 @@ func (a *App) toolImageResponse(w http.ResponseWriter, r *http.Request, chat cha
 			if index >= len(images) {
 				break
 			}
-			_, encoded, ok := strings.Cut(images[index], ";base64,")
-			if !ok {
-				break
-			}
-			const maxImageBytes = 16 * 1024 * 1024
-			data, err := io.ReadAll(io.LimitReader(base64.NewDecoder(base64.StdEncoding, strings.NewReader(encoded)), maxImageBytes+1))
-			mediaType := http.DetectContentType(data)
-			if err != nil || len(data) > maxImageBytes || !safeProjectImage(mediaType) {
-				apiError(w, 400, "This tool result cannot be previewed as an image")
-				return
-			}
-			w.Header().Set("Content-Type", mediaType)
-			w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": "image-" + strconv.Itoa(index+1)}))
-			w.Header().Set("X-Content-Type-Options", "nosniff")
-			w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
-			w.Header().Set("Cache-Control", "private, no-store")
-			http.ServeContent(w, r, "image", time.Time{}, bytes.NewReader(data))
+			serveInlineImage(w, r, "image-"+strconv.Itoa(index+1), images[index])
 			return
 		}
 	}

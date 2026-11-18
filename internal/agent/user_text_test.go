@@ -427,7 +427,7 @@ func TestScreenshotAttachmentBeforeNativeImageLabels(t *testing.T) {
 			} else {
 				parts = claudeTranscriptParts("user", blocks, "")
 			}
-			if len(parts) != 2 || parts[0].Text != prompt || parts[0].Kind != "text" || parts[1].Kind != "image" || parts[1].ImageURL != "data:image/png;base64,aGVsbG8=" {
+			if len(parts) != 2 || parts[0].Text != prompt || parts[0].Kind != "text" || parts[1].Kind != "image" || parts[1].ImageURL != "data:image/png;base64,aGVsbG8=" || parts[1].FilePath != imagePath {
 				t.Fatalf("screenshot still contains injected text or lost its image: %#v", parts)
 			}
 		})

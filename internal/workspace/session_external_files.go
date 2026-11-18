@@ -187,6 +187,7 @@ func (a *App) externalSessionFile(w http.ResponseWriter, r *http.Request, chat c
 		}
 		attached = sessionUserAttachment(complete, path)
 		referenced = attached || project.AllowExternalFiles && sessionReferencesFile(complete, path)
+		snapshot = complete
 	}
 	if !attached && !project.AllowExternalFiles {
 		return false
@@ -211,6 +212,9 @@ func (a *App) externalSessionFile(w http.ResponseWriter, r *http.Request, chat c
 	}
 	info, err := os.Lstat(path)
 	if err != nil {
+		if os.IsNotExist(err) && attached && a.archivedUserImageResponse(w, r, snapshot, path) {
+			return true
+		}
 		sessionFileReadError(w, err)
 		return true
 	}

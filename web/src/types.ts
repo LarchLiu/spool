@@ -39,6 +39,8 @@ export type ProjectDirectory = {
   truncated: boolean;
 };
 export type ProjectFile = {
+  preview_url?: string;
+  download_url?: string;
   external?: boolean;
   path: string;
   name: string;
@@ -75,6 +77,7 @@ export type Attachment = {
   media_type: string;
   size: number;
   preview_url?: string;
+  download_url?: string;
   excerpt?: string;
   file_path?: string;
 };

@@ -77,6 +77,18 @@ call IDs. Other tool bodies are skipped, and base64 pixels stay out of history
 responses. Images remain viewable after temporary files are removed, without
 granting access to their original directory or changing external-file policy.
 
+Tool results, uploaded images and file-panel images share the raster validation
+and HTTP image response implementation. Historical user images retain their
+exact attachment path alongside saved pixels. If an attached file is missing,
+its image, download and file-metadata requests recover those pixels on demand;
+an existing file still takes precedence. Metadata includes preview and download
+URLs with the current chat/worktree scope. Old upload IDs can resolve only a
+matching session attachment with the original chat/ID/name path, including after
+a service restart. These reads keep the usual chat and file authorization and
+never recreate temporary files. Web/desktop and Android use common image-source
+handling within each client and distinguish missing files, access failures,
+unsupported images and transport failures, with retry in full previews.
+
 The rollout parser (`session_transcript.go`, `session_turns.go`) remains the
 reader for everything native paging cannot serve, chosen per thread:
 

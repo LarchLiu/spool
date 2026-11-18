@@ -192,6 +192,7 @@ final class NativeText {
             case "Feedback for denial (optional)": value = "拒绝原因（可选）"; break;
             case "Fetch": value = "获取"; break;
             case "File contents are not included in this patch.": value = "此补丁未包含文件正文。"; break;
+            case "File not found": value = "文件不存在"; break;
             case "File preview": value = "文件预览"; break;
             case "Files": value = "文件"; break;
             case "Fit width": value = "适合宽度"; break;
@@ -212,6 +213,8 @@ final class NativeText {
             case "High": value = "高"; break;
             case "History": value = "历史"; break;
             case "Ideas, brought to life.": value = "想法，在这里落地。"; break;
+            case "Image access denied": value = "无权读取此图片"; break;
+            case "Image could not be loaded. Try again.": value = "图片加载失败，请重试。"; break;
             case "Image unavailable: {name}": value = "图片不可用：{name}"; break;
             case "Information": value = "信息"; break;
             case "Install plugin": value = "安装插件"; break;
@@ -704,6 +707,7 @@ final class NativeText {
             case "Feedback for denial (optional)": value = "拒否の理由（任意）"; break;
             case "Fetch": value = "フェッチ"; break;
             case "File contents are not included in this patch.": value = "このパッチにはファイルの内容が含まれていません。"; break;
+            case "File not found": value = "ファイルが見つかりません"; break;
             case "File preview": value = "ファイルプレビュー"; break;
             case "Files": value = "ファイル"; break;
             case "Fit width": value = "幅に合わせる"; break;
@@ -724,6 +728,8 @@ final class NativeText {
             case "High": value = "高"; break;
             case "History": value = "履歴"; break;
             case "Ideas, brought to life.": value = "アイデアを、かたちに。"; break;
+            case "Image access denied": value = "この画像へのアクセスが拒否されました"; break;
+            case "Image could not be loaded. Try again.": value = "画像を読み込めませんでした。再試行してください。"; break;
             case "Image unavailable: {name}": value = "画像を表示できません: {name}"; break;
             case "Information": value = "情報"; break;
             case "Install plugin": value = "プラグインをインストール"; break;

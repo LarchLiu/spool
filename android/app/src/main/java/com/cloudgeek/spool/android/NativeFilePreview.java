@@ -158,8 +158,13 @@ final class NativeFilePreview extends LinearLayout {
             LinearLayout wrapper = ui.column(); wrapper.setGravity(Gravity.CENTER_HORIZONTAL); wrapper.setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14));
             NativeContainedImage image = new NativeContainedImage(ui, false); image.setContentDescription(file.optString("name"));
             wrapper.addView(image, new LayoutParams(-2, -2)); scroll.addView(wrapper, new ScrollView.LayoutParams(-1, -2));
-            if (images != null) images.remote(image, NativeFileData.filePath(project, chat, file.optString("path"), "image", workspacePath), imageScope, 2048, error -> {
-                if (error != null && image.isAttachedToWindow()) { wrapper.removeAllViews(); wrapper.addView(empty(ui, ui.t("This file cannot be previewed as an image"))); }
+            String address = NativeFileData.imageAction(project, chat, file, "image", workspacePath);
+            NativeImageResource resource = NativeImageResource.source(file.optString("name"), address);
+            if (images != null && resource != null) resource.load(images, image, imageScope, 2048, error -> {
+                if (error != null && image.isAttachedToWindow()) {
+                    wrapper.removeAllViews(); wrapper.addView(empty(ui, ui.t(NativeImageFailure.message(error))));
+                    wrapper.addView(ui.button(ui.t("Retry"), false, () -> reload.run()));
+                }
             });
         } else scroll.addView(empty(ui, ui.t("This file has no text preview. Download it to open locally.")));
         scroll.scrollTo(0, 0);
