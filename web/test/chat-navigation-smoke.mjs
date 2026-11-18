@@ -62,8 +62,21 @@ try {
     if (endpoint === "/api/navigation") return json({ projects: [{ id: "project", name: "Project" }, { id: "other", name: "Other project" }], chats });
     if (endpoint === "/api/agents") return json(["codex", "claude"].map(backend => ({ backend, enabled: true, installed: true, catalog: { models: [] } })));
     if (endpoint === "/api/permissions") return json({ backend: "codex", default: "ask", modes: [{ id: "ask", available: true }] });
+    if (endpoint === "/api/chats" && request.method() === "POST") {
+      const created = { ...request.postDataJSON(), id: "created", title: "Conversation created", user_id: "owner", status: "ready", updated_at: 1,
+        turns: [], transcript: { parts: [] } };
+      chats.unshift(created);
+      return json(created);
+    }
     const chat = chats.find(item => endpoint.startsWith(`/api/chats/${item.id}`));
-    const workspace = chat?.id === "gamma" ? tree : main;
+    const workspace = [main, tree].find(item => item.path === url.searchParams.get("workspace")) || (chat?.id === "gamma" ? tree : main);
+    if (endpoint.endsWith("/messages") && request.method() === "POST") {
+      Object.assign(chat, { status: "completed", updated_at: 2,
+        turns: [{ id: "turn-created", status: "completed", part_start: 0, input_end: 1, part_end: 2 }],
+        transcript: { parts: [{ role: "user", kind: "text", text: request.postDataJSON().message },
+          { role: "assistant", kind: "text", text: "Response from created" }] } });
+      return json(chat);
+    }
     if (endpoint.endsWith("/workspace")) {
       if (gate?.fail) return json({ error: "Workspace unavailable" }, 500);
       return json({ ...workspace, workspaces: [main, tree] });
@@ -170,13 +183,81 @@ try {
     page.getByRole("button", { name: "Refresh files", exact: true }).click(),
   ]);
   assert.ok(requests.slice(offset).some(url => url.startsWith("/api/chats/beta/files?")), "Explicit refresh still reloads the current directory");
-  await page.getByRole("button", { name: "New chat in Project", exact: true }).click();
-  await page.locator(".welcome").waitFor();
-  assert.equal(await page.locator(".chat-heading").innerText(), "New chat", "Explicit new-chat navigation keeps its welcome state");
+  const newChat = async (name = "Project") => {
+    await page.getByRole("button", { name: `New chat in ${name}`, exact: true }).click();
+    await page.locator(".welcome").waitFor();
+    assert.equal(await page.locator(".chat-heading").innerText(), "New chat", "Explicit new-chat navigation keeps its welcome state");
+  };
+  const assertNoDirectoryReload = offset => assert.ok(
+    requests.slice(offset).every(url => !/\/(files|git)\?/.test(url)),
+    "A same-project draft does not reload the file tree or Git",
+  );
+  await directory.click();
+  await page.locator('[data-item-path="src/nested.txt"]').waitFor();
+  await directory.evaluate(element => { window.draftDirectory = element; });
+  await page.locator('[data-item-path="readme.txt"]').click();
+  await page.getByRole("link", { name: "Download file", exact: true }).waitFor();
+  offset = requests.length;
+  await newChat();
+  assertNoDirectoryReload(offset);
+  assert.equal(await directory.evaluate(element => window.draftDirectory === element), true, "A new draft retains the file tree DOM");
+  assert.ok(await page.locator('[data-item-path="src/nested.txt"]').isVisible(), "A new draft retains expanded directories");
+  assert.equal(await page.locator(".file-sidebar").getAttribute("inert"), null, "The retained directory remains usable in a draft");
+  assert.equal(await page.locator(".file-preview").count(), 0, "Chat-scoped file previews clear when opening a draft");
+  await newChat();
+  assertNoDirectoryReload(offset);
+  await page.locator('[data-item-path="readme.txt"]').click();
+  await page.getByRole("link", { name: "Download file", exact: true }).waitFor();
+  assert.match(await page.getByRole("link", { name: "Download file", exact: true }).getAttribute("href"), /\/chats\/beta\/file/,
+    "Draft file actions still address the retained directory");
+  await navigate("beta");
+  await page.getByRole("tab", { name: "Git panel", exact: true }).click();
+  await page.locator(".git-file-row").click();
+  await page.locator(".git-diff-source").waitFor();
+  offset = requests.length;
+  await newChat();
+  assertNoDirectoryReload(offset);
+  assert.ok(await page.locator(".git-diff-source").isVisible(), "A new draft retains the selected Git diff");
+  await page.getByRole("button", { name: "Close diff", exact: true }).click();
+  await page.getByRole("button", { name: "Expand commit area", exact: true }).click();
+  await page.getByRole("textbox", { name: "Commit message", exact: true }).fill("Keep this commit draft");
+  await newChat();
+  assertNoDirectoryReload(offset);
+  assert.equal(await page.getByRole("textbox", { name: "Commit message", exact: true }).inputValue(), "Keep this commit draft");
+  const createdWorkspace = hold("/api/chats/created/workspace");
+  await page.locator("#chat-message").fill("First message in the new chat");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByText("Response from created", { exact: true }).waitFor();
+  assert.equal(await page.locator(".file-sidebar").getAttribute("inert"), "", "Workspace discovery still gates the newly created chat");
+  createdWorkspace.release(); gates.clear();
+  await page.waitForFunction(() => !document.querySelector(".file-sidebar").inert);
+  assertNoDirectoryReload(offset);
+  assert.equal(await directory.evaluate(element => window.draftDirectory === element), true, "First-message creation retains the same directory DOM");
+  assert.equal(await page.getByRole("textbox", { name: "Commit message", exact: true }).inputValue(), "Keep this commit draft");
+  await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === "/api/chats/created/git"),
+    page.getByRole("button", { name: "Refresh Git information", exact: true }).click(),
+  ]);
+  offset = requests.length;
+  await newChat("Other project");
+  await page.locator(".git-summary").getByText("dev", { exact: true }).waitFor();
+  assert.ok(requests.slice(offset).some(url => url.startsWith("/api/projects/other/files?")), "A draft in another project loads its own files");
+  assert.ok(requests.slice(offset).some(url => url.startsWith("/api/projects/other/git?")), "A draft in another project loads its own Git state");
+  assert.equal(await page.getByRole("textbox", { name: "Commit message", exact: true }).count(), 0, "Another project cannot inherit a commit draft");
+  await navigate("gamma");
+  await page.locator(".git-summary").getByText("feature", { exact: true }).waitFor();
+  offset = requests.length;
+  await newChat();
+  assertNoDirectoryReload(offset);
+  assert.equal(await page.locator(".file-sidebar-title strong").innerText(), "feature", "A same-project draft keeps the displayed worktree");
+  await page.getByRole("button", { name: "Switch directory", exact: true }).click();
+  await page.getByRole("option", { name: /main/ }).click();
+  await page.locator(".git-summary").getByText("dev", { exact: true }).waitFor();
+  assert.equal(await page.locator(".file-sidebar-title strong").innerText(), "main", "Directory selection remains functional in a draft");
   assert.deepEqual(errors, []);
   await page.screenshot({ path: path.join(output, "navigation.png") });
   passed = true;
-  console.log("Chat navigation passed: delayed loading, same-directory file/Git reuse, current-chat requests, directory/project changes, retry and explicit refresh.");
+  console.log("Chat navigation passed: delayed loading, same-directory file/Git reuse, new-chat drafts and first-message creation, current-chat requests, directory/project changes, retry and explicit refresh.");
 } finally {
   for (const gate of gates.values()) gate.release();
   await browser?.close();

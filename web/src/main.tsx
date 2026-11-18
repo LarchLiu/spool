@@ -306,14 +306,23 @@ function App() {
   const [fileSelection, setFileSelection] = useState<FileSelection | null>(
     null,
   );
-  const fileChatID = chatID || undefined;
+  const [fileContext, setFileContext] = useState({ project, chatID });
+  if (
+    fileContext.project !== project ||
+    (chatID && fileContext.chatID !== chatID)
+  ) setFileContext({ project, chatID });
+  // A same-project draft keeps browsing the current directory until its first
+  // message creates a chat with its own workspace and file transport.
+  const fileChatID = (
+    chatID || (fileContext.project === project ? fileContext.chatID : "")
+  ) || undefined;
   const sessionWorkspace = useSessionWorkspace(
     fileChatID,
     chat?.id === chatID ? chat.updated_at : undefined,
   );
   const fileScope = JSON.stringify([
     project,
-    fileChatID,
+    chatID,
     sessionWorkspace.workspace?.path,
   ]);
   const openLocalFile = useCallback(
