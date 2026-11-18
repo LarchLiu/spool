@@ -49,7 +49,8 @@ const plugin = {
 };
 let server, browser;
 try {
-  server = await createServer({ cacheDir: path.join(requireRunTemp(), "vite-cache"),
+  server = await createServer({
+    cacheDir: path.join(requireRunTemp(), "vite-cache"),
     configFile: false,
     root: path.join(root, "web"),
     plugins: [plugin, react()],
@@ -66,6 +67,29 @@ try {
   await page.waitForFunction(() => typeof window.bind === "function");
   const report = await page.evaluate(async () => {
     const wait = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const highlighted = async (previous) => {
+      for (let i = 0; i < 500; i++) {
+        const token = document.querySelector(".markdown-code-token");
+        if (token && token !== previous) return;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error("Code highlighting did not load");
+    };
+    const selectCode = (start, end) => {
+      const code = document.querySelector("pre code");
+      const position = (offset) => {
+        const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+        let node;
+        while ((node = walker.nextNode())) {
+          if (offset <= node.length) return [node, offset];
+          offset -= node.length;
+        }
+        throw new Error("Selection offset outside code");
+      };
+      document
+        .getSelection()
+        .setBaseAndExtent(...position(start), ...position(end));
+    };
     const button = () => document.querySelector(".markdown-code-copy");
     const label = () => button().getAttribute("aria-label");
     const result = {};
@@ -78,24 +102,29 @@ try {
     window.bind("```javascript file.js\n" + literal + "\n```");
     const pre = document.querySelector("pre");
     const control = button();
+    // The first grammar loads asynchronously while a selection is already active.
+    selectCode(8, 2);
+    await highlighted();
+    result.initialHighlightRetainsSelection =
+      document.getSelection().toString() === literal.slice(2, 8);
+    result.highlightPreservesCodeBytes =
+      pre.querySelector("code").textContent === literal + "\n";
     result.language = document.querySelector(
       ".markdown-code-language",
     ).textContent;
     control.click();
-    await wait();
+    for (let i = 0; i < 100 && label() !== "Code copied"; i++)
+      await new Promise((resolve) => setTimeout(resolve, 20));
     result.whitespacePreserved = copies.at(-1) === literal;
     result.copiedFeedback = label() === "Code copied";
-    const selection = document.getSelection(),
-      range = document.createRange(),
-      text = pre.querySelector("code").firstChild;
-    range.setStart(text, 2);
-    range.setEnd(text, 8);
-    selection.removeAllRanges();
-    selection.addRange(range);
+    const selection = document.getSelection();
+    selectCode(2, 8);
+    const previousToken = document.querySelector(".markdown-code-token");
     window.bind("```typescript metadata\n" + literal + "\n```");
+    await highlighted(previousToken);
     result.infoChangeRetainsCodeSelection =
       pre === document.querySelector("pre") &&
-      selection.toString() === text.textContent.slice(2, 8);
+      selection.toString() === literal.slice(2, 8);
     result.controlsRetained = control === button();
     // A partial fence changes its body without replacing the scroll/copy controls.
     window.bind("```typescript\n\tlatest  ");
@@ -129,12 +158,7 @@ try {
       return exec(command);
     };
     button().focus();
-    const code = document.querySelector("pre code").firstChild,
-      selected = document.createRange();
-    selected.setStart(code, 1);
-    selected.setEnd(code, 4);
-    selection.removeAllRanges();
-    selection.addRange(selected);
+    selectCode(1, 4);
     button().click();
     await wait();
     result.fallbackPreservesFocusAndSelection =
@@ -163,12 +187,73 @@ try {
       document.querySelector(".markdown-code-language").textContent ===
         "プレーンテキスト" &&
       label() === "コードをコピーしました";
+    for (const [language, source] of [
+      ["js", 'const value = "hello"; // comment'],
+      ["PYTHON", 'def greet():\n\treturn "hello" # comment'],
+      ["c++", "int main() { return 42; } // comment"],
+      ["json", '{"message": "hello", "enabled": true}'],
+    ]) {
+      window.bind("```" + language + "\n" + source + "\n```");
+      await highlighted();
+      const tokens = [...document.querySelectorAll(".markdown-code-token")];
+      result["syntaxColors_" + language] =
+        new Set(tokens.map((token) => getComputedStyle(token).color)).size > 1;
+    }
+    const tokens = [...document.querySelectorAll(".markdown-code-token")];
+    document.documentElement.dataset.theme = "light";
+    const light = tokens.map((token) => getComputedStyle(token).color);
+    document.documentElement.dataset.theme = "dark";
+    result.themeChangesColors = tokens.some(
+      (token, index) => getComputedStyle(token).color !== light[index],
+    );
+    for (const language of ["text", "unknown-language", ""]) {
+      window.bind('```js\nconst value = "plain";\n```');
+      await highlighted();
+      window.bind("```" + language + '\nconst value = "plain";\n```');
+      await wait();
+      result["plainFallback_" + (language || "unspecified")] =
+        !document.querySelector(".markdown-code-token") &&
+        document.querySelector("pre code").textContent ===
+          'const value = "plain";\n';
+    }
+    // A grammar that finishes loading after a language change cannot decorate plain text.
+    window.bind("```ruby\nputs 'old'\n```");
+    await wait();
+    window.bind("```text\nnew source\n```");
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    result.staleSyntaxIgnored =
+      !document.querySelector(".markdown-code-token") &&
+      document.querySelector("pre code").textContent === "new source\n";
+    window.bind("```html\n<script>window.codeExecuted = true</script>\n```");
+    await highlighted();
+    result.highlightedHtmlIsInert =
+      !window.codeExecuted &&
+      !document.querySelector("pre script") &&
+      document.querySelector("pre code").textContent ===
+        "<script>window.codeExecuted = true</script>\n";
+    const crossBlock = 'Before\n\n```javascript\nconst value = "hello";\n```';
+    window.bind(crossBlock);
+    await highlighted();
+    selectCode(5, 5);
+    selection.setBaseAndExtent(
+      document.querySelector(".markdown p").firstChild,
+      2,
+      selection.focusNode,
+      selection.focusOffset,
+    );
+    const selectedText = selection.toString();
+    const selectedToken = document.querySelector(".markdown-code-token");
+    window.bind(crossBlock.replace("javascript", "typescript"));
+    await highlighted(selectedToken);
+    result.crossBlockSelectionRetained =
+      selection.toString() === selectedText.replace("javascript", "typescript");
     document.execCommand = exec;
     return result;
   });
   assert.equal(report.language, "javascript");
   for (const [name, passed] of Object.entries(report))
-    if (name !== "language") assert.equal(passed, true, name);
+    if (name !== "language")
+      assert.equal(passed, true, `${name}: ${JSON.stringify(report)}`);
   const layouts = [];
   for (const width of [320, 1000])
     for (const theme of ["light", "dark"]) {
@@ -185,6 +270,7 @@ try {
         },
         { theme },
       );
+      await page.waitForSelector(".markdown-code-token");
       const layout = await page.evaluate(() => {
         const block = document.querySelectorAll(".markdown-code-block")[1];
         const pre = block.querySelector("pre"),
@@ -206,6 +292,9 @@ try {
       for (const [name, passed] of Object.entries(layout))
         assert.equal(passed, true, `${width}/${theme}: ${name}`);
       layouts.push({ width, theme, ...layout });
+      await page.evaluate(() => {
+        for (const pre of document.querySelectorAll("pre")) pre.scrollLeft = 0;
+      });
       await page.screenshot({
         path: path.join(output, `web-${width}-${theme}.png`),
         fullPage: true,
@@ -221,7 +310,7 @@ try {
     ) + "\n",
   );
   console.log(
-    "Code block copy, stream updates, clipboard fallback/failure, locales, and desktop/mobile layouts passed.",
+    "Code block syntax, themes, selection, copy, stream updates, clipboard fallback/failure, locales, and desktop/mobile layouts passed.",
   );
 } finally {
   await browser?.close();

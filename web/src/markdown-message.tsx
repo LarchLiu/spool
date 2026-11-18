@@ -19,6 +19,7 @@ import { LocalFileContext } from "./local-file-context.js";
 import { localFileTarget } from "./local-file-links.js";
 import { copyMessageText } from "./copy-text.js";
 import { remarkCodexFileCitations } from "./codex-file-citations.js";
+import { applyCodeHighlight, highlightCode } from "./code-highlight.js";
 
 type CodeTranslator = (
   key: "Plain text" | "Copy code" | "Code copied" | "Could not copy code",
@@ -56,6 +57,18 @@ function MarkdownCodeBlock({
     state: "copied" | "failed";
   } | null>(null);
   const request = useRef(0);
+  const pre = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    const element = pre.current?.querySelector("code");
+    if (!element) return;
+    const source = element.textContent ?? "";
+    const controller = new AbortController();
+    void highlightCode(source, language, controller.signal).then((tokens) => {
+      if (!controller.signal.aborted)
+        applyCodeHighlight(element, source, tokens);
+    });
+    return () => controller.abort();
+  }, [text, language]);
   useEffect(() => {
     setFeedback(null);
     return () => {
@@ -108,7 +121,7 @@ function MarkdownCodeBlock({
           {state !== "idle" ? copyLabel : ""}
         </span>
       </div>
-      <pre>{children}</pre>
+      <pre ref={pre}>{children}</pre>
     </div>
   );
 }

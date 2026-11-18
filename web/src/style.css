@@ -2056,6 +2056,26 @@ a.attachment-open {
 .markdown pre code {
   font-size: 12px;
 }
+.markdown-code-token {
+  color: var(--code-light, inherit);
+  font-style: var(--code-light-font-style, normal);
+  font-weight: var(--code-light-font-weight, normal);
+  text-decoration: var(--code-light-text-decoration, none);
+}
+:root[data-theme="dark"] .markdown-code-token {
+  color: var(--code-dark, inherit);
+  font-style: var(--code-dark-font-style, normal);
+  font-weight: var(--code-dark-font-weight, normal);
+  text-decoration: var(--code-dark-text-decoration, none);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .markdown-code-token {
+    color: var(--code-dark, inherit);
+    font-style: var(--code-dark-font-style, normal);
+    font-weight: var(--code-dark-font-weight, normal);
+    text-decoration: var(--code-dark-text-decoration, none);
+  }
+}
 .markdown-code-block {
   max-width: 100%;
   overflow: hidden;
