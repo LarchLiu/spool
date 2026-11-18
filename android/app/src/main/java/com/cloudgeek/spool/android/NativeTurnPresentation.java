@@ -105,8 +105,9 @@ final class NativeTurnPresentation {
                 for (int i = 0; i < turns.length(); i++) {
                     JSONObject turn = turns.optJSONObject(i); if (turn == null) continue;
                     String id = turn.optString("id");
-                    String key = new JSONArray().put(id.isEmpty() ? "index" : "turn").put(id.isEmpty() ? i : id)
-                            .put(occurrences.merge(id, 1, Integer::sum)).toString();
+                    String renderKey = NativeChatState.renderKey(turn);
+                    String key = new JSONArray().put(renderKey.isEmpty() ? "index" : "turn").put(renderKey.isEmpty() ? i : renderKey)
+                            .put(occurrences.merge(renderKey, 1, Integer::sum)).toString();
                     NativeTurnPresentation value = current.get(key);
                     if (value == null || changed == null || id.isEmpty() || changed.contains(id)) { value = turn(parts, turn); builds++; }
                     next.put(key, value);

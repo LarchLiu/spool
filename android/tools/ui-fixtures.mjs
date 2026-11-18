@@ -49,6 +49,9 @@ const steeringPart={...takenPart,pending:true};
 const stateChat=(status='running',parts=[statePart('A complete answer')],turns)=>({id:'chat-one',project_id:'project-one',backend:'codex',status,updated_at:20,transcript:{parts},turns:turns||[{id:'turn-one',status,part_start:0,input_end:0,part_end:parts.length,started_at:10}]});
 const finishedChat=stateChat('completed');
 const pendingTurn={id:'pending-one',user_id:'alice',status:'running',started_at:30,backend:'codex',requested_model:'codex-model',reasoning_effort:'high',permission_mode:'ask'};
+const pendingChat=stateChat('running',[{role:'user',kind:'text',text:'First prompt'}],[{...pendingTurn,part_start:0,input_end:1,part_end:1}]);
+const acceptedChat={...pendingChat,turns:[{...pendingChat.turns[0],id:'live-one',native_turn_id:'native-one'}]};
+const acknowledgedChat={...acceptedChat,turns:[{...acceptedChat.turns[0],render_key:'pending-one'}]};
 export const chatStateCases=[
  {id:'new-send',operation:'optimistic',previous:null,project:'project-one',turn:pendingTurn,input:[{role:'user',kind:'text',text:'Hello'}]},
  {id:'continued-send',operation:'optimistic',previous:finishedChat,project:'project-one',turn:pendingTurn,input:[{role:'user',kind:'image',name:'image.png',text:'[image]'}]},
@@ -70,6 +73,13 @@ export const chatStateCases=[
  {id:'new-turn-removes-old-running',previous:stateChat(),next:stateChat('running',[statePart('New')],[{id:'turn-two',status:'running',part_start:0,input_end:0,part_end:1}])},
  {id:'new-turn-keeps-completed',previous:finishedChat,next:stateChat('running',[statePart('New')],[{id:'turn-two',status:'running',part_start:0,input_end:0,part_end:1}])},
  {id:'adopt-created-chat',operation:'adopt',previous:null,project:'project-one',turn:pendingTurn,input:[{role:'user',kind:'text',text:'First prompt'}],next:stateChat('idle',[],[])},
+ {id:'pending-acknowledgement-keeps-view',previous:pendingChat,next:acceptedChat},
+ {id:'pending-acknowledgement-with-older-history',previous:pendingChat,next:{...acceptedChat,transcript:{parts:[statePart('Older answer'),...acceptedChat.transcript.parts]},turns:[
+  {id:'older',status:'completed',part_start:0,input_end:0,part_end:1},
+  {...acceptedChat.turns[0],part_start:1,input_end:2,part_end:2},
+ ]}},
+ {id:'acknowledgement-replay-keeps-view',previous:acknowledgedChat,next:acceptedChat},
+ {id:'native-alias-keeps-optimistic-view',previous:acknowledgedChat,next:{...acceptedChat,status:'completed',transcript:{...acceptedChat.transcript,source:'codex-native'},turns:[{...acceptedChat.turns[0],id:'imported-one',status:'completed'}]}},
  // A steering message its model has yet to take in is shown provisionally.
  {id:'steering-withdrawn',previous:stateChat('running',[statePart('A complete answer'),steeringPart]),next:stateChat()},
  {id:'steering-taken-later',previous:stateChat('running',[statePart('A'),steeringPart]),next:stateChat('running',[statePart('A'),statePart('B','part-two'),takenPart])},

@@ -2808,7 +2808,8 @@
               "status": "running",
               "part_start": 0,
               "input_end": 0,
-              "part_end": 0
+              "part_end": 0,
+              "render_key": "pending-local"
             }
           ],
           "transcript": {

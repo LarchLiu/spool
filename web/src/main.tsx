@@ -2166,7 +2166,7 @@ function App() {
                   ) : null;
                 };
                 return (
-                  <article className="turn" key={turn.id}>
+                  <article className="turn" key={turn.render_key || turn.id}>
                     {renderInput(parts.slice(0, inputEnd), true)}
                     <TurnResponse
                       parts={response}

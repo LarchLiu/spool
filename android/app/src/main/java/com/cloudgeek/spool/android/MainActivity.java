@@ -2798,7 +2798,8 @@ public final class MainActivity extends Activity {
     }
 
     private NativeActivityList.State activityState(JSONObject page, JSONObject turn) {
-        String key = turn.optString("id", page.optString("id") + ":" + turn.optInt("part_start"));
+        String key = NativeChatState.renderKey(turn);
+        if (key.isEmpty()) key = page.optString("id") + ":" + turn.optInt("part_start");
         return activityStates.computeIfAbsent(key, ignored -> new NativeActivityList.State());
     }
 
@@ -2847,7 +2848,7 @@ public final class MainActivity extends Activity {
     private void renderTurnStatus(JSONObject page, NativeTurnPresentation value, String key, NativeKeyedViews children) {
         JSONObject approval = value.approval;
         if (approval != null) children.use(key + "/approval/" + approval.optString("id"),
-                new JSONArray().put(approval).put(writable()), () -> approvalCard(page.optString("id"), value.turn.optString("id"), approval));
+                new JSONArray().put(approval).put(writable()).put(value.turn.optString("id")), () -> approvalCard(page.optString("id"), value.turn.optString("id"), approval));
         NativeTurnError.State error = activityState(page, value.turn).error;
         error.update(value.error, value.turn.optLong("finished_at"));
         if (!value.error.isEmpty()) children.use(key + "/error", new JSONArray().put(value.error).put(error.finishedAt), () -> new NativeTurnError(ui, error));

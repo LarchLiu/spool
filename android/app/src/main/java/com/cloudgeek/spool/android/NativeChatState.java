@@ -55,6 +55,12 @@ final class NativeChatState {
         return chat != null && chat.optString("status").equals("running") && turn != null && turn.optString("status").equals("running") ? turn : null;
     }
 
+    /** View identity survives optimistic/server/native IDs; actions still use the server id. */
+    static String renderKey(JSONObject turn) {
+        String key = turn.optString("render_key");
+        return key.isEmpty() ? turn.optString("id") : key;
+    }
+
     static boolean hasRunningTurn(JSONObject chat) {
         JSONArray turns = array(chat, "turns");
         for (int i = 0; i < turns.length(); i++) if (part(turns, i).optString("status").equals("running")) return true;
@@ -302,6 +308,14 @@ final class NativeChatState {
             entries.put(id, new Entry(turn, slice(oldParts, turn.optInt("part_start"), turn.optInt("part_end"))));
             if (!turn.optString("native_turn_id").isEmpty()) aliases.put(turn.optString("native_turn_id"), id);
         }
+        JSONObject pending = oldTurns.optJSONObject(oldTurns.length() - 1), acknowledged = null;
+        if (!older && pending != null && pending.optString("id").startsWith("pending-")) {
+            for (int i = 0; i < incoming.length(); i++) {
+                JSONObject turn = part(incoming, i);
+                if (!turn.optString("id").startsWith("pending-") && !entries.containsKey(turn.optString("id"))
+                        && !aliases.containsKey(turn.optString("native_turn_id"))) acknowledged = turn;
+            }
+        }
         List<String> incomingIDs = new ArrayList<>(); boolean newServerTurn = false;
         JSONObject transcript = next.optJSONObject("transcript");
         boolean nativeSource = transcript != null && transcript.optString("source").endsWith("-native");
@@ -319,6 +333,8 @@ final class NativeChatState {
             int inputs = old != null && parts == shown ?old.turn.optInt("input_end") - old.turn.optInt("part_start") : turn.optInt("input_end") - turn.optInt("part_start");
             JSONObject before = old == null ? null : put(shallow(old.turn), "id", id);
             JSONObject merged = shallow(mergeTurn(before, turn)); put(merged, "part_start", 0); put(merged, "input_end", inputs);
+            String renderKey = old != null ? renderKey(old.turn) : turn == acknowledged ? renderKey(pending) : "";
+            if (!renderKey.isEmpty() && !renderKey.equals(id)) put(merged, "render_key", renderKey);
             // Rebased ranges are not data changes; renamed, new, re-sliced or edited turns are.
             if (old == null || !oldID.equals(id) || !sameParts(old.parts, parts) || !equivalent(stripRanges(old.turn), stripRanges(merged))) changedIDs.add(id);
             entries.put(id, new Entry(merged, parts));

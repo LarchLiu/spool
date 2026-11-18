@@ -16,6 +16,7 @@ const compiled = buildSync({entryPoints: [entry], bundle: true, write: false, fo
 const module = {exports: {}};
 vm.runInNewContext(compiled, {module, exports: module.exports, AbortController});
 const {subscribeChatEvents} = module.exports;
+const eventsPath = '/api/chats/chat-one/events?tool_details=lazy';
 const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
 const snapshot = version => ({id: 'chat-one', updated_at: version, turns: []});
 const step = (type, value) => value === undefined ? {type} : {type, value};
@@ -41,7 +42,7 @@ for (const definition of definitions) {
     ...Object.fromEntries(['snapshot', 'metadata', 'turn'].map(name => [name, value => events.push([name, value])])),
     connected: value => { connected = value; }, error: error => errors.push(error.message),
   }, {
-    open: url => { assert.equal(url, '/api/chats/chat-one/events'); return source; },
+    open: url => { assert.equal(url, eventsPath); return source; },
     snapshot: signal => new Promise((resolve, reject) => reads.push({signal, resolve, reject, settled: false})),
     checkAuth: async () => { auth++; },
   });
@@ -97,7 +98,7 @@ const applicationCases = [
   const initialChats = clone(state.chats), factory = {exports: {}};
   const setter = key => value => { state[key] = typeof value === 'function' ? value(state[key]) : value; };
   vm.runInNewContext(handlersCode, {module: factory, exports: factory.exports, activeID: {current: 'chat-one'}, chatID: 'chat-one',
-    setChat: setter('chat'), setChats: setter('chats'), setConnected() {}, fail() {}, ...stateModule.exports});
+    setChat: setter('chat'), setChats: setter('chats'), setConnected() {}, fail() {}, restoreEditedQueueDraft() {}, ...stateModule.exports});
   factory.exports.handlers()[item.kind](clone(item.value));
   return {...item, chats: initialChats, expected: clone(state)};
 });
@@ -114,7 +115,7 @@ if (process.argv.includes('--browser')) {
   const requests = [], sockets = new Set();
   const server = http.createServer((request, response) => {
     if (request.url === '/client.js') { response.writeHead(200, {'Content-Type': 'text/javascript'}); response.end(browserCode); return; }
-    if (request.url === '/api/chats/chat-one/events') {
+    if (request.url === eventsPath) {
       requests.push(performance.now()); response.writeHead(200, {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store'});
       response.write(`event: snapshot\ndata: ${JSON.stringify(snapshot(requests.length))}\n\n`);
       if (requests.length === 1) setTimeout(() => response.end(), 25);

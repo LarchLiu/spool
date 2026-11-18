@@ -177,6 +177,20 @@ function reconcileTurns(previous: Chat, next: Chat, older = false): Chat {
     });
     if (turn.native_turn_id) aliases.set(turn.native_turn_id, turn.id);
   }
+  // A new server turn replaces the optimistic tail below. Keep its React key
+  // so acknowledgement does not remount the visible prompt or replay arrival.
+  const pending = previous.turns.at(-1);
+  const acknowledged =
+    !older && pending?.id.startsWith("pending-")
+      ? next.turns
+          .filter(
+            (turn) =>
+              !turn.id.startsWith("pending-") &&
+              !byID.has(turn.id) &&
+              !(turn.native_turn_id && aliases.has(turn.native_turn_id)),
+          )
+          .at(-1)
+      : undefined;
   const renamed = new Map<string, string>();
   let newServerTurn = false;
   for (const turn of next.turns) {
@@ -214,8 +228,18 @@ function reconcileTurns(previous: Chat, next: Chat, older = false): Chat {
       old ? { ...old.turn, id: turn.id } : undefined,
       turn,
     );
+    const renderKey = old
+      ? old.turn.render_key || old.turn.id
+      : turn === acknowledged
+        ? pending?.render_key || pending?.id
+        : undefined;
     byID.set(turn.id, {
-      turn: { ...merged, part_start: 0, input_end: inputs },
+      turn: {
+        ...merged,
+        ...(renderKey && renderKey !== turn.id && { render_key: renderKey }),
+        part_start: 0,
+        input_end: inputs,
+      },
       parts,
     });
   }

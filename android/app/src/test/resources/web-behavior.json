@@ -1358,7 +1358,8 @@
             "status": "completed",
             "part_start": 0,
             "input_end": 0,
-            "part_end": 1
+            "part_end": 1,
+            "render_key": "live-one"
           }
         ]
       },
@@ -2001,6 +2002,484 @@
         "part_end": 1
       },
       "turnRunning": true
+    },
+    {
+      "id": "pending-acknowledgement-keeps-view",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "First prompt"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "pending-one",
+            "user_id": "alice",
+            "status": "running",
+            "started_at": 30,
+            "backend": "codex",
+            "requested_model": "codex-model",
+            "reasoning_effort": "high",
+            "permission_mode": "ask",
+            "part_start": 0,
+            "input_end": 1,
+            "part_end": 1
+          }
+        ]
+      },
+      "next": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "First prompt"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "live-one",
+            "user_id": "alice",
+            "status": "running",
+            "started_at": 30,
+            "backend": "codex",
+            "requested_model": "codex-model",
+            "reasoning_effort": "high",
+            "permission_mode": "ask",
+            "part_start": 0,
+            "input_end": 1,
+            "part_end": 1,
+            "native_turn_id": "native-one"
+          }
+        ]
+      },
+      "expected": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "First prompt"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "live-one",
+            "user_id": "alice",
+            "status": "running",
+            "started_at": 30,
+            "backend": "codex",
+            "requested_model": "codex-model",
+            "reasoning_effort": "high",
+            "permission_mode": "ask",
+            "part_start": 0,
+            "input_end": 1,
+            "part_end": 1,
+            "native_turn_id": "native-one",
+            "render_key": "pending-one"
+          }
+        ]
+      },
+      "running": {
+        "id": "live-one",
+        "user_id": "alice",
+        "status": "running",
+        "started_at": 30,
+        "backend": "codex",
+        "requested_model": "codex-model",
+        "reasoning_effort": "high",
+        "permission_mode": "ask",
+        "part_start": 0,
+        "input_end": 1,
+        "part_end": 1,
+        "native_turn_id": "native-one",
+        "render_key": "pending-one"
+      },
+      "turnRunning": true
+    },
+    {
+      "id": "pending-acknowledgement-with-older-history",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "First prompt"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "pending-one",
+            "user_id": "alice",
+            "status": "running",
+            "started_at": 30,
+            "backend": "codex",
+            "requested_model": "codex-model",
+            "reasoning_effort": "high",
+            "permission_mode": "ask",
+            "part_start": 0,
+            "input_end": 1,
+            "part_end": 1
+          }
+        ]
+      },
+      "next": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Older answer",
+              "id": "part-one"
+            },
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "First prompt"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "older",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "live-one",
+            "user_id": "alice",
+            "status": "running",
+            "started_at": 30,
+            "backend": "codex",
+            "requested_model": "codex-model",
+            "reasoning_effort": "high",
+            "permission_mode": "ask",
+            "part_start": 1,
+            "input_end": 2,
+            "part_end": 2,
+            "native_turn_id": "native-one"
+          }
+        ]
+      },
+      "expected": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "assistant",
+              "kind": "text",
+              "text": "Older answer",
+              "id": "part-one"
+            },
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "First prompt"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "older",
+            "status": "completed",
+            "part_start": 0,
+            "input_end": 0,
+            "part_end": 1
+          },
+          {
+            "id": "live-one",
+            "user_id": "alice",
+            "status": "running",
+            "started_at": 30,
+            "backend": "codex",
+            "requested_model": "codex-model",
+            "reasoning_effort": "high",
+            "permission_mode": "ask",
+            "part_start": 1,
+            "input_end": 2,
+            "part_end": 2,
+            "native_turn_id": "native-one",
+            "render_key": "pending-one"
+          }
+        ]
+      },
+      "running": {
+        "id": "live-one",
+        "user_id": "alice",
+        "status": "running",
+        "started_at": 30,
+        "backend": "codex",
+        "requested_model": "codex-model",
+        "reasoning_effort": "high",
+        "permission_mode": "ask",
+        "part_start": 1,
+        "input_end": 2,
+        "part_end": 2,
+        "native_turn_id": "native-one",
+        "render_key": "pending-one"
+      },
+      "turnRunning": true
+    },
+    {
+      "id": "acknowledgement-replay-keeps-view",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "First prompt"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "live-one",
+            "user_id": "alice",
+            "status": "running",
+            "started_at": 30,
+            "backend": "codex",
+            "requested_model": "codex-model",
+            "reasoning_effort": "high",
+            "permission_mode": "ask",
+            "part_start": 0,
+            "input_end": 1,
+            "part_end": 1,
+            "native_turn_id": "native-one",
+            "render_key": "pending-one"
+          }
+        ]
+      },
+      "next": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "First prompt"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "live-one",
+            "user_id": "alice",
+            "status": "running",
+            "started_at": 30,
+            "backend": "codex",
+            "requested_model": "codex-model",
+            "reasoning_effort": "high",
+            "permission_mode": "ask",
+            "part_start": 0,
+            "input_end": 1,
+            "part_end": 1,
+            "native_turn_id": "native-one"
+          }
+        ]
+      },
+      "expected": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "First prompt"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "live-one",
+            "user_id": "alice",
+            "status": "running",
+            "started_at": 30,
+            "backend": "codex",
+            "requested_model": "codex-model",
+            "reasoning_effort": "high",
+            "permission_mode": "ask",
+            "part_start": 0,
+            "input_end": 1,
+            "part_end": 1,
+            "native_turn_id": "native-one",
+            "render_key": "pending-one"
+          }
+        ]
+      },
+      "running": {
+        "id": "live-one",
+        "user_id": "alice",
+        "status": "running",
+        "started_at": 30,
+        "backend": "codex",
+        "requested_model": "codex-model",
+        "reasoning_effort": "high",
+        "permission_mode": "ask",
+        "part_start": 0,
+        "input_end": 1,
+        "part_end": 1,
+        "native_turn_id": "native-one",
+        "render_key": "pending-one"
+      },
+      "turnRunning": true
+    },
+    {
+      "id": "native-alias-keeps-optimistic-view",
+      "previous": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "running",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "First prompt"
+            }
+          ]
+        },
+        "turns": [
+          {
+            "id": "live-one",
+            "user_id": "alice",
+            "status": "running",
+            "started_at": 30,
+            "backend": "codex",
+            "requested_model": "codex-model",
+            "reasoning_effort": "high",
+            "permission_mode": "ask",
+            "part_start": 0,
+            "input_end": 1,
+            "part_end": 1,
+            "native_turn_id": "native-one",
+            "render_key": "pending-one"
+          }
+        ]
+      },
+      "next": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "completed",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "First prompt"
+            }
+          ],
+          "source": "codex-native"
+        },
+        "turns": [
+          {
+            "id": "imported-one",
+            "user_id": "alice",
+            "status": "completed",
+            "started_at": 30,
+            "backend": "codex",
+            "requested_model": "codex-model",
+            "reasoning_effort": "high",
+            "permission_mode": "ask",
+            "part_start": 0,
+            "input_end": 1,
+            "part_end": 1,
+            "native_turn_id": "native-one"
+          }
+        ]
+      },
+      "expected": {
+        "id": "chat-one",
+        "project_id": "project-one",
+        "backend": "codex",
+        "status": "completed",
+        "updated_at": 20,
+        "transcript": {
+          "parts": [
+            {
+              "role": "user",
+              "kind": "text",
+              "text": "First prompt"
+            }
+          ],
+          "source": "codex-native"
+        },
+        "turns": [
+          {
+            "id": "imported-one",
+            "user_id": "alice",
+            "status": "completed",
+            "started_at": 30,
+            "backend": "codex",
+            "requested_model": "codex-model",
+            "reasoning_effort": "high",
+            "permission_mode": "ask",
+            "part_start": 0,
+            "input_end": 1,
+            "part_end": 1,
+            "native_turn_id": "native-one",
+            "render_key": "pending-one"
+          }
+        ]
+      },
+      "running": null,
+      "turnRunning": false
     },
     {
       "id": "steering-withdrawn",

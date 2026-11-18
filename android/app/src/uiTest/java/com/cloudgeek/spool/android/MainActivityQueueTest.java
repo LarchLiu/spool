@@ -29,8 +29,9 @@ public class MainActivityQueueTest {
     @org.robolectric.annotation.Implements(View.class)
     public static class ShadowQueueDrag extends org.robolectric.shadows.ShadowView {
         static Object local;
+        // ImageView subclasses can retain a plain ShadowView; this OS stub needs no instance.
         @org.robolectric.annotation.Implementation
-        protected boolean startDragAndDrop(android.content.ClipData data, View.DragShadowBuilder shadow, Object state, int flags) {
+        protected static boolean startDragAndDrop(android.content.ClipData data, View.DragShadowBuilder shadow, Object state, int flags) {
             local = state; return true;
         }
         @org.robolectric.annotation.Resetter public static void resetDrag() { local = null; }

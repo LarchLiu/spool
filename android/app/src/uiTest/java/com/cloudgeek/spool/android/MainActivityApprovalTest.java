@@ -126,6 +126,28 @@ public class MainActivityApprovalTest {
         }
     }
 
+    @Test public void retainedMessagesUseTheCurrentServerTurnForApprovalAfterNativeRenaming() throws Exception {
+        for (boolean recycler : new boolean[] {false, true}) {
+            try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, recycler)) {
+                show(h, request(), false);
+                View root = h.get("root");
+                TextView originalInput = text(root, "请用计算器检查一下结果。"); assertNotNull(originalInput);
+                JSONObject previous = h.get("chat");
+                previous.getJSONArray("turns").getJSONObject(0).put("native_turn_id", "native-one");
+                JSONObject nativeChat = NativeChatState.copy(previous);
+                nativeChat.getJSONArray("turns").getJSONObject(0).put("id", "history-one");
+                h.set("chat", NativeChatState.reconcile(previous, nativeChat)); h.call("renderChat");
+                for (int i = 0; i < 3; i++) {
+                    Shadows.shadowOf(Looper.getMainLooper()).idle(); NativeMarkwonHistoryTest.layout(root);
+                }
+                assertSame("Native renaming keeps the prompt mounted", originalInput, text(root, "请用计算器检查一下结果。"));
+                assertTrue(text(root, "仅允许一次").performClick()); h.io.run();
+                JSONObject body = new JSONObject(MainActivityGoalTest.ShadowClient.calls.get(0).get(2));
+                assertEquals("approval-one", body.getString("id")); assertEquals("history-one", body.getString("turn_id"));
+            }
+        }
+    }
+
     @Test public void dynamicSelectionOnlySubmitsWhenConfirmIsPressed() throws Exception {
         for (boolean dark : new boolean[] {false, true}) {
             try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {

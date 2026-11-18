@@ -147,17 +147,18 @@ public class MainActivitySubmissionTest {
     @Test public void directStopPreservesEditingDoesNotReviveFinishedTurnsAndReportsErrorsInline() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             respond("chat-one"); h.set("chat", server("chat-one", "running")); h.call("renderChat");
-            h.composer().input.setText("Next question");
             assertEquals("stop", kind(h.composer())); assertEquals(((NativeUi) h.get("ui")).dp(9), h.composer().send.getPaddingLeft());
             h.call("sendOrStop"); h.call("sendOrStop"); assertEquals(1, h.io.jobs.size());
+            h.composer().input.setText("Next question");
             assertTrue(h.composer().input.isEnabled()); h.io.run(); assertEquals("Next question", h.composer().input.getText().toString());
             JSONObject finished = h.get("chat");
             h.set("chat", NativeChatState.reconcile(finished, server("chat-one", "running"))); h.call("renderChat");
             assertEquals("send", kind(h.composer()));
             h.set("chat", server("chat-one", "running")); h.call("renderChat");
             MainActivityGoalTest.ShadowClient.responder = call -> envelope(409, NativeChatState.put(new JSONObject(), "error", "Stop failed"));
-            h.call("sendOrStop"); h.io.run();
-            assertEquals("Stop failed", h.<String>get("goalError")); assertEquals("stop", kind(h.composer())); assertTrue(h.composer().send.isEnabled());
+            h.composer().input.setText(""); h.call("sendOrStop"); h.composer().input.setText("Next question"); h.io.run();
+            assertEquals("Stop failed", h.<String>get("goalError")); assertEquals("send", kind(h.composer())); assertTrue(h.composer().send.isEnabled());
+            assertEquals("Next question", h.composer().input.getText().toString());
         }
     }
 
@@ -190,7 +191,7 @@ public class MainActivitySubmissionTest {
             assertEquals(1, MainActivityGoalTest.ShadowClient.calls.size());
             assertFalse(MainActivityGoalTest.ShadowClient.calls.get(0).get(1).endsWith("/stop"));
             assertEquals("Original draft", h.composer().input.getText().toString());
-            assertEquals(creationFails ? "send" : "stop", kind(h.composer())); assertFalse(h.<Boolean>get("busy"));
+            assertEquals("send", kind(h.composer())); assertFalse(h.<Boolean>get("busy"));
             assertEquals("Unavailable", h.<String>get("goalError"));
             if (creationFails) { assertEquals("", h.<String>get("chatID")); assertNull(h.get("chat")); }
             else { h.io.run(); assertEquals("send", kind(h.composer())); }

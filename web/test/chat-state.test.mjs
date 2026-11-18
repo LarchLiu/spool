@@ -294,13 +294,30 @@ test("a stale snapshot cannot erase an optimistic user message", () => {
   assert.equal(result.transcript.parts.at(-1).text, "Next");
 });
 
-test("server acknowledgement replaces rather than duplicates the pending turn", () => {
+test("server acknowledgement keeps the pending render key without duplicating the turn", () => {
   const pending = { ...running, id: "pending-1" };
   const result = reconcile(
     chat([pending], 9, helloTranscript),
     chat([running], 10, helloTranscript),
   );
-  assert.deepEqual(result.turns, [running]);
+  assert.deepEqual(result.turns, [{ ...running, render_key: pending.id }]);
+  const replay = reconcile(result, chat([running], 11, helloTranscript));
+  assert.equal(replay.turns[0].render_key, pending.id);
+  assert.equal(replay.turns[0].id, running.id);
+});
+
+test("only the newest new server turn adopts the optimistic render key", () => {
+  const pending = optimisticChat(null, "project-1", { ...running, id: "pending-1" }, [userPart]);
+  pending.id = "chat-1";
+  const older = { ...running, id: "older", status: "completed" };
+  const result = reconcile(pending, chat([
+    older,
+    { ...running, part_start: 2, input_end: 3, part_end: 4 },
+  ], 11, { parts: [...helloTranscript.parts, ...helloTranscript.parts] }));
+  assert.deepEqual(result.turns.map(turn => [turn.id, turn.render_key]), [
+    ["older", undefined], [running.id, "pending-1"],
+  ]);
+  assert.equal(pending.turns[0].render_key, undefined, "reconciliation does not mutate the pending turn");
 });
 
 test("shorter running snapshots do not remove streamed transcript text", () => {
@@ -398,7 +415,7 @@ test("chat creation preserves the first message until REST or SSE acknowledges i
     turns: [accepted],
     transcript: { parts: [userPart] },
   });
-  assert.deepEqual(acknowledged.turns, [accepted]);
+  assert.deepEqual(acknowledged.turns, [{ ...accepted, render_key: turn.id }]);
 });
 
 test("later sends append to the existing chat without changing its identity or history", () => {
@@ -634,6 +651,25 @@ test("native identity replaces a temporary live ID without duplicating its turn"
     ["one", "history-two"],
   );
   assert.equal(next.transcript.parts.length, 4);
+  assert.equal(next.turns[1].render_key, "live-two");
+  assert.equal(reconcile(next, { ...native, updated_at: 22 }).turns[1].render_key, "live-two");
+});
+
+test("the optimistic render key survives native renaming and backward pagination", () => {
+  const pending = optimisticChat(
+    nativeSnapshot(["one"]), "project-1", { ...running, id: "pending-two" }, [userPart],
+  );
+  const live = nativeSnapshot(["one", "live-two"], [0, 10], 21);
+  live.turns[1].native_turn_id = "native-two";
+  const acknowledged = reconcile(pending, live);
+  const native = nativeSnapshot(["one", "history-two"], [0, 10], 22);
+  native.turns[1].native_turn_id = "native-two";
+  const settled = reconcile(acknowledged, native);
+  const paged = prependHistory(settled, nativeSnapshot(["older"], [0], 22));
+  assert.equal(paged.turns.at(-1).id, "history-two");
+  assert.equal(paged.turns.at(-1).render_key, "pending-two");
+  const next = optimisticChat(paged, paged.project_id, { ...running, id: "pending-three" }, [userPart]);
+  assert.equal(next.turns.at(-1).render_key || next.turns.at(-1).id, "pending-three");
 });
 
 test("a full native snapshot preserves optimistic input until acknowledgement", () => {

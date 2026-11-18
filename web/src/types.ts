@@ -202,6 +202,8 @@ export type Transcript = {
 };
 export type Turn = {
   id: string;
+  // Client-only identity retained when optimistic/live IDs become server/native IDs.
+  render_key?: string;
   user_id?: string;
   actions?: TurnAction[];
   native_turn_id?: string;
