@@ -404,11 +404,26 @@ try {
         }
         return route.fulfill({ json: { repository: true, branch: `dev-${++listRevision}`, commit, files: removed ? [] : [
           { path: "src/example.ts", status: "MM", staged: true, unstaged: true, additions: 100, deletions: 100 },
+          { path: "added.txt", status: "AM", staged: true, unstaged: true, additions: 1, deletions: 0 },
+          { path: "deleted.txt", status: "D", staged: true, unstaged: false, additions: 0, deletions: 1 },
+          { path: "notes.txt", status: "??", untracked: true, unstaged: true, additions: 0, deletions: 0 },
         ], commits: [] } });
       });
       await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__git-panel?theme=${theme}`);
       await page.getByRole("tab", { name: "Git panel", exact: true }).click();
       const row = page.locator(".git-file-row").filter({ hasText: "example.ts" }); await row.first().waitFor();
+      const staged = page.locator(".git-file-group").filter({ has: page.locator(".git-group-toggle", { hasText: /^Staged/ }) });
+      const marker = (group, name) => group.locator(".git-file-row").filter({ hasText: name }).locator(".git-file-status");
+      const yellow = "rgb(188, 148, 0)";
+      const [green, red] = theme === "dark" ? ["rgb(7, 196, 128)", "rgb(255, 46, 63)"] : ["rgb(24, 164, 108)", "rgb(213, 44, 54)"];
+      assert.deepEqual(await marker(staged, "added.txt").evaluate(node => [...node.childNodes].map(child => [
+        child.textContent, getComputedStyle(child.nodeType === Node.ELEMENT_NODE ? child : node).color,
+      ])), [["A", green], ["M", yellow]]);
+      for (const [name, status, color] of [["deleted.txt", "D", red], ["example.ts", "M", yellow]]) {
+        assert.equal(await marker(staged, name).getByText(status, { exact: true }).evaluate(node => getComputedStyle(node).color), color);
+      }
+      const untracked = page.locator(".git-file-group").filter({ has: page.locator(".git-group-toggle", { hasText: /^Untracked/ }) });
+      assert.deepEqual(await marker(untracked, "notes.txt").evaluate(node => [node.textContent, getComputedStyle(node).color]), ["A", green]);
       const diffRequests = () => pollRequests.filter(url => url.includes("view=diff"));
       const poll = async () => {
         const response = page.waitForResponse(response => new URL(response.url()).searchParams.get("view") === "changes");

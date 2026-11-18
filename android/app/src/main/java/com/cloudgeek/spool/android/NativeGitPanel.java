@@ -2,6 +2,9 @@ package com.cloudgeek.spool.android;
 
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.HorizontalScrollView;
@@ -567,6 +570,7 @@ final class NativeGitPanel extends LinearLayout {
         }
     }
     private static final class NativeGitFileRow extends NativePanelAction {
+        private static final int MODIFIED_COLOR = 0xffbc9400;
         final String stats; final Paint ink = new Paint(Paint.ANTI_ALIAS_FLAG); final NativeDiffPalette palette;
         final int addWidth;
         final String additions, deletions;
@@ -574,11 +578,27 @@ final class NativeGitPanel extends LinearLayout {
             super(ui, "", click); palette = new NativeDiffPalette(ui.dark);
             String path = file.optString("path"); int slash = path.lastIndexOf('/');
             String name = slash < 0 ? path : path.substring(slash + 1), directory = slash < 0 ? "" : path.substring(0, slash);
-            setText((file.optBoolean("untracked") ? "+" : file.optString("status")) + "  " + name + "  " + directory);
-            setContentDescription(path + " · " + file.optString("status"));
+            String status = file.optString("status");
+            boolean untracked = file.optBoolean("untracked");
+            String marker = untracked ? "A" : status;
+            SpannableString label = new SpannableString(marker + "  " + name + "  " + directory);
+            for (int i = 0; i < marker.length(); i++) {
+                boolean indexStatus = side.equals("staged") && i == 0;
+                int color = switch (marker.charAt(i)) {
+                    case 'A' -> indexStatus || untracked ? palette.added : ui.text;
+                    case 'D' -> indexStatus ? palette.deleted : ui.text;
+                    case 'M' -> side.isEmpty() ? ui.text : MODIFIED_COLOR;
+                    default -> ui.text;
+                };
+                if (color != ui.text) {
+                    label.setSpan(new ForegroundColorSpan(color), i, i + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+            }
+            setText(label);
+            setContentDescription(path + " · " + status);
             additions = "+" + file.optInt(side.isEmpty() ? "additions" : side + "_additions", file.optInt("additions")); deletions = "−" + file.optInt(side.isEmpty() ? "deletions" : side + "_deletions", file.optInt("deletions"));
             ink.setTextSize(10 * getResources().getDisplayMetrics().scaledDensity); addWidth = Math.round(ink.measureText(additions));
-            stats = file.optBoolean("untracked") ? "" : file.optBoolean("binary") ? ui.t("Binary file") : additions + "  " + deletions;
+            stats = untracked ? "" : file.optBoolean("binary") ? ui.t("Binary file") : additions + "  " + deletions;
             setPadding(ui.dp(12), 0, Math.round(ink.measureText(stats)) + ui.dp(18), 0);
         }
         @Override protected void onDraw(Canvas canvas) {

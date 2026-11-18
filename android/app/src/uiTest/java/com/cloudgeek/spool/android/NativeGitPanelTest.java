@@ -4,6 +4,8 @@ import static org.junit.Assert.*;
 import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -82,6 +84,44 @@ public class NativeGitPanelTest {
     }
     private static int historyRows(NativeGitPanel panel) {
         int count = 0; for (int i = 0; i < panel.content.getChildCount(); i++) if (panel.content.getChildAt(i) instanceof NativeGitHistoryRow) count++; return count;
+    }
+    @Test public void changeRowsColorStagedStatusesAndUntrackedMarkers() throws Exception {
+        for (boolean dark : new boolean[]{false, true}) try (ActivityController<Activity> activity = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(activity.get(), dark, "en");
+            NativeFileModel model = new NativeFileModel("p", "c");
+            model.workspace = workspace("/repo/main");
+            List<NativeFilesTest.Pending> requests = new ArrayList<>();
+            NativeGitPanel panel = new NativeGitPanel(ui, model, (path, done) -> requests.add(new NativeFilesTest.Pending(path, done)), value -> {});
+            activity.get().setContentView(panel);
+            panel.activate(true);
+            JSONObject listing = changes();
+            JSONArray files = listing.getJSONArray("files");
+            files.getJSONObject(0).put("staged", true);
+            files.put(new JSONObject().put("path", "added.txt").put("status", "AM").put("staged", true).put("unstaged", true));
+            files.put(new JSONObject().put("path", "deleted.txt").put("status", "D").put("staged", true));
+            files.put(new JSONObject().put("path", "notes.txt").put("status", "??").put("untracked", true).put("unstaged", true));
+            take(requests, "view=changes").result.done(listing, null);
+
+            int yellow = 0xffbc9400;
+            NativeDiffPalette palette = new NativeDiffPalette(dark);
+            assertStatusColors(panel.content, "src/file.txt · M", "M", yellow);
+            assertStatusColors(panel.content, "added.txt · AM", "AM", palette.added, yellow);
+            assertStatusColors(panel.content, "deleted.txt · D", "D", palette.deleted);
+            assertStatusColors(panel.content, "notes.txt · ??", "A", palette.added);
+            panel.activate(false);
+        }
+    }
+    private static void assertStatusColors(View root, String description, String status, int... colors) {
+        TextView row = (TextView) action(root, description);
+        assertNotNull(row);
+        Spanned label = (Spanned) row.getText();
+        assertEquals(status, label.subSequence(0, status.length()).toString());
+        for (int i = 0; i < colors.length; i++) {
+            ForegroundColorSpan[] spans = label.getSpans(i, i + 1, ForegroundColorSpan.class);
+            assertEquals(1, spans.length);
+            assertEquals(colors[i], spans[0].getForegroundColor());
+        }
+        assertEquals(0, label.getSpans(status.length(), label.length(), ForegroundColorSpan.class).length);
     }
     @Test public void commitDetailsShowBadgesAuthorFullTimeAndMessageAndRefreshTheirState() throws Exception {
         RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");

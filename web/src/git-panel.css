@@ -114,21 +114,29 @@
 }
 .git-summary b,
 .git-file-stats b {
-  color: #18a46c;
   font-weight: 400;
 }
 .git-summary i,
 .git-file-stats i {
-  color: #d52c36;
   font-style: normal;
 }
-:root[data-theme="dark"] .git-summary b,
-:root[data-theme="dark"] .git-file-stats b {
-  color: #07c480;
+.git-panel {
+  --git-added: #18a46c;
+  --git-deleted: #d52c36;
 }
-:root[data-theme="dark"] .git-summary i,
-:root[data-theme="dark"] .git-file-stats i {
-  color: #ff2e3f;
+:root[data-theme="dark"] .git-panel {
+  --git-added: #07c480;
+  --git-deleted: #ff2e3f;
+}
+.git-summary b,
+.git-file-stats b,
+.git-file-status [data-index-status="A"] {
+  color: var(--git-added);
+}
+.git-summary i,
+.git-file-stats i,
+.git-file-status [data-index-status="D"] {
+  color: var(--git-deleted);
 }
 .git-group-toggle {
   width: 100%;
@@ -399,7 +407,7 @@
     monospace;
 }
 .git-file-status.untracked {
-  color: #18a46c;
+  color: var(--git-added);
 }
 .git-file-name {
   min-width: 0;

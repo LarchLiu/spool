@@ -553,7 +553,18 @@ export function GitPanel({
                 <span
                   className={`git-file-status ${file.untracked ? "untracked" : ""}`}
                 >
-                  {file.untracked ? "+" : file.status}
+                  {file.untracked ? (
+                    "A"
+                  ) : groupSide === "staged" ? (
+                    <>
+                      <span data-index-status={file.status[0]}>
+                        {file.status[0]}
+                      </span>
+                      {file.status.slice(1)}
+                    </>
+                  ) : (
+                    file.status
+                  )}
                 </span>
                 <span className="git-file-name">
                   {file.path.split("/").pop()}
