@@ -56,9 +56,11 @@ func (r *CLIRunner) PermissionModes(ctx context.Context, backend chatmodel.Backe
 	defer func() { cancel(); <-p.done }()
 	catalog := chatmodel.PermissionCatalog{Backend: backend, Default: chatmodel.DefaultPermissionMode(backend)}
 	if backend == chatmodel.BackendClaude {
-		if _, err = p.claudeControl(ctx, map[string]any{"subtype": "initialize", "hooks": nil}); err != nil {
+		var initialization map[string]any
+		if initialization, err = p.claudeControl(ctx, map[string]any{"subtype": "initialize", "hooks": nil}); err != nil {
 			return catalog, fmt.Errorf("initialize Claude permission discovery: %w", err)
 		}
+		catalog.Commands = p.discoverClaudeMenuCommands(ctx, initialization)
 		for _, mode := range []string{"manual", "auto", "acceptEdits", "plan", "dontAsk", "bypassPermissions"} {
 			response, e := p.claudeControl(ctx, map[string]any{"subtype": "set_permission_mode", "mode": mode})
 			option := chatmodel.PermissionMode{ID: mode, Available: e == nil}
@@ -75,8 +77,16 @@ func (r *CLIRunner) PermissionModes(ctx context.Context, backend chatmodel.Backe
 			catalog.Modes = append(catalog.Modes, option)
 		}
 	} else {
+		catalog.Commands = codexCommands()
 		if err = p.initializeCodex(ctx); err != nil {
 			return catalog, fmt.Errorf("initialize Codex permission discovery: %w", err)
+		}
+		skills, e := p.codexSkills(ctx, directory)
+		if e != nil {
+			return catalog, e
+		}
+		for _, skill := range skills {
+			catalog.Commands = append(catalog.Commands, skill.command)
 		}
 		config, e := p.codexRPC(ctx, "config/read", map[string]any{"includeLayers": false, "cwd": directory})
 		if e != nil {

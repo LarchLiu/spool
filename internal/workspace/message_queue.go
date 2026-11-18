@@ -96,6 +96,9 @@ func (a *App) queueWhileRunning(chat chatmodel.Session, input messageInput, opti
 	if a.activeTurns[chat.ID] == nil {
 		return false, nil
 	}
+	if chatmodel.ParseSlashCommand(input.Message) != nil {
+		return true, fmt.Errorf("Wait for the running response before using agent commands")
+	}
 	a.queueMu.Lock()
 	defer a.queueMu.Unlock()
 	if len(a.queues[chat.ID]) >= maxQueuedMessages {
@@ -408,6 +411,9 @@ func (a *App) turnRunning(chatID string) bool {
 func (a *App) deliverWhileRunning(ctx context.Context, chat chatmodel.Session, input messageInput, options chatmodel.CodexOptions) (bool, error) {
 	if err := validateMessage(input.Message, len(input.files)); err != nil {
 		return true, err
+	}
+	if chatmodel.ParseSlashCommand(input.Message) != nil && a.turnRunning(chat.ID) {
+		return true, fmt.Errorf("Wait for the running response before using agent commands")
 	}
 	front := false
 	if input.Delivery == "steer" && a.turnRunning(chat.ID) {

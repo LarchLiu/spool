@@ -55,6 +55,9 @@ func (r *CLIRunner) Steer(ctx context.Context, request SteerRequest) error {
 	if err := ctx.Err(); err != nil {
 		return contextError(ctx)
 	}
+	if chatmodel.ParseSlashCommand(request.Prompt) != nil {
+		return fmt.Errorf("Wait for the running response before using agent commands")
+	}
 	if (strings.TrimSpace(request.Prompt) == "" && len(request.Attachments) == 0) || len(request.Prompt) > chatmodel.MaxMessageBytes {
 		return fmt.Errorf("message must be nonempty and at most 128 KB")
 	}

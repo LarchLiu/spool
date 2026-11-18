@@ -43,7 +43,7 @@ func DiscoverClaudeModels(ctx context.Context, binary string) (chatmodel.CodexCa
 		response, _ := v["response"].(map[string]any)
 		body, _ := response["response"].(map[string]any)
 		models, _ := body["models"].([]any)
-		catalog := chatmodel.CodexCatalog{Models: []chatmodel.CodexModel{}}
+		catalog := chatmodel.CodexCatalog{Models: []chatmodel.CodexModel{}, Commands: p.discoverClaudeMenuCommands(ctx, body), CommandSource: "native"}
 		for _, item := range models {
 			model, _ := item.(map[string]any)
 			id := stringValue(model["value"])

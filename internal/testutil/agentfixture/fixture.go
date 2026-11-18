@@ -136,6 +136,27 @@ func Run(t *testing.T) {
 		params, _ := value["params"].(map[string]any)
 		if codex {
 			switch method {
+			case "thread/settings/update":
+				send(map[string]any{"id": value["id"], "result": map[string]any{"threadSettings": params}})
+			case "thread/compact/start":
+				// A completion can precede the acknowledgement on the transport.
+				send(map[string]any{"method": "thread/compacted", "params": map[string]any{"threadId": thread}})
+				send(map[string]any{"id": value["id"], "result": map[string]any{}})
+			case "skills/list":
+				var skills []any
+				if data, err := os.ReadFile("fixture-skills.json"); err == nil {
+					_ = json.Unmarshal(data, &skills)
+				}
+				cwds, _ := params["cwds"].([]any)
+				entries := []any{}
+				for _, cwd := range cwds {
+					entries = append(entries, map[string]any{"cwd": cwd, "skills": skills, "errors": []any{}})
+				}
+				send(map[string]any{"id": value["id"], "result": map[string]any{"data": entries}})
+			case "hooks/list", "plugin/list", "app/list", "mcpServerStatus/list", "account/rateLimits/read", "thread/memory/read", "thread/backgroundTerminals/list", "thread/backgroundTerminals/clean":
+				send(map[string]any{"id": value["id"], "result": map[string]any{"data": []any{}}})
+			case "thread/fork":
+				send(map[string]any{"id": value["id"], "result": map[string]any{"thread": map[string]any{"id": "forked-native-session"}}})
 			case "initialize":
 				send(map[string]any{"id": value["id"], "result": map[string]any{}})
 			case "config/read":
@@ -279,15 +300,25 @@ func Run(t *testing.T) {
 					goal = nil
 				}
 				send(map[string]any{"id": value["id"], "result": map[string]any{"goal": goal}})
-			case "turn/start":
+			case "turn/start", "review/start":
 				// Handled below.
 			default:
 				continue
 			}
-			if method != "turn/start" {
+			if method != "turn/start" && method != "review/start" {
 				continue
 			}
 		} else if method == "control_request" {
+			if NestedString(value, "request", "subtype") == "get_skills_dialog" {
+				if _, err := os.Stat("unsupported-skills-dialog"); err == nil {
+					send(map[string]any{"type": "control_response", "response": map[string]any{"subtype": "error", "request_id": value["request_id"], "error": "unsupported control request"}})
+				} else {
+					send(map[string]any{"type": "control_response", "response": map[string]any{"subtype": "success", "request_id": value["request_id"], "response": map[string]any{"skills": []any{
+						map[string]any{"name": "project:check", "display_name": "project:check", "description": "Project check", "source": "project", "state": "on", "advertised": true, "handles": map[string]any{}},
+					}}}})
+				}
+				continue
+			}
 			if NestedString(value, "request", "subtype") == "set_permission_mode" {
 				mode := NestedString(value, "request", "mode")
 				if _, err := os.Stat("reject-auto"); err == nil && mode == "auto" {
@@ -320,8 +351,18 @@ func Run(t *testing.T) {
 			}
 			body := map[string]any{"models": []any{map[string]any{"value": "test-claude", "displayName": "Test Claude", "supportedEffortLevels": []string{"low", "high"}}}}
 			if NestedString(value, "request", "subtype") == "initialize" {
+				body["commands"] = []any{
+					map[string]any{"name": "code-review", "description": "Review code changes", "argumentHint": "[target]", "aliases": []any{"review"}, "builtin": true},
+					map[string]any{"name": "loop", "description": "Run a prompt on a recurring interval", "argumentHint": "[interval] [prompt]", "builtin": true},
+					map[string]any{"name": "deep-research", "description": "Research a topic and write a cited report", "argumentHint": "[topic]", "builtin": true},
+					map[string]any{"name": "compact", "description": "Compact native context", "builtin": true},
+					map[string]any{"name": "context", "description": "Context usage", "builtin": true},
+					map[string]any{"name": "model", "description": "Select model", "builtin": true},
+					map[string]any{"name": "simplify", "description": "Simplify changes", "argumentHint": "[target]", "aliases": []any{"tidy"}, "builtin": true},
+					map[string]any{"name": "project:check", "description": "Project check", "builtin": false},
+				}
 				if _, err := os.Stat("unsupported-goal"); os.IsNotExist(err) {
-					body["commands"] = []any{map[string]any{"name": "goal", "builtin": true}}
+					body["commands"] = append(body["commands"].([]any), map[string]any{"name": "goal", "builtin": true})
 				}
 			}
 			if NestedString(value, "request", "subtype") == "get_settings" {
@@ -329,7 +370,7 @@ func Run(t *testing.T) {
 				if claudeModel == "clamp-effort" {
 					effort = "low"
 				}
-				body = map[string]any{"applied": map[string]any{"model": claudeModel, "effort": effort}}
+				body = map[string]any{"applied": map[string]any{"model": claudeModel, "effort": effort, "permissionMode": claudeMode}}
 			}
 			send(map[string]any{"type": "control_response", "response": map[string]any{"subtype": "success", "request_id": value["request_id"], "response": body}})
 			continue
@@ -361,6 +402,13 @@ func Run(t *testing.T) {
 			send(map[string]any{"type": "system", "subtype": "init", "session_id": thread, "model": claudeModel})
 		}
 		if !codex {
+			if slash := chatmodel.ParseSlashCommand(prompt); slash != nil && (slash.Name == "context" || slash.Name == "compact" || slash.Name == "model") {
+				if slash.Name == "model" && slash.Arguments != "" {
+					claudeModel = slash.Arguments
+				}
+				send(map[string]any{"type": "result", "subtype": "success", "session_id": thread, "result": "Native command: " + slash.Name})
+				continue
+			}
 			command, _ := chatmodel.ParseGoalCommand(prompt)
 			if command != nil {
 				if command.Action == "set" {

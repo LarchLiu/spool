@@ -102,7 +102,8 @@ func (r *CLIRunner) CodexModels(ctx context.Context) (chatmodel.CodexCatalog, er
 	}
 	catalog := chatmodel.CodexCatalog{
 		DefaultModel: nestedString(config, "config", "model"), DefaultEffort: nestedString(config, "config", "model_reasoning_effort"),
-		Models: []chatmodel.CodexModel{},
+		Models:   []chatmodel.CodexModel{},
+		Commands: codexCommands(), CommandSource: "protocol",
 	}
 	cursor := ""
 	seen := make(map[string]bool)

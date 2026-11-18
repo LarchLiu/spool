@@ -2499,36 +2499,82 @@ a.attachment-open {
   z-index: 12;
   bottom: calc(100% + 8px);
   left: 0;
-  width: min(390px, 100%);
+  width: 100%;
   padding: 5px;
+  max-height: min(320px, 50dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--border-strong);
-  border-radius: 12px;
+  border-radius: 20px;
   background: var(--elevated);
-  box-shadow: 0 8px 32px var(--shadow);
+  box-shadow: 0 6px 24px var(--shadow);
+}
+.slash-command-group {
+  padding: 12px 7px 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.slash-command-menu .slash-command-source {
+  flex: 0 1 auto;
+  max-width: 30%;
+  font-size: 12px;
 }
 .slash-command-menu button {
   display: flex;
   width: 100%;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
+  gap: 9px;
+  min-height: 28px;
+  padding: 5px 8px;
   text-align: left;
   border: 0;
-  border-radius: 8px;
-  background: var(--hover);
+  border-radius: 16px;
+  background: transparent;
   color: var(--text);
 }
-.slash-command-menu span {
-  display: grid;
-  gap: 4px;
+.slash-command-menu button[aria-selected="true"] {
+  background: color-mix(in srgb, var(--text) 9%, var(--elevated));
 }
-.slash-command-menu small,
-.slash-command-menu kbd {
+.slash-command-menu svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.slash-command-menu .slash-command-content {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.slash-command-menu strong {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
+  font-size: 13px;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slash-command-menu small {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slash-command-empty {
+  padding: 8px 12px;
+  font-size: 12px;
   color: var(--subtle);
-  font-size: 11px;
 }
-.slash-command-menu kbd {
-  margin-left: auto;
+.slash-command-menu small {
+  color: var(--subtle);
+  font-size: 13px;
 }
 .goal-command-hint {
   padding: 0 19px 8px;

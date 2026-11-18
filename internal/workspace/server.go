@@ -715,7 +715,13 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 			apiError(w, 400, err.Error())
 			return
 		}
-		fork, err := a.forkChat(chat.ID, input.Backend, options, id.User.ID)
+		var fork chatmodel.Session
+		var err error
+		if input.Backend == chat.Backend {
+			fork, err = a.forkNativeChat(r.Context(), chat, options, id.User.ID)
+		} else {
+			fork, err = a.forkChat(chat.ID, input.Backend, options, id.User.ID)
+		}
 		if err != nil {
 			apiError(w, 409, err.Error())
 			return
@@ -740,6 +746,10 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 	}
 	if len(parts) == 2 && parts[1] == "goal" && r.Method == "POST" {
 		a.goalCommandResponse(w, r, chat)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "commands" && r.Method == "POST" {
+		a.agentCommandResponse(w, r, chat)
 		return
 	}
 	if len(parts) != 2 || parts[1] != "messages" || r.Method != "POST" {

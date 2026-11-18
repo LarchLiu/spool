@@ -58,6 +58,7 @@ type AgentResult struct {
 	SessionID       string
 	Model           string
 	ReasoningEffort string
+	PermissionMode  string
 	Text            string
 	Activities      []string
 	Parts           []chatmodel.Part

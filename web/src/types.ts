@@ -61,6 +61,19 @@ export type Catalog = {
   models: Model[];
   defaultModel: string;
   defaultEffort: string;
+  commands?: AgentCommand[];
+  commandSource?: "native" | "protocol";
+};
+export type AgentCommand = {
+  name: string;
+  displayName?: string;
+  description: string;
+  argumentHint?: string;
+  aliases?: string[];
+  builtin: boolean;
+  kind: "control" | "prompt" | "client" | "skill";
+  scope?: string;
+  pluginId?: string;
 };
 export type Agent = {
   backend: Backend;
@@ -88,6 +101,7 @@ export type PermissionCatalog = {
   modes: { id: string; available: boolean; reason?: string }[];
   approval_policy?: string;
   sandbox?: string;
+  commands?: AgentCommand[];
 };
 export type ApprovalRequest = {
   id: string;

@@ -108,6 +108,7 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 			return result, err, false
 		}
 		commands, _ := response["commands"].([]any)
+		p.claudeCommands = claudeCommands(response)
 		for _, entry := range commands {
 			command, _ := entry.(map[string]any)
 			if command["name"] == "goal" && command["builtin"] == true {
@@ -118,6 +119,22 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 	}
 	if command, _ := chatmodel.ParseGoalCommand(request.Prompt); command != nil && !p.claudeGoalSupported {
 		return result, fmt.Errorf("Installed Claude Code does not advertise native /goal support; update the CLI or check its policy (no prompt fallback)"), true
+	}
+	slash := chatmodel.ParseSlashCommand(request.Prompt)
+	if slash != nil {
+		command, supported := chatmodel.FindSlashCommand(p.claudeCommands, slash.Name)
+		if !supported {
+			return result, fmt.Errorf("Claude Code does not advertise /%s in this session (no prompt fallback)", slash.Name), true
+		}
+		if command.Kind == "client" {
+			return result, fmt.Errorf("Use the Spool session command endpoint for /%s", slash.Name), true
+		}
+		if command.Name == "plan" {
+			request.PermissionMode = "plan"
+			if slash.Arguments != "" {
+				request.Prompt, slash = slash.Arguments, nil
+			}
+		}
 	}
 	if p.sessionID == "" {
 		p.sessionID = request.NativeSessionID
@@ -171,6 +188,11 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 	}
 	result.Model = p.model
 	result.ReasoningEffort = p.effort
+	result.PermissionMode = p.permissionMode
+	if slash != nil && slash.Name == "plan" {
+		result.Text = "Plan mode enabled."
+		return result, nil, true
+	}
 	content, err := claudeUserContent(request)
 	if err != nil {
 		return result, err, false
@@ -544,8 +566,29 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				currentMessage, messageStarted, streamedThinking = "", false, ""
 				continue
 			}
-			if strings.TrimSpace(result.Text) == "" {
+			if strings.TrimSpace(result.Text) == "" && slash == nil {
 				return result, fmt.Errorf("Claude Code finished without an assistant message"), true
+			}
+			if slash != nil {
+				// Local commands may change native settings without a model event.
+				// Read them back so the next Spool request does not undo the command.
+				settings, err := p.claudeControl(ctx, map[string]any{"subtype": "get_settings"})
+				if err != nil {
+					return result, fmt.Errorf("confirm Claude command settings: %w", err), false
+				}
+				applied, _ := settings["applied"].(map[string]any)
+				if model, ok := applied["model"].(string); ok && model != "" {
+					p.model, p.selectedModel, result.Model = model, model, model
+				}
+				if effort, ok := applied["effort"].(string); ok {
+					p.effort, result.ReasoningEffort = effort, effort
+				}
+				if mode, ok := applied["permissionMode"].(string); ok && chatmodel.ValidatePermissionMode(chatmodel.BackendClaude, mode) == nil {
+					p.permissionMode, result.PermissionMode = mode, mode
+				}
+				if result.Text == "" {
+					result.Text = "Command completed."
+				}
 			}
 			// Keep stdin open: another user message starts the next turn in this CLI.
 			return result, nil, true

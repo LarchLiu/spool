@@ -209,6 +209,16 @@ func (r *CLIRunner) Run(ctx context.Context, request AgentRequest, emit func(Age
 			request.Prompt += " " + command.Objective
 		}
 	}
+	if slash := chatmodel.ParseSlashCommand(request.Prompt); slash != nil {
+		if len(request.Attachments) > 0 {
+			return AgentResult{}, fmt.Errorf("Agent commands do not accept attachments")
+		}
+		request.Files = nil
+		request.Prompt = "/" + slash.Name
+		if slash.Arguments != "" {
+			request.Prompt += " " + slash.Arguments
+		}
+	}
 	if (len(request.Prompt) == 0 && len(request.Attachments) == 0) || len(request.Prompt) > chatmodel.MaxMessageBytes {
 		return AgentResult{}, fmt.Errorf("message must be nonempty and at most 128 KB")
 	}
@@ -256,28 +266,8 @@ func (r *CLIRunner) Run(ctx context.Context, request AgentRequest, emit func(Age
 	}
 	reusable := false
 	defer func() { r.release(request.ChatID, chat, reusable) }()
-	if chat.process == nil {
-		process, err := startAgentProcess(chat.ctx, request)
-		if err != nil {
-			return AgentResult{}, err
-		}
-		r.mu.Lock()
-		chat.process = process
-		r.processes.Add(1)
-		r.mu.Unlock()
-		go func() {
-			defer r.processes.Done()
-			<-process.done
-			r.mu.Lock()
-			defer r.mu.Unlock()
-			if r.chats[request.ChatID] == chat && !chat.busy {
-				if chat.timer != nil {
-					chat.timer.Stop()
-				}
-				delete(r.chats, request.ChatID)
-				chat.cancel()
-			}
-		}()
+	if err := r.startReservedProcess(chat, request); err != nil {
+		return AgentResult{}, err
 	}
 	// Request cancellation still stops a turn; it must not tie an idle process
 	// to the HTTP request after that request has completed successfully.
@@ -293,6 +283,34 @@ func (r *CLIRunner) Run(ctx context.Context, request AgentRequest, emit func(Age
 		return result, contextError(ctx)
 	}
 	return result, err
+}
+
+func (r *CLIRunner) startReservedProcess(chat *chatProcess, request AgentRequest) error {
+	if chat.process != nil {
+		return nil
+	}
+	process, err := startAgentProcess(chat.ctx, request)
+	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	chat.process = process
+	r.processes.Add(1)
+	r.mu.Unlock()
+	go func() {
+		defer r.processes.Done()
+		<-process.done
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if r.chats[request.ChatID] == chat && !chat.busy {
+			if chat.timer != nil {
+				chat.timer.Stop()
+			}
+			delete(r.chats, request.ChatID)
+			chat.cancel()
+		}
+	}()
+	return nil
 }
 
 func (r *CLIRunner) Close() error {
@@ -330,6 +348,7 @@ type agentProcess struct {
 	waitErr             error
 	initialized         bool
 	claudeGoalSupported bool
+	claudeCommands      []chatmodel.SlashCommand
 	sessionID           string
 	model               string
 	selectedModel       string

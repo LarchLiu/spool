@@ -15,6 +15,7 @@ func (p *agentProcess) codexRPC(ctx context.Context, method string, params map[s
 	defer cancel()
 	p.nextID++
 	id := p.nextID
+	startsWork := method == "turn/start" || method == "review/start" || method == "thread/compact/start"
 	if err := p.write(map[string]any{"id": id, "method": method, "params": params}); err != nil {
 		return nil, err
 	}
@@ -34,7 +35,7 @@ func (p *agentProcess) codexRPC(ctx context.Context, method string, params map[s
 			return result, nil
 		}
 		if value["id"] != nil && value["method"] != nil {
-			if method == "turn/start" {
+			if startsWork {
 				if len(p.queued) >= 1024 {
 					return nil, fmt.Errorf("too many Codex requests before turn acknowledgement")
 				}
@@ -42,7 +43,7 @@ func (p *agentProcess) codexRPC(ctx context.Context, method string, params map[s
 			} else if err := p.denyCodexRequest(value); err != nil {
 				return nil, err
 			}
-		} else if method == "turn/start" && value["method"] != nil {
+		} else if startsWork && value["method"] != nil {
 			if len(p.queued) >= 1024 {
 				return nil, fmt.Errorf("too many Codex events before turn acknowledgement")
 			}
@@ -175,7 +176,79 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 		// initial user turn, not an application-maintained execution loop.
 		request.Prompt = command.Objective
 	}
+	var reviewTarget map[string]any
+	var selectedSkill *codexSkill
+	if slash := chatmodel.ParseSlashCommand(request.Prompt); command == nil && slash != nil {
+		command, supported := chatmodel.FindSlashCommand(codexCommands(), slash.Name)
+		if !supported {
+			skills, err := p.codexSkills(ctx, request.WorkingDirectory)
+			if err != nil {
+				return result, err, false
+			}
+			for _, skill := range skills {
+				if skill.command.Name == slash.Name {
+					selectedSkill = &skill
+					break
+				}
+			}
+			if selectedSkill == nil {
+				return result, fmt.Errorf("Codex /%s is not available in this project (no prompt fallback)", slash.Name), true
+			}
+		}
+		settings := map[string]any{"threadId": p.sessionID}
+		if command.Name == "review" {
+			settings["approvalsReviewer"] = reviewer
+		}
+		if request.Model != "" && request.Model != p.model {
+			settings["model"] = request.Model
+		}
+		if request.ReasoningEffort != "" && request.ReasoningEffort != p.effort {
+			settings["effort"] = request.ReasoningEffort
+		}
+		if len(settings) > 1 {
+			if _, err := p.codexRPC(ctx, "thread/settings/update", settings); err != nil {
+				return result, err, false
+			}
+			if request.Model != "" {
+				p.model = request.Model
+			}
+			if request.ReasoningEffort != "" {
+				p.effort = request.ReasoningEffort
+			}
+		}
+		p.permissionMode = request.PermissionMode
+		if p.permissionMode == "" {
+			p.permissionMode = chatmodel.DefaultPermissionMode(request.Backend)
+		}
+		if selectedSkill != nil {
+			request.Prompt = slash.Arguments
+			if request.Prompt == "" {
+				request.Prompt = "$" + selectedSkill.name
+			}
+		} else if command.Name == "review" {
+			reviewTarget = map[string]any{"type": "uncommittedChanges"}
+			if slash.Arguments != "" {
+				reviewTarget = map[string]any{"type": "baseBranch", "branch": slash.Arguments}
+			}
+		} else {
+			if err := p.codexPlan(ctx, request); err != nil {
+				return result, fmt.Errorf("Native Codex /%s failed (no prompt fallback): %w", slash.Name, err), false
+			}
+			result.Model, result.ReasoningEffort, result.PermissionMode = p.model, p.effort, p.permissionMode
+			if slash.Arguments == "" {
+				result.Text = "Plan mode enabled."
+				if err := emit(AgentEvent{Type: "delta", Text: result.Text}); err != nil {
+					return result, err, false
+				}
+				return result, nil, true
+			}
+			request.Prompt = slash.Arguments
+		}
+	}
 	input := codexUserInput(request)
+	if selectedSkill != nil {
+		input = append(input, map[string]any{"type": "skill", "name": selectedSkill.name, "path": selectedSkill.path})
+	}
 	params := map[string]any{
 		"threadId": p.sessionID, "cwd": request.WorkingDirectory,
 		"approvalPolicy": "on-request", "approvalsReviewer": reviewer,
@@ -188,7 +261,12 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 	if request.ReasoningEffort != "" {
 		params["effort"] = request.ReasoningEffort
 	}
-	response, err := p.codexRPC(ctx, "turn/start", params)
+	method := "turn/start"
+	if reviewTarget != nil {
+		method = "review/start"
+		params = map[string]any{"threadId": p.sessionID, "target": reviewTarget, "delivery": "inline"}
+	}
+	response, err := p.codexRPC(ctx, method, params)
 	if err != nil {
 		return result, err, false
 	}

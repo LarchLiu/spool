@@ -96,5 +96,5 @@ func (a *App) goalCommandResponse(w http.ResponseWriter, r *http.Request, chat c
 
 func (a *App) nativeCommandRunning(chatID string) bool {
 	control := a.activeTurns[chatID]
-	return control != nil && (strings.HasPrefix(control.id, "goal:") || strings.HasPrefix(control.id, "archive:") || strings.HasPrefix(control.id, "delete:"))
+	return control != nil && (strings.HasPrefix(control.id, "goal:") || strings.HasPrefix(control.id, "command:") || strings.HasPrefix(control.id, "archive:") || strings.HasPrefix(control.id, "delete:"))
 }

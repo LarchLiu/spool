@@ -319,7 +319,11 @@ func TestRegistrySavesDynamicModelsWithoutUserPromptAndRetainsOnFailure(t *testi
 	if fixtureCount(t, codex, "turn/start") != 0 || fixtureCount(t, claude, "user") != 0 {
 		t.Fatal("discovery consumed a user turn")
 	}
+	if len(all[0].Catalog.Commands) == 0 || len(all[1].Catalog.Commands) == 0 || all[1].Catalog.CommandSource != "native" {
+		t.Fatal("command discovery missing from registry")
+	}
 	s.ConfigureAgent(chatmodel.BackendCodex, true, filepath.Join(t.TempDir(), "missing"))
+	s.ConfigureAgent(chatmodel.BackendClaude, true, filepath.Join(t.TempDir(), "missing-claude"))
 	if err := r.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -327,14 +331,17 @@ func TestRegistrySavesDynamicModelsWithoutUserPromptAndRetainsOnFailure(t *testi
 	if all[0].Installed || all[0].Error == "" || len(all[0].Catalog.Models) != 3 || all[0].LastSuccessAt == 0 {
 		t.Fatal("failed discovery erased the cached catalog")
 	}
+	if all[1].Installed || all[1].Error == "" || len(all[1].Catalog.Commands) == 0 || len(all[1].Catalog.Models) != 1 || all[1].LastSuccessAt == 0 {
+		t.Fatal("failed Claude discovery erased saved models or commands")
+	}
 	other, err := OpenStore(s.Root())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer other.Close()
 	persisted, _ := other.Agents()
-	if len(persisted[0].Catalog.Models) != 3 {
-		t.Fatal("models not persisted")
+	if len(persisted[0].Catalog.Models) != 3 || len(persisted[0].Catalog.Commands) == 0 || len(persisted[1].Catalog.Commands) == 0 {
+		t.Fatal("models and commands not persisted")
 	}
 }
 func TestSQLiteTurnWriteRollsBackAtomically(t *testing.T) {

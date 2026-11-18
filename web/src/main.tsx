@@ -123,7 +123,12 @@ import { AgentModelMenu } from "./agent-model-menu";
 import { AgentIcon } from "./agent-icon";
 import { AutosizeTextarea } from "./autosize-textarea";
 import { SlashCommandMenu } from "./slash-command-menu";
-import { goalSuggestion, parseGoalCommand } from "./slash-commands";
+import {
+  commandSuggestions,
+  findSlashCommand,
+  parseSlashCommand,
+  parseGoalCommand,
+} from "./slash-commands";
 import { hasUserMessage, UserMessage } from "./user-message";
 import { MessageFooter } from "./message-footer";
 import { TurnActions, TurnOperatorAvatar } from "./turn-identity";
@@ -416,6 +421,11 @@ function App() {
   const [draftVersion, setDraftVersion] = useState(0);
   const [commandDismissed, setCommandDismissed] = useState(false);
   const [commandFocused, setCommandFocused] = useState(false);
+  const [commandSelection, setCommandSelection] = useState({
+    key: "",
+    index: 0,
+  });
+
   const [commandNotice, setCommandNotice] = useState<{
     chatID: string;
     project: string;
@@ -1055,13 +1065,6 @@ function App() {
     composerReady &&
     !!user &&
     (chat ? canControlChat(chat, user.id) : canCreate);
-  const commandOpen =
-    composerWritable &&
-    commandFocused &&
-    !posting &&
-    chat?.status !== "running" &&
-    !commandDismissed &&
-    goalSuggestion(draft);
   const draftGoal = parseGoalCommand(draft);
   const hasDraft = !!draft.trim() || !!files.length;
   const activeTurn = runningTurn(chat);
@@ -1082,6 +1085,28 @@ function App() {
     !!user && composerWritable && selectedAvailable,
     chat?.backend === backend ? chat.permission_mode : undefined,
   );
+  const agentCommands =
+    permissions.catalog?.commands || selectedAgent?.catalog.commands || [];
+  const suggestions = useMemo(
+    () => commandSuggestions(draft, agentCommands),
+    [draft, agentCommands],
+  );
+  const commandSelectionKey = `${backend}\n${draft}\n${suggestions?.map((command) => command.name).join(",")}`;
+  const commandIndex =
+    commandSelection.key === commandSelectionKey
+      ? Math.min(
+          commandSelection.index,
+          Math.max(0, (suggestions?.length || 0) - 1),
+        )
+      : 0;
+  const commandOpen =
+    composerWritable &&
+    commandFocused &&
+    !posting &&
+    chat?.status !== "running" &&
+    !commandDismissed &&
+    selectedAvailable &&
+    suggestions !== null;
   useEffect(() => {
     if (!chat || chat.turns.at(-1)?.id.startsWith("pending-")) return;
     const selected = chatSelection(agents, chat);
@@ -1224,12 +1249,164 @@ function App() {
     setError("");
     setSidebar(false);
   }
-  function selectGoalCommand() {
-    setDraft("/goal ");
+  function selectCommand(command = suggestions?.[commandIndex]) {
+    if (!command) return;
+    setDraft(`/${command.name} `);
     setCommandDismissed(false);
     requestAnimationFrame(() =>
       document.getElementById("chat-message")?.focus(),
     );
+  }
+  async function runSessionCommand(name: string, argument: string) {
+    const target = chat,
+      owner = user?.id,
+      origin = selection.current;
+    const current = () =>
+      activeUser.current === owner &&
+      selection.current.project === origin.project &&
+      selection.current.chatID === origin.chatID &&
+      selection.current.draftVersion === origin.draftVersion;
+    submission.current = true;
+    setPosting(true);
+    setError("");
+    setCommandNotice(null);
+    try {
+      if (name === "clear" || name === "new") {
+        if (argument) throw new Error(`Usage: /${name}`);
+        if (!current()) return;
+        submission.current = false;
+        newChat();
+      } else if (name === "agents" || name === "resume") {
+        if (argument) {
+          const found = chats.find(
+            (item) =>
+              item.backend === backend &&
+              (item.id === argument || item.title === argument),
+          );
+          if (!found) throw new Error(t("Conversation not found"));
+          openChat(found);
+        } else {
+          setSidebar(true);
+          setPanels(old => ({ ...old, leftOpen: true }));
+        }
+      } else {
+        if (!target || target.backend !== backend)
+          throw new Error(
+            t("Select this chat's current agent to run session commands"),
+          );
+        if (name === "rename") {
+          if (!argument) throw new Error(t("Enter a conversation name"));
+          await renameChat(target, argument);
+        } else if (name === "archive" || name === "delete") {
+          if (argument) throw new Error(`Usage: /${name}`);
+          await removeChat(target, name);
+        } else if (name === "fork") {
+          if (argument) throw new Error("Usage: /fork");
+          const fork = await api<Chat>(`/chats/${target.id}/fork`, {
+            backend,
+            model,
+            reasoning_effort: effort,
+          });
+          if (!current()) return;
+          setChats((old) => [
+            fork,
+            ...old.filter((item) => item.id !== fork.id),
+          ]);
+          openChat(fork);
+        }
+      }
+      if (
+        activeUser.current === owner &&
+        (current() ||
+          name === "fork" ||
+          name === "resume" ||
+          name === "new" ||
+          name === "clear")
+      )
+        setDraft("");
+    } catch (error) {
+      if (current()) fail(error);
+    } finally {
+      submission.current = false;
+      setPosting(false);
+    }
+  }
+  async function runAgentControl(command: string) {
+    const owner = user?.id,
+      projectID = project,
+      message = draft,
+      origin = selection.current;
+    let target = chat;
+    const current = () =>
+      activeUser.current === owner &&
+      selection.current.project === origin.project &&
+      selection.current.chatID === origin.chatID &&
+      selection.current.draftVersion === origin.draftVersion;
+    submission.current = true;
+    setPosting(true);
+    setError("");
+    setCommandNotice(null);
+    try {
+      if (target && target.backend !== backend)
+        throw new Error(
+          t("Select this chat's current agent to run session commands"),
+        );
+      if (!target) {
+        const created = await api<Chat>("/chats", { project_id: projectID, backend });
+        target = {
+          ...created,
+          transcript: created.transcript || { parts: [] },
+          turns: created.turns || [],
+        };
+        if (!current()) return;
+        setChats((old) => [
+          target!,
+          ...old.filter((item) => item.id !== target!.id),
+        ]);
+        permissions.adoptChat(target.id);
+        adoptedChatID.current = target.id;
+        activeID.current = target.id;
+        origin.chatID = target.id;
+        setChatID(target.id);
+        setChat(target);
+      }
+      const result = await api<{
+        message: string;
+        model: string;
+        reasoning_effort: string;
+        permission_mode: string;
+      }>(`/chats/${target.id}/commands`, {
+        command,
+        model,
+        reasoning_effort: effort,
+        permission_mode: permissions.mode,
+      });
+      if (!current()) return;
+      setModel(result.model);
+      setEffort(result.reasoning_effort);
+      setChat((old) =>
+        old?.id === target!.id
+          ? {
+              ...old,
+              model: result.model,
+              reasoning_effort: result.reasoning_effort,
+              permission_mode: result.permission_mode,
+            }
+          : old,
+      );
+      permissions.retry();
+      setCommandNotice({
+        chatID: target.id,
+        project: projectID,
+        text: result.message,
+      });
+      setDraft((value) => (value === message ? "" : value));
+    } catch (error) {
+      if (current()) fail(error);
+    } finally {
+      submission.current = false;
+      setPosting(false);
+    }
   }
   async function runGoalControl(action: "get" | "clear") {
     const target = chatID,
@@ -1295,6 +1472,18 @@ function App() {
     )
       return;
     const command = parseGoalCommand(draft);
+    const slash = parseSlashCommand(draft);
+    const definition = slash
+      ? findSlashCommand(agentCommands, slash.name)
+      : undefined;
+    if (slash && files.length) {
+      setError(t("Agent commands do not accept attachments"));
+      return;
+    }
+    if (slash && !definition) {
+      setError(t("No matching agent commands"));
+      return;
+    }
     if (command && files.length) {
       setError(t("Goal commands do not accept attachments"));
       return;
@@ -1305,6 +1494,21 @@ function App() {
     }
     if (command && command.action !== "set") {
       await runGoalControl(command.action);
+      return;
+    }
+    if (slash && definition?.kind === "client") {
+      await runSessionCommand(definition.name, slash.arguments);
+      return;
+    }
+    if (
+      slash &&
+      definition?.kind === "control" &&
+      !command &&
+      !(definition.name === "plan" && slash.arguments)
+    ) {
+      await runAgentControl(
+        `/${definition.name}${slash.arguments ? " " + slash.arguments : ""}`,
+      );
       return;
     }
     setCommandNotice(null);
@@ -1446,6 +1650,10 @@ function App() {
     )
       return;
     const command = parseGoalCommand(draft);
+    if (parseSlashCommand(draft)) {
+      setError(t("Wait for the running response before using agent commands"));
+      return;
+    }
     if (command && files.length) {
       setError(t("Goal commands do not accept attachments"));
       return;
@@ -2303,7 +2511,15 @@ function App() {
             }}
           >
             {commandOpen && (
-              <SlashCommandMenu t={t} onSelect={selectGoalCommand} />
+              <SlashCommandMenu
+                t={t}
+                commands={suggestions || []}
+                activeIndex={commandIndex}
+                onActiveIndex={(index) =>
+                  setCommandSelection({ key: commandSelectionKey, index })
+                }
+                onSelect={selectCommand}
+              />
             )}
             {!!files.length && (
               <div className="composer-attachments">
@@ -2327,7 +2543,9 @@ function App() {
               aria-controls={commandOpen ? "slash-command-menu" : undefined}
               aria-expanded={commandOpen}
               aria-activedescendant={
-                commandOpen ? "slash-command-goal" : undefined
+                commandOpen && suggestions?.length
+                  ? `slash-command-${commandIndex}`
+                  : undefined
               }
               placeholder={
                 !composerWritable && project
@@ -2357,6 +2575,7 @@ function App() {
                 if (inputMethodKey(e.nativeEvent)) return;
                 if (
                   commandOpen &&
+                  !!suggestions?.length &&
                   (e.key === "Tab" ||
                     (e.key === "Enter" &&
                       !e.metaKey &&
@@ -2364,7 +2583,7 @@ function App() {
                       !e.shiftKey))
                 ) {
                   e.preventDefault();
-                  selectGoalCommand();
+                  selectCommand();
                   return;
                 }
                 if (
@@ -2372,6 +2591,15 @@ function App() {
                   (e.key === "ArrowDown" || e.key === "ArrowUp")
                 ) {
                   e.preventDefault();
+                  const count = suggestions?.length || 0;
+                  if (count)
+                    setCommandSelection({
+                      key: commandSelectionKey,
+                      index:
+                        (commandIndex +
+                          (e.key === "ArrowDown" ? 1 : count - 1)) %
+                        count,
+                    });
                   return;
                 }
                 if (commandOpen && e.key === "Escape") {
@@ -2476,6 +2704,7 @@ function App() {
                         t={t}
                         onChange={(next) => {
                           setBackend(next.backend);
+                          setCommandDismissed(false);
                           setPermissionOpen(false);
                           setModel(next.model);
                           setEffort(next.effort);

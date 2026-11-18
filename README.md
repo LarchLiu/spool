@@ -17,7 +17,7 @@ stay on that machine; install and sign in to Codex or Claude Code there before u
 ## Features
 
 - **Desktop, Web/PWA, and Android** — Continue the same projects and chats across devices; Android supports multiple servers.
-- **Codex and Claude Code** — Independent native sessions, model and reasoning selection, streaming output, stop, and resume.
+- **Codex and Claude Code** — Independent native sessions, model and reasoning selection, [agent slash commands](docs/agent-commands.md), streaming output, stop, and resume.
 - **Rich chat and files** — Markdown, code, diffs, tool activity, images, attachments, project files, Git worktrees, and [Word/Excel previews](docs/office-preview.md).
 - **Collaboration** — Project members, shared sessions, private messages, group chats, and online presence.
 - **Permissions and approvals** — Per-user and project permissions, session access, command/file approvals, and interactive questions.

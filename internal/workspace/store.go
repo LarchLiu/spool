@@ -529,6 +529,12 @@ func (s *Store) finishTurn(id, turnID string, result agent.AgentResult, runErr e
 	if result.ReasoningEffort != "" {
 		t.ReasoningEffort = result.ReasoningEffort
 	}
+	if result.PermissionMode != "" && result.PermissionMode != v.PermissionMode {
+		v.PermissionMode, t.PermissionMode = result.PermissionMode, result.PermissionMode
+		if err := s.saveProjectPermissionMode(v.ProjectID, v.Backend, result.PermissionMode); err != nil {
+			return err
+		}
+	}
 	t.Status, t.FinishedAt = status, nextSessionTime(v.UpdatedAt)
 	if runErr != nil {
 		t.Error = chatmodel.Clip(runErr.Error(), 8192)
@@ -591,7 +597,7 @@ func (s *Store) finishTurn(id, turnID string, result agent.AgentResult, runErr e
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec(`UPDATE sessions SET native_session_id=?,native_session_path=?,status=?,updated_at=? WHERE id=?`, v.NativeSessionID, nativePath, status, t.FinishedAt, id); err != nil {
+	if _, err = tx.Exec(`UPDATE sessions SET native_session_id=?,native_session_path=?,status=?,updated_at=?,permission_mode=? WHERE id=?`, v.NativeSessionID, nativePath, status, t.FinishedAt, v.PermissionMode, id); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(`UPDATE turn_actors SET native_session_id=?,native_turn_id=? WHERE session_id=? AND turn_id=?`, v.NativeSessionID, t.NativeTurnID, id, turnID); err != nil {

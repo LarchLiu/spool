@@ -14,12 +14,13 @@ type PermissionMode struct {
 }
 
 type PermissionCatalog struct {
-	Backend Backend          `json:"backend"`
-	Default string           `json:"default"`
-	Current string           `json:"current"`
-	Modes   []PermissionMode `json:"modes"`
-	Policy  string           `json:"approval_policy,omitempty"`
-	Sandbox string           `json:"sandbox,omitempty"`
+	Backend  Backend          `json:"backend"`
+	Default  string           `json:"default"`
+	Current  string           `json:"current"`
+	Modes    []PermissionMode `json:"modes"`
+	Policy   string           `json:"approval_policy,omitempty"`
+	Sandbox  string           `json:"sandbox,omitempty"`
+	Commands []SlashCommand   `json:"commands,omitempty"`
 }
 
 func DefaultPermissionMode(backend Backend) string {

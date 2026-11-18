@@ -95,7 +95,7 @@ export function usePermissionModes(
       controller.abort();
       clearTimeout(retryTimer);
     };
-  }, [key, enabled, revision]);
+  }, [key, enabled, revision, savedMode]);
   const catalog = result.key === key ? result.catalog : undefined;
   const mode =
     catalog?.current ||

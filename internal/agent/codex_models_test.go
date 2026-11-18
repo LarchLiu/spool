@@ -23,9 +23,28 @@ func TestCodexDiscoversCatalogWithoutStartingChatAndCachesCopy(t *testing.T) {
 	}
 	catalog.Models[0].DisplayName = "Mutated"
 	catalog.Models[0].Efforts[0].Effort = "mutated"
+	if len(catalog.Commands) != 3 || catalog.CommandSource != "protocol" {
+		t.Fatal("protocol command catalog missing")
+	}
+	catalog.Commands[0].Name = "mutated"
+	for i := range catalog.Commands {
+		if len(catalog.Commands[i].Aliases) > 0 {
+			catalog.Commands[i].Aliases[0] = "mutated"
+		}
+	}
 	cached, err := runner.CodexModels(ctx)
 	if err != nil || cached.Models[0].DisplayName != "Test Model" || cached.Models[0].Efforts[0].Effort != "low" || fixtureCount(t, fixture, "spawn") != 1 {
 		t.Fatalf("catalog cache is not independent: %#v, error=%v", cached, err)
+	}
+	for _, command := range cached.Commands {
+		if command.Name == "mutated" {
+			t.Fatal("cached commands mutated")
+		}
+		for _, alias := range command.Aliases {
+			if alias == "mutated" {
+				t.Fatal("cached aliases mutated")
+			}
+		}
 	}
 	if len(runner.chats) != 0 {
 		t.Fatal("catalog query kept a chat process alive")

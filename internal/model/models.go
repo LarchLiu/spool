@@ -22,9 +22,11 @@ type CodexModel struct {
 }
 
 type CodexCatalog struct {
-	Models        []CodexModel `json:"models"`
-	DefaultModel  string       `json:"defaultModel"`
-	DefaultEffort string       `json:"defaultEffort"`
+	Models        []CodexModel   `json:"models"`
+	DefaultModel  string         `json:"defaultModel"`
+	DefaultEffort string         `json:"defaultEffort"`
+	Commands      []SlashCommand `json:"commands"`
+	CommandSource string         `json:"commandSource,omitempty"`
 }
 
 func ValidateCodexOptions(options CodexOptions) error {
@@ -60,6 +62,10 @@ func (c CodexCatalog) Clone() CodexCatalog {
 	c.Models = append([]CodexModel(nil), c.Models...)
 	for i := range c.Models {
 		c.Models[i].Efforts = append([]ReasoningOption(nil), c.Models[i].Efforts...)
+	}
+	c.Commands = append([]SlashCommand(nil), c.Commands...)
+	for i := range c.Commands {
+		c.Commands[i].Aliases = append([]string(nil), c.Commands[i].Aliases...)
 	}
 	return c
 }
