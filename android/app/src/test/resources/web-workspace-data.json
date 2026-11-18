@@ -122,6 +122,477 @@
       ]
     },
     {
+      "id": "latest-recent-across-projects",
+      "initial": {
+        "project": "",
+        "chatID": "",
+        "chat": null,
+        "chats": []
+      },
+      "steps": [
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              },
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ],
+            "chats": [
+              {
+                "id": "old",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "old",
+                "can_control": true,
+                "participants": []
+              },
+              {
+                "id": "latest",
+                "project_id": "two",
+                "updated_at": 3,
+                "title": "latest",
+                "can_control": true,
+                "participants": []
+              },
+              {
+                "id": "middle",
+                "project_id": "one",
+                "updated_at": 2,
+                "title": "middle",
+                "can_control": true,
+                "participants": []
+              }
+            ]
+          },
+          "expected": {
+            "project": "two",
+            "chatID": "latest",
+            "chat": null,
+            "chats": [
+              {
+                "id": "old",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "old",
+                "can_control": true,
+                "participants": []
+              },
+              {
+                "id": "latest",
+                "project_id": "two",
+                "updated_at": 3,
+                "title": "latest",
+                "can_control": true,
+                "participants": []
+              },
+              {
+                "id": "middle",
+                "project_id": "one",
+                "updated_at": 2,
+                "title": "middle",
+                "can_control": true,
+                "participants": []
+              }
+            ],
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              },
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "latest-recent-with-existing-project",
+      "initial": {
+        "project": "one",
+        "chatID": "",
+        "chat": null,
+        "chats": []
+      },
+      "steps": [
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              },
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ],
+            "chats": [
+              {
+                "id": "old",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "old",
+                "can_control": true,
+                "participants": []
+              },
+              {
+                "id": "latest",
+                "project_id": "two",
+                "updated_at": 3,
+                "title": "latest",
+                "can_control": true,
+                "participants": []
+              }
+            ]
+          },
+          "expected": {
+            "project": "two",
+            "chatID": "latest",
+            "chat": null,
+            "chats": [
+              {
+                "id": "old",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "old",
+                "can_control": true,
+                "participants": []
+              },
+              {
+                "id": "latest",
+                "project_id": "two",
+                "updated_at": 3,
+                "title": "latest",
+                "can_control": true,
+                "participants": []
+              }
+            ],
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              },
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "first-project-has-no-chats",
+      "initial": {
+        "project": "",
+        "chatID": "",
+        "chat": null,
+        "chats": []
+      },
+      "steps": [
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              },
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ],
+            "chats": [
+              {
+                "id": "latest",
+                "project_id": "two",
+                "updated_at": 3,
+                "title": "latest",
+                "can_control": true,
+                "participants": []
+              }
+            ]
+          },
+          "expected": {
+            "project": "two",
+            "chatID": "latest",
+            "chat": null,
+            "chats": [
+              {
+                "id": "latest",
+                "project_id": "two",
+                "updated_at": 3,
+                "title": "latest",
+                "can_control": true,
+                "participants": []
+              }
+            ],
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              },
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "equal-recent-timestamps-retain-order",
+      "initial": {
+        "project": "",
+        "chatID": "",
+        "chat": null,
+        "chats": []
+      },
+      "steps": [
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              },
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ],
+            "chats": [
+              {
+                "id": "first",
+                "project_id": "two",
+                "updated_at": 3,
+                "title": "first",
+                "can_control": true,
+                "participants": []
+              },
+              {
+                "id": "second",
+                "project_id": "one",
+                "updated_at": 3,
+                "title": "second",
+                "can_control": true,
+                "participants": []
+              }
+            ]
+          },
+          "expected": {
+            "project": "two",
+            "chatID": "first",
+            "chat": null,
+            "chats": [
+              {
+                "id": "first",
+                "project_id": "two",
+                "updated_at": 3,
+                "title": "first",
+                "can_control": true,
+                "participants": []
+              },
+              {
+                "id": "second",
+                "project_id": "one",
+                "updated_at": 3,
+                "title": "second",
+                "can_control": true,
+                "participants": []
+              }
+            ],
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              },
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "refresh-keeps-current-chat",
+      "initial": {
+        "project": "one",
+        "chatID": "selected",
+        "chat": null,
+        "chats": []
+      },
+      "steps": [
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              },
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ],
+            "chats": [
+              {
+                "id": "selected",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "selected",
+                "can_control": true,
+                "participants": []
+              }
+            ]
+          },
+          "expected": {
+            "project": "one",
+            "chatID": "selected",
+            "chat": null,
+            "chats": [
+              {
+                "id": "selected",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "selected",
+                "can_control": true,
+                "participants": []
+              }
+            ],
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              },
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ]
+          }
+        },
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              },
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ],
+            "chats": [
+              {
+                "id": "latest",
+                "project_id": "two",
+                "updated_at": 3,
+                "title": "latest",
+                "can_control": true,
+                "participants": []
+              },
+              {
+                "id": "selected",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "selected",
+                "can_control": true,
+                "participants": []
+              }
+            ]
+          },
+          "expected": {
+            "project": "one",
+            "chatID": "selected",
+            "chat": null,
+            "chats": [
+              {
+                "id": "latest",
+                "project_id": "two",
+                "updated_at": 3,
+                "title": "latest",
+                "can_control": true,
+                "participants": []
+              },
+              {
+                "id": "selected",
+                "project_id": "one",
+                "updated_at": 1,
+                "title": "selected",
+                "can_control": true,
+                "participants": []
+              }
+            ],
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              },
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "no-chats-selects-first-project",
+      "initial": {
+        "project": "",
+        "chatID": "",
+        "chat": null,
+        "chats": []
+      },
+      "steps": [
+        {
+          "navigation": {
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              },
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ],
+            "chats": []
+          },
+          "expected": {
+            "project": "one",
+            "chatID": "",
+            "chat": null,
+            "chats": [],
+            "projects": [
+              {
+                "id": "one",
+                "name": "one"
+              },
+              {
+                "id": "two",
+                "name": "two"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
       "id": "new-chat-stays-blank",
       "initial": {
         "project": "one",

@@ -38,6 +38,12 @@ section booleans. Server data restores pins even after clearing client storage
 or changing the Desktop loopback port. Section state remains tied to that browser
 origin or Android server/account cache; it does not synchronize.
 
+Projects appear in ascending project-name order. Chats within each project and
+in Recents appear newest first by `updated_at`. On initial workspace opening,
+clients select the first chat in Recents and its project, unless a notification
+or link specifies a chat. With no chats, the first project opens a new-chat view.
+Navigation refreshes preserve the selected chat or an explicit new-chat view.
+
 For existing installations, the first device with locally pinned chats
 can send `{"initial":{"pinned":[...]}}` when the server
 revision is zero. The server imports accessible pins once. An existing server

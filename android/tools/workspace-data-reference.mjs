@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 // Exercise the actual Web effect and profile cache; do not invent a second loading oracle.
 import fs from 'node:fs';
+import assert from 'node:assert/strict';
 import path from 'node:path';
 import vm from 'node:vm';
 import {createRequire} from 'node:module';
@@ -13,6 +14,7 @@ function web(file) {
  vm.runInNewContext(result.outputFiles[0].text,{module,exports:module.exports,require,console,crypto:globalThis.crypto});return module.exports;
 }
 const {createProfileCache}=web('user-profiles.ts'),{mergeNavigationChats}=web('workspace-stream.ts');
+const {sortedSidebarChats}=web('sidebar-state.ts');
 const source=fs.readFileSync(path.join(root,'web/src/main.tsx'),'utf8');
 const start=source.lastIndexOf('let cancelled = false;',source.indexOf('let realtimeConnected = false;'));
 const end=source.indexOf('    loadNavigation(true);',start);
@@ -30,7 +32,8 @@ function harness(initial={}) {
  let navigationCount=0,agentCount=0;
  const selection={current:state},module={exports:{}};
  const setter=key=>value=>{state[key]=typeof value==='function'?value(state[key]):value;};
- vm.runInNewContext(effect,{module,exports:module.exports,AbortController,profileCache,mergeNavigationChats,
+ vm.runInNewContext(effect,{module,exports:module.exports,AbortController,profileCache,mergeNavigationChats,sortedSidebarChats,
+  sidebarPreferences:{accept:()=>{}},
   api:path=>new Promise((resolve,reject)=>requests.push({path,resolve,reject,settled:false})),
   selection,activeID:{current:''},notificationChat:{current:''},setChat:setter('chat'),
   setProject:setter('project'),setChatID:setter('chatID'),setChats:setter('chats'),
@@ -45,6 +48,12 @@ const navigationCases=[];
 for(const item of [
  {id:'first-project',initial:{project:'',chatID:''},steps:[navigation(['one'],[chat('latest'),chat('older')])]},
  {id:'existing-project',steps:[navigation(['one'],[chat('latest')])]},
+ {id:'latest-recent-across-projects',initial:{project:'',chatID:''},steps:[navigation(['one','two'],[chat('old','one',1),chat('latest','two',3),chat('middle','one',2)])],selection:['two','latest']},
+ {id:'latest-recent-with-existing-project',steps:[navigation(['one','two'],[chat('old','one',1),chat('latest','two',3)])],selection:['two','latest']},
+ {id:'first-project-has-no-chats',initial:{project:'',chatID:''},steps:[navigation(['one','two'],[chat('latest','two',3)])],selection:['two','latest']},
+ {id:'equal-recent-timestamps-retain-order',initial:{project:'',chatID:''},steps:[navigation(['one','two'],[chat('first','two',3),chat('second','one',3)])],selection:['two','first']},
+ {id:'refresh-keeps-current-chat',initial:{chatID:'selected'},steps:[navigation(['one','two'],[chat('selected','one',1)]),navigation(['one','two'],[chat('latest','two',3),chat('selected','one',1)])],selection:['one','selected']},
+ {id:'no-chats-selects-first-project',initial:{project:'',chatID:''},steps:[navigation(['one','two'],[])],selection:['one','']},
  {id:'new-chat-stays-blank',steps:[navigation(['one'],[]),navigation(['one'],[chat('later')])]},
  {id:'deleted-current-chat',initial:{chatID:'latest'},steps:[navigation(['one'],[chat('latest')]),navigation(['one'],[chat('other')])]},
  {id:'removed-project',initial:{project:'gone',chatID:'old'},steps:[navigation(['two'],[chat('new','two')])]},
@@ -53,6 +62,7 @@ for(const item of [
 ]) {
  const h=harness(item.initial);const steps=[];
  for(const value of item.steps){h.methods.navigation(value);steps.push({navigation:value,expected:JSON.parse(JSON.stringify(h.state))});}
+ if(item.selection)assert.deepEqual([h.state.project,h.state.chatID],item.selection,item.id);
  navigationCases.push({id:item.id,initial:{project:'one',chatID:'',chat:null,chats:[],...item.initial},steps});
 }
 const loadingCases=[];

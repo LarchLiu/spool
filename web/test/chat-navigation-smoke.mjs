@@ -17,9 +17,9 @@ const output = path.join(root, "build/artifacts/chat-navigation");
 const cleanup = [], requests = [], errors = [], gates = new Map();
 const main = { path: "/repo/main", kind: "main", branch: "dev", available: true };
 const tree = { path: "/repo/feature", kind: "worktree", branch: "feature", available: true };
-const chats = ["alpha", "beta", "gamma", "delta"].map(id => ({
+const chats = ["alpha-chat", "beta", "gamma", "delta"].map(id => ({
   id, title: `Conversation ${id}`, project_id: id === "delta" ? "other" : "project", user_id: "owner",
-  backend: id === "beta" ? "claude" : "codex", status: "completed", updated_at: 1,
+  backend: id === "beta" ? "claude" : "codex", status: "completed", updated_at: id === "delta" ? 3 : 1,
   turns: [{ id: `turn-${id}`, status: "completed", part_start: 0, input_end: 0, part_end: 1 }],
   transcript: { parts: [{ role: "assistant", kind: "text", text: `Response from ${id}` }] },
 }));
@@ -98,7 +98,12 @@ try {
     return json([]);
   });
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/`);
-  await page.getByText("Response from alpha", { exact: true }).waitFor();
+  await page.getByText("Response from delta", { exact: true }).waitFor();
+  assert.equal(await page.locator(".recents .nav-chat-open").first().innerText(), "Conversation delta", "Startup opens the latest recent across projects");
+  assert.equal(await page.locator(".project-row.current .project-toggle").innerText(), "Other project", "Startup selects the recent chat's project");
+  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/?chat=alpha-chat`);
+  await page.getByText("Response from alpha-chat", { exact: true }).waitFor();
+  assert.equal(new URL(page.url()).searchParams.has("chat"), false, "An explicit chat link takes priority over the latest recent");
   const openFiles = page.getByRole("button", { name: "Open file sidebar", exact: true });
   if (await openFiles.isVisible()) await openFiles.click();
   const directory = page.locator('[data-item-path="src/"]');
@@ -112,7 +117,7 @@ try {
   await page.locator(".nav-chat-open").filter({ hasText: "Conversation beta" }).first().click();
   await page.waitForFunction(() => document.querySelector(".chat-heading")?.textContent.includes("Conversation beta") && document.querySelector(".history")?.textContent.includes("Loading conversation…"));
   assert.equal(await page.locator(".welcome").count(), 0, "Loading an existing chat cannot show the new-chat welcome screen");
-  assert.equal(await page.getByText("Response from alpha", { exact: true }).count(), 0, "The previous transcript is hidden immediately");
+  assert.equal(await page.getByText("Response from alpha-chat", { exact: true }).count(), 0, "The previous transcript is hidden immediately");
   assert.equal(await page.locator(".file-sidebar").getAttribute("inert"), "", "The retained directory cannot be used before discovery finishes");
   assert.equal(await page.locator(".file-preview").count(), 0, "Chat-scoped previews clear during navigation");
   workspaceGate.release(); snapshotGate.release(); gates.clear();
@@ -133,11 +138,11 @@ try {
     await page.waitForFunction(() => !document.querySelector(".file-sidebar").inert);
   };
   let offset = requests.length;
-  await navigate("alpha");
+  await navigate("alpha-chat");
   assert.ok(await page.locator(".git-diff-source").isVisible(), "Git selection and diff survive switching within a directory");
   assert.ok(requests.slice(offset).every(url => !url.includes("/git?") && !url.includes("/files?")), "Switching chats reloads neither Git nor the tree");
   await Promise.all([
-    page.waitForResponse(response => new URL(response.url()).pathname === "/api/chats/alpha/git" && new URL(response.url()).searchParams.get("view") === "diff"),
+    page.waitForResponse(response => new URL(response.url()).pathname === "/api/chats/alpha-chat/git" && new URL(response.url()).searchParams.get("view") === "diff"),
     page.getByRole("button", { name: "Refresh diff preview", exact: true }).click(),
   ]);
   await page.getByRole("button", { name: "Close diff", exact: true }).click();
@@ -156,19 +161,19 @@ try {
   await page.getByRole("button", { name: "Expand commit area", exact: true }).click();
   await page.getByRole("textbox", { name: "Commit message", exact: true }).fill("Unsent commit draft");
   offset = requests.length;
-  await navigate("alpha");
+  await navigate("alpha-chat");
   assert.equal(await page.getByRole("textbox", { name: "Commit message", exact: true }).inputValue(), "Unsent commit draft");
   assert.ok(requests.slice(offset).every(url => !url.includes("/git?")), "Commit drafts survive without refreshing Git");
   await navigate("gamma");
   await page.locator(".git-summary").getByText("feature", { exact: true }).waitFor();
   assert.equal(await page.getByRole("textbox", { name: "Commit message", exact: true }).count(), 0, "A different directory resets Git state");
-  await navigate("alpha");
+  await navigate("alpha-chat");
   offset = requests.length;
   await navigate("delta");
   await page.locator(".git-summary").getByText("dev", { exact: true }).waitFor();
   assert.ok(requests.slice(offset).some(url => url.startsWith("/api/chats/delta/files?")), "Different projects never share directory data");
   assert.ok(requests.slice(offset).some(url => url.startsWith("/api/chats/delta/git?")), "Git is scoped by project as well as directory");
-  await navigate("alpha");
+  await navigate("alpha-chat");
   const failed = hold("/api/chats/beta/workspace"); failed.fail = true; failed.release();
   await page.locator(".nav-chat-open").filter({ hasText: "Conversation beta" }).first().click();
   await page.getByRole("tab", { name: "Project panel", exact: true }).click();

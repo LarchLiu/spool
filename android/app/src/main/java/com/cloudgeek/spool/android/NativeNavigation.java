@@ -20,21 +20,15 @@ final class NativeNavigation {
         for (int i = 0; i < projects.length(); i++) found |= projects.optJSONObject(i).optString("id").equals(project);
         Set<String> ids = new HashSet<>();
         for (int i = 0; i < chats.length(); i++) ids.add(chats.optJSONObject(i).optString("id"));
-        if (!found) {
-            project = projects.length() == 0 ? "" : projects.optJSONObject(0).optString("id");
-            chat = first(project, chats);
-        } else if (previousIDs == null && chat.isEmpty()) chat = first(project, chats);
+        if (!found || previousIDs == null && chat.isEmpty()) {
+            java.util.List<JSONObject> recents = NativeSidebarState.sorted(chats, null);
+            JSONObject recent = recents.isEmpty() ? null : recents.get(0);
+            project = recent != null ? recent.optString("project_id") : projects.length() == 0 ? "" : projects.optJSONObject(0).optString("id");
+            chat = recent == null ? "" : recent.optString("id");
+        }
         else if (previousIDs != null && previousIDs.contains(chat) && !ids.contains(chat)) chat = "";
         previousIDs = ids;
         return new Selection(project, chat);
-    }
-
-    private String first(String project, JSONArray chats) {
-        for (int i = 0; i < chats.length(); i++) {
-            JSONObject chat = chats.optJSONObject(i);
-            if (chat.optString("project_id").equals(project)) return chat.optString("id");
-        }
-        return "";
     }
 
     static JSONArray merge(JSONArray previous, JSONArray incoming) {

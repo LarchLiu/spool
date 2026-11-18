@@ -95,6 +95,7 @@ import { PeopleGroupPicker } from "./people-group-picker";
 import { OnlinePeopleMenu } from "./online-people-menu";
 import { ChatTitleMenu } from "./chat-title-menu";
 import { useSidebarPreferences } from "./use-sidebar-preferences";
+import { sortedSidebarChats } from "./sidebar-state";
 import {
   createDirectInbox,
   formatUnreadCount,
@@ -746,19 +747,15 @@ function App() {
         url.searchParams.delete("chat");
         window.history.replaceState(null, "", url);
         openChat(requested);
-      } else if (!p.some((v) => v.id === current.project)) {
+      } else if (
+        !p.some((v) => v.id === current.project) ||
+        (!previousIDs && !current.chatID)
+      ) {
         activeID.current = "";
         setChat(null);
-        const first = p[0]?.id || "";
-        setProject(first);
-        setChatID(
-          navigationChats.find((c) => c.project_id === first)?.id || "",
-        );
-      } else if (!previousIDs && !current.chatID) {
-        setChatID(
-          navigationChats.find((c) => c.project_id === current.project)?.id ||
-            "",
-        );
+        const recent = sortedSidebarChats(navigationChats)[0];
+        setProject(recent?.project_id || p[0]?.id || "");
+        setChatID(recent?.id || "");
       } else if (
         previousIDs?.has(current.chatID) &&
         !navigationChats.some((c) => c.id === current.chatID)
