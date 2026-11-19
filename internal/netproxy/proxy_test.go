@@ -153,6 +153,9 @@ func TestRejectedPolicyBlocksSharedClientsUntilRepaired(t *testing.T) {
 }
 
 func TestCustomProxyOverridesEnvironmentAndKeepsBypassRules(t *testing.T) {
+	for _, key := range []string{"http_proxy", "https_proxy", "all_proxy", "no_proxy"} {
+		t.Setenv(key, "")
+	}
 	t.Setenv("HTTP_PROXY", "http://environment:8080")
 	t.Setenv("HTTPS_PROXY", "http://environment:8081")
 	t.Setenv("ALL_PROXY", "socks5://environment:1080")
