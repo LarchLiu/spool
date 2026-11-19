@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"spool/internal/executil"
 )
 
 type workspaceGitFile struct {
@@ -92,6 +94,7 @@ func readWorkspaceGit(ctx context.Context, directory string, limit int, args ...
 	defer cancel()
 	base := []string{"-c", "core.hooksPath=" + os.DevNull, "-c", "core.fsmonitor=", "-c", "core.quotePath=false", "-c", "color.ui=false"}
 	cmd := exec.CommandContext(ctx, "git", append(base, args...)...)
+	executil.HideWindow(cmd)
 	cmd.Dir = directory
 	cmd.WaitDelay = time.Second
 	for _, entry := range os.Environ() {

@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"spool/internal/executil"
 	chatmodel "spool/internal/model"
 )
 
@@ -287,6 +288,7 @@ func claudeWorktrees(ctx context.Context, directory string) []string {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=", "worktree", "list", "--porcelain", "-z")
+	executil.HideWindow(cmd)
 	cmd.Dir = directory
 	body, err := cmd.Output()
 	if err != nil {

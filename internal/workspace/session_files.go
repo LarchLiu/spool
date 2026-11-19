@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"spool/internal/executil"
 	"spool/internal/issues"
 	chatmodel "spool/internal/model"
 )
@@ -91,6 +92,7 @@ func registeredWorktrees(ctx context.Context, project string) []string {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "worktree", "list", "--porcelain", "-z")
+	executil.HideWindow(cmd)
 	cmd.Dir = project
 	cmd.WaitDelay = time.Second
 	// An inherited Git override must not redirect this authorization check.

@@ -2,9 +2,10 @@ package diagnostics
 
 import (
 	"os/exec"
-	"syscall"
+
+	"spool/internal/executil"
 )
 
 func hideMonitorWindow(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	executil.HideWindow(cmd)
 }

@@ -1,4 +1,4 @@
-//go:build !darwin && !freebsd && !linux && !netbsd && !openbsd
+//go:build !darwin && !freebsd && !linux && !netbsd && !openbsd && !windows
 
 package agent
 

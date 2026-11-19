@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"spool/internal/executil"
 	"spool/internal/netproxy"
 )
 
@@ -40,6 +41,7 @@ func run(ctx context.Context, directory, name, githubCLI string, args ...string)
 		}
 	}
 	cmd := exec.CommandContext(ctx, executable, args...)
+	executil.HideWindow(cmd)
 	cmd.WaitDelay = 5 * time.Second
 	cmd.Dir = directory
 	env, err := netproxy.Environment(cmd.Environ())

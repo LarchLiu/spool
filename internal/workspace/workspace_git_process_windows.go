@@ -5,17 +5,18 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"syscall"
+
+	"spool/internal/executil"
 )
 
 func configureWorkspaceGitCommand(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	executil.HideWindow(cmd)
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return os.ErrProcessDone
 		}
 		kill := exec.Command(filepath.Join(os.Getenv("SystemRoot"), "System32", "taskkill.exe"), "/PID", strconv.Itoa(cmd.Process.Pid), "/T", "/F")
-		kill.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		executil.HideWindow(kill)
 		if err := kill.Run(); err != nil {
 			return cmd.Process.Kill()
 		}
