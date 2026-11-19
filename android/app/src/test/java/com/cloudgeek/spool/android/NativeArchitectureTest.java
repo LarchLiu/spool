@@ -139,12 +139,17 @@ public class NativeArchitectureTest {
 
     @Test public void projectFilesUseReusableNativePanelsAndSessionScopedGoReads() throws Exception {
         String activity = source();
-        String files = activity.substring(activity.indexOf("private void openFiles("), activity.indexOf("private void previewBinary("));
+        int start = activity.indexOf("private void openFiles(");
+        assertTrue("Missing project file panel entry point", start >= 0);
+        int end = activity.indexOf("private NativeFileData loadBinary(", start);
+        assertTrue("Missing binary transport boundary after project file methods", end > start);
+        String files = activity.substring(start, end);
         assertTrue(files.contains("new NativeFileBrowser("));
         assertTrue(files.contains("fileState.project.equals(projectID)"));
         assertTrue(files.contains("Client captured = client"));
         assertTrue(files.contains("token != generation || session != authEpoch"));
-        assertTrue(files.contains("request(captured, path.substring(4), null, auth, loc)"));
+        assertTrue(files.contains("requestProjectFile(path, null, completion)"));
+        assertTrue(files.contains("request(captured, path.substring(4), body, auth, loc)"));
         assertTrue(files.contains("completion.done(null, error)"));
         assertTrue(files.contains("fileBrowser.select(target)"));
         assertFalse(files.contains("AlertDialog"));
