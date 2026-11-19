@@ -16,6 +16,7 @@ import {
   BookOpen,
   Images,
   ImageOff,
+  Workflow,
 } from "lucide-react";
 import { FileDiff } from "@pierre/diffs/react";
 import type { Backend, TranscriptPart } from "./types";
@@ -56,6 +57,12 @@ export function activityOutcome(activity: Pick<Activity, "use" | "result">) {
 
 function outcomeLabel(activity: Pick<Activity, "use" | "result">, t: Translator) {
   const { status, exitCode } = activityOutcome(activity);
+  if (activity.use?.tool?.kind === "task") {
+    if (status === "running") return t("Running");
+    if (status === "completed") return t("Completed");
+    if (status === "stopped") return t("Stopped");
+    if (status === "unknown") return t("Status unavailable");
+  }
   if (status === "declined") return t("Declined");
   if (status !== "failed") return "";
   return exitCode ? t("Exit code {code}", { code: exitCode }) : t("Failed");
@@ -212,6 +219,9 @@ export function displayActivity(
   const query = part.tool?.query || extractQuery(part, data);
   let label = "";
   switch (kind) {
+    case "task":
+      label = name;
+      break;
     case "image":
       label = images.length === 1 ? t("Viewed 1 image") : t("Viewed {count} images", { count: images.length });
       break;
@@ -402,7 +412,7 @@ function groupActivities(activities: Activity[], t: Translator): ActivityGroup[]
       } else groups.push({ kind: activity.kind, label: compoundLabel([activity], t), activities: [activity], compound: true });
       continue;
     }
-    if (last && !last.compound && last.kind === activity.kind && activity.kind !== "message" && activity.kind !== "user") {
+    if (last && !last.compound && last.kind === activity.kind && activity.kind !== "message" && activity.kind !== "user" && activity.kind !== "task") {
       last.activities.push(activity);
       last.label = groupLabel(last.activities, t);
       continue;
@@ -418,6 +428,8 @@ function groupActivities(activities: Activity[], t: Translator): ActivityGroup[]
 
 function iconFor(kind: ActivityKind) {
   switch (kind) {
+    case "task":
+      return Workflow;
     case "image":
       return Images;
     case "read":
@@ -640,6 +652,7 @@ function LazyToolBody({ part, t, thinking, input }: { part: TranscriptPart; t: T
 
 export function ActivityDetail({ activity, t }: { activity: Activity; t: Translator }) {
   if (activity.noDetails) return null;
+  if (activity.kind === "task") return <div className="tool-detail"><pre>{activity.use?.text}</pre></div>;
   const command = activity.use?.text || "";
   const result = activity.result?.text || "";
   return (
@@ -668,6 +681,15 @@ export function ActivityDetail({ activity, t }: { activity: Activity; t: Transla
 }
 
 function ActivityLabel({ activity }: { activity: Activity }) {
+  if (activity.kind === "task" && activity.use?.tool?.task) {
+    const task = activity.use.tool.task;
+    return <span className="tool-task-label">
+      <span className="tool-task-title">{activity.label}</span>
+      {task.agent_type && <span className="tool-task-progress">{task.agent_type}</span>}
+      {task.summary && <span className="tool-task-progress">{oneLine(task.summary, 240)}</span>}
+      {task.last_tool && <span className="tool-task-progress">{task.last_tool}</span>}
+    </span>;
+  }
   if (activity.kind !== "thinking") return <span>{activity.label}</span>;
   const preview = activity.use?.tool?.preview || activity.use?.text;
   // Render the prefix separately so Markdown at the beginning of a thought
@@ -712,7 +734,7 @@ function ActivityItem({
     </div>
   );
   return (
-    <div className={"tool-activity-item " + (open ? "expanded" : "")}>
+    <div className={"tool-activity-item " + (activity.kind === "task" ? `tool-task tool-task-${activityOutcome(activity).status || "unknown"} ` : "") + (open ? "expanded" : "")}>
       <button
         type="button"
         className="tool-activity-item-summary"
@@ -722,6 +744,7 @@ function ActivityItem({
       >
         <Icon size={12} strokeWidth={1.6} />
         <ActivityLabel activity={activity} />
+        {activity.kind === "task" && activity.use?.tool?.task?.background && <span className="tool-task-badge">{t("Background")}</span>}
         {outcome && <span className="tool-activity-outcome">{outcome}</span>}
         {stats && <ActivityChangeStats stats={stats} />}
         <span className="tool-activity-caret">
@@ -948,9 +971,14 @@ export function TurnResponse({
   renderUser?: (parts: TranscriptPart[]) => ReactNode;
 }) {
   const { process, answer, expanded } = turnPresentation(parts, running);
+  // A final main reply can precede background-child completion. Keep live
+  // tasks visible while the ordinary process folds as it always has.
+  const tasks = running ? process.filter(part => part.tool?.kind === "task") : [];
+  const taskSet = new Set(tasks);
   return (
     <>
-      <ToolActivityList parts={process} backend={backend} t={t} live={expanded} summary={summary} renderUser={renderUser} />
+      <ToolActivityList parts={process.filter(part => !taskSet.has(part))} backend={backend} t={t} live={expanded} summary={summary} renderUser={renderUser} />
+      {tasks.length > 0 && <ToolActivityList parts={tasks} backend={backend} t={t} live />}
       {answer && (
         <div className="assistant">
           <div className="assistant-text">

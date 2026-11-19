@@ -179,6 +179,32 @@ public class NativeToolKindTest {
         return false;
     }
 
+    @Test public void subagentRowsTellTheirOwnStateAndShowProgressWithoutLoadingDetails() throws Exception {
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false, "en");
+            String[][] states = {{"running", "Running"}, {"completed", "Completed"}, {"stopped", "Stopped"}, {"unknown", "Status unavailable"}, {"failed", "Failed"}};
+            List<JSONObject> parts = new ArrayList<>();
+            // The title is the author's: it must not be read as a tool name.
+            for (String[] state : states) parts.add(new JSONObject().put("id", "task-" + state[0]).put("role", "assistant").put("kind", "tool_use")
+                    .put("name", "bash").put("text", "bash\nChecking files")
+                    .put("tool", new JSONObject().put("kind", "task").put("status", state[0]).put("task", new JSONObject().put("id", state[0]).put("summary", "Checking files"))));
+            List<NativeActivityModel.Activity> activities = NativeActivityModel.fromParts(ui, parts, "claude");
+            List<NativeActivityModel.Group> groups = NativeActivityModel.groups(ui, activities);
+            assertEquals("each subagent keeps a row of its own", states.length, groups.size());
+            for (int i = 0; i < states.length; i++) {
+                NativeActivityModel.Activity activity = activities.get(i);
+                assertEquals("task", activity.kind);
+                assertEquals("bash · Checking files", activity.label);
+                assertEquals(states[i][1], activity.outcome);
+                assertEquals("workflow", NativeActivityModel.icon(groups.get(i).kind));
+                NativeToolDetail detail = new NativeToolDetail(ui, activity, ignored -> {});
+                for (int child = 0; child < detail.getChildCount(); child++)
+                    assertFalse(states[i][0], detail.getChildAt(child) instanceof NativeToolBody);
+                assertTrue(states[i][0], detail.getChildCount() > 0);
+            }
+        }
+    }
+
     @Test public void codexAndClaudeRawToolsAndServerSummariesMatchSharedClassificationCases() throws Exception {
         JSONArray fixtures;
         try (java.io.InputStream input = getClass().getResourceAsStream("/tool-classification.json")) {

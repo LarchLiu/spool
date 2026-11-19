@@ -423,6 +423,7 @@ final class NativeText {
             case "Staged": value = "已暂存"; break;
             case "Start a fresh conversation": value = "新建会话继续"; break;
             case "Start planning": value = "开始规划"; break;
+            case "Status unavailable": value = "状态不可用"; break;
             case "Stay here": value = "留在当前会话"; break;
             case "Steer": value = "引导"; break;
             case "Stop response": value = "停止回复"; break;
@@ -938,6 +939,7 @@ final class NativeText {
             case "Staged": value = "ステージ済み"; break;
             case "Start a fresh conversation": value = "新しい会話を開始"; break;
             case "Start planning": value = "計画を開始"; break;
+            case "Status unavailable": value = "状態を取得できません"; break;
             case "Stay here": value = "ここに留まる"; break;
             case "Steer": value = "ステア"; break;
             case "Stop response": value = "応答を停止"; break;

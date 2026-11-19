@@ -1,0 +1,9 @@
+{"timestamp":"2026-11-18T15:26:58.000Z","type":"session_meta","payload":{"id":"review-thread","originator":"spool"}}
+{"timestamp":"2026-11-18T15:26:58.100Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"review-root","item":{"type":"EnteredReviewMode","id":"enter-review","target":{"type":"uncommittedChanges"}}}}
+{"timestamp":"2026-11-18T15:26:58.200Z","type":"event_msg","payload":{"type":"task_started","turn_id":"review-worker","root_turn_id":"review-root","turn_attribution":{"turn_id":"review-worker","parent_turn_id":"review-root","root_turn_id":"review-root"}}}
+{"timestamp":"2026-11-18T15:26:59.000Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"review-worker","item":{"type":"UserMessage","id":"review-input","content":[{"type":"text","text":"Review the current code changes."}]}}}
+{"timestamp":"2026-11-18T15:27:00.000Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"review-worker","item":{"type":"CommandExecution","id":"review-read","command":["git","diff"],"status":"completed","aggregated_output":"diff output"}}}
+{"timestamp":"2026-11-18T15:36:41.000Z","type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"model":"session-model","reasoning_effort":"xhigh"}}}
+{"timestamp":"2026-11-18T15:36:41.100Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"review-root","item":{"type":"ExitedReviewMode","id":"exit-review","review_output":{"findings":[]}}}}
+{"timestamp":"2026-11-18T15:36:41.200Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"review-root","item":{"type":"AgentMessage","id":"review-answer","content":[{"type":"Text","text":"Review complete."}]}}}
+{"timestamp":"2026-11-18T15:36:41.300Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"review-root","root_turn_id":"review-root"}}

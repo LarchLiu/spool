@@ -2333,6 +2333,32 @@ a.attachment-open {
 .tool-activity-item {
   min-width: 0;
 }
+.tool-task-label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.tool-task-title,
+.tool-task-progress {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-task-progress,
+.tool-task-badge {
+  color: var(--subtle);
+  font-size: 11px;
+}
+.tool-task-badge {
+  flex-shrink: 0;
+}
+.tool-task-running .tool-activity-outcome,
+.tool-task-completed .tool-activity-outcome,
+.tool-task-stopped .tool-activity-outcome,
+.tool-task-unknown .tool-activity-outcome {
+  color: var(--muted);
+}
 .tool-activity-item-summary {
   display: flex;
   align-items: center;

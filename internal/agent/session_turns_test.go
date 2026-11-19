@@ -4,11 +4,76 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	chatmodel "spool/internal/model"
 )
+
+func TestCodexInternalReviewUsesRootCompletionAndSettings(t *testing.T) {
+	path := "testdata/codex-review.jsonl"
+	turns, err := IndexSessionTurns(chatmodel.BackendCodex, path, 0)
+	if err != nil || len(turns) != 1 {
+		t.Fatalf("review boundaries: %+v %v", turns, err)
+	}
+	turn := turns[0]
+	if turn.ID != "review-root" || !slices.Equal(turn.IDs, []string{"review-worker"}) || turn.Status != chatmodel.StatusCompleted || turn.Model != "session-model" || turn.ReasoningEffort != "xhigh" || !turn.HasUserInput() {
+		t.Fatalf("review metadata: %+v", turn)
+	}
+	transcript, err := ReadSessionTurn(chatmodel.BackendCodex, path, turn)
+	if err != nil || len(transcript.Parts) != 4 || transcript.Parts[0].Text != "Review the current code changes." || transcript.Parts[3].Text != "Review complete." || transcript.Parts[3].Model != "session-model" {
+		t.Fatalf("review transcript: %+v %v", transcript, err)
+	}
+}
+
+func TestCodexUserEventAndResponseEchoesKeepRepeatedInputs(t *testing.T) {
+	for _, eventFirst := range []bool{false, true} {
+		path := filepath.Join(t.TempDir(), "rollout.jsonl")
+		response := map[string]any{"type": "response_item", "payload": map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": "Repeated request"}}}}
+		event := map[string]any{"type": "event_msg", "payload": map[string]any{"type": "item_completed", "item": map[string]any{"type": "UserMessage", "id": "native-input", "content": []any{map[string]any{"type": "text", "text": "Repeated request"}}}}}
+		var records []map[string]any
+		for range 2 {
+			if eventFirst {
+				records = append(records, event, response)
+			} else {
+				records = append(records, response, event)
+			}
+		}
+		writeTitleRecords(t, path, records...)
+		transcript, err := ParseSessionTranscript("codex", path)
+		if err != nil || len(transcript.Parts) != 2 {
+			t.Fatalf("event-first=%v repeated user inputs: %+v %v", eventFirst, transcript, err)
+		}
+	}
+}
+
+func TestCodexUserImageIsShownOnceWhateverRecordNamesIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rollout.jsonl")
+	// The response item carries what the model was sent; the event names the
+	// file the user attached.
+	response := map[string]any{"type": "response_item", "payload": map[string]any{"type": "message", "role": "user", "content": []any{
+		map[string]any{"type": "input_text", "text": "<image name=[Image #1]>"},
+		map[string]any{"type": "input_image", "image_url": "data:image/png;base64,AAAA"},
+		map[string]any{"type": "input_text", "text": "</image>"},
+		map[string]any{"type": "input_text", "text": "What is in this screenshot?"}}}}
+	event := map[string]any{"type": "event_msg", "payload": map[string]any{"type": "item_completed", "item": map[string]any{"type": "UserMessage", "id": "native-input", "content": []any{
+		map[string]any{"type": "text", "text": "What is in this screenshot?"},
+		map[string]any{"type": "localImage", "path": "/work/shot.png"}}}}}
+	writeTitleRecords(t, path, response, event)
+	transcript, err := ParseSessionTranscript("codex", path)
+	images, texts := 0, 0
+	for _, part := range transcript.Parts {
+		if part.Kind == "image" {
+			images++
+		} else if part.Kind == "text" && part.Text == "What is in this screenshot?" {
+			texts++
+		}
+	}
+	if err != nil || images != 1 || texts != 1 || len(transcript.Parts) != 2 {
+		t.Fatalf("image message repeated: %+v %v", transcript.Parts, err)
+	}
+}
 
 func TestClaudeNativeTurnsUsePromptAndParentChains(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "claude.jsonl")

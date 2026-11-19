@@ -52,7 +52,9 @@ func (p *agentProcess) codexRPC(ctx context.Context, method string, params map[s
 	}
 }
 
-func (p *agentProcess) handleCodexApproval(ctx context.Context, value map[string]any, turnID string) error {
+// A request is answered for the thread and turn it was raised in: the chat's
+// own, or one of its descendants'.
+func (p *agentProcess) handleCodexApproval(ctx context.Context, value map[string]any, threadID, turnID string) error {
 	params, _ := value["params"].(map[string]any)
 	method := stringValue(value["method"])
 	requestTurn := stringValue(params["turnId"])
@@ -61,7 +63,7 @@ func (p *agentProcess) handleCodexApproval(ctx context.Context, value map[string
 	if legacy {
 		requestThread = stringValue(params["conversationId"])
 	}
-	if requestThread != p.sessionID || (requestTurn != turnID && !((method == "mcpServer/elicitation/request" || legacy) && requestTurn == "")) {
+	if requestThread != threadID || (requestTurn != turnID && !((method == "mcpServer/elicitation/request" || legacy) && requestTurn == "")) {
 		return p.denyCodexRequest(value)
 	}
 	protocol, ok := codexApproval(method, params)
@@ -71,7 +73,10 @@ func (p *agentProcess) handleCodexApproval(ctx context.Context, value map[string
 	request := protocol.request
 	decision, err := p.awaitApproval(ctx, p.approve, request, func(event map[string]any) bool {
 		params, _ := event["params"].(map[string]any)
-		return event["method"] == "serverRequest/resolved" && stringValue(params["threadId"]) == p.sessionID && fmt.Sprint(params["requestId"]) == fmt.Sprint(value["id"])
+		return event["method"] == "serverRequest/resolved" && stringValue(params["threadId"]) == threadID && fmt.Sprint(params["requestId"]) == fmt.Sprint(value["id"])
+	}, func(event map[string]any) bool {
+		params, _ := event["params"].(map[string]any)
+		return event["method"] == "turn/completed" && stringValue(params["threadId"]) == threadID && nestedString(params, "turn", "id") == turnID
 	})
 	if errors.Is(err, errApprovalResolved) {
 		return nil
@@ -302,7 +307,21 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 	steerItems := make(map[string]bool)
 	streamedThinking := make(map[string]string)
 	streamedToolOutput := make(map[string]string)
+	tasks := codexTasks{root: p.sessionID}
+	completed := false
 	for {
+		// Only children are read on a timer; a turn without any waits for events.
+		polling := tasks.running() || len(tasks.reads) > 0
+		if completed && !polling {
+			return result, nil, true
+		}
+		// Answers to earlier reads may still be queued behind an approval. Read
+		// them before judging any of those reads lost.
+		if polling && len(p.queued) == 0 {
+			if err := tasks.poll(p, time.Now(), emit); err != nil {
+				return result, err, false
+			}
+		}
 		for _, id := range p.rejectedSteers() {
 			if err := emit(AgentEvent{Type: "unsteered", SteerID: id}); err != nil {
 				return result, err, false
@@ -311,11 +330,26 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 		var value map[string]any
 		if len(p.queued) > 0 {
 			value, p.queued = p.queued[0], p.queued[1:]
+		} else if !polling {
+			if value, err = p.read(ctx); err != nil {
+				return result, err, false
+			}
 		} else {
-			value, err = p.read(ctx)
+			readCtx, cancel := context.WithTimeout(ctx, time.Second)
+			value, err = p.read(readCtx)
+			cancel()
+			if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil && p.ctx.Err() == nil {
+				continue
+			}
 			if err != nil {
 				return result, err, false
 			}
+		}
+		if handled, taskErr := tasks.response(p, value, emit); handled || taskErr != nil {
+			if taskErr != nil {
+				return result, taskErr, false
+			}
+			continue
 		}
 		if p.steerResponse(value) {
 			continue
@@ -323,8 +357,21 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 		method := stringValue(value["method"])
 		params, _ := value["params"].(map[string]any)
 		if value["id"] != nil && method != "" {
-			if err := p.handleCodexApproval(ctx, value, turnID); err != nil {
+			thread, turn, err := tasks.requester(method, params, emit)
+			if err != nil {
 				return result, err, false
+			}
+			if thread == "" {
+				thread, turn = p.sessionID, turnID
+			}
+			if err := p.handleCodexApproval(ctx, value, thread, turn); err != nil {
+				return result, err, false
+			}
+			continue
+		}
+		if handled, taskErr := tasks.event(method, params, emit); handled || taskErr != nil {
+			if taskErr != nil {
+				return result, taskErr, false
 			}
 			continue
 		}
@@ -428,6 +475,9 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 			}
 		case "item/started", "item/completed":
 			item, _ := params["item"].(map[string]any)
+			if err := tasks.item(item, p.sessionID, emit); err != nil {
+				return result, err, false
+			}
 			if codexCompactionItem(item) {
 				if err := emit(AgentEvent{Type: "compaction", Compacting: method == "item/started"}); err != nil {
 					return result, err, false
@@ -563,7 +613,15 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 				if strings.TrimSpace(result.Text) == "" {
 					return result, fmt.Errorf("Codex finished without an assistant message"), true
 				}
-				return result, nil, true
+				completed = true
+				for _, task := range tasks.order {
+					if task.running() {
+						task.progress.Background = true
+						if err := emitTask(task, emit); err != nil {
+							return result, err, false
+						}
+					}
+				}
 			case "interrupted":
 				return result, fmt.Errorf("Codex turn interrupted: %w", context.Canceled), true
 			default:

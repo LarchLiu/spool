@@ -55,7 +55,7 @@ func TestCodexMCPElicitationReachesApprovalAndReplies(t *testing.T) {
 				}
 				return test.response, nil
 			}
-			if err := p.handleCodexApproval(context.Background(), map[string]any{"id": "request-1", "method": "mcpServer/elicitation/request", "params": params}, "turn-1"); err != nil {
+			if err := p.handleCodexApproval(context.Background(), map[string]any{"id": "request-1", "method": "mcpServer/elicitation/request", "params": params}, p.sessionID, "turn-1"); err != nil {
 				t.Fatal(err)
 			}
 			var reply map[string]any
@@ -79,7 +79,7 @@ func TestCodexMCPElicitationRejectsOtherThreadOrTurn(t *testing.T) {
 			t.Error("unrelated approval reached the user")
 			return chatmodel.ApprovalResponse{Allow: true}, nil
 		}}
-		if err := p.handleCodexApproval(context.Background(), map[string]any{"id": 1, "method": "mcpServer/elicitation/request", "params": elicitationParams(t, params)}, "turn-1"); err != nil {
+		if err := p.handleCodexApproval(context.Background(), map[string]any{"id": 1, "method": "mcpServer/elicitation/request", "params": elicitationParams(t, params)}, p.sessionID, "turn-1"); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(writer.String(), `"action":"decline"`) {
@@ -100,7 +100,7 @@ func TestCodexMCPElicitationResolutionClearsPromptWithoutReply(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		done <- p.handleCodexApproval(context.Background(), map[string]any{"id": "request-1", "method": "mcpServer/elicitation/request", "params": elicitationParams(t, `{"threadId":"thread-1","mode":"form","requestedSchema":{}}`)}, "turn-1")
+		done <- p.handleCodexApproval(context.Background(), map[string]any{"id": "request-1", "method": "mcpServer/elicitation/request", "params": elicitationParams(t, `{"threadId":"thread-1","mode":"form","requestedSchema":{}}`)}, p.sessionID, "turn-1")
 	}()
 	select {
 	case <-started:

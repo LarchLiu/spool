@@ -18,7 +18,7 @@ import java.util.function.Consumer;
 
 /** Native ToolActivityList with Web-keyed groups/items and conditional detail lifetimes. */
 final class NativeActivityList extends LinearLayout {
-    interface UserInput { void bind(NativeUserRow row, int start, int end); }
+    interface UserInput { void bind(NativeUserRow row, List<org.json.JSONObject> parts); }
     static final class State {
         final NativeTurnError.State error = new NativeTurnError.State();
         boolean open, live, initialized;
@@ -162,7 +162,7 @@ final class NativeActivityList extends LinearLayout {
         NativeActivityModel.Activity current;
         void bind(NativeActivityModel.Activity activity) {
             current = activity;
-            if (userInput != null) userInput.bind(view, activity.inputStart, activity.inputStart + activity.input.size());
+            if (userInput != null) userInput.bind(view, activity.input);
             else {
                 org.json.JSONArray input = new org.json.JSONArray(activity.input);
                 view.bind(null, NativeUserRow.text(input, 0, input.length()), 0, java.util.Collections.emptyList());
@@ -286,6 +286,7 @@ final class NativeActivityList extends LinearLayout {
     }
 
     void bindParts(List<org.json.JSONObject> parts, String backend, CharSequence summary, boolean live) {
+        currentSummary = summary;
         deferredParts = parts; deferredBackend = backend;
         if (rowsChanged != null) {
             // Recycler history owns each expanded body row. This widget only paints its summary.
@@ -304,6 +305,7 @@ final class NativeActivityList extends LinearLayout {
     }
 
     void bind(List<NativeActivityModel.Activity> activities, CharSequence summary, boolean live) {
+        currentSummary = summary;
         org.json.JSONArray input = new org.json.JSONArray().put(live);
         for (NativeActivityModel.Activity activity : activities) input.put(new org.json.JSONArray().put(activity.kind)
                 .put(activity.label).put(activity.detail).put(activity.stats).put(activity.use).put(activity.result).put(activity.noDetails).put(activity.inputStart).put(new org.json.JSONArray(activity.input)));
@@ -323,13 +325,16 @@ final class NativeActivityList extends LinearLayout {
 
     void setSummary(CharSequence value) {
         currentSummary = value;
+        if (value == null) return;
         if (toggle == null) summaryLabel.setText(value);
         else toggle.bind(value, "", "");
     }
 
     private void update() {
         List<View> views = new ArrayList<>();
-        if (groups.isEmpty()) {
+        if (currentSummary == null) {
+            toggle = null;
+        } else if (groups.isEmpty()) {
             if (summaryLabel == null || toggle != null) summaryLabel = ui.text("", 13, ui.muted);
             toggle = null; views.add(summaryLabel);
         } else {
@@ -347,7 +352,7 @@ final class NativeActivityList extends LinearLayout {
             }
             toggle.setExpanded(state.open); views.add(toggle);
         }
-        views.add(summaryGap);
+        if (currentSummary != null) views.add(summaryGap);
         if (rowsChanged == null && !groups.isEmpty() && state.open) { buildGroups(); views.add(list); }
         else { list.removeAllViews(); entries.clear(); gaps.clear(); }
         NativeKeyedViews.sync(this, views);
@@ -361,12 +366,20 @@ final class NativeActivityList extends LinearLayout {
     }
 
     void bindVirtual(NativeTurnPresentation presentation, UserInput input) {
+        bindVirtual(presentation, presentation.process, presentation.running && !presentation.answered, input);
+    }
+
+    void bindVirtualTasks(NativeTurnPresentation presentation) {
+        bindVirtual(presentation, presentation.tasks, true, null);
+    }
+
+    private void bindVirtual(NativeTurnPresentation presentation, List<org.json.JSONObject> parts, boolean live, UserInput input) {
         userInput = input;
         if (virtualPresentation == presentation) return;
         virtualPresentation = presentation;
         statistics.clear();
-        groups = NativeActivityModel.groups(ui, NativeActivityModel.fromParts(ui, presentation.process, presentation.turn.optString("backend")));
-        state.update(presentation.running && !presentation.answered, groups.size());
+        groups = NativeActivityModel.groups(ui, NativeActivityModel.fromParts(ui, parts, presentation.turn.optString("backend")));
+        state.update(live, groups.size());
     }
 
     /** Deterministic debug setup: expanded groups/images and one detail beside the middle image group. */

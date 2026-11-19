@@ -148,6 +148,13 @@ func (s *Store) attributeTurns(chat *chatmodel.Session) error {
 		if !ok {
 			v, ok = byNative[turn.NativeTurnID]
 		}
+		if !ok {
+			for _, id := range turn.NativeTurnIDs {
+				if v, ok = byNative[id]; ok {
+					break
+				}
+			}
+		}
 		turn.UserID = chat.UserID
 		if ok {
 			turn.UserID = v.user

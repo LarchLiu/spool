@@ -1190,5 +1190,7 @@
   "Agent commands do not accept attachments": "Agent 命令不接受附件",
   "Conversation not found": "未找到会话",
   "Select this chat's current agent to run session commands": "请选择此会话当前的 Agent 来执行会话命令",
-  "Enter a conversation name": "请输入会话名称"
+  "Enter a conversation name": "请输入会话名称",
+  "Status unavailable": "状态不可用",
+  "Background": "后台"
 }

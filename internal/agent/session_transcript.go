@@ -123,6 +123,8 @@ type codexHistory struct {
 	calls                []*codexCallRef
 	byCallID             map[string]*codexCallRef
 	pendingAgentMessages map[string]int
+	userEvents           map[string]int
+	userResponses        map[string]int
 	eventCursor          int
 	compactionStart      int
 	compactionText       string
@@ -132,6 +134,8 @@ func newCodexHistory() *codexHistory {
 	return &codexHistory{
 		byCallID:             make(map[string]*codexCallRef),
 		pendingAgentMessages: make(map[string]int),
+		userEvents:           make(map[string]int),
+		userResponses:        make(map[string]int),
 		compactionStart:      -1,
 	}
 }
@@ -140,6 +144,9 @@ func (h *codexHistory) addResponse(item map[string]any, model string, transcript
 	parts := codexTranscriptParts(item, model)
 	kind := codexItemKind(item)
 	if kind == "message" {
+		if item["role"] == "user" && h.userEcho(parts, false) {
+			return nil
+		}
 		if stringValue(item["role"]) != "assistant" {
 			// An event-only assistant message without a matching response item
 			// must not suppress an identically-worded answer in a later turn.
@@ -251,6 +258,9 @@ func (h *codexHistory) hideCompaction(payload map[string]any, transcript *chatmo
 }
 
 func (h *codexHistory) addEvent(payload map[string]any, model string, transcript *chatmodel.Transcript) []chatmodel.Part {
+	if payload["type"] == "task_started" {
+		h.userEvents, h.userResponses = make(map[string]int), make(map[string]int)
+	}
 	if stringValue(payload["type"]) != "item_completed" {
 		return nil
 	}
@@ -262,6 +272,12 @@ func (h *codexHistory) addEvent(payload map[string]any, model string, transcript
 		h.compactionStart, h.compactionText = -1, ""
 	}
 	switch kind := codexItemKind(item); kind {
+	case "usermessage":
+		parts := codexThreadParts([]any{item}, 0)
+		if h.userEcho(parts, true) {
+			return nil
+		}
+		return parts
 	case "reasoning":
 		// response_item reasoning can contain only encrypted content. The event
 		// record is the readable summary used by the native Codex UI.
@@ -321,6 +337,35 @@ func (h *codexHistory) addEvent(payload map[string]any, model string, transcript
 		return []chatmodel.Part{part}
 	}
 	return nil
+}
+
+// Native event and response IDs differ for the same input. Match each echo
+// once by its projected content, preserving repeated genuine user messages.
+// The two records name an image differently (a local path, or the data sent
+// to the model), so an image matches by its place in the message alone.
+func (h *codexHistory) userEcho(parts []chatmodel.Part, event bool) bool {
+	if len(parts) == 0 {
+		return false
+	}
+	content := make([][4]string, len(parts))
+	for i, part := range parts {
+		content[i] = [4]string{part.Kind, part.Text, part.Name, part.FilePath}
+		if part.Kind == "image" {
+			content[i] = [4]string{part.Kind}
+		}
+	}
+	encoded, _ := json.Marshal(content)
+	key := string(encoded)
+	previous, next := h.userEvents, h.userResponses
+	if event {
+		previous, next = next, previous
+	}
+	if previous[key] > 0 {
+		previous[key]--
+		return true
+	}
+	next[key]++
+	return false
 }
 
 func codexMessageKey(part chatmodel.Part) string {

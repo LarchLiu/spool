@@ -717,11 +717,27 @@ func updateTurnTool(turn *chatmodel.Turn, update chatmodel.Part) bool {
 		if update.Text != "" {
 			part.Text = update.Text
 		}
+		if update.Native != nil && update.Native.Kind == "task" && update.Name != "" {
+			part.Name = update.Name
+		}
 		part.Native = update.Native
 		part.Tool = summarizeTool(*part)
 		return true
 	}
 	return false
+}
+
+func finishLiveTasks(turn *chatmodel.Turn, status string) {
+	for i := range turn.Parts {
+		part := &turn.Parts[i]
+		if part.Native == nil || part.Native.Kind != "task" || part.Native.Status != chatmodel.ToolRunning {
+			continue
+		}
+		native := *part.Native
+		native.Status = status
+		part.Native = &native
+		part.Tool = summarizeTool(*part)
+	}
 }
 
 // ownedParts copies a live turn's parts for use outside liveMu. Events rewrite

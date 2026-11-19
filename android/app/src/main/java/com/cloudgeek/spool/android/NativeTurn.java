@@ -20,6 +20,7 @@ final class NativeTurn extends LinearLayout {
     private final Runnable tick;
     private final NativeUi ui;
     private NativeActivityList.State state;
+    private NativeActivityList.State taskState = new NativeActivityList.State();
     private final Consumer<String> open;
     private NativeTranscriptImages images;
     private final boolean renderAnswer;
@@ -101,6 +102,11 @@ final class NativeTurn extends LinearLayout {
                 () -> new NativeActivityList(ui, value.process, current.optString("backend"), summary,
                         running && !answered, state, open, images, activityRowsChanged));
         if (activity == previous) activity.bindParts(value.process, current.optString("backend"), summary, running && !answered);
+        if (renderAnswer && !value.tasks.isEmpty()) {
+            NativeActivityList tasks = (NativeActivityList) children.use("tasks", taskState,
+                    () -> new NativeActivityList(ui, value.tasks, current.optString("backend"), null, true, taskState, open, images));
+            tasks.bindParts(value.tasks, current.optString("backend"), null, true);
+        }
         if (!value.answer.isEmpty() && renderAnswer) {
             NativeMessage message = (NativeMessage) children.use("answer", "answer",
                     () -> new NativeMessage(ui, value.answer, false, null, current.optLong("finished_at"), ui.chinese, open));
@@ -128,6 +134,7 @@ final class NativeTurn extends LinearLayout {
     void rebindForTurn(NativeActivityList.State next, NativeTranscriptImages nextImages) {
         if (state == next) return;
         main.removeCallbacks(tick); running = answered = false; current = null; bound = null; presentation = null;
+        taskState = new NativeActivityList.State();
         state = next; images = nextImages; activity.rebindForTurn(next, nextImages);
     }
 

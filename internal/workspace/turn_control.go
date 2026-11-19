@@ -47,6 +47,7 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string, user string) (chat
 	if live, ok := a.live[chat.ID]; ok && live.ID == turnID {
 		current = live
 		current.Parts = ownedParts(live.Parts)
+		finishLiveTasks(&current, "stopped")
 	}
 	steered := a.steeredLocked(chat.ID, turnID)
 	a.liveMu.Unlock()
@@ -74,6 +75,7 @@ func (a *App) stopTurn(chat chatmodel.Session, turnID string, user string) (chat
 	// as for a normally completed turn.
 	a.liveMu.Lock()
 	if live, ok := a.live[chat.ID]; ok && live.ID == turnID {
+		finishLiveTasks(&live, "stopped")
 		live.Status = chatmodel.StatusStopped
 		live.Compacting = false
 		if len(latest.Turns) > 0 {

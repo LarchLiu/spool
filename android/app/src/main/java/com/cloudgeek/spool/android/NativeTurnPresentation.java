@@ -21,7 +21,7 @@ final class NativeTurnPresentation {
     final JSONArray attachments, actions;
     final JSONObject approval;
     final boolean running, answered;
-    final List<JSONObject> process;
+    final List<JSONObject> process, tasks;
 
     private NativeTurnPresentation(JSONArray parts, int inputEnd, JSONObject turn) {
         this.turn = turn; this.parts = parts; this.inputEnd = inputEnd;
@@ -36,7 +36,7 @@ final class NativeTurnPresentation {
             JSONObject part = parts.optJSONObject(i);
             if (part == null) continue;
             if (part.optString("role").equals("user")) lastUser = i;
-            if (activity(part)) lastActivity = i;
+            if (activity(part) && !task(part)) lastActivity = i;
         }
         List<JSONObject> finals = new ArrayList<>();
         for (int i = lastUser + 1; i < parts.length(); i++) {
@@ -51,11 +51,15 @@ final class NativeTurnPresentation {
         Set<JSONObject> answers = Collections.newSetFromMap(new IdentityHashMap<>());
         answers.addAll(finals);
         List<JSONObject> activity = new ArrayList<>();
+        List<JSONObject> liveTasks = new ArrayList<>();
         for (int i = inputEnd; i < parts.length(); i++) {
             JSONObject part = parts.optJSONObject(i);
-            if (part != null && !answers.contains(part)) activity.add(part);
+            if (part == null || answers.contains(part)) continue;
+            if (running && task(part)) liveTasks.add(part);
+            else activity.add(part);
         }
         process = Collections.unmodifiableList(activity);
+        tasks = Collections.unmodifiableList(liveTasks);
         StringBuilder result = new StringBuilder(); String previous = "";
         for (JSONObject part : finals) {
             String id = part.optString("id");
@@ -89,6 +93,10 @@ final class NativeTurnPresentation {
     private static boolean activity(JSONObject part) {
         String kind = part.optString("kind");
         return !part.optString("role").equals("user") && (kind.equals("thinking") || kind.equals("tool_use") || kind.equals("tool_result"));
+    }
+    private static boolean task(JSONObject part) {
+        JSONObject tool = part.optJSONObject("tool");
+        return tool != null && tool.optString("kind").equals("task");
     }
 
     static final class Cache {

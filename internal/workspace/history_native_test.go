@@ -125,6 +125,33 @@ func TestCodexHistoryReadsNativeBodiesWithCachedRolloutMetadata(t *testing.T) {
 	}
 }
 
+func TestCodexNativeHistoryKeepsConvertedTurnOrigin(t *testing.T) {
+	store := testStore(t)
+	path := filepath.Join(t.TempDir(), "rollout.jsonl")
+	records := []any{
+		map[string]any{"type": "event_msg", "spool_origin": map[string]any{"backend": "claude", "model": "original-claude", "reasoning_effort": "max"}, "payload": map[string]any{"type": "task_started", "turn_id": "carried"}},
+		map[string]any{"type": "turn_context", "payload": map[string]any{"turn_id": "native", "model": "new-codex", "effort": "high"}},
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range records {
+		if err := json.NewEncoder(file).Encode(record); err != nil {
+			file.Close()
+			t.Fatal(err)
+		}
+	}
+	file.Close()
+	chat := store.codexHistorySession(chatmodel.Session{ID: "chat", Backend: "codex", NativeSessionPath: path}, []agent.CodexHistoryTurn{
+		{ID: "carried", Parts: []chatmodel.Part{{Role: "assistant", Kind: "text", Text: "old reply"}}},
+		{ID: "native", Parts: []chatmodel.Part{{Role: "assistant", Kind: "text", Text: "new reply"}}},
+	}, "", true)
+	if len(chat.Turns) != 2 || chat.Turns[0].Backend != "claude" || chat.Turns[0].Model != "original-claude" || chat.Turns[0].ReasoningEffort != "max" || chat.Turns[1].Backend != "codex" || chat.Turns[1].Model != "new-codex" {
+		t.Fatalf("native history replaced original source: %+v", chat.Turns)
+	}
+}
+
 func TestCodexHistoryPreservesPerTurnModelAndEffortAcrossPagesAndRestart(t *testing.T) {
 	store := testStore(t)
 	fake := &fakeCodexHistory{count: 45, turnBytes: 60_000, idPrefix: "native-"}

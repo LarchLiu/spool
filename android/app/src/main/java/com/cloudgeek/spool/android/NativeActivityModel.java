@@ -156,6 +156,13 @@ final class NativeActivityModel {
         String name = part.optString("name").trim();
         if (name.isEmpty()) name = backend.equals("claude") ? "Claude tool" : "Codex tool";
         switch (item.kind) {
+            // A subagent is named by the title its author gave it, with what it last reported.
+            case "task": {
+                JSONObject task = summary.optJSONObject("task");
+                String progress = task == null ? "" : oneLine(task.optString("summary"), 240);
+                item.label = progress.isEmpty() ? name : name + " · " + progress;
+                break;
+            }
             case "image": item.label = imageLabel(ui, item.images.size()); break;
             case "read": item.label = path.isEmpty() ? ui.t("Read files") : ui.t("Read {path}", "path", shortPath(path)); break;
             case "write": item.label = path.isEmpty() ? ui.t("Edited files") : ui.t("Edited {path}", "path", shortPath(path)); break;
@@ -267,7 +274,10 @@ final class NativeActivityModel {
         return matcher.find() ? matcher.group(1) : "";
     }
 
-    /** "", "running", "completed", "failed" or "declined": a failure on the call or its result wins. */
+    /**
+     * "", "running", "completed", "failed" or "declined": a failure on the call or its result wins.
+     * A subagent may also be "stopped", or "unknown" once its progress can no longer be read.
+     */
     static String status(Activity activity) {
         JSONObject use = activity.use == null ? null : activity.use.optJSONObject("tool");
         JSONObject result = activity.result == null ? null : activity.result.optJSONObject("tool");
@@ -280,6 +290,14 @@ final class NativeActivityModel {
     /** A short localized note for a call that failed or was declined; otherwise empty. */
     static String outcome(NativeUi ui, Activity activity) {
         String status = status(activity);
+        // A subagent outlives the call that started it, so every state of it is told.
+        if ("task".equals(activity.kind)) switch (status) {
+            case "running": return ui.t("Running");
+            case "completed": return ui.t("Completed");
+            case "stopped": return ui.t("Stopped");
+            case "unknown": return ui.t("Status unavailable");
+            default: break;
+        }
         if (status.equals("declined")) return ui.t("Declined");
         if (!status.equals("failed")) return "";
         JSONObject use = activity.use == null ? null : activity.use.optJSONObject("tool");
@@ -312,7 +330,7 @@ final class NativeActivityModel {
                 }
                 continue;
             }
-            if (last != null && !last.compound && last.kind.equals(activity.kind) && !activity.kind.equals("message") && !activity.kind.equals("user")) {
+            if (last != null && !last.compound && last.kind.equals(activity.kind) && !activity.kind.equals("message") && !activity.kind.equals("user") && !activity.kind.equals("task")) {
                 last.activities.add(activity);
                 last.label = groupLabel(ui, last.kind);
             } else {
@@ -371,6 +389,7 @@ final class NativeActivityModel {
 
     static String icon(String kind) {
         switch (kind) {
+            case "task": return "workflow";
             case "image": return "image";
             case "read": return "book-open";
             case "write": return "file-pen";

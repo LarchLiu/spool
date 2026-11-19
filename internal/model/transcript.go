@@ -2,10 +2,11 @@ package model
 
 // Part is one normalized piece of a session transcript.
 type Part struct {
-	Replace   bool   `json:"-"` // the complete live body of a tool or of reasoning, rather than a delta
-	ID        string `json:"id,omitempty"`
-	Phase     string `json:"phase,omitempty"`
-	Timestamp int64  `json:"timestamp,omitempty"`
+	Replace      bool   `json:"-"` // the complete live body of a tool or of reasoning, rather than a delta
+	ID           string `json:"id,omitempty"`
+	NativeTurnID string `json:"-"` // original owner when native turns share a response
+	Phase        string `json:"phase,omitempty"`
+	Timestamp    int64  `json:"timestamp,omitempty"`
 	// Correlates a client's optimistic message with its accepted input.
 	ClientMessageID string `json:"client_message_id,omitempty"`
 	// Pending marks a steering message its model has yet to take in. It is
@@ -47,6 +48,20 @@ type ToolNative struct {
 	// Operations are the provider's own reading of one shell command.
 	Operations []ToolOperation
 	Files      []ToolFile
+	Task       *TaskProgress
+}
+
+// TaskProgress is a live child-task snapshot. Native history keeps the
+// provider's original tool records rather than these synthetic activities.
+type TaskProgress struct {
+	ID         string `json:"id"`
+	ParentID   string `json:"parent_id,omitempty"`
+	AgentType  string `json:"agent_type,omitempty"`
+	Background bool   `json:"background,omitempty"`
+	Summary    string `json:"summary,omitempty"`
+	LastTool   string `json:"last_tool,omitempty"`
+	ToolUses   int    `json:"tool_uses,omitempty"`
+	Tokens     int    `json:"tokens,omitempty"`
 }
 
 // ToolSummary is enough to render a collapsed activity without its input/output.
@@ -68,10 +83,11 @@ type ToolSummary struct {
 	Operations []ToolOperation `json:"operations,omitempty"`
 	// Status is absent when the provider did not report one. A call's status
 	// may arrive on its use or on its result.
-	Status     string     `json:"status,omitempty"`
-	ExitCode   *int       `json:"exit_code,omitempty"`
-	DurationMs int64      `json:"duration_ms,omitempty"`
-	Files      []ToolFile `json:"files,omitempty"`
+	Status     string        `json:"status,omitempty"`
+	ExitCode   *int          `json:"exit_code,omitempty"`
+	DurationMs int64         `json:"duration_ms,omitempty"`
+	Files      []ToolFile    `json:"files,omitempty"`
+	Task       *TaskProgress `json:"task,omitempty"`
 	// Shared immutable native facts used with SourceText to detect stale summaries.
 	SourceNative *ToolNative `json:"-"`
 	// Shared immutable source used to detect edits to hydrated cache responses.

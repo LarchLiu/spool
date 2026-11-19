@@ -36,6 +36,10 @@ stay together; the provider does not supply each stage's intermediate output.
 the provider did not say. Clients show a failed or declined call as such and
 leave it out of change statistics.
 
+Live subagent rows also use `stopped` and `unknown` (progress unavailable).
+They are built from live lifecycle events and bounded read-only child status
+queries; native historical tool items retain their existing display behavior.
+
 ## Codex history
 
 A Codex chat is read through app-server the way Codex's own clients view a
@@ -55,6 +59,13 @@ An append refreshes the native window and scans metadata only in the new
 records, retrying any incomplete last line. A window read within two seconds
 of the rollout's last write may lack that write, so it is read once more after
 the rollout has been quiet that long.
+
+Same-thread internal turns with the same `rootTurnId` form one displayed
+response. For example, native review stores its process on an internal turn
+and its final report on the root; Spool shows one work summary using the root's
+completion, followed by the report. A page boundary is extended when needed
+to keep that response together. Tool, reasoning and image locators retain each
+item's original turn ID, and actor/runtime bindings accept the internal IDs.
 
 One window is read from Codex at a time, outside the store and cache locks:
 other chats keep their cached windows, new turns and writes while a read
@@ -92,7 +103,7 @@ unsupported images and transport failures, with retry in full previews.
 The rollout parser (`session_transcript.go`, `session_turns.go`) remains the
 reader for everything native paging cannot serve, chosen per thread:
 
-- a legacy thread, including sessions converted by Spool;
+- a legacy thread, including older sessions converted by Spool;
 - a Codex without these methods, or one that is disabled;
 - a Codex that cannot be started, for every thread not yet read, or a single
   thread whose read fails, for that thread (each retried after 30 seconds);
@@ -116,7 +127,10 @@ decode transcript bodies.
 
 The native API does not report per-turn model and reasoning effort. Spool joins
 them from each rollout `turn_context` by native turn ID, including on older
-pages. Metadata lookup starts at the tail and stops once the oldest requested
+pages. Internal responses that omit this record can use the
+`thread_settings_applied` recorded within their execution; settings applied
+after completion do not overwrite historical metadata.
+Metadata lookup starts at the tail and stops once the oldest requested
 turn is reached; opening older pages extends the search backwards. Tool bodies
 are skipped rather than decoded into transcript parts. A reverse search scans
 up to 4 MiB of blocks per request, plus decoding the matching context records,
@@ -135,6 +149,20 @@ authorized after those pages leave the cache; if it cannot be read the request
 fails as unavailable rather than as denied.
 
 Claude history is read from its JSONL files by the Go parser.
+
+Converted records carry `spool_origin` metadata with the original agent, model
+and reasoning effort. The agent used to parse and resume the file remains the
+target agent; each turn's displayed source comes from its origin. Repeated
+conversions preserve this metadata. Codex conversions also write native turn
+boundaries, allowing native pages to join the origin by turn ID in the same
+bounded metadata search used for model and effort.
+
+Older conversions have no explicit origin. The reader recognizes their
+converter-generated envelopes, including Claude user-only turns without an
+assistant record, and attributes the imported prefix to the source agent.
+Native turns appended after conversion retain the target agent. This does not
+rewrite provider files or recover model/effort that older conversions discarded;
+origins already erased by repeated older conversions cannot be reconstructed.
 
 Web and Android keep compound steps as summary rows and expose the original
 command and combined output once under “Command and output”. Full patch

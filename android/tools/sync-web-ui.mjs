@@ -38,7 +38,7 @@ const icons = {
   monitor:'Monitor', palette:'Palette', sun:'Sun', moon:'Moon', check:'Check', command:'Command',
   copy:'Copy', clipboard_paste:'ClipboardPaste', code_xml:'CodeXml', circle_alert:'CircleAlert', shield_check:'ShieldCheck', shield_question:'ShieldQuestion',
   message:'MessageCircle', search:'Search', refresh:'RefreshCw', spinner:'LoaderCircle', plug:'Plug',
-  brain:'Brain', wrench:'Wrench', terminal:'Terminal', globe:'Globe2', list:'List', image:'Image',
+  brain:'Brain', wrench:'Wrench', workflow:'Workflow', terminal:'Terminal', globe:'Globe2', list:'List', image:'Image',
   book_open:'BookOpen', file_pen:'FilePenLine', file_plus:'FilePlus2', file_x:'FileX2', crosshair:'Crosshair',
   keyboard:'Keyboard', pan:'Move', minus:'Minus', fit:'Scan', fullscreen:'Maximize', fullscreen_exit:'Minimize',
   escape:'CornerUpLeft', tab:'ArrowRightToLine', alt:'Option', shift:'ArrowBigUp', arrow_right:'ArrowRight',
@@ -101,7 +101,7 @@ function vector(svg, filled=false, stroked=!filled) {
 }
 for (const [key,name] of Object.entries(icons))
   write(`android/app/src/main/res/drawable/web_icon_${key}.xml`, vector(renderToStaticMarkup(React.createElement(lucide[name],
-    key.startsWith('project_') ? {strokeWidth:1.4} : ['brain','wrench','terminal','globe','list','book_open','file_pen','file_plus','file_x'].includes(key) ? {strokeWidth:1.6} : {})), key==='stop', true));
+    key.startsWith('project_') ? {strokeWidth:1.4} : ['brain','wrench','workflow','terminal','globe','list','book_open','file_pen','file_plus','file_x'].includes(key) ? {strokeWidth:1.6} : {})), key==='stop', true));
 for (const name of ['Codex','Claude']) {
   const source=path.join(root,`web/node_modules/@lobehub/icons/es/${name}/components`);
   const module=fs.existsSync(path.join(source,'Mono.mjs')) ? 'Mono.mjs' : 'Mono.js';

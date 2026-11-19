@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -183,9 +184,54 @@ func allowsValue(required map[string]any, key, value string) bool {
 
 var errApprovalResolved = errors.New("approval already resolved")
 
+// Other threads keep working while one waits for its owner. This bounds what
+// their events may hold in memory, not how long the owner may take.
+const maxApprovalBacklog = 1 << 14
+
+// Streamed text arrives a token at a time and dominates a long wait. Fold a
+// delta into the one queued just before it when both extend the same text, so
+// the backlog grows with what happened rather than with how it was chunked.
+func foldQueuedDelta(previous, value map[string]any) bool {
+	if method := stringValue(value["method"]); method != "" {
+		before, _ := previous["params"].(map[string]any)
+		after, _ := value["params"].(map[string]any)
+		head, ok := before["delta"].(string)
+		tail, also := after["delta"].(string)
+		if !ok || !also || method != previous["method"] || value["id"] != nil || len(before) != len(after) {
+			return false
+		}
+		for key, item := range after {
+			if key != "delta" && !reflect.DeepEqual(item, before[key]) {
+				return false
+			}
+		}
+		before["delta"] = head + tail
+		return true
+	}
+	if value["type"] != "stream_event" || previous["type"] != "stream_event" || value["parent_tool_use_id"] != previous["parent_tool_use_id"] {
+		return false
+	}
+	before, _ := previous["event"].(map[string]any)
+	after, _ := value["event"].(map[string]any)
+	if after["type"] != "content_block_delta" || before["type"] != "content_block_delta" || after["index"] != before["index"] {
+		return false
+	}
+	head, _ := before["delta"].(map[string]any)
+	tail, _ := after["delta"].(map[string]any)
+	for _, field := range []string{"text", "thinking"} {
+		if tail["type"] == field+"_delta" && head["type"] == tail["type"] {
+			head[field] = stringValue(head[field]) + stringValue(tail[field])
+			return true
+		}
+	}
+	return false
+}
+
 // Keep draining stdout while the owner decides, so cancellation and process
-// exit cannot leave an unanswerable prompt or block the CLI's pipe.
-func (p *agentProcess) awaitApproval(ctx context.Context, handler chatmodel.ApprovalHandler, request chatmodel.ApprovalRequest, cancelled func(map[string]any) bool) (chatmodel.ApprovalResponse, error) {
+// exit cannot leave an unanswerable prompt or block the CLI's pipe. finished
+// reports the event that ends the work the request belongs to: a thread's own
+// approval must outlast the completion of any other thread.
+func (p *agentProcess) awaitApproval(ctx context.Context, handler chatmodel.ApprovalHandler, request chatmodel.ApprovalRequest, cancelled, finished func(map[string]any) bool) (chatmodel.ApprovalResponse, error) {
 	if handler == nil {
 		return chatmodel.ApprovalResponse{}, nil
 	}
@@ -215,11 +261,14 @@ func (p *agentProcess) awaitApproval(ctx context.Context, handler chatmodel.Appr
 			if cancelled(value) {
 				return chatmodel.ApprovalResponse{}, errApprovalResolved
 			}
-			if len(p.queued) >= 1024 {
+			if last := len(p.queued) - 1; last >= 0 && foldQueuedDelta(p.queued[last], value) {
+				continue
+			}
+			if len(p.queued) >= maxApprovalBacklog {
 				return chatmodel.ApprovalResponse{}, fmt.Errorf("too many events while waiting for approval")
 			}
 			p.queued = append(p.queued, value)
-			if value["type"] == "result" || value["method"] == "turn/completed" {
+			if finished(value) {
 				return chatmodel.ApprovalResponse{}, errApprovalResolved
 			}
 		}

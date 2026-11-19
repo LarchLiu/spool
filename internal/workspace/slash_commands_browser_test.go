@@ -68,6 +68,55 @@ func TestSlashCommandsBrowser(t *testing.T) {
 			}
 			a := NewApp(s, runner, "", "")
 			chat, _ := s.CreateChat(u.ID, p.ID, chatmodel.BackendClaude)
+			// A real native conversion exercises the source badges through the
+			// same history API the browser uses, without submitting inference.
+			originRunner := &historyRunner{}
+			emit := func(agent.AgentEvent) error { return nil }
+			old, err := originRunner.Run(t.Context(), agent.AgentRequest{Backend: "codex", Model: "original-codex", WorkingDirectory: p.Path, Prompt: "Origin check question"}, emit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			source, err := agent.FindSessionTranscript("codex", old.SessionID, p.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			converted, err := agent.ConvertSession("codex", "claude", source, p.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(converted.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := bytes.SplitN(data, []byte("\n"), 2)
+			var legacy, first map[string]any
+			_ = json.Unmarshal(lines[0], &legacy)
+			_ = json.Unmarshal(lines[0], &first)
+			delete(legacy, "spool_origin")
+			legacy["uuid"] = "11111111-1111-4111-8111-111111111111"
+			legacy["message"] = map[string]any{"role": "user", "content": "Earlier Codex input without reply"}
+			first["parentUuid"] = legacy["uuid"]
+			var prefixed bytes.Buffer
+			_ = json.NewEncoder(&prefixed).Encode(legacy)
+			_ = json.NewEncoder(&prefixed).Encode(first)
+			prefixed.Write(lines[1])
+			if err := os.WriteFile(converted.Path, prefixed.Bytes(), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err = originRunner.Run(t.Context(), agent.AgentRequest{Backend: "claude", Model: "original-claude", WorkingDirectory: p.Path, Prompt: "Follow up in Claude", NativeSessionID: converted.ID, NativeSessionPath: converted.Path}, emit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			originChat, err := s.CreateChat(u.ID, p.ID, "claude")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.SetNativeSessionPath(originChat.ID, converted.ID, converted.Path); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.db.Exec(`UPDATE sessions SET title='Origin check question' WHERE id=?`, originChat.ID); err != nil {
+				t.Fatal(err)
+			}
 			cookie, _ := loginRequest(t, a, "alice")
 			probe, err := os.ReadFile("testdata/slash-commands-browser.js")
 			if err != nil {
@@ -101,6 +150,12 @@ func TestSlashCommandsBrowser(t *testing.T) {
 								prefix := "commands"
 								if r.URL.Query().Get("agent") == "claude" {
 									prefix = "claude-commands"
+								} else if r.URL.Query().Get("agent") == "claude-review-progress" {
+									prefix = "claude-review-progress"
+								} else if r.URL.Query().Get("agent") == "converted-origin" {
+									prefix = "converted-origin"
+								} else if name := r.URL.Query().Get("agent"); name == "claude-subagents" || name == "codex-subagents" {
+									prefix = name
 								}
 								err = os.WriteFile(filepath.Join(output, fmt.Sprintf("%s-%d.png", prefix, width)), data, 0644)
 							}
@@ -158,7 +213,12 @@ func TestSlashCommandsBrowser(t *testing.T) {
 					}
 					t.Fatalf("%s", data)
 				}
-				for _, name := range []string{"cachedCatalog", "keyboard", "agentSwitch", "bounds", "nativeExecution", "settingsSynced", "noTurns", "draftExecution", "skillList", "skillSelection", "skillExecution", "noBrowserErrors", "claudeList", "claudePresentation", "codexPresentation", "claudeSkillSelection", "claudeSkillExecution", "claudeReviewSelection", "codexReviewSelection"} {
+				for _, name := range []string{"cachedCatalog", "keyboard", "agentSwitch", "bounds", "nativeExecution", "settingsSynced", "noTurns", "draftExecution", "skillList", "skillSelection", "skillExecution", "noBrowserErrors", "claudeList", "claudePresentation", "codexPresentation", "claudeSkillSelection", "claudeSkillExecution", "claudeReviewSelection", "codexReviewSelection", "claudeReviewProgress", "claudeReviewReport", "convertedOrigins"} {
+					if report[name] != true {
+						t.Errorf("%s failed: %s", name, data)
+					}
+				}
+				for _, name := range []string{"claudeSubagents", "codexSubagents"} {
 					if report[name] != true {
 						t.Errorf("%s failed: %s", name, data)
 					}
@@ -177,6 +237,9 @@ func TestSlashCommandsBrowser(t *testing.T) {
 					}
 					value := entry["value"].(map[string]any)
 					input := value["params"].(map[string]any)["input"].([]any)
+					if len(input) == 1 && input[0].(map[string]any)["text"] == "subagent-live wait-progress" {
+						continue
+					}
 					if len(input) != 2 || input[0].(map[string]any)["text"] != "Check browser selection" {
 						t.Fatalf("unexpected skill turn: %#v", input)
 					}

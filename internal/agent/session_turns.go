@@ -7,15 +7,18 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	chatmodel "spool/internal/model"
 )
 
-// NativeTurn contains only identity and file boundaries, never transcript text.
+// NativeTurn contains identity, display metadata and file boundaries, never transcript text.
 type NativeTurn struct {
+	Backend         chatmodel.Backend
 	ID              string
+	IDs             []string
 	PromptID        string
 	ParentID        string
 	PromptIndex     int
@@ -109,6 +112,8 @@ func indexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 	model, effort := "", ""
 	lastStamp := int64(0)
 	codexExplicit := false
+	nestedTurn := false
+	roots := map[string]string{}
 	reader := nativeReader(file, offset, end)
 	for {
 		line, readErr := reader.ReadBytes('\n')
@@ -122,6 +127,10 @@ func indexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 			typ := stringValue(record["type"])
 			payload, _ := record["payload"].(map[string]any)
 			input := typ == "response_item" && payload["type"] == "message" && payload["role"] == "user" && genuineUserContent(payload["content"])
+			if typ == "event_msg" && payload["type"] == "item_completed" {
+				item, _ := payload["item"].(map[string]any)
+				input = codexItemKind(item) == "usermessage" && genuineUserContent(item["content"])
+			}
 			id, prompt := "", ""
 			boundary := false
 			if backend == chatmodel.BackendCodex {
@@ -144,6 +153,19 @@ func indexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 					boundary = !codexExplicit
 				}
 			}
+			nativeID := id
+			if boundary {
+				root := stringValue(payload["root_turn_id"])
+				if root == "" {
+					root = roots[id]
+				} else {
+					roots[id] = root
+				}
+				nestedTurn = root != "" && root != id
+				if nestedTurn {
+					id = root
+				}
+			}
 			if boundary && len(turns) > 0 && id != "" && id == turns[len(turns)-1].ID {
 				boundary = false
 			}
@@ -155,7 +177,22 @@ func indexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 						previous.FinishedAt, previous.Status = lastStamp, chatmodel.StatusCompleted
 					}
 				}
-				turns = append(turns, NativeTurn{ID: id, PromptID: prompt, Start: start, StartedAt: stamp, Model: model, CarryNotes: carryNotes, ReasoningEffort: effort, Status: chatmodel.StatusRunning})
+				source := backend
+				if carryNotes {
+					source, model, effort = chatmodel.BackendClaude, "", ""
+				}
+				turns = append(turns, NativeTurn{Backend: source, ID: id, PromptID: prompt, Start: start, StartedAt: stamp, Model: model, CarryNotes: carryNotes, ReasoningEffort: effort, Status: chatmodel.StatusRunning})
+			}
+			if len(turns) > 0 {
+				// An internal turn announces itself twice: when it starts, and
+				// again with its context.
+				if turn := &turns[len(turns)-1]; nativeID != "" && nativeID != id && !slices.Contains(turn.IDs, nativeID) {
+					turn.IDs = append(turn.IDs, nativeID)
+				}
+				if origin := recordOrigin(record); origin.Backend.Valid() {
+					turn := &turns[len(turns)-1]
+					turn.Backend, turn.Model, turn.ReasoningEffort = origin.Backend, origin.Model, origin.ReasoningEffort
+				}
 			}
 			if len(turns) > 0 && model != "" && typ == "turn_context" {
 				turns[len(turns)-1].Model, turns[len(turns)-1].ReasoningEffort = model, effort
@@ -165,10 +202,15 @@ func indexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 			}
 			if len(turns) > 0 && typ == "event_msg" {
 				turn := &turns[len(turns)-1]
+				if payload["type"] == "thread_settings_applied" && nestedTurn {
+					settings, _ := payload["thread_settings"].(map[string]any)
+					turn.Model, turn.ReasoningEffort = stringValue(settings["model"]), stringValue(settings["reasoning_effort"])
+				}
 				if eventID := stringValue(payload["turn_id"]); eventID == "" || eventID == turn.ID {
 					switch stringValue(payload["type"]) {
 					case "task_complete":
 						turn.Status, turn.FinishedAt = chatmodel.StatusCompleted, stamp
+						nestedTurn = false
 					case "turn_aborted":
 						turn.Status, turn.FinishedAt = chatmodel.StatusStopped, stamp
 					case "task_failed":
@@ -194,7 +236,7 @@ func indexSessionTurnsTo(backend chatmodel.Backend, path string, offset, end int
 		}
 	} else if position > offset {
 		// Old or output-only native files have no explicit input boundary.
-		turns = append(turns, NativeTurn{Start: offset, End: position, CarryNotes: carryNotes, Status: chatmodel.StatusCompleted})
+		turns = append(turns, NativeTurn{Backend: backend, Start: offset, End: position, CarryNotes: carryNotes, Status: chatmodel.StatusCompleted})
 	}
 	return turns, nil
 }
@@ -265,7 +307,7 @@ func indexClaudeTurns(path string, offset, end int64, metadata *nativeSessionMet
 				if current >= 0 && turns[current].Status == chatmodel.StatusRunning {
 					turns[current].Status = chatmodel.StatusCompleted
 				}
-				turn := NativeTurn{ID: id, PromptID: prompt, ParentID: parent, Start: start, StartedAt: nativeTimestamp(record["timestamp"]), Status: chatmodel.StatusRunning, hasUserInput: true}
+				turn := NativeTurn{Backend: chatmodel.BackendClaude, ID: id, PromptID: prompt, ParentID: parent, Start: start, StartedAt: nativeTimestamp(record["timestamp"]), Status: chatmodel.StatusRunning, hasUserInput: true}
 				if pos, ok := record["turnPosition"].(map[string]any); ok {
 					turn.PromptIndex, _ = numberValue(pos["promptIndex"])
 					turn.TurnIndex, _ = numberValue(pos["turnIndex"])
@@ -289,10 +331,16 @@ func indexClaudeTurns(path string, offset, end int64, metadata *nativeSessionMet
 				}
 				turn := &turns[owner]
 				if !claudeCompactionRecord(record) {
-					if model := stringValue(message["model"]); model != "" && model != "<synthetic>" {
-						turn.Model = model
-					}
-					if effort := stringValue(record["perTurnEffort"]); effort != "" {
+					if record["type"] == "assistant" || recordOrigin(record).Backend.Valid() || legacyClaudeCarry(record, message) {
+						origin := claudeRecordOrigin(record)
+						turn.Backend = origin.Backend
+						if origin.Model != "" {
+							turn.Model = origin.Model
+						}
+						if origin.ReasoningEffort != "" {
+							turn.ReasoningEffort = origin.ReasoningEffort
+						}
+					} else if effort := stringValue(record["perTurnEffort"]); effort != "" {
 						turn.ReasoningEffort = effort
 					}
 					meaningful := record["type"] == "user" || record["type"] == "assistant" || record["subtype"] == "turn_duration"
@@ -335,7 +383,7 @@ func indexClaudeTurns(path string, offset, end int64, metadata *nativeSessionMet
 		}
 	}
 	if len(turns) == 0 && position > offset {
-		turns = append(turns, NativeTurn{Start: offset, End: position, Status: chatmodel.StatusCompleted})
+		turns = append(turns, NativeTurn{Backend: chatmodel.BackendClaude, Start: offset, End: position, Status: chatmodel.StatusCompleted})
 	}
 	return turns, nil
 }

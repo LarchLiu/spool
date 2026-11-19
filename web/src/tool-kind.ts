@@ -13,6 +13,7 @@ export type ActivityKind =
   | "message"
   | "user"
   | "image"
+  | "task"
   | "other";
 
 export function toolNameKind(name: string): ActivityKind {

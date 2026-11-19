@@ -16,11 +16,13 @@ import (
 )
 
 const (
-	codexWindowThreads   = 16
-	codexWindowTurnPage  = 10
-	codexWindowMaxPages  = 8
-	codexHistoryRetry    = 30 * time.Second
-	codexHistoryDeadline = 30 * time.Second
+	codexWindowThreads  = 16
+	codexWindowTurnPage = 10
+	codexWindowMaxPages = 8
+	// Internal turns read past a page boundary to keep one response whole.
+	codexResponseMaxTurns = 32
+	codexHistoryRetry     = 30 * time.Second
+	codexHistoryDeadline  = 30 * time.Second
 	// How long after a rollout's last write Codex may still be making that
 	// write readable through its history requests.
 	codexWindowSettle = 2 * time.Second
@@ -246,12 +248,47 @@ func readCodexWindow(reader codexHistoryReader, threadID string, info os.FileInf
 			break
 		}
 	}
+	if err := completeCodexResponse(ctx, reader, threadID, &next.turns, &next.before); err != nil {
+		return next, err
+	}
 	// An index that has not been built reads as an empty thread. The rollout
 	// is the record; let the parser decide whether it really is empty.
 	if len(next.turns) == 0 {
 		return next, agent.ErrCodexHistoryUnsupported
 	}
 	return next, nil
+}
+
+// Native pagination counts internal turns. Do not split one logical response
+// between transport pages: peek at the next record and consume it only while it
+// shares the oldest loaded root. The unconsumed cursor remains the page anchor.
+// A root can be loaded before its older internal turns, so a turn that is its
+// own root needs the peek too. A response longer than the bound is split
+// rather than read one request at a time until the deadline.
+func completeCodexResponse(ctx context.Context, reader codexHistoryReader, threadID string, turns *[]agent.CodexHistoryTurn, before *string) error {
+	if len(*turns) == 0 || (*turns)[0].RootID == "" {
+		return nil
+	}
+	root := (*turns)[0].RootID
+	for range codexResponseMaxTurns {
+		if *before == "" {
+			return nil
+		}
+		page, err := reader.Turns(ctx, threadID, *before, 1)
+		if err != nil {
+			return err
+		}
+		if len(page.Turns) == 0 || page.Turns[0].RootID != root {
+			return nil
+		}
+		if page.Before == *before {
+			return errors.New("Codex repeated its response continuation cursor")
+		}
+		summarizeTurns(page.Turns)
+		*turns = append(page.Turns, (*turns)...)
+		*before = page.Before
+	}
+	return nil
 }
 
 // currentReader is the reader an explicit page or item request uses. Such a
@@ -355,17 +392,64 @@ func (s *Store) codexHistorySession(chat chatmodel.Session, turns []agent.CodexH
 	}
 	chat.Turns = make([]chatmodel.Turn, 0, len(turns))
 	chat.Transcript = chatmodel.Transcript{Parts: []chatmodel.Part{}, Source: string(chat.Backend) + "-native"}
-	for _, native := range turns {
-		// Window parts are shared between responses; copy before use.
-		parts := cloneTranscript(chatmodel.Transcript{Parts: native.Parts}).Parts
-		context := metadata[native.ID]
+	for _, group := range codexResponseGroups(turns) {
+		// Internal turns carry process items; the root carries the final reply
+		// and authoritative completion. Both describe one user-visible response.
+		native := group[len(group)-1]
+		identity := native.RootID
+		if identity == "" {
+			identity = native.ID
+		}
+		context := metadata[identity]
+		// What the user sent opens the response, whichever turn recorded it;
+		// the root's own output closes it.
+		var input, parts []chatmodel.Part
+		var identities []string
+		for _, member := range group {
+			identities = append(identities, member.ID)
+			// An internal turn only supplies what the root's record lacks.
+			other := metadata[member.ID]
+			if context.Model == "" && other.Model != "" {
+				context.Model = other.Model
+				if context.ReasoningEffort == "" {
+					context.ReasoningEffort = other.ReasoningEffort
+				}
+			}
+			if !context.Backend.Valid() {
+				context.Backend = other.Backend
+			}
+			if native.StartedAt == 0 || member.StartedAt > 0 && member.StartedAt < native.StartedAt {
+				native.StartedAt = member.StartedAt
+			}
+			// Window parts are shared between responses; copy before use. Tool
+			// locators keep their actual owner, rather than the merged root ID.
+			owned := cloneTranscript(chatmodel.Transcript{Parts: member.Parts}).Parts
+			sent := 0
+			for i := range owned {
+				owned[i].NativeTurnID = member.ID
+				if sent == i && owned[i].Role == "user" {
+					sent++
+				}
+			}
+			if member.ID == identity {
+				input = append(owned[:sent:sent], input...)
+			} else {
+				input = append(input, owned[:sent]...)
+			}
+			parts = append(parts, owned[sent:]...)
+		}
+		parts = append(input, parts...)
+		backend := context.Backend
+		if !backend.Valid() {
+			backend = chat.Backend
+		}
 		for i := range parts {
 			if parts[i].Role == "assistant" && parts[i].Model == "" {
 				parts[i].Model = context.Model
 			}
 		}
 		// These turns have no rollout offset; -1 keeps offset-based actor matching away.
-		turn := chatmodel.Turn{ID: historyTurnID(chat.ID, native.ID), NativeTurnID: native.ID, SourceOffset: -1, Backend: chat.Backend,
+		turn := chatmodel.Turn{ID: historyTurnID(chat.ID, identity), NativeTurnID: identity, NativeTurnIDs: identities, SourceOffset: -1, Backend: backend,
 			NativeHistory: true, Model: context.Model, ReasoningEffort: context.ReasoningEffort,
 			StartedAt: native.StartedAt, FinishedAt: native.FinishedAt, Status: native.Status, Error: native.Error, Parts: parts}
 		// Only a live in-memory request may render an active timer.
@@ -387,6 +471,33 @@ func (s *Store) codexHistorySession(chat chatmodel.Session, turns []agent.CodexH
 		chat.History.Before = nativeHistoryCursor(chat.ID, before)
 	}
 	return chat
+}
+
+func codexResponseGroups(turns []agent.CodexHistoryTurn) [][]agent.CodexHistoryTurn {
+	var groups [][]agent.CodexHistoryTurn
+	positions := map[string]int{}
+	for _, turn := range turns {
+		root := turn.RootID
+		if root == "" {
+			root = turn.ID
+		}
+		index, found := positions[root]
+		if !found {
+			index = len(groups)
+			positions[root] = index
+			groups = append(groups, nil)
+		}
+		group := groups[index]
+		// Keep the root's final output after the internal process even when
+		// equal native timestamps put the root before its children in a page.
+		if len(group) > 0 && group[len(group)-1].ID == root {
+			group = append(group[:len(group)-1], turn, group[len(group)-1])
+		} else {
+			group = append(group, turn)
+		}
+		groups[index] = group
+	}
+	return groups
 }
 
 // codexHistoryPage reads a bounded page directly. It does not change the newest
@@ -424,6 +535,9 @@ func (s *Store) codexHistoryPage(ctx context.Context, chat chatmodel.Session, be
 		if cursor == "" || cursor == previous || turnBytes(turns) >= historyPageBytes {
 			break
 		}
+	}
+	if err := completeCodexResponse(ctx, reader, chat.NativeSessionID, &turns, &cursor); err != nil {
+		return chat, err
 	}
 	chat = s.codexHistorySession(chat, turns, cursor, true)
 	if err := s.attributeTurns(&chat); err != nil {

@@ -1014,6 +1014,14 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 	finish := func(result agent.AgentResult, runErr error) (agent.AgentResult, error) {
 		a.liveMu.Lock()
 		if current, ok := a.live[id]; ok && current.ID == turn.ID {
+			if runErr != nil {
+				status := chatmodel.ToolFailed
+				if errors.Is(runErr, context.Canceled) {
+					status = "stopped"
+				}
+				finishLiveTasks(&current, status)
+				a.live[id] = current
+			}
 			inputCount := max(0, min(current.InputEnd-current.PartStart, len(current.Parts)))
 			if len(current.Parts) > inputCount {
 				result.Parts = append([]chatmodel.Part(nil), current.Parts[inputCount:]...)

@@ -123,6 +123,60 @@ func TestCodexMetadataReadsPagesAndOnlyAppendedBytes(t *testing.T) {
 	}
 }
 
+func TestCodexMetadataReadsInternalTurnRootSettings(t *testing.T) {
+	data, err := os.ReadFile("testdata/codex-review.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, appended := range []bool{false, true} {
+		t.Run(fmt.Sprint(appended), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "rollout.jsonl")
+			c := &CodexMetadata{}
+			requested := []CodexHistoryTurn{{ID: "review-worker"}, {ID: "review-root"}}
+			if appended {
+				cut := bytes.Index(data, []byte(`{"timestamp":"2026-11-18T15:36:41.000Z"`))
+				if err := os.WriteFile(path, data[:cut], 0600); err != nil {
+					t.Fatal(err)
+				}
+				if got, err := c.Read(path, requested); err != nil || got["review-root"].Model != "" {
+					t.Fatalf("unfinished review: %+v %v", got, err)
+				}
+				file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = file.Write(data[cut:])
+				file.Close()
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := c.Read(path, requested)
+			if err != nil || got["review-root"].Model != "session-model" || got["review-root"].ReasoningEffort != "xhigh" {
+				t.Fatalf("root settings missing: %+v %v", got, err)
+			}
+			// A later ordinary turn's settings must not replace the review's.
+			file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = file.WriteString("{\"type\":\"event_msg\",\"payload\":{\"type\":\"thread_settings_applied\",\"thread_settings\":{\"model\":\"between-turns\"}}}\n{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"turn_id\":\"next\",\"root_turn_id\":\"next\"}}\n{\"type\":\"event_msg\",\"payload\":{\"type\":\"thread_settings_applied\",\"thread_settings\":{\"model\":\"unrelated\"}}}\n")
+			file.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, reader := range []*CodexMetadata{c, {}} {
+				got, err := reader.Read(path, requested)
+				if err != nil || got["review-root"].Model != "session-model" {
+					t.Fatalf("later settings changed historical model: %+v %v", got, err)
+				}
+			}
+		})
+	}
+}
+
 func TestCodexMetadataInvalidatesChangedAndReplacedFiles(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "rollout.jsonl")
 	write := func(model string) {

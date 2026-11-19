@@ -357,6 +357,8 @@ type agentProcess struct {
 	queued              []map[string]any
 	permissionMode      string
 	approve             chatmodel.ApprovalHandler
+	// Replaces both waits of a finished Claude turn for its tasks; tests shorten them.
+	taskWait time.Duration
 	// A steering request writes while the turn that owns the process reads.
 	writeMu       sync.Mutex
 	steerMu       sync.Mutex

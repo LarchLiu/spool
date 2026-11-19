@@ -95,6 +95,22 @@ public class NativeTurnPresentationTest {
         assertFalse(NativeTurnPresentation.turn(parts, turn).answered);
     }
 
+    @Test public void lateSubagentsKeepUnphasedAnswersAndReturnToCompletedProcess() throws Exception {
+        JSONObject task = new JSONObject("{role:'assistant',kind:'tool_use',name:'Inspect parser',tool:{kind:'task',status:'running'}}");
+        JSONArray parts = new JSONArray().put(part("user", "Question")).put(part("assistant", "Main report")).put(task);
+        JSONObject turn = turn("turn", 0, parts.length()).put("status", "running");
+        NativeTurnPresentation live = NativeTurnPresentation.turn(parts, turn);
+        assertFalse(live.answered);
+        assertEquals(1, live.tasks.size()); assertSame(task, live.tasks.get(0));
+        assertEquals(1, live.process.size()); assertEquals("Main report", live.process.get(0).getString("text"));
+        turn.put("status", "completed"); task.getJSONObject("tool").put("status", "completed");
+        NativeTurnPresentation completed = NativeTurnPresentation.turn(parts, turn);
+        assertEquals("Main report", completed.answer); assertTrue(completed.tasks.isEmpty());
+        assertEquals(1, completed.process.size()); assertSame(task, completed.process.get(0));
+        parts.put(new JSONObject("{role:'assistant',kind:'tool_use',name:'Read'}")); turn.put("part_end", parts.length());
+        assertFalse("An ordinary tool still separates progress from the final answer", NativeTurnPresentation.turn(parts, turn).answered);
+    }
+
     @Test public void duplicateIdsRetirementAndSessionChangesDoNotAliasCachedPresentations() throws Exception {
         JSONArray parts = new JSONArray().put(part("assistant", "One")).put(part("assistant", "Two"));
         JSONObject page = page(parts, new JSONArray().put(turn("same", 0, 1)).put(turn("same", 1, 2)));

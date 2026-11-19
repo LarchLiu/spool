@@ -3,6 +3,7 @@ package workspace
 import (
 	"crypto/sha256"
 	"fmt"
+	"slices"
 	"strconv"
 
 	"spool/internal/agent"
@@ -111,7 +112,11 @@ func (s *Store) readHistorySnapshot(chat chatmodel.Session, file *nativeHistory)
 			continue
 		}
 		identity := nativeIdentity(chat.NativeSessionID, native)
-		turn := chatmodel.Turn{ID: historyTurnID(chat.ID, identity), NativeTurnID: identity, NativePromptID: native.PromptID, SourceOffset: native.Start, Backend: chat.Backend, StartedAt: native.StartedAt, FinishedAt: native.FinishedAt, Status: native.Status, Model: native.Model, ReasoningEffort: native.ReasoningEffort, Error: native.Error, Parts: parts}
+		backend := native.Backend
+		if !backend.Valid() {
+			backend = chat.Backend
+		}
+		turn := chatmodel.Turn{ID: historyTurnID(chat.ID, identity), NativeTurnID: identity, NativeTurnIDs: native.IDs, NativePromptID: native.PromptID, SourceOffset: native.Start, Backend: backend, StartedAt: native.StartedAt, FinishedAt: native.FinishedAt, Status: native.Status, Model: native.Model, ReasoningEffort: native.ReasoningEffort, Error: native.Error, Parts: parts}
 		if turn.Status == "" {
 			turn.Status = chatmodel.StatusCompleted
 		}
@@ -144,7 +149,7 @@ func (s *Store) withRuntimeTurn(chat chatmodel.Session) chatmodel.Session {
 	matched := -1
 	for i := len(chat.Turns) - 1; i >= 0; i-- {
 		native := chat.Turns[i]
-		if (current.NativeTurnID != "" && current.NativeTurnID == native.NativeTurnID) || (current.NativeTurnID == "" && native.SourceOffset >= current.SourceOffset) {
+		if (current.NativeTurnID != "" && (current.NativeTurnID == native.NativeTurnID || slices.Contains(native.NativeTurnIDs, current.NativeTurnID))) || (current.NativeTurnID == "" && native.SourceOffset >= current.SourceOffset) {
 			matched = i
 			break
 		}

@@ -2,7 +2,7 @@
   const report = {};
   const requests = [];
   const errors = [];
-  window.addEventListener("error", event => errors.push(event.message));
+  window.addEventListener("error", event => errors.push(event.error?.stack || event.message));
   window.addEventListener("unhandledrejection", event => errors.push(String(event.reason)));
   const nativeFetch = window.fetch;
   window.fetch = async (...args) => {
@@ -47,6 +47,21 @@
     document.querySelector(`.model-popover [role=group][aria-label="${name}"] button`).click();
     document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     await wait(() => !document.querySelector(".model-popover"), "picker dismissed");
+  };
+  const checkSubagents = async backend => {
+    await type("subagent-live wait-progress");
+    await wait(() => document.querySelector(".send:not(:disabled)"), "subagent submission");
+    key("Enter");
+    await wait(() => document.querySelectorAll(".tool-task-running").length === 2 && document.querySelector(".turn:last-child")?.textContent.includes("Main report"), backend + " parallel tasks after main reply");
+    await wait(() => [...document.querySelectorAll(".tool-task-running")].every(task => task.textContent.includes("Checking child files")), backend + " task summaries");
+    const chatID = requests.filter(request => request.id && request.url.includes("/messages")).at(-1)?.id;
+    const snapshot = await (await fetch("/api/chats/" + chatID)).json();
+    const tasks = snapshot.transcript.parts.filter(part => part.tool?.kind === "task");
+    if (snapshot.status !== "running" || tasks.length !== 2 || tasks.some(part => part.tool.status !== "running" || !part.tool.task?.id)) throw Error("Refresh snapshot lost child tasks");
+    if (document.documentElement.scrollWidth > innerWidth + 1) throw Error("Child tasks overflow the viewport");
+    if (!(await fetch("/smoke/capture?agent=" + backend + "-subagents")).ok) throw Error("Subagent screenshot failed");
+    await wait(() => document.querySelector(".picker-summary:not(:disabled)"), backend + " tasks finished");
+    report[backend + "Subagents"] = true;
   };
   try {
     if (!(await fetch("/smoke/viewport")).ok) throw Error("viewport setup failed");
@@ -118,6 +133,18 @@
     await wait(() => document.querySelector(".turn")?.textContent.includes("Hello world"), "native Claude skill response");
     await wait(() => document.querySelector(".picker-summary:not(:disabled)"), "Claude skill turn completed");
     report.claudeSkillExecution = input().value === "";
+    await type("/code-review wait-progress");
+    await wait(() => document.querySelector(".send:not(:disabled)"), "Claude review ready");
+    key("Enter");
+    await wait(() => [...document.querySelectorAll(".tool-activity-item-summary")].some(row => row.textContent.includes("/code-review") && row.textContent.includes("Running")), "foreground review running progress");
+    [...document.querySelectorAll(".tool-activity-item-summary")].find(row => row.textContent.includes("/code-review") && row.textContent.includes("Running")).click();
+    await wait(() => [...document.querySelectorAll(".tool-detail")].some(detail => detail.textContent.includes("Tool uses: 3") && detail.textContent.includes("Duration: 1.5s")), "native review progress details");
+    report.claudeReviewProgress = true;
+    if (!(await fetch("/smoke/capture?agent=claude-review-progress")).ok) throw Error("review progress screenshot failed");
+    await wait(() => document.querySelector(".picker-summary:not(:disabled)"), "Claude review finished");
+    const reviewTurn = [...document.querySelectorAll(".turn")].find(turn => turn.textContent.includes("/code-review wait-progress"));
+    report.claudeReviewReport = reviewTurn?.textContent.includes("Hello world") && !reviewTurn.textContent.includes("PRIVATE") && (reviewTurn.textContent.match(/Hello world/g) || []).length === 1;
+    await checkSubagents("claude");
     document.querySelector('[aria-label="Open sidebar"]')?.click();
     await wait(() => document.querySelector(".project-new"), "Codex new chat button");
     document.querySelector(".project-new").click();
@@ -137,6 +164,18 @@
     key("Enter");
     await wait(() => [...document.querySelectorAll(".turn")].some(turn => turn.textContent.includes("Check browser selection") && turn.textContent.includes("Hello world")), "native skill response");
     report.skillExecution = input().value === "";
+    await wait(() => document.querySelector(".picker-summary:not(:disabled)"), "Codex skill finished");
+    await checkSubagents("codex");
+    document.querySelector('[aria-label="Open sidebar"]')?.click();
+    await wait(() => [...document.querySelectorAll(".nav-chat-open")].some(button => button.textContent.includes("Origin check question")), "converted history chat");
+    [...document.querySelectorAll(".nav-chat-open")].find(button => button.textContent.includes("Origin check question")).click();
+    await wait(() => [...document.querySelectorAll(".turn")].some(turn => turn.textContent.includes("Follow up in Claude")), "converted history loaded");
+    const convertedTurns = [...document.querySelectorAll(".turn")];
+    const original = convertedTurns.find(turn => turn.textContent.includes("Origin check question"));
+    const followup = convertedTurns.find(turn => turn.textContent.includes("Follow up in Claude"));
+    const userOnly = convertedTurns.find(turn => turn.textContent.includes("Earlier Codex input without reply"));
+    report.convertedOrigins = original?.querySelector(".work-metadata")?.textContent.includes("Codex · original-codex") && followup?.querySelector(".work-metadata")?.textContent.includes("Claude · original-claude") && userOnly?.querySelector(".work-metadata")?.textContent.trim() === "· Codex";
+    if (!(await fetch("/smoke/capture?agent=converted-origin")).ok) throw Error("converted origin screenshot failed");
     report.noBrowserErrors = errors.length === 0;
     report.complete = true;
   } catch (error) { report.error = String(error); report.body = document.body.innerText.slice(-2500); report.requests = requests; report.browserErrors = errors; }

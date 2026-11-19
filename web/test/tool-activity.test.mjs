@@ -24,6 +24,19 @@ const t = (message, values = {}) =>
 const tool = (name, text) => ({ role: "assistant", kind: "tool_use", name, text });
 const message = (text, phase, id) => ({ role: "assistant", kind: "text", text, phase, id });
 
+test("native command tasks display progress and terminal state before their report", () => {
+  for (const [status, label] of [["running", "Running"], ["completed", "Completed"], ["failed", "Failed"]]) {
+    const part = { ...tool("/code-review", "/code-review\nChecking changed files\nTool uses: 3"), id: "review", tool: { kind: "task", version: status, bytes: 50, status, duration_ms: 1500 } };
+    const activity = displayActivity(part, "claude", t);
+    assert.equal(activity.label, "/code-review");
+    const html = renderToStaticMarkup(createElement(ToolActivityList, { parts: [part], backend: "claude", t, live: true }));
+    assert.match(html, new RegExp(`/code-review</span><span class="tool-activity-outcome">${label}<`));
+    const detail = renderToStaticMarkup(createElement(ActivityDetail, { activity, t }));
+    assert.match(detail, /Checking changed files/);
+    assert.match(detail, /Tool uses: 3/);
+  }
+});
+
 test("compound Codex and Claude commands fold into one summary and have no per-step details", () => {
   const cases = JSON.parse(readFileSync(new URL("../../android/app/src/test/resources/tool-operations.json", import.meta.url), "utf8"));
   for (const fixture of cases) {
@@ -625,4 +638,32 @@ test("converted patch input and result remain in expandable tool details in full
   assert.match(list, /Created pong\.html/);
   assert.match(list, /title="apply_patch"/);
   assert.match(list, /class="tool-activity-additions">\+25000<\/span> <span class="tool-activity-deletions">-0<\/span>/);
+});
+
+test("parallel live subagents stay visible after the main final reply and keep separate progress", () => {
+  const parts = [
+    { ...tool("Inspect database", "Inspect database\nChecking migrations"), id: "task-one", tool: { kind: "task", version: "1", bytes: 40, status: "running", task: { id: "one", summary: "Checking migrations", last_tool: "Read", background: true, agent_type: "Explore" } } },
+    { ...tool("Inspect parser", "Inspect parser\nChecking syntax"), id: "task-two", tool: { kind: "task", version: "1", bytes: 40, status: "failed", task: { id: "two", parent_id: "one", summary: "Checking syntax" } } },
+    message("Main report", "final_answer", "report"),
+  ];
+  const before = JSON.stringify(parts);
+  const html = renderToStaticMarkup(createElement(TurnResponse, { parts, backend: "claude", t, running: true, summary: "Working" }));
+  assert.match(html, /Inspect database/);
+  assert.match(html, /Checking migrations/);
+  assert.match(html, /Inspect parser/);
+  assert.match(html, /Checking syntax/);
+  assert.match(html, /Background/);
+  assert.match(html, /Running/);
+  assert.match(html, /Failed/);
+  assert.equal((html.match(/Main report/g) || []).length, 1);
+  assert.equal((html.match(/class="tool-task-title"/g) || []).length, 2);
+  assert.equal(JSON.stringify(parts), before);
+  const completed = renderToStaticMarkup(createElement(TurnResponse, { parts, backend: "claude", t, running: false, summary: "Completed" }));
+  assert.doesNotMatch(completed, /Inspect database|Checking migrations|Inspect parser/);
+  assert.match(completed, /Main report/);
+});
+
+test("late task updates do not hide an unphased main answer on completion", () => {
+  const parts = [message("Main report", undefined, "report"), { ...tool("Inspect parser", "Done"), tool: { kind: "task", status: "completed", version: "1", bytes: 4 } }];
+  assert.equal(turnPresentation(parts, false).answer, "Main report");
 });

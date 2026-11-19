@@ -63,7 +63,7 @@ func TestCodexHistoryRPCReadsPagesAndLocatesItemsWithoutResume(t *testing.T) {
 			data := map[string]any{"native-thread": map[string]any{
 				"thread": map[string]any{"id": "native-thread", "historyMode": "paginated", "name": "Native history"},
 				"turns": []any{
-					map[string]any{"id": "new", "itemsView": "full", "status": "completed", "startedAt": 20, "items": []any{map[string]any{"type": "commandExecution", "id": "call-new", "command": "cat notes.txt", "status": "completed", "aggregatedOutput": "notes"}}},
+					map[string]any{"id": "new", "rootTurnId": "root", "itemsView": "full", "status": "completed", "startedAt": 20, "items": []any{map[string]any{"type": "commandExecution", "id": "call-new", "command": "cat notes.txt", "status": "completed", "aggregatedOutput": "notes"}}},
 					map[string]any{"id": "old", "itemsView": "full", "status": "completed", "startedAt": 10, "items": []any{
 						map[string]any{"type": "commandExecution", "id": "call-old", "command": "ls", "status": "failed", "exitCode": 1, "aggregatedOutput": "missing"},
 						map[string]any{"type": "reasoning", "id": "thought-old", "summary": []string{"stored reasoning"}},
@@ -88,7 +88,7 @@ func TestCodexHistoryRPCReadsPagesAndLocatesItemsWithoutResume(t *testing.T) {
 				t.Fatalf("thread: %+v %v", thread, err)
 			}
 			newest, err := history.Turns(ctx, "native-thread", "", 1)
-			if err != nil || len(newest.Turns) != 1 || newest.Turns[0].ID != "new" || newest.Before == "" {
+			if err != nil || len(newest.Turns) != 1 || newest.Turns[0].ID != "new" || newest.Turns[0].RootID != "root" || newest.Before == "" {
 				t.Fatalf("newest: %+v %v", newest, err)
 			}
 			oldest, err := history.Turns(ctx, "native-thread", newest.Before, 1)

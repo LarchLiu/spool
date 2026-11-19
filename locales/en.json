@@ -1190,5 +1190,7 @@
   "Agent commands do not accept attachments": "Agent commands do not accept attachments",
   "Conversation not found": "Conversation not found",
   "Select this chat's current agent to run session commands": "Select this chat's current agent to run session commands",
-  "Enter a conversation name": "Enter a conversation name"
+  "Enter a conversation name": "Enter a conversation name",
+  "Status unavailable": "Status unavailable",
+  "Background": "Background"
 }

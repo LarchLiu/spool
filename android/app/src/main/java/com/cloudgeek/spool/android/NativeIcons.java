@@ -69,6 +69,7 @@ final class NativeIcons {
             case "plug": resource = R.drawable.web_icon_plug; break;
             case "brain": resource = R.drawable.web_icon_brain; break;
             case "wrench": resource = R.drawable.web_icon_wrench; break;
+            case "workflow": resource = R.drawable.web_icon_workflow; break;
             case "terminal": resource = R.drawable.web_icon_terminal; break;
             case "globe": resource = R.drawable.web_icon_globe; break;
             case "list": resource = R.drawable.web_icon_list; break;

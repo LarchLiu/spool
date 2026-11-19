@@ -122,6 +122,7 @@ func Run(t *testing.T) {
 	turn := 0
 	var goal any
 	var chatter sync.Once
+	childPolls := map[string]int{}
 	scanner := scannerFor(os.Stdin)
 	for scanner.Scan() {
 		var value map[string]any
@@ -221,6 +222,19 @@ func Run(t *testing.T) {
 				}
 				send(map[string]any{"id": value["id"], "result": result})
 			case "thread/read", "thread/turns/list", "thread/items/read", "thread/items/list":
+				if n, ok := childPolls[StringValue(params["threadId"])]; ok {
+					if method == "thread/turns/list" {
+						childPolls[StringValue(params["threadId"])] = n + 1
+						status := "inProgress"
+						if n > 0 {
+							status = "completed"
+						}
+						send(map[string]any{"id": value["id"], "result": map[string]any{"data": []any{map[string]any{"id": "child-turn", "status": status}}}})
+					} else {
+						send(map[string]any{"id": value["id"], "result": map[string]any{"data": []any{map[string]any{"turnId": "child-turn", "item": map[string]any{"type": "agentMessage", "id": "child-message", "text": "Checking child files"}}, map[string]any{"turnId": "child-turn", "item": map[string]any{"type": "commandExecution", "id": "child-read", "command": "cat child.go", "status": "completed"}}}}})
+					}
+					continue
+				}
 				// fixture-thread-history.json maps a thread ID to its metadata and
 				// turns (newest first); without it the fixture has no paged history.
 				var threads map[string]struct {
@@ -386,6 +400,8 @@ func Run(t *testing.T) {
 				prompt = StringValue(first["text"])
 			}
 		}
+		slash := chatmodel.ParseSlashCommand(prompt)
+		forkedReview := !codex && slash != nil && (slash.Name == "code-review" || slash.Name == "review")
 		if codex {
 			input, _ := params["input"].([]any)
 			if len(input) > 0 {
@@ -398,10 +414,30 @@ func Run(t *testing.T) {
 				}})
 			}
 			send(map[string]any{"id": value["id"], "result": map[string]any{"turn": map[string]any{"id": turnID, "status": "inProgress"}}})
-		} else if turn == 1 {
+		} else if turn == 1 && !forkedReview {
 			send(map[string]any{"type": "system", "subtype": "init", "session_id": thread, "model": claudeModel})
 		}
+		if strings.Contains(prompt, "subagent-live") {
+			fixtureLiveTasks(codex, prompt, thread, turnID, send, childPolls)
+			continue
+		}
 		if !codex {
+			if forkedReview {
+				// Native /code-review runs a foreground fork before system init,
+				// then returns its report as a synthetic top-level assistant.
+				send(map[string]any{"type": "system", "subtype": "task_started", "task_id": turnID, "description": "/code-review", "task_type": "local_agent", "spawn_depth": 1, "is_backgrounded": false, "ambient": true, "skip_transcript": true, "prompt": "PRIVATE REVIEW PROMPT"})
+				send(map[string]any{"type": "system", "subtype": "task_progress", "task_id": turnID, "description": "/code-review", "summary": "Checking changed files", "last_tool_name": "Read", "usage": map[string]any{"tool_uses": 3, "total_tokens": 1200, "duration_ms": 1500}})
+				send(map[string]any{"type": "assistant", "parent_tool_use_id": "nested-agent", "message": map[string]any{"content": []any{map[string]any{"type": "text", "text": "PRIVATE NESTED OUTPUT"}}}})
+				if strings.Contains(prompt, "wait-progress") {
+					time.Sleep(1500 * time.Millisecond)
+				}
+				send(map[string]any{"type": "system", "subtype": "task_notification", "task_id": turnID, "status": "completed", "summary": "/code-review", "ambient": true, "skip_transcript": true, "usage": map[string]any{"tool_uses": 4, "total_tokens": 1600, "duration_ms": 2000}})
+				send(map[string]any{"type": "system", "subtype": "init", "session_id": thread, "model": claudeModel})
+				send(map[string]any{"type": "user", "parent_tool_use_id": "forked-command-code-review", "message": map[string]any{"role": "user", "content": "PRIVATE REVIEW PROMPT"}})
+				send(map[string]any{"type": "assistant", "parent_tool_use_id": nil, "local_command_source": "code-review", "message": map[string]any{"model": "<synthetic>", "content": []any{map[string]any{"type": "text", "text": "Hello world"}}}})
+				send(map[string]any{"type": "result", "subtype": "success", "session_id": thread, "result": "Hello world", "local_command": "code-review"})
+				continue
+			}
 			if slash := chatmodel.ParseSlashCommand(prompt); slash != nil && (slash.Name == "context" || slash.Name == "compact" || slash.Name == "model") {
 				if slash.Name == "model" && slash.Arguments != "" {
 					claudeModel = slash.Arguments

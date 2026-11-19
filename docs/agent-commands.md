@@ -55,6 +55,29 @@ session. `/code-review [target]`, `/loop [interval] [prompt]`,
 `/goal` retains native goal controls. A builtin entry appears in Skills only
 when the native Skills response confirms it.
 
+Native commands and ordinary prompts share the same live subagent tracking.
+Claude `Agent`/`Task` calls and task lifecycle events are joined by their native
+IDs; foreground forks, background tasks and nested agents each get a live
+activity. Codex collaboration calls and child-thread events update each child's
+own state, independently of whether the spawning tool finished. Spool reads a
+bounded page of recent child turns/items when Codex does not forward progress;
+these reads never resume a child or take its writer lease.
+
+Each task shows its description, state and available progress summary, last
+tool and usage. Parallel tasks keep separate rows. If the main reply ends first,
+the request remains running while known child tasks continue, so progress,
+approvals and cancellation still work and the idle timeout does not reclaim
+their process. Live task rows remain visible beside the main reply. Refreshing
+an active session recovers them from the running turn. Child transcripts never
+become the main reply. Failed progress reads are shown as unavailable, not as a
+successful or failed child execution: only consecutive reads that told nothing
+count, and a child's own events or requests start the count again. Claude Code
+offers no such read, so a child of a finished turn that reports nothing for 15
+minutes is shown as unavailable and no longer holds the request open. The turn
+Claude Code runs in answer to a task notification belongs to the same request.
+Native history parsing and its existing
+tool records are unchanged; Spool does not load independent subagent histories.
+
 Codex implements these commands:
 
 | Commands | Execution |

@@ -163,6 +163,24 @@ func TestAgentSwitchCreatesIndependentChatsWithoutSourceLinks(t *testing.T) {
 	if len(a.Turns) != 2 || len(b.Turns) != 3 || len(c.Turns) != 4 || len(d.Turns) != 5 {
 		t.Fatal("independent histories have wrong length", len(a.Turns), len(b.Turns), len(c.Turns), len(d.Turns))
 	}
+	assertOrigins := func(chat chatmodel.Session, origins ...chatmodel.Backend) {
+		t.Helper()
+		if len(chat.Turns) != len(origins) {
+			t.Fatalf("wrong turn count: %d != %d", len(chat.Turns), len(origins))
+		}
+		for i, backend := range origins {
+			model := "test-model"
+			if backend == chatmodel.BackendClaude {
+				model = "test-claude"
+			}
+			if turn := chat.Turns[i]; turn.Backend != backend || turn.Model != model {
+				t.Fatalf("turn %d (%s) attributed to %s/%s, want %s/%s", i, turn.Prompt, turn.Backend, turn.Model, backend, model)
+			}
+		}
+	}
+	assertOrigins(b, "codex", "claude", "claude")
+	assertOrigins(c, "codex", "claude", "claude", "codex")
+	assertOrigins(d, "codex", "claude", "claude", "codex", "claude")
 	// The target's native file alone is sufficient after restart.
 	reopened, err := OpenStore(store.Root())
 	if err != nil {
@@ -173,6 +191,7 @@ func TestAgentSwitchCreatesIndependentChatsWithoutSourceLinks(t *testing.T) {
 	if len(saved.Turns) != 5 || saved.Turns[0].Prompt != "message-A" || saved.Turns[4].Prompt != "message-D" {
 		t.Fatal("native-only reload lost context")
 	}
+	assertOrigins(saved, "codex", "claude", "claude", "codex", "claude")
 	assertNoTurnTables(t, reopened)
 	bobCookie, bobCSRF := loginRequest(t, app, "bob")
 	w := apiRequest(app, "POST", "/api/chats/"+a.ID+"/fork", `{"backend":"claude"}`, bobCookie, bobCSRF)

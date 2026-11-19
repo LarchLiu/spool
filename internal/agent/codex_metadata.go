@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"sync"
+
+	chatmodel "spool/internal/model"
 )
 
 const (
@@ -20,6 +22,7 @@ const (
 // CodexTurnContext is the metadata omitted by native turn pages. Offset also
 // lets the reader recognize when it has already searched a page's time range.
 type CodexTurnContext struct {
+	Backend                chatmodel.Backend
 	Model, ReasoningEffort string
 	Offset                 int64
 }
@@ -29,15 +32,17 @@ type CodexTurnContext struct {
 // line. It holds neither transcript bodies nor a complete session index.
 // One instance belongs to one rollout path and can be shared by its viewers.
 type CodexMetadata struct {
-	mu       sync.Mutex
-	info     os.FileInfo
-	end      int64 // where an append is read from
-	tail     bool  // end is not yet known to follow a complete line
-	floor    int64
-	oldestAt int64
-	guard    []byte
-	turns    map[string]CodexTurnContext
-	search   *codexMetadataSearch
+	mu                     sync.Mutex
+	info                   os.FileInfo
+	end                    int64 // where an append is read from
+	tail                   bool  // end is not yet known to follow a complete line
+	floor                  int64
+	oldestAt               int64
+	guard                  []byte
+	turns                  map[string]CodexTurnContext
+	search                 *codexMetadataSearch
+	activeTurn, activeRoot string
+	activeKnown            bool
 }
 
 func (c *CodexMetadata) Read(path string, turns []CodexHistoryTurn) (map[string]CodexTurnContext, error) {
@@ -106,6 +111,7 @@ func (c *CodexMetadata) read(file io.ReaderAt, info os.FileInfo, requested []Cod
 			c.turns = make(map[string]CodexTurnContext)
 			c.end, c.floor, c.oldestAt = info.Size(), info.Size(), 0
 			c.search, c.tail = nil, true
+			c.activeTurn, c.activeRoot, c.activeKnown = "", "", false
 		}
 		c.guard = make([]byte, min(info.Size(), 128))
 		if _, err := file.ReadAt(c.guard, info.Size()-int64(len(c.guard))); err != nil {
@@ -166,30 +172,83 @@ func (c *CodexMetadata) coveredAt(turns []CodexHistoryTurn, floor int64) bool {
 }
 
 type codexContextRecord struct {
-	Type      string `json:"type"`
-	Timestamp string `json:"timestamp"`
+	Type      string          `json:"type"`
+	Timestamp string          `json:"timestamp"`
+	Origin    json.RawMessage `json:"spool_origin"`
 	Payload   struct {
 		Type            string `json:"type"`
 		TurnID          string `json:"turn_id"`
+		RootTurnID      string `json:"root_turn_id"`
 		Model           string `json:"model"`
 		Effort          string `json:"effort"`
 		ReasoningEffort string `json:"reasoning_effort"`
+		ThreadSettings  struct {
+			Model           string `json:"model"`
+			ReasoningEffort string `json:"reasoning_effort"`
+		} `json:"thread_settings"`
 	} `json:"payload"`
 }
 
-func (c *CodexMetadata) collect(record codexContextRecord, offset int64, overwrite bool) {
-	if record.Type != "turn_context" || record.Payload.TurnID == "" {
-		return
+func (c *CodexMetadata) collect(record codexContextRecord, offset int64, overwrite bool) bool {
+	if record.Type == "event_msg" && record.Payload.Type == "task_complete" {
+		if overwrite && (record.Payload.TurnID == c.activeRoot || record.Payload.TurnID == c.activeTurn) {
+			c.activeTurn, c.activeRoot, c.activeKnown = "", "", true
+		} else if !overwrite && c.search != nil {
+			// Walking backwards crosses out of between-turn settings updates.
+			c.search.settings = nil
+			if !c.activeKnown {
+				c.activeTurn, c.activeRoot, c.activeKnown = "", "", true
+			}
+		}
+		return false
+	}
+	if record.Type == "event_msg" && record.Payload.Type == "thread_settings_applied" {
+		settings := CodexTurnContext{Backend: chatmodel.BackendCodex, Model: record.Payload.ThreadSettings.Model, ReasoningEffort: record.Payload.ThreadSettings.ReasoningEffort, Offset: offset}
+		if overwrite {
+			// Settings restored inside a same-thread internal turn describe its
+			// enclosing response. Do not assign ordinary between-turn settings
+			// updates to an earlier, unrelated historical turn.
+			if c.activeRoot != "" && c.activeRoot != c.activeTurn {
+				c.turns[c.activeRoot] = settings
+			}
+		} else if c.search != nil && c.search.settings == nil {
+			c.search.settings = &settings
+		}
+		return false
+	}
+	if record.Type == "event_msg" && record.Payload.Type == "task_started" {
+		id, root := record.Payload.TurnID, record.Payload.RootTurnID
+		if overwrite || !c.activeKnown {
+			c.activeTurn, c.activeRoot, c.activeKnown = id, root, true
+		}
+		if !overwrite && c.search != nil {
+			if root != "" && root != id && c.search.settings != nil {
+				if _, found := c.turns[root]; !found {
+					c.turns[root] = *c.search.settings
+				}
+			}
+			c.search.settings = nil
+		}
+	}
+	origin := decodeOrigin(record.Origin)
+	carried := record.Type == "event_msg" && record.Payload.Type == "task_started" && origin.Backend.Valid()
+	if record.Type != "turn_context" && !carried || record.Payload.TurnID == "" {
+		return false
 	}
 	id := record.Payload.TurnID
 	if _, exists := c.turns[id]; exists && !overwrite {
-		return
+		return true
 	}
 	effort := record.Payload.Effort
 	if effort == "" {
 		effort = record.Payload.ReasoningEffort
 	}
-	c.turns[id] = CodexTurnContext{Model: record.Payload.Model, ReasoningEffort: effort, Offset: offset}
+	context := CodexTurnContext{Backend: chatmodel.BackendCodex, Model: record.Payload.Model, ReasoningEffort: effort, Offset: offset}
+	if carried {
+		context.Backend, context.Model, context.ReasoningEffort = origin.Backend, origin.Model, origin.ReasoningEffort
+	}
+	c.turns[id] = context
+	return true
 }
 
 func (c *CodexMetadata) append(file io.ReaderAt, start, end int64) (int64, error) {
@@ -203,6 +262,7 @@ type codexMetadataSearch struct {
 	position, lineEnd, completeEnd int64
 	candidate                      bool
 	edge                           []byte
+	settings                       *CodexTurnContext
 }
 
 // backward locates newlines in fixed-size blocks. Only context records are
@@ -216,18 +276,17 @@ func (c *CodexMetadata) backward(file io.ReaderAt, end int64, requested []CodexH
 	}
 	search := c.search
 	budgetEnd := max(0, search.position-codexMetadataBudget)
-	needle := []byte(`"turn_context"`)
+	const markerSize = len(`"thread_settings_applied"`)
 	fragment := func(data []byte) {
-		bridge := append(append([]byte{}, data[max(0, len(data)-len(needle)):]...), search.edge...)
-		search.candidate = search.candidate || bytes.Contains(data, needle) || bytes.Contains(bridge, needle)
-		search.edge = append(append([]byte{}, data[:min(len(data), len(needle))]...), search.edge...)
-		search.edge = search.edge[:min(len(search.edge), len(needle))]
+		bridge := append(append([]byte{}, data[max(0, len(data)-markerSize):]...), search.edge...)
+		search.candidate = search.candidate || codexMetadataCandidate(data) || codexMetadataCandidate(bridge)
+		search.edge = append(append([]byte{}, data[:min(len(data), markerSize)]...), search.edge...)
+		search.edge = search.edge[:min(len(search.edge), markerSize)]
 	}
 	visit := func(start int64) bool {
 		if search.candidate {
 			var record codexContextRecord
-			if json.NewDecoder(io.NewSectionReader(file, start, search.lineEnd-start)).Decode(&record) == nil && record.Type == "turn_context" {
-				c.collect(record, start, false)
+			if json.NewDecoder(io.NewSectionReader(file, start, search.lineEnd-start)).Decode(&record) == nil && c.collect(record, start, false) {
 				if stamp := nativeTimestamp(record.Timestamp); stamp > 0 {
 					c.oldestAt = stamp
 				}
@@ -282,9 +341,10 @@ func codexMetadataForward(file io.ReaderAt, start, end int64, visit func(codexCo
 	var edge []byte
 	for {
 		fragment, err := reader.ReadSlice('\n')
-		joined := append(append([]byte{}, edge...), fragment[:min(len(fragment), 16)]...)
+		const markerSize = len(`"thread_settings_applied"`)
+		joined := append(append([]byte{}, edge...), fragment[:min(len(fragment), markerSize)]...)
 		candidate = candidate || codexMetadataCandidate(fragment) || codexMetadataCandidate(joined)
-		edge = append(edge[:0], fragment[max(0, len(fragment)-16):]...)
+		edge = append(edge[:0], fragment[max(0, len(fragment)-markerSize):]...)
 		position += int64(len(fragment))
 		if err == bufio.ErrBufferFull {
 			continue
@@ -306,7 +366,7 @@ func codexMetadataForward(file io.ReaderAt, start, end int64, visit func(codexCo
 }
 
 func codexMetadataCandidate(data []byte) bool {
-	return bytes.Contains(data, []byte(`"turn_context"`)) || bytes.Contains(data, []byte(`"task_started"`))
+	return bytes.Contains(data, []byte(`"turn_context"`)) || bytes.Contains(data, []byte(`"task_started"`)) || bytes.Contains(data, []byte(`"task_complete"`)) || bytes.Contains(data, []byte(`"thread_settings_applied"`))
 }
 
 // CodexTurnAfter resolves an unannounced turn from the offset saved before its

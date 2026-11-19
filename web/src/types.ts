@@ -177,6 +177,7 @@ export type ToolSummary = {
     | "shell"
     | "thinking"
     | "image"
+    | "task"
     | "other";
   path?: string;
   image_paths?: string[];
@@ -189,10 +190,20 @@ export type ToolSummary = {
   operations?: ToolOperation[];
   // What the provider reported about the call. A status may arrive on the
   // call or on its result; absent means the provider did not say.
-  status?: "running" | "completed" | "failed" | "declined";
+  status?: "running" | "completed" | "failed" | "declined" | "stopped" | "unknown";
   exit_code?: number;
   duration_ms?: number;
   files?: ToolFile[];
+  task?: {
+    id: string;
+    parent_id?: string;
+    agent_type?: string;
+    background?: boolean;
+    summary?: string;
+    last_tool?: string;
+    tool_uses?: number;
+    tokens?: number;
+  };
 };
 // Display-only input summaries. Compound commands have no per-operation output.
 export type ToolOperation = {

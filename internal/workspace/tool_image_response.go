@@ -32,7 +32,7 @@ func (a *App) toolImageResponse(w http.ResponseWriter, r *http.Request, chat cha
 			images := part.Images
 			paths := viewedImagePaths(part.Name, part.Text)
 			if len(images) == 0 && turn.NativeHistory && part.Kind == "tool_use" && index < len(paths) && chat.NativeSessionPath != "" {
-				images, err = agent.ReadCodexToolImages(r.Context(), chat.NativeSessionPath, turn.NativeTurnID, part.ID)
+				images, err = agent.ReadCodexToolImages(r.Context(), chat.NativeSessionPath, nativePartTurnID(turn, part), part.ID)
 				if err != nil {
 					apiError(w, 503, "Native session history is unavailable")
 					return

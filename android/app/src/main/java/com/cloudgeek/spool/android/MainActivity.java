@@ -2764,6 +2764,13 @@ public final class MainActivity extends Activity {
                 }
                 recycler.chrome(key + "/heading", refresh, children -> renderTurn(page, value, key, children, false));
                 if (rows != null) rows.appendVirtualRows(recycler, key + "/activity", refresh);
+                if (!value.tasks.isEmpty()) {
+                    String taskKey = key + "/tasks";
+                    NativeActivityList taskRows = virtualActivityRows.computeIfAbsent(taskKey, ignored -> NativeActivityList.virtualRows(ui,
+                            new NativeActivityList.State(), this::openMessageLink, transcriptImages(page), () -> requestActivityRender(recycler, key)));
+                    taskRows.bindVirtualTasks(value); expanded.add(taskKey);
+                    taskRows.appendVirtualRows(recycler, taskKey, refresh);
+                }
                 if (!value.answer.isEmpty()) recycler.markdown(key + "/answer", value.answer);
                 recycler.chrome(key + "/footer", refresh, children -> {
                     NativeTurnActions audit = (NativeTurnActions) children.use("actions", "actions", () -> new NativeTurnActions(ui));
@@ -2810,13 +2817,13 @@ public final class MainActivity extends Activity {
 
     private NativeActivityList.UserInput turnUserInput(JSONObject page, NativeTurnPresentation value) {
         JSONObject operator = turnOperator(page, value.turn);
-        return (row, from, to) -> {
-            int first = value.inputEnd + from, last = value.inputEnd + to;
-            String text = NativeUserRow.text(value.parts, first, last);
-            row.setVisibility(NativeUserRow.hasContent(text, new JSONArray(), value.parts, first, last) ? View.VISIBLE : View.GONE);
-            row.bind(operator, text, NativeUserRow.timestamp(value.parts, first, last, value.turn.optLong("started_at")),
-                    userFiles(page, value.turn, row, value.parts, first, last, false));
-            bindDeliveryStatus(row, value.parts, first, last);
+        return (row, parts) -> {
+            JSONArray input = new JSONArray(parts);
+            String text = NativeUserRow.text(input, 0, input.length());
+            row.setVisibility(NativeUserRow.hasContent(text, new JSONArray(), input, 0, input.length()) ? View.VISIBLE : View.GONE);
+            row.bind(operator, text, NativeUserRow.timestamp(input, 0, input.length(), value.turn.optLong("started_at")),
+                    userFiles(page, value.turn, row, input, 0, input.length(), false));
+            bindDeliveryStatus(row, input, 0, input.length());
         };
     }
 

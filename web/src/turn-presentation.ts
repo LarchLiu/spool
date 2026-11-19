@@ -30,7 +30,7 @@ export function turnPresentation(parts: TranscriptPart[], running: boolean) {
     // tool/thought can be the completed answer, never earlier progress messages.
     let lastActivity = lastUser;
     parts.forEach((part, index) => {
-      if (isActivity(part)) lastActivity = Math.max(lastActivity, index);
+      if (isActivity(part) && part.tool?.kind !== "task") lastActivity = Math.max(lastActivity, index);
     });
     final = parts.filter(
       (part, index) => index > lastActivity && isText(part) && !part.phase,

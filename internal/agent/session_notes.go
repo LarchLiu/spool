@@ -105,7 +105,7 @@ func codexCarryNotes(record map[string]any, imported bool) bool {
 	case "event_msg":
 		payload, _ := record["payload"].(map[string]any)
 		if payload["type"] == "task_started" {
-			return false
+			return recordOrigin(record).Backend.Valid()
 		}
 	}
 	return imported

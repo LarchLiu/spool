@@ -54,6 +54,13 @@ func summarizeTool(part chatmodel.Part) *chatmodel.ToolSummary {
 		native = &chatmodel.ToolNative{}
 	}
 	summary.Status, summary.ExitCode, summary.DurationMs = native.Status, native.ExitCode, native.DurationMs
+	summary.Task = native.Task
+	if native.Kind == "task" {
+		// A task's name is the title its author gave it and its text is prose
+		// about the work: neither names a tool, a path or a change.
+		summary.Kind = "task"
+		return summary
+	}
 	if part.Kind == "tool_result" {
 		return summarizeToolChanges(part.Text, summary)
 	}
@@ -245,14 +252,21 @@ func toolChangeSuffix(text string) string {
 
 func toolPartRef(chatID string, turn chatmodel.Turn, index int, part chatmodel.Part) string {
 	if turn.NativeHistory && turn.NativeTurnID != "" && part.ID != "" {
-		return nativeToolRef(chatID, turn.NativeTurnID, part)
+		return nativeToolRef(chatID, nativePartTurnID(turn, part), part)
 	}
 	return toolBodyVersion(chatID + ":" + turn.ID + ":" + strconv.Itoa(index-turn.PartStart) + ":" + part.Kind + ":" + part.ID)
 }
 
+func nativePartTurnID(turn chatmodel.Turn, part chatmodel.Part) string {
+	if part.NativeTurnID != "" {
+		return part.NativeTurnID
+	}
+	return turn.NativeTurnID
+}
+
 // Projection never changes the provider-owned snapshot or the live runner state.
 func slimToolDetails(chat chatmodel.Session) chatmodel.Session {
-	chat.Transcript.Parts = append([]chatmodel.Part(nil), chat.Transcript.Parts...)
+	chat.Transcript.Parts = append([]chatmodel.Part{}, chat.Transcript.Parts...)
 	for _, turn := range chat.Turns {
 		for i := max(0, turn.PartStart); i < min(turn.PartEnd, len(chat.Transcript.Parts)); i++ {
 			part := &chat.Transcript.Parts[i]
@@ -261,6 +275,13 @@ func slimToolDetails(chat chatmodel.Session) chatmodel.Session {
 			}
 			part.Tool = summarizeTool(*part)
 			part.Tool.Ref = toolPartRef(chat.ID, turn, i, *part)
+			if part.Tool.Kind == "task" {
+				// Task events carry bounded progress metadata, not raw tool I/O.
+				// Keep it with the live row: a foreground fork may not have
+				// written a main-transcript turn from which details can load yet.
+				part.Tool.Href, part.Tool.SourceText = "", ""
+				continue
+			}
 			part.Tool.Href = "/chats/" + chat.ID + "/tool-detail?ref=" + part.Tool.Ref
 			part.Tool.ImageURLs = nil
 			imageCount := len(part.Images)

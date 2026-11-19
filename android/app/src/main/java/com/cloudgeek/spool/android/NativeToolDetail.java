@@ -56,6 +56,8 @@ final class NativeToolDetail extends LinearLayout {
         org.json.JSONObject commandSummary = activity.use == null ? null : activity.use.optJSONObject("tool");
         org.json.JSONObject resultSummary = activity.result == null ? null : activity.result.optJSONObject("tool");
         List<View> views = new ArrayList<>();
+        // A subagent's progress arrives with its row; it has no tool detail to load.
+        if (activity.kind.equals("task")) commandSummary = null;
         if (!command.trim().isEmpty() || commandSummary != null) {
             if (input == null) input = new Block();
             boolean thinking = activity.kind.equals("thinking");

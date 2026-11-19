@@ -88,6 +88,7 @@ type carryItem struct {
 	Result string
 	Done   bool
 	Time   time.Time
+	Origin sessionOrigin
 }
 
 // carryResultMax is the most of one tool's output carried over: the rest is
@@ -234,8 +235,16 @@ func claudeCarryItems(path string) ([]carryItem, error) {
 			continue
 		}
 		at, _ := time.Parse(time.RFC3339Nano, l.Timestamp)
-		items = append(items, claudeLineItems(l, at)...)
+		var record map[string]any
+		_ = json.Unmarshal(chain[i], &record)
+		origin := claudeRecordOrigin(record)
+		added := claudeLineItems(l, at)
+		for j := range added {
+			added[j].Origin = origin
+		}
+		items = append(items, added...)
 	}
+	completeCarryOrigins(items, chatmodel.BackendClaude)
 	return items, nil
 }
 
@@ -332,6 +341,8 @@ type cxCarryPayload struct {
 // words before it and its summary, as Codex rebuilds it.
 func codexCarryItems(path string) ([]carryItem, error) {
 	var items []carryItem
+	origin := sessionOrigin{Backend: chatmodel.BackendCodex}
+	imported := false
 	err := eachLine(path, func(b []byte) {
 		var l struct {
 			Type      string          `json:"type"`
@@ -341,12 +352,36 @@ func codexCarryItems(path string) ([]carryItem, error) {
 		if json.Unmarshal(b, &l) != nil {
 			return
 		}
+		var record map[string]any
+		_ = json.Unmarshal(b, &record)
+		imported = codexCarryNotes(record, imported)
+		if l.Type == "session_meta" && imported {
+			origin = sessionOrigin{Backend: chatmodel.BackendClaude}
+		}
+		if l.Type == "turn_context" {
+			payload, _ := record["payload"].(map[string]any)
+			origin = sessionOrigin{Backend: chatmodel.BackendCodex, Model: stringValue(payload["model"]), ReasoningEffort: stringValue(payload["effort"])}
+			if origin.ReasoningEffort == "" {
+				origin.ReasoningEffort = stringValue(payload["reasoning_effort"])
+			}
+		} else if payload, _ := record["payload"].(map[string]any); l.Type == "event_msg" && payload["type"] == "task_started" && !imported {
+			origin = sessionOrigin{Backend: chatmodel.BackendCodex}
+		}
+		if explicit := recordOrigin(record); explicit.Backend.Valid() {
+			origin = explicit
+		}
 		at, _ := time.Parse(time.RFC3339Nano, l.Timestamp)
+		add := func(added []carryItem, source sessionOrigin) {
+			for i := range added {
+				added[i].Origin = source
+			}
+			items = append(items, added...)
+		}
 		switch l.Type {
 		case "response_item":
 			var p cxCarryPayload
 			if json.Unmarshal(l.Payload, &p) == nil {
-				items = append(items, codexItem(p, at)...)
+				add(codexItem(p, at), origin)
 			}
 		case "compacted":
 			var p cxCarryPayload
@@ -354,11 +389,32 @@ func codexCarryItems(path string) ([]carryItem, error) {
 				return
 			}
 			if p.ReplacementHistory != nil {
+				// Compaction retains historical inputs without their custom
+				// metadata. Match full multimodal inputs in occurrence order.
+				completeCarryOrigins(items, chatmodel.BackendCodex)
+				inputs := map[string][]sessionOrigin{}
+				for _, it := range items {
+					if it.Kind == "user" {
+						key := carryInputKey(it)
+						inputs[key] = append(inputs[key], it.Origin)
+					}
+				}
 				items = nil
+				replacementOrigin := origin
 				for _, raw := range p.ReplacementHistory {
 					var q cxCarryPayload
 					if json.Unmarshal(raw, &q) == nil {
-						items = append(items, codexItem(q, at)...)
+						added := codexItem(q, at)
+						for _, it := range added {
+							if it.Kind == "user" {
+								replacementOrigin = origin
+								key := carryInputKey(it)
+								if kept := inputs[key]; len(kept) > 0 {
+									replacementOrigin, inputs[key] = kept[0], kept[1:]
+								}
+							}
+						}
+						add(added, replacementOrigin)
 					}
 				}
 			} else if p.Message != "" {
@@ -368,11 +424,16 @@ func codexCarryItems(path string) ([]carryItem, error) {
 						kept = append(kept, it)
 					}
 				}
-				items = append(kept, carryItem{Kind: "user", Text: "[Earlier conversation summary]\n" + p.Message, Time: at})
+				items = append(kept, carryItem{Kind: "user", Text: "[Earlier conversation summary]\n" + p.Message, Time: at, Origin: origin})
 			}
 		}
 	})
+	completeCarryOrigins(items, chatmodel.BackendCodex)
 	return items, err
+}
+
+func carryInputKey(it carryItem) string {
+	return string(jsonLine(o("text", it.Text, "images", it.Images)))
 }
 
 func codexItem(p cxCarryPayload, at time.Time) []carryItem {
@@ -564,6 +625,7 @@ func writeClaudeCarry(home, cwd string, items []carryItem, now time.Time) (Conve
 	version := "2.0.0"
 	var lines [][]byte
 	parent := ""
+	var origin sessionOrigin
 	msgID := "" // the assistant message lines are part of, while it goes on
 	line := func(typ string, message ord, at time.Time, extra ...any) string {
 		u := uuid.NewString()
@@ -571,6 +633,9 @@ func writeClaudeCarry(home, cwd string, items []carryItem, now time.Time) (Conve
 		l = append(l, o(extra...)...)
 		l = append(l, o("uuid", u, "timestamp", carryStamp(at, now), "userType", "external",
 			"entrypoint", "cli", "cwd", cwd, "sessionId", id, "version", version)...)
+		if origin.Backend.Valid() {
+			l = append(l, o("spool_origin", origin)...)
+		}
 		lines = append(lines, jsonLine(l))
 		parent = u
 		return u
@@ -584,6 +649,7 @@ func writeClaudeCarry(home, cwd string, items []carryItem, now time.Time) (Conve
 			"usage", o("input_tokens", 0, "cache_creation_input_tokens", 0, "cache_read_input_tokens", 0, "output_tokens", 0)), at)
 	}
 	for _, it := range items {
+		origin = it.Origin
 		switch it.Kind {
 		case "user":
 			msgID = ""
@@ -706,17 +772,37 @@ func writeCodexCarry(home, cwd string, items []carryItem, now time.Time) (Conver
 	lines := [][]byte{jsonLine(o("timestamp", stamp, "type", "session_meta", "payload", o(
 		"session_id", id, "id", id, "timestamp", stamp, "cwd", cwd, "originator", "codex_cli_rs",
 		"cli_version", version, "source", "cli")))}
+	var origin sessionOrigin
 	add := func(at time.Time, typ string, payload ord) {
-		lines = append(lines, jsonLine(o("timestamp", carryStamp(at, now), "type", typ, "payload", payload)))
+		record := o("timestamp", carryStamp(at, now), "type", typ, "payload", payload)
+		if origin.Backend.Valid() {
+			record = append(record, o("spool_origin", origin)...)
+		}
+		lines = append(lines, jsonLine(record))
 	}
 	say := func(at time.Time, text string) {
 		add(at, "response_item", o("type", "message", "role", "assistant",
 			"content", []any{o("type", "output_text", "text", text)}))
 		add(at, "event_msg", o("type", "agent_message", "message", text))
 	}
+	turnID := ""
+	lastAt := now
+	finish := func() {
+		if turnID != "" {
+			add(lastAt, "event_msg", o("type", "task_complete", "turn_id", turnID))
+		}
+	}
 	for _, it := range items {
+		if it.Kind == "user" && it.Origin.Backend.Valid() {
+			finish()
+		}
+		origin, lastAt = it.Origin, it.Time
 		switch it.Kind {
 		case "user":
+			if origin.Backend.Valid() {
+				turnID = uuid.NewString()
+				add(it.Time, "event_msg", o("type", "task_started", "turn_id", turnID))
+			}
 			content := []any{}
 			if it.Text != "" {
 				content = append(content, o("type", "input_text", "text", it.Text))
@@ -752,6 +838,7 @@ func writeCodexCarry(home, cwd string, items []carryItem, now time.Time) (Conver
 			add(it.Time, "response_item", o("type", "function_call_output", "call_id", callID, "output", out))
 		}
 	}
+	finish()
 	if err := writeNew(path, lines); err != nil {
 		return ConvertedSession{}, err
 	}

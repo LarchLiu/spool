@@ -77,6 +77,14 @@ func (p *agentProcess) handleClaudeApproval(ctx context.Context, value map[strin
 	decision, err := p.awaitApproval(ctx, p.approve, request, func(event map[string]any) bool {
 		withdrawn = event["type"] == "control_cancel_request" && event["request_id"] == value["request_id"]
 		return withdrawn
+	}, func(event map[string]any) bool {
+		agentID := stringValue(itemField(body, "agent_id", "agentId"))
+		parentID := stringValue(value["parent_tool_use_id"])
+		if agentID == "" && parentID == "" {
+			return event["type"] == "result" && stringValue(event["parent_tool_use_id"]) == ""
+		}
+		return event["type"] == "system" && event["subtype"] == "task_notification" &&
+			(agentID != "" && event["task_id"] == agentID || parentID != "" && event["tool_use_id"] == parentID)
 	})
 	if errors.Is(err, errApprovalResolved) {
 		if withdrawn {
@@ -284,20 +292,104 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 		return emit(AgentEvent{Type: "retract", RetractedIDs: ids})
 	}
 	var streamedThinking string
+	var tasks claudeTasks
+	taskEmit := func(event AgentEvent) error {
+		if event.Type == "activity" {
+			result.Activities = append(result.Activities, event.Text)
+		}
+		return emit(event)
+	}
+	completed := false
+	// Claude Code answers a task notification that reaches an idle session with
+	// one more turn. Its output belongs to this request, so the request stays
+	// open until that turn has had time to show itself.
+	var followupBy time.Time
+	silence, grace := claudeTaskSilence, claudeFollowupGrace
+	if p.taskWait > 0 {
+		silence, grace = p.taskWait, p.taskWait
+	}
 	for {
+		if completed && !tasks.running() && !time.Now().Before(followupBy) {
+			if strings.TrimSpace(result.Text) == "" && slash == nil {
+				return result, fmt.Errorf("Claude Code finished without an assistant message"), true
+			}
+			if slash != nil {
+				// Local commands may change native settings without a model event.
+				// Read them back so the next Spool request does not undo the command.
+				settings, err := p.claudeControl(ctx, map[string]any{"subtype": "get_settings"})
+				if err != nil {
+					return result, fmt.Errorf("confirm Claude command settings: %w", err), false
+				}
+				applied, _ := settings["applied"].(map[string]any)
+				if model, ok := applied["model"].(string); ok && model != "" {
+					p.model, p.selectedModel, result.Model = model, model, model
+				}
+				if effort, ok := applied["effort"].(string); ok {
+					p.effort, result.ReasoningEffort = effort, effort
+				}
+				if mode, ok := applied["permissionMode"].(string); ok && chatmodel.ValidatePermissionMode(chatmodel.BackendClaude, mode) == nil {
+					p.permissionMode, result.PermissionMode = mode, mode
+				}
+				if result.Text == "" {
+					result.Text = "Command completed."
+				}
+			}
+			// Keep stdin open: another user message starts the next turn in this CLI.
+			return result, nil, true
+		}
 		var value map[string]any
 		var err error
 		if len(p.queued) > 0 {
 			value, p.queued = p.queued[0], p.queued[1:]
-		} else {
+		} else if !completed {
 			value, err = p.read(ctx)
+		} else {
+			// Only tasks or an expected turn keep a finished request reading.
+			deadline := followupBy
+			if tasks.running() {
+				deadline = tasks.heard.Add(silence)
+			}
+			readCtx, cancel := context.WithDeadline(ctx, deadline)
+			value, err = p.read(readCtx)
+			cancel()
+			if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil && p.ctx.Err() == nil {
+				if err := tasks.abandon(taskEmit); err != nil {
+					return result, err, false
+				}
+				continue
+			}
 		}
 		if err != nil {
 			return result, err, false
 		}
-		// Nested agent output is not the top-level chat response.
-		if value["parent_tool_use_id"] != nil && value["parent_tool_use_id"] != "" && value["type"] != "control_request" {
+		// Lifecycle events may carry a parent tool ID too. Track them before
+		// excluding nested transcript content from the main reply.
+		if value["type"] == "system" {
+			if handled, taskErr := tasks.system(value, taskEmit); handled || taskErr != nil {
+				if taskErr != nil {
+					return result, taskErr, false
+				}
+				if completed && value["subtype"] == "task_notification" {
+					followupBy = time.Now().Add(grace)
+				}
+				continue
+			}
+		}
+		if parent := stringValue(value["parent_tool_use_id"]); parent != "" && value["type"] != "control_request" {
+			if err := tasks.nested(value, parent, taskEmit); err != nil {
+				return result, err, false
+			}
 			continue
+		}
+		if completed {
+			switch kind := stringValue(value["type"]); {
+			case kind == "assistant" || kind == "stream_event" && nestedString(value, "event", "type") == "message_start":
+				// The model is answering again; its result ends the request.
+				completed, followupBy = false, time.Time{}
+			case !followupBy.IsZero() && (kind == "system" || kind == "command_lifecycle"):
+				// The expected turn is being set up, or retried.
+				followupBy = time.Now().Add(grace)
+			}
 		}
 		switch stringValue(value["type"]) {
 		case "command_lifecycle":
@@ -306,6 +398,7 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				// The next model request carries the message: within this turn,
 				// or opening the one a result left it over for.
 				followup = false
+				completed = false
 				result.Steered++
 				if err := emit(AgentEvent{Type: "steered", SteerID: id}); err != nil {
 					return result, err, false
@@ -319,17 +412,16 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				}
 			}
 			if followup && remaining == 0 && p.claudeTurnSettled() {
-				// Nothing is left for a further turn to answer.
-				if strings.TrimSpace(result.Text) == "" {
-					return result, fmt.Errorf("Claude Code finished without an assistant message"), true
-				}
-				return result, nil, true
+				// The main turn has ended even if its children are still running.
+				// Let the common completion path wait for their terminal events.
+				completed, tasks.heard = true, time.Now()
 			}
 		case "control_request":
 			if err := p.handleClaudeApproval(ctx, value, settleDialog); err != nil {
 				return result, err, false
 			}
 		case "system":
+
 			if value["subtype"] == "status" || value["subtype"] == "compact_boundary" {
 				if err := emit(AgentEvent{Type: "compaction", Compacting: value["subtype"] == "status" && value["status"] == "compacting"}); err != nil {
 					return result, err, false
@@ -461,6 +553,12 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 						return result, err, false
 					}
 				case "tool_use":
+					if handled, taskErr := tasks.call(item, "", taskEmit); handled || taskErr != nil {
+						if taskErr != nil {
+							return result, taskErr, false
+						}
+						continue
+					}
 					id := stringValue(item["id"])
 					if id == "" {
 						id = stringValue(item["name"])
@@ -492,6 +590,12 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 			for _, block := range content {
 				item, _ := block.(map[string]any)
 				if stringValue(item["type"]) != "tool_result" {
+					continue
+				}
+				if handled, taskErr := tasks.result(item, value, taskEmit); handled || taskErr != nil {
+					if taskErr != nil {
+						return result, taskErr, false
+					}
 					continue
 				}
 				name := seenActivity[stringValue(item["tool_use_id"])]
@@ -566,32 +670,9 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 				currentMessage, messageStarted, streamedThinking = "", false, ""
 				continue
 			}
-			if strings.TrimSpace(result.Text) == "" && slash == nil {
-				return result, fmt.Errorf("Claude Code finished without an assistant message"), true
-			}
-			if slash != nil {
-				// Local commands may change native settings without a model event.
-				// Read them back so the next Spool request does not undo the command.
-				settings, err := p.claudeControl(ctx, map[string]any{"subtype": "get_settings"})
-				if err != nil {
-					return result, fmt.Errorf("confirm Claude command settings: %w", err), false
-				}
-				applied, _ := settings["applied"].(map[string]any)
-				if model, ok := applied["model"].(string); ok && model != "" {
-					p.model, p.selectedModel, result.Model = model, model, model
-				}
-				if effort, ok := applied["effort"].(string); ok {
-					p.effort, result.ReasoningEffort = effort, effort
-				}
-				if mode, ok := applied["permissionMode"].(string); ok && chatmodel.ValidatePermissionMode(chatmodel.BackendClaude, mode) == nil {
-					p.permissionMode, result.PermissionMode = mode, mode
-				}
-				if result.Text == "" {
-					result.Text = "Command completed."
-				}
-			}
-			// Keep stdin open: another user message starts the next turn in this CLI.
-			return result, nil, true
+			// Children are given their silence from here, not from an event
+			// that may be as old as the turn.
+			completed, tasks.heard = true, time.Now()
 		}
 	}
 }

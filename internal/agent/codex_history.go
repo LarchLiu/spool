@@ -57,6 +57,7 @@ type CodexThread struct {
 // CodexHistoryTurn is one stored turn with its complete items as parts.
 type CodexHistoryTurn struct {
 	ID                    string
+	RootID                string
 	Status                chatmodel.SessionStatus
 	Error                 string
 	StartedAt, FinishedAt int64 // milliseconds
@@ -259,7 +260,7 @@ func (h *CodexHistory) Turns(ctx context.Context, threadID, before string, limit
 		if stringValue(raw["itemsView"]) != "full" {
 			return CodexTurnPage{}, fmt.Errorf("%w: turn items were not returned", ErrCodexHistoryUnsupported)
 		}
-		turn := CodexHistoryTurn{ID: id, StartedAt: codexSeconds(raw["startedAt"]), FinishedAt: codexSeconds(raw["completedAt"])}
+		turn := CodexHistoryTurn{ID: id, RootID: stringValue(raw["rootTurnId"]), StartedAt: codexSeconds(raw["startedAt"]), FinishedAt: codexSeconds(raw["completedAt"])}
 		switch stringValue(raw["status"]) {
 		case "completed":
 			turn.Status = chatmodel.StatusCompleted

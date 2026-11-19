@@ -36,6 +36,7 @@ type Turn struct {
 	Actions         []TurnAction     `json:"actions,omitempty"`
 	ID              string           `json:"id"`
 	NativeTurnID    string           `json:"native_turn_id,omitempty"`
+	NativeTurnIDs   []string         `json:"-"` // same-thread internal turns belonging to this response
 	NativePromptID  string           `json:"native_prompt_id,omitempty"`
 	Backend         Backend          `json:"backend,omitempty"`
 	PartStart       int              `json:"part_start"`

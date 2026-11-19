@@ -1190,5 +1190,7 @@
   "Agent commands do not accept attachments": "エージェントコマンドに添付ファイルは使えません",
   "Conversation not found": "会話が見つかりません",
   "Select this chat's current agent to run session commands": "会話コマンドを実行するには、この会話の現在のエージェントを選択してください",
-  "Enter a conversation name": "会話名を入力してください"
+  "Enter a conversation name": "会話名を入力してください",
+  "Status unavailable": "状態を取得できません",
+  "Background": "バックグラウンド"
 }

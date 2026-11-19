@@ -190,6 +190,16 @@ func TestConvertedNativeSessionResumesWithoutPrompt(t *testing.T) {
 				if len(turns) == 0 {
 					t.Fatal("Codex resumed an empty history instead of the converted conversation")
 				}
+				indexed, err := IndexSessionTurns(backend, converted.Path, 0)
+				if err != nil || len(indexed) != len(turns) {
+					t.Fatalf("native and indexed converted turns disagree: %d vs %d, %v", len(turns), len(indexed), err)
+				}
+				for i, raw := range turns {
+					turn, _ := raw.(map[string]any)
+					if turn["id"] != indexed[i].ID {
+						t.Fatalf("native resume lost converted identity: %v != %s", turn["id"], indexed[i].ID)
+					}
+				}
 			} else {
 				if _, err := process.claudeControl(ctx, map[string]any{"subtype": "initialize"}); err != nil {
 					t.Fatal(err)
