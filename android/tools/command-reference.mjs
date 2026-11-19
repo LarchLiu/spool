@@ -31,7 +31,16 @@ export async function renderCommandReferences({browser,url,output,fontCSS}) {
      const read=selector=>box(document.querySelector(selector));
      const text=selector=>{const element=document.querySelector(selector),rgb=getComputedStyle(element).color.match(/[\d.]+/g).map(Number);return{...box(element),text:element.textContent,color:(0xff000000|rgb[0]<<16|rgb[1]<<8|rgb[2])|0};};
      const result={composer:read('.composer-wrap'),surface:read('.composer'),input:read('textarea'),bottom:read('.composer-bottom')};
-     if(document.querySelector('.slash-command-menu'))Object.assign(result,{menu:read('.slash-command-menu'),option:read('.slash-command-menu button'),symbol:read('.slash-command-menu svg'),title:text('.slash-command-menu strong'),detail:text('.slash-command-menu small'),shortcut:text('.slash-command-menu kbd')});
+     if(document.querySelector('.slash-command-menu')) {
+      result.menu=read('.slash-command-menu');
+      result.rows=[...document.querySelectorAll('.slash-command-menu button')].map(row=>{
+       const item={option:box(row),symbol:box(row.querySelector('svg'))};
+       const readText=element=>{const rgb=getComputedStyle(element).color.match(/[\d.]+/g).map(Number);return{...box(element),text:element.textContent,color:(0xff000000|rgb[0]<<16|rgb[1]<<8|rgb[2])|0};};
+       item.title=readText(row.querySelector('strong'));item.detail=readText(row.querySelector('.slash-command-content small'));
+       if(row.querySelector('.slash-command-source'))item.source=readText(row.querySelector('.slash-command-source'));
+       return item;
+      });
+     }
      if(document.querySelector('.goal-command-hint'))result.hint=text('.goal-command-hint');
      if(document.querySelector('.goal-command-notice'))Object.assign(result,{notice:read('.goal-command-notice'),noticeText:text('.goal-command-notice pre'),close:read('.goal-command-notice .icon')});
      if(document.querySelector('.error'))result.error=text('.error > span');

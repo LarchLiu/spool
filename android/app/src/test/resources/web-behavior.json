@@ -267,10 +267,512 @@
       }
     }
   ],
+  "agentCommandCases": [
+    {
+      "text": "",
+      "parsed": null,
+      "suggestions": null,
+      "resolved": null
+    },
+    {
+      "text": "/",
+      "parsed": null,
+      "suggestions": [
+        "code-review",
+        "deep-research",
+        "goal",
+        "loop",
+        "plan",
+        "skill:inspect:repo",
+        "docs"
+      ],
+      "resolved": null
+    },
+    {
+      "text": "/g",
+      "parsed": {
+        "name": "g",
+        "arguments": ""
+      },
+      "suggestions": [
+        "goal",
+        "code-review",
+        "docs"
+      ],
+      "resolved": null
+    },
+    {
+      "text": "/go",
+      "parsed": {
+        "name": "go",
+        "arguments": ""
+      },
+      "suggestions": [
+        "goal"
+      ],
+      "resolved": null
+    },
+    {
+      "text": "/goa",
+      "parsed": {
+        "name": "goa",
+        "arguments": ""
+      },
+      "suggestions": [
+        "goal"
+      ],
+      "resolved": null
+    },
+    {
+      "text": "/goal",
+      "parsed": {
+        "name": "goal",
+        "arguments": ""
+      },
+      "suggestions": [
+        "goal"
+      ],
+      "resolved": "goal"
+    },
+    {
+      "text": "/goals",
+      "parsed": {
+        "name": "goals",
+        "arguments": ""
+      },
+      "suggestions": [],
+      "resolved": null
+    },
+    {
+      "text": "/goal/path",
+      "parsed": null,
+      "suggestions": null,
+      "resolved": null
+    },
+    {
+      "text": " /goal",
+      "parsed": {
+        "name": "goal",
+        "arguments": ""
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "/goal ",
+      "parsed": {
+        "name": "goal",
+        "arguments": ""
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "/Goal",
+      "parsed": {
+        "name": "Goal",
+        "arguments": ""
+      },
+      "suggestions": [
+        "goal"
+      ],
+      "resolved": null
+    },
+    {
+      "text": "`/goal`",
+      "parsed": null,
+      "suggestions": null,
+      "resolved": null
+    },
+    {
+      "text": "explain /goal",
+      "parsed": null,
+      "suggestions": null,
+      "resolved": null
+    },
+    {
+      "text": "/unknown",
+      "parsed": {
+        "name": "unknown",
+        "arguments": ""
+      },
+      "suggestions": [],
+      "resolved": null
+    },
+    {
+      "text": "/goal clear",
+      "parsed": {
+        "name": "goal",
+        "arguments": "clear"
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "/goal stop",
+      "parsed": {
+        "name": "goal",
+        "arguments": "stop"
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "/goal off",
+      "parsed": {
+        "name": "goal",
+        "arguments": "off"
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "/goal reset",
+      "parsed": {
+        "name": "goal",
+        "arguments": "reset"
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "/goal none",
+      "parsed": {
+        "name": "goal",
+        "arguments": "none"
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "/goal cancel",
+      "parsed": {
+        "name": "goal",
+        "arguments": "cancel"
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "/goal CLEAR",
+      "parsed": {
+        "name": "goal",
+        "arguments": "CLEAR"
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "/goal clear the tests",
+      "parsed": {
+        "name": "goal",
+        "arguments": "clear the tests"
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "/goal　修好测试\nand verify",
+      "parsed": {
+        "name": "goal",
+        "arguments": "修好测试\nand verify"
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "\n/goal\t",
+      "parsed": {
+        "name": "goal",
+        "arguments": ""
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "/\n",
+      "parsed": null,
+      "suggestions": null,
+      "resolved": null
+    },
+    {
+      "text": "/goal\r\n",
+      "parsed": {
+        "name": "goal",
+        "arguments": ""
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": " /goal ",
+      "parsed": {
+        "name": "goal",
+        "arguments": ""
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": " /goal ",
+      "parsed": {
+        "name": "goal",
+        "arguments": ""
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": " /goal ",
+      "parsed": {
+        "name": "goal",
+        "arguments": ""
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": " /goal ",
+      "parsed": {
+        "name": "goal",
+        "arguments": ""
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": " /goal ",
+      "parsed": {
+        "name": "goal",
+        "arguments": ""
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": " /goal ",
+      "parsed": {
+        "name": "goal",
+        "arguments": ""
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": " /goal ",
+      "parsed": {
+        "name": "goal",
+        "arguments": ""
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "　/goal　",
+      "parsed": {
+        "name": "goal",
+        "arguments": ""
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "﻿/goal﻿",
+      "parsed": {
+        "name": "goal",
+        "arguments": ""
+      },
+      "suggestions": null,
+      "resolved": "goal"
+    },
+    {
+      "text": "/goal",
+      "parsed": null,
+      "suggestions": null,
+      "resolved": null
+    },
+    {
+      "text": "᠎/goal᠎",
+      "parsed": null,
+      "suggestions": null,
+      "resolved": null
+    },
+    {
+      "text": "/review main",
+      "parsed": {
+        "name": "review",
+        "arguments": "main"
+      },
+      "suggestions": null,
+      "resolved": "code-review"
+    },
+    {
+      "text": "/code",
+      "parsed": {
+        "name": "code",
+        "arguments": ""
+      },
+      "suggestions": [
+        "code-review"
+      ],
+      "resolved": null
+    },
+    {
+      "text": "/CHECK",
+      "parsed": {
+        "name": "CHECK",
+        "arguments": ""
+      },
+      "suggestions": [
+        "skill:inspect:repo"
+      ],
+      "resolved": null
+    },
+    {
+      "text": "/project",
+      "parsed": {
+        "name": "project",
+        "arguments": ""
+      },
+      "suggestions": [
+        "skill:inspect:repo"
+      ],
+      "resolved": null
+    },
+    {
+      "text": "/guides",
+      "parsed": {
+        "name": "guides",
+        "arguments": ""
+      },
+      "suggestions": [
+        "docs"
+      ],
+      "resolved": null
+    },
+    {
+      "text": "/inspect",
+      "parsed": {
+        "name": "inspect",
+        "arguments": ""
+      },
+      "suggestions": [
+        "skill:inspect:repo"
+      ],
+      "resolved": null
+    },
+    {
+      "text": "/repo:check first\nsecond",
+      "parsed": {
+        "name": "repo:check",
+        "arguments": "first\nsecond"
+      },
+      "suggestions": null,
+      "resolved": null
+    },
+    {
+      "text": "/skill:inspect:repo verify",
+      "parsed": {
+        "name": "skill:inspect:repo",
+        "arguments": "verify"
+      },
+      "suggestions": null,
+      "resolved": "skill:inspect:repo"
+    },
+    {
+      "text": "/tmp/file",
+      "parsed": null,
+      "suggestions": null,
+      "resolved": null
+    },
+    {
+      "text": "/back\\slash",
+      "parsed": null,
+      "suggestions": null,
+      "resolved": null
+    },
+    {
+      "text": "/\"quoted\"",
+      "parsed": null,
+      "suggestions": [],
+      "resolved": null
+    },
+    {
+      "text": "/`quoted`",
+      "parsed": null,
+      "suggestions": [],
+      "resolved": null
+    }
+  ],
+  "commandCatalog": [
+    {
+      "name": "goal",
+      "description": "Set a native agent goal",
+      "kind": "prompt",
+      "argumentHint": "[condition|clear]"
+    },
+    {
+      "name": "plan",
+      "description": "Use native plan mode",
+      "kind": "control",
+      "argumentHint": "[task]"
+    },
+    {
+      "name": "code-review",
+      "displayName": "Code review",
+      "description": "Review changes",
+      "aliases": [
+        "review"
+      ],
+      "kind": "prompt",
+      "argumentHint": "[target]"
+    },
+    {
+      "name": "loop",
+      "description": "Run a task repeatedly",
+      "kind": "prompt"
+    },
+    {
+      "name": "deep-research",
+      "description": "Research a topic",
+      "kind": "prompt"
+    },
+    {
+      "name": "skill:inspect:repo",
+      "displayName": "Inspect project",
+      "description": "Check project health and tests",
+      "kind": "skill",
+      "scope": "repo"
+    },
+    {
+      "name": "docs",
+      "displayName": "Write documentation",
+      "description": "Write and update guides",
+      "kind": "skill",
+      "scope": "user",
+      "pluginId": "team-tools"
+    }
+  ],
   "commandCases": [
     {
       "id": "menu",
-      "draft": "/go"
+      "draft": "/go",
+      "menu": true
+    },
+    {
+      "id": "catalog",
+      "draft": "/",
+      "menu": true
+    },
+    {
+      "id": "skills",
+      "draft": "/inspect",
+      "menu": true
+    },
+    {
+      "id": "empty",
+      "draft": "/unknown",
+      "menu": true
     },
     {
       "id": "hint",

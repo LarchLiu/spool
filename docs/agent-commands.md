@@ -5,6 +5,13 @@ menu filters names, display names, descriptions and aliases; Up/Down selects a
 row, Tab or Enter inserts it, and Escape closes the menu. Send the completed
 command to execute it.
 Switching the model to another agent switches the command catalog as well.
+The Android composer uses the same project catalog, command routing and compact
+menu layout, including skill groups and source labels. Its popup keeps the input
+focused for the touch keyboard and scrolls long catalogs above the composer.
+The connected Spool server must also include command discovery; updating only
+the Android APK cannot add command support to an older server. Android shows a
+server update message when the returned catalogs lack the `commands` field,
+and distinguishes this from loading, discovery failure and an empty search.
 
 ## Discovery and saved catalogs
 
@@ -75,8 +82,8 @@ count, and a child's own events or requests start the count again. Claude Code
 offers no such read, so a child of a finished turn that reports nothing for 15
 minutes is shown as unavailable and no longer holds the request open. The turn
 Claude Code runs in answer to a task notification belongs to the same request.
-Native history parsing and its existing
-tool records are unchanged; Spool does not load independent subagent histories.
+History display uses native tool records; Spool does not load independent
+subagent histories.
 
 Codex implements these commands:
 
@@ -107,3 +114,28 @@ catalog's `commands`. Local execution uses `POST /api/chats/:id/commands` with
 `{"command":"/context"}` and optional model, reasoning effort and permission
 selection. Commands that start agent work use the existing messages endpoint;
 goal and session management retain their dedicated endpoints.
+
+## History display checks
+
+Command and skill invocations remain user input when native histories are read,
+including Claude's command envelopes and a later continuation. Skill instruction
+records stay hidden. The same history projection serves Desktop, Web and Android,
+and preserves command requests when converting between Codex and Claude.
+Codex records the skill selection separately from the task: its history shows
+the task text, or `$skill-name` for an invocation without arguments. Injected
+`<skill>` instruction bodies do not become extra user turns.
+
+The opt-in browser check renders synthetic native histories through the actual
+server and frontend at desktop and phone widths. It writes server responses to
+`build/artifacts/slash-history/` for the Android renderer contract check:
+
+```sh
+CHROME_BIN='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' \
+  make test-go GO_PACKAGES=./internal/workspace \
+  GO_TEST_FLAGS='-run TestSlashCommandHistoryBrowser'
+SPOOL_COMMAND_HISTORY_FIXTURES="$PWD/build/artifacts/slash-history" \
+  sh android/gradlew --offline :app:testDebugUnitTest --tests '*MainActivitySlashHistoryTest'
+```
+
+Build the frontend with `make web` before the browser check. All snapshots and
+screenshots in these checks contain synthetic conversations.

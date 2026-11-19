@@ -249,6 +249,14 @@ func claudeCarryItems(path string) ([]carryItem, error) {
 }
 
 func claudeLineItems(l ccCarryLine, at time.Time) []carryItem {
+	if l.Type == "user" {
+		var content any
+		if json.Unmarshal(l.Message.Content, &content) == nil {
+			if command := claudeCommandInput(content); command != "" {
+				return []carryItem{{Kind: "user", Text: command, Time: at}}
+			}
+		}
+	}
 	var text string
 	if json.Unmarshal(l.Message.Content, &text) == nil {
 		if l.Type == "user" && claudeOwnWords(text) {
@@ -504,7 +512,7 @@ func codexItem(p cxCarryPayload, at time.Time) []carryItem {
 // folder, AGENTS.md, a turn's interruption), not the user's words.
 func codexOwnWords(text string) bool {
 	t := strings.TrimSpace(text)
-	return t == "" || nativeContextText(t)
+	return t == "" || nativeContextText(t) || codexSkillBlockEnd(t, userMarkdownLines(t), 0) == len(t)
 }
 
 // shellLine is a command's argv as the line a shell would run: the script

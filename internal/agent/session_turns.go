@@ -301,7 +301,7 @@ func indexClaudeTurns(path string, offset, end int64, metadata *nativeSessionMet
 			if previous, ok := byPrompt[prompt]; ok && prompt != "" {
 				owner = previous
 			}
-			input := record["type"] == "user" && record["isMeta"] != true && !claudeCompactionRecord(record) && record["isVisibleInTranscriptOnly"] != true && genuineUserContent(message["content"])
+			input := record["type"] == "user" && record["isMeta"] != true && !claudeCompactionRecord(record) && record["isVisibleInTranscriptOnly"] != true && (genuineUserContent(message["content"]) || claudeCommandInput(message["content"]) != "")
 			_, known := byPrompt[prompt]
 			if input && (prompt == "" || !known) {
 				if current >= 0 && turns[current].Status == chatmodel.StatusRunning {

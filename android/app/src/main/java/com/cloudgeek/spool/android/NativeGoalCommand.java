@@ -34,7 +34,7 @@ final class NativeGoalCommand {
         return value.substring(start, end);
     }
 
-    private static boolean space(char value) {
+    static boolean space(char value) {
         return value >= '\t' && value <= '\r' || value == ' ' || value == '\u00a0' || value == '\u1680'
                 || value >= '\u2000' && value <= '\u200a' || value == '\u2028' || value == '\u2029'
                 || value == '\u202f' || value == '\u205f' || value == '\u3000' || value == '\ufeff';

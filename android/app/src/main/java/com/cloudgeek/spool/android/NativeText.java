@@ -12,7 +12,9 @@ final class NativeText {
             case "Add files or images": value = "添加文件或图片"; break;
             case "Add server": value = "添加服务器"; break;
             case "Additional permissions": value = "额外权限"; break;
+            case "Administrator": value = "管理员"; break;
             case "After pairing, sign in with your Spool account.": value = "配对后，使用你的 Spool 账号登录。"; break;
+            case "Agent commands do not accept attachments": value = "Agent 命令不接受附件"; break;
             case "Allow and apply permission suggestion": value = "允许并应用权限建议"; break;
             case "Allow and save command rule": value = "允许并保存命令规则"; break;
             case "Allow and save network rule": value = "允许并保存网络规则"; break;
@@ -88,6 +90,7 @@ final class NativeText {
             case "Close settings": value = "关闭设置"; break;
             case "Close sidebar": value = "关闭侧边栏"; break;
             case "Code copied": value = "代码已复制"; break;
+            case "Code review": value = "代码审查"; break;
             case "Collapse commit area": value = "收起提交区"; break;
             case "Collapse file sidebar": value = "收起文件侧栏"; break;
             case "Command": value = "命令"; break;
@@ -115,6 +118,7 @@ final class NativeText {
             case "Continue conversation": value = "继续会话"; break;
             case "Continue here": value = "在当前会话继续"; break;
             case "Continue in automatic mode": value = "以自动模式继续"; break;
+            case "Conversation not found": value = "未找到会话"; break;
             case "Copied": value = "已复制"; break;
             case "Copy SHA": value = "复制 SHA"; break;
             case "Copy code": value = "复制代码"; break;
@@ -124,6 +128,7 @@ final class NativeText {
             case "Could not copy code": value = "无法复制代码"; break;
             case "Could not copy message": value = "无法复制消息"; break;
             case "Could not download or verify the update. Try again.": value = "更新下载或验证失败，请重试。"; break;
+            case "Could not load agent commands. Check project permissions and retry.": value = "无法加载 Agent 命令，请检查项目权限后重试。"; break;
             case "Could not open the system installer.": value = "无法打开系统安装器。"; break;
             case "Could not save avatar": value = "无法保存头像"; break;
             case "Create files": value = "创建文件"; break;
@@ -134,6 +139,7 @@ final class NativeText {
             case "Current version: {version}": value = "当前版本：{version}"; break;
             case "Dark": value = "深色"; break;
             case "Declined": value = "已拒绝"; break;
+            case "Deep research": value = "深度研究"; break;
             case "Default": value = "默认"; break;
             case "Delete": value = "删除"; break;
             case "Delete chat": value = "删除对话"; break;
@@ -178,6 +184,7 @@ final class NativeText {
             case "Enable bypass": value = "确认跳过检查"; break;
             case "Enable full screen": value = "启用全屏"; break;
             case "Enter a chat title of 1–200 characters": value = "请输入 1–200 个字符的对话标题"; break;
+            case "Enter a conversation name": value = "请输入会话名称"; break;
             case "Enter a message of up to 2000 characters.": value = "请输入不超过 2000 字的消息。"; break;
             case "Enter a server name (1–80 characters).": value = "请输入 1–80 个字符的服务器名称。"; break;
             case "Enter commit message": value = "输入提交信息"; break;
@@ -198,12 +205,14 @@ final class NativeText {
             case "Fit width": value = "适合宽度"; break;
             case "Follow system": value = "跟随系统"; break;
             case "Form values (JSON)": value = "表单内容（JSON）"; break;
+            case "From {plugin}": value = "来自 {plugin}"; break;
             case "Generated from your name": value = "根据你的名字自动生成"; break;
             case "Generated on your device. Your name is never sent to DiceBear.": value = "在你的设备上生成，不会向 DiceBear 发送你的名字。"; break;
             case "Git diff": value = "Git 差异"; break;
             case "Git panel": value = "Git"; break;
             case "Git remote actions": value = "Git 远端操作"; break;
             case "Git views": value = "Git 视图"; break;
+            case "Goal": value = "目标"; break;
             case "Goal commands do not accept attachments": value = "目标指令不支持附件"; break;
             case "Goal conditions must be at most 4000 characters": value = "目标条件最多 4000 个字符"; break;
             case "Group chat": value = "群聊"; break;
@@ -233,6 +242,7 @@ final class NativeText {
             case "Listed files in {path}": value = "列出 {path} 中的文件"; break;
             case "Load next section": value = "加载下一段"; break;
             case "Loading Git information…": value = "正在加载 Git 信息…"; break;
+            case "Loading agent commands…": value = "正在加载 Agent 命令…"; break;
             case "Loading diff…": value = "正在加载差异…"; break;
             case "Loading earlier messages…": value = "正在加载更早的消息…"; break;
             case "Loading files…": value = "正在加载文件…"; break;
@@ -241,6 +251,7 @@ final class NativeText {
             case "Loading tool details…": value = "正在加载工具详情…"; break;
             case "Local agent workspace": value = "本地 agent 工作空间"; break;
             case "Local session": value = "本地会话"; break;
+            case "Loop": value = "循环任务"; break;
             case "Lorelei": value = "Lorelei"; break;
             case "Low": value = "低"; break;
             case "Main checkout": value = "主工作区"; break;
@@ -269,6 +280,7 @@ final class NativeText {
             case "No commits yet.": value = "暂无提交。"; break;
             case "No conversations yet.": value = "还没有聊天记录。"; break;
             case "No goal set.": value = "尚未设置目标。"; break;
+            case "No matching agent commands": value = "没有匹配的 Agent 命令"; break;
             case "No other people online.": value = "暂无其他在线成员。"; break;
             case "No pinned chats": value = "还没有置顶聊天"; break;
             case "No servers yet.": value = "尚未添加服务器。"; break;
@@ -299,6 +311,7 @@ final class NativeText {
             case "People chat": value = "成员聊天"; break;
             case "Permission discovery is unavailable": value = "暂时无法读取权限模式，请检查 CLI 安装和项目配置。"; break;
             case "Permissions": value = "权限"; break;
+            case "Personal": value = "个人"; break;
             case "Picked by you": value = "你选择的头像"; break;
             case "Pin chat": value = "置顶聊天"; break;
             case "Pinned": value = "置顶"; break;
@@ -306,6 +319,7 @@ final class NativeText {
             case "Plain text": value = "纯文本"; break;
             case "Plan": value = "规划模式"; break;
             case "Plan before making changes.": value = "先规划，限制直接执行修改。"; break;
+            case "Plan mode": value = "计划模式"; break;
             case "Plugin recommendation": value = "插件推荐"; break;
             case "Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity.": value = "优先通过局域网连接已配对的服务器，外出时使用中继，两种方式都验证同一服务器身份。"; break;
             case "Prepare a project first.": value = "先准备一个项目。"; break;
@@ -317,6 +331,7 @@ final class NativeText {
             case "Previous rows": value = "上一组行"; break;
             case "Private message": value = "私聊消息"; break;
             case "Private messages": value = "私聊"; break;
+            case "Project": value = "项目"; break;
             case "Project file tree": value = "项目文件树"; break;
             case "Project files": value = "项目文件"; break;
             case "Project panel": value = "项目"; break;
@@ -369,6 +384,7 @@ final class NativeText {
             case "Review conversation context": value = "检查会话上下文"; break;
             case "Review flagged permission rules": value = "检查被标记的权限规则"; break;
             case "Review or edit the tool input before approving.": value = "批准前可检查或修改工具输入。"; break;
+            case "Review uncommitted changes or compare against a branch": value = "审查未提交的更改，或与分支比较"; break;
             case "Review usage cost": value = "检查用量费用"; break;
             case "Rows {start}–{end}": value = "第 {start}–{end} 行"; break;
             case "Rules to remove": value = "要移除的规则"; break;
@@ -387,6 +403,7 @@ final class NativeText {
             case "Searched the web": value = "搜索网络"; break;
             case "Searched web for {query}": value = "搜索网络：{query}"; break;
             case "Select online people": value = "选择在线成员"; break;
+            case "Select this chat's current agent to run session commands": value = "请选择此会话当前的 Agent 来执行会话命令"; break;
             case "Select this chat's current agent to view or clear its goal": value = "请切回此聊天当前的 Agent，再查看或清除目标"; break;
             case "Send answers": value = "提交回答"; break;
             case "Send failed": value = "发送失败"; break;
@@ -402,7 +419,7 @@ final class NativeText {
             case "Servers": value = "服务器"; break;
             case "Session directory": value = "会话目录"; break;
             case "Session directory is unavailable": value = "会话目录已不可用"; break;
-            case "Set a native agent goal": value = "设置 Agent 原生目标"; break;
+            case "Set a goal to keep pursuing": value = "设置一个持续推进的目标"; break;
             case "Settings": value = "设置"; break;
             case "Show less": value = "收起"; break;
             case "Show more": value = "显示更多"; break;
@@ -414,6 +431,7 @@ final class NativeText {
             case "Sign out": value = "退出登录"; break;
             case "Sign-in required": value = "等待登录"; break;
             case "Signing in…": value = "正在登录…"; break;
+            case "Skills": value = "技能"; break;
             case "Skip permission checks. Only use in trusted projects.": value = "不进行权限检查，仅用于可信项目。"; break;
             case "Some selected people went offline. Update your selection and try again.": value = "部分所选成员已离线，请调整选择后重试。"; break;
             case "Source": value = "源码"; break;
@@ -433,6 +451,7 @@ final class NativeText {
             case "Stopping…": value = "正在停止…"; break;
             case "Switch directory": value = "切换目录"; break;
             case "Switch to default model": value = "切换为默认模型"; break;
+            case "System": value = "系统"; break;
             case "Tailscale": value = "Tailscale"; break;
             case "Tailscale HTTPS address": value = "Tailscale HTTPS 地址"; break;
             case "The agent reviews approval requests automatically.": value = "由 agent 的原生自动审批机制评估请求。"; break;
@@ -457,6 +476,7 @@ final class NativeText {
             case "This request contains unsupported permissions.": value = "此请求包含当前无法处理的权限类型。"; break;
             case "This request requires device verification in the Codex app.": value = "此请求需要在 Codex 应用中完成设备验证。"; break;
             case "This request uses a form that Spool cannot display yet.": value = "Spool 暂不支持显示此请求的表单。"; break;
+            case "This server does not provide an agent command catalog. Update Spool on the server.": value = "服务端未提供 Agent 命令目录，请更新服务端的 Spool。"; break;
             case "This tool requires an interaction in its native application.": value = "此工具需要在原应用中完成交互。"; break;
             case "This worksheet is empty.": value = "此工作表为空。"; break;
             case "Thought": value = "思考"; break;
@@ -469,6 +489,7 @@ final class NativeText {
             case "Toon Head": value = "Toon Head"; break;
             case "Tracked": value = "已跟踪"; break;
             case "Tracked files will be restored to their staged version. Untracked files will be deleted. Staged changes are kept. This cannot be undone.": value = "已跟踪文件将恢复到暂存区的版本，未跟踪文件将被删除。已暂存的修改会保留。此操作无法撤销。"; break;
+            case "Turn plan mode on": value = "开启计划模式"; break;
             case "Unpin chat": value = "取消置顶聊天"; break;
             case "Unstage all": value = "全部取消暂存"; break;
             case "Unstage {path}": value = "取消暂存 {path}"; break;
@@ -488,6 +509,7 @@ final class NativeText {
             case "Viewed 1 image": value = "已查看 1 张图片"; break;
             case "Viewed {count} images": value = "已查看 {count} 张图片"; break;
             case "Voxel Art": value = "Voxel Art"; break;
+            case "Wait for the running response before using agent commands": value = "请等待当前回复结束后再使用 Agent 命令"; break;
             case "Waiting for MCP authorization": value = "等待 MCP 授权"; break;
             case "Waiting for project access": value = "等待项目授权"; break;
             case "Welcome back": value = "欢迎回来"; break;
@@ -528,7 +550,9 @@ final class NativeText {
             case "Add files or images": value = "ファイル・画像を追加"; break;
             case "Add server": value = "サーバーを追加"; break;
             case "Additional permissions": value = "追加の権限"; break;
+            case "Administrator": value = "管理者"; break;
             case "After pairing, sign in with your Spool account.": value = "After pairing, sign in with your Spool account."; break;
+            case "Agent commands do not accept attachments": value = "エージェントコマンドに添付ファイルは使えません"; break;
             case "Allow and apply permission suggestion": value = "許可して権限の提案を適用"; break;
             case "Allow and save command rule": value = "許可してコマンドルールを保存"; break;
             case "Allow and save network rule": value = "許可してネットワークルールを保存"; break;
@@ -604,6 +628,7 @@ final class NativeText {
             case "Close settings": value = "設定を閉じる"; break;
             case "Close sidebar": value = "サイドバーを閉じる"; break;
             case "Code copied": value = "コードをコピーしました"; break;
+            case "Code review": value = "コードレビュー"; break;
             case "Collapse commit area": value = "コミット欄を折りたたむ"; break;
             case "Collapse file sidebar": value = "ファイルサイドバーを閉じる"; break;
             case "Command": value = "コマンド"; break;
@@ -631,6 +656,7 @@ final class NativeText {
             case "Continue conversation": value = "会話を続行"; break;
             case "Continue here": value = "ここで続行"; break;
             case "Continue in automatic mode": value = "自動モードで続行"; break;
+            case "Conversation not found": value = "会話が見つかりません"; break;
             case "Copied": value = "コピーしました"; break;
             case "Copy SHA": value = "SHA をコピー"; break;
             case "Copy code": value = "コードをコピー"; break;
@@ -640,6 +666,7 @@ final class NativeText {
             case "Could not copy code": value = "コードをコピーできませんでした"; break;
             case "Could not copy message": value = "メッセージをコピーできませんでした"; break;
             case "Could not download or verify the update. Try again.": value = "更新のダウンロードまたは検証に失敗しました。もう一度お試しください。"; break;
+            case "Could not load agent commands. Check project permissions and retry.": value = "エージェントコマンドを読み込めませんでした。プロジェクトの権限を確認して再試行してください。"; break;
             case "Could not open the system installer.": value = "システムのインストーラーを開けませんでした。"; break;
             case "Could not save avatar": value = "アバターを保存できませんでした"; break;
             case "Create files": value = "ファイルを作成"; break;
@@ -650,6 +677,7 @@ final class NativeText {
             case "Current version: {version}": value = "バージョン：{version}"; break;
             case "Dark": value = "ダーク"; break;
             case "Declined": value = "拒否"; break;
+            case "Deep research": value = "詳細調査"; break;
             case "Default": value = "既定"; break;
             case "Delete": value = "削除"; break;
             case "Delete chat": value = "チャットを削除"; break;
@@ -694,6 +722,7 @@ final class NativeText {
             case "Enable bypass": value = "スキップを有効化"; break;
             case "Enable full screen": value = "全画面表示を有効化"; break;
             case "Enter a chat title of 1–200 characters": value = "チャットのタイトルを1～200文字で入力してください"; break;
+            case "Enter a conversation name": value = "会話名を入力してください"; break;
             case "Enter a message of up to 2000 characters.": value = "2000 文字以内のメッセージを入力してください。"; break;
             case "Enter a server name (1–80 characters).": value = "サーバー名を1～80文字で入力してください。"; break;
             case "Enter commit message": value = "コミットメッセージを入力"; break;
@@ -714,12 +743,14 @@ final class NativeText {
             case "Fit width": value = "幅に合わせる"; break;
             case "Follow system": value = "システムに従う"; break;
             case "Form values (JSON)": value = "フォームの値（JSON）"; break;
+            case "From {plugin}": value = "提供元: {plugin}"; break;
             case "Generated from your name": value = "名前から自動生成"; break;
             case "Generated on your device. Your name is never sent to DiceBear.": value = "お使いのデバイス上で生成され、名前は DiceBear に送信されません。"; break;
             case "Git diff": value = "Git 差分"; break;
             case "Git panel": value = "Git"; break;
             case "Git remote actions": value = "Git リモート操作"; break;
             case "Git views": value = "Git ビュー"; break;
+            case "Goal": value = "目標"; break;
             case "Goal commands do not accept attachments": value = "目標コマンドに添付ファイルは使用できません"; break;
             case "Goal conditions must be at most 4000 characters": value = "目標条件は 4000 文字以内で入力してください"; break;
             case "Group chat": value = "グループチャット"; break;
@@ -749,6 +780,7 @@ final class NativeText {
             case "Listed files in {path}": value = "{path} のファイル一覧を取得"; break;
             case "Load next section": value = "次の部分を読み込む"; break;
             case "Loading Git information…": value = "Git 情報を読み込み中…"; break;
+            case "Loading agent commands…": value = "エージェントコマンドを読み込み中…"; break;
             case "Loading diff…": value = "差分を読み込み中…"; break;
             case "Loading earlier messages…": value = "以前のメッセージを読み込み中…"; break;
             case "Loading files…": value = "ファイル一覧を読み込み中…"; break;
@@ -757,6 +789,7 @@ final class NativeText {
             case "Loading tool details…": value = "ツールの詳細を読み込み中…"; break;
             case "Local agent workspace": value = "ローカルエージェントのワークスペース"; break;
             case "Local session": value = "ローカルセッション"; break;
+            case "Loop": value = "繰り返しタスク"; break;
             case "Lorelei": value = "Lorelei"; break;
             case "Low": value = "低"; break;
             case "Main checkout": value = "メイン作業ツリー"; break;
@@ -785,6 +818,7 @@ final class NativeText {
             case "No commits yet.": value = "コミットはまだありません。"; break;
             case "No conversations yet.": value = "チャットはまだありません。"; break;
             case "No goal set.": value = "目標は設定されていません。"; break;
+            case "No matching agent commands": value = "一致するエージェントコマンドはありません"; break;
             case "No other people online.": value = "他にオンラインのメンバーはいません。"; break;
             case "No pinned chats": value = "ピン留めされたチャットはありません"; break;
             case "No servers yet.": value = "サーバーがまだありません。"; break;
@@ -815,6 +849,7 @@ final class NativeText {
             case "People chat": value = "ユーザーチャット"; break;
             case "Permission discovery is unavailable": value = "権限モードを取得できません。CLIとプロジェクトの設定を確認してください。"; break;
             case "Permissions": value = "権限"; break;
+            case "Personal": value = "個人"; break;
             case "Picked by you": value = "選択したアバター"; break;
             case "Pin chat": value = "チャットをピン留め"; break;
             case "Pinned": value = "ピン留め"; break;
@@ -822,6 +857,7 @@ final class NativeText {
             case "Plain text": value = "プレーンテキスト"; break;
             case "Plan": value = "プランモード"; break;
             case "Plan before making changes.": value = "変更を行う前に計画します。"; break;
+            case "Plan mode": value = "プランモード"; break;
             case "Plugin recommendation": value = "プラグインの提案"; break;
             case "Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity.": value = "Prefer the paired server on your LAN; use its relay when away. Both paths verify the same server identity."; break;
             case "Prepare a project first.": value = "まずプロジェクトを準備しましょう。"; break;
@@ -833,6 +869,7 @@ final class NativeText {
             case "Previous rows": value = "前の行"; break;
             case "Private message": value = "プライベートメッセージを入力"; break;
             case "Private messages": value = "プライベートメッセージ"; break;
+            case "Project": value = "プロジェクト"; break;
             case "Project file tree": value = "プロジェクトのファイルツリー"; break;
             case "Project files": value = "プロジェクトファイル"; break;
             case "Project panel": value = "プロジェクト"; break;
@@ -885,6 +922,7 @@ final class NativeText {
             case "Review conversation context": value = "会話のコンテキストを確認"; break;
             case "Review flagged permission rules": value = "指摘された権限ルールを確認"; break;
             case "Review or edit the tool input before approving.": value = "承認前にツールの入力を確認・編集できます。"; break;
+            case "Review uncommitted changes or compare against a branch": value = "未コミットの変更をレビュー、またはブランチと比較"; break;
             case "Review usage cost": value = "利用料金を確認"; break;
             case "Rows {start}–{end}": value = "{start}～{end} 行"; break;
             case "Rules to remove": value = "削除するルール"; break;
@@ -903,6 +941,7 @@ final class NativeText {
             case "Searched the web": value = "Web を検索"; break;
             case "Searched web for {query}": value = "Web で {query} を検索"; break;
             case "Select online people": value = "オンラインのメンバーを選択"; break;
+            case "Select this chat's current agent to run session commands": value = "会話コマンドを実行するには、この会話の現在のエージェントを選択してください"; break;
             case "Select this chat's current agent to view or clear its goal": value = "目標の表示・解除には、このチャットの現在のエージェントを選択してください"; break;
             case "Send answers": value = "回答を送信"; break;
             case "Send failed": value = "送信失敗"; break;
@@ -918,7 +957,7 @@ final class NativeText {
             case "Servers": value = "サーバー"; break;
             case "Session directory": value = "セッションディレクトリ"; break;
             case "Session directory is unavailable": value = "セッションディレクトリを利用できません"; break;
-            case "Set a native agent goal": value = "エージェントのネイティブ目標を設定"; break;
+            case "Set a goal to keep pursuing": value = "継続して取り組む目標を設定"; break;
             case "Settings": value = "設定"; break;
             case "Show less": value = "折りたたむ"; break;
             case "Show more": value = "さらに表示"; break;
@@ -930,6 +969,7 @@ final class NativeText {
             case "Sign out": value = "サインアウト"; break;
             case "Sign-in required": value = "ログインが必要"; break;
             case "Signing in…": value = "サインイン中…"; break;
+            case "Skills": value = "スキル"; break;
             case "Skip permission checks. Only use in trusted projects.": value = "権限チェックを省略します。信頼できるプロジェクトでのみ使用してください。"; break;
             case "Some selected people went offline. Update your selection and try again.": value = "選択したメンバーの一部がオフラインになりました。選択し直してお試しください。"; break;
             case "Source": value = "ソース"; break;
@@ -949,6 +989,7 @@ final class NativeText {
             case "Stopping…": value = "停止しています…"; break;
             case "Switch directory": value = "ディレクトリを切り替え"; break;
             case "Switch to default model": value = "既定のモデルに切り替え"; break;
+            case "System": value = "システム"; break;
             case "Tailscale": value = "Tailscale"; break;
             case "Tailscale HTTPS address": value = "Tailscale HTTPSアドレス"; break;
             case "The agent reviews approval requests automatically.": value = "エージェントの自動承認機能でリクエストを審査します。"; break;
@@ -973,6 +1014,7 @@ final class NativeText {
             case "This request contains unsupported permissions.": value = "このリクエストには未対応の権限が含まれています。"; break;
             case "This request requires device verification in the Codex app.": value = "このリクエストは Codex アプリでのデバイス認証が必要です。"; break;
             case "This request uses a form that Spool cannot display yet.": value = "このリクエストのフォームは、Spool ではまだ表示できません。"; break;
+            case "This server does not provide an agent command catalog. Update Spool on the server.": value = "このサーバーはエージェントコマンドの一覧を提供していません。サーバーの Spool を更新してください。"; break;
             case "This tool requires an interaction in its native application.": value = "このツールは元のアプリでの操作が必要です。"; break;
             case "This worksheet is empty.": value = "このワークシートは空です。"; break;
             case "Thought": value = "思考"; break;
@@ -985,6 +1027,7 @@ final class NativeText {
             case "Toon Head": value = "Toon Head"; break;
             case "Tracked": value = "追跡済み"; break;
             case "Tracked files will be restored to their staged version. Untracked files will be deleted. Staged changes are kept. This cannot be undone.": value = "追跡済みファイルをステージ済みの内容に戻し、未追跡ファイルを削除します。ステージ済みの変更は保持されます。この操作は元に戻せません。"; break;
+            case "Turn plan mode on": value = "プランモードを有効にする"; break;
             case "Unpin chat": value = "チャットのピン留めを解除"; break;
             case "Unstage all": value = "すべてステージ解除"; break;
             case "Unstage {path}": value = "{path} のステージを解除"; break;
@@ -1004,6 +1047,7 @@ final class NativeText {
             case "Viewed 1 image": value = "1枚の画像を表示"; break;
             case "Viewed {count} images": value = "{count}枚の画像を表示"; break;
             case "Voxel Art": value = "Voxel Art"; break;
+            case "Wait for the running response before using agent commands": value = "現在の応答が完了してからエージェントコマンドを使用してください"; break;
             case "Waiting for MCP authorization": value = "MCP の承認を待機中"; break;
             case "Waiting for project access": value = "プロジェクトへのアクセスを待機中"; break;
             case "Welcome back": value = "おかえりなさい"; break;

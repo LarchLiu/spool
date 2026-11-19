@@ -40,6 +40,7 @@ const icons = {
   message:'MessageCircle', search:'Search', refresh:'RefreshCw', spinner:'LoaderCircle', plug:'Plug',
   brain:'Brain', wrench:'Wrench', workflow:'Workflow', terminal:'Terminal', globe:'Globe2', list:'List', image:'Image',
   book_open:'BookOpen', file_pen:'FilePenLine', file_plus:'FilePlus2', file_x:'FileX2', crosshair:'Crosshair',
+  goal:'Goal', lightbulb:'Lightbulb', bug:'Bug', repeat_2:'Repeat2', scan_search:'ScanSearch', package:'Package', command_terminal:'Terminal',
   keyboard:'Keyboard', pan:'Move', minus:'Minus', fit:'Scan', fullscreen:'Maximize', fullscreen_exit:'Minimize',
   escape:'CornerUpLeft', tab:'ArrowRightToLine', alt:'Option', shift:'ArrowBigUp', arrow_right:'ArrowRight',
 };

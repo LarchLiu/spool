@@ -37,6 +37,7 @@ import {Menu,Users,PanelRightOpen,Plus,ShieldQuestion,ChevronDown,ArrowUp,Folder
 import {LoginStory} from '/src/login-story.tsx';
 import {AutosizeTextarea} from '/src/autosize-textarea.tsx';
 import {SlashCommandMenu} from '/src/slash-command-menu.tsx';
+import {commandSuggestions} from '/src/slash-commands.ts';
 import {ComposerSendButton} from '/src/composer-send-button.tsx';
 import {AgentIcon} from '/src/agent-icon.tsx';
 import {AvatarDialog} from '/src/avatar-dialog.tsx';
@@ -60,7 +61,7 @@ import {ToolActivityList} from '/src/tool-activity.tsx';
 import {AttachmentCards,ImagePreview} from '/src/attachments.tsx';
 import {translator} from '/src/i18n.ts';
 import {agents,activityParts,attachmentFiles,peopleProfiles,peopleOnline,peopleGroups,peopleMessages,sidebarProjects,sidebarChats,codeTabContents,diffLayoutContents,syntaxSourceContents,syntaxPatchContents,messageCases,markdownCases,permissionCases} from '/@fs${root}/android/tools/ui-fixtures.mjs';
-import {commandCases,sendButtonCases} from '/@fs${root}/android/tools/ui-fixtures.mjs';
+import {commandCatalog,commandCases,sendButtonCases} from '/@fs${root}/android/tools/ui-fixtures.mjs';
 import '/src/style.css';
 const h=React.createElement,t=translator(new URL(location.href).searchParams.get('locale')||'en');
 const screen=new URL(location.href).searchParams.get('screen');
@@ -87,7 +88,7 @@ const commandScene=h('main',{className:'workspace command-scene',style:{height:8
  h('footer',{className:'composer-wrap'},
  commandCase.errorKey&&h('div',{className:'error dismissible-error',role:'alert'},h('span',null,t(commandCase.errorKey)),h('button',{type:'button',className:'icon','aria-label':t('Dismiss')},h(X,{size:15}))),
  commandNotice&&h('div',{className:'goal-command-notice',role:'status'},h('pre',null,commandNotice),h('button',{className:'icon','aria-label':t('Dismiss')},h(X,{size:15}))),
- React.cloneElement(baseComposer,{},commandCase.id==='menu'&&h(SlashCommandMenu,{t,onSelect:()=>{}}),
+ React.cloneElement(baseComposer,{},commandCase.menu&&h(SlashCommandMenu,{t,commands:commandSuggestions(commandCase.draft,commandCatalog)||[],activeIndex:0,onActiveIndex:()=>{},onSelect:()=>{}}),
  React.cloneElement(baseComposer.props.children[0],{value:commandCase.draft}),
  commandCase.draft.startsWith('/goal')&&h('div',{className:'goal-command-hint'},t('/goal <condition> · /goal to view · /goal clear to remove')),
  baseComposer.props.children[1])));

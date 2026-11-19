@@ -11,7 +11,7 @@ import android.widget.TextView;
 final class NativeComposerCommands {
     final TextView hint;
     final NativePopover menu;
-    final NativeSlashCommandMenu option;
+    final java.util.List<NativeSlashCommandMenu> options = new java.util.ArrayList<>();
     NativeCommandNotice notice;
     TextView error;
     private LinearLayout errorRow;
@@ -19,6 +19,10 @@ final class NativeComposerCommands {
     private final NativeUi.Composer composer;
     private boolean writable, posting, running, dismissed, hiding;
     private int handledKey;
+    private int activeIndex;
+    private java.util.List<NativeSlashCommand> catalog = java.util.Collections.emptyList(), suggestions;
+    private String catalogKey = "", selectionKey = "", renderedKey = "";
+    private String catalogMessage = "";
     /** While a turn runs, the draft waits for its end or is steered into it; set by the composer's owner. */
     Runnable queue, steer;
     private String noticeText = "", errorText = "";
@@ -30,9 +34,7 @@ final class NativeComposerCommands {
         hint.setPadding(ui.dp(19), 0, ui.dp(19), ui.dp(8)); hint.setVisibility(View.GONE);
         composer.box.addView(hint, composer.box.getChildCount() - 1, new LinearLayout.LayoutParams(-1, -2));
         menu = NativePopover.commands(ui);
-        option = new NativeSlashCommandMenu(ui, this::select);
         menu.content.setContentDescription(ui.t("Chat commands"));
-        menu.content.addView(option, new LinearLayout.LayoutParams(-1, -2));
         menu.dismissed = () -> { if (!hiding) dismissed = true; };
         composer.input.setFilters(new android.text.InputFilter[] {new android.text.InputFilter.LengthFilter(131072)});
         composer.input.addTextChangedListener(new TextWatcher() {
@@ -44,9 +46,9 @@ final class NativeComposerCommands {
         composer.input.setOnKeyListener((view, key, event) -> {
             if (event.getAction() == KeyEvent.ACTION_UP && handledKey == key) { handledKey = 0; return true; }
             if (event.getAction() != KeyEvent.ACTION_DOWN || composing()) return false;
-            boolean complete = menu.isShowing() && (key == KeyEvent.KEYCODE_TAB || key == KeyEvent.KEYCODE_ENTER
+            boolean complete = menu.isShowing() && !options.isEmpty() && (key == KeyEvent.KEYCODE_TAB || key == KeyEvent.KEYCODE_ENTER
                     && !event.isMetaPressed() && !event.isAltPressed() && !event.isShiftPressed());
-            boolean navigation = menu.isShowing() && (key == KeyEvent.KEYCODE_DPAD_DOWN || key == KeyEvent.KEYCODE_DPAD_UP);
+            boolean navigation = menu.isShowing() && !options.isEmpty() && (key == KeyEvent.KEYCODE_DPAD_DOWN || key == KeyEvent.KEYCODE_DPAD_UP);
             boolean escape = menu.isShowing() && key == KeyEvent.KEYCODE_ESCAPE;
             // Enter sends and Shift+Enter breaks the line. A touch keyboard has no
             // Shift+Enter, so its Enter keeps the line break and the button sends.
@@ -59,7 +61,11 @@ final class NativeComposerCommands {
             handledKey = key;
             if (event.getRepeatCount() != 0) return true;
             if (complete) select();
-            else if (escape) { dismissed = true; hide(); }
+            else if (navigation) {
+                activeIndex = (activeIndex + (key == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : options.size() - 1)) % options.size();
+                for (int i = 0; i < options.size(); i++) options.get(i).setActive(i == activeIndex);
+                menu.reveal(options.get(activeIndex));
+            } else if (escape) { dismissed = true; hide(); }
             else if (send && writable && !posting) {
                 // The key never stops a running turn; that is the button's job.
                 if (!running) submit.run();
@@ -78,19 +84,57 @@ final class NativeComposerCommands {
         this.writable = writable; this.posting = posting; this.running = running; refresh();
     }
 
+    void catalog(String backend, org.json.JSONArray commands) {
+        catalog(backend, commands, "");
+    }
+
+    void catalog(String backend, org.json.JSONArray commands, String message) {
+        String key = backend + "\n" + commands + "\n" + message;
+        if (key.equals(catalogKey)) return;
+        catalogKey = key; catalogMessage = message; catalog = NativeSlashCommand.catalog(commands); refresh();
+    }
+
     private boolean composing() { return android.view.inputmethod.BaseInputConnection.getComposingSpanStart(composer.input.getText()) >= 0; }
 
     private void refresh() {
         String text = composer.input.getText().toString();
+        suggestions = NativeSlashCommand.suggestions(text, catalog);
+        String key = catalogKey + "\n" + text;
+        if (!selectionKey.equals(key)) { selectionKey = key; activeIndex = 0; renderedKey = ""; }
         hint.setVisibility(NativeGoalCommand.parse(text) == null ? View.GONE : View.VISIBLE);
-        boolean show = writable && composer.input.hasFocus() && !posting && !running && !dismissed && NativeGoalCommand.suggestion(text);
+        boolean show = writable && composer.input.hasFocus() && !posting && !running && !dismissed && suggestions != null;
         if (show && composer.box.isAttachedToWindow() && composer.box.getWidth() > 0) {
+            if (!renderedKey.equals(key)) { renderedKey = key; renderOptions(); }
             if (!menu.isShowing()) menu.show(composer.box, true);
         } else hide();
     }
 
+    private void renderOptions() {
+        options.clear(); menu.content.removeAllViews(); boolean skills = false;
+        if (suggestions.isEmpty()) {
+            TextView empty = ui.text(catalogMessage.isEmpty() ? ui.t("No matching agent commands") : catalogMessage, 12, ui.subtle);
+            ui.normalFallbackLineSpacing(empty); empty.setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8));
+            empty.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.topMargin = params.bottomMargin = ui.dp(12);
+            menu.content.addView(empty, params);
+        }
+        for (NativeSlashCommand command : suggestions) {
+            if (command.skill() && !skills) {
+                TextView group = ui.text(ui.t("Skills"), 12, ui.muted); ui.normalFallbackLineSpacing(group);
+                group.setPadding(ui.dp(7), ui.dp(12), ui.dp(7), ui.dp(5)); menu.content.addView(group); skills = true;
+            }
+            NativeSlashCommandMenu row = new NativeSlashCommandMenu(ui, command, options.size() == activeIndex, () -> select(command));
+            options.add(row); menu.content.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        }
+        menu.reveal(options.isEmpty() ? menu.content : options.get(activeIndex));
+    }
+
     void select() {
-        composer.input.setText("/goal "); composer.input.setSelection(composer.input.length());
+        if (suggestions != null && activeIndex < suggestions.size()) select(suggestions.get(activeIndex));
+    }
+
+    private void select(NativeSlashCommand command) {
+        composer.input.setText("/" + command.name + " "); composer.input.setSelection(composer.input.length());
         dismissed = false; hide(); composer.input.requestFocus();
     }
 

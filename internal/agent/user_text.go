@@ -273,6 +273,9 @@ func requestHeading(line string) bool {
 
 func nativeUserBlockEnd(text string, lines []userMarkdownLine, start int) int {
 	rest := text[start:]
+	if end := codexSkillBlockEnd(text, lines, start); end > start {
+		return end
+	}
 	if strings.HasPrefix(rest, "# AGENTS.md instructions for ") {
 		if newline := strings.IndexByte(rest, '\n'); newline >= 0 {
 			body := newline + len(rest[newline:]) - len(strings.TrimLeft(rest[newline:], "\r\n"))
@@ -331,6 +334,33 @@ func nativeUserBlockEnd(text string, lines []userMarkdownLine, start int) int {
 		}
 	}
 	return start
+}
+
+// Codex injects a selected skill as a separate user-role message after the
+// actual request. Only recognize its complete native name/path envelope;
+// ordinary XML examples and incomplete skill records remain user text.
+func codexSkillBlockEnd(text string, lines []userMarkdownLine, start int) int {
+	rest, ok := strings.CutPrefix(text[start:], "<skill>")
+	if !ok {
+		return start
+	}
+	rest, ok = strings.CutPrefix(strings.TrimLeft(rest, " \t\r\n"), "<name>")
+	if !ok {
+		return start
+	}
+	name, rest, ok := strings.Cut(rest, "</name>")
+	if !ok || strings.TrimSpace(name) == "" || strings.ContainsAny(name, "<>\x00\r\n") {
+		return start
+	}
+	rest, ok = strings.CutPrefix(strings.TrimLeft(rest, " \t\r\n"), "<path>")
+	if !ok {
+		return start
+	}
+	filePath, _, ok := strings.Cut(rest, "</path>")
+	if !ok || !validUserFile("SKILL.md", filePath) {
+		return start
+	}
+	return completeUserTagEnd(text, lines, start, "skill")
 }
 
 func userInterruptionEnd(text string) int {

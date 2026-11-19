@@ -19,9 +19,9 @@ final class NativePopover {
         return menu;
     }
     static NativePopover commands(NativeUi ui) {
-        NativePopover menu = new NativePopover(ui, 390, 12, 6, 0);
+        NativePopover menu = new NativePopover(ui, 390, 20, 6, 0);
         menu.commandMode = true;
-        menu.restyle(12, ui.borderStrong, 8, 32, ui.shadow);
+        menu.restyle(20, ui.borderStrong, 6, 24, ui.shadow);
         menu.window.setFocusable(false);
         menu.window.setInputMethodMode(PopupWindow.INPUT_METHOD_NEEDED);
         return menu;
@@ -264,6 +264,15 @@ final class NativePopover {
 
     View panel() { return frame.surface; }
 
+    void reveal(View row) {
+        content.post(() -> {
+            if (row.getParent() == null && row != content) return;
+            int top = row == content ? 0 : row.getTop(), bottom = row == content ? 0 : row.getBottom();
+            if (top < scroll.getScrollY()) scroll.scrollTo(0, top);
+            else if (bottom > scroll.getScrollY() + scroll.getHeight()) scroll.scrollTo(0, bottom - scroll.getHeight());
+        });
+    }
+
     private void place(View anchor, Rect viewport, int x, int y, int width, int height) {
         if (viewport.isEmpty() || width <= 0 || height <= 0) { dismiss(); return; }
         Rect bounds = frame.place(viewport, x, y, width, height);
@@ -294,9 +303,11 @@ final class NativePopover {
             return;
         }
         if (commandMode) {
-            width = Math.max(ui.dp(1), Math.min(requestedWidth, anchor.getWidth() - ui.dp(2)));
+            width = Math.max(ui.dp(1), Math.min(viewport.width(), anchor.getWidth() - ui.dp(2)));
             content.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-            int height = Math.min(viewport.height(), content.getMeasuredHeight());
+            int maximum = Math.min(ui.dp(320), viewport.height() / 2);
+            maximum = Math.min(maximum, Math.max(1, position[1] - viewport.top - ui.dp(8)));
+            int height = Math.min(maximum, content.getMeasuredHeight());
             place(anchor, viewport, position[0] + ui.dp(1), position[1] + ui.dp(1) - height - ui.dp(8), width, height);
             return;
         }

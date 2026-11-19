@@ -500,6 +500,11 @@ func claudeToolUsePart(item map[string]any, model string) chatmodel.Part {
 }
 
 func claudeTranscriptParts(role string, content any, model string) []chatmodel.Part {
+	if role == "user" {
+		if command := claudeCommandInput(content); command != "" {
+			content = command
+		}
+	}
 	if text, ok := content.(string); ok {
 		parts := []chatmodel.Part{transcriptTextPart(role, text, model)}
 		if role == "user" {

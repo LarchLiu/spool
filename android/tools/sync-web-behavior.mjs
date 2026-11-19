@@ -5,7 +5,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import {createRequire} from 'node:module';
 import {fileURLToPath,pathToFileURL} from 'node:url';
-import {agents,activityCases,patchCases,attachmentFiles,fileDirectories,projectFiles,peopleProfiles,peopleOnline,peopleGroups,peopleMessages,sidebarProjects,sidebarChats,codeTabContents,messageCases,typographyCases,markdownCases,permissionCases,editorCases,composerLayoutCases,commandCases,chatStateCases,sendButtonCases} from './ui-fixtures.mjs';
+import {agents,activityCases,patchCases,attachmentFiles,fileDirectories,projectFiles,peopleProfiles,peopleOnline,peopleGroups,peopleMessages,sidebarProjects,sidebarChats,codeTabContents,messageCases,typographyCases,markdownCases,permissionCases,editorCases,composerLayoutCases,commandCatalog,commandCases,chatStateCases,sendButtonCases} from './ui-fixtures.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const require=createRequire(path.join(root,'web/package.json'));
 const {buildSync}=require('esbuild');
@@ -42,6 +42,10 @@ const slashInputs=['','/','/g','/go','/goa','/goal','/goals','/goal/path',' /goa
  '/goal\u3000修好测试\nand verify','\n/goal\t','/\n','/goal\r\n',...['\u00a0','\u1680','\u2007','\u2028','\u2029','\u202f','\u205f','\u3000','\ufeff','\u0085','\u180e'].map(space=>space+'/goal'+space),
  '/goal '+ 'x'.repeat(4000),'/goal '+ 'x'.repeat(4001),'/goal '+ '😀'.repeat(4000),'/goal '+ '😀'.repeat(4001)];
 const slashCommands=slashInputs.map(text=>({text,suggestion:slash.goalSuggestion(text),command:slash.parseGoalCommand(text)}));
+const agentCommandCases=[...slashInputs.slice(0,37),'/review main','/code','/CHECK','/project','/guides','/inspect','/repo:check first\nsecond','/skill:inspect:repo verify','/tmp/file','/back\\slash','/"quoted"','/`quoted`'].map(text=>({
+ text,parsed:slash.parseSlashCommand(text),suggestions:slash.commandSuggestions(text,commandCatalog)?.map(command=>command.name)??null,
+ resolved:slash.findSlashCommand(commandCatalog,slash.parseSlashCommand(text)?.name||'')?.name||null,
+}));
 const peopleInbox=people.createDirectInbox(),peopleCases=[];
 const recordPeople=operation=>{const s=peopleInbox.snapshot();peopleCases.push({operation,expected:{active:s.active,messages:s.messages.map(m=>m.id),people:s.people.map(p=>p.id),drafts:Object.fromEntries(Object.entries(s.drafts).map(([id,d])=>[id,d.text])),sending:Object.keys(s.sending),unread:Object.fromEntries(Object.entries(s.unread).filter(([,n])=>n)),groups:s.groups.map(g=>g.id),names:s.groupNames,conversations:people.peopleConversationIDs(s,'alice',peopleOnline.map(p=>p.id))}});};
 recordPeople({type:'initial'});
@@ -136,7 +140,7 @@ const modelCases=[];
 for(const agent of agents)for(const id of [...agent.catalog.models.map(item=>item.model),'imported-custom'])
  modelCases.push({agent,model:id,expected:model.chooseModel(agent,id),levels:model.effortChoices(agent.backend,agent.catalog.models.find(item=>item.model===id)).map(item=>item.reasoningEffort)});
 const value={
- slashCommands,commandCases,chatStates,inputTranscripts,sendButtonCases,composerLayoutCases,
+ slashCommands,agentCommandCases,commandCatalog,commandCases,chatStates,inputTranscripts,sendButtonCases,composerLayoutCases,
  permissionCases,
  messageTimes,
  codeTabContents,

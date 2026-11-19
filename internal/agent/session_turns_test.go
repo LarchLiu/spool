@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -127,6 +129,51 @@ func TestClaudeNativeTurnsUsePromptAndParentChains(t *testing.T) {
 		if i == 0 && strings.Contains(text.String(), "second") {
 			t.Fatal("a delayed parent-linked message swallowed a newer prompt")
 		}
+	}
+}
+
+func TestClaudeSkillInvocationKeepsItsHistoryBeforeAContinuation(t *testing.T) {
+	const envelope = "<command-message>gh</command-message>\n<command-name>/gh</command-name>\n<command-args>看一下最新版本</command-args>"
+	for _, blocks := range []bool{false, true} {
+		t.Run(fmt.Sprint("blocks=", blocks), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "claude.jsonl")
+			var content any = envelope
+			if blocks {
+				var values []any
+				for _, field := range strings.Split(envelope, "\n") {
+					values = append(values, map[string]any{"type": "text", "text": field})
+				}
+				content = values
+			}
+			writeTitleRecords(t, path,
+				map[string]any{"type": "user", "uuid": "skill-input", "message": map[string]any{"content": content}},
+				map[string]any{"type": "user", "uuid": "skill-body", "parentUuid": "skill-input", "isMeta": true, "message": map[string]any{"content": "Base directory for this skill: /skills/gh\nPrivate skill instructions"}},
+				map[string]any{"type": "assistant", "uuid": "query", "parentUuid": "skill-body", "message": map[string]any{"content": []any{map[string]any{"type": "tool_use", "id": "release-query", "name": "Bash", "input": map[string]any{"command": "gh release view"}}}}},
+				map[string]any{"type": "user", "uuid": "result", "parentUuid": "query", "message": map[string]any{"content": []any{map[string]any{"type": "tool_result", "tool_use_id": "release-query", "content": "Approval required"}}}},
+				map[string]any{"type": "assistant", "uuid": "first-answer", "parentUuid": "result", "message": map[string]any{"content": "First release answer", "stop_reason": "end_turn"}},
+				map[string]any{"type": "user", "uuid": "continue", "parentUuid": "first-answer", "message": map[string]any{"content": "继续吧"}},
+				map[string]any{"type": "assistant", "uuid": "last-answer", "parentUuid": "continue", "message": map[string]any{"content": "Confirmed release answer", "stop_reason": "end_turn"}},
+			)
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			turns, err := IndexSessionTurns(chatmodel.BackendClaude, path, 0)
+			if err != nil || len(turns) != 2 || turns[0].ID != "skill-input" || turns[1].ID != "continue" || !turns[0].HasUserInput() {
+				t.Fatalf("skill-started turn disappeared: %+v, %v", turns, err)
+			}
+			first, err := ReadSessionTurn(chatmodel.BackendClaude, path, turns[0])
+			if err != nil || len(first.Parts) != 4 || first.Parts[0].Text != "/gh 看一下最新版本" || first.Parts[1].Name != "Bash" || first.Parts[2].Text != "Approval required" || first.Parts[3].Text != "First release answer" {
+				t.Fatalf("skill invocation/activity/answer lost: %+v, %v", first, err)
+			}
+			last, err := ReadSessionTurn(chatmodel.BackendClaude, path, turns[1])
+			if err != nil || len(last.Parts) != 2 || last.Parts[0].Text != "继续吧" || last.Parts[1].Text != "Confirmed release answer" {
+				t.Fatalf("continuation swallowed the skill turn: %+v, %v", last, err)
+			}
+			if after, err := os.ReadFile(path); err != nil || !bytes.Equal(before, after) {
+				t.Fatal("display modified the native history")
+			}
+		})
 	}
 }
 

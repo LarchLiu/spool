@@ -1,6 +1,6 @@
 package com.cloudgeek.spool.android;
 
-/** Captured goal-control selection; a delayed reply cannot replace a newer chat or draft. */
+/** Captured command selection; a delayed reply cannot replace a newer chat or draft. */
 final class NativeGoalRequest {
     private final int session, selection;
     private final String key, message;

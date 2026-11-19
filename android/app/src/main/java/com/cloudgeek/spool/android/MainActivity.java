@@ -2262,7 +2262,8 @@ public final class MainActivity extends Activity {
         boolean running = chat != null && chat.optString("status").equals("running");
         boolean stopping = activeTurn != null && (stoppingTurns.contains(activeTurn.optString("id"))
                 || activeSubmission(activeTurn) != null && pendingSend.stopRequested);
-        composerView.commands.bind(writable(), busy, running);
+        composerView.commands.catalog(backend, agentCommands(), commandCatalogMessage());
+        composerView.commands.bind(writable() && selectedAgentAvailable(), busy, running);
         composerView.commands.notice(goalNotice, () -> { goalNotice = ""; updateComposer(); });
         composerView.commands.error(goalError, () -> { goalError = ""; updateComposer(); });
         boolean editing = delivering() && editingQueue;
@@ -3122,6 +3123,27 @@ public final class MainActivity extends Activity {
         return false;
     }
 
+    private JSONArray agentCommands() {
+        JSONArray commands = permissionCatalog == null ? null : permissionCatalog.optJSONArray("commands");
+        if (commands != null) return commands;
+        for (int i = 0; i < agents.length(); i++) {
+            JSONObject agent = at(agents, i);
+            if (agent.optString("backend").equals(backend)) {
+                JSONObject catalog = agent.optJSONObject("catalog");
+                return catalog == null ? null : catalog.optJSONArray("commands");
+            }
+        }
+        return null;
+    }
+
+    private String commandCatalogMessage() {
+        if (agentCommands() != null) return "";
+        if (permissionLoading) return ui.t("Loading agent commands…");
+        if (permissionFailed) return ui.t("Could not load agent commands. Check project permissions and retry.");
+        if (permissionCatalog != null) return ui.t("This server does not provide an agent command catalog. Update Spool on the server.");
+        return ui.t("Loading agent commands…");
+    }
+
     private String permissionLabel(String mode) {
         return NativePermissionMenu.label(ui, backend, mode);
     }
@@ -3326,11 +3348,8 @@ public final class MainActivity extends Activity {
         if (!writable() || delivering() || !queueingDraft(activeTurn)) return;
         captureDraft();
         final Draft submitted = draft();
-        NativeGoalCommand command = NativeGoalCommand.parse(submitted.text);
-        if (command != null) {
-            String issue = command.validationError(!submitted.files.isEmpty());
-            if (!issue.isEmpty()) { goalError = ui.t(issue); updateComposer(); return; }
-            if (!command.action.equals("set")) return;
+        if (NativeSlashCommand.parse(submitted.text) != null) {
+            goalError = ui.t("Wait for the running response before using agent commands"); updateComposer(); return;
         }
         final String target = chatID, message = submitted.text, auth = csrf, loc = locale();
         final List<Attachment> files = new ArrayList<>(submitted.files);
@@ -3465,10 +3484,25 @@ public final class MainActivity extends Activity {
             return;
         }
         NativeGoalCommand command = NativeGoalCommand.parse(submitted.text);
+        NativeSlashCommand.Input slash = NativeSlashCommand.parse(submitted.text);
+        NativeSlashCommand definition = slash == null ? null : NativeSlashCommand.find(NativeSlashCommand.catalog(agentCommands()), slash.name);
+        if (slash != null && !submitted.files.isEmpty()) {
+            goalError = ui.t("Agent commands do not accept attachments"); updateComposer(); return;
+        }
+        if (slash != null && definition == null) {
+            String unavailable = commandCatalogMessage();
+            goalError = unavailable.isEmpty() ? ui.t("No matching agent commands") : unavailable; updateComposer(); return;
+        }
         if (command != null) {
             String issue = command.validationError(!submitted.files.isEmpty());
             if (!issue.isEmpty()) { goalError = ui.t(issue); updateComposer(); return; }
             if (!command.action.equals("set")) { runGoalControl(command.action, submitted); return; }
+        }
+        if (definition != null && definition.kind.equals("client")) {
+            runSessionCommand(definition.name, slash.arguments, submitted); return;
+        }
+        if (definition != null && definition.kind.equals("control") && command == null && !(definition.name.equals("plan") && !slash.arguments.isEmpty())) {
+            runAgentControl("/" + definition.name + (slash.arguments.isEmpty() ? "" : " " + slash.arguments), submitted); return;
         }
         goalNotice = goalError = "";
         final String pid = projectID,
@@ -3654,6 +3688,107 @@ public final class MainActivity extends Activity {
             stoppingTurns.remove(pendingID); stoppingTurns.remove(turnID);
             if (target.equals(chatID)) goalError = failure.getMessage() == null ? failure.toString() : failure.getMessage();
             updateComposer();
+        });
+    }
+
+    private void clearCommandDraft(Draft submitted, NativeGoalRequest request) {
+        if (request.clears(submitted.text)) submitted.text = "";
+        if (composer != null && request.clears(composer.getText().toString())) composer.setText("");
+    }
+
+    private void commandFailed(Exception failure) {
+        goalError = failure.getMessage() == null ? failure.toString() : failure.getMessage(); updateComposer();
+    }
+
+    private void runAgentControl(String command, Draft submitted) {
+        if (chat != null && !backend.equals(chat.optString("backend"))) {
+            goalError = ui.t("Select this chat's current agent to run session commands"); updateComposer(); return;
+        }
+        NativeGoalRequest origin = new NativeGoalRequest(authEpoch, selectionEpoch, selectionKey(), submitted.text);
+        JSONObject options = object("command", command, "model", model, "reasoning_effort", effort, "permission_mode", permission);
+        goalNotice = goalError = ""; busy = true; updateComposer();
+        if (!chatID.isEmpty()) { sendAgentControl(options, submitted, origin); return; }
+        final String pid = projectID, draftKey = selectionKey(), message = submitted.text;
+        api("/chats", object("project_id", pid, "backend", backend), value -> {
+            if (!origin.current(authEpoch, selectionEpoch, selectionKey())) { busy = false; updateComposer(); return; }
+            JSONObject created = (JSONObject) value;
+            if (created.optString("id").isEmpty()) {
+                busy = false; commandFailed(new IOException(ui.t("The server returned an invalid response"))); return;
+            }
+            captureDraft(); chatID = created.optString("id"); chat = created;
+            drafts.remove(draftKey); drafts.put(chatID, submitted); ++selectionEpoch;
+            chats = NativeChatState.reconcileList(chats, created);
+            NativeGoalRequest adopted = new NativeGoalRequest(authEpoch, selectionEpoch, selectionKey(), message);
+            renderChat(); startChat(); sendAgentControl(options, submitted, adopted);
+        }, failure -> {
+            busy = false;
+            if (origin.current(authEpoch, selectionEpoch, selectionKey())) commandFailed(failure); else updateComposer();
+        });
+    }
+
+    private void sendAgentControl(JSONObject options, Draft submitted, NativeGoalRequest origin) {
+        api("/chats/" + Uri.encode(chatID) + "/commands", options, value -> {
+            busy = false;
+            if (!origin.current(authEpoch, selectionEpoch, selectionKey())) { updateComposer(); return; }
+            JSONObject result = (JSONObject) value;
+            model = result.optString("model"); effort = result.optString("reasoning_effort"); permission = result.optString("permission_mode");
+            NativeChatState.put(chat, "model", model); NativeChatState.put(chat, "reasoning_effort", effort); NativeChatState.put(chat, "permission_mode", permission);
+            goalNotice = result.optString("message"); clearCommandDraft(submitted, origin);
+            renderChat(); loadPermissions();
+        }, failure -> {
+            busy = false;
+            if (origin.current(authEpoch, selectionEpoch, selectionKey())) commandFailed(failure); else updateComposer();
+        });
+    }
+
+    private void runSessionCommand(String name, String argument, Draft submitted) {
+        NativeGoalRequest origin = new NativeGoalRequest(authEpoch, selectionEpoch, selectionKey(), submitted.text);
+        goalNotice = goalError = "";
+        if (name.equals("clear") || name.equals("new")) {
+            if (!argument.isEmpty()) { goalError = "Usage: /" + name; updateComposer(); return; }
+            if (canCreateInProject()) { clearCommandDraft(submitted, origin); newChat(projectID); }
+            return;
+        }
+        if (name.equals("agents") || name.equals("resume")) {
+            if (argument.isEmpty()) { clearCommandDraft(submitted, origin); openSidebar(); return; }
+            for (int i = 0; i < chats.length(); i++) {
+                JSONObject target = at(chats, i);
+                if (target.optString("backend").equals(backend) && (argument.equals(target.optString("id")) || argument.equals(target.optString("title")))) {
+                    clearCommandDraft(submitted, origin); openChat(target.optString("id")); return;
+                }
+            }
+            goalError = ui.t("Conversation not found"); updateComposer(); return;
+        }
+        if (chat == null || !backend.equals(chat.optString("backend"))) {
+            goalError = ui.t("Select this chat's current agent to run session commands"); updateComposer(); return;
+        }
+        if (name.equals("rename") && argument.isEmpty()) {
+            goalError = ui.t("Enter a conversation name"); updateComposer(); return;
+        }
+        if (!name.equals("rename") && !argument.isEmpty()) { goalError = "Usage: /" + name; updateComposer(); return; }
+        if (!name.equals("rename") && !name.equals("archive") && !name.equals("delete") && !name.equals("fork")) {
+            goalError = ui.t("No matching agent commands"); updateComposer(); return;
+        }
+        String target = chatID;
+        JSONObject body = name.equals("rename") ? object("title", argument) : name.equals("fork")
+                ? object("backend", backend, "model", model, "reasoning_effort", effort) : object();
+        busy = true; updateComposer();
+        api("/chats/" + Uri.encode(target) + "/" + name, body, value -> {
+            busy = false;
+            if (!origin.current(authEpoch, selectionEpoch, selectionKey())) { updateComposer(); return; }
+            clearCommandDraft(submitted, origin);
+            if (workspaceData != null) workspaceData.navigationChanged();
+            if (name.equals("rename")) {
+                chat = NativeChatState.metadata(chat, (JSONObject) value);
+                for (int i = 0; i < chats.length(); i++) if (target.equals(at(chats, i).optString("id")))
+                    chats.put(i, NativeChatState.metadata(at(chats, i), (JSONObject) value));
+                heading.setText(chatTitle()); updateComposer();
+            } else if (name.equals("fork")) {
+                chats = NativeChatState.reconcileList(chats, (JSONObject) value); openChat(((JSONObject) value).optString("id"));
+            } else acceptNavigation((JSONObject) value, target);
+        }, failure -> {
+            busy = false;
+            if (origin.current(authEpoch, selectionEpoch, selectionKey())) commandFailed(failure); else updateComposer();
         });
     }
 

@@ -29,8 +29,20 @@ export const composerLayoutCases=[
  if(!sample)throw new Error('Missing actual editor fixture: '+editor);
  return {...viewport,locale:sample.locale,value:sample.value};
 });
+export const commandCatalog=[
+ {name:'goal',description:'Set a native agent goal',kind:'prompt',argumentHint:'[condition|clear]'},
+ {name:'plan',description:'Use native plan mode',kind:'control',argumentHint:'[task]'},
+ {name:'code-review',displayName:'Code review',description:'Review changes',aliases:['review'],kind:'prompt',argumentHint:'[target]'},
+ {name:'loop',description:'Run a task repeatedly',kind:'prompt'},
+ {name:'deep-research',description:'Research a topic',kind:'prompt'},
+ {name:'skill:inspect:repo',displayName:'Inspect project',description:'Check project health and tests',kind:'skill',scope:'repo'},
+ {name:'docs',displayName:'Write documentation',description:'Write and update guides',kind:'skill',scope:'user',pluginId:'team-tools'},
+];
 export const commandCases=[
- {id:'menu',draft:'/go'},
+ {id:'menu',draft:'/go',menu:true},
+ {id:'catalog',draft:'/',menu:true},
+ {id:'skills',draft:'/inspect',menu:true},
+ {id:'empty',draft:'/unknown',menu:true},
  {id:'hint',draft:'/goal fix tests'},
  {id:'notice',draft:'',noticeKey:'No goal set.'},
  {id:'tall',draft:'',notice:Array.from({length:24},(_,index)=>`Goal detail ${index+1}: keep the original native session.`).join('\n')},

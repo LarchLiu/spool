@@ -79,6 +79,13 @@ final class NativeIcons {
             case "file_plus": resource = R.drawable.web_icon_file_plus; break;
             case "file_x": resource = R.drawable.web_icon_file_x; break;
             case "crosshair": resource = R.drawable.web_icon_crosshair; break;
+            case "goal": resource = R.drawable.web_icon_goal; break;
+            case "lightbulb": resource = R.drawable.web_icon_lightbulb; break;
+            case "bug": resource = R.drawable.web_icon_bug; break;
+            case "repeat_2": resource = R.drawable.web_icon_repeat_2; break;
+            case "scan_search": resource = R.drawable.web_icon_scan_search; break;
+            case "package": resource = R.drawable.web_icon_package; break;
+            case "command_terminal": resource = R.drawable.web_icon_command_terminal; break;
             case "keyboard": resource = R.drawable.web_icon_keyboard; break;
             case "pan": resource = R.drawable.web_icon_pan; break;
             case "minus": resource = R.drawable.web_icon_minus; break;

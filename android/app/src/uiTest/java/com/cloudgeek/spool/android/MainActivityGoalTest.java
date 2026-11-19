@@ -138,7 +138,8 @@ public class MainActivityGoalTest {
             }));
             set("user", new JSONObject().put("id", "alice"));
             set("projects", new JSONArray().put(new JSONObject().put("id", "project-one").put("name", "Project").put("can_create", true)));
-            set("agents", new JSONArray().put(new JSONObject().put("backend", "codex").put("enabled", true).put("installed", true)));
+            set("agents", new JSONArray().put(new JSONObject().put("backend", "codex").put("enabled", true).put("installed", true)
+                    .put("catalog", new JSONObject().put("commands", new JSONArray("[{name:'goal',kind:'prompt',description:'Set a goal'},{name:'plan',kind:'control',description:'Plan'},{name:'review',kind:'prompt',description:'Review'}]")))));
             set("permission", "ask"); set("permissionCatalog", new JSONObject().put("modes", new JSONArray().put(new JSONObject().put("id", "ask").put("available", true))));
             set("csrf", "test-csrf"); set("client", new Client("unused", "https://fixture.invalid")); set("connected", true);
             set("avatarImages", new NativeAvatars(task -> {}, (style, seed) -> { throw new AssertionError("No avatar generation in Activity request tests"); }));
@@ -183,7 +184,8 @@ public class MainActivityGoalTest {
         }
         try (Harness h = new Harness(true)) {
             h.set("backend", "claude");
-            h.set("agents", new JSONArray().put(new JSONObject().put("backend", "claude").put("enabled", true).put("installed", true)));
+            h.set("agents", new JSONArray().put(new JSONObject().put("backend", "claude").put("enabled", true).put("installed", true)
+                    .put("catalog", new JSONObject().put("commands", new JSONArray("[{name:'goal',kind:'control',description:'Set a goal'}]")))));
             h.send("/goal");
             assertEquals("Select this chat's current agent to view or clear its goal", h.<String>get("goalError"));
             assertTrue(h.io.jobs.isEmpty()); assertTrue(ShadowClient.calls.isEmpty());
@@ -240,7 +242,7 @@ public class MainActivityGoalTest {
             Object draft = ReflectionHelpers.callInstanceMethod(h.activity, "draft");
             List<Object> files = ReflectionHelpers.getField(draft, "files"); files.add(file);
             h.send("/goal clear");
-            assertEquals("Goal commands do not accept attachments", h.<String>get("goalError"));
+            assertEquals("Agent commands do not accept attachments", h.<String>get("goalError"));
             assertTrue(h.io.jobs.isEmpty()); assertTrue(ShadowClient.calls.isEmpty()); files.clear();
             h.set("goalError", ""); h.set("busy", true); h.send("/goal");
             assertTrue(h.io.jobs.isEmpty()); h.set("busy", false);
