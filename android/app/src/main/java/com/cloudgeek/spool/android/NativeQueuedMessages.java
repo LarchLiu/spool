@@ -1,9 +1,8 @@
 package com.cloudgeek.spool.android;
 
 import android.text.TextUtils;
-import android.content.ClipData;
-import android.view.DragEvent;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -31,17 +30,15 @@ final class NativeQueuedMessages extends ScrollView {
     private final BiConsumer<String, String> move;
     private boolean busy;
     private boolean dragging;
-    private String draggedID, pendingID, pendingBefore;
-    private float dragY;
+    private String dragBefore, originalBefore, pendingID, pendingBefore;
+    private View dragRow, dragGrip;
+    private android.graphics.drawable.Drawable dragBackground;
+    private int dragPointer = MotionEvent.INVALID_POINTER_ID, dragStartScroll;
+    private float dragStartY, dragY;
     private Map<String, Float> positions;
     private final Runnable dragScroll = this::scrollDrag;
     private NativePopover menu;
     private String shown = "";
-    private static final class QueueDrag {
-        final NativeQueuedMessages owner;
-        final String id;
-        QueueDrag(NativeQueuedMessages owner, String id) { this.owner = owner; this.id = id; }
-    }
 
     NativeQueuedMessages(NativeUi ui, Consumer<String> steer, Consumer<String> delete,
                          Consumer<String> edit, BiConsumer<String, String> move) {
@@ -70,47 +67,102 @@ final class NativeQueuedMessages extends ScrollView {
         setOverScrollMode(OVER_SCROLL_IF_CONTENT_SCROLLS);
         setContentDescription(ui.t("Queued messages"));
         setVisibility(GONE);
-        setOnDragListener((view, event) -> {
-            if (!(event.getLocalState() instanceof QueueDrag)) return false;
-            QueueDrag drag = (QueueDrag) event.getLocalState();
-            if (drag.owner != this) return false;
-            if (event.getAction() == DragEvent.ACTION_DRAG_ENDED) {
-                dragging = false; removeCallbacks(dragScroll);
-                markDrop(null); draggedID = null; return true;
+    }
+
+    @Override public boolean onInterceptTouchEvent(MotionEvent event) {
+        if (dragRow != null) return true;
+        if (!busy && list.getChildCount() > 1 && event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            for (int i = 0; i < list.getChildCount(); i++) {
+                LinearLayout row = (LinearLayout) list.getChildAt(i);
+                View grip = row.getChildAt(0);
+                float x = event.getX() + getScrollX() - list.getLeft() - row.getX() - grip.getX();
+                float y = event.getY() + getScrollY() - list.getTop() - row.getY() - grip.getY();
+                if (!grip.isEnabled() || x < 0 || x >= grip.getWidth() || y < 0 || y >= grip.getHeight()) continue;
+                // Own the touch from the handle down, so ScrollView never steals a reorder gesture.
+                // Unlike a system drag shadow, the actual row stays clipped inside the queue.
+                for (int at = 0; at < list.getChildCount(); at++) {
+                    View child = list.getChildAt(at);
+                    child.animate().cancel(); child.setTranslationY(0);
+                }
+                positions = null;
+                dragRow = row; dragGrip = grip; dragBackground = row.getBackground();
+                dragPointer = event.getPointerId(0);
+                dragStartY = dragY = event.getY(); dragStartScroll = getScrollY();
+                dragBefore = originalBefore = i + 1 < list.getChildCount() ? (String) list.getChildAt(i + 1).getTag() : "";
+                grip.requestFocus(); grip.setPressed(true);
+                requestDisallowInterceptTouchEvent(true);
+                if (menu != null) { menu.dismiss(); menu = null; }
+                return true;
             }
-            if (event.getAction() == DragEvent.ACTION_DRAG_EXITED) {
-                dragging = false; removeCallbacks(dragScroll);
-                markDrop(null); return true;
-            }
-            if (this.busy) return false;
-            if (event.getAction() == DragEvent.ACTION_DRAG_LOCATION) {
-                draggedID = drag.id; dragging = true; dragY = event.getY();
-                removeCallbacks(dragScroll); scrollDrag();
-                markDrop(before(event.getY()));
-            } else if (event.getAction() == DragEvent.ACTION_DROP) {
-                dragging = false; removeCallbacks(dragScroll);
-                String before = before(event.getY()), originalBefore = "";
-                for (int i = 0; i < list.getChildCount() - 1; i++)
-                    if (drag.id.equals(list.getChildAt(i).getTag())) originalBefore = (String) list.getChildAt(i + 1).getTag();
-                if (!before.equals(originalBefore)) moveMessage(drag.id, before);
-                else markDrop(null);
-                draggedID = null;
-            }
+        }
+        return super.onInterceptTouchEvent(event);
+    }
+
+    // The intercepted handle owns click/accessibility actions; a tap calls its performClick.
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    @Override public boolean onTouchEvent(MotionEvent event) {
+        if (dragRow == null) return super.onTouchEvent(event);
+        int action = event.getActionMasked(), pointer = event.findPointerIndex(dragPointer);
+        if (action == MotionEvent.ACTION_CANCEL || pointer < 0
+                || (action == MotionEvent.ACTION_POINTER_UP && event.getPointerId(event.getActionIndex()) == dragPointer)) {
+            finishDrag(false);
             return true;
-        });
+        }
+        dragY = event.getY(pointer);
+        if (action == MotionEvent.ACTION_MOVE) {
+            if (!dragging && Math.abs(dragY - dragStartY) >= ui.dp(5)) {
+                dragging = true;
+                dragRow.setBackground(ui.shape(ui.elevated, 9, ui.borderStrong));
+                dragRow.setElevation(ui.dp(4));
+            }
+            if (dragging) {
+                updateDrag();
+                removeCallbacks(dragScroll); scrollDrag();
+            }
+        } else if (action == MotionEvent.ACTION_UP) {
+            if (dragging) updateDrag();
+            else dragGrip.performClick();
+            finishDrag(true);
+        }
+        return true;
+    }
+
+    private void updateDrag() {
+        float offset = dragY - dragStartY + getScrollY() - dragStartScroll;
+        float top = getScrollY() + getPaddingTop() - list.getTop() - dragRow.getTop();
+        float bottom = getScrollY() + getHeight() - getPaddingBottom() - list.getTop() - dragRow.getBottom();
+        dragRow.setTranslationY(Math.max(top, Math.min(offset, bottom)));
+        // Compare stable layout midpoints, not the animated neighbors. Keep the original grab
+        // offset so touching near a handle's edge cannot make the target jump on pickup.
+        String before = before(dragRow.getTop() + dragRow.getHeight() / 2f + offset);
+        if (!before.equals(dragBefore)) { dragBefore = before; markDrop(before); }
+    }
+
+    private void finishDrag(boolean commit) {
+        if (dragRow == null) return;
+        String id = (String) dragRow.getTag(), before = dragBefore;
+        boolean changed = commit && dragging && !before.equals(originalBefore);
+        rememberPositions();
+        dragging = false; removeCallbacks(dragScroll);
+        dragGrip.setPressed(false);
+        dragRow.setBackground(dragBackground); dragRow.setElevation(0);
+        dragRow = dragGrip = null; dragBackground = null;
+        dragPointer = MotionEvent.INVALID_POINTER_ID;
+        requestDisallowInterceptTouchEvent(false);
+        if (changed) moveMessage(id, before);
+        else requestLayout();
     }
 
     private void scrollDrag() {
         if (!dragging || busy) return;
         int direction = dragY < ui.dp(24) ? -1 : dragY > getHeight() - ui.dp(24) ? 1 : 0;
         if (direction == 0 || !canScrollVertically(direction)) return;
-        scrollBy(0, direction * ui.dp(8)); markDrop(before(dragY));
+        scrollBy(0, direction * ui.dp(8)); updateDrag();
         postDelayed(dragScroll, 16);
     }
 
     @Override protected void onDetachedFromWindow() {
-        dragging = false; removeCallbacks(dragScroll);
-        draggedID = null; markDrop(null);
+        finishDrag(false);
         for (int i = 0; i < list.getChildCount(); i++) list.getChildAt(i).animate().cancel();
         if (menu != null) menu.dismiss();
         super.onDetachedFromWindow();
@@ -119,8 +171,8 @@ final class NativeQueuedMessages extends ScrollView {
     private String before(float y) {
         for (int i = 0; i < list.getChildCount(); i++) {
             View row = list.getChildAt(i);
-            if (row.getTag().equals(draggedID)) continue;
-            if (y + getScrollY() - list.getTop() < row.getTop() + row.getHeight() / 2f) return (String) row.getTag();
+            if (row == dragRow) continue;
+            if (y < row.getTop() + row.getHeight() / 2f) return (String) row.getTag();
         }
         return "";
     }
@@ -128,15 +180,15 @@ final class NativeQueuedMessages extends ScrollView {
     private void markDrop(String id) {
         int from = -1, to = list.getChildCount();
         for (int i = 0; i < list.getChildCount(); i++) {
-            if (list.getChildAt(i).getTag().equals(draggedID)) from = i;
+            if (list.getChildAt(i) == dragRow) from = i;
             if (list.getChildAt(i).getTag().equals(id)) to = i;
         }
         if (to > from) to--;
         for (int i = 0; i < list.getChildCount(); i++) {
             View row = list.getChildAt(i);
-            row.setAlpha(id != null && i == from ? .2f : 1);
-            float offset = id == null || from < 0 ? 0 : i > from && i <= to ? -row.getHeight()
-                    : i < from && i >= to ? row.getHeight() : 0;
+            if (row == dragRow) continue;
+            float offset = i > from && i <= to ? -dragRow.getHeight()
+                    : i < from && i >= to ? dragRow.getHeight() : 0;
             if (android.animation.ValueAnimator.areAnimatorsEnabled())
                 row.animate().translationY(offset).setDuration(180).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
             else { row.animate().cancel(); row.setTranslationY(offset); }
@@ -194,7 +246,7 @@ final class NativeQueuedMessages extends ScrollView {
         if (state.equals(shown)) return;
         shown = state;
         this.busy = busy;
-        dragging = false; removeCallbacks(dragScroll);
+        finishDrag(false);
         if (positions == null) rememberPositions();
         if (!busy) { pendingID = null; pendingBefore = null; }
         if (menu != null) { menu.dismiss(); menu = null; }
@@ -244,26 +296,6 @@ final class NativeQueuedMessages extends ScrollView {
                 boolean provisional = false;
                 for (JSONObject entry : ordered) provisional |= !entry.optString("delivery_status").isEmpty();
                 grip.setEnabled(!busy && !provisional);
-                grip.setOnLongClickListener(view -> {
-                    if (!view.isEnabled()) return false;
-                    draggedID = id;
-                    boolean started = view.startDragAndDrop(ClipData.newPlainText("", ""), new View.DragShadowBuilder(row) {
-                        @Override public void onProvideShadowMetrics(android.graphics.Point size, android.graphics.Point touch) {
-                            super.onProvideShadowMetrics(size, touch);
-                            touch.set(Math.round(view.getX() + view.getWidth() / 2f), row.getHeight() / 2);
-                        }
-                        @Override public void onDrawShadow(android.graphics.Canvas canvas) {
-                            android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-                            android.graphics.RectF bounds = new android.graphics.RectF(.5f, .5f, row.getWidth() - .5f, row.getHeight() - .5f);
-                            paint.setColor(ui.elevated); canvas.drawRoundRect(bounds, ui.dp(9), ui.dp(9), paint);
-                            paint.setStyle(android.graphics.Paint.Style.STROKE); paint.setStrokeWidth(ui.dp(1));
-                            paint.setColor(ui.borderStrong); canvas.drawRoundRect(bounds, ui.dp(9), ui.dp(9), paint);
-                            super.onDrawShadow(canvas);
-                        }
-                    }, new QueueDrag(this, id), 0);
-                    if (!started) draggedID = null;
-                    return started;
-                });
                 final int index = i;
                 grip.setOnKeyListener((view, code, event) -> {
                     if (event.getAction() != android.view.KeyEvent.ACTION_DOWN || !view.isEnabled()) return false;

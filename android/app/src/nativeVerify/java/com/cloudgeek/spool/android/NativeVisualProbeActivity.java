@@ -40,6 +40,8 @@ public final class NativeVisualProbeActivity extends Activity {
     private int historyPages;
     private boolean panelClosing, historyPending;
     private NativeSidebar sidebarProbe;
+    private NativeQueuedMessages queueProbe;
+    private final JSONArray queueMoves = new JSONArray();
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -57,6 +59,7 @@ public final class NativeVisualProbeActivity extends Activity {
             else if (screen.equals("pdf")) pdf();
             else if (screen.equals("panels")) panels();
             else if (screen.equals("sidebar")) sidebar();
+            else if (screen.equals("queue")) queue();
             else login();
         } catch (Exception error) { root.addView(ui.text(error.getClass().getSimpleName() + ": " + error.getMessage(), 14, ui.error)); }
         setContentView(root); root.requestApplyInsets();
@@ -153,6 +156,24 @@ public final class NativeVisualProbeActivity extends Activity {
         composer.model.bind("gpt-6.1-codex", "codex", "Choose model"); composer.permission.bind("Ask for approval", "shield-question", "Permissions");
         page.addView(composer); root.addView(page, new FrameLayout.LayoutParams(-1, -1));
         measured.put("header", header); measured.put("history", history); measured.put("composer", composer); measured.put("input", composer.input);
+    }
+
+    private void queue() throws Exception {
+        LinearLayout page = ui.workspace();
+        page.addView(ui.new Header("Queue drag verification", "spool", () -> {}, () -> {}, () -> {}));
+        page.addView(ui.welcome("Queue drag verification", "Synthetic queued messages", "spool", ""), new LinearLayout.LayoutParams(-1, 0, 1));
+        NativeUi.Composer composer = ui.new Composer("Message Codex", () -> {}, () -> {}, () -> {}, () -> {});
+        queueProbe = new NativeQueuedMessages(ui, id -> {}, id -> {}, id -> {}, (id, before) -> {
+            queueMoves.put(new JSONObject(java.util.Map.of("id", id, "before", before)));
+            root.post(this::report);
+        });
+        JSONArray messages = new JSONArray();
+        int count = Math.max(2, Math.min(20, getIntent().getIntExtra("queueCount", 3)));
+        for (int i = 0; i < count; i++) messages.put(new JSONObject().put("id", "queued-" + i).put("message", "Queued message " + i));
+        queueProbe.bind(messages, true, false);
+        composer.addView(queueProbe, 0, new LinearLayout.LayoutParams(-1, -2));
+        page.addView(composer); root.addView(page, new FrameLayout.LayoutParams(-1, -1));
+        measured.put("queue", queueProbe); measured.put("composer", composer);
     }
 
     private void source() {
@@ -312,6 +333,17 @@ public final class NativeVisualProbeActivity extends Activity {
                 for (NativeProjectRow row : sidebarProbe.projectRows) pressed.put(row.isPressed());
                 data.put("sidebarBackgroundPressed", panelDrawer.sheet.isPressed()).put("projectsPressed", pressed);
             }
+            if (queueProbe != null) {
+                JSONArray rows = new JSONArray();
+                android.view.ViewGroup list = (android.view.ViewGroup) queueProbe.getChildAt(0);
+                for (int i = 0; i < list.getChildCount(); i++) {
+                    android.view.ViewGroup row = (android.view.ViewGroup) list.getChildAt(i);
+                    rows.put(new JSONObject().put("id", row.getTag()).put("bounds", bounds(row)).put("grip", bounds(row.getChildAt(0)))
+                            .put("translationY", row.getTranslationY()).put("elevation", row.getElevation()));
+                }
+                data.put("queueRows", rows).put("queueMoves", queueMoves).put("queueScroll", queueProbe.getScrollY())
+                        .put("queueCanScrollDown", queueProbe.canScrollVertically(1));
+            }
             if (pdfBrowser != null) {
                 NativePdfPreview pdf = pdfBrowser.preview.pdf;
                 data.put("pdfOpen", pdf != null);
@@ -348,6 +380,7 @@ public final class NativeVisualProbeActivity extends Activity {
                 root.postDelayed(this::report, 150);
             if (!destroyed && pdfBrowser != null) root.postDelayed(this::report, 150);
             if (!destroyed && sidebarProbe != null) root.postDelayed(this::report, 150);
+            if (!destroyed && queueProbe != null) root.postDelayed(this::report, 50);
         } catch (Exception error) { android.util.Log.e("SpoolNativeVerify", "Cannot save synthetic layout report", error); }
     }
 

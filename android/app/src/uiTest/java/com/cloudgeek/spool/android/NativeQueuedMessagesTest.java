@@ -5,6 +5,7 @@ import static org.junit.Assert.*;
 import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
@@ -17,13 +18,16 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RuntimeEnvironment;
+import org.robolectric.Shadows;
 import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
+import org.robolectric.annotation.LooperMode;
 
 @RunWith(org.robolectric.RobolectricTestRunner.class)
 @Config(sdk = {26, 35})
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
+@LooperMode(LooperMode.Mode.PAUSED)
 public class NativeQueuedMessagesTest {
     private void layout(View page, int width, int height) {
         page.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
@@ -66,6 +70,204 @@ public class NativeQueuedMessagesTest {
     }
 
     private static View after(ViewGroup row, View child) { return row.getChildAt(row.indexOfChild(child) + 1); }
+
+    private void advance(long millis) {
+        Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(millis));
+    }
+
+    private final class DragFixture implements AutoCloseable {
+        final ActivityController<Activity> controller;
+        final NativeUi ui;
+        final NativeQueuedMessages queue;
+        final LinearLayout page;
+        final java.util.List<String> moves = new java.util.ArrayList<>();
+        float x, y;
+        long down;
+
+        DragFixture(int count, boolean dark) throws Exception {
+            RuntimeEnvironment.setQualifiers("w390dp-h420dp-mdpi");
+            controller = Robolectric.buildActivity(Activity.class).setup();
+            ui = new NativeUi(controller.get(), dark);
+            page = ui.column(); page.setBackgroundColor(ui.surface);
+            page.addView(new View(ui.context), new LinearLayout.LayoutParams(-1, ui.dp(40)));
+            queue = new NativeQueuedMessages(ui, id -> {}, id -> {}, id -> {}, (id, before) -> moves.add(id + ":" + before));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+            params.leftMargin = params.rightMargin = ui.dp(28);
+            page.addView(queue, params); controller.get().setContentView(page);
+            queue.bind(messages(count), true, false);
+            relayout(); advance(240);
+        }
+
+        void relayout() { layout(page, ui.dp(390), ui.dp(420)); }
+        ViewGroup rows() { return (ViewGroup) queue.getChildAt(0); }
+        View row(int at) { return rows().getChildAt(at); }
+        void press(int at) { press(at, .5f); }
+        void press(int at, float fraction) {
+            View grip = described((ViewGroup) row(at), ui.t("Drag to reorder"));
+            x = queue.getLeft() + rows().getLeft() + row(at).getX() + grip.getLeft() + grip.getWidth() / 2f;
+            y = queue.getTop() + rows().getTop() + row(at).getY() + grip.getTop() + grip.getHeight() * fraction - queue.getScrollY();
+            down = android.os.SystemClock.uptimeMillis();
+            touch(MotionEvent.ACTION_DOWN, x, y);
+        }
+        void touch(int action, float x, float y) {
+            MotionEvent event = MotionEvent.obtain(down, android.os.SystemClock.uptimeMillis(), action, x, y, 0);
+            // Dispatch through the parent as a device would, including moves outside the queue.
+            try { assertTrue(page.dispatchTouchEvent(event)); } finally { event.recycle(); }
+        }
+        void inside(View row) {
+            float top = rows().getTop() + row.getY() - queue.getScrollY();
+            assertTrue("The moving row stays below the queue's top edge", top >= queue.getPaddingTop() - .1f);
+            assertTrue("The moving row stays above the queue's bottom edge", top + row.getHeight() <= queue.getHeight() - queue.getPaddingBottom() + .1f);
+            assertEquals("Dragging stays vertical", 0, row.getTranslationX(), .01f);
+            assertEquals("The moving row stays opaque", 1, row.getAlpha(), .01f);
+        }
+        void settled() {
+            relayout(); advance(240);
+            for (int i = 0; i < rows().getChildCount(); i++) {
+                assertEquals(0, row(i).getTranslationY(), .01f);
+                assertEquals(0, row(i).getElevation(), .01f);
+                assertFalse(described((ViewGroup) row(i), ui.t("Drag to reorder")).isPressed());
+            }
+        }
+        @Override public void close() { controller.close(); }
+    }
+
+    @Test public void aHandleStartsAfterSmallVerticalMovementAndSwapsAtStableMidpoints() throws Exception {
+        try (DragFixture f = new DragFixture(3, false)) {
+            f.press(1, .2f);
+            View moving = f.row(1), neighbor = f.row(2);
+            f.touch(MotionEvent.ACTION_MOVE, f.x + 80, f.y + f.ui.dp(4));
+            assertEquals("Touch slop does not pick up the row", 0, moving.getTranslationY(), .01f);
+            f.touch(MotionEvent.ACTION_MOVE, f.x, f.y + moving.getHeight() - 2);
+            advance(200);
+            assertEquals("The grab offset does not trigger a premature swap", 0, neighbor.getTranslationY(), .01f);
+            f.touch(MotionEvent.ACTION_MOVE, f.x, f.y + moving.getHeight() + 2);
+            advance(200);
+            assertEquals(-moving.getHeight(), neighbor.getTranslationY(), .01f);
+            // The neighbor's animation must not feed back into the next hit test.
+            f.touch(MotionEvent.ACTION_MOVE, f.x, f.y + moving.getHeight() + 3);
+            advance(200);
+            assertEquals(-moving.getHeight(), neighbor.getTranslationY(), .01f);
+            assertTrue("Moving only previews; releasing commits", f.moves.isEmpty());
+            f.touch(MotionEvent.ACTION_UP, f.x, f.y + moving.getHeight() + 3);
+            assertEquals(java.util.List.of("queued-1:"), f.moves);
+            assertEquals("queued-1", f.row(2).getTag());
+            f.settled();
+        }
+    }
+
+    @Test public void draggingOutsideTheQueueKeepsTheActualRowInsideAndCommitsOnce() throws Exception {
+        for (boolean dark : new boolean[] {false, true}) try (DragFixture f = new DragFixture(3, dark)) {
+            f.press(2);
+            View moving = f.row(2);
+            f.touch(MotionEvent.ACTION_MOVE, f.x - 200, f.y - 300);
+            advance(200); f.inside(moving);
+            assertEquals(moving.getHeight(), f.row(0).getTranslationY(), .01f);
+            screenshot(f.page, dark ? "drag-contained-dark" : "drag-contained-light");
+            f.touch(MotionEvent.ACTION_MOVE, f.x + 500, f.y + 300);
+            f.inside(moving);
+            f.touch(MotionEvent.ACTION_MOVE, f.x - 200, f.y - 300);
+            f.touch(MotionEvent.ACTION_UP, f.x - 200, f.y - 300);
+            assertEquals(java.util.List.of("queued-2:queued-0"), f.moves);
+            assertEquals("queued-2", f.row(0).getTag());
+            f.settled();
+        }
+    }
+
+    @Test public void aTapCancelAndReturnToTheOriginalSlotDoNotSendMoves() throws Exception {
+        try (DragFixture f = new DragFixture(3, false)) {
+            f.press(1);
+            f.touch(MotionEvent.ACTION_UP, f.x, f.y);
+            f.settled();
+            f.press(1);
+            f.touch(MotionEvent.ACTION_MOVE, f.x, f.y - 80);
+            f.touch(MotionEvent.ACTION_CANCEL, f.x, f.y - 80);
+            f.settled();
+            f.press(1);
+            f.touch(MotionEvent.ACTION_MOVE, f.x, f.y - 80);
+            f.touch(MotionEvent.ACTION_MOVE, f.x, f.y);
+            f.touch(MotionEvent.ACTION_UP, f.x, f.y);
+            f.settled();
+            assertTrue(f.moves.isEmpty());
+            assertEquals("queued-1", f.row(1).getTag());
+        }
+    }
+
+    @Test public void holdingAtTheEdgesScrollsBothWaysAndStopsOnCancel() throws Exception {
+        try (DragFixture f = new DragFixture(20, true)) {
+            f.press(1);
+            View moving = f.row(1);
+            float bottom = f.queue.getBottom() + 80;
+            f.touch(MotionEvent.ACTION_MOVE, f.x, bottom);
+            advance(160);
+            int first = f.queue.getScrollY();
+            assertTrue("A stationary finger scrolls the long queue", first > 0);
+            f.inside(moving);
+            advance(160);
+            assertTrue(f.queue.getScrollY() > first);
+            int lower = f.queue.getScrollY();
+            f.touch(MotionEvent.ACTION_MOVE, f.x, f.queue.getTop() - 80);
+            advance(160);
+            assertTrue("Moving to the top reverses the scroll", f.queue.getScrollY() < lower);
+            f.inside(moving);
+            f.touch(MotionEvent.ACTION_CANCEL, f.x, f.queue.getTop() - 80);
+            int stopped = f.queue.getScrollY();
+            advance(160);
+            assertEquals(stopped, f.queue.getScrollY());
+            assertTrue(f.moves.isEmpty());
+            f.settled();
+        }
+    }
+
+    @Test public void aScrolledDragCanReachAndCommitTheVeryLastSlot() throws Exception {
+        try (DragFixture f = new DragFixture(20, false)) {
+            f.press(0);
+            View moving = f.row(0);
+            f.touch(MotionEvent.ACTION_MOVE, f.x, f.queue.getBottom() + 80);
+            for (int tick = 0; tick < 40 && f.queue.canScrollVertically(1); tick++) advance(160);
+            assertFalse("Scroll " + f.queue.getScrollY() + ", content " + f.rows().getHeight() + ", viewport " + f.queue.getHeight(), f.queue.canScrollVertically(1));
+            f.inside(moving);
+            f.touch(MotionEvent.ACTION_UP, f.x, f.queue.getBottom() + 80);
+            assertEquals(java.util.List.of("queued-0:"), f.moves);
+            assertEquals("queued-0", f.row(19).getTag());
+            f.settled();
+        }
+    }
+
+    @Test public void aBusyOrReplacedQueueCancelsTheActiveDrag() throws Exception {
+        try (DragFixture f = new DragFixture(3, false)) {
+            f.press(1);
+            f.touch(MotionEvent.ACTION_MOVE, f.x, f.y - 80);
+            f.queue.bind(messages(3), true, true);
+            f.touch(MotionEvent.ACTION_UP, f.x, f.y - 80);
+            f.settled();
+            assertFalse(described((ViewGroup) f.row(1), f.ui.t("Drag to reorder")).isEnabled());
+            f.queue.bind(messages(3), true, false); f.relayout(); advance(240);
+            f.press(1);
+            f.touch(MotionEvent.ACTION_MOVE, f.x, f.y - 80);
+            f.queue.bind(messages(1), true, false);
+            f.touch(MotionEvent.ACTION_UP, f.x, f.y - 80);
+            f.relayout(); advance(240);
+            assertTrue(f.moves.isEmpty());
+            assertEquals(1, f.queue.rows());
+            assertEquals(0, f.row(0).getTranslationY(), .01f);
+        }
+    }
+
+    @Test public void swipingTheMessageBodyStillScrollsWithoutReordering() throws Exception {
+        try (DragFixture f = new DragFixture(20, false)) {
+            float x = f.queue.getLeft() + f.queue.getWidth() / 2f;
+            float y = f.queue.getTop() + f.row(2).getTop() + f.row(2).getHeight() / 2f;
+            f.down = android.os.SystemClock.uptimeMillis();
+            f.touch(MotionEvent.ACTION_DOWN, x, y);
+            f.touch(MotionEvent.ACTION_MOVE, x, y - 40);
+            f.touch(MotionEvent.ACTION_MOVE, x, y - 80);
+            assertTrue("The text area retains normal queue scrolling", f.queue.getScrollY() > 0);
+            f.touch(MotionEvent.ACTION_UP, x, y - 80);
+            assertTrue(f.moves.isEmpty());
+            for (int i = 0; i < f.rows().getChildCount(); i++) assertEquals(0, f.row(i).getElevation(), .01f);
+        }
+    }
 
     @Test public void failedAndSendingRowsKeepTheirTextAndActionsInsideANarrowQueue() throws Exception {
         RuntimeEnvironment.setQualifiers("w320dp-h420dp-mdpi");

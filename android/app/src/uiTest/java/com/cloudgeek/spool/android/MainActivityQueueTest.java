@@ -20,22 +20,10 @@ import org.robolectric.util.ReflectionHelpers;
 
 /** Queued messages in the real Activity, with a deterministic gomobile boundary. */
 @RunWith(org.robolectric.RobolectricTestRunner.class)
-@Config(sdk = {26, 35}, shadows = {MainActivityGoalTest.ShadowClient.class, MainActivityGoalTest.ShadowSeq.class, MainActivityQueueTest.ShadowQueueDrag.class})
+@Config(sdk = {26, 35}, shadows = {MainActivityGoalTest.ShadowClient.class, MainActivityGoalTest.ShadowSeq.class})
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class MainActivityQueueTest {
-    // Robolectric has no system drag service. Capture the real handle's OS call,
-    // then deliver the framework events back to the production queue View.
-    @org.robolectric.annotation.Implements(View.class)
-    public static class ShadowQueueDrag extends org.robolectric.shadows.ShadowView {
-        static Object local;
-        // ImageView subclasses can retain a plain ShadowView; this OS stub needs no instance.
-        @org.robolectric.annotation.Implementation
-        protected static boolean startDragAndDrop(android.content.ClipData data, View.DragShadowBuilder shadow, Object state, int flags) {
-            local = state; return true;
-        }
-        @org.robolectric.annotation.Resetter public static void resetDrag() { local = null; }
-    }
     private JSONObject running(int queued) throws Exception {
         JSONArray parts = new JSONArray().put(new JSONObject().put("role", "user").put("kind", "text").put("text", "Hello"))
                 .put(new JSONObject().put("role", "assistant").put("kind", "text").put("text", "Partial reply"));
@@ -377,7 +365,7 @@ public class MainActivityQueueTest {
         }
     }
 
-    @Test public void aLongPressDragDropsTheMessageAtTheSelectedPosition() throws Exception {
+    @Test public void draggingAHandleDropsTheMessageAtTheSelectedPosition() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
             show(h, running(3));
             MainActivityGoalTest.ShadowClient.responder = call -> {
@@ -390,22 +378,21 @@ public class MainActivityQueueTest {
                 } catch (Exception error) { throw new AssertionError(error); }
             };
             View grip = action(h, 2, "Drag to reorder");
-            grip.performLongClick();
-            Object local = ShadowQueueDrag.local;
-            assertNotNull("The native drag retains its queue message", local);
             NativeQueuedMessages queue = h.get("queuedView");
-            for (int type : new int[] {android.view.DragEvent.ACTION_DRAG_STARTED, android.view.DragEvent.ACTION_DRAG_LOCATION,
-                    android.view.DragEvent.ACTION_DROP, android.view.DragEvent.ACTION_DRAG_ENDED}) {
-                android.view.DragEvent event = ReflectionHelpers.callStaticMethod(android.view.DragEvent.class, "obtain");
-                ReflectionHelpers.setField(event, "mAction", type);
-                ReflectionHelpers.setField(event, "mY", 2f);
-                ReflectionHelpers.setField(event, "mLocalState", local);
-                assertTrue(queue.dispatchDragEvent(event)); ReflectionHelpers.callInstanceMethod(event, "recycle");
-                if (type == android.view.DragEvent.ACTION_DRAG_LOCATION) {
+            View row = (View) grip.getParent();
+            float x = queue.getChildAt(0).getLeft() + row.getLeft() + grip.getLeft() + grip.getWidth() / 2f;
+            float startY = queue.getChildAt(0).getTop() + row.getTop() + grip.getTop() + grip.getHeight() / 2f;
+            long down = android.os.SystemClock.uptimeMillis();
+            for (int type : new int[] {android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_MOVE,
+                    android.view.MotionEvent.ACTION_UP}) {
+                android.view.MotionEvent event = android.view.MotionEvent.obtain(down, android.os.SystemClock.uptimeMillis(),
+                        type, x, type == android.view.MotionEvent.ACTION_DOWN ? startY : 2f, 0);
+                try { assertTrue(queue.dispatchTouchEvent(event)); } finally { event.recycle(); }
+                if (type == android.view.MotionEvent.ACTION_MOVE) {
                     Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(80));
-                    assertTrue("Neighbors make room while the native drag shadow follows the touch", queue.getChildAt(0) instanceof ViewGroup
+                    assertTrue("Neighbors make room while the row follows the touch inside the queue", queue.getChildAt(0) instanceof ViewGroup
                             && ((ViewGroup) queue.getChildAt(0)).getChildAt(0).getTranslationY() > 0);
-                } else if (type == android.view.DragEvent.ACTION_DROP) {
+                } else if (type == android.view.MotionEvent.ACTION_UP) {
                     ViewGroup rows = (ViewGroup) queue.getChildAt(0);
                     assertEquals("Drop shows the new order before the network response", "queued-2", rows.getChildAt(0).getTag());
                 }
