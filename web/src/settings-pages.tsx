@@ -1004,13 +1004,6 @@ export function PeoplePage({ data, run, t }: PageProps) {
               required={!draft.id}
             />
           </Row>
-          <Row title={t("Disable account")}>
-            <Toggle
-              label={t("Disable account")}
-              value={draft.disabled}
-              onChange={(disabled) => setDraft({ ...draft, disabled })}
-            />
-          </Row>
           <Row
             title={t("Allow remote desktop connection")}
             help={t(
@@ -1023,6 +1016,13 @@ export function PeoplePage({ data, run, t }: PageProps) {
               onChange={(remote_desktop) =>
                 setDraft({ ...draft, remote_desktop })
               }
+            />
+          </Row>
+          <Row title={t("Disable account")}>
+            <Toggle
+              label={t("Disable account")}
+              value={draft.disabled}
+              onChange={(disabled) => setDraft({ ...draft, disabled })}
             />
           </Row>
         </Card>

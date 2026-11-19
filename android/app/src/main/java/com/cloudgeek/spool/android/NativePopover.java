@@ -32,6 +32,24 @@ final class NativePopover {
         popup.restyle(10, ui.line, 8, 30, 0x22000000);
         return popup;
     }
+    static NativePopover queuedMessage(NativeUi ui, Runnable edit) {
+        NativePopover menu = new NativePopover(ui, 180, 9, 5, 16);
+        menu.queuedMessageMode = true;
+        menu.restyle(9, ui.line, 6, 24, 0x22000000);
+        LinearLayout row = menu.selectOption(ui.t("Edit message"), "pencil", 14, 8, ui.text, edit);
+        // Web rows are 32px tall; touch needs the platform minimum target.
+        row.setMinimumHeight(ui.dp(48));
+        android.graphics.drawable.StateListDrawable background = new android.graphics.drawable.StateListDrawable();
+        for (int state : new int[] {android.R.attr.state_pressed, android.R.attr.state_hovered, android.R.attr.state_activated})
+            background.addState(new int[] {state}, ui.shape(ui.hover, 5, 0));
+        background.addState(new int[0], ui.shape(0, 5, 0));
+        row.setBackground(background);
+        // Like :focus-visible, keyboard focus is highlighted but touch focus is not.
+        row.setOnFocusChangeListener((view, focused) -> view.setActivated(focused && !view.isInTouchMode()));
+        TextView label = (TextView) row.getChildAt(1);
+        ui.typography(label, 13, ui.text, 400); ui.cssNormalLabel(label);
+        return menu;
+    }
 
     final LinearLayout content;
     Runnable dismissed;
@@ -52,6 +70,7 @@ final class NativePopover {
     private boolean permissionMode;
     private boolean commandMode;
     private boolean workspaceMode;
+    private boolean queuedMessageMode;
     private String search = "";
     private long searchAt;
     private android.view.ViewTreeObserver observer;
@@ -126,11 +145,25 @@ final class NativePopover {
         observer = null;
     }
 
-    void selectOption(String title, boolean selected, Runnable click) {
-        selectOption(title, "", selected, click);
+    LinearLayout selectOption(String title, boolean selected, Runnable click) {
+        return selectOption(title, "", selected, click);
     }
 
-    void selectOption(String title, String description, boolean selected, Runnable click) {
+    /** Adds an option led by an icon; a non-zero color replaces the default label and icon colors. */
+    LinearLayout selectOption(String title, String icon, int iconSize, int iconGap, int color, Runnable click) {
+        LinearLayout row = selectOption(title, "", false, click);
+        android.widget.ImageView symbol = ui.decorativeIcon(icon, iconSize);
+        if (color != 0) {
+            ((TextView) row.getChildAt(0)).setTextColor(color);
+            symbol.setImageTintList(android.content.res.ColorStateList.valueOf(color));
+        }
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(ui.dp(iconSize), ui.dp(iconSize));
+        params.setMarginEnd(ui.dp(iconGap));
+        row.addView(symbol, 0, params);
+        return row;
+    }
+
+    LinearLayout selectOption(String title, String description, boolean selected, Runnable click) {
         LinearLayout row = ui.row();
         row.setMinimumHeight(ui.dp(36));
         row.setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8));
@@ -203,6 +236,7 @@ final class NativePopover {
             return true;
         });
         content.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        return row;
     }
 
     void showSelect(View anchor, int initial) {
@@ -254,6 +288,11 @@ final class NativePopover {
             observer.addOnGlobalLayoutListener(layoutObserver);
             observer.addOnScrollChangedListener(scrollObserver);
             anchor.addOnAttachStateChangeListener(attachmentObserver);
+            if (queuedMessageMode && content.getChildCount() > 0) {
+                // The popup is not attached yet, so the trigger tells whether it was opened by keyboard.
+                View first = content.getChildAt(0);
+                first.requestFocus(); first.setActivated(first.isFocused() && !anchor.isInTouchMode());
+            }
         }
     }
 
@@ -286,6 +325,15 @@ final class NativePopover {
         }
     }
 
+    private int contentHeight(int width) {
+        content.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        return content.getMeasuredHeight();
+    }
+
+    private int clampX(Rect viewport, int x, int width, int margin) {
+        return Math.max(viewport.left + margin, Math.min(x, viewport.right - width - margin));
+    }
+
     private void relayout() {
         View anchor = this.anchor == null ? null : this.anchor.get();
         if (anchor == null || !anchor.isAttachedToWindow()) { dismiss(); return; }
@@ -294,10 +342,18 @@ final class NativePopover {
         int width = Math.max(ui.dp(1), Math.min(requestedWidth, viewport.width() - viewportReserve));
         int[] position = new int[2];
         anchor.getLocationOnScreen(position);
+        if (queuedMessageMode) {
+            int height = Math.min(contentHeight(width), viewport.height() - ui.dp(16));
+            int x = clampX(viewport, position[0] + anchor.getWidth() - width, width, ui.dp(8));
+            // The measured menu sits wholly above its trigger, or below when there is no room.
+            int y = position[1] - height - ui.dp(6);
+            if (y < viewport.top + ui.dp(8)) y = position[1] + anchor.getHeight() + ui.dp(4);
+            place(anchor, viewport, x, y, width, height);
+            return;
+        }
         if (workspaceMode) {
-            content.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-            int height = Math.min(Math.max(1, viewport.height() - ui.dp(16)), content.getMeasuredHeight());
-            int x = Math.max(viewport.left + ui.dp(8), Math.min(position[0], viewport.right - width - ui.dp(8)));
+            int height = Math.min(Math.max(1, viewport.height() - ui.dp(16)), contentHeight(width));
+            int x = clampX(viewport, position[0], width, ui.dp(8));
             int y = Math.max(viewport.top + ui.dp(8), Math.min(position[1] + anchor.getHeight() + ui.dp(8), viewport.bottom - height - ui.dp(8)));
             place(anchor, viewport, x, y, width, height);
             return;
@@ -320,9 +376,8 @@ final class NativePopover {
         }
         if (operatorMode) {
             width = Math.max(ui.dp(1), Math.min(ui.dp(240), viewport.width() - ui.dp(16)));
-            content.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-            int height = Math.min(Math.min(ui.dp(320), viewport.height() - ui.dp(16)), content.getMeasuredHeight());
-            int x = Math.max(viewport.left + ui.dp(8), Math.min(position[0], viewport.right - width - ui.dp(8)));
+            int height = Math.min(Math.min(ui.dp(320), viewport.height() - ui.dp(16)), contentHeight(width));
+            int x = clampX(viewport, position[0], width, ui.dp(8));
             int y = position[1] - height - ui.dp(6);
             if (y < viewport.top + ui.dp(8)) y = position[1] + anchor.getHeight() + ui.dp(6);
             y = Math.max(viewport.top + ui.dp(8), Math.min(y, viewport.bottom - height - ui.dp(8)));

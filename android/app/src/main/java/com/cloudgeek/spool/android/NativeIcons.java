@@ -17,6 +17,8 @@ final class NativeIcons {
             case "arrow_up": resource = R.drawable.web_icon_arrow_up; break;
             case "more": resource = R.drawable.web_icon_more; break;
             case "grip_vertical": resource = R.drawable.web_icon_grip_vertical; break;
+            case "list_end": resource = R.drawable.web_icon_list_end; break;
+            case "corner_down_right": resource = R.drawable.web_icon_corner_down_right; break;
             case "pencil": resource = R.drawable.web_icon_pencil; break;
             case "archive": resource = R.drawable.web_icon_archive; break;
             case "trash": resource = R.drawable.web_icon_trash; break;

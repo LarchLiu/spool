@@ -239,7 +239,8 @@ public class MainActivityQueueTest {
             queue.draw(new android.graphics.Canvas(frame));
             assertEquals(ui.borderStrong, frame.getPixel(0, queue.getHeight() / 2));
             int separator = ui.dark ? androidx.core.graphics.ColorUtils.blendARGB(ui.line, ui.borderStrong, .65f) : ui.line;
-            assertEquals(separator, frame.getPixel(queue.getWidth() / 2, ui.dp(NativeQueuedMessages.ROW_HEIGHT_DP)));
+            assertEquals(separator, frame.getPixel(queue.getWidth() / 2, ui.dp(1) + ui.dp(NativeQueuedMessages.ROW_HEIGHT_DP)));
+            assertEquals(ui.elevated, frame.getPixel(queue.getWidth() / 2, queue.getHeight() - 1));
             frame.recycle();
             java.io.File directory = new java.io.File(System.getProperty("spool.ui.artifacts"), "../queued-messages");
             assertTrue(directory.isDirectory() || directory.mkdirs());
@@ -460,7 +461,7 @@ public class MainActivityQueueTest {
             NativeUi ui = h.get("ui");
             show(h, running(2));
             NativeQueuedMessages queue = h.get("queuedView");
-            assertEquals(2, queue.rows()); assertEquals(2 * ui.dp(NativeQueuedMessages.ROW_HEIGHT_DP), queue.getHeight());
+            assertEquals(2, queue.rows()); assertEquals(ui.dp(1) + 2 * ui.dp(NativeQueuedMessages.ROW_HEIGHT_DP), queue.getHeight());
             assertEquals(ui.dp(16), queue.getLeft() - h.composer().box.getLeft());
             assertEquals(ui.dp(16), h.composer().box.getRight() - queue.getRight());
             assertFalse("A short queue has nothing to scroll", queue.canScrollVertically(1));

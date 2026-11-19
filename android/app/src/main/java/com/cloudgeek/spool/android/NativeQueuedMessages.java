@@ -52,8 +52,21 @@ final class NativeQueuedMessages extends ScrollView {
         addView(list, new LayoutParams(-1, -2));
         android.graphics.drawable.GradientDrawable surface = ui.shape(ui.elevated, 12, ui.borderStrong);
         surface.setCornerRadii(new float[] {ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12), 0, 0, 0, 0});
-        setBackground(surface);
+        // The composer supplies the bottom edge; the queue only has a top and two sides.
+        // Its stroke is pushed below the view and clipped here, because the composer does not clip children
+        // and a rounded-path outline cannot clip before API 33.
+        setBackground(new android.graphics.drawable.InsetDrawable(surface, 0, 0, 0, -ui.dp(1)) {
+            @Override public void draw(android.graphics.Canvas canvas) {
+                int save = canvas.save();
+                canvas.clipRect(getBounds());
+                super.draw(canvas);
+                canvas.restoreToCount(save);
+            }
+        });
+        setPadding(ui.dp(1), ui.dp(1), ui.dp(1), 0);
         setClipToOutline(true);
+        // Like the Web overflow, a queue with more rows than fit keeps a visible scroll position.
+        setScrollbarFadingEnabled(false);
         setOverScrollMode(OVER_SCROLL_IF_CONTENT_SCROLLS);
         setContentDescription(ui.t("Queued messages"));
         setVisibility(GONE);
@@ -107,7 +120,7 @@ final class NativeQueuedMessages extends ScrollView {
         for (int i = 0; i < list.getChildCount(); i++) {
             View row = list.getChildAt(i);
             if (row.getTag().equals(draggedID)) continue;
-            if (y + getScrollY() < row.getTop() + row.getHeight() / 2f) return (String) row.getTag();
+            if (y + getScrollY() - list.getTop() < row.getTop() + row.getHeight() / 2f) return (String) row.getTag();
         }
         return "";
     }
@@ -208,16 +221,21 @@ final class NativeQueuedMessages extends ScrollView {
             String deliveryStatus = message.optString("delivery_status");
             String body = message.optString("message").trim();
             JSONArray files = message.optJSONArray("attachments");
-            if (body.isEmpty() && files != null) body = files.optString(0);
+            if (body.isEmpty() && files != null) {
+                List<String> names = new ArrayList<>();
+                for (int file = 0; file < files.length(); file++) names.add(files.optString(file));
+                body = String.join(", ", names);
+            }
             LinearLayout row = ui.row();
             row.setTag(id);
             row.setPadding(ui.dp(12), ui.dp(2), ui.dp(8), ui.dp(2));
+            // A minimum like the Web row, so larger font scales grow the row instead of clipping it.
+            row.setMinimumHeight(ui.dp(ROW_HEIGHT_DP));
             if (i > 0) {
                 int color = ui.dark ? androidx.core.graphics.ColorUtils.blendARGB(ui.line, ui.borderStrong, .65f) : ui.line;
                 android.graphics.drawable.LayerDrawable divider = new android.graphics.drawable.LayerDrawable(
                         new android.graphics.drawable.Drawable[] {ui.shape(color, 0, 0)});
                 divider.setLayerHeight(0, ui.dp(1)); divider.setLayerGravity(0, Gravity.TOP);
-                divider.setLayerInset(0, ui.dp(1), 0, ui.dp(1), 0);
                 row.setBackground(divider);
             }
             if (count > 1) {
@@ -260,6 +278,10 @@ final class NativeQueuedMessages extends ScrollView {
                 LinearLayout.LayoutParams gripParams = new LinearLayout.LayoutParams(ui.dp(26), ui.dp(26));
                 gripParams.rightMargin = ui.dp(8);
                 row.addView(grip, gripParams);
+            } else {
+                LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(ui.dp(15), ui.dp(15));
+                iconParams.rightMargin = ui.dp(8);
+                row.addView(ui.decorativeIcon("list_end", 15), iconParams);
             }
             TextView text = ui.text(body, 13, ui.text);
             text.setSingleLine(true); text.setEllipsize(TextUtils.TruncateAt.END);
@@ -270,15 +292,27 @@ final class NativeQueuedMessages extends ScrollView {
                 row.addView(new NativeDeliveryStatus(ui, deliveryStatus, null), statusParams);
             }
             if (deliveryStatus.equals("sending")) {
-                list.addView(row, new LinearLayout.LayoutParams(-1, ui.dp(ROW_HEIGHT_DP)));
+                list.addView(row, new LinearLayout.LayoutParams(-1, -2));
                 continue;
             }
             if (deliveryStatus.isEmpty()) {
-                TextView action = ui.text("↳ " + ui.t(running ? "Steer" : "Send now"), 12, ui.muted);
-                action.setGravity(Gravity.CENTER); action.setPadding(ui.dp(8), 0, ui.dp(8), 0);
-                action.setFocusable(true); action.setEnabled(!busy); action.setAlpha(busy ? .45f : 1);
+                TextView action = ui.text(ui.t(running ? "Steer" : "Send now"), 12, ui.muted);
+                action.setSingleLine(true); ui.cssNormalLabel(action);
+                ui.setButtonIcon(action, "corner_down_right", 14, false);
+                action.setCompoundDrawablePadding(ui.dp(5));
+                android.content.res.ColorStateList colors = new android.content.res.ColorStateList(
+                        new int[][] {{android.R.attr.state_pressed}, {android.R.attr.state_hovered}, {}},
+                        new int[] {ui.text, ui.text, ui.muted});
+                action.setTextColor(colors); action.setCompoundDrawableTintList(colors);
+                // The fixed CSS line box ignores minimum heights, so padding keeps the 26dp tap height of the icons.
+                float line = action instanceof NativeTextView ? ((NativeTextView) action).lineBox : action.getLineHeight();
+                int vertical = Math.max(ui.dp(4), (int) Math.ceil((ui.dp(26) - line) / 2));
+                action.setGravity(Gravity.CENTER); action.setPadding(ui.dp(8), vertical, ui.dp(8), vertical);
+                action.setBackground(ui.states(0, 7, 0, ui.hover, 0, ui.hover));
+                action.setFocusable(true); action.setEnabled(!busy); action.setAlpha(busy ? .5f : 1);
+                ui.buttonKeys(action);
                 action.setOnClickListener(view -> steer.accept(id));
-                LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(-2, ui.dp(26));
+                LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(-2, -2);
                 actionParams.leftMargin = ui.dp(8); actionParams.rightMargin = ui.dp(8);
                 row.addView(action, actionParams);
             }
@@ -290,14 +324,13 @@ final class NativeQueuedMessages extends ScrollView {
             more.setPadding(ui.dp(5), ui.dp(5), ui.dp(5), ui.dp(5));
             more.setEnabled(!busy);
             more.setOnClickListener(view -> {
-                menu = new NativePopover(ui, 180, 9, 4);
-                menu.selectOption(ui.t("Edit message"), false, () -> { menu.dismiss(); edit.accept(id); });
+                menu = NativePopover.queuedMessage(ui, () -> { menu.dismiss(); edit.accept(id); });
                 menu.show(more, true);
             });
             LinearLayout.LayoutParams moreParams = new LinearLayout.LayoutParams(ui.dp(26), ui.dp(26));
             moreParams.leftMargin = ui.dp(8);
             row.addView(more, moreParams);
-            list.addView(row, new LinearLayout.LayoutParams(-1, ui.dp(ROW_HEIGHT_DP)));
+            list.addView(row, new LinearLayout.LayoutParams(-1, -2));
         }
     }
 

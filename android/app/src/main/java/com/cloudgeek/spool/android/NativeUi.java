@@ -729,7 +729,10 @@ final class NativeUi extends WebPalette {
             boxParams.gravity = Gravity.CENTER_HORIZONTAL;
             for (int i = 0; i < getChildCount(); i++) {
                 LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) getChildAt(i).getLayoutParams();
-                int inset = getChildAt(i) instanceof NativeQueuedMessages ? dp(32) : 0;
+                boolean queued = getChildAt(i) instanceof NativeQueuedMessages;
+                int inset = queued ? dp(32) : 0;
+                // Extend the open queue sides into the composer's rounded top border.
+                if (queued) params.bottomMargin = -dp(1);
                 params.width = Math.max(0, boxParams.width - inset); params.gravity = Gravity.CENTER_HORIZONTAL;
             }
             bottom.setViewportWidth(width);

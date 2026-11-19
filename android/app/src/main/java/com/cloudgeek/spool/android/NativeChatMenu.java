@@ -44,15 +44,8 @@ final class NativeChatMenu {
     }
 
     private void option(String text, String icon, boolean danger, Runnable click) {
-        popup.selectOption(ui.t(text), false, () -> { popup.dismiss(); click.run(); });
-        LinearLayout row = (LinearLayout) popup.content.getChildAt(popup.content.getChildCount() - 1);
-        row.setMinimumHeight(ui.dp(48));
-        if (danger) ((TextView) row.getChildAt(0)).setTextColor(ui.error);
-        android.widget.ImageView symbol = ui.decorativeIcon(icon, 16);
-        if (danger) symbol.setImageTintList(android.content.res.ColorStateList.valueOf(ui.error));
-        LinearLayout.LayoutParams position = new LinearLayout.LayoutParams(ui.dp(16), ui.dp(16));
-        position.setMarginEnd(ui.dp(10));
-        row.addView(symbol, 0, position);
+        popup.selectOption(ui.t(text), icon, 16, 10, danger ? ui.error : 0, () -> { popup.dismiss(); click.run(); })
+                .setMinimumHeight(ui.dp(48));
     }
 
     void show(View anchor) { popup.showSelect(anchor, 0, 180, 48); }
