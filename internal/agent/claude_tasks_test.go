@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -228,5 +229,85 @@ func TestClaudeTurnAnsweringTaskNotificationBelongsToItsRequest(t *testing.T) {
 	result, err, reusable := p.runClaude(ctx, AgentRequest{Backend: "claude", Prompt: "Inspect project"}, func(AgentEvent) error { return nil })
 	if err != nil || !reusable || result.Text != "Main report Child confirmed" || len(p.messages) != 0 {
 		t.Fatalf("answering turn was left for the next request: result=%+v left=%d reusable=%v err=%v", result, len(p.messages), reusable, err)
+	}
+}
+
+func TestClaudeChildStepsAreABoundedWindowOnItsWork(t *testing.T) {
+	var tasks claudeTasks
+	var events []AgentEvent
+	emit := func(e AgentEvent) error { events = append(events, e); return nil }
+	latest := func() *chatmodel.TaskProgress { return events[len(events)-1].Part.Native.Task }
+	if _, err := tasks.call(map[string]any{"id": "call", "name": "Agent", "input": map[string]any{"description": "Inspect parser", "prompt": "Check the grammar"}}, "", emit); err != nil {
+		t.Fatal(err)
+	}
+	nested := func(kind string, block map[string]any) {
+		t.Helper()
+		if err := tasks.nested(map[string]any{"type": kind, "message": map[string]any{"content": []any{block}}}, "call", emit); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nested("assistant", map[string]any{"type": "text", "text": "Reading the grammar"})
+	nested("assistant", map[string]any{"type": "tool_use", "id": "read", "name": "Read", "input": map[string]any{"file_path": "/repo/grammar.go", "limit": 20.0}})
+	nested("assistant", map[string]any{"type": "tool_use", "id": "write", "name": "Write", "input": map[string]any{"file_path": "/repo/out.go", "content": strings.Repeat("x", 4096)}})
+	started := latest()
+	nested("user", map[string]any{"type": "tool_result", "tool_use_id": "read", "content": "package grammar"})
+	nested("user", map[string]any{"type": "tool_result", "tool_use_id": "write", "content": "denied", "is_error": true})
+	steps := latest().Steps
+	// A file's body is not something a step's label is read from.
+	if len(steps) != 3 || steps[0].Kind != chatmodel.TaskStepMessage || steps[0].Text != "Reading the grammar" ||
+		steps[1].Name != "Read" || steps[1].Status != chatmodel.ToolCompleted || steps[1].Input != `{"file_path":"/repo/grammar.go","limit":20}` ||
+		steps[2].Name != "Write" || steps[2].Status != chatmodel.ToolFailed || steps[2].Input != `{"file_path":"/repo/out.go"}` {
+		t.Fatalf("child steps not told: %+v", steps)
+	}
+	if latest().Prompt != "Check the grammar" || latest().StartedAt == 0 {
+		t.Fatalf("child prompt or start missing: %+v", latest())
+	}
+	if len(started.Steps) != 3 || started.Steps[1].Status != chatmodel.ToolRunning || started.Steps[2].Status != chatmodel.ToolRunning {
+		t.Fatalf("emitted steps mutated: %+v", started.Steps)
+	}
+	for i := range 30 {
+		nested("assistant", map[string]any{"type": "tool_use", "id": fmt.Sprintf("bash-%d", i), "name": "Bash", "input": map[string]any{"command": "echo"}})
+	}
+	// A call that newer steps pushed out is not brought back by being told again.
+	nested("assistant", map[string]any{"type": "tool_use", "id": "read", "name": "Read", "input": map[string]any{"file_path": "/repo/grammar.go"}})
+	steps = latest().Steps
+	if len(steps) != taskStepLimit || steps[0].ID != "bash-10" || steps[len(steps)-1].ID != "bash-29" || latest().ToolUses != 32 {
+		t.Fatalf("steps are not the latest %d: %d steps from %q to %q, %d calls", taskStepLimit, len(steps), steps[0].ID, steps[len(steps)-1].ID, latest().ToolUses)
+	}
+}
+
+func TestClaudeChildToldOnlyByProgressEventsStillShowsSteps(t *testing.T) {
+	var tasks claudeTasks
+	var events []AgentEvent
+	emit := func(e AgentEvent) error { events = append(events, e); return nil }
+	system := func(value map[string]any) {
+		t.Helper()
+		value["task_id"] = "one"
+		if _, err := tasks.system(value, emit); err != nil {
+			t.Fatal(err)
+		}
+	}
+	system(map[string]any{"subtype": "task_started", "tool_use_id": "call", "description": "Inspect parser", "task_type": "local_agent"})
+	system(map[string]any{"subtype": "task_progress", "summary": "Reading files", "last_tool_name": "Read", "usage": map[string]any{"tool_uses": 1.0}})
+	system(map[string]any{"subtype": "task_progress", "summary": "Reading files", "last_tool_name": "Grep", "usage": map[string]any{"tool_uses": 3.0}})
+	// No call was counted since: the same tool is not a new step.
+	system(map[string]any{"subtype": "task_progress", "summary": "Reading files", "last_tool_name": "Grep", "usage": map[string]any{"tool_uses": 3.0}})
+	steps := events[len(events)-1].Part.Native.Task.Steps
+	if len(steps) != 3 || steps[0].Kind != chatmodel.TaskStepMessage || steps[0].Text != "Reading files" || steps[1].Name != "Read" || steps[2].Name != "Grep" {
+		t.Fatalf("progress events told no steps: %+v", steps)
+	}
+	// The child's own calls, once forwarded, are the steps; progress adds none.
+	call := map[string]any{"type": "tool_use", "id": "grep", "name": "Grep", "input": map[string]any{"pattern": "TODO"}}
+	if err := tasks.nested(map[string]any{"type": "assistant", "message": map[string]any{"content": []any{call}}}, "call", emit); err != nil {
+		t.Fatal(err)
+	}
+	system(map[string]any{"subtype": "task_progress", "summary": "Searching", "last_tool_name": "Bash", "usage": map[string]any{"tool_uses": 5.0}})
+	steps = events[len(events)-1].Part.Native.Task.Steps
+	if len(steps) != 3 || steps[2].ID != "grep" || steps[2].Input != `{"pattern":"TODO"}` {
+		t.Fatalf("forwarded call duplicated its announcement: %+v", steps)
+	}
+	system(map[string]any{"subtype": "task_notification", "status": "completed", "summary": "Done"})
+	if done := events[len(events)-1].Part.Native; done.Status != chatmodel.ToolCompleted || done.DurationMs <= 0 {
+		t.Fatalf("finished child has no duration: %+v", done)
 	}
 }

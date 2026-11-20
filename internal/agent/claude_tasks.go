@@ -109,10 +109,18 @@ func (tasks *claudeTasks) system(value map[string]any, emit func(AgentEvent) err
 			return true, nil
 		}
 	}
+	// Claude Code may report a child only through these events, without
+	// forwarding what it did. Its steps are then what the events tell: each
+	// progress summary, and the tool of each newly counted call.
+	told := len(task.stepIDs) == 0 && subtype == "task_progress"
 	if summary := strings.TrimSpace(stringValue(value["summary"])); summary != "" && summary != task.part.Name && value["status"] != "stopped" {
 		task.progress.Summary = chatmodel.Clip(summary, 4000)
+		if told {
+			task.step(chatmodel.TaskStep{Kind: chatmodel.TaskStepMessage, Text: summary})
+		}
 	}
-	if tool := stringValue(value["last_tool_name"]); tool != "" {
+	tool, calls := stringValue(value["last_tool_name"]), task.progress.ToolUses
+	if tool != "" {
 		task.progress.LastTool = chatmodel.Clip(tool, 200)
 	}
 	if usage, ok := value["usage"].(map[string]any); ok {
@@ -125,6 +133,9 @@ func (tasks *claudeTasks) system(value map[string]any, emit func(AgentEvent) err
 		if n, ok := numberValue(usage["duration_ms"]); ok && n >= 0 {
 			task.duration = int64(n)
 		}
+	}
+	if told && tool != "" && task.progress.ToolUses > calls {
+		task.step(chatmodel.TaskStep{Name: tool})
 	}
 	return true, emitTask(task, emit)
 }
@@ -200,17 +211,36 @@ func (tasks *claudeTasks) nested(value map[string]any, parent string, emit func(
 				continue
 			}
 			if task := tasks.tools[parent]; task != nil {
-				task.tool(stringValue(item["id"]), stringValue(item["name"]))
+				id, name := stringValue(item["id"]), stringValue(item["name"])
+				task.tool(id, name)
+				if input, _ := item["input"].(map[string]any); name != "" {
+					step := chatmodel.TaskStep{ID: id, Name: name, Input: taskStepInput(input)}
+					// Only a call that names itself can later be told to have ended.
+					if id != "" {
+						step.Status = chatmodel.ToolRunning
+					}
+					task.step(step)
+				}
 			}
 		}
 		if value["type"] == "user" && item["type"] == "tool_result" {
 			if _, err := tasks.result(item, value, emit); err != nil {
 				return err
 			}
+			if task := tasks.tools[parent]; task != nil {
+				status := chatmodel.ToolCompleted
+				if item["is_error"] == true {
+					status = chatmodel.ToolFailed
+				}
+				task.settle(stringValue(item["tool_use_id"]), status)
+			}
 		}
 		if task := tasks.tools[parent]; task != nil && task.running() {
-			if value["type"] == "assistant" && item["type"] == "text" {
-				task.progress.Summary = chatmodel.Clip(strings.TrimSpace(stringValue(item["text"])), 4000)
+			if text := strings.TrimSpace(stringValue(item["text"])); value["type"] == "assistant" && item["type"] == "text" {
+				task.progress.Summary = chatmodel.Clip(text, 4000)
+				if text != "" {
+					task.step(chatmodel.TaskStep{Kind: chatmodel.TaskStepMessage, Text: text})
+				}
 			}
 			if err := emitTask(task, emit); err != nil {
 				return err

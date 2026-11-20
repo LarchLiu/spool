@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -285,13 +287,14 @@ func (tasks *codexTasks) event(method string, params map[string]any, emit func(A
 		if err := tasks.item(item, id, emit); err != nil {
 			return true, err
 		}
-		kind := codexItemKind(item)
-		if kind == "agentmessage" {
-			if text := stringValue(item["text"]); text != "" {
-				task.progress.Summary = chatmodel.Clip(text, 4000)
-			}
-		} else if parts, ok := codexToolParts(item, ""); ok && len(parts) > 0 {
-			task.tool(stringValue(item["id"]), parts[0].Name)
+		step, ok := codexTaskStep(item)
+		if ok && step.Kind == chatmodel.TaskStepMessage {
+			task.progress.Summary = chatmodel.Clip(stringValue(item["text"]), 4000)
+		} else if ok {
+			task.tool(step.ID, step.Name)
+		}
+		if ok {
+			task.step(step)
 		}
 	}
 	return true, emitTask(task, emit)
@@ -437,14 +440,17 @@ func (tasks *codexTasks) response(p *agentProcess, value map[string]any, emit fu
 		}
 		return true, nil
 	} else {
-		// Newest first: one stable message and the most recent tool are enough for
-		// a progress summary. Never copy the child's full transcript into the chat.
-		messageSeen, toolSeen := false, false
+		// Newest first: the latest stable message is the progress summary. The
+		// page is bounded, and so are the steps kept from it: never copy the
+		// child's full transcript into the chat.
+		items := make([]map[string]any, 0, len(data))
+		messageSeen := false
 		for _, raw := range data {
 			item, _ := raw.(map[string]any)
 			if nested, ok := item["item"].(map[string]any); ok {
 				item = nested
 			}
+			items = append(items, item)
 			if err := tasks.discover(item, task.progress.ID, emit); err != nil {
 				return true, err
 			}
@@ -453,13 +459,51 @@ func (tasks *codexTasks) response(p *agentProcess, value map[string]any, emit fu
 					task.progress.Summary = chatmodel.Clip(text, 4000)
 					messageSeen = true
 				}
-			} else if !toolSeen {
-				if parts, ok := codexToolParts(item, ""); ok && len(parts) > 0 {
-					task.tool(stringValue(item["id"]), parts[0].Name)
-					toolSeen = true
-				}
+			}
+		}
+		// Steps are told in the order they happened, which leaves the most
+		// recent tool as the last one. A page is read again and again: only an
+		// item that names itself can be recognized as already told.
+		for _, item := range slices.Backward(items) {
+			step, ok := codexTaskStep(item)
+			if !ok {
+				continue
+			}
+			if step.Kind != chatmodel.TaskStepMessage {
+				task.tool(step.ID, step.Name)
+			}
+			if step.ID != "" {
+				task.step(step)
 			}
 		}
 	}
 	return true, emitTask(task, emit)
+}
+
+// A child's item as one of its steps: what it said, or the tool it called
+// with Codex's own reading of that call.
+func codexTaskStep(item map[string]any) (chatmodel.TaskStep, bool) {
+	id := stringValue(item["id"])
+	if isCodexAgentMessage(item["type"]) {
+		text := strings.TrimSpace(stringValue(item["text"]))
+		return chatmodel.TaskStep{ID: id, Kind: chatmodel.TaskStepMessage, Text: text}, text != ""
+	}
+	parts, ok := codexToolParts(item, "")
+	if !ok && codexItemKind(item) == "imageview" {
+		parts = codexTranscriptParts(item, "")
+	}
+	if len(parts) == 0 || parts[0].Name == "" {
+		return chatmodel.TaskStep{}, false
+	}
+	step := chatmodel.TaskStep{ID: id, Name: parts[0].Name, Input: chatmodel.Clip(parts[0].Text, taskStepBytes)}
+	// Bound structured fields before encoding so a long body cannot hide the
+	// target or leave the step's display input as an incomplete JSON document.
+	var input map[string]any
+	if json.Unmarshal([]byte(parts[0].Text), &input) == nil && input != nil {
+		step.Input = taskStepInput(input)
+	}
+	if native := parts[0].Native; native != nil {
+		step.Kind, step.Path, step.Query, step.Status = native.Kind, native.Path, native.Query, native.Status
+	}
+	return step, true
 }

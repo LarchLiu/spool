@@ -192,3 +192,45 @@ func TestCancelledLiveTasksDoNotKeepRunningInTerminalSnapshot(t *testing.T) {
 		})
 	}
 }
+
+func TestTaskStepsAreSummarizedLikeTheCallsTheyAre(t *testing.T) {
+	task := &chatmodel.TaskProgress{ID: "child", Steps: []chatmodel.TaskStep{
+		{Kind: chatmodel.TaskStepMessage, Text: "Reading the grammar"},
+		{ID: "read", Name: "Read", Input: `{"file_path":"/repo/internal/parser/grammar.go"}`, Status: "completed"},
+		{ID: "grep", Name: "Grep", Input: `{"path":"src","pattern":"TODO"}`, Status: "failed"},
+		{ID: "bash", Name: "Bash", Input: "{\"command\":\"go test ./...\\n\"}", Status: "running"},
+		// Codex's own reading of a command outranks the literal one.
+		{ID: "cat", Name: "shell", Input: "sed -n 1,20p child.go", Kind: "read", Path: "child.go", Status: "completed"},
+		{ID: "write", Name: "files.write_file", Input: `{"path":"/work/output.txt"}`},
+		{ID: "image", Name: "view_image", Input: `{"path":"/work/page 1.png"}`},
+		{Name: "mcp__tracker__create_issue", Input: `{"title":"Parser"}`},
+	}}
+	steps := func(status string) string {
+		part := chatmodel.Part{ID: "task", Role: "assistant", Kind: "tool_use", Name: "Inspect parser", Text: "Inspect parser",
+			Native: &chatmodel.ToolNative{Kind: "task", Status: status, Task: task}}
+		data, err := json.Marshal(summarizeTool(part).Task.Steps)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	// Call identities and inputs stay on the server: a client gets the reading.
+	want := `[{"kind":"message","text":"Reading the grammar"},` +
+		`{"kind":"read","name":"Read","path":"…/internal/parser/grammar.go","status":"completed"},` +
+		`{"kind":"search","name":"Grep","path":"src","query":"TODO","status":"failed"},` +
+		`{"kind":"shell","name":"Bash","text":"go test ./...","status":"running"},` +
+		`{"kind":"read","name":"shell","path":"child.go","status":"completed"},` +
+		`{"kind":"create","name":"files.write_file","path":"/work/output.txt"},` +
+		`{"kind":"read","name":"view_image","path":"/work/page 1.png"},` +
+		`{"kind":"other","name":"mcp__tracker__create_issue"}]`
+	if got := steps("running"); got != want {
+		t.Fatalf("steps summarized as\n%s\nwant\n%s", got, want)
+	}
+	// Nothing told how a call ended when its child stopped first.
+	if got, want := steps("stopped"), strings.Replace(want, `,"status":"running"`, "", 1); got != want {
+		t.Fatalf("stopped child's steps summarized as\n%s\nwant\n%s", got, want)
+	}
+	if task.Steps[1].Kind != "" || task.Steps[3].Status != "running" {
+		t.Fatal("summary changed the live snapshot", task.Steps)
+	}
+}

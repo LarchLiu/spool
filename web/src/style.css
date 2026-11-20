@@ -2353,6 +2353,49 @@ a.attachment-open {
 .tool-task-badge {
   flex-shrink: 0;
 }
+.tool-task-meta,
+.tool-task-facts {
+  font-variant-numeric: tabular-nums;
+}
+.tool-task-facts {
+  color: var(--subtle);
+  font-size: 11px;
+}
+.tool-task-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow: auto;
+  list-style: none;
+}
+.tool-task-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.tool-task-step > svg {
+  flex-shrink: 0;
+}
+.tool-task-step-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-task-step-message {
+  color: var(--subtle);
+}
+.tool-task-step-running .tool-activity-outcome {
+  color: var(--muted);
+}
 .tool-task-running .tool-activity-outcome,
 .tool-task-completed .tool-activity-outcome,
 .tool-task-stopped .tool-activity-outcome,

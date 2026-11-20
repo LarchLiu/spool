@@ -199,11 +199,25 @@ export type ToolSummary = {
     parent_id?: string;
     agent_type?: string;
     background?: boolean;
+    prompt?: string;
     summary?: string;
     last_tool?: string;
     tool_uses?: number;
     tokens?: number;
+    // When the child was first seen, in Unix milliseconds.
+    started_at?: number;
+    steps?: TaskStep[];
   };
+};
+// One of a child's latest steps: a tool call read like any other call, or
+// (kind "message") something the child said.
+export type TaskStep = {
+  kind: ToolSummary["kind"] | "message";
+  name?: string;
+  path?: string;
+  query?: string;
+  text?: string;
+  status?: ToolSummary["status"];
 };
 // Display-only input summaries. Compound commands have no per-operation output.
 export type ToolOperation = {

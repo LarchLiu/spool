@@ -71,7 +71,15 @@ bounded page of recent child turns/items when Codex does not forward progress;
 these reads never resume a child or take its writer lease.
 
 Each task shows its description, state and available progress summary, last
-tool and usage. Parallel tasks keep separate rows. If the main reply ends first,
+tool and usage. A running task also shows the call it is making and the time
+since it was first seen; its detail lists what it was asked, its most recent
+steps and its latest update. Steps are a bounded window of the latest 20 tool
+calls and messages: a call is named by the same display categories as the main
+activity list, from a bounded copy of its scalar input, and a message is
+clipped to one line. Tool output, file bodies and the rest of the child
+transcript are not kept. When Claude Code reports a child only through progress
+events, its steps are those events' summaries and tool names. Parallel tasks
+keep separate rows. If the main reply ends first,
 the request remains running while known child tasks continue, so progress,
 approvals and cancellation still work and the idle timeout does not reclaim
 their process. Live task rows remain visible beside the main reply. Refreshing

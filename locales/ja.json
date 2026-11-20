@@ -1195,5 +1195,14 @@
   "Select this chat's current agent to run session commands": "会話コマンドを実行するには、この会話の現在のエージェントを選択してください",
   "Enter a conversation name": "会話名を入力してください",
   "Status unavailable": "状態を取得できません",
-  "Background": "バックグラウンド"
+  "Background": "バックグラウンド",
+  "Prompt": "タスクの指示",
+  "Recent steps": "最近のステップ",
+  "Latest update": "最新の進捗",
+  "1 tool use": "ツール呼び出し 1 回",
+  "{count} tool uses": "ツール呼び出し {count} 回",
+  "{count} tokens": "{count} トークン",
+  "{seconds}s": "{seconds} 秒",
+  "{minutes}m {seconds}s": "{minutes} 分 {seconds} 秒",
+  "{hours}h {minutes}m": "{hours} 時間 {minutes} 分"
 }

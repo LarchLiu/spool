@@ -42,15 +42,109 @@ final class NativeToolDetail extends LinearLayout {
     private final Consumer<String> open;
     private final View between;
     private Block input, output;
+    // A subagent's detail: what it was asked, its latest steps, what it last said, and its facts.
+    private final View[] taskGaps = new View[3];
+    private final Runnable tick;
+    private TextView stepsLabel, facts;
+    private LinearLayout steps;
+    private String stepsSource;
+    private NativeActivityModel.Activity task;
 
     NativeToolDetail(NativeUi ui, NativeActivityModel.Activity activity, Consumer<String> open) {
         super(ui.context); this.ui = ui; this.open = open;
         setOrientation(VERTICAL); setPadding(ui.dp(13), ui.dp(11), ui.dp(13), ui.dp(11));
         setBackground(ui.shape(ui.input, 9, ui.borderStrong));
-        between = ui.space(10); bind(activity);
+        between = ui.space(10);
+        // A working child sends nothing during one long step: its time is counted here.
+        tick = new Runnable() {
+            @Override public void run() {
+                removeCallbacks(this);
+                if (task == null || facts == null) return;
+                String value = NativeActivityModel.taskFacts(ui, task, System.currentTimeMillis());
+                if (!value.contentEquals(facts.getText())) facts.setText(value);
+                if (isAttachedToWindow() && getWindowVisibility() == VISIBLE && NativeActivityModel.status(task).equals("running")) postDelayed(this, 1000);
+            }
+        };
+        bind(activity);
+    }
+
+    @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); tick.run(); }
+
+    @Override protected void onDetachedFromWindow() { removeCallbacks(tick); super.onDetachedFromWindow(); }
+
+    @Override protected void onWindowVisibilityChanged(int visibility) {
+        super.onWindowVisibilityChanged(visibility);
+        // The superclass constructor reports visibility before this view has its fields.
+        if (tick != null && visibility == VISIBLE) tick.run();
+    }
+
+    /** Web TaskDetail: the same blocks in the same order, each present only when it has something to say. */
+    private boolean bindTask(NativeActivityModel.Activity activity) {
+        org.json.JSONObject progress = NativeActivityModel.task(activity);
+        if (progress == null) return false;
+        String status = NativeActivityModel.status(activity), prompt = progress.optString("prompt"), summary = progress.optString("summary");
+        org.json.JSONArray list = progress.optJSONArray("steps");
+        task = activity;
+        String told = NativeActivityModel.taskFacts(ui, activity, System.currentTimeMillis());
+        if (prompt.isEmpty() && summary.isEmpty() && told.isEmpty() && (list == null || list.length() == 0)) { task = null; return false; }
+        List<View> views = new ArrayList<>();
+        if (!prompt.isEmpty()) {
+            if (input == null) input = new Block();
+            input.bind(ui.t("Prompt"), prompt, false, true); input.add(views);
+        } else input = null;
+        if (list != null && list.length() > 0) {
+            if (steps == null) {
+                steps = ui.column();
+                stepsLabel = ui.text(ui.t("Recent steps").toUpperCase(java.util.Locale.ROOT), 10, ui.subtle); stepsLabel.setLetterSpacing(.05f);
+                stepsSource = null;
+            }
+            // Statuses are worded here, so the wording is part of what was rendered.
+            String source = ui.t("Running") + '\n' + list;
+            if (!source.equals(stepsSource)) {
+                stepsSource = source; steps.removeAllViews();
+                for (int i = 0; i < list.length(); i++) {
+                    org.json.JSONObject step = list.optJSONObject(i);
+                    if (step == null) continue;
+                    boolean message = step.optString("kind").equals("message");
+                    String label = NativeActivityModel.taskStepLabel(ui, step), outcome = NativeActivityModel.taskStepOutcome(ui, step);
+                    // The layout of an activity row, without its disclosure.
+                    LinearLayout row = ui.row();
+                    row.addView(ui.decorativeIcon(message ? "message" : NativeActivityModel.icon(step.optString("kind")), 12));
+                    TextView text = ui.text(outcome.isEmpty() ? label : label + "  " + outcome, 12, message ? ui.subtle : ui.muted);
+                    ui.lineHeight(text, 1.5f); text.setSingleLine(true); text.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                    LayoutParams textParams = new LayoutParams(0, -2, 1); textParams.setMarginStart(ui.dp(7));
+                    row.addView(text, textParams);
+                    LayoutParams params = new LayoutParams(-1, -2); if (i > 0) params.topMargin = ui.dp(3);
+                    steps.addView(row, params);
+                }
+            }
+            if (!views.isEmpty()) views.add(taskGap(0));
+            views.add(stepsLabel); views.add(taskGap(1)); views.add(steps);
+        } else { steps = null; stepsLabel = null; stepsSource = null; }
+        if (!summary.isEmpty()) {
+            if (!views.isEmpty()) views.add(between);
+            if (output == null) output = new Block();
+            output.bind(ui.t(status.matches("completed|failed") ? "Result" : "Latest update"), summary, true, false); output.add(views);
+        } else output = null;
+        if (!told.isEmpty()) {
+            if (facts == null) facts = ui.text("", 11, ui.subtle);
+            if (!told.contentEquals(facts.getText())) facts.setText(told);
+            if (!views.isEmpty()) views.add(taskGap(2));
+            views.add(facts);
+        } else facts = null;
+        NativeKeyedViews.sync(this, views);
+        tick.run();
+        return true;
+    }
+
+    private View taskGap(int index) {
+        if (taskGaps[index] == null) taskGaps[index] = ui.space(index == 1 ? 4 : 10);
+        return taskGaps[index];
     }
 
     void bind(NativeActivityModel.Activity activity) {
+        if (bindTask(activity)) return;
+        task = null; steps = null; stepsLabel = null; stepsSource = null; facts = null;
         String command = activity.use == null ? "" : activity.use.optString("text");
         String result = activity.result == null ? "" : activity.result.optString("text");
         org.json.JSONObject commandSummary = activity.use == null ? null : activity.use.optJSONObject("tool");

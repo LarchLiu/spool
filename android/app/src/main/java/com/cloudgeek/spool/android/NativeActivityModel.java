@@ -160,6 +160,8 @@ final class NativeActivityModel {
             case "task": {
                 JSONObject task = summary.optJSONObject("task");
                 String progress = task == null ? "" : oneLine(task.optString("summary"), 240);
+                // A working child that has said nothing yet is told by its latest call.
+                if (progress.isEmpty() && task != null && summary.optString("status").equals("running")) progress = taskDoing(ui, task);
                 item.label = progress.isEmpty() ? name : name + " · " + progress;
                 break;
             }
@@ -304,6 +306,77 @@ final class NativeActivityModel {
         JSONObject result = activity.result == null ? null : activity.result.optJSONObject("tool");
         int code = use != null && use.has("exit_code") ? use.optInt("exit_code") : result != null ? result.optInt("exit_code") : 0;
         return code != 0 ? ui.t("Exit code {code}", "code", code) : ui.t("Failed");
+    }
+
+    /** A child's live progress, or null for a row that carries none. */
+    static JSONObject task(Activity activity) {
+        JSONObject tool = !"task".equals(activity.kind) || activity.use == null ? null : activity.use.optJSONObject("tool");
+        return tool == null ? null : tool.optJSONObject("task");
+    }
+
+    /** A child's step, named as the same call is in the main activity list. */
+    static String taskStepLabel(NativeUi ui, JSONObject step) {
+        String text = oneLine(step.optString("text"), 240);
+        if (step.optString("kind").equals("message")) return text;
+        try {
+            JSONObject summary = new JSONObject().put("kind", step.optString("kind", "other"))
+                    .put("path", step.optString("path")).put("query", step.optString("query"));
+            String label = display(ui, new JSONObject().put("kind", "tool_use").put("name", step.optString("name")).put("tool", summary), "").label;
+            return text.isEmpty() ? label : label + " · " + oneLine(text, 180);
+        } catch (org.json.JSONException impossible) { throw new IllegalStateException(impossible); }
+    }
+
+    /** How a step went, where that is worth telling: still running, failed or declined. */
+    static String taskStepOutcome(NativeUi ui, JSONObject step) {
+        switch (step.optString("status")) {
+            case "running": return ui.t("Running");
+            case "failed": return ui.t("Failed");
+            case "declined": return ui.t("Declined");
+            default: return "";
+        }
+    }
+
+    /** What a working child is doing now: its latest call, by name if no more is known. */
+    private static String taskDoing(NativeUi ui, JSONObject task) {
+        org.json.JSONArray steps = task.optJSONArray("steps");
+        for (int i = steps == null ? -1 : steps.length() - 1; i >= 0; i--) {
+            JSONObject step = steps.optJSONObject(i);
+            if (step != null && !step.optString("kind").equals("message")) return taskStepLabel(ui, step);
+        }
+        return oneLine(task.optString("last_tool"), 80);
+    }
+
+    /**
+     * The child's agent type, calls, tokens and time. A running child is timed from when it
+     * was first seen; a finished one took as long as its provider, or the server, says it did.
+     */
+    static String taskFacts(NativeUi ui, Activity activity, long now) {
+        JSONObject task = task(activity);
+        if (task == null) return "";
+        List<String> facts = new ArrayList<>();
+        if (!task.optString("agent_type").isEmpty()) facts.add(task.optString("agent_type"));
+        if (task.optBoolean("background")) facts.add(ui.t("Background"));
+        int calls = task.optInt("tool_uses");
+        if (calls == 1) facts.add(ui.t("1 tool use")); else if (calls > 1) facts.add(ui.t("{count} tool uses", "count", calls));
+        long tokens = task.optLong("tokens"), started = task.optLong("started_at");
+        if (tokens > 0) facts.add(ui.t("{count} tokens", "count", compactCount(tokens)));
+        long duration = status(activity).equals("running") && started > 0 ? Math.max(0, now - started)
+                : activity.use.optJSONObject("tool").optLong("duration_ms");
+        if (duration > 0) facts.add(duration(ui, duration));
+        return String.join(" · ", facts);
+    }
+
+    static String duration(NativeUi ui, long milliseconds) {
+        long seconds = Math.max(0, Math.round(milliseconds / 1000d));
+        if (seconds < 60) return ui.t("{seconds}s", "seconds", seconds);
+        if (seconds < 3600) return ui.t("{minutes}m {seconds}s", "minutes", seconds / 60, "seconds", seconds % 60);
+        return ui.t("{hours}h {minutes}m", "hours", seconds / 3600, "minutes", seconds % 3600 / 60);
+    }
+
+    private static String compactCount(long count) {
+        if (count < 1000) return String.valueOf(count);
+        String value = String.format(Locale.ROOT, "%.1f", count < 1_000_000 ? count / 1000d : count / 1_000_000d);
+        return (value.endsWith(".0") ? value.substring(0, value.length() - 2) : value) + (count < 1_000_000 ? "k" : "M");
     }
 
     private static String shortPath(String value) {

@@ -58,10 +58,35 @@ type TaskProgress struct {
 	ParentID   string `json:"parent_id,omitempty"`
 	AgentType  string `json:"agent_type,omitempty"`
 	Background bool   `json:"background,omitempty"`
-	Summary    string `json:"summary,omitempty"`
-	LastTool   string `json:"last_tool,omitempty"`
-	ToolUses   int    `json:"tool_uses,omitempty"`
-	Tokens     int    `json:"tokens,omitempty"`
+	// Prompt is what the child was asked to do.
+	Prompt   string `json:"prompt,omitempty"`
+	Summary  string `json:"summary,omitempty"`
+	LastTool string `json:"last_tool,omitempty"`
+	ToolUses int    `json:"tool_uses,omitempty"`
+	Tokens   int    `json:"tokens,omitempty"`
+	// StartedAt is when the child was first seen, in Unix milliseconds.
+	StartedAt int64 `json:"started_at,omitempty"`
+	// Steps are the child's most recent steps, oldest first. They are a
+	// bounded window on its work, never its transcript.
+	Steps []TaskStep `json:"steps,omitempty"`
+}
+
+// TaskStepMessage is the Kind of a step in which the child said something.
+const TaskStepMessage = "message"
+
+// TaskStep is one thing a child did: a tool call, or something it said. A
+// tool step reaches clients with the display kind and target its summary
+// read from Input; a message's Text is what was said.
+type TaskStep struct {
+	ID     string `json:"-"`
+	Kind   string `json:"kind"`
+	Name   string `json:"name,omitempty"`
+	Path   string `json:"path,omitempty"`
+	Query  string `json:"query,omitempty"`
+	Text   string `json:"text,omitempty"`
+	Status string `json:"status,omitempty"`
+	// Input is the call's bounded input, kept for classification only.
+	Input string `json:"-"`
 }
 
 // ToolSummary is enough to render a collapsed activity without its input/output.

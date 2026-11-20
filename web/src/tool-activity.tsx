@@ -16,10 +16,11 @@ import {
   BookOpen,
   Images,
   ImageOff,
+  MessageCircle,
   Workflow,
 } from "lucide-react";
 import { FileDiff } from "@pierre/diffs/react";
-import type { Backend, TranscriptPart } from "./types";
+import type { Backend, TaskStep, TranscriptPart } from "./types";
 import type { Translator } from "./i18n";
 import { MarkdownMessage, MarkdownPreview } from "./markdown-message.js";
 import { patchText, toolResultDiffs } from "./tool-diff.js";
@@ -652,7 +653,7 @@ function LazyToolBody({ part, t, thinking, input }: { part: TranscriptPart; t: T
 
 export function ActivityDetail({ activity, t }: { activity: Activity; t: Translator }) {
   if (activity.noDetails) return null;
-  if (activity.kind === "task") return <div className="tool-detail"><pre>{activity.use?.text}</pre></div>;
+  if (activity.kind === "task") return activity.use?.tool?.task ? <TaskDetail activity={activity} t={t} /> : <div className="tool-detail"><pre>{activity.use?.text}</pre></div>;
   const command = activity.use?.text || "";
   const result = activity.result?.text || "";
   return (
@@ -680,16 +681,102 @@ export function ActivityDetail({ activity, t }: { activity: Activity; t: Transla
   );
 }
 
-function ActivityLabel({ activity }: { activity: Activity }) {
-  if (activity.kind === "task" && activity.use?.tool?.task) {
-    const task = activity.use.tool.task;
-    return <span className="tool-task-label">
-      <span className="tool-task-title">{activity.label}</span>
-      {task.agent_type && <span className="tool-task-progress">{task.agent_type}</span>}
-      {task.summary && <span className="tool-task-progress">{oneLine(task.summary, 240)}</span>}
-      {task.last_tool && <span className="tool-task-progress">{task.last_tool}</span>}
-    </span>;
-  }
+// How long something took, or has taken so far.
+export function durationLabel(ms: number, t: Translator) {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds < 60) return t("{seconds}s", { seconds });
+  if (seconds < 3600) return t("{minutes}m {seconds}s", { minutes: Math.floor(seconds / 60), seconds: seconds % 60 });
+  return t("{hours}h {minutes}m", { hours: Math.floor(seconds / 3600), minutes: Math.floor((seconds % 3600) / 60) });
+}
+
+function compactCount(count: number) {
+  if (count < 1000) return String(count);
+  const [value, unit] = count < 1_000_000 ? [count / 1000, "k"] : [count / 1_000_000, "M"];
+  return value.toFixed(1).replace(/\.0$/, "") + unit;
+}
+
+// A child's step is named as the same call is in the main activity list.
+export function taskStepLabel(step: TaskStep, t: Translator) {
+  if (step.kind === "message") return oneLine(step.text || "", 240);
+  const { label } = displayActivity({ role: "assistant", kind: "tool_use", name: step.name, text: "",
+    tool: { kind: step.kind, path: step.path, query: step.query, version: "", bytes: 0 } }, undefined, t);
+  return step.text ? `${label} · ${oneLine(step.text)}` : label;
+}
+
+// A running child is timed from when it was first seen, by a clock of its own:
+// its row gets no event while it works on one long step. A finished child took
+// as long as its provider, or the server, says it did.
+function useTaskFacts(activity: Activity, t: Translator) {
+  const tool = activity.use?.tool, task = tool?.task;
+  const running = activityOutcome(activity).status === "running";
+  const startedAt = running ? task?.started_at : undefined;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!startedAt) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [startedAt]);
+  const duration = startedAt ? Math.max(0, now - startedAt) : tool?.duration_ms || 0;
+  const calls = task?.tool_uses || 0;
+  return {
+    running,
+    calls: calls === 1 ? t("1 tool use") : calls ? t("{count} tool uses", { count: calls }) : "",
+    tokens: task?.tokens ? t("{count} tokens", { count: compactCount(task.tokens) }) : "",
+    duration: duration ? durationLabel(duration, t) : "",
+  };
+}
+
+function TaskLabel({ activity, t }: { activity: Activity; t: Translator }) {
+  const task = activity.use!.tool!.task!;
+  const facts = useTaskFacts(activity, t);
+  // What a working child is doing now is its latest call, by name if no more is known.
+  const call = facts.running ? task.steps?.filter(step => step.kind !== "message").at(-1) : undefined;
+  const doing = call ? taskStepLabel(call, t) : facts.running ? task.last_tool : "";
+  const meta = [task.agent_type, doing, facts.calls, facts.duration].filter(Boolean);
+  return <span className="tool-task-label">
+    <span className="tool-task-title">{activity.label}</span>
+    {task.summary && <span className="tool-task-progress">{oneLine(task.summary, 240)}</span>}
+    {meta.length > 0 && <span className="tool-task-progress tool-task-meta">{meta.join(" · ")}</span>}
+  </span>;
+}
+
+function TaskDetail({ activity, t }: { activity: Activity; t: Translator }) {
+  const task = activity.use!.tool!.task!;
+  const facts = useTaskFacts(activity, t);
+  const status = activityOutcome(activity).status;
+  const steps = task.steps || [];
+  const meta = [task.agent_type, task.background && t("Background"), facts.calls, facts.tokens, facts.duration].filter(Boolean);
+  if (!task.prompt && !steps.length && !task.summary && !meta.length) return <div className="tool-detail"><pre>{activity.use?.text}</pre></div>;
+  return <div className="tool-detail tool-task-detail">
+    {task.prompt && <div className="tool-detail-block">
+      <span className="tool-detail-label">{t("Prompt")}</span>
+      <pre>{task.prompt}</pre>
+    </div>}
+    {steps.length > 0 && <div className="tool-detail-block">
+      <span className="tool-detail-label">{t("Recent steps")}</span>
+      <ol className="tool-task-steps">
+        {steps.map((step, index) => {
+          const Icon = step.kind === "message" ? MessageCircle : iconFor(step.kind);
+          const outcome = step.status === "running" ? t("Running") : step.status === "failed" ? t("Failed") : step.status === "declined" ? t("Declined") : "";
+          return <li key={index} className={`tool-task-step tool-task-step-${step.kind === "message" ? "message" : "call"}${step.status === "running" ? " tool-task-step-running" : ""}`}>
+            <Icon size={12} strokeWidth={1.6} />
+            <span className="tool-task-step-label">{taskStepLabel(step, t)}</span>
+            {outcome && <span className="tool-activity-outcome">{outcome}</span>}
+          </li>;
+        })}
+      </ol>
+    </div>}
+    {task.summary && <div className="tool-detail-block">
+      <span className="tool-detail-label">{status === "completed" || status === "failed" ? t("Result") : t("Latest update")}</span>
+      <MarkdownMessage t={t}>{task.summary}</MarkdownMessage>
+    </div>}
+    {meta.length > 0 && <div className="tool-detail-block tool-task-facts">{meta.join(" · ")}</div>}
+  </div>;
+}
+
+function ActivityLabel({ activity, t }: { activity: Activity; t: Translator }) {
+  if (activity.kind === "task" && activity.use?.tool?.task) return <TaskLabel activity={activity} t={t} />;
   if (activity.kind !== "thinking") return <span>{activity.label}</span>;
   const preview = activity.use?.tool?.preview || activity.use?.text;
   // Render the prefix separately so Markdown at the beginning of a thought
@@ -729,7 +816,7 @@ function ActivityItem({
     <div className="tool-activity-item">
       <div className="tool-activity-item-summary tool-activity-static" title={activity.label}>
         <Icon size={12} strokeWidth={1.6} />
-        <ActivityLabel activity={activity} />
+        <ActivityLabel activity={activity} t={t} />
       </div>
     </div>
   );
@@ -743,7 +830,7 @@ function ActivityItem({
         onClick={onToggle}
       >
         <Icon size={12} strokeWidth={1.6} />
-        <ActivityLabel activity={activity} />
+        <ActivityLabel activity={activity} t={t} />
         {activity.kind === "task" && activity.use?.tool?.task?.background && <span className="tool-task-badge">{t("Background")}</span>}
         {outcome && <span className="tool-activity-outcome">{outcome}</span>}
         {stats && <ActivityChangeStats stats={stats} />}

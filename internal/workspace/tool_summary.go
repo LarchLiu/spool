@@ -59,6 +59,7 @@ func summarizeTool(part chatmodel.Part) *chatmodel.ToolSummary {
 		// A task's name is the title its author gave it and its text is prose
 		// about the work: neither names a tool, a path or a change.
 		summary.Kind = "task"
+		summary.Task = summarizeTaskSteps(native.Task, native.Status)
 		return summary
 	}
 	if part.Kind == "tool_result" {
@@ -297,4 +298,45 @@ func slimToolDetails(chat chatmodel.Session) chatmodel.Session {
 		}
 	}
 	return chat
+}
+
+// A child's steps are read the way its parent's calls are, so that both lists
+// name the same call the same way. A step keeps its command only when nothing
+// else says what it was for. One that was still running when its child ended
+// was never told to have finished: it says nothing of how it went.
+func summarizeTaskSteps(task *chatmodel.TaskProgress, status string) *chatmodel.TaskProgress {
+	if task == nil || len(task.Steps) == 0 {
+		return task
+	}
+	summarized := *task
+	summarized.Steps = make([]chatmodel.TaskStep, len(task.Steps))
+	for i, step := range task.Steps {
+		if step.Kind != chatmodel.TaskStepMessage {
+			call := chatmodel.Part{Role: "assistant", Kind: "tool_use", Name: step.Name, Text: step.Input}
+			if step.Kind != "" {
+				call.Native = &chatmodel.ToolNative{Kind: step.Kind, Path: step.Path, Query: step.Query}
+			}
+			tool := summarizeTool(call)
+			step.Kind, step.Path, step.Query, step.Text = tool.Kind, tool.Path, tool.Query, ""
+			if step.Kind == "image" {
+				// A list row names the file; the image itself is not carried.
+				step.Kind = "read"
+				if len(tool.ImagePaths) > 0 {
+					step.Path = toolBounded(tool.ImagePaths[0], 1024)
+				}
+			}
+			if step.Path == "" && step.Query == "" && toolNameKind(step.Name) == "shell" {
+				var data map[string]json.RawMessage
+				if strings.HasPrefix(strings.TrimSpace(step.Input), "{") {
+					_ = json.Unmarshal([]byte(step.Input), &data)
+				}
+				step.Text = toolBounded(strings.Join(strings.Fields(toolCommand(step.Input, data)), " "), 240)
+			}
+		}
+		if status != chatmodel.ToolRunning && step.Status == chatmodel.ToolRunning {
+			step.Status = ""
+		}
+		summarized.Steps[i] = step
+	}
+	return &summarized
 }

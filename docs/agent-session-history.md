@@ -39,6 +39,12 @@ leave it out of change statistics.
 Live subagent rows also use `stopped` and `unknown` (progress unavailable).
 They are built from live lifecycle events and bounded read-only child status
 queries; native historical tool items retain their existing display behavior.
+A row's `task` carries `prompt`, `started_at` (Unix milliseconds) and `steps`,
+the child's latest steps, oldest first. A step is a tool call with the `kind`,
+`path` and `query` of an ordinary call's summary plus its `name` and `status`,
+or `kind: "message"` with the `text` the child said. A shell call that names no
+target keeps its command in `text`. `duration_ms` is the provider's figure when
+it gave one, and otherwise the time from `started_at` to the child's end.
 
 ## Codex history
 

@@ -6,6 +6,7 @@ final class NativeText {
         String value = key;
         if (locale.equals("zh-CN")) switch (key) {
             case "/goal <condition> · /goal to view · /goal clear to remove": value = "/goal <目标条件> · /goal 查看 · /goal clear 清除"; break;
+            case "1 tool use": value = "1 次工具调用"; break;
             case "A little space for big ideas": value = "留一点空间，给大想法"; break;
             case "Accept edits": value = "允许编辑"; break;
             case "Acknowledge usage cost": value = "确认用量费用"; break;
@@ -49,6 +50,7 @@ final class NativeText {
             case "Avatar style": value = "头像风格"; break;
             case "Away": value = "离开"; break;
             case "Back to start": value = "回到开头"; break;
+            case "Background": value = "后台"; break;
             case "Binary file": value = "二进制文件"; break;
             case "Bypass permissions": value = "跳过权限检查"; break;
             case "CLI default": value = "CLI 默认"; break;
@@ -236,6 +238,7 @@ final class NativeText {
             case "Language": value = "语言"; break;
             case "Language server recommendation": value = "语言服务器推荐"; break;
             case "Large directories show up to 2,000 entries.": value = "大型目录最多显示 2,000 项。"; break;
+            case "Latest update": value = "最新进展"; break;
             case "Less": value = "较少"; break;
             case "Light": value = "浅色"; break;
             case "Listed files": value = "列出文件"; break;
@@ -338,6 +341,7 @@ final class NativeText {
             case "Project panels": value = "项目面板"; break;
             case "Project sandbox · network access requires approval": value = "项目目录沙箱 · 网络访问需审批；代我审批不会取消沙箱"; break;
             case "Projects": value = "项目"; break;
+            case "Prompt": value = "任务说明"; break;
             case "Public HTTPS": value = "公网 HTTPS"; break;
             case "Public HTTPS address": value = "公网 HTTPS 地址"; break;
             case "Publish branch": value = "发布分支"; break;
@@ -352,6 +356,7 @@ final class NativeText {
             case "Read {path}": value = "读取 {path}"; break;
             case "Read-only": value = "只读"; break;
             case "Reasoning level": value = "推理级别"; break;
+            case "Recent steps": value = "最近步骤"; break;
             case "Recents": value = "最近聊天"; break;
             case "Reconnecting…": value = "正在重连…"; break;
             case "Refresh Git information": value = "刷新 Git 信息"; break;
@@ -538,12 +543,18 @@ final class NativeText {
             case "{count} members": value = "{count} 位成员"; break;
             case "{count} online": value = "{count} 人在线"; break;
             case "{count} selected": value = "已选 {count} 人"; break;
+            case "{count} tokens": value = "{count} tokens"; break;
+            case "{count} tool uses": value = "{count} 次工具调用"; break;
             case "{count} unread messages": value = "{count} 条未读消息"; break;
+            case "{hours}h {minutes}m": value = "{hours} 小时 {minutes} 分"; break;
+            case "{minutes}m {seconds}s": value = "{minutes} 分 {seconds} 秒"; break;
             case "{previous}, {next}": value = "{previous}、{next}"; break;
+            case "{seconds}s": value = "{seconds} 秒"; break;
             default: break;
         }
         else if (locale.equals("ja")) switch (key) {
             case "/goal <condition> · /goal to view · /goal clear to remove": value = "/goal <達成条件> · /goal で表示 · /goal clear で解除"; break;
+            case "1 tool use": value = "ツール呼び出し 1 回"; break;
             case "A little space for big ideas": value = "大きなアイデアのための小さな場所"; break;
             case "Accept edits": value = "編集を許可"; break;
             case "Acknowledge usage cost": value = "利用料金を確認"; break;
@@ -587,6 +598,7 @@ final class NativeText {
             case "Avatar style": value = "アバターのスタイル"; break;
             case "Away": value = "離席中"; break;
             case "Back to start": value = "先頭に戻る"; break;
+            case "Background": value = "バックグラウンド"; break;
             case "Binary file": value = "バイナリファイル"; break;
             case "Bypass permissions": value = "権限チェックをスキップ"; break;
             case "CLI default": value = "CLI の既定値"; break;
@@ -774,6 +786,7 @@ final class NativeText {
             case "Language": value = "言語"; break;
             case "Language server recommendation": value = "言語サーバーの提案"; break;
             case "Large directories show up to 2,000 entries.": value = "大きなフォルダーは最大 2,000 件まで表示します。"; break;
+            case "Latest update": value = "最新の進捗"; break;
             case "Less": value = "少なめ"; break;
             case "Light": value = "ライト"; break;
             case "Listed files": value = "ファイル一覧を取得"; break;
@@ -876,6 +889,7 @@ final class NativeText {
             case "Project panels": value = "プロジェクトパネル"; break;
             case "Project sandbox · network access requires approval": value = "プロジェクト内のサンドボックス · ネットワーク接続には承認が必要です"; break;
             case "Projects": value = "プロジェクト"; break;
+            case "Prompt": value = "タスクの指示"; break;
             case "Public HTTPS": value = "公開HTTPS"; break;
             case "Public HTTPS address": value = "公開HTTPSアドレス"; break;
             case "Publish branch": value = "ブランチを公開"; break;
@@ -890,6 +904,7 @@ final class NativeText {
             case "Read {path}": value = "{path} を読み取り"; break;
             case "Read-only": value = "読み取り専用"; break;
             case "Reasoning level": value = "推論レベル"; break;
+            case "Recent steps": value = "最近のステップ"; break;
             case "Recents": value = "最近のチャット"; break;
             case "Reconnecting…": value = "再接続中…"; break;
             case "Refresh Git information": value = "Git 情報を更新"; break;
@@ -1076,8 +1091,13 @@ final class NativeText {
             case "{count} members": value = "{count} 人のメンバー"; break;
             case "{count} online": value = "{count} 人がオンライン"; break;
             case "{count} selected": value = "{count} 人を選択中"; break;
+            case "{count} tokens": value = "{count} トークン"; break;
+            case "{count} tool uses": value = "ツール呼び出し {count} 回"; break;
             case "{count} unread messages": value = "未読メッセージ {count} 件"; break;
+            case "{hours}h {minutes}m": value = "{hours} 時間 {minutes} 分"; break;
+            case "{minutes}m {seconds}s": value = "{minutes} 分 {seconds} 秒"; break;
             case "{previous}, {next}": value = "{previous}、{next}"; break;
+            case "{seconds}s": value = "{seconds} 秒"; break;
             default: break;
         }
         for (int i = 0; i + 1 < pairs.length; i += 2) value = value.replace("{" + pairs[i] + "}", String.valueOf(pairs[i + 1]));

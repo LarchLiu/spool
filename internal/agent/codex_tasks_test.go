@@ -306,3 +306,100 @@ func TestCodexRepeatedSpawnActivityDoesNotReopenTerminalTask(t *testing.T) {
 		t.Fatal("delayed spawn reopened task")
 	}
 }
+
+func TestCodexChildStepsComeFromItsEventsAndBoundedReadsOnce(t *testing.T) {
+	tasks := codexTasks{root: "parent"}
+	task := tasks.ensure("child", "parent", "Inspect parser")
+	var latest *chatmodel.TaskProgress
+	emit := func(e AgentEvent) error { latest = e.Part.Native.Task; return nil }
+	command := func(id, text, status string) map[string]any {
+		return map[string]any{"type": "commandExecution", "id": id, "command": text, "status": status}
+	}
+	note := map[string]any{"type": "agentMessage", "id": "note", "text": "Parser reads fine"}
+	for _, event := range []struct {
+		method string
+		item   map[string]any
+	}{{"item/started", command("read", "cat child.go", "inProgress")}, {"item/completed", command("read", "cat child.go", "completed")}, {"item/completed", note}} {
+		if _, err := tasks.event(event.method, map[string]any{"threadId": "child", "item": event.item}, emit); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(latest.Steps) != 2 || latest.Steps[0].Name != "shell" || latest.Steps[0].Input != "cat child.go" || latest.Steps[0].Status != chatmodel.ToolCompleted ||
+		latest.Steps[1].Kind != chatmodel.TaskStepMessage || latest.Steps[1].Text != "Parser reads fine" || latest.ToolUses != 1 {
+		t.Fatalf("live child steps not told: %+v", latest)
+	}
+	// A page is newest first, and repeats what the events already told.
+	page := []any{map[string]any{"item": command("test", "go test ./...", "inProgress")}, map[string]any{"item": note}, map[string]any{"item": command("read", "cat child.go", "completed")}}
+	for range 2 {
+		tasks.reads["items"] = codexTaskRead{task: task, method: "thread/items/list", revision: task.revision}
+		if handled, err := tasks.response(&agentProcess{}, map[string]any{"id": "items", "result": map[string]any{"data": page}}, emit); !handled || err != nil {
+			t.Fatal(handled, err)
+		}
+	}
+	steps := latest.Steps
+	if len(steps) != 3 || steps[0].ID != "read" || steps[1].ID != "note" || steps[2].ID != "test" || steps[2].Status != chatmodel.ToolRunning || latest.ToolUses != 2 || latest.LastTool != "shell" {
+		t.Fatalf("read page repeated or reordered steps: %+v", latest)
+	}
+}
+
+func TestCodexChildStepsKeepToolTargets(t *testing.T) {
+	arguments := map[string]any{
+		"content": strings.Repeat("long \"quoted\" content\n", 64),
+		"path":    "/work/output.txt",
+	}
+	encoded, err := json.Marshal(arguments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, tool, path string
+		item             map[string]any
+	}{
+		{"mcp object", "files.write_file", "/work/output.txt", map[string]any{"type": "mcpToolCall", "id": "target", "server": "files", "tool": "write_file", "arguments": arguments}},
+		{"mcp JSON", "files.write_file", "/work/output.txt", map[string]any{"type": "mcpToolCall", "id": "target", "server": "files", "tool": "write_file", "arguments": string(encoded)}},
+		{"dynamic object", "files.write_file", "/work/output.txt", map[string]any{"type": "dynamicToolCall", "id": "target", "namespace": "files", "tool": "write_file", "arguments": arguments}},
+		{"dynamic JSON", "files.write_file", "/work/output.txt", map[string]any{"type": "dynamicToolCall", "id": "target", "namespace": "files", "tool": "write_file", "arguments": string(encoded)}},
+		{"image view", "view_image", "/work/page 1.png", map[string]any{"type": "imageView", "id": "target", "path": "/work/page 1.png"}},
+		{"rollout image view", "view_image", "/work/page 1.png", map[string]any{"type": "image_view", "id": "target", "path": "/work/page 1.png"}},
+	} {
+		for _, transport := range []string{"live", "polled"} {
+			t.Run(test.name+"/"+transport, func(t *testing.T) {
+				tasks := codexTasks{root: "parent"}
+				task := tasks.ensure("child", "parent", "Inspect files")
+				var latest *chatmodel.TaskProgress
+				emit := func(e AgentEvent) error { latest = e.Part.Native.Task; return nil }
+				previous := map[string]any{"type": "commandExecution", "id": "previous", "command": "pwd", "status": "completed"}
+				if handled, err := tasks.event("item/completed", map[string]any{"threadId": "child", "item": previous}, emit); !handled || err != nil {
+					t.Fatal(handled, err)
+				}
+				for range 2 {
+					if transport == "live" {
+						if handled, err := tasks.event("item/completed", map[string]any{"threadId": "child", "item": test.item}, emit); !handled || err != nil {
+							t.Fatal(handled, err)
+						}
+					} else {
+						tasks.reads["items"] = codexTaskRead{task: task, method: "thread/items/list", revision: task.revision}
+						page := []any{map[string]any{"item": test.item}, map[string]any{"item": previous}}
+						if handled, err := tasks.response(&agentProcess{}, map[string]any{"id": "items", "result": map[string]any{"data": page}}, emit); !handled || err != nil {
+							t.Fatal(handled, err)
+						}
+					}
+				}
+				if len(latest.Steps) != 2 || latest.LastTool != test.tool || latest.ToolUses != 2 {
+					t.Fatalf("child tool missing or repeated: %+v", latest)
+				}
+				step := latest.Steps[1]
+				if step.ID != "target" || step.Name != test.tool {
+					t.Fatalf("child tool lost its identity: %+v", step)
+				}
+				var input map[string]any
+				if err := json.Unmarshal([]byte(step.Input), &input); err != nil || input["path"] != test.path {
+					t.Fatalf("child tool lost its structured target: %q (%v)", step.Input, err)
+				}
+				if _, kept := input["content"]; kept {
+					t.Fatal("child step retained a large file body")
+				}
+			})
+		}
+	}
+}

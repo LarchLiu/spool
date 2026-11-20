@@ -1195,5 +1195,14 @@
   "Select this chat's current agent to run session commands": "请选择此会话当前的 Agent 来执行会话命令",
   "Enter a conversation name": "请输入会话名称",
   "Status unavailable": "状态不可用",
-  "Background": "后台"
+  "Background": "后台",
+  "Prompt": "任务说明",
+  "Recent steps": "最近步骤",
+  "Latest update": "最新进展",
+  "1 tool use": "1 次工具调用",
+  "{count} tool uses": "{count} 次工具调用",
+  "{count} tokens": "{count} tokens",
+  "{seconds}s": "{seconds} 秒",
+  "{minutes}m {seconds}s": "{minutes} 分 {seconds} 秒",
+  "{hours}h {minutes}m": "{hours} 小时 {minutes} 分"
 }

@@ -663,6 +663,44 @@ test("parallel live subagents stay visible after the main final reply and keep s
   assert.match(completed, /Main report/);
 });
 
+test("a live subagent row tells what the child is doing and its detail lists its recent steps", () => {
+  const steps = [
+    { kind: "message", text: "Reading the grammar" },
+    { kind: "read", name: "Read", path: "…/parser/grammar.go", status: "completed" },
+    { kind: "search", name: "Grep", query: "TODO", path: "src", status: "failed" },
+    { kind: "shell", name: "Bash", text: "go test ./...", status: "running" },
+  ];
+  const part = (status, extra = {}) => ({
+    ...tool("Inspect parser", "Inspect parser\nCheck the grammar"), id: "task",
+    tool: { kind: "task", version: "1", bytes: 40, status, ...extra,
+      task: { id: "one", agent_type: "Explore", prompt: "Check the grammar", summary: "Tests are **running**", tool_uses: 3, tokens: 12345, started_at: Date.now() - 65_000, steps } },
+  });
+  const render = (value) => [
+    renderToStaticMarkup(createElement(ToolActivityList, { parts: [value], backend: "claude", t, live: true })),
+    renderToStaticMarkup(createElement(ActivityDetail, { activity: displayActivity(value, "claude", t), t })),
+  ];
+  const [row, detail] = render(part("running"));
+  // The row names the call in progress and counts from when the child started.
+  assert.match(row, /class="tool-task-progress tool-task-meta">Explore · Ran command · go test \.\/\.\.\. · 3 tool uses · 1m \ds</);
+  assert.match(detail, /Prompt<\/span><pre>Check the grammar<\/pre>/);
+  assert.deepEqual(
+    [...detail.matchAll(/class="tool-task-step-label">([^<]*)</g)].map((match) => match[1]),
+    ["Reading the grammar", "Read …/parser/grammar.go", "Searched for TODO in src", "Ran command · go test ./..."],
+  );
+  assert.match(detail, /Searched for TODO in src<\/span><span class="tool-activity-outcome">Failed</);
+  assert.match(detail, /go test \.\/\.\.\.<\/span><span class="tool-activity-outcome">Running</);
+  assert.doesNotMatch(detail, /grammar\.go<\/span><span class="tool-activity-outcome"/);
+  assert.match(detail, /Latest update<\/span>[\s\S]*<strong>running<\/strong>/);
+  assert.match(detail, /class="tool-detail-block tool-task-facts">Explore · 3 tool uses · 12\.3k tokens · 1m \ds</);
+
+  // A finished child took what was reported, and is no longer doing anything.
+  const [doneRow, doneDetail] = render(part("completed", { duration_ms: 125_000 }));
+  assert.match(doneRow, /class="tool-task-progress tool-task-meta">Explore · 3 tool uses · 2m 5s</);
+  assert.match(doneDetail, /Result<\/span>/);
+  assert.doesNotMatch(doneDetail, /Latest update/);
+  assert.match(doneDetail, /12\.3k tokens · 2m 5s</);
+});
+
 test("late task updates do not hide an unphased main answer on completion", () => {
   const parts = [message("Main report", undefined, "report"), { ...tool("Inspect parser", "Done"), tool: { kind: "task", status: "completed", version: "1", bytes: 4 } }];
   assert.equal(turnPresentation(parts, false).answer, "Main report");

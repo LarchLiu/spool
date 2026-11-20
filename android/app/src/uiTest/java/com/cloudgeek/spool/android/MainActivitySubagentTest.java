@@ -54,6 +54,42 @@ public class MainActivitySubagentTest {
         assertTrue(((View) response.activity.summaryLabel.getParent()).performClick());
     }
 
+    @Test public void subagentDetailListsItsRecentStepsAndCountsWhileItWorks() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
+            NativeUi ui = h.get("ui");
+            JSONObject part = task("first", "Inspect parser", "").put("id", "task");
+            JSONObject tool = part.getJSONObject("tool");
+            JSONObject progress = tool.getJSONObject("task").put("agent_type", "Explore").put("prompt", "Check the grammar")
+                    .put("tool_uses", 3).put("tokens", 12345).put("started_at", System.currentTimeMillis() - 65_000)
+                    .put("steps", new JSONArray()
+                            .put(new JSONObject("{kind:'message',text:'Reading the grammar'}"))
+                            .put(new JSONObject("{kind:'read',name:'Read',path:'grammar.go',status:'completed'}"))
+                            .put(new JSONObject("{kind:'search',name:'Grep',query:'TODO',path:'src',status:'failed'}"))
+                            .put(new JSONObject("{kind:'shell',name:'Bash',text:'go test ./...',status:'running'}")));
+            List<JSONObject> parts = new ArrayList<>(); parts.add(part);
+            NativeActivityModel.Activity activity = NativeActivityModel.fromParts(ui, parts, "claude").get(0);
+            // A child that has said nothing yet is told by the call it is making.
+            assertEquals("Inspect parser · Ran command · go test ./...", activity.label);
+            NativeToolDetail detail = new NativeToolDetail(ui, activity, link -> {});
+            for (String text : new String[] {"PROMPT", "Check the grammar", "RECENT STEPS", "Reading the grammar", "Read grammar.go",
+                    "Searched for TODO in src  Failed", "Ran command · go test ./...  Running"})
+                assertEquals(text, 1, occurrences(detail, text));
+            assertEquals(0, occurrences(detail, "LATEST UPDATE"));
+            assertEquals(1, views(detail, TextView.class).stream().filter(view -> view.getText().toString()
+                    .matches("Explore · 3 tool uses · 12\\.3k tokens · 1m \\ds")).count());
+
+            // The same detail follows the child to its end: no step is left running.
+            progress.put("summary", "Parser checked").getJSONArray("steps").getJSONObject(3).remove("status");
+            tool.put("status", "completed").put("duration_ms", 125_000);
+            activity = NativeActivityModel.fromParts(ui, parts, "claude").get(0);
+            assertEquals("Inspect parser · Parser checked", activity.label);
+            detail.bind(activity);
+            assertEquals(1, occurrences(detail, "RESULT")); assertEquals(1, occurrences(detail, "Parser checked"));
+            assertEquals(0, occurrences(detail, "Running")); assertEquals(1, occurrences(detail, "Searched for TODO in src  Failed"));
+            assertEquals(1, occurrences(detail, "Explore · 3 tool uses · 12.3k tokens · 2m 5s"));
+        }
+    }
+
     @Test public void subagentsRemainVisibleBesideFinalAnswersInBothRenderers() throws Exception {
         for (boolean markwon : new boolean[] {false, true}) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, markwon)) {
             JSONObject first = task("first", "Inspect parser", "Checking syntax");

@@ -1195,5 +1195,14 @@
   "Select this chat's current agent to run session commands": "Select this chat's current agent to run session commands",
   "Enter a conversation name": "Enter a conversation name",
   "Status unavailable": "Status unavailable",
-  "Background": "Background"
+  "Background": "Background",
+  "Prompt": "Prompt",
+  "Recent steps": "Recent steps",
+  "Latest update": "Latest update",
+  "1 tool use": "1 tool use",
+  "{count} tool uses": "{count} tool uses",
+  "{count} tokens": "{count} tokens",
+  "{seconds}s": "{seconds}s",
+  "{minutes}m {seconds}s": "{minutes}m {seconds}s",
+  "{hours}h {minutes}m": "{hours}h {minutes}m"
 }
