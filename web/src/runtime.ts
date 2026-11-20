@@ -19,6 +19,23 @@ export function isDesktopChat(
 
 export const desktopSettingsPath = "/__desktop/settings";
 
+// This carries no identity. Native code rereads and validates its HTTPOnly
+// cookie after the chat has completed a login, logout or initial session load.
+export async function notifyDesktopSessionChanged(
+  surface: unknown = globalThis,
+): Promise<void> {
+  if (!isDesktopChat(surface) || !("location" in surface)) return;
+  const location = surface.location;
+  if (
+    typeof location !== "object" ||
+    location === null ||
+    !("assign" in location) ||
+    typeof location.assign !== "function"
+  )
+    return;
+  location.assign("/__desktop/session-changed");
+}
+
 export function isMacDesktop(surface: unknown = globalThis): boolean {
   return (
     isDesktopChat(surface) &&
@@ -61,7 +78,8 @@ export function subscribeDesktopFileAccess(
         "path" in result &&
         typeof result.path === "string" &&
         (!("error" in result) || typeof result.error === "string")
-      ) listener(result as DesktopFileAccessResult);
+      )
+        listener(result as DesktopFileAccessResult);
     },
     surface,
   );

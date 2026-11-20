@@ -80,6 +80,53 @@ func TestDesktopNotificationsDropForegroundEventsWithoutReplay(t *testing.T) {
 	sub.Close()
 }
 
+func TestDesktopNotificationsWakeOnEventsAndClose(t *testing.T) {
+	s := testStore(t)
+	if err := s.SaveDesktopNotificationsEnabled(true); err != nil {
+		t.Fatal(err)
+	}
+	a := NewApp(s, &fakeRunner{}, "", "")
+	t.Cleanup(func() { a.Close() })
+	sub := (&Service{Store: s}).SubscribeDesktopNotifications()
+	t.Cleanup(sub.Close)
+	select {
+	case <-sub.Ready():
+		t.Fatal("an idle subscription woke without an event")
+	default:
+	}
+	// More than one UI batch must survive coalesced wakeups. Publishing must
+	// also remain nonblocking when the event queue is full.
+	for range 150 {
+		a.enqueuePush(pushJob{kind: "completed", turnID: "queued"})
+	}
+	select {
+	case <-sub.Ready():
+	default:
+		t.Fatal("queued events did not wake the native host")
+	}
+	if len(sub.Events()) != 128 {
+		t.Fatalf("queue length = %d, want its bounded capacity", len(sub.Events()))
+	}
+	for len(sub.Events()) != 0 {
+		nextDesktopEvent(t, sub)
+	}
+	select {
+	case <-sub.Ready():
+		t.Fatal("wakeups did not coalesce")
+	default:
+	}
+	a.enqueuePush(pushJob{kind: "completed", turnID: "next"})
+	select {
+	case <-sub.Ready():
+	default:
+		t.Fatal("the next event did not wake an idle host")
+	}
+	sub.Close()
+	if _, open := <-sub.Ready(); open {
+		t.Fatal("closing the subscription did not stop the native watcher")
+	}
+}
+
 func TestDesktopTaskNotificationsWithoutPushSubscriptions(t *testing.T) {
 	s := testStore(t)
 	alice, bob, carol := testUser(t, s, "alice"), testUser(t, s, "bob"), testUser(t, s, "carol")

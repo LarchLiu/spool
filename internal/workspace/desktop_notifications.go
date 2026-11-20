@@ -28,6 +28,7 @@ type desktopNotificationHub struct {
 type DesktopNotificationSubscription struct {
 	hub     *desktopNotificationHub
 	events  chan DesktopNotificationEvent
+	ready   chan struct{}
 	focused bool
 }
 
@@ -52,12 +53,16 @@ func (h *desktopNotificationHub) subscribe() *DesktopNotificationSubscription {
 	if h.subs == nil {
 		h.subs = map[*DesktopNotificationSubscription]struct{}{}
 	}
-	s := &DesktopNotificationSubscription{hub: h, events: make(chan DesktopNotificationEvent, 128)}
+	s := &DesktopNotificationSubscription{hub: h, events: make(chan DesktopNotificationEvent, 128), ready: make(chan struct{}, 1)}
 	h.subs[s] = struct{}{}
 	return s
 }
 
 func (s *DesktopNotificationSubscription) Events() <-chan DesktopNotificationEvent { return s.events }
+
+// Ready wakes the native host when events arrive. Wakes coalesce; the host must
+// drain Events before waiting again. It closes with the subscription.
+func (s *DesktopNotificationSubscription) Ready() <-chan struct{} { return s.ready }
 
 // SetFocused drops pending and future foreground events instead of replaying
 // them when the desktop loses focus. It does not affect other subscribers.
@@ -85,6 +90,7 @@ func (s *DesktopNotificationSubscription) Close() {
 	if _, ok := s.hub.subs[s]; ok {
 		delete(s.hub.subs, s)
 		close(s.events)
+		close(s.ready)
 	}
 }
 
@@ -104,6 +110,10 @@ func (h *desktopNotificationHub) publish(a *App, job pushJob) {
 		}
 		select {
 		case sub.events <- DesktopNotificationEvent{a, job}:
+			select {
+			case sub.ready <- struct{}{}:
+			default:
+			}
 		default: // Best effort; never block message or task execution on native UI.
 		}
 	}

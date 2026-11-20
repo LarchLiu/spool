@@ -77,7 +77,9 @@ type panel struct {
 	notificationsEnabled   bool
 	notificationsSupported bool
 	notificationSession    [32]byte
-	notificationPolling    bool
+	notificationReader     desktopNotificationReader
+	notificationRevision   uint64
+	notificationRefresh    bool
 	pendingNotification    *notificationTarget
 	notificationShow       func(mygo.NotificationOptions) error
 	notificationClear      func()
@@ -105,8 +107,12 @@ func runDesktop() (runErr error) {
 	development := mygo.IsDev()
 	root := flag.String("data-dir", workspace.DefaultDataDir(development), "Data directory (database in db/spool.sqlite)")
 	smoke := flag.String("release-smoke", "", "Probe the packaged desktop using fresh temporary data; write a JSON report")
+	smokeProbe := flag.String("smoke-probe", "", "Run only the notifications native probe (requires --release-smoke)")
 	smokeHistoryPath := flag.String("smoke-release-history", "", "ReleaseHistory JSON fixture for --release-smoke screenshots only")
 	flag.Parse()
+	if *smokeProbe != "" && (*smoke == "" || *smokeProbe != "notifications") {
+		return fmt.Errorf("--smoke-probe only accepts notifications and requires --release-smoke")
+	}
 	var smokeHistory *appupdate.ReleaseHistory
 	if *smokeHistoryPath != "" {
 		if *smoke == "" {
@@ -255,6 +261,7 @@ func runDesktop() (runErr error) {
 		p.window = mygo.NewWindow(opts)
 		p.notificationsSupported = mygo.NotificationsSupported()
 		p.notificationEvents = service.SubscribeDesktopNotifications()
+		p.watchDesktopNotifications(done)
 		p.setDesktopNotificationFocused(p.window.IsFocused())
 		p.window.OnFocus(func() { p.setDesktopNotificationFocused(true) })
 		p.window.OnBlur(func() { p.setDesktopNotificationFocused(false) })
@@ -312,7 +319,11 @@ func runDesktop() (runErr error) {
 			p.updates.Start()
 		} else {
 			p.window.Show()
-			go p.smoke(*smoke, smokeResult, smokeHistory)
+			if *smokeProbe == "notifications" {
+				go p.smokeNotificationsOnly(*smoke, smokeResult)
+			} else {
+				go p.smoke(*smoke, smokeResult, smokeHistory)
+			}
 		}
 
 		go func() {
@@ -327,7 +338,6 @@ func runDesktop() (runErr error) {
 					agents, _ := service.Store.Agents()
 					projects, _ := service.Store.Projects()
 					p.window.Update(func() {
-						p.pollDesktopNotifications()
 						p.status, p.agents, p.projects = status, agents, projects
 						p.sendUpdateAvailability(p.chatView)
 					})
@@ -354,7 +364,11 @@ func runDesktop() (runErr error) {
 }
 func (p *panel) load() {
 	p.preferences, _ = p.service.Store.UIPreferences("")
+	notificationsWereEnabled := p.notificationsEnabled
 	p.notificationsEnabled, _ = p.service.Store.DesktopNotificationsEnabled()
+	if notificationsWereEnabled != p.notificationsEnabled && p.window != nil {
+		p.refreshDesktopNotificationSession()
+	}
 	p.settings, _ = p.service.Store.Settings()
 	p.port = strconv.Itoa(p.settings.Port)
 	p.idle = strconv.Itoa(p.settings.IdleMinutes)

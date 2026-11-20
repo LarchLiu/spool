@@ -1,11 +1,120 @@
 package main
 
 import (
+	"crypto/sha256"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo"
 )
+
+func TestDesktopNotificationCookieWaitLeavesUIAvailable(t *testing.T) {
+	var reader desktopNotificationReader
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	releaseLookup := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(releaseLookup)
+	posted := make(chan func(), 1)
+	applied := make(chan desktopNotificationSession, 1)
+	want := desktopNotificationSession{"synthetic-token", "synthetic-account"}
+
+	// Model a UI callback. A slow cookie store must not hold this callback
+	// open or start pumping native events inside an active resize operation.
+	uiReturned := make(chan struct{})
+	go func() {
+		reader.read(func() desktopNotificationSession {
+			close(started)
+			<-release
+			return want
+		}, func(fn func()) { posted <- fn }, func(session desktopNotificationSession) { applied <- session })
+		close(uiReturned)
+	}()
+	select {
+	case <-uiReturned:
+	case <-time.After(time.Second):
+		releaseLookup()
+		<-uiReturned
+		t.Fatal("waiting for WebKit cookies held the UI callback open")
+	}
+	<-started
+	if reader.read(func() desktopNotificationSession {
+		t.Error("an overlapping poll started a second cookie lookup")
+		return desktopNotificationSession{}
+	}, func(func()) {}, func(desktopNotificationSession) {}) {
+		t.Fatal("a cookie lookup already in progress must coalesce later polls")
+	}
+	releaseLookup()
+	var apply func()
+	select {
+	case apply = <-posted:
+	case <-time.After(time.Second):
+		t.Fatal("cookie result was not returned to the UI")
+	}
+	select {
+	case <-applied:
+		t.Fatal("the worker applied notification state before UI dispatch")
+	default:
+	}
+	apply()
+	if got := <-applied; got != want {
+		t.Fatalf("session = %+v, want %+v", got, want)
+	}
+	if !reader.read(func() desktopNotificationSession { return desktopNotificationSession{} }, func(fn func()) { posted <- fn }, func(desktopNotificationSession) {}) {
+		t.Fatal("the next poll was not accepted after the previous one completed")
+	}
+	select {
+	case apply = <-posted:
+		apply()
+	case <-time.After(time.Second):
+		t.Fatal("the next cookie lookup did not complete")
+	}
+}
+
+func TestDesktopNotificationSessionRequiresOneAuthenticatedHTTPOnlyCookie(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		cookies []mygo.Cookie
+		err     error
+		account string
+		want    desktopNotificationSession
+	}{
+		{name: "signed out"},
+		{name: "cookie read failed", err: errors.New("unavailable")},
+		{name: "renderer cookie", cookies: []mygo.Cookie{{Value: "token"}}, account: "person"},
+		{name: "ambiguous sessions", cookies: []mygo.Cookie{{Value: "one", HTTPOnly: true}, {Value: "two", HTTPOnly: true}}, account: "person"},
+		{name: "expired session", cookies: []mygo.Cookie{{Value: "token", HTTPOnly: true}}},
+		{name: "authenticated", cookies: []mygo.Cookie{{Value: "token", HTTPOnly: true}}, account: "person", want: desktopNotificationSession{"token", "person"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := lookupDesktopNotificationSession("http://127.0.0.1:1234", func(address string) ([]mygo.Cookie, error) {
+				if address != "http://127.0.0.1:1234" {
+					t.Fatal("cookie lookup changed the service origin")
+				}
+				return test.cookies, test.err
+			}, func(token string) string {
+				if len(test.cookies) != 1 || !test.cookies[0].HTTPOnly || token != test.cookies[0].Value {
+					t.Fatal("an ambiguous or non-HTTPOnly cookie reached authentication")
+				}
+				return test.account
+			})
+			if got != test.want {
+				t.Fatalf("session = %+v, want %+v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestDesktopNotificationReadCompletionDoesNothingAfterQuit(t *testing.T) {
+	want := sha256.Sum256([]byte("previous-session"))
+	p := &panel{quitting: true, notificationSession: want, notificationClear: func() { t.Fatal("late cookie result changed OS notifications during shutdown") }}
+	p.applyDesktopNotificationSession(desktopNotificationSession{"synthetic-token", "synthetic-account"})
+	if p.notificationSession != want {
+		t.Fatal("late cookie result changed UI state during shutdown")
+	}
+}
 
 func TestNativeNotificationIDsOnlyContainAccountScopedLocalTargets(t *testing.T) {
 	for _, target := range []notificationTarget{

@@ -17,6 +17,7 @@ import {
   subscribeDesktopNotifications,
   desktopFileAccessURL,
   subscribeDesktopFileAccess,
+  notifyDesktopSessionChanged,
 } from "../.test-build/runtime.js";
 import { resolveLanguage, resolveTheme } from "../.test-build/preferences.js";
 import { DesktopSettingsLink, ChatSettingsControl } from "../.test-build/components/web/src/desktop-settings.js";
@@ -26,6 +27,21 @@ test("desktop presentation requires the explicit preload flag, not a query or ge
   for (const surface of [null, {}, { spoolDesktop: "true" }, { spoolDesktop: false }, { mygo: {} }, { location: { search: "?desktop=true" } }]) {
     assert.equal(isDesktopChat(surface), false);
   }
+});
+
+test("desktop session changes send only a refresh hint, without an account or credentials", async () => {
+  const calls = [];
+  const location = { assign: (...args) => { calls.push(args); } };
+  for (const surface of [null, {}, { location }, { spoolDesktop: true }, { spoolDesktop: true, location: {} }]) {
+    await notifyDesktopSessionChanged(surface);
+  }
+  assert.deepEqual(calls, []);
+  await notifyDesktopSessionChanged({ spoolDesktop: true, location });
+  assert.deepEqual(calls, [["/__desktop/session-changed"]]);
+  await assert.rejects(notifyDesktopSessionChanged({
+    spoolDesktop: true,
+    location: { assign: () => { throw new Error("page unavailable"); } },
+  }), /page unavailable/);
 });
 
 test("attachment access links preserve the exact file and only appear on macOS desktop", () => {

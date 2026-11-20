@@ -11,6 +11,7 @@ import (
 )
 
 const desktopSettingsPath = "/__desktop/settings"
+const desktopSessionChangedPath = "/__desktop/session-changed"
 
 func (p *panel) startOnLaunch() {
 	if !p.settings.AutoStart {
@@ -83,6 +84,11 @@ func (p *panel) loadChatView(address string) error {
 		// Register guards before the first navigation. Never trust additional
 		// origins or load external content into a privileged desktop window.
 		page.OnWillNavigate(func(e *mygo.NavigateEvent) {
+			if chatSessionChangedNavigation(p.chatURL, e.URL) {
+				e.PreventDefault()
+				p.window.Update(p.refreshDesktopNotificationSession)
+				return
+			}
 			if target, ok := attachmentAccessNavigation(p.chatURL, e.URL); ok {
 				e.PreventDefault()
 				if e.UserInitiated {
@@ -113,6 +119,7 @@ func (p *panel) loadChatView(address string) error {
 			p.sendUpdateAvailability(view)
 			p.chatFailed = false
 			p.chatLoaded = true
+			p.refreshDesktopNotificationSession()
 			p.sendPendingNotification()
 			if p.tab == "Chat" {
 				view.Focus()
@@ -226,11 +233,21 @@ func chatNavigationAllowed(address, target string) bool {
 // This reserved same-origin link only changes native presentation. It is not
 // an HTTP settings API and does not expose any administrative operations.
 func chatSettingsNavigation(address, target string) bool {
+	return chatReservedNavigation(address, target, desktopSettingsPath)
+}
+
+// A same-origin hint only: intercept it without loading another document or
+// granting the chat access to native methods. Cookie validation stays native.
+func chatSessionChangedNavigation(address, target string) bool {
+	return chatReservedNavigation(address, target, desktopSessionChangedPath)
+}
+
+func chatReservedNavigation(address, target, path string) bool {
 	if !chatNavigationAllowed(address, target) {
 		return false
 	}
 	u, _ := url.Parse(target)
-	return u.Path == desktopSettingsPath && u.RawPath == "" &&
+	return u.Path == path && u.RawPath == "" &&
 		u.RawQuery == "" && !u.ForceQuery && u.Fragment == ""
 }
 

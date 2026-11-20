@@ -3,13 +3,17 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
+	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -17,6 +21,43 @@ import (
 
 	"spool/internal/workspace"
 )
+
+func (p *panel) smokeNotificationsOnly(report string, result chan<- error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	defer cancel()
+	err := func() error {
+		if _, err := p.service.Store.SaveUser(workspace.UserInput{Username: "smoke-person", Nickname: "Notification Receiver", Password: "smoke-password-123"}); err != nil {
+			return err
+		}
+		views := make(chan [2]*mygo.WebView, 1)
+		p.window.Update(func() { views <- [2]*mygo.WebView{p.chatView, p.settingsView} })
+		var ready [2]*mygo.WebView
+		select {
+		case ready = <-views:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		if ready[0] == nil || ready[1] == nil {
+			return fmt.Errorf("notification probe requires the desktop chat and settings pages")
+		}
+		if err := waitChatScript(ctx, ready[0].Page(), `return !!document.querySelector('input[name="password"]');`); err != nil {
+			return err
+		}
+		if err := waitChatScript(ctx, ready[1].Page(), `return !!document.querySelector('.settings-sidebar');`); err != nil {
+			return err
+		}
+		if _, err := ready[1].Page().EvalContext(ctx, smokeSettingsReadyScript); err != nil {
+			return err
+		}
+		if err := p.probeDesktopNotifications(ctx, report); err != nil {
+			return err
+		}
+		data, _ := json.Marshal(map[string]any{"scope": "notifications", "version": mygo.App.Version(), "target": runtime.GOOS + "-" + runtime.GOARCH, "native": true, "notification_ui_responsive": true, "notification_event_driven": true})
+		return os.WriteFile(report, data, 0o600)
+	}()
+	result <- err
+	mygo.App.Quit()
+}
 
 // System WebViews may share cookies with an installed app. Keep their page
 // signed out; use isolated HTTP clients for both chat identities, inject only
@@ -47,13 +88,18 @@ func (p *panel) probeDesktopNotifications(ctx context.Context, report string) er
 		return err
 	}
 	defer receiverConn.CloseNow()
-	conn, _, err := smokeNotificationSocket(ctx, address, "notification-sender", "smoke-sender-password")
+	conn, senderToken, err := smokeNotificationSocket(ctx, address, "notification-sender", "smoke-sender-password")
 	if err != nil {
 		return err
 	}
 	defer conn.CloseNow()
 	shown := make(chan mygo.NotificationOptions, 16)
 	ready := make(chan struct{}, 1)
+	cookieStarted, cookieRelease := make(chan struct{}), make(chan struct{})
+	var cookieReads atomic.Int32
+	var cookieOnce, releaseOnce sync.Once
+	releaseCookie := func() { releaseOnce.Do(func() { close(cookieRelease) }) }
+	defer releaseCookie()
 	p.window.Update(func() {
 		p.showMainWindow()
 		p.notificationFocused = p.window.IsVisible
@@ -61,6 +107,11 @@ func (p *panel) probeDesktopNotifications(ctx context.Context, report string) er
 		p.notificationsSupported = true
 		p.notificationShow = func(opts mygo.NotificationOptions) error { shown <- opts; return nil }
 		p.notificationCookies = func(string) ([]mygo.Cookie, error) {
+			cookieReads.Add(1)
+			cookieOnce.Do(func() {
+				close(cookieStarted)
+				<-cookieRelease
+			})
 			return []mygo.Cookie{{Name: "spool_session", Value: token, HTTPOnly: true, Path: "/"}}, nil
 		}
 		ready <- struct{}{}
@@ -89,6 +140,41 @@ func (p *panel) probeDesktopNotifications(ctx context.Context, report string) er
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+	// Exercise the actual panel path with a deliberately slow cookie store.
+	// Native dispatch must continue while the read is still pending.
+	pollReturned := make(chan struct{})
+	p.window.Update(func() { p.processDesktopNotifications(); close(pollReturned) })
+	for _, signal := range []<-chan struct{}{pollReturned, cookieStarted} {
+		select {
+		case <-signal:
+		case <-ctx.Done():
+			return fmt.Errorf("notification cookie lookup blocked native dispatch: %w", ctx.Err())
+		}
+	}
+	responsive := make(chan struct{})
+	p.window.Update(func() { close(responsive) })
+	select {
+	case <-responsive:
+	case <-ctx.Done():
+		return fmt.Errorf("native UI stopped while waiting for cookies: %w", ctx.Err())
+	}
+	releaseCookie()
+	if err := p.waitNotificationSession(ctx, token); err != nil {
+		return err
+	}
+	// Cross the old three-second timer boundary with no notification or auth
+	// change. A quiet desktop must not query the WebKit cookie store again.
+	readsBeforeIdle := cookieReads.Load()
+	idle := time.NewTimer(3300 * time.Millisecond)
+	defer idle.Stop()
+	select {
+	case <-idle.C:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if cookieReads.Load() != readsBeforeIdle {
+		return fmt.Errorf("an idle desktop still polled the notification cookie store")
+	}
 	if err := smokeSettingsCommand(ctx, settings, settingsCommand{Kind: "navigate", Section: "Appearance"}); err != nil {
 		return err
 	}
@@ -104,6 +190,13 @@ func (p *panel) probeDesktopNotifications(ctx context.Context, report string) er
 		return err
 	}
 	page := p.chatView.Page()
+	if _, err := page.EvalContext(ctx, `
+		try { await window.mygo.call('DesktopSettings.Snapshot'); }
+		catch (error) { if (String(error).includes('not allowed to call Go methods')) return; throw error; }
+		throw new Error('chat page acquired native settings privileges');
+	`); err != nil {
+		return err
+	}
 	if _, err := page.EvalContext(ctx, smokeNotificationObserverScript); err != nil {
 		return err
 	}
@@ -134,7 +227,7 @@ func (p *panel) probeDesktopNotifications(ctx context.Context, report string) er
 		return err
 	}
 	p.window.Update(func() {
-		p.pollDesktopNotifications()
+		p.processDesktopNotifications()
 		if len(shown) != 0 {
 			checked <- fmt.Errorf("foreground notification replayed after hiding the window")
 			return
@@ -208,7 +301,138 @@ func (p *panel) probeDesktopNotifications(ctx context.Context, report string) er
 	if err := waitSmokeNotification(ctx, page, groupTarget); err != nil {
 		return err
 	}
+	// Hold a read of the previous session across an account switch. The old
+	// result must not consume the queued event or restore the old identity.
+	staleStarted, staleRelease := make(chan struct{}), make(chan struct{})
+	var staleOnce sync.Once
+	releaseStale := func() { staleOnce.Do(func() { close(staleRelease) }) }
+	defer releaseStale()
+	p.window.Update(func() {
+		p.window.Hide()
+		p.notificationCookies = func(string) ([]mygo.Cookie, error) {
+			close(staleStarted)
+			<-staleRelease
+			return []mygo.Cookie{{Value: token, HTTPOnly: true}}, nil
+		}
+	})
+	if err := p.waitNotificationWindow(ctx, false, false); err != nil {
+		return err
+	}
+	if err := p.smokeDesktopSessionChanged(ctx, page); err != nil {
+		return err
+	}
+	select {
+	case <-staleStarted:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := conn.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"type":"direct_message","request_id":"native-old-account-smoke","to":%q,"text":"previous account"}`, receiver))); err != nil {
+		return err
+	}
+	if _, err := smokeNotificationResult(ctx, conn, "native-old-account-smoke"); err != nil {
+		return err
+	}
+	p.window.Update(func() {
+		p.notificationCookies = func(string) ([]mygo.Cookie, error) {
+			return []mygo.Cookie{{Value: senderToken, HTTPOnly: true}}, nil
+		}
+	})
+	if err := p.smokeDesktopSessionChanged(ctx, page); err != nil {
+		return err
+	}
+	releaseStale()
+	if err := p.waitNotificationSession(ctx, senderToken); err != nil {
+		return err
+	}
+	if len(shown) != 0 {
+		return fmt.Errorf("an old-session cookie result displayed the previous account's notification")
+	}
+	if err := receiverConn.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"type":"direct_message","request_id":"native-new-account-smoke","to":%q,"text":"current account"}`, sender.ID))); err != nil {
+		return err
+	}
+	if _, err := smokeNotificationResult(ctx, receiverConn, "native-new-account-smoke"); err != nil {
+		return err
+	}
+	select {
+	case note := <-shown:
+		target, valid := notificationTargetFromID(note.ID)
+		if !valid || target.User != sender.ID {
+			return fmt.Errorf("account switch did not route notifications to the new session")
+		}
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	p.window.Update(func() {
+		p.notificationCookies = func(string) ([]mygo.Cookie, error) { return nil, nil }
+	})
+	if err := p.smokeDesktopSessionChanged(ctx, page); err != nil {
+		return err
+	}
+	if err := p.waitNotificationSession(ctx, ""); err != nil {
+		return err
+	}
 	return smokeSettingsCommand(ctx, settings, settingsCommand{Kind: "save-notifications", Enabled: false})
+}
+
+func (p *panel) smokeDesktopSessionChanged(ctx context.Context, page *mygo.Page) error {
+	before := make(chan uint64, 1)
+	p.window.Update(func() { before <- p.notificationRevision })
+	var revision uint64
+	select {
+	case revision = <-before:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if _, err := page.EvalContext(ctx, `window.location.assign('/__desktop/session-changed');`); err != nil {
+		return err
+	}
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		state := make(chan bool, 1)
+		p.window.Update(func() { state <- p.notificationRevision > revision })
+		select {
+		case ready := <-state:
+			if ready {
+				return waitChatScript(ctx, page, `return document === window.spoolSmokeDocument;`)
+			}
+		case <-ctx.Done():
+			return fmt.Errorf("chat session-change hint did not reach native host: %w", ctx.Err())
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (p *panel) waitNotificationSession(ctx context.Context, token string) error {
+	var want [32]byte
+	if token != "" {
+		want = sha256.Sum256([]byte(token))
+	}
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		state := make(chan bool, 1)
+		p.window.Update(func() {
+			state <- p.notificationSession == want && !p.notificationReader.pending && !p.notificationRefresh && len(p.notificationEvents.Events()) == 0
+		})
+		select {
+		case ready := <-state:
+			if ready {
+				return nil
+			}
+		case <-ctx.Done():
+			return fmt.Errorf("notification session did not settle: %w", ctx.Err())
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 // The frontend consumes and deletes spoolNotificationTarget synchronously.

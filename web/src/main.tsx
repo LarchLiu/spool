@@ -30,6 +30,7 @@ import {
 import { api, APIError, getCSRF, setCSRF } from "./api";
 import {
   isDesktopChat,
+  notifyDesktopSessionChanged,
   subscribeDesktopNotifications,
   takeDesktopNotification,
 } from "./runtime";
@@ -555,6 +556,9 @@ function App() {
     window.addEventListener("auth-expired", expire);
     return () => window.removeEventListener("auth-expired", expire);
   }, []);
+  useEffect(() => {
+    if (ready) void notifyDesktopSessionChanged().catch(() => {});
+  }, [ready, user?.id]);
   useEffect(() => {
     if (!user || isDesktopChat()) return;
     const controller = new AbortController();

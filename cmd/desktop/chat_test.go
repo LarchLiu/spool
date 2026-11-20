@@ -150,6 +150,28 @@ func TestChatWebViewUsesPreloadWithoutNativePrivileges(t *testing.T) {
 	}
 }
 
+func TestChatSessionChangeHintOnlyInterceptsExactLocalDestination(t *testing.T) {
+	const origin = "http://127.0.0.1:8787"
+	for _, tc := range []struct {
+		target string
+		allow  bool
+	}{
+		{origin + desktopSessionChangedPath, true},
+		{"http://127.0.0.1:8788" + desktopSessionChangedPath, false},
+		{"http://localhost:8787" + desktopSessionChangedPath, false},
+		{"https://evil.test" + desktopSessionChangedPath, false},
+		{origin + desktopSessionChangedPath + "?user=user-12345678", false},
+		{origin + desktopSessionChangedPath + "#fragment", false},
+		{origin + desktopSessionChangedPath + "/", false},
+		{origin + "/__desktop/%73ession-changed", false},
+		{origin + desktopSettingsPath, false},
+	} {
+		if got := chatSessionChangedNavigation(origin, tc.target); got != tc.allow {
+			t.Errorf("session hint %q = %v, want %v", tc.target, got, tc.allow)
+		}
+	}
+}
+
 func TestChatEmbedsInMainWindowInsteadOfOpeningAnotherWindow(t *testing.T) {
 	file, err := parser.ParseFile(token.NewFileSet(), "chat.go", nil, 0)
 	if err != nil {

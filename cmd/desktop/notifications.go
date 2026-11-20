@@ -62,11 +62,50 @@ func (p *panel) clearSystemNotifications() {
 	mygo.ClearNotifications()
 }
 
+func desktopSessionCookies(address string) ([]mygo.Cookie, error) {
+	return mygo.Cookies.List(mygo.CookieFilter{URL: address, Name: "spool_session", Path: "/"})
+}
+
 func (p *panel) desktopSessionCookies(address string) ([]mygo.Cookie, error) {
 	if p.notificationCookies != nil {
 		return p.notificationCookies(address)
 	}
-	return mygo.Cookies.List(mygo.CookieFilter{URL: address, Name: "spool_session", Path: "/"})
+	return desktopSessionCookies(address)
+}
+
+type desktopNotificationSession struct{ token, account string }
+
+// pending and apply belong to the UI thread. Only the copied lookup runs on a
+// worker: waiting for WebKit cookies on the UI thread pumps a nested native
+// event loop, which can consume events from an ongoing window resize.
+type desktopNotificationReader struct{ pending bool }
+
+func (r *desktopNotificationReader) read(lookup func() desktopNotificationSession, dispatch func(func()), apply func(desktopNotificationSession)) bool {
+	if r.pending {
+		return false
+	}
+	r.pending = true
+	go func() {
+		session := lookup()
+		dispatch(func() {
+			r.pending = false
+			apply(session)
+		})
+	}()
+	return true
+}
+
+func lookupDesktopNotificationSession(address string, cookies func(string) ([]mygo.Cookie, error), account func(string) string) desktopNotificationSession {
+	values, err := cookies(address)
+	if err != nil || len(values) != 1 || !values[0].HTTPOnly {
+		return desktopNotificationSession{}
+	}
+	token := values[0].Value
+	user := account(token)
+	if user == "" {
+		return desktopNotificationSession{}
+	}
+	return desktopNotificationSession{token, user}
 }
 
 func (p *panel) desktopNotificationFocused() bool {
@@ -119,27 +158,90 @@ func (p *panel) testSystemNotification(ctx context.Context) error {
 	return showSystemTest(c.supported, c.opts, c.show)
 }
 
-func (p *panel) pollDesktopNotifications() {
-	if p.quitting || p.notificationEvents == nil || p.notificationPolling {
+func (p *panel) watchDesktopNotifications(done <-chan struct{}) {
+	ready, dispatch := p.notificationEvents.Ready(), p.window.Update
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case _, open := <-ready:
+				if !open {
+					return
+				}
+				dispatch(func() {
+					// Focus may have discarded the event before UI dispatch.
+					if len(p.notificationEvents.Events()) != 0 {
+						p.processDesktopNotifications()
+					}
+				})
+			}
+		}
+	}()
+}
+
+func (p *panel) refreshDesktopNotificationSession() {
+	if p.quitting {
 		return
 	}
-	p.notificationPolling = true
-	defer func() { p.notificationPolling = false }()
+	// Invalidate a cookie lookup that predates login, logout, a page reload or a
+	// preference change. Clear old-account notifications without waiting for it.
+	p.notificationRevision++
+	p.clearSystemNotifications()
+	p.notificationSession = [32]byte{}
+	p.notificationRefresh = true
+	p.processDesktopNotifications()
+}
+
+func (p *panel) processDesktopNotifications() {
+	if p.quitting || p.notificationEvents == nil {
+		return
+	}
+	if p.notificationReader.pending {
+		return
+	}
+	p.notificationRefresh = false
 	p.setDesktopNotificationFocused(p.desktopNotificationFocused())
-	var token, account string
 	if p.notificationsEnabled && p.notificationsSupported {
 		address, err := p.service.LocalWebURL()
 		if err == nil {
-			cookies, err := p.desktopSessionCookies(address)
-			if err == nil && len(cookies) == 1 && cookies[0].HTTPOnly {
+			cookies := p.notificationCookies
+			if cookies == nil {
+				cookies = desktopSessionCookies
+			}
+			account := p.service.DesktopNotificationAccount
+			revision := p.notificationRevision
+			p.notificationReader.read(func() desktopNotificationSession {
+				return lookupDesktopNotificationSession(address, cookies, account)
+			}, p.window.Update, func(identity desktopNotificationSession) {
 				if p.quitting {
 					return
 				}
-				token = cookies[0].Value
-				account = p.service.DesktopNotificationAccount(token)
-			}
+				if revision == p.notificationRevision {
+					p.applyDesktopNotificationSession(identity)
+				}
+				if p.notificationRefresh || len(p.notificationEvents.Events()) != 0 {
+					p.processDesktopNotifications()
+				}
+			})
+			return
 		}
 	}
+	p.applyDesktopNotificationSession(desktopNotificationSession{})
+	if len(p.notificationEvents.Events()) != 0 {
+		p.processDesktopNotifications()
+	}
+}
+
+func (p *panel) applyDesktopNotificationSession(identity desktopNotificationSession) {
+	if p.quitting {
+		return
+	}
+	// Preferences and focus may have changed while WebKit was reading cookies.
+	if !p.notificationsEnabled || !p.notificationsSupported {
+		identity = desktopNotificationSession{}
+	}
+	token, account := identity.token, identity.account
 	var session [32]byte
 	if account != "" {
 		session = sha256.Sum256([]byte(token))
