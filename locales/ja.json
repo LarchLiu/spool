@@ -157,6 +157,7 @@
   "Could not load projects": "プロジェクトを読み込めませんでした",
   "Could not load agents": "エージェントを読み込めませんでした",
   "Could not load navigation": "ナビゲーションを読み込めませんでした",
+  "Could not load server information": "サーバー情報を読み込めませんでした",
   "Model discovery failed. The last successful list is retained. Contact your administrator.": "モデルの検出に失敗しました。前回の一覧を保持しています。管理者にお問い合わせください。",
   "You do not have access to this project": "このプロジェクトにアクセスできません",
   "The agent is disabled or not installed": "エージェントは無効か未インストールです",

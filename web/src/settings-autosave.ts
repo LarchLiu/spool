@@ -33,6 +33,7 @@ export function createSettingsCommandQueue(
 }
 
 type ServiceDraft = {
+  server_name: string;
   web_enabled: boolean;
   host: string;
   port: string;
@@ -82,6 +83,7 @@ type AutosaveArgs = [
 
 function toServiceDraft(settings: ServerSettings): ServiceDraft {
   return {
+    server_name: settings.server_name ?? "Home",
     web_enabled: settings.web_enabled ?? true,
     host: settings.host,
     public_url: settings.public_url,

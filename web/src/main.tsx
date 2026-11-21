@@ -172,6 +172,11 @@ function App() {
   const [remoteDesktopConnected, setRemoteDesktopConnected] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [version, setVersion] = useState("");
+  const [serverName, setServerName] = useState("Home");
+  const liveServerName = useRef(false);
+  useEffect(() => {
+    document.title = `Spool · ${serverName}`;
+  }, [serverName]);
   const { t, theme, locale } = usePresentation(preferences);
   const effortLabel = (value: string) => formatEffort(value, t);
   const [user, setUser] = useState<User | null>(null),
@@ -516,8 +521,12 @@ function App() {
     setError(e instanceof Error ? e.message : t("Request failed"));
   }
   useEffect(() => {
-    void api<{ version: string }>("/version")
-      .then((value) => setVersion(value.version))
+    void api<{ version: string; server_name?: string }>("/version")
+      .then((value) => {
+        setVersion(value.version);
+        if (!liveServerName.current)
+          setServerName(value.server_name?.trim() || "Home");
+      })
       .catch(() => {});
     api<{ user: User; csrf: string }>("/me")
       .then((v) => {
@@ -834,6 +843,11 @@ function App() {
         navigation: receiveNavigation,
         agents: receiveAgents,
         profiles: receiveProfiles,
+        server: (value) => {
+          if (cancelled) return;
+          liveServerName.current = true;
+          setServerName(value.server_name.trim() || "Home");
+        },
         presence: (people) => {
           if (!cancelled) setOnline(people);
         },
@@ -2043,6 +2057,7 @@ function App() {
       <Sidebar
         key={user!.id}
         user={displayUser!}
+        serverName={serverName}
         resolveProfile={resolveProfile}
         projects={projects}
         chats={chats}

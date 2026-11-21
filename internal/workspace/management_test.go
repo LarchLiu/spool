@@ -18,6 +18,7 @@ func TestSettingsUsersProjectsAndAgentsPersistInSQLite(t *testing.T) {
 	u := testUser(t, s, "alice")
 	p := testProject(t, s, u)
 	settings := DefaultSettings()
+	settings.ServerName = "Office"
 	settings.Port = 18787
 	settings.Host = "0.0.0.0"
 	settings.PublicURL = "https://chat.example.test"
@@ -36,7 +37,7 @@ func TestSettingsUsersProjectsAndAgentsPersistInSQLite(t *testing.T) {
 	saved, _ := other.Settings()
 	agents, _ := other.Agents()
 	projects, _ := other.UserProjects(u.ID)
-	if saved.Port != 18787 || saved.HistoryCacheMiB != 128 || other.historyCache.maxBytes != 128*1024*1024 || agents[0].Enabled || agents[0].Executable != "/custom/codex" || len(projects) != 1 || projects[0].ID != p.ID {
+	if saved.ServerName != "Office" || saved.Port != 18787 || saved.HistoryCacheMiB != 128 || other.historyCache.maxBytes != 128*1024*1024 || agents[0].Enabled || agents[0].Executable != "/custom/codex" || len(projects) != 1 || projects[0].ID != p.ID {
 		t.Fatal("management state did not persist")
 	}
 	if _, err = s.CreateChat(u.ID, p.ID, chatmodel.BackendCodex); err != nil {

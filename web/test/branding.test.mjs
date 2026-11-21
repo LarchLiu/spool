@@ -17,7 +17,7 @@ test("desktop and PWA metadata consistently use Spool", async () => {
   assert.equal(manifest.name, "Spool");
   assert.equal(manifest.short_name, "Spool");
   assert.equal(pkg.name, "spool-web");
-  assert.match(await read("../index.html"), /<title>Spool · Chat<\/title>/);
+  assert.match(await read("../index.html"), /<title>Spool · Home<\/title>/);
   assert.match(await read("../index.html"), /href="\.\/favicon\.png"/);
   assert.match(await read("../index.html"), /href="\.\/apple-touch-icon\.png"/);
   assert.ok(manifest.icons.some((icon) => icon.purpose === "maskable"));

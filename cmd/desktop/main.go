@@ -482,6 +482,7 @@ func (p *panel) field(c *ui.Context, label string, value *string) {
 	ui.Column(c).FillWidth().Gap(5).Children(func() { ui.Text(c, label).FontSize(12); ui.TextInput(c, value).FillWidth().Label(label) })
 }
 func (p *panel) serviceView(c *ui.Context) {
+	p.serviceSettingField(c, "Server name", &p.settings.ServerName, func(settings *workspace.Settings, value string) error { settings.ServerName = value; return nil })
 	status := "Stopped"
 	if p.status.Running {
 		status = "Running"

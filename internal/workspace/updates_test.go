@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -72,7 +73,11 @@ func TestVersionIsPublicWithoutExposingWorkspaceSettings(t *testing.T) {
 	a := NewApp(testStore(t), &fakeRunner{}, "", "")
 	t.Cleanup(func() { _ = a.Close() })
 	w := apiRequest(a, "GET", "/api/version", "", nil, "")
-	if w.Code != http.StatusOK || w.Body.String() != "{\"version\":\""+spool.Version()+"\"}\n" {
+	var info map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &info); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != http.StatusOK || len(info) != 2 || info["version"] != spool.Version() || info["server_name"] != "Home" {
 		t.Fatalf("missing running version before sign-in: %d %s", w.Code, w.Body.String())
 	}
 	if w.Header().Get("Cache-Control") != "no-store" {

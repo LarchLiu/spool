@@ -157,6 +157,7 @@
   "Could not load projects": "读取项目失败",
   "Could not load agents": "读取 agents 失败",
   "Could not load navigation": "读取导航失败",
+  "Could not load server information": "读取服务器信息失败",
   "Model discovery failed. The last successful list is retained. Contact your administrator.": "模型探测失败，已保留上次成功的列表；请联系管理员。",
   "You do not have access to this project": "无权访问该项目",
   "The agent is disabled or not installed": "agent 未启用或尚未安装",

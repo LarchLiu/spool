@@ -29,6 +29,7 @@ final class NativeSidebar extends LinearLayout {
     private final Consumer<String> select, create;
     private final Runnable avatar, settings, logout, login;
     private String serverLabel = "Spool", serverID = "";
+    private String serverName = "Home";
     private final Function<String, JSONObject> person;
     private final Paint border = new Paint();
     private JSONArray projects = new JSONArray(), chats = new JSONArray();
@@ -91,6 +92,7 @@ final class NativeSidebar extends LinearLayout {
     void servers(ServerProfiles profiles, java.util.Map<String, String> online, Consumer<String> choose, Runnable add) {
         hasServer = profiles.active() != null;
         serverLabel = hasServer ? profiles.active().name : ui.t("No servers yet.");
+        serverName = hasServer ? profiles.active().serverName : "Home";
         serverID = profiles.selected;
         StringBuilder structure = new StringBuilder();
         for (ServerProfiles.Server server : profiles.entries) structure.append(server.id).append('\0').append(server.name).append('\0');
@@ -153,7 +155,7 @@ final class NativeSidebar extends LinearLayout {
     }
     private void render() {
         if (!active) return;
-        StringBuilder next = new StringBuilder().append(serverID).append(serverLabel).append(ServerProfiles.displayAccount(user)).append(project).append('\0').append(chat).append('\0').append(backend).append(posting).append(cached).append(state.projectLimit).append(state.recentLimit).append(state.expanded).append(state.chatLimits);
+        StringBuilder next = new StringBuilder().append(serverID).append(serverLabel).append('\0').append(serverName).append(ServerProfiles.displayAccount(user)).append(project).append('\0').append(chat).append('\0').append(backend).append(posting).append(cached).append(state.projectLimit).append(state.recentLimit).append(state.expanded).append(state.chatLimits);
         next.append(state.pinned).append(state.collapsed);
         if (user.optString("id").isEmpty() && !cached) next.append(connectionAction);
         // Metadata signatures must never serialize transcript payloads or hidden agent catalogs.
@@ -214,7 +216,7 @@ final class NativeSidebar extends LinearLayout {
         boolean authenticated = connectionAction.isEmpty() && !user.optString("id").isEmpty();
         FrameLayout photo = new FrameLayout(ui.context); photo.setPadding(ui.dp(1), ui.dp(1), ui.dp(1), ui.dp(1)); photo.setBackground(ui.shape(ui.soft, 99, ui.borderStrong)); photo.addView(ui.avatar(identity, 32), new FrameLayout.LayoutParams(ui.dp(32), ui.dp(32), Gravity.CENTER)); photo.setFocusable(authenticated); photo.setContentDescription(ui.t("Change avatar")); photo.setEnabled(authenticated); photo.setOnClickListener(view -> { if (active && authenticated) avatar.run(); }); footer.addView(photo, new LayoutParams(ui.dp(34), ui.dp(34)));
         LinearLayout copy = ui.column(); TextView name = ui.text(NativeAvatars.name(identity), 12, ui.text); ui.fixedLineHeight(name, 14f / 12); ui.preciseText(name); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END); copy.addView(name, new LayoutParams(-1, -2));
-        TextView hint = ui.text(serverLabel, 9, ui.muted); ui.fixedLineHeight(hint, 10f / 9); hint.setSingleLine(true); hint.setEllipsize(android.text.TextUtils.TruncateAt.END); LayoutParams detail = new LayoutParams(-1, -2); detail.topMargin = ui.dp(4); copy.addView(hint, detail);
+        TextView hint = ui.text(serverName, 9, ui.muted); ui.fixedLineHeight(hint, 10f / 9); hint.setSingleLine(true); hint.setEllipsize(android.text.TextUtils.TruncateAt.END); LayoutParams detail = new LayoutParams(-1, -2); detail.topMargin = ui.dp(4); copy.addView(hint, detail);
         LayoutParams identityParams = new LayoutParams(0, -2, 1); identityParams.setMarginStart(ui.dp(10)); footer.addView(copy, identityParams);
         if (!connectionAction.isEmpty()) {
             NativeUi.IconButton action = ui.icon(connectionPending ? "spinner" : connectionAction.equals("Retry") ? "refresh" : "plug", 16, ui.t(connectionAction), () -> { if (active && !connectionPending) login.run(); });

@@ -54,6 +54,7 @@ function fixture(t) {
         "agents",
         "presence",
         "profiles",
+        "server",
         "connected",
         "expired",
         "directMessage",
@@ -148,6 +149,20 @@ test("heartbeat responds with current visibility, without sending CSRF again", (
   assert.deepEqual(socket.sent.slice(1), [
     { type: "visibility", visible: false },
     { type: "pong", visible: false },
+  ]);
+});
+
+test("workspace socket delivers the server's name on initial sync and rename", (t) => {
+  const f = fixture(t);
+  const socket = f.sockets[0];
+  socket.opened();
+  socket.emit("server", { server_name: "Home" });
+  socket.emit("ready", true);
+  socket.emit("server", { server_name: "办公室 · Mac" });
+  assert.deepEqual(f.received, [
+    ["server", { server_name: "Home" }],
+    ["connected", true],
+    ["server", { server_name: "办公室 · Mac" }],
   ]);
 });
 

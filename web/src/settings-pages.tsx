@@ -346,6 +346,13 @@ export function ServicePage({ data, run, t }: PageProps) {
   return (
     <>
       <Card title={t("Spool service")}>
+        <TextField
+          title={t("Server name")}
+          value={draft.server_name}
+          placeholder="Home"
+          onChange={(value) => autosave.edit("server_name", value)}
+          onCommit={() => void autosave.commit("server_name")}
+        />
         <Row title={t("Service status")}>
           <span
             className={`settings-state${data.status.Running ? " online" : ""}`}

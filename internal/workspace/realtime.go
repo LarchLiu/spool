@@ -146,6 +146,12 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 				return false
 			}
 		}
+		if changes&changeServer != 0 {
+			settings, err := a.store.Settings()
+			if err != nil || send("server", map[string]string{"server_name": settings.ServerName}) != nil {
+				return false
+			}
+		}
 		var people []PresenceUser
 		if changes&(changeNavigation|changeProfiles|changePresence) != 0 {
 			people = a.presence.List(a.store)
@@ -190,7 +196,7 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 	syncGroups := func() bool {
 		return syncState(changeAuth) && send("chat_groups", a.directMessages.groupsFor(identity.User.ID)) == nil
 	}
-	if !syncState(changeNavigation|changeAgents|changePresence|changeRemoteDesktop) || !syncGroups() || send("ready", true) != nil {
+	if !syncState(changeNavigation|changeAgents|changePresence|changeRemoteDesktop|changeServer) || !syncGroups() || send("ready", true) != nil {
 		return
 	}
 	incoming := make(chan realtimeInput)
@@ -281,7 +287,7 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 					return
 				}
 			}
-			if input.Type == "refresh" && !syncState(changeNavigation|changeAgents|changePresence|changeRemoteDesktop) {
+			if input.Type == "refresh" && !syncState(changeNavigation|changeAgents|changePresence|changeRemoteDesktop|changeServer) {
 				return
 			}
 		case <-ticker.C:

@@ -65,6 +65,25 @@ test("service inputs keep raw numeric drafts and save only the committed field",
   });
 });
 
+test("server names default to Home and autosave without discarding connection drafts", async () => {
+  const { autosave, commands } = fixture((command) => ({
+    settings: {
+      ...command.settings,
+      server_name: command.settings.server_name.trim() || "Home",
+    },
+  }));
+  assert.equal(autosave.draft.server_name, "Home");
+  autosave.edit("port", "");
+  autosave.edit("server_name", "  办公室 · Mac  ");
+  await autosave.commit("server_name");
+  assert.equal(autosave.draft.server_name, "办公室 · Mac");
+  assert.equal(commands[0].settings.port, initial().port);
+  assert.equal(autosave.draft.port, "");
+  autosave.edit("server_name", " ");
+  await autosave.commit("server_name");
+  assert.equal(autosave.draft.server_name, "Home");
+});
+
 test("unchanged polling and unrelated proxy changes do not redraw service drafts", () => {
   let redraws = 0;
   const autosave = new ServiceSettingsAutosave(

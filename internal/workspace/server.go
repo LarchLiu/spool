@@ -206,7 +206,12 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (a *App) api(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimSuffix(r.URL.Path, "/")
 	if path == "/api/version" && r.Method == http.MethodGet {
-		apiJSON(w, http.StatusOK, map[string]string{"version": resources.Version()})
+		settings, err := a.store.Settings()
+		if err != nil {
+			apiError(w, http.StatusInternalServerError, "Could not load server information")
+			return
+		}
+		apiJSON(w, http.StatusOK, map[string]string{"version": resources.Version(), "server_name": settings.ServerName})
 		return
 	}
 	if path == "/api/login" && r.Method == "POST" {
@@ -433,7 +438,12 @@ func (a *App) signedInResponse(w http.ResponseWriter, id authIdentity) {
 		apiError(w, 500, "Could not save preferences")
 		return
 	}
-	apiJSON(w, 200, map[string]any{"user": id.User, "csrf": id.CSRF, "preferences": preferences})
+	settings, err := a.store.Settings()
+	if err != nil {
+		apiError(w, 500, "Could not load server information")
+		return
+	}
+	apiJSON(w, 200, map[string]any{"user": id.User, "csrf": id.CSRF, "preferences": preferences, "server_name": settings.ServerName})
 }
 func (a *App) enabled(backend chatmodel.Backend) bool {
 	all, err := a.store.Agents()

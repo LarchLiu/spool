@@ -42,6 +42,14 @@ function renderService(state = {}, settings = {}) {
   );
 }
 
+test("Spool service exposes an editable server name with the Home default", () => {
+  assert.match(renderService(), /aria-label="Server name"[^>]*value="Home"/);
+  assert.match(
+    renderService({}, { server_name: "Office" }),
+    /aria-label="Server name"[^>]*value="Office"/,
+  );
+});
+
 test("saved relay tokens do not show Unregister without a confirmed registration", () => {
   for (const State of ["registration_required", "disabled", "stopped"]) {
     const html = renderService(

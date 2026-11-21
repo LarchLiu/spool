@@ -927,6 +927,7 @@ public final class MainActivity extends Activity {
                                     routeSelecting = false;
                                     user = account;
                                     csrf = value.optString("csrf");
+                                    rememberServerName(serverProfiles.active(), value);
                                     restoreServerWorkspace();
                                     loginErrorText = "";
                                     render();
@@ -1135,8 +1136,13 @@ public final class MainActivity extends Activity {
             public void selected(ConnectionRouter.Candidate<Client> candidate) {
                 runtime.selecting = false; runtime.candidate = candidate;
                 if (destroyed) return;
+                if (candidate.session != null) try { rememberServerName(owner, new JSONObject(candidate.session.json)); }
+                catch (Exception ignored) {}
                 if (!serverProfiles.selected.equals(serverID)) {
-                    if (candidate.session != null) try { rememberAccount(owner, new JSONObject(candidate.session.json).optJSONObject("user")); }
+                    if (candidate.session != null) try {
+                        JSONObject value = new JSONObject(candidate.session.json);
+                        rememberAccount(owner, value.optJSONObject("user"));
+                    }
                     catch (Exception ignored) {}
                     else if (candidate.sessionChecked) forgetAccount(owner);
                     syncServerFeed(owner); renderNavigation(); return;
@@ -1343,6 +1349,7 @@ public final class MainActivity extends Activity {
                                     restoringSession = false; routeLoginRequired = false;
                                     user = account;
                                     csrf = result.optString("csrf");
+                                    rememberServerName(serverProfiles.active(), result);
                                     ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
                                     if (runtime != null && runtime.candidate != null && runtime.candidate.client == captured) {
                                         ConnectionRouter.Candidate<Client> previous = runtime.candidate;
@@ -1670,6 +1677,13 @@ public final class MainActivity extends Activity {
         server.account = account; saveServers();
     }
 
+    private void rememberServerName(ServerProfiles.Server server, JSONObject value) {
+        if (server == null) return;
+        String name = ServerProfiles.serverName(value.optString("server_name"));
+        if (server.serverName.equals(name)) return;
+        server.serverName = name; saveServers();
+    }
+
     private void forgetAccount() {
         workspaceUserID = ""; workspaceCached = false;
         forgetAccount(serverProfiles.active());
@@ -1918,7 +1932,7 @@ public final class MainActivity extends Activity {
             }
             public void failed() { if (serverFeedCurrent(server, runtime, feed)) probeServer(server, true); }
             public void event(String kind, String raw) {
-                if (!java.util.Arrays.asList("navigation", "agents", "profiles", "desktop", "presence").contains(kind)) return;
+                if (!java.util.Arrays.asList("navigation", "agents", "profiles", "desktop", "presence", "server").contains(kind)) return;
                 EventStream stream = feed.stream;
                 workspaceDecode.execute(() -> {
                     if (destroyed) return;
@@ -1974,6 +1988,7 @@ public final class MainActivity extends Activity {
         else if (kind.equals("profiles") && value instanceof JSONObject) acceptServerProfiles(server, feed.cache, (JSONObject) value);
         else if (kind.equals("desktop") && value instanceof JSONObject) feed.desktopAvailable = ((JSONObject) value).optBoolean("available");
         else if (kind.equals("presence") && value instanceof JSONArray) feed.presence = (JSONArray) value;
+        else if (kind.equals("server") && value instanceof JSONObject) rememberServerName(server, (JSONObject) value);
     }
 
     private void acceptServerNavigation(ServerWorkspace cache, JSONObject value) {
@@ -2036,7 +2051,8 @@ public final class MainActivity extends Activity {
                 if (!server.enabled || destroyed) return;
                 runtime.candidate = candidate;
                 if (candidate.session != null) try {
-                    rememberAccount(server, new JSONObject(candidate.session.json).optJSONObject("user"));
+                    JSONObject value = new JSONObject(candidate.session.json);
+                    rememberAccount(server, value.optJSONObject("user")); rememberServerName(server, value);
                 } catch (Exception ignored) {}
                 else if (candidate.sessionChecked && !server.id.equals(serverProfiles.selected)) forgetAccount(server);
                 if (server.id.equals(serverProfiles.selected)) { routeStates.putAll(runtime.states); adoptConnection(candidate); }
@@ -4222,7 +4238,7 @@ public final class MainActivity extends Activity {
         if (kind.equals("ready")) { setWorkspaceConnected(true); return; }
         if (kind.equals("transport_error")) { if (workspaceEvents != null) workspaceEvents.failed(); return; }
         if (kind.equals("auth_expired")) { expire(); return; }
-        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result", "desktop").contains(kind)) return;
+        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result", "desktop", "server").contains(kind)) return;
         Object value = new JSONTokener(raw).nextValue();
         applyWorkspaceEvent(kind, value, epoch);
     }
@@ -4232,7 +4248,7 @@ public final class MainActivity extends Activity {
             try { workspaceEvent(kind, raw, epoch); } catch (Exception error) { toast(error); }
             return;
         }
-        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result", "desktop").contains(kind)) return;
+        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result", "desktop", "server").contains(kind)) return;
         final int token = generation, session = authEpoch;
         final ServerProfiles.Server server = serverProfiles.active();
         final Client sourceClient = client;
@@ -4257,6 +4273,10 @@ public final class MainActivity extends Activity {
     private void applyWorkspaceEvent(String kind, Object value, int epoch) throws Exception {
         if (destroyed || workspaceEpoch != epoch || user == null) return;
         switch (kind) {
+            case "server":
+                rememberServerName(serverProfiles.active(), (JSONObject) value);
+                renderNavigation();
+                break;
             case "desktop":
                 setDesktopAvailable(((JSONObject) value).optBoolean("available"));
                 break;

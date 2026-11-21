@@ -242,6 +242,12 @@ button:disabled {
   padding: 0 18px;
   border-bottom: 1px solid var(--line);
 }
+.brand-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .sidebar-scroll,
 .history,
 .settings-sidebar-content,
@@ -466,6 +472,8 @@ button:disabled {
 }
 .side-foot small {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 9px;
   color: var(--muted);
   margin-top: 4px;

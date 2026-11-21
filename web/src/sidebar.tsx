@@ -37,6 +37,7 @@ import { INITIAL_CHAT_LIMIT, SidebarChatList } from "./sidebar-chat-list";
 
 type Props = {
   user: User;
+  serverName: string;
   projects: Project[];
   chats: Chat[];
   pinned: string[];
@@ -220,7 +221,9 @@ export function Sidebar(props: Props) {
         {!isMacDesktop() && (
           <>
             <img className="brand-mark" src={appURL("/logo.png")} alt="" />
-            Spool
+            <span className="brand-name" title={`Spool · ${props.serverName}`}>
+              Spool · {props.serverName}
+            </span>
           </>
         )}
         <button
@@ -349,7 +352,7 @@ export function Sidebar(props: Props) {
         </button>
         <div>
           {props.user.nickname}
-          <small>{t("Project chat visibility follows project settings")}</small>
+          <small title={props.serverName}>{props.serverName}</small>
         </div>
         {!isDesktopChat() && (
           <>

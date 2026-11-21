@@ -64,7 +64,7 @@ public class MainActivityServerTabsTest {
         void responses(int meStatus) {
             MainActivityGoalTest.ShadowClient.responder = call -> {
                 String path = call.get(1);
-                String body = path.equals("/api/me") ? "{user:{id:'alice',nickname:'Alice'},csrf:'shared-csrf'}"
+                String body = path.equals("/api/me") ? "{user:{id:'alice',nickname:'Alice'},csrf:'shared-csrf',server_name:'Server from sign-in'}"
                         : path.equals("/api/navigation") ? navigation("REST snapshot")
                         : path.equals("/api/profiles") ? "{revision:1,people:[{id:'alice',nickname:'Alice'}]}"
                         : path.equals("/api/agents") ? "[]" : "{}";
@@ -95,6 +95,32 @@ public class MainActivityServerTabsTest {
             h.activity.getPreferences(Activity.MODE_PRIVATE).edit().clear().commit();
             MainActivityConnectionTest.ShadowSpoolnet.tailnetHealth = null; h.close();
         }
+    }
+
+    @Test public void serverNamesFollowTheirOwningConnectionsAcrossTabSwitches() throws Exception {
+        try (Fixture f = new Fixture(true)) {
+            assertEquals("Server from sign-in", footerServerName(f));
+            f.push(f.homeClient, "server", "{server_name:'家里的服务器'}");
+            f.push(f.officeClient, "server", "{server_name:'Office server'}");
+            assertEquals("家里的服务器", footerServerName(f));
+            assertEquals("Office", f.office.name);
+            f.select(f.office.id);
+            assertEquals("Office server", footerServerName(f));
+            f.drain();
+            f.push(f.homeClient, "server", "{server_name:'Home renamed in background'}");
+            assertEquals("Office server", footerServerName(f));
+            f.select(f.home);
+            assertEquals("Home renamed in background", footerServerName(f));
+            f.drain();
+            f.push(f.homeClient, "server", "{server_name:''}");
+            assertEquals("Home", footerServerName(f));
+        }
+    }
+
+    private String footerServerName(Fixture f) {
+        NativeSidebar sidebar = f.h.get("sidebar");
+        android.widget.LinearLayout copy = (android.widget.LinearLayout) sidebar.footer.getChildAt(1);
+        return ((android.widget.TextView) copy.getChildAt(1)).getText().toString();
     }
 
     @Test public void anUnselectedServerReceivesItsOwnPushesAndStaleRestCannotReplaceThem() throws Exception {

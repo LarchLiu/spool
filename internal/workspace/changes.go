@@ -12,6 +12,7 @@ const (
 	changeProfiles
 	changeRemoteDesktop
 	changeADBBridge
+	changeServer
 )
 
 // Notifications carry no user data. Each subscriber reads a fresh, authorized

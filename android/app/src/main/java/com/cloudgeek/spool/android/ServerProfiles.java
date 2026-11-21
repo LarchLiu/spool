@@ -12,6 +12,7 @@ final class ServerProfiles {
     static final class Server {
         final String id;
         String name;
+        String serverName = "Home";
         ConnectionPlan plan;
         JSONObject account = new JSONObject();
         boolean enabled = true;
@@ -43,6 +44,7 @@ final class ServerProfiles {
                 ConnectionPlan plan = new ConnectionPlan(value.optString("direct"), value.optString("tailscale"), value.optString("relay"),
                         ConnectionMode.restore(network, ""), value.optBoolean("automatic", true));
                 Server server = new Server(id, name, plan); server.enabled = value.optBoolean("enabled", true);
+                server.serverName = serverName(value.optString("server_name"));
                 server.account = displayAccount(value.optJSONObject("account")); restored.add(server);
             }
             if (array.length() == 0 || !restored.isEmpty()) { profiles.entries.clear(); profiles.entries.addAll(restored); }
@@ -53,6 +55,7 @@ final class ServerProfiles {
     }
 
     Server active() { for (Server server : entries) if (server.id.equals(selected)) return server; return entries.isEmpty() ? null : entries.get(0); }
+    static String serverName(String value) { String name = value.trim(); return name.isEmpty() ? "Home" : name; }
     void remove(String id) {
         entries.removeIf(server -> server.id.equals(id));
         if (selected.equals(id)) selected = entries.isEmpty() ? "" : entries.get(0).id;
@@ -74,7 +77,7 @@ final class ServerProfiles {
     }
     String encode() {
         JSONArray array = new JSONArray();
-        try { for (Server server : entries) array.put(new JSONObject().put("id", server.id).put("name", server.name)
+        try { for (Server server : entries) array.put(new JSONObject().put("id", server.id).put("name", server.name).put("server_name", server.serverName)
                 .put("direct", server.plan.direct).put("tailscale", server.plan.tailscale).put("relay", server.plan.relay).put("selectedNetwork", server.plan.selected.value).put("automatic", server.plan.autoSwitch).put("enabled", server.enabled).put("account", displayAccount(server.account))); }
         catch (Exception error) { throw new IllegalArgumentException(error); }
         return array.toString();

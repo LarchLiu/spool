@@ -14,6 +14,7 @@ export const settingsSections = [
 export type SettingsSection = (typeof settingsSections)[number];
 export type Backend = "codex" | "claude";
 export type ServerSettings = {
+  server_name?: string;
   web_enabled?: boolean;
   host: string;
   port: number;

@@ -15,6 +15,31 @@ import org.robolectric.annotation.Config;
 @RunWith(org.robolectric.RobolectricTestRunner.class)
 @Config(sdk = {26, 35})
 public class ServerProfilesTest {
+    @Test public void serverDefinedNamesPersistSeparatelyFromLocalNamesAndAppearBelowTheAccount() throws Exception {
+        ConnectionPlan plan = new ConnectionPlan("", "", ConnectionMode.DIRECT);
+        ServerProfiles profiles = ServerProfiles.restore("[{id:'legacy',name:'My custom label'}]", "legacy", plan);
+        assertEquals("Home", profiles.active().serverName);
+        profiles.active().serverName = "办公室 · Mac";
+        profiles = ServerProfiles.restore(profiles.encode(), "legacy", plan);
+        assertEquals("My custom label", profiles.active().name);
+        assertEquals("办公室 · Mac", profiles.active().serverName);
+        assertEquals("Home", ServerProfiles.serverName(" \t "));
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false, "en");
+            NativeSidebar sidebar = new NativeSidebar(ui, new NativeSidebarState(), id -> new org.json.JSONObject(), () -> {}, id -> {}, id -> {}, () -> {}, () -> {}, () -> {});
+            org.json.JSONObject account = new org.json.JSONObject("{id:'alice',nickname:'Alice'}");
+            for (String value : new String[] {"办公室 · Mac", "Renamed server", "Home"}) {
+                profiles.active().serverName = value;
+                sidebar.servers(profiles, Map.of(), id -> {}, () -> {});
+                sidebar.bind(account, new org.json.JSONArray(), new org.json.JSONArray(), "", "", "", false);
+                android.widget.LinearLayout copy = (android.widget.LinearLayout) sidebar.footer.getChildAt(1);
+                assertEquals("Alice", ((android.widget.TextView) copy.getChildAt(0)).getText().toString());
+                assertEquals(value, ((android.widget.TextView) copy.getChildAt(1)).getText().toString());
+            }
+            sidebar.deactivate();
+        }
+    }
+
     @Test public void profilesRetainIndependentAddressesNetworkChoicesEnabledFlagsAndSelection() {
         ConnectionPlan legacy = new ConnectionPlan("https://first.example.com", "https://first.example.ts.net", ConnectionMode.TAILSCALE, true);
         ServerProfiles profiles = new ServerProfiles(legacy);

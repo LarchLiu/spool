@@ -60,6 +60,7 @@ type Project struct {
 	Issues             IssuesAutomation  `json:"-"`
 }
 type Settings struct {
+	ServerName           string `json:"server_name"`
 	WebEnabled           bool   `json:"web_enabled"`
 	Host                 string `json:"host"`
 	Port                 int    `json:"port"`
@@ -86,7 +87,14 @@ type Settings struct {
 }
 
 func DefaultSettings() Settings {
-	return Settings{WebEnabled: true, Host: "127.0.0.1", Port: 59001, WebTrustedProxies: "127.0.0.0/8,::1/128", IdleMinutes: 15, AutoStart: true, HistoryCacheMiB: 64, TSNetHostname: "spool-server", TSNetPort: 443, ProxyEnabled: true, RelayLANPort: 10095}
+	return Settings{ServerName: "Home", WebEnabled: true, Host: "127.0.0.1", Port: 59001, WebTrustedProxies: "127.0.0.0/8,::1/128", IdleMinutes: 15, AutoStart: true, HistoryCacheMiB: 64, TSNetHostname: "spool-server", TSNetPort: 443, ProxyEnabled: true, RelayLANPort: 10095}
+}
+
+func normalizeServerName(name string) string {
+	if name = strings.TrimSpace(name); name == "" {
+		return "Home"
+	}
+	return name
 }
 func (s Settings) Address() string { return net.JoinHostPort(s.Host, fmt.Sprint(s.Port)) }
 func (s Settings) Validate() error {
@@ -153,9 +161,11 @@ func (s *Store) Settings() (Settings, error) {
 		return v, err
 	}
 	err = json.Unmarshal([]byte(body), &v)
+	v.ServerName = normalizeServerName(v.ServerName)
 	return v, err
 }
 func (s *Store) SaveSettings(v Settings) error {
+	v.ServerName = normalizeServerName(v.ServerName)
 	v.ProxyURL = strings.TrimSpace(v.ProxyURL)
 	v.NoProxy = strings.TrimSpace(v.NoProxy)
 	if !v.TSNetEnabled {
@@ -183,7 +193,7 @@ func (s *Store) saveSettingsLocked(v Settings) error {
 		s.historyCache.setMaxBytes(v.HistoryCacheMiB * 1024 * 1024)
 		s.codexHistory.setMaxBytes(v.HistoryCacheMiB * 1024 * 1024)
 	}
-	return err
+	return s.notify(err, changeServer)
 }
 func (s *Store) Users() ([]User, error) {
 	rows, err := s.db.Query(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,COALESCE(a.style,?),COALESCE(a.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0) FROM users u LEFT JOIN user_avatars a ON a.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id ORDER BY u.username`, DefaultAvatar().Style)

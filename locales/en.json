@@ -157,6 +157,7 @@
   "Could not load projects": "Could not load projects",
   "Could not load agents": "Could not load agents",
   "Could not load navigation": "Could not load navigation",
+  "Could not load server information": "Could not load server information",
   "Model discovery failed. The last successful list is retained. Contact your administrator.": "Model discovery failed. The last successful list is retained. Contact your administrator.",
   "You do not have access to this project": "You do not have access to this project",
   "The agent is disabled or not installed": "The agent is disabled or not installed",

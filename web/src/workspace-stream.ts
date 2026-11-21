@@ -37,6 +37,7 @@ export function subscribeWorkspaceEvents(
     agents: (value: Agent[]) => void;
     presence: (value: Online[]) => void;
     profiles: (value: ProfileSnapshot) => void;
+    server?: (value: { server_name: string }) => void;
     connected: (value: boolean) => void;
     expired: () => void;
     directMessage?: (value: DirectMessage) => void;
@@ -141,6 +142,9 @@ export function subscribeWorkspaceEvents(
       lastMessage = Date.now();
       armWatchdog(current);
       switch (message.type) {
+        case "server":
+          handlers.server?.(message.data as { server_name: string });
+          break;
         case "navigation":
           handlers.navigation(message.data as Navigation);
           break;
