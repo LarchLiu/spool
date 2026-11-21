@@ -401,6 +401,9 @@ func TestLocalSharingListAndOpenedTitlesAgree(t *testing.T) {
 		if !ok {
 			t.Fatal("local session could not be opened")
 		}
+		if strings.HasPrefix(listed.Title, "长标题") && opened.Title != listed.Title {
+			t.Fatalf("opening changed the bounded native title: %q", opened.Title)
+		}
 		sub := s.changes.subscribe()
 		for range 3 {
 			if err := s.syncLocalSessions(true); err != nil {

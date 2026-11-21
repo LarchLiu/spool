@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import type { Translator } from "./i18n";
+import { useChatTitleTooltip } from "./chat-title-tooltip";
 
 type ChatActionProps = {
   title: string;
@@ -18,6 +19,7 @@ type ChatActionProps = {
   pinned: boolean;
   onTogglePin: () => void;
   canManage?: boolean;
+  tooltipSide?: "below" | "right";
   onRename: (title: string) => Promise<void>;
   onArchive: () => Promise<void>;
   onDelete: () => Promise<void>;
@@ -27,12 +29,12 @@ type ChatActionProps = {
 export function ChatTitleMenu(props: ChatActionProps) {
   return (
     <ChatActionMenu {...props}>
-      {({ trigger, id, open, archiving, show, close }) => (
+      {({ trigger, id, open, archiving, show, close, tooltipProps }) => (
         <button
+          {...tooltipProps}
           ref={trigger}
           type="button"
           className="chat-title-trigger"
-          title={props.title}
           aria-label={`${props.t("Chat options")}: ${props.title}`}
           aria-haspopup="menu"
           aria-expanded={open}
@@ -60,6 +62,7 @@ export function ChatActionMenu({
   pinned,
   onTogglePin,
   canManage = true,
+  tooltipSide,
   onRename,
   onArchive,
   onDelete,
@@ -74,6 +77,7 @@ export function ChatActionMenu({
     show: (point?: { left: number; top: number }) => void;
     close: () => void;
     archive: () => Promise<void>;
+    tooltipProps: ReturnType<typeof useChatTitleTooltip>["tooltipProps"];
   }) => ReactNode;
 }) {
   const id = useId();
@@ -83,6 +87,12 @@ export function ChatActionMenu({
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const { tooltip, tooltipProps } = useChatTitleTooltip(
+    title,
+    trigger,
+    open || renaming || deleting || archiving,
+    tooltipSide,
+  );
   const archivePending = useRef(false);
   const [point, setPoint] = useState<{ left?: number; top?: number }>({});
   const [position, setPosition] = useState<{ left: number; top: number }>();
@@ -153,7 +163,17 @@ export function ChatActionMenu({
   }, [open]);
   return (
     <>
-      {children({ trigger, id, open, archiving, show, close, archive })}
+      {children({
+        trigger,
+        id,
+        open,
+        archiving,
+        show,
+        close,
+        archive,
+        tooltipProps,
+      })}
+      {tooltip}
       {open &&
         createPortal(
           <>

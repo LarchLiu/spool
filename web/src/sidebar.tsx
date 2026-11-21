@@ -111,6 +111,7 @@ export function Sidebar(props: Props) {
       <ChatActionMenu
         key={chat.id}
         title={title}
+        tooltipSide="right"
         t={t}
         pinned={pinned}
         canManage={canManage}
@@ -120,7 +121,7 @@ export function Sidebar(props: Props) {
         onDelete={() => props.onDelete(chat)}
         onError={props.onError}
       >
-        {({ trigger, id, open, archiving, show, archive }) => (
+        {({ trigger, id, open, archiving, show, archive, tooltipProps }) => (
           <div
             className={
               "nav-chat " +
@@ -140,11 +141,11 @@ export function Sidebar(props: Props) {
               <ChatOperatorAvatars chat={chat} resolve={props.resolveProfile} />
             )}
             <button
+              {...tooltipProps}
               ref={trigger}
               type="button"
               className="nav-chat-open"
               aria-current={chat.id === chatID ? "page" : undefined}
-              title={title}
               aria-haspopup="menu"
               aria-expanded={open}
               aria-controls={open ? id : undefined}

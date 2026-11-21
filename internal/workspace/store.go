@@ -865,10 +865,6 @@ func (s *Store) SetInterrupted() error {
 }
 func titleFor(prompt string) string {
 	text := strings.Join(strings.Fields(prompt), " ")
-	runes := []rune(text)
-	if len(runes) > 52 {
-		return string(runes[:51]) + "…"
-	}
 	if text == "" {
 		return "New chat"
 	}

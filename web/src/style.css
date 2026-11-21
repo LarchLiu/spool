@@ -626,9 +626,11 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: 1;
   min-width: 0;
 }
 .heading > div {
+  flex: 1;
   min-width: 0;
 }
 .chat-heading {
@@ -656,6 +658,27 @@ button:disabled {
 .chat-title-trigger > svg {
   flex: none;
   color: var(--muted);
+}
+.chat-title-tooltip {
+  position: fixed;
+  z-index: 98;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 16px));
+  max-height: min(480px, calc(100dvh - 16px));
+  overflow: auto;
+  padding: 9px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--elevated);
+  color: var(--text);
+  box-shadow: 0 4px 18px #0002;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.chat-title-tooltip[data-side="right"] {
+  max-width: min(300px, calc(100vw - 16px));
 }
 .chat-menu-backdrop {
   position: fixed;
@@ -760,6 +783,7 @@ button:disabled {
 }
 .heading strong {
   display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -779,6 +803,7 @@ button:disabled {
 }
 .header-actions {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 18px;
 }

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"spool/internal/agent"
 	chatmodel "spool/internal/model"
 )
 
@@ -112,13 +114,14 @@ func TestSessionNativeTitleReachesAPIAndNavigation(t *testing.T) {
 			user := testUser(t, store, "title-viewer")
 			project := testProject(t, store, user)
 			chat, rename := titleSessionFixture(t, store, backend, user.ID, project.ID)
-			rename("Native title for sidebar")
+			want := strings.Repeat("完整的会话标题 with spaces ", 25) + "末尾"
+			rename(want)
 			app := NewApp(store, &fakeRunner{}, "", "")
 			t.Cleanup(func() { app.Close() })
 			cookie, csrf := loginRequest(t, app, user.Username)
 			response := apiRequest(app, "GET", "/api/chats/"+chat.ID, "", cookie, csrf)
 			var value chatmodel.Session
-			if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &value) != nil || value.Title != "Native title for sidebar" {
+			if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &value) != nil || value.Title != want {
 				t.Fatalf("API did not return the native title: %s", response.Body.String())
 			}
 			navigation, err := store.UserNavigation(user.ID)
@@ -126,6 +129,32 @@ func TestSessionNativeTitleReachesAPIAndNavigation(t *testing.T) {
 				t.Fatalf("navigation did not retain metadata-only native title: %+v, %v", navigation, err)
 			}
 		})
+	}
+}
+
+func TestSessionInitialTitlePreservesCompletePrompt(t *testing.T) {
+	store := testStore(t)
+	want := strings.Repeat("检查长标题和完整的 hover 内容 ", 25) + "末尾"
+	chat, err := store.createSession("", "", chatmodel.BackendCodex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn, err := store.BeginTurn(chat.ID, " \n\t"+want+"\n ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := store.Get(chat.ID)
+	if !ok || got.Title != want {
+		t.Fatalf("initial title was truncated: %q", got.Title)
+	}
+	if err := store.FinishTurn(chat.ID, turn.ID, agent.AgentResult{}, nil, chatmodel.StatusCompleted); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.BeginTurn(chat.ID, "A later prompt"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := store.Get(chat.ID); got.Title != want {
+		t.Fatalf("later prompt replaced the title: %q", got.Title)
 	}
 }
 
