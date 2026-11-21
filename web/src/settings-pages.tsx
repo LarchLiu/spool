@@ -4,7 +4,6 @@ import {
   FolderOpen,
   Github,
   Globe2,
-  Monitor,
   MonitorUp,
   Plus,
   Radio,
@@ -156,7 +155,7 @@ const serviceTabs = [
   { key: "web", label: "Web", icon: Globe2 },
   { key: "relay", label: "Relay", icon: Radio },
   { key: "tsnet", label: "Tailscale", icon: ShieldCheck },
-  { key: "desktop", label: "Remote desktop", icon: Monitor },
+  { key: "desktop", label: "Remote desktop", icon: MonitorUp },
   { key: "adb", label: "ADB bridge", icon: Smartphone },
 ] as const;
 type ServiceTab = (typeof serviceTabs)[number]["key"];

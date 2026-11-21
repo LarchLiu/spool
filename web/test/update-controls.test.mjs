@@ -40,7 +40,8 @@ test("browser settings show the running version rather than the SQLite hint, eve
       preferences: { theme: "system", language: "en" },
       saving, version: "9.8.7", onChange() {}, onClose() {}, t,
     }));
-    assert.match(html, /<p>Current version: 9\.8\.7<\/p>/);
+    assert.match(html, /<span>Current version: 9\.8\.7<\/span>/);
+    assert.match(html, /href="https:\/\/github\.com\/LarchLiu\/spool" target="_blank" rel="noopener noreferrer" aria-label="Open GitHub repository"/);
     assert.doesNotMatch(html, /SQLite|Changes apply immediately/);
   }
 });

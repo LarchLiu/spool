@@ -182,6 +182,7 @@ public final class MainActivity extends Activity {
     private NativeConnectionSettings connectionSettings;
     private NativeServerSettings serverSettings;
     private NativeAdbSettings adbSettings;
+    private NativeDialog adbDialog;
     private AdbShare adbShare;
     private AdbDiscovery adbDiscovery;
     /** "" when the selected server accepts a share, its reason when not, null while unknown. */
@@ -820,7 +821,6 @@ public final class MainActivity extends Activity {
         settingsOpen = false;
         dismissSettingsDialog();
         connectionSettings = null;
-        adbSettings = null; main.removeCallbacks(adbPoll);
         serverInput = null;
         connectionText = null;
         connectionHint = null;
@@ -1442,6 +1442,7 @@ public final class MainActivity extends Activity {
         if (sidebar != null && !sidebarPageDeferred) sidebar.deactivate();
         closeDesktop();
         setDesktopAvailable(false);
+        closeAdbDialog();
         // A share belongs to the session that was allowed to start it.
         adbAvailability = null;
         stopAdbShare(); bindAdbSettings();
@@ -1586,10 +1587,6 @@ public final class MainActivity extends Activity {
         connectionHint = connectionSettings.note;
         body.addView(connectionSettings);
         gap(body, 24);
-        adbSettings = new NativeAdbSettings(settingsUi, this::startAdbShare, this::stopAdbShare,
-                (code, port) -> { if (adbShare != null) adbShare.pair(code, port); });
-        body.addView(adbSettings);
-        bindAdbSettings(); refreshAdbAvailability();
         Button delete = settingsUi.button(settingsUi.t("Delete server"), false, this::deleteServer);
         delete.setTextColor(settingsUi.error);
         body.addView(delete, new LinearLayout.LayoutParams(-1, -2));
@@ -2345,6 +2342,7 @@ public final class MainActivity extends Activity {
         root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
         renderNavigation();
         overlay.show(animate);
+        refreshAdbAvailability();
     }
 
     private void closeDrawer() {
@@ -2409,6 +2407,7 @@ public final class MainActivity extends Activity {
                 showWorkspace ? chats : new JSONArray(), showWorkspace ? projectID : "", showWorkspace ? chatID : "",
                 showWorkspace && chat != null && array(chat, "turns").length() == 0 ? backend : "", busy, !signedIn && showWorkspace);
         sidebar.desktop(desktopAvailable, this::openDesktop);
+        bindAdbSettings();
     }
 
     private void loginFromSidebar() {
@@ -4782,9 +4781,30 @@ public final class MainActivity extends Activity {
         } catch (java.util.concurrent.RejectedExecutionException ignored) {}
     }
 
+    private void openAdbDialog() {
+        if (adbDialog != null || !foreground || destroyed || user == null || client == null) return;
+        captureDraft(); closeSettings(); closeDrawer(); closePeople();
+        adbDialog = new NativeDialog(ui, ui.t("ADB bridge"), ui.t("Close"));
+        adbDialog.actions.addView(ui.quietButton(ui.t("Close"), this::closeAdbDialog));
+        adbSettings = new NativeAdbSettings(ui, this::startAdbShare, this::stopAdbShare,
+                (code, port) -> { if (adbShare != null) adbShare.pair(code, port); });
+        adbDialog.body.addView(adbSettings);
+        adbDialog.setOnDismissListener(dialog -> {
+            adbDialog = null; adbSettings = null;
+            if (sidebar == null) main.removeCallbacks(adbPoll);
+        });
+        bindAdbSettings();
+        adbDialog.show();
+        refreshAdbAvailability();
+    }
+
+    private void closeAdbDialog() {
+        if (adbDialog != null) adbDialog.dismiss();
+    }
+
     private void refreshAdbAvailability() {
         main.removeCallbacks(adbPoll);
-        if (adbSettings == null || destroyed) return;
+        if ((adbSettings == null && sidebar == null) || destroyed) return;
         if (foreground && !adbAvailabilityBusy) {
             adbAvailabilityBusy = true;
             final int session = authEpoch;
@@ -4801,6 +4821,13 @@ public final class MainActivity extends Activity {
 
     private void bindAdbSettings() {
         if (adbSettings != null) adbSettings.bind(adbShare(), adbAvailability, Build.VERSION.SDK_INT >= 30);
+        if (sidebar != null) {
+            boolean active = adbShare != null && adbShare.phase != AdbShare.Phase.IDLE;
+            boolean available = !"disabled".equals(adbAvailability)
+                    && (active || adbAvailability != null && !adbAvailability.equals("not_authorized"));
+            sidebar.adb(available, adbShare == null ? "IDLE" : adbShare.phase.name(),
+                    adbShare == null ? "" : NativeAdbSettings.status(adbShare, locale()), this::openAdbDialog);
+        }
     }
 
     private boolean canStartAdbShare() {
@@ -4845,6 +4872,10 @@ public final class MainActivity extends Activity {
     }
 
     private void back() {
+        if (adbDialog != null) {
+            closeAdbDialog();
+            return;
+        }
         if (desktopDialog != null) {
             closeDesktop();
             return;
@@ -4949,6 +4980,7 @@ public final class MainActivity extends Activity {
         closeDesktop();
         setDesktopAvailable(false);
         stopAdbShare();
+        closeAdbDialog();
         if (adbDiscovery != null) adbDiscovery.close();
         if (fileBrowser != null) fileBrowser.deactivate();
         fileBrowser = null;

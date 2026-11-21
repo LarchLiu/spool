@@ -10,6 +10,7 @@ import type { USBLike } from "./adb-usb";
 import { api, getCSRF } from "./api";
 import { appURL } from "./app-path";
 import type { MessageKey, Translator } from "./i18n";
+import { ConnectionControl } from "./connection-control";
 
 export type ADBShareSupport = "supported" | "insecure" | "unsupported";
 
@@ -21,8 +22,8 @@ function browserUSB(): USBLike | undefined {
 
 let shared: ADBShare | undefined;
 
-// The page's one share. It is started from the settings dialog and has to
-// outlive it; it ends with the session that was allowed to start it.
+// The page's one share outlives its popup and ends with the session that
+// was allowed to start it.
 function pageShare(): ADBShare | undefined {
   if (shared) return shared;
   const usb = browserUSB();
@@ -245,56 +246,65 @@ export function ADBShareSection({
   );
 }
 
-export function ADBShareSettings({ t }: { t: Translator }) {
+export function ADBShareControl({
+  t,
+  active,
+}: {
+  t: Translator;
+  active: boolean;
+}) {
+  if (!browserUSB()) return null;
+  return <SupportedADBShareControl t={t} active={active} />;
+}
+
+function SupportedADBShareControl({
+  t,
+  active,
+}: {
+  t: Translator;
+  active: boolean;
+}) {
   const availability = useADBShareAvailability();
   const state = useADBShareState();
   const share = pageShare();
-  // A failure stays on the indicator until it has been read here.
-  useEffect(
-    () => () => {
-      if (share?.state().phase === "failed") share.stop();
-    },
-    [share],
-  );
+  if (
+    availability?.reason === "disabled" ||
+    (state.phase === "idle" &&
+      (!availability || availability.reason === "not_authorized"))
+  )
+    return null;
   return (
-    <ADBShareSection
-      availability={availability}
-      support={
-        share
-          ? "supported"
-          : window.isSecureContext
-            ? "unsupported"
-            : "insecure"
+    <ConnectionControl
+      active={active}
+      label={t("ADB bridge")}
+      icon={<Smartphone size={16} aria-hidden="true" />}
+      status={
+        state.phase === "online"
+          ? "connected"
+          : state.phase === "connecting" ||
+              state.phase === "unauthorized" ||
+              state.phase === "waiting"
+            ? "pending"
+            : undefined
       }
-      state={state}
-      t={t}
-      onStart={() => void share?.start()}
-      onStop={() => share?.stop()}
-    />
-  );
-}
-
-// Shown wherever the user is while a phone is exposed to the server.
-export function ADBShareIndicator({
-  t,
-  onOpen,
-}: {
-  t: Translator;
-  onOpen: () => void;
-}) {
-  const state = useADBShareState();
-  if (state.phase === "idle" || state.phase === "choosing") return null;
-  const label = adbShareStatus(state, t);
-  return (
-    <button
-      type="button"
-      className="icon adb-share-indicator"
-      data-phase={state.phase}
-      onClick={onOpen}
-      aria-label={label}
-      title={label}
+      statusLabel={adbShareStatus(state, t)}
     >
-      <Smartphone size={16} />
-    </button>
+      {() => (
+        <ADBShareSection
+          availability={availability}
+          support={
+            share
+              ? "supported"
+              : window.isSecureContext
+                ? "unsupported"
+                : "insecure"
+          }
+          state={state}
+          t={t}
+          onStart={() => void share?.start()}
+          onStop={() => share?.stop()}
+        />
+      )}
+    </ConnectionControl>
   );
 }

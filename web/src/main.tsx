@@ -14,7 +14,7 @@ import {
   ArrowUp,
   ArrowDown,
   ChevronDown,
-  Settings2,
+  Palette,
   Folder,
   Users,
   Menu,
@@ -86,11 +86,7 @@ import {
 } from "./web-push";
 import { AvatarDialog } from "./avatar-dialog";
 import { AvatarStack } from "./user-avatar";
-import {
-  RemoteDesktopDialog,
-  RemoteDesktopSettings,
-} from "./remote-desktop-settings";
-import { ADBShareSettings } from "./adb-share-settings";
+import { RemoteDesktopDialog } from "./remote-desktop-settings";
 import { DirectMessagePanel } from "./direct-message-panel";
 import type { FloatingWindowBounds } from "./floating-window";
 import { PeopleGroupPicker } from "./people-group-picker";
@@ -173,6 +169,7 @@ function App() {
   }, [preferences]);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [remoteDesktopOpen, setRemoteDesktopOpen] = useState(false);
+  const [remoteDesktopConnected, setRemoteDesktopConnected] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [version, setVersion] = useState("");
   const { t, theme, locale } = usePresentation(preferences);
@@ -368,7 +365,7 @@ function App() {
   }, []);
   useEffect(() => {
     const closePanels = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !document.querySelector("dialog:modal")) {
         setSidebar(false);
         setFileSidebarMobile(false);
       }
@@ -545,6 +542,7 @@ function App() {
       setChatID("");
       setAppearanceOpen(false);
       setRemoteDesktopOpen(false);
+      setRemoteDesktopConnected(false);
       setAvatarOpen(false);
       setDraft("");
       setFiles((old) => {
@@ -1963,17 +1961,6 @@ function App() {
       onClose={() => setAppearanceOpen(false)}
     >
       {user && <NotificationSettings key={user.id} t={t} language={locale} />}
-      {user && (
-        <RemoteDesktopSettings
-          key={`desktop-${user.id}`}
-          t={t}
-          onConnect={() => {
-            setAppearanceOpen(false);
-            setRemoteDesktopOpen(true);
-          }}
-        />
-      )}
-      {user && <ADBShareSettings key={`adb-${user.id}`} t={t} />}
     </AppearanceDialog>
   );
   if (!ready)
@@ -1995,7 +1982,7 @@ function App() {
               onClick={() => setAppearanceOpen(true)}
               aria-label={t("Appearance and language")}
             >
-              <Settings2 size={20} />
+              <Palette size={20} />
             </button>
           )}
           <LoginStory t={t} />
@@ -2085,6 +2072,8 @@ function App() {
         }}
         onNew={newChat}
         onSettings={() => setAppearanceOpen(true)}
+        onRemoteConnect={() => setRemoteDesktopOpen(true)}
+        remoteConnected={remoteDesktopConnected}
         onAvatar={() => setAvatarOpen(true)}
         onLogout={logout}
       />
@@ -2834,7 +2823,11 @@ function App() {
       {remoteDesktopOpen && (
         <RemoteDesktopDialog
           t={t}
-          onClose={() => setRemoteDesktopOpen(false)}
+          onConnected={() => setRemoteDesktopConnected(true)}
+          onClose={() => {
+            setRemoteDesktopOpen(false);
+            setRemoteDesktopConnected(false);
+          }}
         />
       )}
       {preview && (

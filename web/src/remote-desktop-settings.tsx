@@ -4,6 +4,7 @@ import { MonitorUp, X } from "lucide-react";
 import { api } from "./api";
 import type { Translator } from "./i18n";
 import { configureVoxlFrame } from "./voxl-frame";
+import { ConnectionControl } from "./connection-control";
 
 export function RemoteDesktopConnection({
   available,
@@ -42,9 +43,11 @@ export function RemoteDesktopConnection({
 export function RemoteDesktopDialog({
   t,
   onClose,
+  onConnected,
 }: {
   t: Translator;
   onClose: () => void;
+  onConnected?: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const disposeViewer = useRef<(() => void) | undefined>(undefined);
@@ -64,7 +67,10 @@ export function RemoteDesktopDialog({
       .then((value) => {
         connection = value.token;
         if (disposed) disconnect(value.token);
-        else setToken(value.token);
+        else {
+          setToken(value.token);
+          onConnected?.();
+        }
       })
       .catch(() => {
         if (!disposed) onClose();
@@ -156,20 +162,38 @@ function useRemoteDesktopAvailable(token?: string) {
   return available;
 }
 
-export function RemoteDesktopSettings({
+export function RemoteDesktopControl({
   t,
   onConnect,
+  connected,
+  active,
 }: {
   t: Translator;
   onConnect: () => void;
+  connected: boolean;
+  active: boolean;
 }) {
   const available = useRemoteDesktopAvailable();
+  if (available !== true && !connected) return null;
   return (
-    <RemoteDesktopConnection
-      available={available === true}
-      secure={window.isSecureContext}
-      t={t}
-      onConnect={onConnect}
-    />
+    <ConnectionControl
+      active={active}
+      label={t("Remote connection")}
+      icon={<MonitorUp size={16} aria-hidden="true" />}
+      status={connected ? "connected" : undefined}
+      statusLabel={t("Connected")}
+    >
+      {(close) => (
+        <RemoteDesktopConnection
+          available
+          secure={window.isSecureContext}
+          t={t}
+          onConnect={() => {
+            close();
+            onConnect();
+          }}
+        />
+      )}
+    </ConnectionControl>
   );
 }

@@ -491,25 +491,42 @@ button:disabled {
   right: 3px;
   box-shadow: 0 0 0 2px var(--sidebar);
 }
-.adb-share-indicator {
+.connection-control {
   position: relative;
+  flex-shrink: 0;
 }
-.adb-share-indicator::after {
-  content: "";
+.connection-status-dot {
   position: absolute;
   top: 3px;
   right: 3px;
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--notice-text);
+  background: var(--green);
   box-shadow: 0 0 0 2px var(--sidebar);
 }
-.adb-share-indicator[data-phase="online"]::after {
-  background: var(--green);
+.connection-status-dot[data-state="pending"] {
+  background: var(--notice-text);
 }
-.adb-share-indicator[data-phase="failed"]::after {
-  background: var(--error-text);
+.connection-popover {
+  position: fixed;
+  z-index: 45;
+  width: min(340px, calc(100vw - 16px));
+  max-height: calc(100dvh - var(--sidebar-footer-height) - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--elevated);
+  box-shadow: 0 8px 30px var(--shadow);
+  color: var(--text);
+  font-size: 12px;
+}
+.connection-popover .notification-settings {
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 .desktop-settings-labeled {
   width: auto;
@@ -3960,6 +3977,12 @@ option {
   font-size: 11px;
   line-height: 1.8;
   color: var(--muted);
+}
+.appearance-version {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 .notification-settings {
   margin-top: 22px;

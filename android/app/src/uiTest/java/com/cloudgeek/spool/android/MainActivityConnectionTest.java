@@ -97,6 +97,56 @@ public class MainActivityConnectionTest {
     }
 
     @Test @Config(sdk = 35)
+    public void adbEntryOpensAnIndependentDialogAndKeepsSharingAfterDismissal() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            MainActivityGoalTest.ShadowClient.responder = call -> "{status:200,body:'{available:true}'}";
+            h.call("openSettings");
+            assertNull("Server settings no longer contain phone sharing", h.get("adbSettings"));
+            h.call("closeSettings");
+            h.call("openSidebar"); h.io.run();
+            NativeSidebar sidebar = h.get("sidebar");
+            assertNotNull(sidebar.adb);
+            sidebar.adb.performClick();
+            NativeDialog dialog = h.get("adbDialog");
+            assertNotNull(dialog); assertTrue(dialog.isShowing());
+            assertNull(h.get("settingsDialog")); assertNull(h.get("sidebar"));
+            assertNotNull(h.get("adbSettings"));
+            AdbShare share = h.get("adbShare");
+            share.phase = AdbShare.Phase.ONLINE;
+            dialog.dismiss(); idle();
+            assertNull(h.get("adbDialog")); assertNull(h.get("adbSettings"));
+            assertEquals(AdbShare.Phase.ONLINE, share.phase);
+            h.call("openSidebar");
+            assertNotNull(h.<NativeSidebar>get("sidebar").findViewWithTag("adb-status"));
+            h.call("clearWorkspace");
+            assertEquals(AdbShare.Phase.IDLE, share.phase);
+        }
+    }
+
+    @Test @Config(sdk = 35)
+    public void adbEntryTracksHostEnablementEvenAfterAShareFailed() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            java.util.concurrent.atomic.AtomicBoolean enabled = new java.util.concurrent.atomic.AtomicBoolean(false);
+            MainActivityGoalTest.ShadowClient.responder = call -> enabled.get()
+                    ? "{status:200,body:'{available:true}'}"
+                    : "{status:200,body:'{available:false,reason:\"disabled\"}'}";
+            h.call("openSidebar"); h.io.run();
+            assertNull(h.<NativeSidebar>get("sidebar").adb);
+            enabled.set(true);
+            h.call("refreshAdbAvailability"); h.io.run();
+            assertNotNull(h.<NativeSidebar>get("sidebar").adb);
+            h.call("adbShare");
+            h.<AdbShare>get("adbShare").phase = AdbShare.Phase.FAILED;
+            enabled.set(false);
+            h.call("refreshAdbAvailability"); h.io.run();
+            assertNull(h.<NativeSidebar>get("sidebar").adb);
+            enabled.set(true);
+            h.call("refreshAdbAvailability"); h.io.run();
+            assertNotNull(h.<NativeSidebar>get("sidebar").adb);
+        }
+    }
+
+    @Test @Config(sdk = 35)
     public void deniedOrStaleNotificationPermissionCannotStartAdbSharing() throws Exception {
         String permission = android.Manifest.permission.POST_NOTIFICATIONS;
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {

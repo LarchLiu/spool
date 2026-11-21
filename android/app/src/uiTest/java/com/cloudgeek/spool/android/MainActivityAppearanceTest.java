@@ -175,6 +175,8 @@ public class MainActivityAppearanceTest {
 
     @Test public void websocketAvailabilityUpdatesTheFooterAndSurvivesAppearanceChangesWithoutPolling() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            MainActivityGoalTest.ShadowClient.responder = call -> call.get(1).equals("/api/adb")
+                    ? "{status:200,body:'{available:false,reason:\"not_authorized\"}'}" : MainActivityGoalTest.ShadowClient.response;
             MainActivityWorkspaceEventsTest.install(h); h.call("startWorkspace"); h.io.run();
             MainActivityWorkspaceEventsTest.event("ready", "{}");
             h.call("openSidebar"); idle();
@@ -193,7 +195,9 @@ public class MainActivityAppearanceTest {
             h.call("openSettings"); idle(); h.call("closeSettings");
             assertNotNull(h.<NativeSidebar>get("sidebar").remote);
             Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(10000));
-            assertTrue("Availability uses the existing WebSocket without HTTP polling", MainActivityGoalTest.ShadowClient.calls.isEmpty());
+            while (!h.io.jobs.isEmpty()) { h.io.jobs.remove(0).run(); idle(); }
+            assertTrue("Remote desktop availability uses the existing WebSocket without HTTP polling",
+                    MainActivityGoalTest.ShadowClient.calls.stream().allMatch(call -> call.get(1).equals("/api/adb")));
             assertTrue(h.io.jobs.isEmpty());
             desktopEvent("{available:false}");
             assertNull(h.<NativeSidebar>get("sidebar").remote);

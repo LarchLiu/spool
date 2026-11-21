@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { Check, Monitor, Moon, Sun, X } from "lucide-react";
+import { Check, Github, Monitor, Moon, Sun, X } from "lucide-react";
 import type { Translator } from "./i18n";
 import { CustomSelect } from "./custom-select.js";
 import {
@@ -108,7 +108,19 @@ export function AppearanceDialog({
         />
       </div>
       {children}
-      <p>{t("Current version: {version}", { version: version || "..." })}</p>
+      <p className="appearance-version">
+        <span>{t("Current version: {version}", { version: version || "..." })}</span>
+        <a
+          className="icon"
+          href="https://github.com/LarchLiu/spool"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={t("Open GitHub repository")}
+          title={t("Open GitHub repository")}
+        >
+          <Github size={18} aria-hidden="true" />
+        </a>
+      </p>
     </dialog>
   );
 }

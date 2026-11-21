@@ -19,10 +19,6 @@ final class NativeAdbSettings extends LinearLayout {
 
     NativeAdbSettings(NativeUi ui, IntConsumer start, Runnable stop, BiConsumer<String, Integer> pairDevice) {
         super(ui.context); this.ui = ui; setOrientation(VERTICAL);
-        addView(ui.divider()); addView(ui.space(18));
-        TextView title = ui.text(ui.t("ADB bridge"), 12, ui.text);
-        ui.typography(title, 12, ui.text, 500);
-        addView(title); addView(ui.space(8));
         TextView about = ui.text(ui.t("Share this phone with adb on the server over wireless debugging, so agents there can install and debug apps on it. While it is shared, the server and every agent and program on it can control the phone."), 11, ui.muted);
         ui.lineHeight(about, 1.5f);
         addView(about); addView(ui.space(10));

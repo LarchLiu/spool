@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { Settings2 } from "lucide-react";
+import { Palette, Settings2 } from "lucide-react";
 import type { Translator } from "./i18n";
 import {
   desktopSettingsPath,
@@ -53,7 +53,7 @@ export function ChatSettingsControl({
       aria-label={t("Appearance and language")}
       title={t("Settings")}
     >
-      <Settings2 size={16} />
+      <Palette size={16} />
     </button>
   );
 }

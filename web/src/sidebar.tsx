@@ -19,8 +19,9 @@ import { UserAvatar } from "./user-avatar";
 import { ChatOperatorAvatars } from "./turn-identity";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { ChatSettingsControl } from "./desktop-settings";
-import { ADBShareIndicator } from "./adb-share-settings";
-import { isMacDesktop } from "./runtime";
+import { ADBShareControl } from "./adb-share-settings";
+import { RemoteDesktopControl } from "./remote-desktop-settings";
+import { isDesktopChat, isMacDesktop } from "./runtime";
 import { canControlChat } from "./chat-state";
 import { ChatActionMenu } from "./chat-title-menu";
 import {
@@ -60,6 +61,8 @@ type Props = {
   onError: (error: unknown) => void;
   onNew: (project?: string) => void;
   onSettings: () => void;
+  onRemoteConnect: () => void;
+  remoteConnected: boolean;
   onAvatar: () => void;
   onLogout: () => void;
 };
@@ -348,12 +351,23 @@ export function Sidebar(props: Props) {
           {props.user.nickname}
           <small>{t("Project chat visibility follows project settings")}</small>
         </div>
-        <ADBShareIndicator t={t} onOpen={props.onSettings} />
+        {!isDesktopChat() && (
+          <>
+            <RemoteDesktopControl
+              t={t}
+              active={props.active}
+              connected={props.remoteConnected}
+              onConnect={props.onRemoteConnect}
+            />
+            <ADBShareControl t={t} active={props.active} />
+          </>
+        )}
         <ChatSettingsControl t={t} onAppearance={props.onSettings} />
         <button
           className="icon"
           onClick={props.onLogout}
           aria-label={t("Sign out")}
+          title={t("Sign out")}
         >
           <LogOut size={16} />
         </button>

@@ -42,6 +42,10 @@ final class NativeSidebar extends LinearLayout {
     private boolean hasServer = true, desktopAvailable;
     private Runnable desktop = () -> {};
     NativeUi.IconButton remote;
+    NativeUi.IconButton adb;
+    private boolean adbAvailable;
+    private String adbPhase = "IDLE", adbStatus = "";
+    private Runnable openAdb = () -> {};
     private NativeServerTabs serverTabs;
     private String serverSignature = "";
     private int epoch;
@@ -196,7 +200,7 @@ final class NativeSidebar extends LinearLayout {
     }
     private void footer() {
         footer.removeAllViews();
-        remote = null; connection = null;
+        remote = null; adb = null; connection = null;
         JSONObject identity = account == null ? user : account;
         if (identity.optString("id").isEmpty()) {
             TextView name = ui.text(serverLabel, 12, ui.text); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -217,9 +221,27 @@ final class NativeSidebar extends LinearLayout {
             action.setEnabled(!connectionPending); connection = action;
             LayoutParams at = new LayoutParams(ui.dp(32), ui.dp(32)); at.setMarginStart(ui.dp(6)); footer.addView(action, at);
         } else if (desktopAvailable && authenticated) {
-            remote = ui.icon("monitor", 16, ui.t("Remote connection"), () -> { if (active && desktopAvailable) desktop.run(); });
+            remote = ui.icon("monitor-up", 16, ui.t("Remote connection"), () -> { if (active && desktopAvailable) desktop.run(); });
+            remote.setTooltipText(ui.t("Remote connection"));
             LayoutParams action = new LayoutParams(ui.dp(32), ui.dp(32)); action.setMarginStart(ui.dp(6));
             footer.addView(remote, action);
+        }
+        if (adbAvailable && authenticated) {
+            String label = ui.t("ADB bridge") + (adbStatus.isEmpty() ? "" : " · " + adbStatus);
+            adb = ui.icon("smartphone", 16, label, () -> { if (active && adbAvailable) openAdb.run(); });
+            adb.setTooltipText(label);
+            FrameLayout entry = new FrameLayout(ui.context);
+            entry.addView(adb, new FrameLayout.LayoutParams(ui.dp(32), ui.dp(32)));
+            if (!adbPhase.equals("IDLE") && !adbPhase.equals("FAILED")) {
+                View dot = new View(ui.context);
+                dot.setTag("adb-status");
+                dot.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                dot.setBackground(ui.shape(adbPhase.equals("ONLINE") ? ui.green : ui.noticeText, 99, ui.sidebar));
+                FrameLayout.LayoutParams position = new FrameLayout.LayoutParams(ui.dp(8), ui.dp(8), Gravity.TOP | Gravity.END);
+                position.topMargin = ui.dp(3); position.setMarginEnd(ui.dp(3)); entry.addView(dot, position);
+            }
+            LayoutParams position = new LayoutParams(ui.dp(32), ui.dp(32)); position.setMarginStart(ui.dp(6));
+            footer.addView(entry, position);
         }
         LayoutParams action = new LayoutParams(ui.dp(32), ui.dp(32)); action.setMarginStart(ui.dp(10)); footer.addView(ui.icon("settings", 16, ui.t("Settings"), () -> { if (active) settings.run(); }), action);
         LayoutParams exit = new LayoutParams(ui.dp(32), ui.dp(32)); exit.setMarginStart(ui.dp(10));
@@ -230,6 +252,12 @@ final class NativeSidebar extends LinearLayout {
         desktop = connect;
         if (desktopAvailable == available) return;
         desktopAvailable = available;
+        if (active) footer();
+    }
+    void adb(boolean available, String phase, String status, Runnable open) {
+        openAdb = open;
+        if (adbAvailable == available && adbPhase.equals(phase) && adbStatus.equals(status)) return;
+        adbAvailable = available; adbPhase = phase; adbStatus = status;
         if (active) footer();
     }
     void deactivate() { active = false; epoch++; for (NativeChatLink row : chatRows) if (row.operators != null) row.operators.deactivate(); }

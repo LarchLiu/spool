@@ -30,6 +30,33 @@ import org.robolectric.shadows.ShadowNsdManager;
 @Config(sdk = 35)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class NativeAdbSharingTest {
+    @Test public void footerOffersAdbBeforeSettingsAndOnlyShowsADotForAnActiveShare() throws Exception {
+        NativeUi ui = new NativeUi(RuntimeEnvironment.getApplication(), false, "en");
+        List<String> actions = new ArrayList<>();
+        NativeSidebar sidebar = new NativeSidebar(ui, new NativeSidebarState(), id -> new org.json.JSONObject(),
+                () -> {}, id -> {}, id -> {}, () -> {}, () -> actions.add("settings"), () -> {});
+        sidebar.bind(new org.json.JSONObject().put("id", "alice"), new org.json.JSONArray(), new org.json.JSONArray(), "", "", "", false);
+        assertNull(sidebar.adb);
+        sidebar.adb(true, "IDLE", "", () -> actions.add("adb"));
+        assertNotNull(sidebar.adb);
+        assertEquals("ADB bridge", sidebar.adb.getTooltipText());
+        assertNull(sidebar.findViewWithTag("adb-status"));
+        int settings = sidebar.footer.getChildCount() - 2;
+        assertSame(sidebar.adb.getParent(), sidebar.footer.getChildAt(settings - 1));
+        sidebar.adb.performClick(); sidebar.footer.getChildAt(settings).performClick();
+        assertEquals(List.of("adb", "settings"), actions);
+        for (String phase : new String[] {"CONNECTING", "ONLINE", "WAITING", "UNPAIRED"}) {
+            sidebar.adb(true, phase, "Current share", () -> {});
+            assertNotNull(sidebar.findViewWithTag("adb-status"));
+            assertTrue(sidebar.adb.getContentDescription().toString().contains("Current share"));
+        }
+        sidebar.adb(true, "FAILED", "Sharing ended", () -> {});
+        assertNull(sidebar.findViewWithTag("adb-status"));
+        sidebar.adb(false, "IDLE", "", () -> {});
+        assertNull(sidebar.adb);
+        sidebar.deactivate();
+    }
+
     private static final class Owner implements AdbShareService.Controls {
         final Application app = RuntimeEnvironment.getApplication();
         final AdbShare share = new AdbShare(null, () -> {});
