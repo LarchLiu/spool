@@ -950,6 +950,8 @@ func (p *panel) probeThemePicker(ctx context.Context, view *mygo.WebView, report
 	if _, err := page.EvalContext(ctx, `document.querySelector('[data-section="Appearance"]').click();`); err != nil {
 		return err
 	}
+	// Native commands do not update SettingsApp's snapshot. Wait for its poll to
+	// show the reset values before a UI save merges with that snapshot.
 	if err := waitChatChecks(ctx, page, `
 		const section = document.querySelector('[data-page="Appearance"]');
 		const language = section?.querySelector('.custom-select-trigger[aria-haspopup="listbox"]');
@@ -957,7 +959,9 @@ func (p *panel) probeThemePicker(ctx context.Context, view *mygo.WebView, report
 			visible: !!section && !section.hidden,
 			idle: smokeSettingsReady('Appearance'),
 			themes: section?.querySelectorAll('.settings-theme-picker button').length === 3,
-			language: !!language && !language.matches(':disabled') && language.getAttribute('aria-expanded') === 'false'
+			themeSynced: section?.querySelector('[data-theme-choice="system"]')?.getAttribute('aria-pressed') === 'true',
+			language: !!language && !language.matches(':disabled') && language.getAttribute('aria-expanded') === 'false',
+			languageSynced: language?.textContent.trim() === '简体中文'
 		};
 		return {ready: Object.values(checks).every(Boolean), checks};
 	`); err != nil {
@@ -1023,13 +1027,19 @@ func (p *panel) probeSettingsLanguage(ctx context.Context, page *mygo.Page) erro
 		if _, err := page.EvalContext(ctx, fmt.Sprintf(`document.querySelector('.custom-select-menu [role="option"][data-value="%s"]').click();`, language)); err != nil {
 			return fmt.Errorf("language %s select: %w", language, err)
 		}
-		if err := waitChatScript(ctx, page, fmt.Sprintf(`
+		if err := waitChatChecks(ctx, page, fmt.Sprintf(`
 			const snapshot = await mygo.call('DesktopSettings.Snapshot');
 			const trigger = document.querySelector('[data-page="Appearance"] .custom-select-trigger');
-			return snapshot.preferences.language === %q && snapshot.preferences.theme === 'system' &&
-				document.documentElement.lang === %q && smokeSettingsReady('Appearance') &&
-				!trigger.matches(':disabled') && trigger.getAttribute('aria-expanded') === 'false' &&
-				!document.querySelector('.custom-select-menu');
+			const checks = {
+				languageSaved: snapshot.preferences.language === %q,
+				themePreserved: snapshot.preferences.theme === 'system',
+				translated: document.documentElement.lang === %q,
+				idle: smokeSettingsReady('Appearance'),
+				enabled: !trigger.matches(':disabled'),
+				closed: trigger.getAttribute('aria-expanded') === 'false' && !document.querySelector('.custom-select-menu')
+			};
+			return {ready: Object.values(checks).every(Boolean), checks, preferences: snapshot.preferences,
+				locale: document.documentElement.lang, error: document.querySelector('.settings-error')?.textContent};
 		`, language, language)); err != nil {
 			return fmt.Errorf("language %s save: %w", language, err)
 		}
