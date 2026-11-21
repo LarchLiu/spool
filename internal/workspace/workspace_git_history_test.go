@@ -86,6 +86,14 @@ func TestWorkspaceGitHistoryPagesTagsAndOutgoingCommits(t *testing.T) {
 		if item.ID != ids[104-i] || item.Unpushed != (i < 5) {
 			t.Errorf("history row %d: %+v", i, item)
 		}
+		wantSubject := fmt.Sprintf("History commit %d", 104-i)
+		wantMessage := wantSubject
+		if i == 0 {
+			wantMessage += "\n\nRelease details\nSecond line with 中文\n\nFinal paragraph"
+		}
+		if item.Subject != wantSubject || item.Message != wantMessage {
+			t.Errorf("history row %d message: subject %q, message %q; want %q, %q", i, item.Subject, item.Message, wantSubject, wantMessage)
+		}
 		wantTag := ""
 		switch item.ID {
 		case ids[104]:

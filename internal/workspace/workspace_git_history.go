@@ -13,18 +13,18 @@ const workspaceGitHistoryPage = 50
 // page boundaries. The caller verifies that the anchor is still reachable.
 func workspaceGitHistory(ctx context.Context, directory string, view *workspaceGitView, anchor string, offset int) error {
 	run := func(args ...string) ([]byte, error) { return readWorkspaceGit(ctx, directory, 4*1024*1024, args...) }
-	body, err := run("log", "-"+strconv.Itoa(workspaceGitHistoryPage+1), "--skip="+strconv.Itoa(offset), "-z", "--format=%H%x00%s%x00%an%x00%at", anchor, "--", ".")
+	body, err := run("log", "-"+strconv.Itoa(workspaceGitHistoryPage+1), "--skip="+strconv.Itoa(offset), "-z", "--format=%H%x00%s%x00%an%x00%at%x00%B", anchor, "--", ".")
 	if err != nil {
 		return err
 	}
 	fields := strings.Split(string(body), "\x00")
-	for i := 0; i+3 < len(fields); i += 4 {
+	for i := 0; i+4 < len(fields); i += 5 {
 		if len(view.Commits) == workspaceGitHistoryPage {
 			view.NextCursor = anchor + ":" + strconv.Itoa(offset+workspaceGitHistoryPage)
 			break
 		}
 		stamp, _ := strconv.ParseInt(fields[i+3], 10, 64)
-		view.Commits = append(view.Commits, workspaceGitCommit{ID: strings.TrimSpace(fields[i]), Subject: fields[i+1], Author: fields[i+2], Time: stamp})
+		view.Commits = append(view.Commits, workspaceGitCommit{ID: strings.TrimSpace(fields[i]), Subject: fields[i+1], Author: fields[i+2], Time: stamp, Message: strings.TrimRight(fields[i+4], "\r\n")})
 	}
 	return workspaceGitCommitBadges(ctx, directory, view, anchor, view.Commits)
 }

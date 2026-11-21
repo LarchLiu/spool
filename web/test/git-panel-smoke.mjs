@@ -87,7 +87,7 @@ try {
         const base = { repository: true, writable: true, index: "index-snapshot", commit, remote: "origin", remote_branch: "dev", remote_allowed: true, upstream: "origin/dev", ahead: 2, behind: 0,
           last_commit: { id: commit, subject: lastSubject, author: "Developer", time: 1794900000 },
           branch: scope === "/repo/feature" ? "feature/git" : "dev", files: [], commits: [] };
-        if (url.searchParams.get("view") === "history") return json({ ...base, commits: [{ id: commit, subject: "Fix Git panel preview", author: "Developer", time: 1794900000, tags: ["v1.2.0"], unpushed: true }] });
+        if (url.searchParams.get("view") === "history") return json({ ...base, commits: [{ id: commit, subject: "Fix Git panel preview", message: detailMessage, author: "Developer", time: 1794900000, tags: ["v1.2.0"], unpushed: true }] });
         return json({ ...base, ...(url.searchParams.has("commit") ? { selected_commit: {
           id: commit, subject: "Fix Git panel preview", message: detailMessage, author: "Developer", time: 1794900000,
           tags: [detailPushed ? "v1.2.1" : "v1.2.0"], unpushed: !detailPushed,
@@ -242,6 +242,9 @@ try {
       await page.locator(".git-file-row").filter({ hasText: "image.png" }).click(); await page.locator(".git-diff-preview").getByText("Binary file", { exact: true }).waitFor();
       await page.getByRole("tab", { name: "History", exact: true }).click();
       await page.locator(".git-history-list").getByText("v1.2.0", { exact: true }).waitFor();
+      const historyRow = page.locator(".git-history-list > .file-panel-button").first();
+      await historyRow.locator("strong").hover();
+      assert.equal(await historyRow.getAttribute("title"), `${commit}\n\n${detailMessage}`, "History hover includes the full SHA and complete commit message");
       assert.deepEqual(await page.locator(".git-history-list .git-history-badge").evaluateAll(badges => badges.map(badge => badge.getAttribute("aria-label") || badge.textContent)), ["v1.2.0", "Not pushed"]);
       await page.locator(".file-sidebar").screenshot({ path: path.join(output, `history-${width}-${theme}.png`) });
       await page.getByText("Fix Git panel preview", { exact: true }).click();

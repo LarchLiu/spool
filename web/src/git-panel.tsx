@@ -773,7 +773,7 @@ export function GitPanel({
                           setData(undefined);
                           setSelected("");
                         }}
-                        title={item.id}
+                        title={`${item.id}\n\n${item.message || item.subject}`}
                       >
                         <span className="git-history-title">
                           <strong>{item.subject}</strong>
