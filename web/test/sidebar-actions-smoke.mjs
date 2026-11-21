@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { requireRunTemp } from "../../tools/test-scratch.mjs";
-import { createTestViteServer } from "./vite-fixture.mjs";
+import { createTestViteServer, mockDesktopNavigation } from "./vite-fixture.mjs";
 
 requireRunTemp();
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -15,7 +15,7 @@ const { chromium, webkit } = require("playwright");
 const output = path.join(root, "build/artifacts/sidebar-actions");
 const cleanup = [];
 const server = await createTestViteServer({ after: fn => cleanup.push(fn) }, {
-  configFile: false, root: path.join(root, "web"), plugins: [react()],
+  configFile: false, root: path.join(root, "web"), plugins: [react(), mockDesktopNavigation()],
   server: { host: "127.0.0.1", port: 0 },
 });
 let browser;

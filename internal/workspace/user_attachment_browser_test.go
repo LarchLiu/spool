@@ -70,6 +70,7 @@ func TestUserAttachmentBrowser(t *testing.T) {
 	if err := s.SetNativeSessionPath(chat.ID, "attachment-browser-native", native); err != nil {
 		t.Fatal(err)
 	}
+	s.codexHistory.reader = &fakeCodexHistory{legacy: true}
 	a := NewApp(s, &fakeRunner{}, "", "")
 	t.Cleanup(func() { _ = a.Close() })
 	server := httptest.NewServer(a)

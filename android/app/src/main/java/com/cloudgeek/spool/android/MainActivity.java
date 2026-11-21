@@ -4845,7 +4845,7 @@ public final class MainActivity extends Activity {
 
     private void refreshAdbAvailability() {
         main.removeCallbacks(adbPoll);
-        if ((adbSettings == null && sidebar == null) || destroyed) return;
+        if ((adbSettings == null && sidebar == null) || destroyed || Build.VERSION.SDK_INT < 30) return;
         if (foreground && !adbAvailabilityBusy) {
             adbAvailabilityBusy = true;
             final int session = authEpoch;
@@ -4864,7 +4864,7 @@ public final class MainActivity extends Activity {
         if (adbSettings != null) adbSettings.bind(adbShare(), adbAvailability, Build.VERSION.SDK_INT >= 30);
         if (sidebar != null) {
             boolean active = adbShare != null && adbShare.phase != AdbShare.Phase.IDLE;
-            boolean available = !"disabled".equals(adbAvailability)
+            boolean available = Build.VERSION.SDK_INT >= 30 && !"disabled".equals(adbAvailability)
                     && (active || adbAvailability != null && !adbAvailability.equals("not_authorized"));
             sidebar.adb(available, adbShare == null ? "IDLE" : adbShare.phase.name(),
                     adbShare == null ? "" : NativeAdbSettings.status(adbShare, locale()), this::openAdbDialog);

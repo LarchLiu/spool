@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { requireRunTemp } from "../../tools/test-scratch.mjs";
-import { createTestViteServer } from "./vite-fixture.mjs";
+import { createTestViteServer, mockDesktopNavigation } from "./vite-fixture.mjs";
 
 requireRunTemp();
 const root = path.resolve(
@@ -30,7 +30,7 @@ const server = await createTestViteServer(
   {
     configFile: false,
     root: path.join(root, "web"),
-    plugins: [react()],
+    plugins: [react(), mockDesktopNavigation()],
     server: { host: "127.0.0.1", port: 0 },
   },
 );

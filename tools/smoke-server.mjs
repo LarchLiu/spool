@@ -66,7 +66,7 @@ export async function smokeServer(directory, target, env = process.env) {
       await new Promise((done) => setTimeout(done, 100));
     }
     assert.ok(ready, `headless server never became ready: ${output}`);
-    assert.deepEqual(await (await fetch(`${origin}/api/version`)).json(), { version });
+    assert.deepEqual(await (await fetch(`${origin}/api/version`)).json(), { version, server_name: "Home" });
     assert.match(await (await fetch(origin)).text(), /<html/);
     assert.equal((await fetch(`${origin}/api/projects`)).status, 401);
     const login = await fetch(`${origin}/api/login`, {

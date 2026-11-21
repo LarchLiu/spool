@@ -13,7 +13,7 @@
  const panel = key => document.getElementById(tab(key).getAttribute('aria-controls'));
  const assertTab = key => {
   if (document.querySelectorAll('.settings-service-panel:not([hidden])').length !== 1 || panel(key).hidden || tab(key).getAttribute('aria-selected') !== 'true' || tab(key).tabIndex !== 0) throw new Error('Wrong active service tab: ' + key);
-  for (const item of ['web', 'relay', 'tsnet', 'desktop']) {
+  for (const item of ['web', 'relay', 'tsnet', 'desktop', 'adb']) {
    if (panel(item).getAttribute('aria-labelledby') !== tab(item).id || item !== key && (!panel(item).hidden || tab(item).tabIndex !== -1)) throw new Error('Service tab accessibility is out of sync');
   }
  };
@@ -40,9 +40,9 @@
  const original = structuredClone(fixture.snapshot.settings);
  // Tabs keep all drafts mounted and support the standard keyboard controls.
  assertTab('web');
- if ([...document.querySelectorAll('[role="tab"]')].map(item => item.textContent).join('|') !== 'Web|中继|Tailscale|远程桌面') throw new Error('Unexpected service tabs');
+ if ([...document.querySelectorAll('[role="tab"]')].map(item => item.textContent).join('|') !== 'Web|中继|Tailscale|远程桌面|ADB 桥接') throw new Error('Unexpected service tabs');
  const initialCommands = fixture.commands.length;
- for (const [key, target] of [['End', 'desktop'], ['ArrowRight', 'web'], ['ArrowLeft', 'desktop'], ['Home', 'web'], ['ArrowRight', 'relay'], ['ArrowRight', 'tsnet']]) {
+ for (const [key, target] of [['End', 'adb'], ['ArrowRight', 'web'], ['ArrowLeft', 'adb'], ['Home', 'web'], ['ArrowRight', 'relay'], ['ArrowRight', 'tsnet']]) {
   document.querySelector('[role="tab"][aria-selected="true"]').focus();
   document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {key, bubbles: true}));
   await waitFor(() => !panel(target).hidden, 'keyboard ' + key);

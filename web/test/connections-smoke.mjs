@@ -24,10 +24,11 @@ try {
   await server.listen();
   const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
   browser = await chromium.launch({ channel: "chrome", headless: true });
-  for (const [width, supportsUSB, desktopPlatform] of [
+  for (const [width, supportsUSB, desktopPlatform, missingADB] of [
     [1280, true], [390, true], [320, true],
     [1280, false], [390, false], [320, false],
     [1280, true, "darwin"], [1280, true, "win32"], [1280, true, "linux"],
+    [1280, true, undefined, true],
   ]) {
     const context = await browser.newContext({
       viewport: { width, height: 820 }, serviceWorkers: "block",
@@ -86,6 +87,7 @@ try {
       let desktopReads = 0;
       // The native shell consumes this navigation without leaving the chat.
       await page.route("**/__desktop/session-changed", (route) => route.fulfill({ status: 204 }));
+      await page.route("**/__desktop/view?*", (route) => route.fulfill({ status: 204 }));
       await page.route("**/api/**", async (route) => {
         const request = route.request(), endpoint = new URL(request.url()).pathname;
         const json = (value) => route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
@@ -102,6 +104,7 @@ try {
         }
         if (endpoint === "/api/adb") {
           adbReads++;
+          if (missingADB) return json({});
           return json(!authorized ? { available: false, reason: "not_authorized" }
             : adbEnabled ? { available: true } : { available: false, reason: "disabled" });
         }
@@ -109,6 +112,9 @@ try {
         if (endpoint === "/api/desktop/view/") return route.fulfill({ contentType: "text/html", body: "<!doctype html><p>Fixture desktop</p>" });
         return json({});
       });
+      const incompleteResponse = missingADB
+        ? page.waitForResponse(response => new URL(response.url()).pathname === "/api/adb")
+        : undefined;
       await page.goto(origin);
       if (width < 600) await page.getByRole("button", { name: "Open sidebar", exact: true }).click();
       const footer = page.locator(".side-foot");
@@ -130,6 +136,14 @@ try {
       }
       assert.equal(await footer.getByRole("button", { name: "Appearance and language", exact: true }).locator(".lucide-palette").count(), 1);
       await remote.waitFor();
+      if (missingADB) {
+        await (await incompleteResponse).finished();
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        assert.equal(await adb.count(), 0, "An incomplete availability response keeps ADB unknown");
+        assert.deepEqual(errors, [], "An incomplete availability response cannot crash the workspace");
+        console.log("PASS: incomplete ADB availability keeps the workspace usable");
+        continue;
+      }
       if (!supportsUSB) {
         assert.equal(await adb.count(), 0, "Browsers without WebUSB hide the ADB entry");
         assert.equal(adbReads, 0, "Browsers without WebUSB do not poll ADB availability");

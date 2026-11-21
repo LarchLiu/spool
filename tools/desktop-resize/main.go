@@ -124,7 +124,8 @@ func main() {
 				page.OnWillNavigate(func(e *mygo.NavigateEvent) {
 					target, err := url.Parse(e.URL)
 					if err == nil && fixture != nil && target.Scheme == fixture.Scheme && target.Host == fixture.Host &&
-						target.Path == "/__desktop/session-changed" && target.RawPath == "" && target.RawQuery == "" && !target.ForceQuery && target.Fragment == "" {
+						target.RawPath == "" && target.Fragment == "" && (target.Path == "/__desktop/view" ||
+						target.Path == "/__desktop/session-changed" && target.RawQuery == "" && !target.ForceQuery) {
 						e.PreventDefault()
 					}
 				})

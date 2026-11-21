@@ -68,7 +68,7 @@ function useADBShareAvailability() {
         .then((next) => {
           if (controller.signal.aborted) return;
           setAvailability((old) =>
-            old?.available === next.available && old.reason === next.reason
+            old?.available === next.available && old?.reason === next.reason
               ? old
               : next,
           );

@@ -96,6 +96,23 @@ public class MainActivityConnectionTest {
                 new JSONObject("{revision:" + revision + ",people:[{id:'alice',nickname:'" + name + "'}]}")));
     }
 
+    private void finishSidebarAvailability(MainActivityGoalTest.Harness h) {
+        if (h.io.jobs.isEmpty()) return;
+        h.io.run();
+        assertEquals("/api/adb", MainActivityGoalTest.ShadowClient.calls.get(MainActivityGoalTest.ShadowClient.calls.size() - 1).get(1));
+    }
+
+    @Test @Config(sdk = 26)
+    public void unsupportedAndroidDoesNotPollOrOfferPhoneSharing() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            h.set("adbAvailability", "");
+            h.call("openSidebar");
+            h.call("refreshAdbAvailability");
+            assertTrue(h.io.jobs.isEmpty());
+            assertNull(h.<NativeSidebar>get("sidebar").adb);
+        }
+    }
+
     @Test @Config(sdk = 35)
     public void adbEntryOpensAnIndependentDialogAndKeepsSharingAfterDismissal() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
@@ -299,6 +316,7 @@ public class MainActivityConnectionTest {
             connectionQueue(h);
             try {
                 navigation(h, "Home"); h.composer().input.setText("Unsent during reconnect"); h.call("openSidebar");
+                finishSidebarAvailability(h);
                 h.call("beginNetworkHandoff");
                 assertEquals("Home project", h.<NativeSidebar>get("sidebar").projectRows.get(0).title.getText().toString());
                 Client next = new Client("unused", "https://home.example.ts.net");
@@ -467,6 +485,7 @@ public class MainActivityConnectionTest {
                 ConnectionPlan plan = new ConnectionPlan("", "https://private.example.ts.net", ConnectionMode.TAILSCALE);
                 h.<ServerProfiles>get("serverProfiles").active().plan = plan; h.set("connectionPlan", plan); h.set("connectionDraft", plan);
                 h.call("openSidebar");
+                finishSidebarAvailability(h);
                 Client next = new Client("unused", "https://private.example.ts.net");
                 ConnectionRouter.Candidate<Client> candidate = new ConnectionRouter.Candidate<>(
                         new ConnectionPlan.Endpoint(ConnectionMode.TAILSCALE, "https://private.example.ts.net"), next,
@@ -497,6 +516,7 @@ public class MainActivityConnectionTest {
             connectionQueue(h);
             try {
                 h.<JSONObject>get("user").put("nickname", "Alice"); h.call("openSidebar");
+                finishSidebarAvailability(h);
                 Client next = new Client("unused", "https://private.example.ts.net");
                 ConnectionRouter.Candidate<Client> candidate = new ConnectionRouter.Candidate<>(
                         new ConnectionPlan.Endpoint(ConnectionMode.TAILSCALE, "https://private.example.ts.net"), next,
@@ -526,6 +546,7 @@ public class MainActivityConnectionTest {
                 ConnectionPlan plan = new ConnectionPlan("", "https://private.example.ts.net", ConnectionMode.TAILSCALE);
                 h.<ServerProfiles>get("serverProfiles").active().plan = plan; h.set("connectionPlan", plan); h.set("connectionDraft", plan);
                 h.call("openSidebar");
+                finishSidebarAvailability(h);
                 Client next = new Client("unused", plan.tailscale);
                 ConnectionRouter.Candidate<Client> candidate = new ConnectionRouter.Candidate<>(
                         new ConnectionPlan.Endpoint(ConnectionMode.TAILSCALE, plan.tailscale), next,
@@ -609,8 +630,11 @@ public class MainActivityConnectionTest {
 
     private void drainWorkspace(MainActivityGoalTest.Harness h, boolean pushFirst) {
         if (pushFirst) {
-            assertFalse(h.io.jobs.isEmpty());
-            h.io.jobs.remove(0).run(); idle();
+            int runs = 0;
+            while (MainActivityGoalTest.ShadowClient.workspaceListener == null && !h.io.jobs.isEmpty()) {
+                assertTrue("Workspace subscription must start", ++runs < 30);
+                h.io.jobs.remove(0).run(); idle();
+            }
             assertNotNull(MainActivityGoalTest.ShadowClient.workspaceListener);
             MainActivityGoalTest.ShadowClient.workspaceListener.onEvent("ready", "true"); idle();
             MainActivityGoalTest.ShadowClient.workspaceListener.onEvent("navigation", workspaceNavigation()); idle();

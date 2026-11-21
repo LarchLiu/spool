@@ -27,10 +27,12 @@ try {
         window.mygo = { platform: "darwin" };
       });
       const login = await context.request.post(origin + "/api/login", {
+        headers: { Origin: origin },
         data: { username: "owner", password: "test-password-2026" },
       });
       assert.equal(login.status(), 200);
       const page = await context.newPage();
+      await page.route("**/__desktop/view?*", route => route.fulfill({ status: 204 }));
       page.on("pageerror", error => errors.push(error.message));
       let downloads = 0;
       page.on("download", () => downloads++);

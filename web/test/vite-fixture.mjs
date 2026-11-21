@@ -1,7 +1,31 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import { createScratch } from "../../tools/test-scratch.mjs";
+
+// Browser fixtures have no native OnWillNavigate guard. A routed 204 still
+// cancels pending fetches in WebKit, so replace only the native notification
+// boundary. runtime.test.mjs and the real desktop smoke cover its delivery.
+export function mockDesktopNavigation() {
+  const runtime = fileURLToPath(new URL("../src/runtime.ts", import.meta.url));
+  const id = "\0spool-test-desktop-navigation";
+  return {
+    name: "spool-test-desktop-navigation",
+    enforce: "pre",
+    async resolveId(source, importer) {
+      if (!/^\.\/runtime(?:\.[jt]s)?$/.test(source)) return;
+      const resolved = await this.resolve(source, importer, { skipSelf: true });
+      if (resolved?.id === runtime) return id;
+    },
+    load(source) {
+      if (source !== id) return;
+      return `export * from ${JSON.stringify(runtime)};
+export async function notifyDesktopSessionChanged() {}
+export async function notifyDesktopViewChanged() {}`;
+    },
+  };
+}
 
 // A test Vite server with different options invalidates the development
 // server's optimized modules if both use node_modules/.vite. Each fixture

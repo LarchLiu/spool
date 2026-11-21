@@ -23,6 +23,7 @@ try {
       if (surface === "desktop") await context.addInitScript(() => { window.spoolDesktop = true; window.mygo = { platform: "darwin" }; });
       assert.equal((await context.request.post(origin + "/api/login", { headers: { Origin: origin }, data: { username: "owner", password: "test-password-2026" } })).status(), 200);
       const page = await context.newPage();
+      await page.route("**/__desktop/view?*", route => route.fulfill({ status: 204 }));
       const errors = [];
       page.on("pageerror", error => errors.push(error.message));
       await page.goto(origin + "/?chat=" + process.env.SPOOL_IMAGE_CHAT);
@@ -42,6 +43,9 @@ try {
         let failing = true;
         await page.route("**/api/chats/*/file?**", route => failing && new URL(route.request().url()).searchParams.get("image") === "1"
           ? route.fulfill({ status, json: { error: "synthetic image failure" } }) : route.continue());
+        // Drop the decoded image retained by this document before simulating a
+        // network failure; opening an already-loaded image needs no request.
+        await page.reload();
         await card.click();
         await dialog.getByRole("status").filter({ hasText: text }).waitFor();
         if (status === 404 && surface === "mobile") await dialog.screenshot({ path: join(output, "missing-image-mobile.png") });
