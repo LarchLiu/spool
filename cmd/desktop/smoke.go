@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -403,8 +404,37 @@ func smokeSettingsCommand(ctx context.Context, page *mygo.Page, command settings
 	if err != nil {
 		return err
 	}
-	_, err = page.EvalContext(ctx, fmt.Sprintf(`return await window.mygo.call('DesktopSettings.Execute', %s);`, body))
-	return err
+	err = retrySmokeSettingsCommand(ctx, func() error {
+		_, err := page.EvalContext(ctx, fmt.Sprintf(`return await window.mygo.call('DesktopSettings.Execute', %s);`, body))
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("%s: %w", command.Kind, err)
+	}
+	return nil
+}
+
+// Smoke commands bypass the frontend's command queue. A snapshot can expose a
+// saved value before the autosave releases the native mutation lock, especially
+// on WebView2. Only this rejection is safe to retry: Execute has not mutated yet.
+func retrySmokeSettingsCommand(ctx context.Context, execute func() error) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := execute()
+		var scriptError *mygo.EvalError
+		if !errors.As(err, &scriptError) || scriptError.Message != "Working…" {
+			return err
+		}
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		}
+	}
 }
 
 func (p *panel) probeSettings(ctx context.Context, report string, history *appupdate.ReleaseHistory) error {
