@@ -215,6 +215,7 @@ public final class MainActivity extends Activity {
     private final NativePeopleModel inbox = new NativePeopleModel();
     private final Map<String, NativeGroupPicker.Completion> pendingGroups = new java.util.LinkedHashMap<>();
     private final NativeSidebarState sidebarState = new NativeSidebarState();
+    private final NativeSessionNotifications sessionNotifications = new NativeSessionNotifications();
     private Draft pickerDraft;
     private String csrf = "", origin = "", authURL = "", connectionMessage = "", networkMessage = "";
     private String tailnetState = "Disconnected", httpsState = "Not checked";
@@ -238,6 +239,7 @@ public final class MainActivity extends Activity {
         JSONArray projects = new JSONArray(), chats = new JSONArray(), agents = new JSONArray(), profiles = new JSONArray();
         boolean agentsInitialized, cached;
         final NativeSidebarState sidebar = new NativeSidebarState();
+        final NativeSessionNotifications notifications = new NativeSessionNotifications();
         final NativeNavigation navigation = new NativeNavigation();
         final NativeProfiles directory = new NativeProfiles();
         final NativeHistoryScroll.State history = new NativeHistoryScroll.State();
@@ -1480,6 +1482,7 @@ public final class MainActivity extends Activity {
         editedQueueDrafts.clear();
         activityStates.clear();
         sidebarState.reset();
+        sessionNotifications.clear();
         inbox.reset();
         pendingGroups.clear();
         peopleBounds = null;
@@ -1715,6 +1718,7 @@ public final class MainActivity extends Activity {
         state.agentsInitialized = agentsInitialized;
         state.cached = workspaceCached || projects.length() != 0 || chats.length() != 0;
         state.sidebar.copyFrom(sidebarState); state.navigation.copyFrom(navigation);
+        state.notifications.copyFrom(sessionNotifications);
         state.directory.copyFrom(profileCache); state.history.copyFrom(historyScrollState);
         state.activityStates.clear(); state.activityStates.putAll(activityStates);
         state.drafts.clear();
@@ -1748,6 +1752,7 @@ public final class MainActivity extends Activity {
         projects = state.projects; chats = state.chats; agents = state.agents; profiles = state.profiles;
         agentsInitialized = state.agentsInitialized;
         sidebarState.copyFrom(state.sidebar); navigation.copyFrom(state.navigation);
+        sessionNotifications.copyFrom(state.notifications);
         profileCache.copyFrom(state.directory); historyScrollState.copyFrom(state.history);
         activityStates.putAll(state.activityStates); drafts.putAll(state.drafts);
         workspaceUserID = state.userID; workspaceCached = state.cached;
@@ -1932,7 +1937,7 @@ public final class MainActivity extends Activity {
             }
             public void failed() { if (serverFeedCurrent(server, runtime, feed)) probeServer(server, true); }
             public void event(String kind, String raw) {
-                if (!java.util.Arrays.asList("navigation", "agents", "profiles", "desktop", "presence", "server").contains(kind)) return;
+                if (!java.util.Arrays.asList("navigation", "agents", "profiles", "desktop", "presence", "server", "session_notification").contains(kind)) return;
                 EventStream stream = feed.stream;
                 workspaceDecode.execute(() -> {
                     if (destroyed) return;
@@ -1989,6 +1994,7 @@ public final class MainActivity extends Activity {
         else if (kind.equals("desktop") && value instanceof JSONObject) feed.desktopAvailable = ((JSONObject) value).optBoolean("available");
         else if (kind.equals("presence") && value instanceof JSONArray) feed.presence = (JSONArray) value;
         else if (kind.equals("server") && value instanceof JSONObject) rememberServerName(server, (JSONObject) value);
+        else if (kind.equals("session_notification") && value instanceof JSONObject) feed.cache.notifications.receive((JSONObject) value, feed.userID, "");
     }
 
     private void acceptServerNavigation(ServerWorkspace cache, JSONObject value) {
@@ -2377,6 +2383,7 @@ public final class MainActivity extends Activity {
         else if (previous != null) root.removeView(previous);
         if (sidebarPageDeferred && showPage) {
             sidebarPageDeferred = false;
+            readSessionNotification();
             render();
         }
     }
@@ -2419,6 +2426,7 @@ public final class MainActivity extends Activity {
         JSONObject account = signedIn ? ServerProfiles.displayAccount(person(user.optString("id")))
                 : serverProfiles.active() == null ? new JSONObject() : serverProfiles.active().account;
         sidebar.connection(account, action, pending);
+        sidebar.notifications(showWorkspace ? sessionNotifications : new NativeSessionNotifications());
         sidebar.bind(signedIn ? person(user.optString("id")) : new JSONObject(), showWorkspace ? projects : new JSONArray(),
                 showWorkspace ? chats : new JSONArray(), showWorkspace ? projectID : "", showWorkspace ? chatID : "",
                 showWorkspace && chat != null && array(chat, "turns").length() == 0 ? backend : "", busy, !signedIn && showWorkspace);
@@ -2684,6 +2692,7 @@ public final class MainActivity extends Activity {
     }
 
     private void openChat(String id) {
+        sessionNotifications.dismiss(id);
         boolean deferred = sidebarPageDeferred;
         closeDrawer(false); sidebarPageDeferred = false;
         if (deferred && id.equals(chatID)) { render(); startChat(); return; }
@@ -2692,6 +2701,7 @@ public final class MainActivity extends Activity {
 
     /** Restoring a selection from workspace data must preserve the user's open sidebar. */
     private void selectChat(String id) {
+        sessionNotifications.dismiss(id);
         if (id.equals(chatID)) return;
         goalNotice = goalError = "";
         discardComposerDrafts();
@@ -4238,7 +4248,7 @@ public final class MainActivity extends Activity {
         if (kind.equals("ready")) { setWorkspaceConnected(true); return; }
         if (kind.equals("transport_error")) { if (workspaceEvents != null) workspaceEvents.failed(); return; }
         if (kind.equals("auth_expired")) { expire(); return; }
-        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result", "desktop", "server").contains(kind)) return;
+        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result", "desktop", "server", "session_notification").contains(kind)) return;
         Object value = new JSONTokener(raw).nextValue();
         applyWorkspaceEvent(kind, value, epoch);
     }
@@ -4248,7 +4258,7 @@ public final class MainActivity extends Activity {
             try { workspaceEvent(kind, raw, epoch); } catch (Exception error) { toast(error); }
             return;
         }
-        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result", "desktop", "server").contains(kind)) return;
+        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result", "desktop", "server", "session_notification").contains(kind)) return;
         final int token = generation, session = authEpoch;
         final ServerProfiles.Server server = serverProfiles.active();
         final Client sourceClient = client;
@@ -4273,6 +4283,9 @@ public final class MainActivity extends Activity {
     private void applyWorkspaceEvent(String kind, Object value, int epoch) throws Exception {
         if (destroyed || workspaceEpoch != epoch || user == null) return;
         switch (kind) {
+            case "session_notification":
+                if (value instanceof JSONObject && sessionNotifications.receive((JSONObject) value, user.optString("id"), viewedNotificationChat())) renderNavigation();
+                break;
             case "server":
                 rememberServerName(serverProfiles.active(), (JSONObject) value);
                 renderNavigation();
@@ -4338,6 +4351,14 @@ public final class MainActivity extends Activity {
             if (at(profiles, i).optString("id").equals(id))
                 return at(profiles, i).optString("nickname");
         return tr("Workspace member", "工作空间成员");
+    }
+
+    private String viewedNotificationChat() {
+        return foreground && hasWindowFocus() && !sidebarPageDeferred ? chatID : "";
+    }
+
+    private void readSessionNotification() {
+        if (sessionNotifications.dismiss(viewedNotificationChat())) renderNavigation();
     }
 
     private JSONObject person(String id) {
@@ -4961,7 +4982,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onWindowFocusChanged(boolean focused) {
         super.onWindowFocusChanged(focused);
-        if (focused) resumeWorkspace();
+        if (focused) { readSessionNotification(); resumeWorkspace(); }
     }
 
     @Override

@@ -46,7 +46,7 @@ func TestDesktopNotificationsDefaultOffAndPersist(t *testing.T) {
 	}
 }
 
-func TestDesktopNotificationsDropForegroundEventsWithoutReplay(t *testing.T) {
+func TestDesktopNotificationsSuppressOnlyViewedForegroundSession(t *testing.T) {
 	s := testStore(t)
 	if err := s.SaveDesktopNotificationsEnabled(true); err != nil {
 		t.Fatal(err)
@@ -57,26 +57,55 @@ func TestDesktopNotificationsDropForegroundEventsWithoutReplay(t *testing.T) {
 	sub, other := service.SubscribeDesktopNotifications(), service.SubscribeDesktopNotifications()
 	t.Cleanup(sub.Close)
 	t.Cleanup(other.Close)
-	a.enqueuePush(pushJob{kind: "completed", turnID: "before-focus"})
-	sub.SetFocused(true)
-	for range 150 {
-		a.enqueuePush(pushJob{kind: "completed", turnID: "while-focused"})
+	a.enqueuePush(pushJob{chatID: "viewed-chat", kind: "completed", turnID: "before-focus"})
+	a.enqueuePush(pushJob{chatID: "other-chat", kind: "completed", turnID: "other-before-focus"})
+	sub.SetView(true, "viewed-chat")
+	if event := nextDesktopEvent(t, sub); event.job.turnID != "other-before-focus" {
+		t.Fatal("focusing the viewed session discarded another session's notification")
 	}
-	if len(sub.Events()) != 0 || len(other.Events()) == 0 {
-		t.Fatal("foreground events queued or another subscriber was suppressed")
+	for _, kind := range []string{"completed", "failed", "approval"} {
+		a.enqueuePush(pushJob{chatID: "viewed-chat", kind: kind, turnID: "viewed-" + kind})
+		a.enqueuePush(pushJob{chatID: "other-chat", kind: kind, turnID: "other-" + kind})
+		if event := nextDesktopEvent(t, sub); event.job.turnID != "other-"+kind {
+			t.Fatalf("foreground session notification not routed independently: %+v", event.job)
+		}
 	}
-	sub.SetFocused(false)
+	if len(sub.Events()) != 0 || len(other.Events()) != 8 {
+		t.Fatal("viewed session notified or another subscriber lost its events")
+	}
+	for _, kind := range []string{"direct_message", "group_message"} {
+		a.enqueuePush(pushJob{kind: kind})
+	}
+	if len(sub.Events()) != 0 {
+		t.Fatal("foreground message notifications changed their background-only policy")
+	}
+	sub.SetView(false, "viewed-chat")
 	select {
 	case <-sub.Events():
-		t.Fatal("foreground events replayed after blur")
+		t.Fatal("viewed foreground events replayed after blur")
 	default:
 	}
-	a.enqueuePush(pushJob{kind: "completed", turnID: "after-blur"})
+	a.enqueuePush(pushJob{chatID: "viewed-chat", kind: "completed", turnID: "after-blur"})
 	if event := nextDesktopEvent(t, sub); event.job.turnID != "after-blur" {
 		t.Fatal("background notification did not resume after blur")
 	}
+	sub.SetView(true, "other-chat")
+	a.enqueuePush(pushJob{chatID: "viewed-chat", kind: "failed", turnID: "after-switch"})
+	if event := nextDesktopEvent(t, sub); event.job.turnID != "after-switch" {
+		t.Fatal("switching sessions did not allow the previous session to notify")
+	}
+	a.enqueuePush(pushJob{chatID: "viewed-chat", kind: "approval"})
+	sub.SetView(true, "viewed-chat")
+	if len(sub.Events()) != 0 {
+		t.Fatal("viewing a session did not discard its pending notification")
+	}
+	sub.SetView(true, "")
+	a.enqueuePush(pushJob{chatID: "viewed-chat", kind: "approval"})
+	if len(sub.Events()) != 1 {
+		t.Fatal("foreground settings or a new draft suppressed a session notification")
+	}
 	sub.Close()
-	sub.SetFocused(true)
+	sub.SetView(true, "viewed-chat")
 	sub.Close()
 }
 
@@ -149,10 +178,8 @@ func TestDesktopTaskNotificationsWithoutPushSubscriptions(t *testing.T) {
 		tokens[name] = token
 	}
 	a.enqueuePush(pushJob{chatID: chat.ID, turnID: "turn-12345678", kind: "completed"})
-	select {
-	case <-sub.Events():
-		t.Fatal("disabled desktop queued a notification")
-	default:
+	if note, ok := nextDesktopEvent(t, sub).Resolve(tokens["alice"], "en"); !ok || note.ChatID != chat.ID || note.Kind != "completed" {
+		t.Fatal("session indicators depend on OS notification opt-in")
 	}
 	if err := s.SaveDesktopNotificationsEnabled(true); err != nil {
 		t.Fatal(err)
@@ -163,7 +190,7 @@ func TestDesktopTaskNotificationsWithoutPushSubscriptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	note, ok := event.Resolve(tokens["alice"], "zh-CN")
-	if !ok || note.UserID != alice.ID || note.URL != "/?chat="+chat.ID || note.Title != "Spool · 任务成功：修复通知标题" {
+	if !ok || note.UserID != alice.ID || note.URL != "/?chat="+chat.ID || note.Title != "Spool · 任务成功：修复通知标题" || note.ChatID != chat.ID || note.Kind != "completed" {
 		t.Fatalf("bad task notification: %+v %v", note, ok)
 	}
 	for _, token := range []string{"", "invalid-token", tokens["bob"], tokens["carol"]} {
@@ -184,8 +211,8 @@ func TestDesktopTaskNotificationsWithoutPushSubscriptions(t *testing.T) {
 		t.Fatal("revoked native recipient still notified")
 	}
 	s.SaveDesktopNotificationsEnabled(false)
-	if _, ok := event.Resolve(tokens["alice"], "en"); ok {
-		t.Fatal("queued notification survived disable")
+	if _, ok := event.Resolve(tokens["alice"], "en"); !ok {
+		t.Fatal("disabling OS popups discarded a session indicator")
 	}
 	s.SaveDesktopNotificationsEnabled(true)
 	s.db.Exec(`DELETE FROM auth_sessions WHERE user_id=?`, alice.ID)
@@ -218,6 +245,9 @@ func TestDesktopMessageNotificationsFollowDeliveredRecipients(t *testing.T) {
 	u, _ := url.Parse(note.URL)
 	if !ok || note.Title != "Spool - Message from alice" || strings.Contains(note.Body, message.Text) || u.Query().Get("inbox") != message.From || u.Query().Get("recipient") != f.users["bob"].ID {
 		t.Fatalf("bad private native notification: %+v %v", note, ok)
+	}
+	if note.ChatID != "" || note.Kind != "" {
+		t.Fatal("a message notification must not mark a session")
 	}
 	if _, ok := event.Resolve(senderToken, "en"); ok {
 		t.Fatal("sender received own message notification")
@@ -255,7 +285,7 @@ func TestDesktopNotificationLifetimeAndApprovalChecks(t *testing.T) {
 	token, _, _ := s.login("alice", "test-password-2026")
 	event := DesktopNotificationEvent{a, pushJob{chatID: chat.ID, turnID: "turn-12345678", approvalID: "native-approval", kind: "approval", queuedAt: time.Now()}}
 	a.approvals[event.job.approvalID] = &pendingApproval{chatID: chat.ID, turnID: event.job.turnID}
-	if note, ok := event.Resolve(token, "zh-CN"); !ok || note.Title != "Spool · 需要审核：审核任务" {
+	if note, ok := event.Resolve(token, "zh-CN"); !ok || note.Title != "Spool · 需要审核：审核任务" || note.ChatID != chat.ID || note.Kind != "approval" {
 		t.Fatal("native approval not delivered")
 	}
 	if _, err := s.db.Exec(`INSERT INTO project_member_own_access VALUES(?,?,'read-only') ON CONFLICT(project_id,user_id) DO UPDATE SET access='read-only'`, p.ID, u.ID); err != nil {
@@ -268,6 +298,10 @@ func TestDesktopNotificationLifetimeAndApprovalChecks(t *testing.T) {
 	a.approvals[event.job.approvalID].decided = true
 	if _, ok := event.Resolve(token, "en"); ok {
 		t.Fatal("resolved native approval delivered")
+	}
+	event.job.kind = "failed"
+	if note, ok := event.Resolve(token, "en"); !ok || note.ChatID != chat.ID || note.Kind != "failed" {
+		t.Fatal("failed task lost session notification metadata")
 	}
 	event.job.kind, event.job.queuedAt = "failed", time.Now().Add(-6*time.Minute)
 	if _, ok := event.Resolve(token, "en"); ok {

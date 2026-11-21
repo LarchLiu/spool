@@ -4,6 +4,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ImageView;
 import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,9 +19,15 @@ final class NativeChatLink extends LinearLayout {
     final NativeChatOperators operators;
     final NativeSpinner spinner;
     final FrameLayout agent;
+    final String chatID;
+    private final NativeUi ui;
+    private final String description;
+    ImageView notification;
+    private String notificationKind = "";
 
     NativeChatLink(NativeUi ui, JSONObject chat, boolean nested, boolean selected, String activeBackend, Function<String, JSONObject> person, Runnable select) {
         super(ui.context); setGravity(Gravity.CENTER_VERTICAL); setPadding(ui.dp(nested ? 32 : 9), ui.dp(5), ui.dp(9), ui.dp(5)); setSelected(selected); setAddStatesFromChildren(true); setBackground(ui.states(selected ? ui.selected : 0, 10, 0, ui.hover, selected ? ui.selected : 0));
+        this.ui = ui; chatID = chat.optString("id");
         List<JSONObject> members = new ArrayList<>(); JSONArray participants = chat.optJSONArray("participants"); if (participants != null) for (int i = 0; i < participants.length(); i++) members.add(person.apply(participants.optJSONObject(i).optString("id")));
         operators = members.isEmpty() ? null : new NativeChatOperators(ui, members);
         if (operators != null) { addView(operators); }
@@ -34,7 +41,30 @@ final class NativeChatLink extends LinearLayout {
         LayoutParams copy = new LayoutParams(0, -1, 1); if (operators == null) copy.setMarginStart(ui.dp(9)); open.addView(title, copy);
         spinner = chat.optString("status").equals("running") ? new NativeSpinner(ui, 11, ui.t("Working"), true) : null;
         if (spinner != null) { LayoutParams at = new LayoutParams(ui.dp(11), ui.dp(11)); at.setMarginStart(ui.dp(13)); at.setMarginEnd(ui.dp(4)); open.addView(spinner, at); }
-        open.setContentDescription(label + (chat.optBoolean("local_session") ? ", " + ui.t("Local session") : "") + (spinner == null ? "" : ", " + ui.t("Working")));
+        description = label + (chat.optBoolean("local_session") ? ", " + ui.t("Local session") : "") + (spinner == null ? "" : ", " + ui.t("Working"));
+        open.setContentDescription(description);
         open.setAccessibilityDelegate(new View.AccessibilityDelegate() { @Override public void onInitializeAccessibilityNodeInfo(View view, android.view.accessibility.AccessibilityNodeInfo info) { super.onInitializeAccessibilityNodeInfo(view, info); info.setClassName("android.widget.Button"); info.setSelected(selected); } });
+    }
+
+    void notification(String kind) {
+        if (!NativeSessionNotifications.validKind(kind)) kind = "";
+        if (notificationKind.equals(kind)) return;
+        notificationKind = kind;
+        if (kind.isEmpty()) {
+            if (notification != null) open.removeView(notification);
+            notification = null; open.setContentDescription(description); return;
+        }
+        if (notification == null) {
+            notification = new ImageView(ui.context);
+            notification.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            LayoutParams at = new LayoutParams(ui.dp(16), ui.dp(16)); at.setMarginStart(ui.dp(8));
+            open.addView(notification, at);
+        }
+        String icon = kind.equals("completed") ? "circle-check" : kind.equals("failed") ? "circle-x" : "shield-question";
+        String label = ui.t(kind.equals("completed") ? "Completed" : kind.equals("failed") ? "Failed" : "Approval required");
+        int color = kind.equals("completed") ? ui.notificationCompleted : kind.equals("failed") ? ui.notificationFailed : ui.notificationApproval;
+        notification.setImageDrawable(NativeIcons.drawable(ui.context, icon, color, ui.dp(14)));
+        notification.setTag("session-notification:" + kind); notification.setContentDescription(label);
+        open.setContentDescription(description + ", " + label);
     }
 }

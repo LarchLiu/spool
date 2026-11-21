@@ -18,6 +18,7 @@ import {
   desktopFileAccessURL,
   subscribeDesktopFileAccess,
   notifyDesktopSessionChanged,
+  notifyDesktopViewChanged,
 } from "../.test-build/runtime.js";
 import { resolveLanguage, resolveTheme } from "../.test-build/preferences.js";
 import { DesktopSettingsLink, ChatSettingsControl } from "../.test-build/components/web/src/desktop-settings.js";
@@ -42,6 +43,23 @@ test("desktop session changes send only a refresh hint, without an account or cr
     spoolDesktop: true,
     location: { assign: () => { throw new Error("page unavailable"); } },
   }), /page unavailable/);
+});
+
+test("desktop viewed-session hints distinguish navigation from account changes", async () => {
+  const calls = [];
+  const location = { assign: (target) => calls.push(target) };
+  const surface = { spoolDesktop: true, location };
+  await notifyDesktopViewChanged("chat-12345678", false, surface);
+  await notifyDesktopViewChanged("", false, surface);
+  await notifyDesktopViewChanged("chat-12345678", true, surface);
+  await notifyDesktopViewChanged("", true, surface);
+  assert.deepEqual(calls, [
+    "/__desktop/view?chat=chat-12345678", "/__desktop/view?chat=",
+    "/__desktop/view?chat=chat-12345678&session=changed", "/__desktop/view?chat=&session=changed",
+  ]);
+  for (const chat of ["short", "chat-12345678&user=someone", "/api/me"]) await notifyDesktopViewChanged(chat, true, surface);
+  await notifyDesktopViewChanged("chat-12345678", false, { location });
+  assert.equal(calls.length, 4, "invalid IDs or browser surfaces must not navigate");
 });
 
 test("attachment access links preserve the exact file and only appear on macOS desktop", () => {

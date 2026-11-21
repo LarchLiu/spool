@@ -22,14 +22,14 @@ var errSessionConversion = errors.New("Could not convert this chat to another ag
 var errTurnChanged = errors.New("turn changed while agent was running")
 
 type Store struct {
-	changes              changeHub
-	desktopNotifications desktopNotificationHub
-	updateEvents         chan struct{}
-	historyCache         nativeHistoryCache
-	codexHistory         codexWindows
-	settingsMu           sync.Mutex
-	mu                   sync.Mutex
-	agentMu              sync.Mutex
+	changes       changeHub
+	notifications notificationHub
+	updateEvents  chan struct{}
+	historyCache  nativeHistoryCache
+	codexHistory  codexWindows
+	settingsMu    sync.Mutex
+	mu            sync.Mutex
+	agentMu       sync.Mutex
 	// localScanMu serializes provider discovery and owns localIndex,
 	// localClaude and localFailing. localMu guards localScanAt and the
 	// projection of discovered sessions; it is never held during discovery.

@@ -41,7 +41,7 @@ test("older activity metadata still updates current session control permissions"
   assert.equal(result[0].can_control, false);
 });
 
-function fixture(t) {
+function fixture(t, view) {
   const sockets = [];
   const received = [];
   const auth = [];
@@ -59,6 +59,7 @@ function fixture(t) {
         "expired",
         "directMessage",
         "groups",
+        "sessionNotification",
       ].map((key) => [key, (value) => received.push([key, value])]),
     ),
     {
@@ -89,6 +90,7 @@ function fixture(t) {
       checkAuth: async (signal) => {
         auth.push(signal);
       },
+      view,
     },
   );
   t.after(() => stream.close());
@@ -150,6 +152,39 @@ test("heartbeat responds with current visibility, without sending CSRF again", (
     { type: "visibility", visible: false },
     { type: "pong", visible: false },
   ]);
+});
+
+test("browser view follows selection and focus on hello, navigation, visibility and heartbeat", (t) => {
+  let view = { focused: true, chat: "viewed-chat123" };
+  const f = fixture(t, () => view);
+  const socket = f.sockets[0];
+  socket.opened();
+  assert.deepEqual(socket.sent[0], {
+    type: "hello", csrf: "csrf-secret", visible: true, ...view,
+  });
+  view = { focused: true, chat: "another-chat123" };
+  f.stream.view();
+  assert.deepEqual(socket.sent.at(-1), { type: "view", visible: true, ...view });
+  view = { ...view, focused: false };
+  f.stream.view();
+  assert.equal(socket.sent.at(-1).focused, false);
+  f.visible(false);
+  f.stream.visibility();
+  socket.emit("ping", true);
+  assert.deepEqual(socket.sent.at(-1), { type: "pong", visible: false, ...view });
+});
+
+test("session status events are delivered independently of push and reject malformed payloads", (t) => {
+  const f = fixture(t);
+  const socket = f.sockets[0];
+  socket.opened();
+  socket.emit("ready", true);
+  const note = { chat: "chat-12345678", user: "user-12345678", kind: "completed" };
+  for (const kind of ["completed", "failed", "approval"]) socket.emit("session_notification", { ...note, kind });
+  for (const value of [null, {}, { ...note, kind: "test" }, { ...note, chat: "../api/me" }, { ...note, user: "short" }])
+    socket.emit("session_notification", value);
+  assert.deepEqual(f.received.filter(([kind]) => kind === "sessionNotification"),
+    ["completed", "failed", "approval"].map((kind) => ["sessionNotification", { ...note, kind }]));
 });
 
 test("workspace socket delivers the server's name on initial sync and rename", (t) => {

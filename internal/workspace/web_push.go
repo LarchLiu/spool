@@ -262,7 +262,7 @@ func (a *App) enqueuePush(job pushJob) {
 		return
 	default:
 	}
-	a.store.desktopNotifications.publish(a, job)
+	a.store.notifications.publish(a, job)
 	var subscribed bool
 	if err := a.store.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM web_push_subscriptions)`).Scan(&subscribed); err != nil || !subscribed {
 		return
@@ -461,6 +461,9 @@ func (a *App) pushNotificationText(language string, job pushJob) (string, string
 }
 
 func (a *App) sendPush(ctx context.Context, sub pushSubscription, job pushJob) error {
+	if a.store.notifications.suppressesWebPush(sub.token, job) {
+		return nil
+	}
 	var active bool
 	err := a.store.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM web_push_subscriptions p JOIN auth_sessions a ON a.token_hash=p.token_hash AND a.user_id=p.user_id JOIN users u ON u.id=a.user_id WHERE p.endpoint=? AND p.token_hash=? AND p.user_id=? AND a.expires_at>? AND u.disabled=0)`, sub.Endpoint, sub.token, sub.user, time.Now().UnixMilli()).Scan(&active)
 	if err != nil || !active {

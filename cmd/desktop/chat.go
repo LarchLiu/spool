@@ -8,10 +8,13 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+
+	chatmodel "spool/internal/model"
 )
 
 const desktopSettingsPath = "/__desktop/settings"
 const desktopSessionChangedPath = "/__desktop/session-changed"
+const desktopViewPath = "/__desktop/view"
 
 func (p *panel) startOnLaunch() {
 	if !p.settings.AutoStart {
@@ -84,6 +87,17 @@ func (p *panel) loadChatView(address string) error {
 		// Register guards before the first navigation. Never trust additional
 		// origins or load external content into a privileged desktop window.
 		page.OnWillNavigate(func(e *mygo.NavigateEvent) {
+			if view, ok := desktopViewNavigation(p.chatURL, e.URL); ok {
+				e.PreventDefault()
+				p.window.Update(func() {
+					p.notificationChat = view.chat
+					p.setDesktopNotificationFocused(p.desktopNotificationFocused())
+					if view.sessionChanged {
+						p.refreshDesktopNotificationSession()
+					}
+				})
+				return
+			}
 			if chatSessionChangedNavigation(p.chatURL, e.URL) {
 				e.PreventDefault()
 				p.window.Update(p.refreshDesktopNotificationSession)
@@ -119,7 +133,9 @@ func (p *panel) loadChatView(address string) error {
 			p.sendUpdateAvailability(view)
 			p.chatFailed = false
 			p.chatLoaded = true
+			p.setDesktopNotificationFocused(p.desktopNotificationFocused())
 			p.refreshDesktopNotificationSession()
+			p.sendSessionNotifications()
 			p.sendPendingNotification()
 			if p.tab == "Chat" {
 				view.Focus()
@@ -136,6 +152,7 @@ func (p *panel) loadChatView(address string) error {
 	}
 	if p.chatURL != address || p.chatFailed {
 		p.chatLoaded = false
+		p.setDesktopNotificationFocused(p.desktopNotificationFocused())
 		p.chatURL = address
 		p.chatFailed = false
 		if err := p.chatView.Page().LoadURL(address); err != nil {
@@ -166,6 +183,7 @@ func (p *panel) selectTab(tab string) {
 		p.flushServiceSetting()
 	}
 	p.tab = tab
+	p.setDesktopNotificationFocused(p.desktopNotificationFocused())
 	if p.window != nil {
 		if tab != "Chat" && p.settingsView != nil && !p.settingsFailed {
 			_ = settingsSection.EmitPage(p.settingsView.Page(), tab)
@@ -240,6 +258,35 @@ func chatSettingsNavigation(address, target string) bool {
 // granting the chat access to native methods. Cookie validation stays native.
 func chatSessionChangedNavigation(address, target string) bool {
 	return chatReservedNavigation(address, target, desktopSessionChangedPath)
+}
+
+type desktopView struct {
+	chat           string
+	sessionChanged bool
+}
+
+// This hint only suppresses redundant presentation. It carries no account or
+// credentials; notification authorization still uses the native cookie store.
+func desktopViewNavigation(address, target string) (desktopView, bool) {
+	if !chatNavigationAllowed(address, target) {
+		return desktopView{}, false
+	}
+	u, _ := url.Parse(target)
+	if u.Path != desktopViewPath || u.RawPath != "" || u.Fragment != "" {
+		return desktopView{}, false
+	}
+	params, err := url.ParseQuery(u.RawQuery)
+	if err != nil || len(params["chat"]) != 1 || len(params) > 2 || len(params["session"]) > 1 {
+		return desktopView{}, false
+	}
+	chat := params.Get("chat")
+	if chat != "" && !chatmodel.ValidID(chat) {
+		return desktopView{}, false
+	}
+	if len(params) == 2 && params.Get("session") != "changed" {
+		return desktopView{}, false
+	}
+	return desktopView{chat, params.Get("session") == "changed"}, true
 }
 
 func chatReservedNavigation(address, target, path string) bool {

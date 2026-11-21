@@ -20,6 +20,8 @@ type realtimeInput struct {
 	Type      string   `json:"type"`
 	CSRF      string   `json:"csrf,omitempty"`
 	Visible   bool     `json:"visible"`
+	Focused   bool     `json:"focused"`
+	Chat      string   `json:"chat,omitempty"`
 	RequestID string   `json:"request_id,omitempty"`
 	To        string   `json:"to,omitempty"`
 	Text      string   `json:"text,omitempty"`
@@ -111,6 +113,9 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 	a.presence.Touch(identity, client, hello.Visible)
 	direct := a.directMessages.subscribe(identity.User.ID)
 	defer a.directMessages.unsubscribe(direct)
+	notifications := a.store.notifications.subscribe(identity.TokenHash)
+	defer notifications.Close()
+	notifications.SetView(hello.Focused && hello.Visible, hello.Chat)
 	messageTokens, messageRefill := 10.0, time.Now()
 	last := make(map[string][]byte)
 	send := func(kind string, value any) error {
@@ -231,6 +236,24 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 			return
 		case <-direct.done:
 			return
+		case event := <-notifications.Events():
+			if event.job.isMessage() {
+				continue
+			}
+			if !syncState(changeAuth) {
+				return
+			}
+			if event.authorized(identity.User.ID) {
+				// Events can repeat for successive turns in the same session.
+				delete(last, "session_notification")
+				if send("session_notification", struct {
+					Chat string `json:"chat"`
+					User string `json:"user"`
+					Kind string `json:"kind"`
+				}{event.job.chatID, identity.User.ID, event.job.kind}) != nil {
+					return
+				}
+			}
 		case <-direct.groups:
 			if !syncGroups() {
 				return
@@ -244,7 +267,7 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 				return
 			}
 		case input := <-incoming:
-			if input.Type != "pong" && input.Type != "visibility" && input.Type != "refresh" && input.Type != "direct_message" && input.Type != "group_message" && input.Type != "group_create" && input.Type != "group_invite" {
+			if input.Type != "pong" && input.Type != "visibility" && input.Type != "refresh" && input.Type != "view" && input.Type != "direct_message" && input.Type != "group_message" && input.Type != "group_create" && input.Type != "group_invite" {
 				_ = conn.Close(websocket.StatusPolicyViolation, "invalid message")
 				return
 			}
@@ -255,6 +278,7 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 				return
 			}
 			a.presence.Touch(current, client, input.Visible)
+			notifications.SetView(input.Focused && input.Visible, input.Chat)
 			if input.Type == "direct_message" || input.Type == "group_message" || input.Type == "group_create" || input.Type == "group_invite" {
 				now := time.Now()
 				messageTokens = min(10, messageTokens+now.Sub(messageRefill).Seconds()*5)

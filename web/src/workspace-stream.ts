@@ -10,6 +10,7 @@ import {
 } from "./direct-messages.js";
 
 import type { SidebarSnapshot } from "./sidebar-sync";
+import { isSessionNotification, type SessionNotification } from "./runtime";
 export type Navigation = {
   projects: Project[];
   chats: Chat[];
@@ -42,12 +43,14 @@ export function subscribeWorkspaceEvents(
     expired: () => void;
     directMessage?: (value: DirectMessage) => void;
     groups?: (value: PeopleChatGroup[]) => void;
+    sessionNotification?: (value: SessionNotification) => void;
   },
   transport: {
     open: () => WebSocket;
     csrf: () => string;
     visible: () => boolean;
     checkAuth: (signal: AbortSignal) => Promise<unknown>;
+    view?: () => { focused: boolean; chat: string };
   },
 ) {
   const controller = new AbortController();
@@ -82,7 +85,13 @@ export function subscribeWorkspaceEvents(
   };
   const send = (type: string) => {
     if (socket?.readyState === 1)
-      socket.send(JSON.stringify({ type, visible: transport.visible() }));
+      socket.send(
+        JSON.stringify({
+          type,
+          visible: transport.visible(),
+          ...transport.view?.(),
+        }),
+      );
   };
   const lost = (current?: WebSocket) => {
     if (controller.signal.aborted || (current && socket !== current)) return;
@@ -127,6 +136,7 @@ export function subscribeWorkspaceEvents(
           type: "hello",
           csrf: transport.csrf(),
           visible: transport.visible(),
+          ...transport.view?.(),
         }),
       );
     };
@@ -147,6 +157,10 @@ export function subscribeWorkspaceEvents(
           break;
         case "navigation":
           handlers.navigation(message.data as Navigation);
+          break;
+        case "session_notification":
+          if (isSessionNotification(message.data))
+            handlers.sessionNotification?.(message.data);
           break;
         case "agents":
           handlers.agents(message.data as Agent[]);
@@ -258,6 +272,7 @@ export function subscribeWorkspaceEvents(
             request_id: requestID,
             ...fields,
             visible: transport.visible(),
+            ...transport.view?.(),
           }),
         );
       } catch {
@@ -283,6 +298,7 @@ export function subscribeWorkspaceEvents(
     inviteGroup: (to: string, members: string[]) =>
       request<PeopleChatGroup>("group_invite", { to, members }),
     visibility: () => send("visibility"),
+    view: () => send("view"),
     resume: () => {
       if (controller.signal.aborted) return;
       if (ready && Date.now() - lastMessage < 45000) send("refresh");

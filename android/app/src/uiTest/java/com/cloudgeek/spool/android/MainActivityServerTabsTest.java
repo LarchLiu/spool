@@ -117,6 +117,58 @@ public class MainActivityServerTabsTest {
         }
     }
 
+    @Test public void sessionNotificationsStayWithTheirServerAcrossLiveStreamHandoffs() throws Exception {
+        try (Fixture f = new Fixture(true)) {
+            f.push(f.officeClient, "navigation", navigation("Office"));
+            f.push(f.officeClient, "session_notification", "{chat:'chat-one',user:'alice',kind:'approval'}");
+            assertEquals("", f.h.<NativeSessionNotifications>get("sessionNotifications").kind("chat-one"));
+            f.select(f.office.id);
+            assertEquals("approval", f.h.<NativeSessionNotifications>get("sessionNotifications").kind("chat-one"));
+            assertTrue(f.h.<NativeSidebar>get("sidebar").chatRows.stream().allMatch(row -> row.notification != null));
+            f.drain();
+            f.push(f.homeClient, "session_notification", "{chat:'chat-one',user:'alice',kind:'failed'}");
+            assertEquals("approval", f.h.<NativeSessionNotifications>get("sessionNotifications").kind("chat-one"));
+            f.select(f.home);
+            assertEquals("failed", f.h.<NativeSessionNotifications>get("sessionNotifications").kind("chat-one"));
+            f.drain();
+            f.push(f.officeClient, "session_notification", "{chat:'chat-one',user:'bob',kind:'completed'}");
+            f.select(f.office.id);
+            assertEquals("approval", f.h.<NativeSessionNotifications>get("sessionNotifications").kind("chat-one"));
+        }
+    }
+
+    @Test public void closingTheServerSidebarReadsOnlyTheRestoredChatWhenFocused() throws Exception {
+        for (boolean focused : new boolean[] {true, false}) try (Fixture f = new Fixture(true)) {
+            JSONObject officeNavigation = new JSONObject(navigation("Office"));
+            officeNavigation.getJSONArray("chats").put(new JSONObject().put("id", "chat-two").put("title", "Other chat")
+                    .put("project_id", "project-one").put("backend", "codex"));
+            f.push(f.officeClient, "navigation", officeNavigation.toString());
+            f.push(f.officeClient, "session_notification", "{chat:'chat-one',user:'alice',kind:'approval'}");
+            f.push(f.officeClient, "session_notification", "{chat:'chat-two',user:'alice',kind:'failed'}");
+            f.select(f.office.id); f.drain();
+            f.push(f.officeClient, "navigation", officeNavigation.toString());
+            f.h.controller.windowFocusChanged(focused);
+            NativeSessionNotifications notifications = f.h.get("sessionNotifications");
+            assertTrue(f.h.<Boolean>get("sidebarPageDeferred"));
+            assertEquals("approval", notifications.kind("chat-one"));
+            assertEquals("failed", notifications.kind("chat-two"));
+            f.h.call("closeDrawer");
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(250)); f.drain();
+            assertFalse(f.h.<Boolean>get("sidebarPageDeferred"));
+            assertEquals("chat-one", f.h.<String>get("chatID"));
+            assertEquals(focused ? "" : "approval", notifications.kind("chat-one"));
+            assertEquals("failed", notifications.kind("chat-two"));
+            f.h.controller.windowFocusChanged(true);
+            assertEquals("", notifications.kind("chat-one"));
+            assertEquals("failed", notifications.kind("chat-two"));
+            f.h.call("openSidebar");
+            for (NativeChatLink row : f.h.<NativeSidebar>get("sidebar").chatRows) {
+                if (row.chatID.equals("chat-one")) assertNull(row.notification);
+                if (row.chatID.equals("chat-two")) assertNotNull(row.notification);
+            }
+        }
+    }
+
     private String footerServerName(Fixture f) {
         NativeSidebar sidebar = f.h.get("sidebar");
         android.widget.LinearLayout copy = (android.widget.LinearLayout) sidebar.footer.getChildAt(1);

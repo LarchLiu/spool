@@ -36,7 +36,7 @@ const icons = {
   file_code:'FileCode2', chevron_down:'ChevronDown', chevron_up:'ChevronUp',
   chevron_left:'ChevronLeft', chevron_right:'ChevronRight', download:'Download', log_out:'LogOut', key_round:'KeyRound', scan_qr_code:'ScanQrCode',
   monitor:'Monitor', monitor_up:'MonitorUp', smartphone:'Smartphone', palette:'Palette', sun:'Sun', moon:'Moon', check:'Check', command:'Command',
-  copy:'Copy', clipboard_paste:'ClipboardPaste', code_xml:'CodeXml', circle_alert:'CircleAlert', shield_check:'ShieldCheck', shield_question:'ShieldQuestion',
+  copy:'Copy', clipboard_paste:'ClipboardPaste', code_xml:'CodeXml', circle_alert:'CircleAlert', circle_check:'CircleCheck', circle_x:'CircleX', shield_check:'ShieldCheck', shield_question:'ShieldQuestion',
   message:'MessageCircle', search:'Search', refresh:'RefreshCw', spinner:'LoaderCircle', plug:'Plug',
   brain:'Brain', wrench:'Wrench', workflow:'Workflow', terminal:'Terminal', globe:'Globe2', list:'List', image:'Image',
   book_open:'BookOpen', file_pen:'FilePenLine', file_plus:'FilePlus2', file_x:'FileX2', crosshair:'Crosshair',
@@ -136,7 +136,7 @@ function palette(selector) {
   return result;
 }
 const light=palette(':root'), dark={...light,...palette(':root[data-theme="dark"]')};
-const colors={text:'--text',muted:'--muted',subtle:'--subtle',line:'--line',green:'--green',primary:'--color-primary',primaryHover:'--color-primary-hover',surface:'--surface',sidebar:'--sidebar',elevated:'--elevated',soft:'--soft',hover:'--hover',controlHover:'--control-hover',controlActive:'--control-active',selected:'--selected',input:'--input',header:'--header',atmosphere:'--atmosphere',borderStrong:'--border-strong',error:'--error-text',errorBg:'--error-bg',errorBorder:'--error-border',noticeBg:'--notice-bg',noticeText:'--notice-text',shadow:'--shadow',track:'--track',thumb:'--thumb'};
+const colors={text:'--text',muted:'--muted',subtle:'--subtle',line:'--line',green:'--green',primary:'--color-primary',primaryHover:'--color-primary-hover',surface:'--surface',sidebar:'--sidebar',elevated:'--elevated',soft:'--soft',hover:'--hover',controlHover:'--control-hover',controlActive:'--control-active',selected:'--selected',input:'--input',header:'--header',atmosphere:'--atmosphere',borderStrong:'--border-strong',error:'--error-text',errorBg:'--error-bg',errorBorder:'--error-border',noticeBg:'--notice-bg',noticeText:'--notice-text',notificationCompleted:'--notification-completed',notificationFailed:'--notification-failed',notificationApproval:'--notification-approval',shadow:'--shadow',track:'--track',thumb:'--thumb'};
 function argb(value) {
   let s=value.slice(1);
   if(s.length===3||s.length===4)s=[...s].map(c=>c+c).join('');

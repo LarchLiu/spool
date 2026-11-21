@@ -38,6 +38,9 @@
   --error-text: #a14f32;
   --notice-bg: #f6f1df;
   --notice-text: #8b7747;
+  --notification-completed: #21844a;
+  --notification-failed: #d13e3e;
+  --notification-approval: #bd650d;
   --track: #e5e9e1;
   --thumb: #fff;
   --sidebar-footer-height: 64px;
@@ -70,6 +73,9 @@
   --error-text: #edac90;
   --notice-bg: #393427;
   --notice-text: #d2bd8a;
+  --notification-completed: #6ccc8b;
+  --notification-failed: #ff8787;
+  --notification-approval: #ffb45c;
   --track: #464a43;
   --thumb: #e6e9e2;
 }
@@ -382,6 +388,21 @@ button:disabled {
   flex-shrink: 0;
   width: 16px;
   height: 16px;
+}
+.session-notification-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 16px;
+  height: 16px;
+}
+.session-notification-icon[data-status="completed"] {
+  color: var(--notification-completed);
+}
+.session-notification-icon[data-status="failed"] {
+  color: var(--notification-failed);
+}
+.session-notification-icon[data-status="approval"] {
+  color: var(--notification-approval);
 }
 .nav-chat.nested {
   padding-left: 32px;

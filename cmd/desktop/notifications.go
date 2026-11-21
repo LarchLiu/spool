@@ -13,6 +13,7 @@ import (
 	"github.com/egoist/mygo"
 
 	chatmodel "spool/internal/model"
+	"spool/internal/workspace"
 )
 
 type notificationTarget struct {
@@ -21,6 +22,15 @@ type notificationTarget struct {
 }
 
 var desktopNotificationOpen = mygo.NewEvent[notificationTarget]("spool:notification-open")
+
+type sessionNotification struct {
+	Chat string `json:"chat"`
+	User string `json:"user"`
+	Kind string `json:"kind"`
+}
+
+var desktopSessionNotification = mygo.NewEvent[sessionNotification]("spool:session-notification")
+var desktopSessionView = mygo.NewEvent[string]("spool:session-view")
 
 func notificationID(target notificationTarget) string {
 	body, _ := json.Marshal(target)
@@ -119,9 +129,27 @@ func (p *panel) setDesktopNotificationFocused(focused bool) {
 	if p.notificationFocused != nil {
 		focused = p.notificationFocused()
 	}
+	chat := p.viewedDesktopNotificationChat(focused)
 	if p.notificationEvents != nil {
-		p.notificationEvents.SetFocused(focused)
+		p.notificationEvents.SetView(focused, chat)
 	}
+	if !p.quitting && p.chatView != nil && p.chatLoaded && !p.chatFailed {
+		_ = desktopSessionView.EmitPage(p.chatView.Page(), chat)
+	}
+}
+
+func (p *panel) viewedDesktopNotificationChat(focused bool) string {
+	if focused && p.tab == "Chat" && p.chatLoaded && !p.chatFailed {
+		return p.notificationChat
+	}
+	return ""
+}
+
+func (p *panel) suppressDesktopNotification(note workspace.DesktopNotification) bool {
+	if !p.desktopNotificationFocused() {
+		return false
+	}
+	return note.ChatID == "" || note.ChatID == p.viewedDesktopNotificationChat(true)
 }
 
 func showSystemTest(supported bool, opts mygo.NotificationOptions, show func(mygo.NotificationOptions) error) error {
@@ -202,30 +230,28 @@ func (p *panel) processDesktopNotifications() {
 	}
 	p.notificationRefresh = false
 	p.setDesktopNotificationFocused(p.desktopNotificationFocused())
-	if p.notificationsEnabled && p.notificationsSupported {
-		address, err := p.service.LocalWebURL()
-		if err == nil {
-			cookies := p.notificationCookies
-			if cookies == nil {
-				cookies = desktopSessionCookies
-			}
-			account := p.service.DesktopNotificationAccount
-			revision := p.notificationRevision
-			p.notificationReader.read(func() desktopNotificationSession {
-				return lookupDesktopNotificationSession(address, cookies, account)
-			}, p.window.Update, func(identity desktopNotificationSession) {
-				if p.quitting {
-					return
-				}
-				if revision == p.notificationRevision {
-					p.applyDesktopNotificationSession(identity)
-				}
-				if p.notificationRefresh || len(p.notificationEvents.Events()) != 0 {
-					p.processDesktopNotifications()
-				}
-			})
-			return
+	address, err := p.service.LocalWebURL()
+	if err == nil {
+		cookies := p.notificationCookies
+		if cookies == nil {
+			cookies = desktopSessionCookies
 		}
+		account := p.service.DesktopNotificationAccount
+		revision := p.notificationRevision
+		p.notificationReader.read(func() desktopNotificationSession {
+			return lookupDesktopNotificationSession(address, cookies, account)
+		}, p.window.Update, func(identity desktopNotificationSession) {
+			if p.quitting {
+				return
+			}
+			if revision == p.notificationRevision {
+				p.applyDesktopNotificationSession(identity)
+			}
+			if p.notificationRefresh || len(p.notificationEvents.Events()) != 0 {
+				p.processDesktopNotifications()
+			}
+		})
+		return
 	}
 	p.applyDesktopNotificationSession(desktopNotificationSession{})
 	if len(p.notificationEvents.Events()) != 0 {
@@ -236,10 +262,6 @@ func (p *panel) processDesktopNotifications() {
 func (p *panel) applyDesktopNotificationSession(identity desktopNotificationSession) {
 	if p.quitting {
 		return
-	}
-	// Preferences and focus may have changed while WebKit was reading cookies.
-	if !p.notificationsEnabled || !p.notificationsSupported {
-		identity = desktopNotificationSession{}
 	}
 	token, account := identity.token, identity.account
 	var session [32]byte
@@ -259,11 +281,23 @@ func (p *panel) applyDesktopNotificationSession(identity desktopNotificationSess
 			if !open {
 				return
 			}
-			if account == "" || p.desktopNotificationFocused() {
+			if account == "" {
 				continue
 			}
 			note, allowed := event.Resolve(token, mygo.App.Locale())
-			if !allowed || p.desktopNotificationFocused() {
+			if !allowed || p.suppressDesktopNotification(note) {
+				continue
+			}
+			if note.ChatID != "" {
+				p.sessionNotifications = append(p.sessionNotifications, sessionNotification{note.ChatID, note.UserID, note.Kind})
+				if len(p.sessionNotifications) > 128 {
+					p.sessionNotifications = p.sessionNotifications[len(p.sessionNotifications)-128:]
+				}
+				p.sendSessionNotifications()
+			}
+			// Session indicators remain useful when OS notifications are disabled,
+			// unsupported or denied. These preferences only control the OS popup.
+			if !p.notificationsEnabled || !p.notificationsSupported {
 				continue
 			}
 			id := notificationID(notificationTarget{note.URL, note.UserID})
@@ -275,6 +309,19 @@ func (p *panel) applyDesktopNotificationSession(identity desktopNotificationSess
 			return
 		}
 	}
+}
+
+func (p *panel) sendSessionNotifications() {
+	if p.quitting || p.chatView == nil || !p.chatLoaded || p.chatFailed {
+		return
+	}
+	for len(p.sessionNotifications) > 0 {
+		if desktopSessionNotification.EmitPage(p.chatView.Page(), p.sessionNotifications[0]) != nil {
+			return
+		}
+		p.sessionNotifications = p.sessionNotifications[1:]
+	}
+	p.sessionNotifications = nil
 }
 
 func (p *panel) openSystemNotification(id string) {

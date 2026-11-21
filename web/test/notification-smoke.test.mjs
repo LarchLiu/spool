@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
-import { takeDesktopNotification } from "../.test-build/runtime.js";
+import {
+  takeDesktopNotification,
+  takeDesktopSessionNotifications,
+  subscribeDesktopSessionNotifications,
+  desktopViewedChat,
+  subscribeDesktopSessionView,
+} from "../.test-build/runtime.js";
 
 const chrome = await readFile(new URL("../../cmd/desktop/window_chrome.go", import.meta.url), "utf8");
 const smoke = await readFile(new URL("../../cmd/desktop/notifications_smoke.go", import.meta.url), "utf8");
@@ -36,16 +42,63 @@ function fixture() {
     received.push(takeDesktopNotification(window));
   });
   vm.runInContext(observer, context);
-  const emit = (target) => {
-    for (const listener of listeners.get("spool:notification-open") ?? []) listener(target);
+  const emitNative = (name, value) => {
+    for (const listener of listeners.get(name) ?? []) listener(value);
   };
+  const emit = (target) => emitNative("spool:notification-open", target);
   const check = (target) => {
     const args = [target.url, target.user];
     const script = checks.replace(/%q/g, () => JSON.stringify(args.shift()));
     return vm.runInContext(`(function () { ${script} })()`, context);
   };
-  return { window, performance, document, context, received, emit, check };
+  return { window, performance, document, context, received, emit, emitNative, check };
 }
+
+test("native session notifications buffer until login and deliver each status without opening a chat", () => {
+  const { window, emitNative, received } = fixture();
+  const pending = ["completed", "failed", "approval"].map((kind, i) => ({
+    chat: `chat-1234567${i}`, user: "user-12345678", kind,
+  }));
+  emitNative("spool:session-notification", pending[0]);
+  const seen = [];
+  const off = subscribeDesktopSessionNotifications(() => seen.push(...takeDesktopSessionNotifications(window)), window);
+  seen.push(...takeDesktopSessionNotifications(window));
+  for (const notification of pending.slice(1)) emitNative("spool:session-notification", notification);
+  assert.deepEqual(seen, pending);
+  assert.deepEqual(takeDesktopSessionNotifications(window), []);
+  assert.deepEqual(received, [], "showing notifications must not navigate");
+  off();
+  emitNative("spool:session-notification", pending[0]);
+  assert.equal(seen.length, 3);
+  assert.deepEqual(takeDesktopSessionNotifications(window), pending.slice(0, 1));
+});
+
+test("session notification buffers reject malformed data and browser surfaces", () => {
+  const valid = { chat: "chat-12345678", user: "user-12345678", kind: "completed" };
+  const invalid = [null, {}, { ...valid, chat: "short" }, { ...valid, user: "bad" }, { ...valid, kind: "test" }, { ...valid, kind: "direct_message" }];
+  const native = { spoolDesktop: true, spoolSessionNotifications: [...invalid, valid] };
+  assert.deepEqual(takeDesktopSessionNotifications(native), [valid]);
+  assert.equal("spoolSessionNotifications" in native, false);
+  assert.deepEqual(takeDesktopSessionNotifications({ spoolSessionNotifications: [valid] }), []);
+  assert.deepEqual(takeDesktopSessionNotifications({ spoolDesktop: true, spoolSessionNotifications: {} }), []);
+  subscribeDesktopSessionNotifications(() => assert.fail("browser subscribed"), {})();
+});
+
+test("native session views retain the current read state across subscriptions and validate payloads", () => {
+  const { window, emitNative } = fixture();
+  emitNative("spool:session-view", "chat-12345678");
+  assert.equal(desktopViewedChat(window), "chat-12345678");
+  const seen = [];
+  const off = subscribeDesktopSessionView(() => seen.push(desktopViewedChat(window)), window);
+  for (const chat of ["", "chat-87654321", "short", null, {}, "../api/me"])
+    emitNative("spool:session-view", chat);
+  assert.deepEqual(seen, ["", "chat-87654321", "", "", "", ""]);
+  off();
+  emitNative("spool:session-view", "chat-12345678");
+  assert.equal(seen.length, 6);
+  assert.equal(desktopViewedChat({ spoolViewedChat: "chat-12345678" }), "");
+  subscribeDesktopSessionView(() => assert.fail("browser subscribed"), {})();
+});
 
 test("native smoke observes clicks after the frontend consumes the one-shot target", () => {
   const { window, document, received, emit, check } = fixture();

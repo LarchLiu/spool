@@ -26,6 +26,9 @@ class WebPalette {
     final int errorBorder;
     final int noticeBg;
     final int noticeText;
+    final int notificationCompleted;
+    final int notificationFailed;
+    final int notificationApproval;
     final int shadow;
     final int track;
     final int thumb;
@@ -54,6 +57,9 @@ class WebPalette {
         errorBorder = dark ? 0xff614334 : 0xffecd6cb;
         noticeBg = dark ? 0xff393427 : 0xfff6f1df;
         noticeText = dark ? 0xffd2bd8a : 0xff8b7747;
+        notificationCompleted = dark ? 0xff6ccc8b : 0xff21844a;
+        notificationFailed = dark ? 0xffff8787 : 0xffd13e3e;
+        notificationApproval = dark ? 0xffffb45c : 0xffbd650d;
         shadow = dark ? 0x45000000 : 0x16182416;
         track = dark ? 0xff464a43 : 0xffe5e9e1;
         thumb = dark ? 0xffe6e9e2 : 0xffffffff;

@@ -19,6 +19,14 @@ window.mygo?.on("spool:notification-open", target => {
   window.spoolNotificationTarget = target;
   window.dispatchEvent(new Event("spool:notification-changed"));
 });
+window.mygo?.on("spool:session-notification", notification => {
+  window.spoolSessionNotifications = [...(window.spoolSessionNotifications || []), notification].slice(-128);
+  window.dispatchEvent(new Event("spool:session-notification-changed"));
+});
+window.mygo?.on("spool:session-view", chat => {
+  window.spoolViewedChat = chat;
+  window.dispatchEvent(new Event("spool:session-view-changed"));
+});
 window.mygo?.on("spool:update-available", available => {
   const next = available === true;
   if (window.spoolUpdateAvailable === next) return;

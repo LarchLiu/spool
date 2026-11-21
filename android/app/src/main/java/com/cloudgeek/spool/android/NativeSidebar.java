@@ -51,6 +51,12 @@ final class NativeSidebar extends LinearLayout {
     private String serverSignature = "";
     private int epoch;
     private BiConsumer<JSONObject, View> chatOptions = (value, anchor) -> {};
+    private NativeSessionNotifications notifications = new NativeSessionNotifications();
+
+    void notifications(NativeSessionNotifications value) {
+        notifications = value;
+        for (NativeChatLink row : chatRows) row.notification(value.kind(row.chatID));
+    }
 
     void chatOptions(BiConsumer<JSONObject, View> action) { chatOptions = action; }
 
@@ -145,6 +151,7 @@ final class NativeSidebar extends LinearLayout {
     private void chatRow(JSONObject value, boolean nested, String prefix) {
         String id = value.optString("id");
         NativeChatLink row = new NativeChatLink(ui, value, nested, chat.equals(id), backend, person, () -> { if (!active || cached) return; state.expanded.add(value.optString("project_id")); select.accept(id); }); row.open.setEnabled(!cached); row.open.setTag(prefix + id); navigation.addView(row, new LayoutParams(-1, ui.dp(31))); chatRows.add(row);
+        row.notification(notifications.kind(id));
         View.OnLongClickListener options = view -> {
             if (!active || cached) return false;
             chatOptions.accept(value, row.open);

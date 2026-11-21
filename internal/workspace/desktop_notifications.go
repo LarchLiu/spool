@@ -9,10 +9,12 @@ import (
 	"time"
 )
 
-// Desktop notifications never expose an HTTP API or trust a renderer-provided
-// user ID. The native host resolves each event with its HTTPOnly session cookie.
+// The native host resolves notifications with its HTTPOnly session cookie.
+// Web session indicators use the same events through an authenticated socket;
+// neither path trusts a renderer-provided user ID.
 type DesktopNotification struct {
 	Title, Body, URL, UserID string
+	ChatID, Kind             string
 }
 
 type DesktopNotificationEvent struct {
@@ -20,20 +22,23 @@ type DesktopNotificationEvent struct {
 	job pushJob
 }
 
-type desktopNotificationHub struct {
+type notificationHub struct {
 	mu   sync.Mutex
 	subs map[*DesktopNotificationSubscription]struct{}
 }
 
 type DesktopNotificationSubscription struct {
-	hub     *desktopNotificationHub
-	events  chan DesktopNotificationEvent
-	ready   chan struct{}
-	focused bool
+	hub      *notificationHub
+	events   chan DesktopNotificationEvent
+	ready    chan struct{}
+	focused  bool
+	chatID   string
+	webToken string
+	viewAt   time.Time
 }
 
 func (s *Service) SubscribeDesktopNotifications() *DesktopNotificationSubscription {
-	return s.Store.desktopNotifications.subscribe()
+	return s.Store.notifications.subscribe("")
 }
 
 func (s *Service) DesktopNotificationAccount(token string) string {
@@ -47,13 +52,13 @@ func (s *Service) DesktopNotificationAccount(token string) string {
 	return identity.User.ID
 }
 
-func (h *desktopNotificationHub) subscribe() *DesktopNotificationSubscription {
+func (h *notificationHub) subscribe(webToken string) *DesktopNotificationSubscription {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.subs == nil {
 		h.subs = map[*DesktopNotificationSubscription]struct{}{}
 	}
-	s := &DesktopNotificationSubscription{hub: h, events: make(chan DesktopNotificationEvent, 128), ready: make(chan struct{}, 1)}
+	s := &DesktopNotificationSubscription{hub: h, events: make(chan DesktopNotificationEvent, 128), ready: make(chan struct{}, 1), webToken: webToken}
 	h.subs[s] = struct{}{}
 	return s
 }
@@ -64,24 +69,37 @@ func (s *DesktopNotificationSubscription) Events() <-chan DesktopNotificationEve
 // drain Events before waiting again. It closes with the subscription.
 func (s *DesktopNotificationSubscription) Ready() <-chan struct{} { return s.ready }
 
-// SetFocused drops pending and future foreground events instead of replaying
-// them when the desktop loses focus. It does not affect other subscribers.
-func (s *DesktopNotificationSubscription) SetFocused(focused bool) {
+// SetView suppresses the session being read in the foreground. Other sessions
+// still notify, while message notifications retain their background-only policy.
+// Discard suppressed events now so losing focus never replays them later.
+func (s *DesktopNotificationSubscription) SetView(focused bool, chatID string) {
 	s.hub.mu.Lock()
 	defer s.hub.mu.Unlock()
 	if _, open := s.hub.subs[s]; !open {
 		return
 	}
-	s.focused = focused
+	s.focused, s.chatID = focused, chatID
+	s.viewAt = time.Now()
 	if focused {
+		var pending []DesktopNotificationEvent
 		for {
 			select {
-			case <-s.events:
+			case event := <-s.events:
+				if !s.suppresses(event.job) {
+					pending = append(pending, event)
+				}
 			default:
+				for _, event := range pending {
+					s.events <- event
+				}
 				return
 			}
 		}
 	}
+}
+
+func (s *DesktopNotificationSubscription) suppresses(job pushJob) bool {
+	return s.focused && (job.isMessage() || job.chatID != "" && job.chatID == s.chatID)
 }
 
 func (s *DesktopNotificationSubscription) Close() {
@@ -94,18 +112,37 @@ func (s *DesktopNotificationSubscription) Close() {
 	}
 }
 
-func (h *desktopNotificationHub) publish(a *App, job pushJob) {
+// A focused view suppresses pushes for its browser auth session only. Other
+// devices remain independent. Expire stale focus hints if a browser suspends
+// without a blur event.
+func (h *notificationHub) suppressesWebPush(token string, job pushJob) bool {
+	if job.chatID == "" || job.isMessage() {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for sub := range h.subs {
+		if sub.webToken == token && sub.focused && sub.chatID == job.chatID && time.Since(sub.viewAt) < 45*time.Second {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *notificationHub) publish(a *App, job pushJob) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if len(h.subs) == 0 {
 		return
 	}
-	enabled, err := a.store.DesktopNotificationsEnabled()
-	if err != nil || !enabled {
-		return
+	if job.isMessage() {
+		enabled, err := a.store.DesktopNotificationsEnabled()
+		if err != nil || !enabled {
+			return
+		}
 	}
 	for sub := range h.subs {
-		if sub.focused {
+		if sub.suppresses(job) {
 			continue
 		}
 		select {
@@ -139,20 +176,17 @@ func (s *Store) SaveDesktopNotificationsEnabled(enabled bool) error {
 
 func (event DesktopNotificationEvent) Resolve(token, language string) (DesktopNotification, bool) {
 	a, job := event.app, event.job
-	if a == nil || time.Since(job.queuedAt) > 5*time.Minute || !a.pushJobCurrent(job) {
+	if a == nil || token == "" || len(token) > 128 {
 		return DesktopNotification{}, false
 	}
-	select {
-	case <-a.shutdown:
-		return DesktopNotification{}, false
-	default:
-	}
-	enabled, err := a.store.DesktopNotificationsEnabled()
-	if err != nil || !enabled || token == "" || len(token) > 128 {
-		return DesktopNotification{}, false
+	if job.isMessage() {
+		enabled, err := a.store.DesktopNotificationsEnabled()
+		if err != nil || !enabled {
+			return DesktopNotification{}, false
+		}
 	}
 	identity, err := a.store.authenticate(token)
-	if err != nil || !a.desktopNotificationRecipient(identity.User.ID, job) {
+	if err != nil || !event.authorized(identity.User.ID) {
 		return DesktopNotification{}, false
 	}
 	title, body := a.pushNotificationText(language, job)
@@ -164,7 +198,24 @@ func (event DesktopNotificationEvent) Resolve(token, language string) (DesktopNo
 		}
 		target = "/?" + url.Values{"inbox": {peer}, "recipient": {identity.User.ID}}.Encode()
 	}
-	return DesktopNotification{title, body, target, identity.User.ID}, true
+	note := DesktopNotification{Title: title, Body: body, URL: target, UserID: identity.User.ID}
+	if !job.isMessage() {
+		note.ChatID, note.Kind = job.chatID, job.kind
+	}
+	return note, true
+}
+
+func (event DesktopNotificationEvent) authorized(user string) bool {
+	a, job := event.app, event.job
+	if a == nil || time.Since(job.queuedAt) > 5*time.Minute || !a.pushJobCurrent(job) {
+		return false
+	}
+	select {
+	case <-a.shutdown:
+		return false
+	default:
+	}
+	return a.desktopNotificationRecipient(user, job)
 }
 
 func (a *App) desktopNotificationRecipient(user string, job pushJob) bool {

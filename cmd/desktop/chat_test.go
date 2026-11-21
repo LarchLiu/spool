@@ -172,6 +172,35 @@ func TestChatSessionChangeHintOnlyInterceptsExactLocalDestination(t *testing.T) 
 	}
 }
 
+func TestDesktopViewedSessionHintValidatesOriginAndPresentationFields(t *testing.T) {
+	const origin = "http://127.0.0.1:8787"
+	for _, test := range []struct {
+		target, chat string
+		changed, ok  bool
+	}{
+		{target: origin + desktopViewPath + "?chat=", ok: true},
+		{target: origin + desktopViewPath + "?chat=chat-12345678", chat: "chat-12345678", ok: true},
+		{target: origin + desktopViewPath + "?chat=chat-12345678&session=changed", chat: "chat-12345678", changed: true, ok: true},
+		{target: origin + desktopViewPath + "?chat=&session=changed", changed: true, ok: true},
+		{target: "https://evil.test" + desktopViewPath + "?chat=chat-12345678"},
+		{target: "http://127.0.0.1:8788" + desktopViewPath + "?chat=chat-12345678"},
+		{target: origin + desktopViewPath + "?chat=short"},
+		{target: origin + desktopViewPath + "?chat=chat-12345678&chat=chat-87654321"},
+		{target: origin + desktopViewPath + "?chat=chat-12345678&user=user-12345678"},
+		{target: origin + desktopViewPath + "?chat=chat-12345678&session=changed&user=user-12345678"},
+		{target: origin + desktopViewPath + "?chat=chat-12345678&session=changed&session=changed"},
+		{target: origin + desktopViewPath + "?chat=chat-12345678&session=unknown"},
+		{target: origin + desktopViewPath + "?chat=chat-12345678#fragment"},
+		{target: origin + "/__desktop/%76iew?chat=chat-12345678"},
+		{target: origin + desktopViewPath + "?session=changed"},
+	} {
+		view, ok := desktopViewNavigation(origin, test.target)
+		if ok != test.ok || view.chat != test.chat || view.sessionChanged != test.changed {
+			t.Errorf("view hint %q = %+v, %v", test.target, view, ok)
+		}
+	}
+}
+
 func TestChatEmbedsInMainWindowInsteadOfOpeningAnotherWindow(t *testing.T) {
 	file, err := parser.ParseFile(token.NewFileSet(), "chat.go", nil, 0)
 	if err != nil {

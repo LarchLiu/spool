@@ -64,6 +64,8 @@ final class NativeIcons {
             case "clipboard_paste": resource = R.drawable.web_icon_clipboard_paste; break;
             case "code_xml": resource = R.drawable.web_icon_code_xml; break;
             case "circle_alert": resource = R.drawable.web_icon_circle_alert; break;
+            case "circle_check": resource = R.drawable.web_icon_circle_check; break;
+            case "circle_x": resource = R.drawable.web_icon_circle_x; break;
             case "shield_check": resource = R.drawable.web_icon_shield_check; break;
             case "shield_question": resource = R.drawable.web_icon_shield_question; break;
             case "message": resource = R.drawable.web_icon_message; break;

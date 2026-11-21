@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+
+	"spool/internal/workspace"
 )
 
 func TestDesktopNotificationCookieWaitLeavesUIAvailable(t *testing.T) {
@@ -195,4 +197,34 @@ func TestDesktopNotificationFocusDefaultsToNativeAndSupportsIsolatedProbes(t *te
 		t.Fatal("clearing the probe override did not restore native focus lookup")
 	}
 	p.setDesktopNotificationFocused(false) // Safe before a subscription is installed.
+}
+
+func TestDesktopNotificationPresentationFollowsViewedSession(t *testing.T) {
+	for _, test := range []struct {
+		name, tab, viewed, notified string
+		read                        string
+		focused, loaded, failed     bool
+		suppressed                  bool
+	}{
+		{name: "current foreground session", tab: "Chat", viewed: "chat-current", notified: "chat-current", read: "chat-current", focused: true, loaded: true, suppressed: true},
+		{name: "other foreground session", tab: "Chat", viewed: "chat-current", notified: "chat-other", read: "chat-current", focused: true, loaded: true},
+		{name: "current background session", tab: "Chat", viewed: "chat-current", notified: "chat-current", loaded: true},
+		{name: "settings foreground", tab: "Service", viewed: "chat-current", notified: "chat-current", focused: true, loaded: true},
+		{name: "unloaded renderer", tab: "Chat", viewed: "chat-current", notified: "chat-current", focused: true},
+		{name: "failed renderer", tab: "Chat", viewed: "chat-current", notified: "chat-current", focused: true, loaded: true, failed: true},
+		{name: "foreground message", tab: "Chat", viewed: "chat-current", read: "chat-current", focused: true, loaded: true, suppressed: true},
+		{name: "background message", tab: "Chat", viewed: "chat-current", loaded: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := &panel{tab: test.tab, chatLoaded: test.loaded, chatFailed: test.failed, notificationChat: test.viewed, notificationFocused: func() bool { return test.focused }}
+			if got := p.viewedDesktopNotificationChat(test.focused); got != test.read {
+				t.Fatalf("read session = %q, want %q", got, test.read)
+			}
+			for _, kind := range []string{"completed", "failed", "approval"} {
+				if got := p.suppressDesktopNotification(workspace.DesktopNotification{ChatID: test.notified, Kind: kind}); got != test.suppressed {
+					t.Fatalf("%s suppressed = %v, want %v", kind, got, test.suppressed)
+				}
+			}
+		})
+	}
 }

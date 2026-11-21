@@ -82,10 +82,12 @@ type panel struct {
 	notificationRevision   uint64
 	notificationRefresh    bool
 	pendingNotification    *notificationTarget
+	sessionNotifications   []sessionNotification
 	notificationShow       func(mygo.NotificationOptions) error
 	notificationClear      func()
 	notificationCookies    func(string) ([]mygo.Cookie, error)
 	notificationFocused    func() bool
+	notificationChat       string
 }
 
 func main() {

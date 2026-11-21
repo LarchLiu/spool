@@ -346,6 +346,74 @@ func TestPushRecipientsAndRevokedAccess(t *testing.T) {
 	}
 }
 
+func TestPushSuppressesOnlyViewedSessionOnItsBrowser(t *testing.T) {
+	s := testStore(t)
+	u := testUser(t, s, "alice")
+	p := testProject(t, s, u)
+	viewed, _ := s.CreateChat(u.ID, p.ID, chatmodel.BackendCodex)
+	other, _ := s.CreateChat(u.ID, p.ID, chatmodel.BackendCodex)
+	a := NewApp(s, &fakeRunner{}, "", "")
+	t.Cleanup(func() { a.Close() })
+	var sent []string
+	a.pushClient = &http.Client{Transport: pushTransport(func(r *http.Request) (*http.Response, error) {
+		sent = append(sent, r.URL.String())
+		return pushResponse(201), nil
+	})}
+	var browserToken string
+	for _, name := range []string{"focused-browser", "other-device"} {
+		cookie, csrf := loginRequest(t, a, u.Username)
+		sub, _ := testPushSubscription(t, name)
+		subscribePush(t, a, cookie, csrf, sub, "en")
+		if name == "focused-browser" {
+			browserToken = tokenHash(cookie.Value)
+		}
+	}
+	first := s.notifications.subscribe(browserToken)
+	second := s.notifications.subscribe(browserToken)
+	t.Cleanup(first.Close)
+	t.Cleanup(second.Close)
+	first.SetView(true, viewed.ID)
+	second.SetView(false, other.ID)
+	for _, kind := range []string{"completed", "failed", "approval"} {
+		job := pushJob{chatID: viewed.ID, turnID: "web-turn", kind: kind}
+		if kind == "approval" {
+			job.approvalID = "web-approval"
+			a.approvals[job.approvalID] = &pendingApproval{chatID: viewed.ID, turnID: job.turnID}
+		}
+		sent = nil
+		a.deliverPushJob(context.Background(), job)
+		if len(sent) != 1 || !strings.HasSuffix(sent[0], "other-device") {
+			t.Fatalf("%s suppressed the wrong device: %v", kind, sent)
+		}
+	}
+	checkBoth := func(chat string) {
+		t.Helper()
+		sent = nil
+		a.deliverPushJob(context.Background(), pushJob{chatID: chat, kind: "completed"})
+		if len(sent) != 2 {
+			t.Fatalf("expected both devices for %s: %v", chat, sent)
+		}
+	}
+	checkBoth(other.ID)
+	first.SetView(false, viewed.ID)
+	checkBoth(viewed.ID)
+	// Another tab in the same browser can be the one reading the session.
+	second.SetView(true, viewed.ID)
+	if !s.notifications.suppressesWebPush(browserToken, pushJob{chatID: viewed.ID, kind: "completed"}) {
+		t.Fatal("focused second tab did not suppress its current session")
+	}
+	s.notifications.mu.Lock()
+	second.viewAt = time.Now().Add(-time.Minute)
+	s.notifications.mu.Unlock()
+	checkBoth(viewed.ID)
+	second.SetView(true, viewed.ID)
+	if s.notifications.suppressesWebPush(browserToken, pushJob{kind: "direct_message"}) {
+		t.Fatal("session view changed the private message push policy")
+	}
+	second.Close()
+	checkBoth(viewed.ID)
+}
+
 func TestPushApprovalRequiresCurrentControlAndTurnParticipants(t *testing.T) {
 	s := testStore(t)
 	alice, bob, carol := testUser(t, s, "alice"), testUser(t, s, "bob"), testUser(t, s, "carol")

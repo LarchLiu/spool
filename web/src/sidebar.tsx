@@ -34,12 +34,15 @@ import {
 } from "./sidebar-state";
 import { SidebarSection } from "./sidebar-section";
 import { INITIAL_CHAT_LIMIT, SidebarChatList } from "./sidebar-chat-list";
+import { SessionNotificationIcon } from "./session-notification-icon";
+import type { SessionNotifications } from "./use-session-notifications";
 
 type Props = {
   user: User;
   serverName: string;
   projects: Project[];
   chats: Chat[];
+  notifications: SessionNotifications;
   pinned: string[];
   collapsed: SidebarPreferences["collapsed"];
   onToggleSection: (section: Section) => void;
@@ -208,6 +211,10 @@ export function Sidebar(props: Props) {
                 </button>
               )}
             </div>
+            <SessionNotificationIcon
+              kind={props.notifications[chat.id]}
+              t={t}
+            />
           </div>
         )}
       </ChatActionMenu>

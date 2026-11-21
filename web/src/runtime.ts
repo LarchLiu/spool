@@ -24,6 +24,21 @@ export const desktopSettingsPath = "/__desktop/settings";
 export async function notifyDesktopSessionChanged(
   surface: unknown = globalThis,
 ): Promise<void> {
+  desktopNavigationHint("/__desktop/session-changed", surface);
+}
+
+export async function notifyDesktopViewChanged(
+  chat: string,
+  sessionChanged: boolean,
+  surface: unknown = globalThis,
+): Promise<void> {
+  if (chat && !/^[a-zA-Z0-9_][a-zA-Z0-9_-]{7,127}$/.test(chat)) return;
+  const params = new URLSearchParams({ chat });
+  if (sessionChanged) params.set("session", "changed");
+  desktopNavigationHint("/__desktop/view?" + params, surface);
+}
+
+function desktopNavigationHint(path: string, surface: unknown): void {
   if (!isDesktopChat(surface) || !("location" in surface)) return;
   const location = surface.location;
   if (
@@ -33,7 +48,7 @@ export async function notifyDesktopSessionChanged(
     typeof location.assign !== "function"
   )
     return;
-  location.assign("/__desktop/session-changed");
+  location.assign(path);
 }
 
 export function isMacDesktop(surface: unknown = globalThis): boolean {
@@ -143,6 +158,73 @@ export function subscribeDesktopUpdates(
 }
 
 export type DesktopNotificationTarget = { url: string; user: string };
+
+export type SessionNotificationKind = "completed" | "failed" | "approval";
+export type SessionNotification = {
+  chat: string;
+  user: string;
+  kind: SessionNotificationKind;
+};
+export type DesktopSessionNotification = SessionNotification;
+
+export function isSessionNotification(
+  value: unknown,
+): value is SessionNotification {
+  const validID = /^[a-zA-Z0-9_][a-zA-Z0-9_-]{7,127}$/;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "chat" in value &&
+    typeof value.chat === "string" &&
+    validID.test(value.chat) &&
+    "user" in value &&
+    typeof value.user === "string" &&
+    validID.test(value.user) &&
+    "kind" in value &&
+    (value.kind === "completed" ||
+      value.kind === "failed" ||
+      value.kind === "approval")
+  );
+}
+
+export function takeDesktopSessionNotifications(
+  surface: unknown = globalThis,
+): DesktopSessionNotification[] {
+  if (!isDesktopChat(surface) || !("spoolSessionNotifications" in surface))
+    return [];
+  const pending = surface.spoolSessionNotifications;
+  delete (surface as { spoolSessionNotifications?: unknown })
+    .spoolSessionNotifications;
+  if (!Array.isArray(pending)) return [];
+  return Array.from(pending).filter(isSessionNotification);
+}
+
+export function subscribeDesktopSessionNotifications(
+  listener: () => void,
+  surface: unknown = globalThis,
+): () => void {
+  return subscribeDesktopEvent(
+    "spool:session-notification-changed",
+    listener,
+    surface,
+  );
+}
+
+export function desktopViewedChat(surface: unknown = globalThis): string {
+  if (!isDesktopChat(surface) || !("spoolViewedChat" in surface)) return "";
+  const chat = surface.spoolViewedChat;
+  return typeof chat === "string" &&
+    /^[a-zA-Z0-9_][a-zA-Z0-9_-]{7,127}$/.test(chat)
+    ? chat
+    : "";
+}
+
+export function subscribeDesktopSessionView(
+  listener: () => void,
+  surface: unknown = globalThis,
+): () => void {
+  return subscribeDesktopEvent("spool:session-view-changed", listener, surface);
+}
 
 export function takeDesktopNotification(
   surface: unknown = globalThis,

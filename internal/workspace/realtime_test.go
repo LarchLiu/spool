@@ -397,3 +397,110 @@ func TestRealtimeFinishingAndApprovalPublishNavigation(t *testing.T) {
 		return m.Type == "navigation" && strings.Contains(string(m.Data), `"status":"completed"`)
 	})
 }
+
+func waitNotificationView(t *testing.T, a *App, token, chat string, focused bool) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for a.store.notifications.suppressesWebPush(tokenHash(token), pushJob{chatID: chat, kind: "completed"}) != focused {
+		if time.Now().After(deadline) {
+			t.Fatal("browser notification view was not synchronized")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestRealtimeSessionNotificationsWithoutPushOptIn(t *testing.T) {
+	a, server, alice, project, cookie, csrf := realtimeFixture(t)
+	viewed, _ := a.store.CreateChat(alice.ID, project.ID, chatmodel.BackendCodex)
+	other, _ := a.store.CreateChat(alice.ID, project.ID, chatmodel.BackendCodex)
+	conn := realtimeConnect(t, server, cookie, csrf, true)
+	realtimeReady(t, conn)
+	realtimeWrite(t, conn, realtimeInput{Type: "view", Visible: true, Focused: true, Chat: viewed.ID})
+	waitNotificationView(t, a, cookie.Value, viewed.ID, true)
+	check := func(chat, kind string) {
+		t.Helper()
+		message := realtimeUntil(t, conn, func(m realtimeMessage) bool { return m.Type == "session_notification" })
+		var note struct{ Chat, User, Kind string }
+		if err := json.Unmarshal(message.Data, &note); err != nil || note.Chat != chat || note.User != alice.ID || note.Kind != kind {
+			t.Fatalf("session notification = %s (%v)", message.Data, err)
+		}
+	}
+	for _, kind := range []string{"completed", "completed", "failed", "approval"} {
+		job := pushJob{chatID: other.ID, turnID: "browser-turn", kind: kind}
+		if kind == "approval" {
+			job.approvalID = "browser-approval"
+			a.liveMu.Lock()
+			a.approvals[job.approvalID] = &pendingApproval{chatID: other.ID, turnID: job.turnID}
+			a.liveMu.Unlock()
+		}
+		a.enqueuePush(pushJob{chatID: viewed.ID, turnID: job.turnID, kind: kind})
+		a.enqueuePush(job)
+		check(other.ID, kind)
+	}
+	// A visible tab in an unfocused window still receives its session status.
+	realtimeWrite(t, conn, realtimeInput{Type: "view", Visible: true, Chat: viewed.ID})
+	waitNotificationView(t, a, cookie.Value, viewed.ID, false)
+	a.enqueuePush(pushJob{chatID: viewed.ID, turnID: "background-turn", kind: "completed"})
+	check(viewed.ID, "completed")
+	// Closing the connection immediately releases any browser push suppression.
+	realtimeWrite(t, conn, realtimeInput{Type: "view", Visible: true, Focused: true, Chat: viewed.ID})
+	waitNotificationView(t, a, cookie.Value, viewed.ID, true)
+	conn.CloseNow()
+	waitNotificationView(t, a, cookie.Value, viewed.ID, false)
+}
+
+func TestRealtimeSessionNotificationsAuthorizeEachEvent(t *testing.T) {
+	a, server, alice, project, cookie, csrf := realtimeFixture(t)
+	bob := testUser(t, a.store, "bob")
+	project.Members = append(project.Members, bob.ID)
+	project.SharedChats = true
+	if _, err := a.store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	shared, _ := a.store.CreateChat(bob.ID, project.ID, chatmodel.BackendCodex)
+	own, _ := a.store.CreateChat(alice.ID, project.ID, chatmodel.BackendCodex)
+	conn := realtimeConnect(t, server, cookie, csrf, true)
+	realtimeReady(t, conn)
+	// Project access alone is not a notification subscription to every session.
+	a.enqueuePush(pushJob{chatID: shared.ID, kind: "failed"})
+	a.enqueuePush(pushJob{chatID: own.ID, kind: "completed"})
+	message := realtimeUntil(t, conn, func(m realtimeMessage) bool { return m.Type == "session_notification" })
+	if !strings.Contains(string(message.Data), own.ID) {
+		t.Fatalf("project-only member received a status: %s", message.Data)
+	}
+	if _, err := a.store.db.Exec(`INSERT INTO chat_collaborators VALUES(?,?)`, shared.ID, alice.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.store.db.Exec(`INSERT INTO project_member_own_access VALUES(?,?,'read-only') ON CONFLICT(project_id,user_id) DO UPDATE SET access='read-only'`, project.ID, alice.ID); err != nil {
+		t.Fatal(err)
+	}
+	a.liveMu.Lock()
+	a.approvals["web-readonly-approval"] = &pendingApproval{chatID: own.ID, turnID: "web-turn"}
+	a.liveMu.Unlock()
+	a.enqueuePush(pushJob{chatID: own.ID, turnID: "web-turn", kind: "approval", approvalID: "web-readonly-approval"})
+	a.enqueuePush(pushJob{chatID: own.ID, kind: "approval", approvalID: "obsolete-approval"})
+	a.store.notifications.publish(a, pushJob{chatID: own.ID, kind: "failed", queuedAt: time.Now().Add(-6 * time.Minute)})
+	a.enqueuePush(pushJob{chatID: own.ID, kind: "completed"})
+	message = realtimeUntil(t, conn, func(m realtimeMessage) bool { return m.Type == "session_notification" })
+	if !strings.Contains(string(message.Data), own.ID) || !strings.Contains(string(message.Data), `"kind":"completed"`) {
+		t.Fatalf("unauthorized, stale or resolved event reached the browser: %s", message.Data)
+	}
+	// A collaborator with access can still receive completion/failure indicators.
+	a.enqueuePush(pushJob{chatID: shared.ID, kind: "failed"})
+	message = realtimeUntil(t, conn, func(m realtimeMessage) bool { return m.Type == "session_notification" })
+	if !strings.Contains(string(message.Data), shared.ID) {
+		t.Fatalf("collaborator did not receive a status: %s", message.Data)
+	}
+	if _, err := a.store.db.Exec(`DELETE FROM project_members WHERE project_id=? AND user_id=?`, project.ID, alice.ID); err != nil {
+		t.Fatal(err)
+	}
+	// Use a fresh private project for the final sentinel after revoking access.
+	private := testProject(t, a.store, alice)
+	allowed, _ := a.store.CreateChat(alice.ID, private.ID, chatmodel.BackendCodex)
+	a.enqueuePush(pushJob{chatID: shared.ID, kind: "completed"})
+	a.enqueuePush(pushJob{chatID: allowed.ID, kind: "completed"})
+	message = realtimeUntil(t, conn, func(m realtimeMessage) bool { return m.Type == "session_notification" })
+	if !strings.Contains(string(message.Data), allowed.ID) {
+		t.Fatalf("revoked collaborator received a status: %s", message.Data)
+	}
+}

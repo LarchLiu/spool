@@ -30,7 +30,7 @@ import {
 import { api, APIError, getCSRF, setCSRF } from "./api";
 import {
   isDesktopChat,
-  notifyDesktopSessionChanged,
+  notifyDesktopViewChanged,
   subscribeDesktopNotifications,
   takeDesktopNotification,
 } from "./runtime";
@@ -93,6 +93,7 @@ import { PeopleGroupPicker } from "./people-group-picker";
 import { OnlinePeopleMenu } from "./online-people-menu";
 import { ChatTitleMenu } from "./chat-title-menu";
 import { useSidebarPreferences } from "./use-sidebar-preferences";
+import { useSessionNotifications } from "./use-session-notifications";
 import { sortedSidebarChats } from "./sidebar-state";
 import {
   createDirectInbox,
@@ -193,6 +194,7 @@ function App() {
     : chats.find((item) => item.id === chatID);
   const chatLoading = !!chatID && chat?.id !== chatID;
   const sidebarPreferences = useSidebarPreferences(user?.id, fail);
+  const sessionNotifications = useSessionNotifications(user?.id, chatID);
   const [online, setOnline] = useState<Online[]>([]),
     [draft, setDraft] = useState(""),
     [posting, setPosting] = useState(false),
@@ -494,6 +496,7 @@ function App() {
     follow = useRef(true),
     activeID = useRef(chatID);
   const notificationChat = useRef(notificationChatFromURL(window.location.href));
+  const desktopAccount = useRef<string | null>(null);
   const [notificationInbox, setNotificationInbox] = useState(() =>
     notificationInboxFromURL(window.location.href),
   );
@@ -565,8 +568,15 @@ function App() {
     return () => window.removeEventListener("auth-expired", expire);
   }, []);
   useEffect(() => {
-    if (ready) void notifyDesktopSessionChanged().catch(() => {});
-  }, [ready, user?.id]);
+    if (!ready || !isDesktopChat()) return;
+    const account = user?.id || "";
+    const changed = desktopAccount.current !== account;
+    desktopAccount.current = account;
+    void notifyDesktopViewChanged(user ? chatID : "", changed).catch(() => {});
+  }, [ready, user?.id, chatID]);
+  useEffect(() => {
+    messageStream.current?.view();
+  }, [user?.id, chatID]);
   useEffect(() => {
     if (!user || isDesktopChat()) return;
     const controller = new AbortController();
@@ -841,6 +851,9 @@ function App() {
     const stream = subscribeWorkspaceEvents(
       {
         navigation: receiveNavigation,
+        sessionNotification: (value) => {
+          if (!cancelled) sessionNotifications.receive(value);
+        },
         agents: receiveAgents,
         profiles: receiveProfiles,
         server: (value) => {
@@ -878,6 +891,10 @@ function App() {
         },
         csrf: getCSRF,
         visible: () => document.visibilityState === "visible",
+        view: () => ({
+          focused: !isDesktopChat() && document.visibilityState === "visible" && document.hasFocus(),
+          chat: activeID.current,
+        }),
         checkAuth: (signal) => api("/me", undefined, signal),
       },
     );
@@ -891,11 +908,13 @@ function App() {
       stream.visibility();
       if (document.visibilityState === "visible") resume();
     };
+    const blur = () => stream.view();
     // Poll only as a fallback for unavailable/blocked WebSocket connections.
     const refresh = setInterval(() => {
       if (!realtimeConnected) loadNavigation();
     }, 15000);
     window.addEventListener("focus", resume);
+    window.addEventListener("blur", blur);
     window.addEventListener("online", resume);
     document.addEventListener("visibilitychange", visibility);
     return () => {
@@ -905,6 +924,7 @@ function App() {
       if (messageStream.current === stream) messageStream.current = null;
       clearInterval(refresh);
       window.removeEventListener("focus", resume);
+      window.removeEventListener("blur", blur);
       window.removeEventListener("online", resume);
       document.removeEventListener("visibilitychange", visibility);
     };
@@ -1899,6 +1919,7 @@ function App() {
     setPreferences(next);
   }
   function openChat(chat: Chat) {
+    sessionNotifications.dismiss(chat.id);
     activeID.current = chat.id;
     selection.current = {
       project: chat.project_id,
@@ -2061,6 +2082,7 @@ function App() {
         resolveProfile={resolveProfile}
         projects={projects}
         chats={chats}
+        notifications={sessionNotifications.notifications}
         pinned={sidebarPreferences.pinned}
         collapsed={sidebarPreferences.collapsed}
         onToggleSection={sidebarPreferences.toggleSection}
