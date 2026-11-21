@@ -27,6 +27,7 @@ type authIdentity struct {
 	User      User
 	CSRF      string
 	TokenHash string
+	adbEpoch  uint64
 }
 
 func randomToken() string {
@@ -43,7 +44,7 @@ func tokenHash(token string) string {
 func (s *Store) authenticate(token string) (authIdentity, error) {
 	var v authIdentity
 	v.TokenHash = tokenHash(token)
-	err := s.db.QueryRow(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,a.csrf,COALESCE(av.style,?),COALESCE(av.seed,''),COALESCE(rd.enabled,0) FROM auth_sessions a JOIN users u ON u.id=a.user_id LEFT JOIN user_avatars av ON av.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id WHERE a.token_hash=? AND a.expires_at>? AND u.disabled=0`, DefaultAvatar().Style, v.TokenHash, time.Now().UnixMilli()).Scan(&v.User.ID, &v.User.Username, &v.User.Nickname, &v.User.Disabled, &v.User.CreatedAt, &v.CSRF, &v.User.Avatar.Style, &v.User.Avatar.Seed, &v.User.RemoteDesktop)
+	err := s.db.QueryRow(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,a.csrf,COALESCE(av.style,?),COALESCE(av.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0),COALESCE(ae.epoch,0) FROM auth_sessions a JOIN users u ON u.id=a.user_id LEFT JOIN user_avatars av ON av.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id LEFT JOIN user_adb_bridge_epochs ae ON ae.user_id=u.id WHERE a.token_hash=? AND a.expires_at>? AND u.disabled=0`, DefaultAvatar().Style, v.TokenHash, time.Now().UnixMilli()).Scan(&v.User.ID, &v.User.Username, &v.User.Nickname, &v.User.Disabled, &v.User.CreatedAt, &v.CSRF, &v.User.Avatar.Style, &v.User.Avatar.Seed, &v.User.RemoteDesktop, &v.User.ADBBridge, &v.adbEpoch)
 	return v, err
 }
 func (s *Store) login(username, password string) (string, authIdentity, error) {

@@ -24,6 +24,7 @@ stay on that machine; install and sign in to Codex or Claude Code there before u
 - **Automation** — Scheduled GitHub Issue processing in isolated worktrees, with pull requests for review.
 - **Remote access** — Headless server, HTTPS, embedded Tailscale, relay pairing, and optional relay Web/PWA access.
 - **Remote desktop** — Optional [voxl](https://github.com/tembo/voxl) integration, started on demand and authorized per user.
+- **ADB bridge** — Share an Android phone over browser USB or the Android app with the host's adb, enabled per host and per user.
 - **Notifications and preferences** — Desktop notifications, Web Push, themes, and English, Simplified Chinese, and Japanese.
 
 ![Spool Web workspace](docs/images/web-workspace-dark.png)
@@ -48,5 +49,6 @@ Build output is written to `build/`.
 
 - [Deployment, Web/PWA, Tailscale, and remote desktop](docs/deployment.md)
 - [Server CLI](docs/server-cli.md)
+- [ADB bridge](docs/adb-bridge.md)
 - [Android development](android/README.md)
 - [Relay deployment and pairing](relay/README.md)

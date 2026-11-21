@@ -132,7 +132,7 @@ func runLegacy(ctx context.Context, args []string) (runErr error) {
 		}
 		for _, u := range users {
 			if strings.EqualFold(u.Username, *remoteUser) {
-				_, e = service.Store.SaveUser(workspace.UserInput{ID: u.ID, Username: u.Username, Nickname: u.Nickname, Disabled: u.Disabled, RemoteDesktop: *remoteDesktop})
+				_, e = service.Store.SaveUser(workspace.UserInput{ID: u.ID, Username: u.Username, Nickname: u.Nickname, Disabled: u.Disabled, RemoteDesktop: *remoteDesktop, ADBBridge: u.ADBBridge})
 				return e
 			}
 		}

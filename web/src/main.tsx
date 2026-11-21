@@ -90,6 +90,7 @@ import {
   RemoteDesktopDialog,
   RemoteDesktopSettings,
 } from "./remote-desktop-settings";
+import { ADBShareSettings } from "./adb-share-settings";
 import { DirectMessagePanel } from "./direct-message-panel";
 import type { FloatingWindowBounds } from "./floating-window";
 import { PeopleGroupPicker } from "./people-group-picker";
@@ -1972,6 +1973,7 @@ function App() {
           }}
         />
       )}
+      {user && <ADBShareSettings key={`adb-${user.id}`} t={t} />}
     </AppearanceDialog>
   );
   if (!ready)

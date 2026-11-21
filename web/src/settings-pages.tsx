@@ -10,6 +10,7 @@ import {
   Radio,
   RefreshCw,
   ShieldCheck,
+  Smartphone,
 } from "lucide-react";
 import { AgentIcon } from "./agent-icon";
 import { UserAvatar } from "./user-avatar";
@@ -26,6 +27,7 @@ import { SettingsBack, SettingsList } from "./settings-list";
 import { usePendingSettings, usePendingSettingsSave } from "./settings-pending";
 import { ThemePicker } from "./theme-picker";
 import { VoxlSettings } from "./voxl-settings";
+import { ADBHostSettings } from "./adb-host-settings";
 import { RelayPairing, RelayRegistration } from "./relay-settings";
 import { CustomSelect } from "./custom-select";
 import { AddressLink, AddressQRButton } from "./address-actions";
@@ -155,6 +157,7 @@ const serviceTabs = [
   { key: "relay", label: "Relay", icon: Radio },
   { key: "tsnet", label: "Tailscale", icon: ShieldCheck },
   { key: "desktop", label: "Remote desktop", icon: Monitor },
+  { key: "adb", label: "ADB bridge", icon: Smartphone },
 ] as const;
 type ServiceTab = (typeof serviceTabs)[number]["key"];
 
@@ -861,6 +864,9 @@ export function ServicePage({ data, run, t }: PageProps) {
       <ServiceTabPanel id={tabsID} tab="desktop" active={activeTab}>
         <VoxlSettings data={data} run={run} t={t} />
       </ServiceTabPanel>
+      <ServiceTabPanel id={tabsID} tab="adb" active={activeTab}>
+        <ADBHostSettings data={data} run={run} t={t} />
+      </ServiceTabPanel>
     </>
   );
 }
@@ -909,41 +915,58 @@ export function PeoplePage({ data, run, t }: PageProps) {
           title: person.nickname || person.username,
           description: person.username,
           status: person.disabled ? t("Disabled") : "",
-          action: person.remote_desktop && (
+          action: (person.remote_desktop || person.adb_bridge) && (
             <div className="settings-person-remote">
-              <span
-                className="settings-person-remote-icon"
-                role="img"
-                aria-label={t("Remote desktop allowed")}
-                title={t("Remote desktop allowed")}
-              >
-                <MonitorUp size={17} aria-hidden="true" />
-              </span>
-              <span
-                className={`settings-remote-count${(data.status.RemoteDesktopConnections?.[person.id] ?? 0) > 0 ? " is-connected" : ""}`}
-                role="status"
-                aria-label={t("Remote connections · {count}", {
-                  count: data.status.RemoteDesktopConnections?.[person.id] ?? 0,
-                })}
-                title={t("Remote connections · {count}", {
-                  count: data.status.RemoteDesktopConnections?.[person.id] ?? 0,
-                })}
-              >
-                {data.status.RemoteDesktopConnections?.[person.id] ?? 0}
-              </span>
-              {(data.status.RemoteDesktopConnections?.[person.id] ?? 0) > 0 && (
-                <button
-                  type="button"
-                  aria-label={`${t("Disconnect desktop")} · ${person.nickname || person.username}`}
-                  onClick={() =>
-                    void run({
-                      kind: "disconnect-remote-desktop",
-                      target: person.id,
-                    })
-                  }
+              {person.adb_bridge && (
+                <span
+                  className="settings-person-remote-icon"
+                  role="img"
+                  aria-label={t("ADB bridge allowed")}
+                  title={t("ADB bridge allowed")}
                 >
-                  {t("Disconnect desktop")}
-                </button>
+                  <Smartphone size={17} aria-hidden="true" />
+                </span>
+              )}
+              {person.remote_desktop && (
+                <>
+                  <span
+                    className="settings-person-remote-icon"
+                    role="img"
+                    aria-label={t("Remote desktop allowed")}
+                    title={t("Remote desktop allowed")}
+                  >
+                    <MonitorUp size={17} aria-hidden="true" />
+                  </span>
+                  <span
+                    className={`settings-remote-count${(data.status.RemoteDesktopConnections?.[person.id] ?? 0) > 0 ? " is-connected" : ""}`}
+                    role="status"
+                    aria-label={t("Remote connections · {count}", {
+                      count:
+                        data.status.RemoteDesktopConnections?.[person.id] ?? 0,
+                    })}
+                    title={t("Remote connections · {count}", {
+                      count:
+                        data.status.RemoteDesktopConnections?.[person.id] ?? 0,
+                    })}
+                  >
+                    {data.status.RemoteDesktopConnections?.[person.id] ?? 0}
+                  </span>
+                  {(data.status.RemoteDesktopConnections?.[person.id] ?? 0) >
+                    0 && (
+                    <button
+                      type="button"
+                      aria-label={`${t("Disconnect desktop")} · ${person.nickname || person.username}`}
+                      onClick={() =>
+                        void run({
+                          kind: "disconnect-remote-desktop",
+                          target: person.id,
+                        })
+                      }
+                    >
+                      {t("Disconnect desktop")}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           ),
@@ -1016,6 +1039,18 @@ export function PeoplePage({ data, run, t }: PageProps) {
               onChange={(remote_desktop) =>
                 setDraft({ ...draft, remote_desktop })
               }
+            />
+          </Row>
+          <Row
+            title={t("Allow ADB bridge")}
+            help={t(
+              "Lets this person add Android devices to this computer's adb, where every agent can use them, beyond project permissions.",
+            )}
+          >
+            <Toggle
+              label={t("Allow ADB bridge")}
+              value={!!draft.adb_bridge}
+              onChange={(adb_bridge) => setDraft({ ...draft, adb_bridge })}
             />
           </Row>
           <Row title={t("Disable account")}>

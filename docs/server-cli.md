@@ -205,6 +205,16 @@ interrupted. Stop it before other management commands. Relay credentials stay
 in private files, outside JSON settings/status. See [relay deployment](../relay/README.md)
 for the independent VPS component.
 
+## ADB bridge
+
+Install adb on the host, grant users access and enable the bridge. Shared
+devices are usable by every agent on the host; see [ADB bridge](adb-bridge.md).
+
+```sh
+spool-server user update --user alice --adb-bridge=true
+spool-server config set --adb-bridge=true
+```
+
 ## Remote desktop on a desktop host
 
 Using the CLI does not require a headless host. Stop any instance using the data

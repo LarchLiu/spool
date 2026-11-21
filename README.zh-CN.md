@@ -23,6 +23,7 @@ Spool 是面向个人和团队的本地 AI 编程工作区。通过 Desktop、We
 - **自动化**：定时处理 GitHub Issues，在隔离 worktree 中执行任务并创建 PR 供审阅。
 - **远程访问**：支持 headless server、HTTPS、内置 Tailscale、中继配对和可选的中继 Web/PWA 入口。
 - **远程桌面**：可选集成 [voxl](https://github.com/tembo/voxl)，按需启动并按用户授权。
+- **ADB 桥接**：通过浏览器 USB 或 Android app 把手机共享给主机的 adb，需主机开启并按用户授权。
 - **通知与偏好**：桌面通知、Web Push、主题，以及简体中文、English 和日本語。
 
 ![Spool Web workspace](docs/images/web-workspace-dark.png)
@@ -47,5 +48,6 @@ make test     # 运行工具、前端、Go 测试及 vet
 
 - [部署、Web/PWA、Tailscale 与远程桌面](docs/deployment.zh-CN.md)
 - [Server CLI](docs/server-cli.md)
+- [ADB 桥接](docs/adb-bridge.md)
 - [Android 开发](android/README.md)
 - [中继部署与配对](relay/README.md)

@@ -32,6 +32,7 @@ export type ServerSettings = {
   proxy_url: string;
   no_proxy: string;
   remote_desktop_enabled?: boolean;
+  adb_bridge_enabled?: boolean;
   relay_enabled?: boolean;
   relay_web_enabled?: boolean;
   relay_url?: string;
@@ -40,6 +41,7 @@ export type ServerSettings = {
 export type Person = User & {
   disabled: boolean;
   remote_desktop?: boolean;
+  adb_bridge?: boolean;
 };
 export type PersonDraft = Person & { password: string };
 export type Automation = {
@@ -160,6 +162,11 @@ export type SettingsSnapshot = {
       install_step?: string;
       application?: string;
     };
+    ADB?: {
+      // Empty when adb is not installed on the host.
+      Path: string;
+      Devices: { Owner: string; Transport: string; Serial: string }[];
+    };
   };
   users: Person[];
   projects: ManagedProject[];
@@ -201,6 +208,7 @@ export type SettingsCommand =
   | { kind: "save-appearance"; preferences: UIPreferences }
   | { kind: "save-notifications"; enabled: boolean }
   | { kind: "set-remote-desktop"; enabled: boolean }
+  | { kind: "set-adb-bridge"; enabled: boolean }
   | { kind: "disconnect-remote-desktop"; target: string }
   | { kind: "unregister-relay"; target: string }
   | { kind: "copy-relay-pairing-code"; text: string }
@@ -298,6 +306,7 @@ export function newPerson(): PersonDraft {
     password: "",
     disabled: false,
     remote_desktop: false,
+    adb_bridge: false,
   };
 }
 export function newProject(): ManagedProject {

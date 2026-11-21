@@ -96,6 +96,32 @@ public class MainActivityConnectionTest {
                 new JSONObject("{revision:" + revision + ",people:[{id:'alice',nickname:'" + name + "'}]}")));
     }
 
+    @Test @Config(sdk = 35)
+    public void deniedOrStaleNotificationPermissionCannotStartAdbSharing() throws Exception {
+        String permission = android.Manifest.permission.POST_NOTIFICATIONS;
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true)) {
+            Shadows.shadowOf(h.activity).denyPermissions(permission);
+            h.set("adbAvailability", "");
+            org.robolectric.util.ReflectionHelpers.ClassParameter<Integer> port = ReflectionHelpers.ClassParameter.from(int.class, 44000);
+            ReflectionHelpers.callInstanceMethod(h.activity, "startAdbShare", port);
+            org.robolectric.shadows.ShadowActivity.PermissionsRequest request = Shadows.shadowOf(h.activity).getLastRequestedPermission();
+            assertArrayEquals(new String[] {permission}, request.requestedPermissions);
+            assertNull(h.get("adbShare"));
+            h.activity.onRequestPermissionsResult(request.requestCode, request.requestedPermissions,
+                    new int[] {android.content.pm.PackageManager.PERMISSION_DENIED});
+            AdbShare share = h.get("adbShare");
+            assertEquals(AdbShare.Phase.FAILED, share.phase);
+            assertEquals("notification_unavailable", share.code);
+
+            ReflectionHelpers.callInstanceMethod(h.activity, "startAdbShare", port);
+            h.call("clearWorkspace");
+            Shadows.shadowOf(h.activity).grantPermissions(permission);
+            h.activity.onRequestPermissionsResult(request.requestCode, request.requestedPermissions,
+                    new int[] {android.content.pm.PackageManager.PERMISSION_GRANTED});
+            assertEquals(AdbShare.Phase.IDLE, share.phase);
+        }
+    }
+
     @Test public void relayApprovalReplacesTheLiveClientEvenWhenItsCodeIsUnchanged() throws Exception {
         try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(false)) {
             MainActivityGoalTest.Queue connections = connectionQueue(h);

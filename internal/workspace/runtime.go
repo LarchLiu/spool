@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"spool/internal/adbbridge"
 	"spool/internal/agent"
 	chatmodel "spool/internal/model"
 	"spool/internal/netproxy"
@@ -52,6 +53,7 @@ type Service struct {
 	networkProxy        netproxy.Options
 	networkProxyReady   bool
 	desktop             *voxl.Manager
+	adb                 *adbbridge.Manager
 	relay               *relayRuntime
 	relayRegistering    bool
 	relayDevices        *relay.Devices
@@ -70,6 +72,7 @@ type ServiceStatus struct {
 	TSNetAuthKeySet          bool
 	Voxl                     voxl.Status
 	RemoteDesktopConnections map[string]int
+	ADB                      ADBBridgeStatus
 	Relay                    RelayStatus
 }
 
@@ -113,6 +116,8 @@ func openService(root string, mode serviceMode) (*Service, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Service{Store: store, Registry: NewRegistry(store), ctx: ctx, cancel: cancel, lease: lease}
 	s.desktop = voxl.New(filepath.Join(store.Root(), "voxl"), func() { store.changes.publish(changeRemoteDesktop) })
+	// Outlives service restarts so a returning device keeps its adb serial.
+	s.adb = adbbridge.New()
 	settings, err := store.Settings()
 	if err == nil {
 		_, err = s.loadRelayRegistrationsLocked()
@@ -165,14 +170,17 @@ func openService(root string, mode serviceMode) (*Service, error) {
 	return s, nil
 }
 func (s *Service) applyRuntimeSettingsLocked(settings Settings) {
-	if s.runner == nil || s.activeSettings.IdleMinutes == settings.IdleMinutes {
+	if s.runner == nil {
 		return
 	}
-	s.runner.SetIdleTimeout(time.Duration(settings.IdleMinutes) * time.Minute)
-	s.activeSettings.IdleMinutes = settings.IdleMinutes
+	if s.activeSettings.IdleMinutes != settings.IdleMinutes {
+		s.runner.SetIdleTimeout(time.Duration(settings.IdleMinutes) * time.Minute)
+	}
+	s.activeSettings.IdleMinutes, s.activeSettings.ADBBridgeEnabled = settings.IdleMinutes, settings.ADBBridgeEnabled
 	s.app.configMu.Lock()
 	s.app.settings.IdleMinutes = settings.IdleMinutes
 	s.app.configMu.Unlock()
+	s.app.setADBBridgeEnabled(settings.ADBBridgeEnabled)
 }
 
 func (s *Service) Start() error {
@@ -222,6 +230,7 @@ func (s *Service) startWithSettingsLocked(settings Settings) error {
 	app.settings = settings
 	app.configureRelayWeb(settings)
 	app.desktop = s.desktop
+	app.adb = s.adb
 	app.startLocalSessionSync()
 	app.startIssueScheduler(s.lease)
 	server := &http.Server{Handler: app, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
@@ -385,7 +394,7 @@ func (s *Service) Status() ServiceStatus {
 		webDetecting = webDetecting || s.app.webProxyProbe != nil
 		s.app.webProxyMu.Unlock()
 	}
-	return ServiceStatus{Running: s.server != nil, RestartRequired: len(pending) > 0, PendingChanges: pending, WebError: s.webError, WebDetecting: webDetecting, WebProxyCheck: s.webProxyCheck, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != "", Voxl: desktopStatus, RemoteDesktopConnections: connections, Relay: relayStatus}
+	return ServiceStatus{Running: s.server != nil, RestartRequired: len(pending) > 0, PendingChanges: pending, WebError: s.webError, WebDetecting: webDetecting, WebProxyCheck: s.webProxyCheck, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != "", Voxl: desktopStatus, RemoteDesktopConnections: connections, ADB: s.adbBridgeStatusLocked(), Relay: relayStatus}
 }
 func (s *Service) WebURL() string {
 	s.mu.Lock()

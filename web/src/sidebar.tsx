@@ -19,6 +19,7 @@ import { UserAvatar } from "./user-avatar";
 import { ChatOperatorAvatars } from "./turn-identity";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { ChatSettingsControl } from "./desktop-settings";
+import { ADBShareIndicator } from "./adb-share-settings";
 import { isMacDesktop } from "./runtime";
 import { canControlChat } from "./chat-state";
 import { ChatActionMenu } from "./chat-title-menu";
@@ -347,6 +348,7 @@ export function Sidebar(props: Props) {
           {props.user.nickname}
           <small>{t("Project chat visibility follows project settings")}</small>
         </div>
+        <ADBShareIndicator t={t} onOpen={props.onSettings} />
         <ChatSettingsControl t={t} onAppearance={props.onSettings} />
         <button
           className="icon"

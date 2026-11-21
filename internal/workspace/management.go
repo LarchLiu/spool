@@ -30,6 +30,7 @@ type User struct {
 	CreatedAt     int64  `json:"created_at"`
 	Avatar        Avatar `json:"avatar"`
 	RemoteDesktop bool   `json:"remote_desktop"`
+	ADBBridge     bool   `json:"adb_bridge"`
 }
 type UserInput struct {
 	ID            string
@@ -38,6 +39,7 @@ type UserInput struct {
 	Password      string
 	Disabled      bool
 	RemoteDesktop bool
+	ADBBridge     bool
 }
 
 const productionBcryptCost = 12
@@ -76,6 +78,7 @@ type Settings struct {
 	ProxyURL             string `json:"proxy_url"`
 	NoProxy              string `json:"no_proxy"`
 	RemoteDesktopEnabled bool   `json:"remote_desktop_enabled"`
+	ADBBridgeEnabled     bool   `json:"adb_bridge_enabled"`
 	RelayEnabled         bool   `json:"relay_enabled"`
 	RelayWebEnabled      bool   `json:"relay_web_enabled"`
 	RelayURL             string `json:"relay_url"`
@@ -183,7 +186,7 @@ func (s *Store) saveSettingsLocked(v Settings) error {
 	return err
 }
 func (s *Store) Users() ([]User, error) {
-	rows, err := s.db.Query(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,COALESCE(a.style,?),COALESCE(a.seed,''),COALESCE(rd.enabled,0) FROM users u LEFT JOIN user_avatars a ON a.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id ORDER BY u.username`, DefaultAvatar().Style)
+	rows, err := s.db.Query(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,COALESCE(a.style,?),COALESCE(a.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0) FROM users u LEFT JOIN user_avatars a ON a.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id ORDER BY u.username`, DefaultAvatar().Style)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +194,7 @@ func (s *Store) Users() ([]User, error) {
 	out := []User{}
 	for rows.Next() {
 		var v User
-		if err = rows.Scan(&v.ID, &v.Username, &v.Nickname, &v.Disabled, &v.CreatedAt, &v.Avatar.Style, &v.Avatar.Seed, &v.RemoteDesktop); err != nil {
+		if err = rows.Scan(&v.ID, &v.Username, &v.Nickname, &v.Disabled, &v.CreatedAt, &v.Avatar.Style, &v.Avatar.Seed, &v.RemoteDesktop, &v.ADBBridge); err != nil {
 			return nil, err
 		}
 		out = append(out, v)
@@ -261,6 +264,9 @@ func (s *Store) saveUserWithPasswordCost(v UserInput, passwordCost int) (User, e
 	if _, err = tx.Exec(`INSERT INTO user_remote_desktop(user_id,enabled) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET enabled=excluded.enabled`, v.ID, v.RemoteDesktop); err != nil {
 		return User{}, err
 	}
+	if _, err = tx.Exec(`INSERT INTO user_adb_bridge(user_id,enabled) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET enabled=excluded.enabled`, v.ID, v.ADBBridge); err != nil {
+		return User{}, err
+	}
 	avatar := DefaultAvatar()
 	if err = tx.QueryRow(`SELECT style,seed FROM user_avatars WHERE user_id=?`, v.ID).Scan(&avatar.Style, &avatar.Seed); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return User{}, err
@@ -270,7 +276,7 @@ func (s *Store) saveUserWithPasswordCost(v UserInput, passwordCost int) (User, e
 	}
 	err = tx.Commit()
 	s.notify(err, changeNavigation|changePresence|changeAuth|changeProfiles)
-	return User{ID: v.ID, Username: v.Username, Nickname: v.Nickname, Disabled: v.Disabled, CreatedAt: now, Avatar: avatar, RemoteDesktop: v.RemoteDesktop}, err
+	return User{ID: v.ID, Username: v.Username, Nickname: v.Nickname, Disabled: v.Disabled, CreatedAt: now, Avatar: avatar, RemoteDesktop: v.RemoteDesktop, ADBBridge: v.ADBBridge}, err
 }
 func (s *Store) DeleteUser(id string) error {
 	tx, err := s.db.Begin()

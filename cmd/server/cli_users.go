@@ -28,7 +28,7 @@ func findUser(s *workspace.Store, ref string) (workspace.User, error) {
 }
 
 func userInput(u workspace.User) workspace.UserInput {
-	return workspace.UserInput{ID: u.ID, Username: u.Username, Nickname: u.Nickname, Disabled: u.Disabled, RemoteDesktop: u.RemoteDesktop}
+	return workspace.UserInput{ID: u.ID, Username: u.Username, Nickname: u.Nickname, Disabled: u.Disabled, RemoteDesktop: u.RemoteDesktop, ADBBridge: u.ADBBridge}
 }
 
 func addUsers(root *command, out io.Writer) {
@@ -45,6 +45,7 @@ func addUsers(root *command, out io.Writer) {
 	username := add.flags.String("username", "", "Unique login name (required)")
 	nickname := add.flags.String("nickname", "", "Display name; defaults to username")
 	remoteDesktop := add.flags.Bool("remote-desktop", false, "Grant access to the host desktop when remote desktop is enabled")
+	adbBridge := add.flags.Bool("adb-bridge", false, "Allow sharing Android devices with this host's adb when the ADB bridge is enabled")
 	add.validate = func() error {
 		if err := required("username", *username); err != nil {
 			return err
@@ -58,24 +59,25 @@ func addUsers(root *command, out io.Writer) {
 			name = *username
 		}
 		password, _ := envRequired("SPOOL_NEW_PASSWORD")
-		v, err := s.Store.SaveUser(workspace.UserInput{Username: *username, Nickname: name, Password: password, RemoteDesktop: *remoteDesktop})
+		v, err := s.Store.SaveUser(workspace.UserInput{Username: *username, Nickname: name, Password: password, RemoteDesktop: *remoteDesktop, ADBBridge: *adbBridge})
 		if err != nil {
 			return err
 		}
 		return writeJSON(out, v)
 	}
-	update := c.add("update", "Change account details, password or remote desktop access", "Only supplied fields change. Use --password to read the new password from SPOOL_NEW_PASSWORD.\nRemote desktop grants allow control of the host's full desktop, independently of project permissions.")
+	update := c.add("update", "Change account details, password, remote desktop or ADB bridge access", "Only supplied fields change. Use --password to read the new password from SPOOL_NEW_PASSWORD.\nRemote desktop grants allow control of the host's full desktop, independently of project permissions.\nADB bridge grants let the user add Android devices to this host's adb, where every agent can use them.")
 	ref := update.flags.String("user", "", "Current username or ID (required)")
 	newName := update.flags.String("username", "", "New login name")
 	newNick := update.flags.String("nickname", "", "New display name")
 	password := update.flags.Bool("password", false, "Reset password from SPOOL_NEW_PASSWORD")
 	newRemoteDesktop := update.flags.Bool("remote-desktop", false, "Grant or revoke host desktop access (--remote-desktop=true/false)")
+	newADBBridge := update.flags.Bool("adb-bridge", false, "Grant or revoke sharing Android devices with this host's adb (--adb-bridge=true/false)")
 	update.validate = func() error {
 		if err := required("user", *ref); err != nil {
 			return err
 		}
-		if !changed(update, "username") && !changed(update, "nickname") && !*password && !changed(update, "remote-desktop") {
-			return usage("supply --username, --nickname, --password or --remote-desktop")
+		if !changed(update, "username") && !changed(update, "nickname") && !*password && !changed(update, "remote-desktop") && !changed(update, "adb-bridge") {
+			return usage("supply --username, --nickname, --password, --remote-desktop or --adb-bridge")
 		}
 		if *password {
 			_, err := envRequired("SPOOL_NEW_PASSWORD")
@@ -100,6 +102,9 @@ func addUsers(root *command, out io.Writer) {
 		}
 		if changed(update, "remote-desktop") {
 			v.RemoteDesktop = *newRemoteDesktop
+		}
+		if changed(update, "adb-bridge") {
+			v.ADBBridge = *newADBBridge
 		}
 		saved, err := s.Store.SaveUser(v)
 		if err != nil {

@@ -48,6 +48,9 @@ export function settingsPageDataEqual(
         a.status.WebDetecting === b.status.WebDetecting &&
         a.status.WebProxyCheck === b.status.WebProxyCheck &&
         a.status.Voxl === b.status.Voxl &&
+        a.status.ADB === b.status.ADB &&
+        // Shared devices are listed with their owner's name.
+        a.users === b.users &&
         a.status.TSNet === b.status.TSNet &&
         a.status.Relay === b.status.Relay &&
         a.status.TSNetAuthKeySet === b.status.TSNetAuthKeySet
@@ -124,6 +127,7 @@ export function settingsCommandScope(
     case "detect-web-proxy":
     case "install-voxl":
     case "set-remote-desktop":
+    case "set-adb-bridge":
       return "Service";
     case "save-person":
     case "disconnect-remote-desktop":

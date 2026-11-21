@@ -70,7 +70,21 @@ test("page dependencies distinguish presence, membership, settings and appearanc
       (next) => (next.status.RemoteDesktopConnections = { person: 2 }),
       ["People"],
     ],
-    [(next) => (next.users[0].nickname = "Updated"), ["People", "Projects"]],
+    [
+      (next) => (next.users[0].nickname = "Updated"),
+      ["Service", "People", "Projects"],
+    ],
+    [
+      (next) =>
+        (next.status.ADB = {
+          Path: "/fixture/adb",
+          Devices: [
+            { Owner: "person", Transport: "usb", Serial: "127.0.0.1:41000" },
+          ],
+        }),
+      ["Service"],
+    ],
+    [(next) => (next.settings.adb_bridge_enabled = true), ["Service"]],
     [(next) => (next.status.TSNet.State = "NeedsLogin"), ["Service"]],
     [(next) => (next.settings.use_system_proxy = true), ["Service", "Network"]],
     [(next) => (next.settings.proxy_enabled = false), ["Service", "Network"]],
@@ -147,6 +161,7 @@ test("clipboard, navigation and reveal actions bypass mutation scope while saves
     ["save-updates", undefined],
     ["restart-service", "Service"],
     ["detect-web-proxy", "Service"],
+    ["set-adb-bridge", "Service"],
     ["save-person", "People"],
     ["disconnect-remote-desktop", "People"],
     ["save-project", "Projects"],

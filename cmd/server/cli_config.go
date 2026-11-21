@@ -33,6 +33,7 @@ func configFlags(c *command) func(*workspace.Service) error {
 	f.StringVar(&v.RelayURL, "relay-url", "", "Relay HTTPS origin, e.g. https://relay.example.com")
 	f.IntVar(&v.RelayLANPort, "relay-lan-port", v.RelayLANPort, "Secure LAN listener/discovery port (1-65535)")
 	f.BoolVar(&v.RemoteDesktopEnabled, "remote-desktop", false, "Enable on-demand voxl remote desktop (install voxl and grant users access first)")
+	f.BoolVar(&v.ADBBridgeEnabled, "adb-bridge", false, "Let granted users share Android devices with this host's adb (install adb and grant users access first)")
 	apply := func(s *workspace.Settings) {
 		if changed(c, "web") {
 			s.WebEnabled = v.WebEnabled
@@ -91,6 +92,9 @@ func configFlags(c *command) func(*workspace.Service) error {
 		if changed(c, "remote-desktop") {
 			s.RemoteDesktopEnabled = v.RemoteDesktopEnabled
 		}
+		if changed(c, "adb-bridge") {
+			s.ADBBridgeEnabled = v.ADBBridgeEnabled
+		}
 	}
 	return func(s *workspace.Service) error {
 		if changed(c, "remote-desktop") && v.RemoteDesktopEnabled && !s.VoxlStatus().Installed {
@@ -110,7 +114,7 @@ func saveConfig(s *workspace.Service, apply func(*workspace.Settings)) error {
 }
 
 func addConfig(root *command, out io.Writer) {
-	c := root.add("config", "Inspect or change persisted service/network settings", "Changes apply on the next serve. Omitted options keep their saved values.\nProxy URLs may contain credentials: keep config output private.\nRemote desktop requires a local voxl installation and per-user grants.")
+	c := root.add("config", "Inspect or change persisted service/network settings", "Changes apply on the next serve. Omitted options keep their saved values.\nProxy URLs may contain credentials: keep config output private.\nRemote desktop requires a local voxl installation and per-user grants.\nThe ADB bridge requires adb on this host and per-user grants; shared devices are usable by every agent.")
 	show := c.add("show", "Print saved settings as JSON", "Requires the service to be stopped; this is saved configuration, not live status.")
 	show.run = func(_ context.Context, s *workspace.Service) error {
 		v, err := s.Store.Settings()

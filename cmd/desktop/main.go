@@ -19,6 +19,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"spool"
+	"spool/internal/adbbridge"
 	"spool/internal/appupdate"
 	"spool/internal/diagnostics"
 	chatmodel "spool/internal/model"
@@ -594,6 +595,30 @@ func (p *panel) serviceView(c *ui.Context) {
 			ui.Text(c, p.tr(line)).Wrap()
 		}
 	}
+	ui.Text(c, p.tr("ADB bridge")).Bold()
+	ui.Text(c, p.tr("Authorized users can share an Android device they have with them with adb on this computer. Every agent and program running as this computer's user can then install apps on that device and control it. Turning this off disconnects every shared device.")).Wrap().FontSize(12)
+	if p.status.ADB.Path == "" {
+		ui.Text(c, p.tr("adb was not found on this computer. Install Android SDK Platform-Tools to use the ADB bridge.")).Wrap().FontSize(12)
+	} else {
+		ui.Text(c, p.status.ADB.Path).Selectable().Wrap().FontSize(12)
+	}
+	adbBridge := p.settings.ADBBridgeEnabled
+	if ui.Checkbox(c, &adbBridge, p.tr("Enable ADB bridge")).Disabled(p.busy).Changed() {
+		p.action(func() error { return p.service.SetADBBridgeEnabled(adbBridge) })
+	}
+	for _, device := range p.status.ADB.Devices {
+		owner := device.Owner
+		for _, u := range p.users {
+			if u.ID == device.Owner {
+				owner = u.Nickname
+			}
+		}
+		transport := "USB"
+		if device.Transport == adbbridge.TransportWireless {
+			transport = p.tr("Wireless debugging")
+		}
+		ui.Text(c, device.Serial+" · "+transport+" · "+owner).Selectable().Wrap().FontSize(12)
+	}
 	ui.Text(c, "SQLite · "+p.service.Store.DatabasePath()).Wrap().FontSize(12)
 	if p.runtimeDiagnostics != nil {
 		ui.Text(c, p.tr("Application log")+": "+p.runtimeDiagnostics.Path).Selectable().Wrap().FontSize(12)
@@ -735,7 +760,7 @@ func (p *panel) peopleView(c *ui.Context) {
 					label += " (" + p.tr("Disabled") + ")"
 				}
 				if ui.Button(c, label).FillWidth().Clicked() {
-					p.user = workspace.UserInput{ID: u.ID, Username: u.Username, Nickname: u.Nickname, Disabled: u.Disabled, RemoteDesktop: u.RemoteDesktop}
+					p.user = workspace.UserInput{ID: u.ID, Username: u.Username, Nickname: u.Nickname, Disabled: u.Disabled, RemoteDesktop: u.RemoteDesktop, ADBBridge: u.ADBBridge}
 				}
 				if u.RemoteDesktop {
 					ui.Icon(c, remoteDesktopIcon).Size(17, 17).Label(p.tr("Remote desktop allowed")).Tooltip(p.tr("Remote desktop allowed"))
@@ -757,6 +782,8 @@ func (p *panel) peopleView(c *ui.Context) {
 	ui.Checkbox(c, &p.user.Disabled, p.tr("Disable account"))
 	ui.Checkbox(c, &p.user.RemoteDesktop, p.tr("Allow remote desktop connection"))
 	ui.Text(c, p.tr("Allows control of this computer's entire desktop, beyond project permissions.")).Wrap().FontSize(12)
+	ui.Checkbox(c, &p.user.ADBBridge, p.tr("Allow ADB bridge"))
+	ui.Text(c, p.tr("Lets this person add Android devices to this computer's adb, where every agent can use them, beyond project permissions.")).Wrap().FontSize(12)
 	if ui.PrimaryButton(c, p.tr("Save person")).Disabled(p.busy).Clicked() {
 		input := p.user
 		p.user.Password = ""

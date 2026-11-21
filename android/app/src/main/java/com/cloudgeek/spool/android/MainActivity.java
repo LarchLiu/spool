@@ -181,6 +181,21 @@ public final class MainActivity extends Activity {
     private boolean desktopAvailable;
     private NativeConnectionSettings connectionSettings;
     private NativeServerSettings serverSettings;
+    private NativeAdbSettings adbSettings;
+    private AdbShare adbShare;
+    private AdbDiscovery adbDiscovery;
+    /** "" when the selected server accepts a share, its reason when not, null while unknown. */
+    private String adbAvailability;
+    private boolean adbAvailabilityBusy;
+    private static final int ADB_NOTIFICATION_PERMISSION = 13;
+    private int adbPermissionPort, adbPermissionSession = -1;
+    private final Runnable adbPoll = this::refreshAdbAvailability;
+    private final AdbShareService.Controls adbControls = new AdbShareService.Controls() {
+        public void stop() { stopAdbShare(); }
+        public void pair(String code) { if (adbShare != null) adbShare.pair(code, 0); }
+        public void foregroundUnavailable() { if (adbShare != null) adbShare.foregroundUnavailable(); }
+        public void notificationUnavailable() { if (adbShare != null) adbShare.notificationUnavailable(); }
+    };
     private NativeServerDialog serverDialog;
     private NativeFileBrowser fileBrowser;
     private NativeFileModel fileState;
@@ -805,6 +820,7 @@ public final class MainActivity extends Activity {
         settingsOpen = false;
         dismissSettingsDialog();
         connectionSettings = null;
+        adbSettings = null; main.removeCallbacks(adbPoll);
         serverInput = null;
         connectionText = null;
         connectionHint = null;
@@ -1040,6 +1056,12 @@ public final class MainActivity extends Activity {
                 && !validated.relay.isEmpty() && new RelayPairing(validated.relay).invitation) {
             confirmDevicePairing(validated);
             return;
+        }
+        // A share may follow existing routes, but a newly configured endpoint has not been trusted for ADB.
+        if (!connectionPlan.direct.equals(validated.direct) || !connectionPlan.tailscale.equals(validated.tailscale)
+                || !connectionPlan.relay.equals(validated.relay)) {
+            adbAvailability = null;
+            stopAdbShare(); bindAdbSettings();
         }
         connectionPlan = connectionDraft = validated;
         serverProfiles.active().plan = validated; serverProfiles.active().enabled = true; saveServers();
@@ -1420,6 +1442,9 @@ public final class MainActivity extends Activity {
         if (sidebar != null && !sidebarPageDeferred) sidebar.deactivate();
         closeDesktop();
         setDesktopAvailable(false);
+        // A share belongs to the session that was allowed to start it.
+        adbAvailability = null;
+        stopAdbShare(); bindAdbSettings();
         if (workspaceData != null) workspaceData.stop();
         agentsInitialized = false;
         if (chatRefresh != null) chatRefresh.stop();
@@ -1561,6 +1586,10 @@ public final class MainActivity extends Activity {
         connectionHint = connectionSettings.note;
         body.addView(connectionSettings);
         gap(body, 24);
+        adbSettings = new NativeAdbSettings(settingsUi, this::startAdbShare, this::stopAdbShare,
+                (code, port) -> { if (adbShare != null) adbShare.pair(code, port); });
+        body.addView(adbSettings);
+        bindAdbSettings(); refreshAdbAvailability();
         Button delete = settingsUi.button(settingsUi.t("Delete server"), false, this::deleteServer);
         delete.setTextColor(settingsUi.error);
         body.addView(delete, new LinearLayout.LayoutParams(-1, -2));
@@ -4685,6 +4714,136 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private AdbShare adbShare() {
+        if (adbShare != null) return adbShare;
+        adbDiscovery = new AdbDiscovery(this);
+        adbShare = new AdbShare(new AdbShare.Host() {
+            public void port(boolean pairing, java.util.function.IntConsumer found) {
+                adbDiscovery.find(pairing ? AdbDiscovery.PAIRING : AdbDiscovery.CONNECT, found);
+            }
+            public void cancelDiscovery() { adbDiscovery.close(); }
+            private AdbShare.Link open(boolean pairing, String code, int port, AdbShare.Events events) throws Exception {
+                final Client captured = client;
+                if (captured == null || user == null || routeLoginRequired || csrf.isEmpty()) throw new IOException("Not connected");
+                spoolnet.EventListener listener = (kind, data) -> {
+                    String value = "", text = "";
+                    try {
+                        JSONObject fields = new JSONObject(data);
+                        value = fields.optString(kind.equals("ready") ? "serial" : kind.equals("state") ? "state" : "code");
+                        text = fields.optString("message");
+                    } catch (Exception ignored) {}
+                    final String first = value, second = text;
+                    main.post(() -> { if (!destroyed) events.event(kind, first, second); });
+                };
+                spoolnet.ADBStream stream = pairing ? captured.pairADB(csrf, code, port, listener)
+                        : captured.shareADB(csrf, adbDeviceKey(), port, listener);
+                return () -> {
+                    try { streamCloser.execute(stream::close); }
+                    catch (java.util.concurrent.RejectedExecutionException ignored) { stream.close(); }
+                };
+            }
+            public AdbShare.Link share(int port, AdbShare.Events events) throws Exception { return open(false, "", port, events); }
+            public AdbShare.Link pair(String code, int port, AdbShare.Events events) throws Exception { return open(true, code, port, events); }
+            public void availability(java.util.function.Consumer<String> result) { readAdbAvailability(result); }
+            public void later(Runnable task, long millis) { main.postDelayed(task, millis); }
+            public void cancel(Runnable task) { main.removeCallbacks(task); }
+            public long now() { return android.os.SystemClock.elapsedRealtime(); }
+            public double random() { return Math.random(); }
+        }, this::adbShareChanged);
+        return adbShare;
+    }
+
+    private String adbDeviceKey() {
+        String key = getPreferences(MODE_PRIVATE).getString("adbDevice", "");
+        if (key.matches("android-[0-9a-f]{16}")) return key;
+        key = "android-" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        getPreferences(MODE_PRIVATE).edit().putString("adbDevice", key).apply();
+        return key;
+    }
+
+    /** Reports "" when sharing is available, the reason when it is not, null when the server did not answer. */
+    private void readAdbAvailability(java.util.function.Consumer<String> result) {
+        final Client captured = client;
+        final int token = generation, session = authEpoch;
+        final String auth = csrf, loc = locale();
+        if (captured == null || user == null || routeLoginRequired || destroyed) { result.accept(null); return; }
+        try {
+            io.execute(() -> {
+                String answer = null;
+                try {
+                    JSONObject value = (JSONObject) request(captured, "/adb", null, auth, loc);
+                    answer = value.optBoolean("available") ? "" : value.optString("reason", "unavailable");
+                } catch (ApiFailure error) {
+                    if (error.status == 401 || error.status == 403) answer = "not_authorized";
+                } catch (Exception ignored) {}
+                final String reason = answer;
+                main.post(() -> { if (!destroyed) result.accept(token == generation && session == authEpoch ? reason : null); });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {}
+    }
+
+    private void refreshAdbAvailability() {
+        main.removeCallbacks(adbPoll);
+        if (adbSettings == null || destroyed) return;
+        if (foreground && !adbAvailabilityBusy) {
+            adbAvailabilityBusy = true;
+            final int session = authEpoch;
+            readAdbAvailability(reason -> {
+                adbAvailabilityBusy = false;
+                if (session != authEpoch) return;
+                // An unanswered poll keeps what the server last said.
+                if (reason != null || client == null) adbAvailability = reason;
+                bindAdbSettings();
+            });
+        }
+        main.postDelayed(adbPoll, 5000);
+    }
+
+    private void bindAdbSettings() {
+        if (adbSettings != null) adbSettings.bind(adbShare(), adbAvailability, Build.VERSION.SDK_INT >= 30);
+    }
+
+    private boolean canStartAdbShare() {
+        return Build.VERSION.SDK_INT >= 30 && foreground && !destroyed && client != null
+                && user != null && !routeLoginRequired && !csrf.isEmpty() && "".equals(adbAvailability);
+    }
+
+    private void startAdbShare(int port) {
+        if (!canStartAdbShare()) return;
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            adbPermissionPort = port;
+            adbPermissionSession = authEpoch;
+            requestPermissions(new String[] {android.Manifest.permission.POST_NOTIFICATIONS}, ADB_NOTIFICATION_PERMISSION);
+            return;
+        }
+        if (AdbShareService.canNotify(this)) adbShare().start(port);
+        else adbShare().notificationUnavailable();
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != ADB_NOTIFICATION_PERMISSION) return;
+        int session = adbPermissionSession, port = adbPermissionPort;
+        adbPermissionSession = -1;
+        if (session != authEpoch || !canStartAdbShare()) return;
+        if (grantResults.length != 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+                && AdbShareService.canNotify(this)) adbShare().start(port);
+        else adbShare().notificationUnavailable();
+    }
+
+    private void stopAdbShare() {
+        adbPermissionSession = -1;
+        if (adbShare != null) adbShare.stop();
+    }
+
+    private void adbShareChanged() {
+        if (adbShare.active()) {
+            if (!AdbShareService.canNotify(this)) adbShare.notificationUnavailable();
+            else if (!AdbShareService.show(this, adbControls, adbShare, locale())) adbShare.foregroundUnavailable();
+        } else AdbShareService.end(this, adbControls);
+        bindAdbSettings();
+    }
+
     private void back() {
         if (desktopDialog != null) {
             closeDesktop();
@@ -4789,6 +4948,8 @@ public final class MainActivity extends Activity {
         if (appUpdates != null) appUpdates.close();
         closeDesktop();
         setDesktopAvailable(false);
+        stopAdbShare();
+        if (adbDiscovery != null) adbDiscovery.close();
         if (fileBrowser != null) fileBrowser.deactivate();
         fileBrowser = null;
         destroyed = true;

@@ -64,6 +64,7 @@ type settingsPerson struct {
 	Password      string `json:"password"`
 	Disabled      bool   `json:"disabled"`
 	RemoteDesktop bool   `json:"remote_desktop"`
+	ADBBridge     bool   `json:"adb_bridge"`
 }
 
 type settingsSnapshot struct {
@@ -497,6 +498,8 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 		err = p.service.SetRemoteDesktopEnabled(command.Enabled)
 	case "disconnect-remote-desktop":
 		err = p.service.DisconnectRemoteDesktopUser(command.Target)
+	case "set-adb-bridge":
+		err = p.service.SetADBBridgeEnabled(command.Enabled)
 	case "restart-update":
 		_, err = settingsUI(ctx, p, func() (bool, error) { return true, p.restartForUpdate() })
 	case "start-service":
@@ -536,7 +539,7 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 	case "save-person":
 		person := command.Person
 		var saved workspace.User
-		saved, err = store.SaveUser(workspace.UserInput{ID: person.ID, Username: person.Username, Nickname: person.Nickname, Password: person.Password, Disabled: person.Disabled, RemoteDesktop: person.RemoteDesktop})
+		saved, err = store.SaveUser(workspace.UserInput{ID: person.ID, Username: person.Username, Nickname: person.Nickname, Password: person.Password, Disabled: person.Disabled, RemoteDesktop: person.RemoteDesktop, ADBBridge: person.ADBBridge})
 		savedID = saved.ID
 	case "save-project":
 		project := command.Project.Project

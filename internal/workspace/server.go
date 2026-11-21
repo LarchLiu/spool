@@ -16,6 +16,7 @@ import (
 	"time"
 
 	resources "spool"
+	"spool/internal/adbbridge"
 	"spool/internal/agent"
 	"spool/internal/avatar"
 	"spool/internal/i18n"
@@ -76,6 +77,8 @@ type App struct {
 	desktop      *voxl.Manager
 	desktopMu    sync.Mutex
 	desktopViews map[string]*remoteDesktopView
+	adb          *adbbridge.Manager
+	adbEpoch     uint64 // guarded by configMu
 }
 
 type completedTurn struct {
@@ -253,6 +256,10 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		apiJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	case strings.HasPrefix(path, "/api/desktop/"):
 		a.remoteDesktopRoute(w, r, id)
+	case path == "/api/adb" && r.Method == http.MethodGet:
+		a.adbBridgeStatus(w, id)
+	case path == "/api/adb/bridge" && r.Method == http.MethodGet:
+		a.adbBridgeStream(w, r, id)
 	case path == "/api/avatars.svg" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 		a.avatarImage(w, r)
 	case strings.HasPrefix(path, "/api/push/"):

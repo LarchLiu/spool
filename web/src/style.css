@@ -491,6 +491,26 @@ button:disabled {
   right: 3px;
   box-shadow: 0 0 0 2px var(--sidebar);
 }
+.adb-share-indicator {
+  position: relative;
+}
+.adb-share-indicator::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--notice-text);
+  box-shadow: 0 0 0 2px var(--sidebar);
+}
+.adb-share-indicator[data-phase="online"]::after {
+  background: var(--green);
+}
+.adb-share-indicator[data-phase="failed"]::after {
+  background: var(--error-text);
+}
 .desktop-settings-labeled {
   width: auto;
   padding: 7px 11px;
