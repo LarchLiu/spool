@@ -657,6 +657,7 @@ test("parallel live subagents stay visible after the main final reply and keep s
   assert.match(html, /Failed/);
   assert.equal((html.match(/Main report/g) || []).length, 1);
   assert.equal((html.match(/class="tool-task-title"/g) || []).length, 2);
+  assert.equal((html.match(/lucide-bot\b/g) || []).length, 2);
   assert.equal(JSON.stringify(parts), before);
   const completed = renderToStaticMarkup(createElement(TurnResponse, { parts, backend: "claude", t, running: false, summary: "Completed" }));
   assert.doesNotMatch(completed, /Inspect database|Checking migrations|Inspect parser/);

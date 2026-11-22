@@ -156,15 +156,7 @@ final class NativeActivityModel {
         String name = part.optString("name").trim();
         if (name.isEmpty()) name = backend.equals("claude") ? "Claude tool" : "Codex tool";
         switch (item.kind) {
-            // A subagent is named by the title its author gave it, with what it last reported.
-            case "task": {
-                JSONObject task = summary.optJSONObject("task");
-                String progress = task == null ? "" : oneLine(task.optString("summary"), 240);
-                // A working child that has said nothing yet is told by its latest call.
-                if (progress.isEmpty() && task != null && summary.optString("status").equals("running")) progress = taskDoing(ui, task);
-                item.label = progress.isEmpty() ? name : name + " · " + progress;
-                break;
-            }
+            case "task": item.label = name; break;
             case "image": item.label = imageLabel(ui, item.images.size()); break;
             case "read": item.label = path.isEmpty() ? ui.t("Read files") : ui.t("Read {path}", "path", shortPath(path)); break;
             case "write": item.label = path.isEmpty() ? ui.t("Edited files") : ui.t("Edited {path}", "path", shortPath(path)); break;
@@ -346,22 +338,29 @@ final class NativeActivityModel {
         return oneLine(task.optString("last_tool"), 80);
     }
 
-    /**
-     * The child's agent type, calls, tokens and time. A running child is timed from when it
-     * was first seen; a finished one took as long as its provider, or the server, says it did.
-     */
-    static String taskFacts(NativeUi ui, Activity activity, long now) {
+    static String taskSummary(JSONObject task) { return oneLine(task.optString("summary"), 240); }
+
+    static long taskStartedAt(Activity activity) {
+        JSONObject task = task(activity);
+        return task != null && status(activity).equals("running") ? task.optLong("started_at") : 0;
+    }
+
+    static String taskMetadata(NativeUi ui, Activity activity, boolean detail, long now) {
         JSONObject task = task(activity);
         if (task == null) return "";
         List<String> facts = new ArrayList<>();
-        if (!task.optString("agent_type").isEmpty()) facts.add(task.optString("agent_type"));
-        if (task.optBoolean("background")) facts.add(ui.t("Background"));
+        String type = task.optString("agent_type");
+        if (!type.isEmpty()) facts.add(type);
+        if (detail && task.optBoolean("background")) facts.add(ui.t("Background"));
+        if (!detail && status(activity).equals("running")) {
+            String doing = taskDoing(ui, task);
+            if (!doing.isEmpty()) facts.add(doing);
+        }
         int calls = task.optInt("tool_uses");
         if (calls == 1) facts.add(ui.t("1 tool use")); else if (calls > 1) facts.add(ui.t("{count} tool uses", "count", calls));
-        long tokens = task.optLong("tokens"), started = task.optLong("started_at");
-        if (tokens > 0) facts.add(ui.t("{count} tokens", "count", compactCount(tokens)));
-        long duration = status(activity).equals("running") && started > 0 ? Math.max(0, now - started)
-                : activity.use.optJSONObject("tool").optLong("duration_ms");
+        long tokens = task.optLong("tokens"), started = taskStartedAt(activity);
+        if (detail && tokens > 0) facts.add(ui.t("{count} tokens", "count", compactCount(tokens)));
+        long duration = started > 0 ? Math.max(0, now - started) : activity.use.optJSONObject("tool").optLong("duration_ms");
         if (duration > 0) facts.add(duration(ui, duration));
         return String.join(" · ", facts);
     }
@@ -462,7 +461,7 @@ final class NativeActivityModel {
 
     static String icon(String kind) {
         switch (kind) {
-            case "task": return "workflow";
+            case "task": return "bot";
             case "image": return "image";
             case "read": return "book-open";
             case "write": return "file-pen";

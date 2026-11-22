@@ -2,15 +2,18 @@ package com.cloudgeek.spool.android;
 
 import static org.junit.Assert.*;
 
+import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
 import org.robolectric.annotation.LooperMode;
@@ -68,11 +71,12 @@ public class MainActivitySubagentTest {
                             .put(new JSONObject("{kind:'shell',name:'Bash',text:'go test ./...',status:'running'}")));
             List<JSONObject> parts = new ArrayList<>(); parts.add(part);
             NativeActivityModel.Activity activity = NativeActivityModel.fromParts(ui, parts, "claude").get(0);
-            // A child that has said nothing yet is told by the call it is making.
-            assertEquals("Inspect parser · Ran command · go test ./...", activity.label);
+            assertEquals("Inspect parser", activity.label);
+            assertEquals("Explore · Ran command · go test ./... · 3 tool uses · 1m 5s",
+                    NativeActivityModel.taskMetadata(ui, activity, false, progress.getLong("started_at") + 65_000));
             NativeToolDetail detail = new NativeToolDetail(ui, activity, link -> {});
             for (String text : new String[] {"PROMPT", "Check the grammar", "RECENT STEPS", "Reading the grammar", "Read grammar.go",
-                    "Searched for TODO in src  Failed", "Ran command · go test ./...  Running"})
+                    "Searched for TODO in src", "Failed", "Ran command · go test ./...", "Running"})
                 assertEquals(text, 1, occurrences(detail, text));
             assertEquals(0, occurrences(detail, "LATEST UPDATE"));
             assertEquals(1, views(detail, TextView.class).stream().filter(view -> view.getText().toString()
@@ -82,11 +86,93 @@ public class MainActivitySubagentTest {
             progress.put("summary", "Parser checked").getJSONArray("steps").getJSONObject(3).remove("status");
             tool.put("status", "completed").put("duration_ms", 125_000);
             activity = NativeActivityModel.fromParts(ui, parts, "claude").get(0);
-            assertEquals("Inspect parser · Parser checked", activity.label);
             detail.bind(activity);
             assertEquals(1, occurrences(detail, "RESULT")); assertEquals(1, occurrences(detail, "Parser checked"));
-            assertEquals(0, occurrences(detail, "Running")); assertEquals(1, occurrences(detail, "Searched for TODO in src  Failed"));
+            assertEquals(0, occurrences(detail, "Running")); assertEquals(1, occurrences(detail, "Failed"));
             assertEquals(1, occurrences(detail, "Explore · 3 tool uses · 12.3k tokens · 2m 5s"));
+
+            JSONArray steps = progress.getJSONArray("steps");
+            for (int i = steps.length(); i < 20; i++) steps.put(new JSONObject().put("kind", "message").put("text", "Step " + i));
+            detail.bind(NativeActivityModel.fromParts(ui, parts, "claude").get(0));
+            NativeMarkwonHistoryTest.layout(detail);
+            android.widget.ScrollView recentSteps = views(detail, android.widget.ScrollView.class).stream()
+                    .filter(view -> occurrences(view, "Step 19") == 1).findFirst().orElseThrow();
+            assertTrue(recentSteps.canScrollVertically(1));
+            assertTrue(recentSteps.getHeight() <= ui.dp(260));
+        }
+    }
+
+    @Test public void collapsedSubagentKeepsSeparateLinesWithBackgroundAndStatus() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
+            NativeUi ui = h.get("ui");
+            JSONObject part = task("first", "Inspect parser", "Checking\n syntax " + "in a long file ".repeat(20));
+            JSONObject tool = part.getJSONObject("tool");
+            tool.getJSONObject("task").put("agent_type", "Explore").put("background", true)
+                    .put("tool_uses", 3).put("tokens", 12345).put("started_at", System.currentTimeMillis() - 5000)
+                    .put("last_tool", "Read");
+            List<JSONObject> parts = List.of(part);
+            NativeActivityList list = new NativeActivityList(ui, parts, "claude", null, true, new NativeActivityList.State(), link -> {});
+            h.activity.setContentView(list);
+            NativeMarkwonHistoryTest.layout(list);
+            NativeDisclosureRow row = views(list, NativeDisclosureRow.class).get(0);
+            TextView title = row.label;
+            TextView summary = views(row, TextView.class).stream().filter(view -> view.getText().toString().startsWith("Checking syntax")).findFirst().orElseThrow();
+            TextView metadata = views(row, TextView.class).stream().filter(view -> view.getText().toString().startsWith("Explore")).findFirst().orElseThrow();
+            TextView badge = views(row, TextView.class).stream().filter(view -> view.getText().toString().equals("Background")).findFirst().orElseThrow();
+            TextView status = views(row, TextView.class).stream().filter(view -> view.getText().toString().equals("Running")).findFirst().orElseThrow();
+            assertEquals("Inspect parser", title.getText().toString());
+            assertEquals("Explore · Read · 3 tool uses · 5s", metadata.getText().toString());
+            assertTrue(metadata.getTop() >= summary.getBottom());
+            assertTrue(summary.getTop() >= title.getBottom());
+            assertTrue(badge.getLeft() > metadata.getRight());
+            assertTrue(status.getLeft() > badge.getRight());
+            assertTrue(views(list, NativeToolDetail.class).isEmpty());
+            assertTrue(row.isAttachedToWindow());
+            assertTrue(row.getContentDescription().toString().endsWith("Background · Running"));
+
+            tool.put("status", "completed").put("duration_ms", 8000);
+            list.bindParts(parts, "claude", null, true);
+            assertSame(row, views(list, NativeDisclosureRow.class).get(0));
+            assertEquals("Explore · 3 tool uses · 8s", metadata.getText().toString());
+            assertEquals("Completed", status.getText().toString());
+
+            JSONObject read = new JSONObject("{role:'assistant',kind:'tool_use',name:'Read',text:'',tool:{kind:'read',path:'grammar.go'}}");
+            list.bindParts(List.of(read), "claude", null, true);
+            assertSame(row, views(list, NativeDisclosureRow.class).get(0));
+            assertEquals("Read grammar.go", row.getContentDescription());
+            for (TextView extra : List.of(summary, metadata, badge)) assertEquals(View.GONE, extra.getVisibility());
+        }
+    }
+
+    @Test public void collapsedSubagentClockTicksWhileAttachedAndStopsOnCompletionOrDetach() throws Exception {
+        try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true, false)) {
+            NativeUi ui = h.get("ui");
+            long clockStart = android.os.SystemClock.uptimeMillis();
+            long startedAt = 1_000_000;
+            JSONObject part = task("first", "Inspect parser", "");
+            JSONObject tool = part.getJSONObject("tool");
+            tool.getJSONObject("task").put("started_at", startedAt).put("tool_uses", 1);
+            NativeDisclosureRow row = new NativeDisclosureRow(ui, "", "bot", "", false, false, false, () -> {},
+                    () -> startedAt + 5000 + android.os.SystemClock.uptimeMillis() - clockStart);
+            row.bindTask(NativeActivityModel.fromParts(ui, List.of(part), "claude").get(0), true);
+            h.activity.setContentView(row);
+            assertTrue(row.isAttachedToWindow());
+            assertEquals(1, occurrences(row, "1 tool use · 5s"));
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1));
+            assertEquals(1, occurrences(row, "1 tool use · 6s"));
+
+            tool.put("status", "completed").put("duration_ms", 8000);
+            row.bindTask(NativeActivityModel.fromParts(ui, List.of(part), "claude").get(0), true);
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1));
+            assertEquals(1, occurrences(row, "1 tool use · 8s"));
+
+            tool.put("status", "running");
+            row.bindTask(NativeActivityModel.fromParts(ui, List.of(part), "claude").get(0), true);
+            assertEquals(1, occurrences(row, "1 tool use · 7s"));
+            h.activity.setContentView(ui.column());
+            assertFalse(row.isAttachedToWindow());
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(1));
+            assertEquals(1, occurrences(row, "1 tool use · 7s"));
         }
     }
 

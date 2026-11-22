@@ -38,7 +38,7 @@ const icons = {
   monitor:'Monitor', monitor_up:'MonitorUp', smartphone:'Smartphone', palette:'Palette', sun:'Sun', moon:'Moon', check:'Check', command:'Command',
   copy:'Copy', clipboard_paste:'ClipboardPaste', code_xml:'CodeXml', circle_alert:'CircleAlert', circle_check:'CircleCheck', circle_x:'CircleX', shield_check:'ShieldCheck', shield_question:'ShieldQuestion',
   message:'MessageCircle', search:'Search', refresh:'RefreshCw', spinner:'LoaderCircle', plug:'Plug',
-  brain:'Brain', wrench:'Wrench', workflow:'Workflow', terminal:'Terminal', globe:'Globe2', list:'List', image:'Image',
+  brain:'Brain', wrench:'Wrench', workflow:'Workflow', bot:'Bot', terminal:'Terminal', globe:'Globe2', list:'List', image:'Image',
   book_open:'BookOpen', file_pen:'FilePenLine', file_plus:'FilePlus2', file_x:'FileX2', crosshair:'Crosshair',
   goal:'Goal', lightbulb:'Lightbulb', bug:'Bug', repeat_2:'Repeat2', scan_search:'ScanSearch', package:'Package', command_terminal:'Terminal',
   keyboard:'Keyboard', pan:'Move', minus:'Minus', fit:'Scan', maximize_2:'Maximize2', fullscreen:'Maximize', fullscreen_exit:'Minimize',
@@ -102,7 +102,7 @@ function vector(svg, filled=false, stroked=!filled) {
 }
 for (const [key,name] of Object.entries(icons))
   write(`android/app/src/main/res/drawable/web_icon_${key}.xml`, vector(renderToStaticMarkup(React.createElement(lucide[name],
-    key.startsWith('project_') ? {strokeWidth:1.4} : ['brain','wrench','workflow','terminal','globe','list','book_open','file_pen','file_plus','file_x'].includes(key) ? {strokeWidth:1.6} : {})), key==='stop', true));
+    key.startsWith('project_') ? {strokeWidth:1.4} : ['brain','wrench','workflow','bot','terminal','globe','list','book_open','file_pen','file_plus','file_x'].includes(key) ? {strokeWidth:1.6} : {})), key==='stop', true));
 for (const name of ['Codex','Claude']) {
   const source=path.join(root,`web/node_modules/@lobehub/icons/es/${name}/components`);
   const module=fs.existsSync(path.join(source,'Mono.mjs')) ? 'Mono.mjs' : 'Mono.js';

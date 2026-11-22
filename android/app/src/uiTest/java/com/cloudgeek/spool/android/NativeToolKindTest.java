@@ -194,9 +194,9 @@ public class NativeToolKindTest {
             for (int i = 0; i < states.length; i++) {
                 NativeActivityModel.Activity activity = activities.get(i);
                 assertEquals("task", activity.kind);
-                assertEquals("bash · Checking files", activity.label);
+                assertEquals("bash", activity.label);
                 assertEquals(states[i][1], activity.outcome);
-                assertEquals("workflow", NativeActivityModel.icon(groups.get(i).kind));
+                assertEquals("bot", NativeActivityModel.icon(groups.get(i).kind));
                 NativeToolDetail detail = new NativeToolDetail(ui, activity, ignored -> {});
                 for (int child = 0; child < detail.getChildCount(); child++)
                     assertFalse(states[i][0], detail.getChildAt(child) instanceof NativeToolBody);

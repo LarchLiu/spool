@@ -17,7 +17,7 @@ import {
   Images,
   ImageOff,
   MessageCircle,
-  Workflow,
+  Bot,
 } from "lucide-react";
 import { FileDiff } from "@pierre/diffs/react";
 import type { Backend, TaskStep, TranscriptPart } from "./types";
@@ -430,7 +430,7 @@ function groupActivities(activities: Activity[], t: Translator): ActivityGroup[]
 function iconFor(kind: ActivityKind) {
   switch (kind) {
     case "task":
-      return Workflow;
+      return Bot;
     case "image":
       return Images;
     case "read":

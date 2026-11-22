@@ -74,8 +74,10 @@ final class NativeActivityList extends LinearLayout {
                 }
                 title = previewTitle;
             } else { previewSource = previewLabel = null; previewTitle = null; }
-            row.bind(title, NativeActivityModel.icon(activity.kind), prepared ? owner.itemStatistics(activity)
-                    : NativeActivityModel.trailing(activity), prepared || owner.rowsChanged == null);
+            boolean preservePlainFallback = prepared || owner.rowsChanged == null;
+            if (activity.kind.equals("task")) row.bindTask(activity, preservePlainFallback);
+            else row.bind(title, NativeActivityModel.icon(activity.kind), prepared ? owner.itemStatistics(activity)
+                    : NativeActivityModel.trailing(activity), preservePlainFallback);
             row.setDisclosureEnabled(!activity.noDetails);
             row.setExpanded(!activity.noDetails && owner.state.items.contains(id));
             if (!activity.noDetails && owner.state.items.contains(id)) {
@@ -563,6 +565,10 @@ final class NativeActivityList extends LinearLayout {
         text.setTypeface(Typeface.MONOSPACE);
         ui.lineHeight(text, 1.6f);
         text.setTextIsSelectable(true);
+        return detailViewport(ui, text);
+    }
+
+    static ScrollView detailViewport(NativeUi ui, View content) {
         ScrollView viewport = new ScrollView(ui.context) {
             @Override protected void onMeasure(int widthSpec, int heightSpec) {
                 super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(ui.dp(260), MeasureSpec.AT_MOST));
@@ -570,12 +576,13 @@ final class NativeActivityList extends LinearLayout {
         };
         viewport.setNestedScrollingEnabled(true);
         viewport.setOnTouchListener((view, event) -> {
-            if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) view.getParent().requestDisallowInterceptTouchEvent(true);
-            else if (event.getActionMasked() == android.view.MotionEvent.ACTION_UP || event.getActionMasked() == android.view.MotionEvent.ACTION_CANCEL)
+            if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+                if (view.canScrollVertically(-1) || view.canScrollVertically(1)) view.getParent().requestDisallowInterceptTouchEvent(true);
+            } else if (event.getActionMasked() == android.view.MotionEvent.ACTION_UP || event.getActionMasked() == android.view.MotionEvent.ACTION_CANCEL)
                 view.getParent().requestDisallowInterceptTouchEvent(false);
             return false;
         });
-        viewport.addView(text, new ScrollView.LayoutParams(-1, -2));
+        viewport.addView(content, new ScrollView.LayoutParams(-1, -2));
         return viewport;
     }
 }
