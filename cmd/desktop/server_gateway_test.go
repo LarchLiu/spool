@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,8 +15,28 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"golang.org/x/crypto/bcrypt"
+	chatmodel "spool/internal/model"
 	"spool/internal/workspace"
 )
+
+func newGatewayTestUser(t *testing.T, store *workspace.Store, username, nickname string) {
+	t.Helper()
+	// Seed only this test's disposable database with a cheap hash. Login still
+	// verifies bcrypt and creates real sessions through the workspace API.
+	hash, err := bcrypt.GenerateFromPassword([]byte("fixture-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", store.DatabasePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO users(id,username,nickname,password_hash,disabled,created_at) VALUES(?,?,?,?,0,?)`, chatmodel.NewID(), username, nickname, string(hash), time.Now().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func newTestServerGateway(t *testing.T, profiles desktopServers) *desktopServerGateway {
 	t.Helper()
@@ -35,9 +56,7 @@ func TestDesktopServerGatewayIsolatesAccountsOnTheSameHost(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = store.Close() })
-		if _, err = store.SaveUser(workspace.UserInput{Username: "alice", Nickname: name, Password: "fixture-password"}); err != nil {
-			t.Fatal(err)
-		}
+		newGatewayTestUser(t, store, "alice", name)
 		app := workspace.NewApp(store, nil, "", "")
 		t.Cleanup(func() { _ = app.Close() })
 		server := httptest.NewServer(app)
@@ -104,9 +123,7 @@ func TestDesktopServerGatewayKeepsSeparateLoginsForEachConnectionMode(t *testing
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	for _, name := range []string{"direct", "tailscale", "relay"} {
-		if _, err := store.SaveUser(workspace.UserInput{Username: name, Nickname: name, Password: "fixture-password"}); err != nil {
-			t.Fatal(err)
-		}
+		newGatewayTestUser(t, store, name, name)
 	}
 	app := workspace.NewApp(store, nil, "", "")
 	t.Cleanup(func() { _ = app.Close() })
@@ -131,6 +148,16 @@ func TestDesktopServerGatewayKeepsSeparateLoginsForEachConnectionMode(t *testing
 		request, _ := http.NewRequest("GET", base+"me", nil)
 		if status, _ := devRequest(t, client, request); status != 401 {
 			t.Fatalf("%s inherited another mode's login: %d", mode, status)
+		}
+		request, _ = http.NewRequest("POST", base+"login", strings.NewReader(`{"username":"`+mode+`","password":"wrong-password"}`))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Origin", gateway.url)
+		if status, body := devRequest(t, client, request); status != 401 {
+			t.Fatalf("%s accepted an incorrect password: %d %s", mode, status, body)
+		}
+		request, _ = http.NewRequest("GET", base+"me", nil)
+		if status, _ := devRequest(t, client, request); status != 401 {
+			t.Fatalf("%s created a session for an incorrect password: %d", mode, status)
 		}
 		request, _ = http.NewRequest("POST", base+"login", strings.NewReader(`{"username":"`+mode+`","password":"fixture-password"}`))
 		request.Header.Set("Content-Type", "application/json")
