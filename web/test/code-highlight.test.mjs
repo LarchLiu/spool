@@ -11,6 +11,7 @@ test("fenced languages and aliases use shared syntax grammars in both themes", a
     ["json", '{"message": "Hello", "enabled": true}\n'],
     ["sh", '#!/bin/sh\necho "Hello"\n'],
     ["html", '<script>alert("Hello")</script>\n'],
+    ["mermaid", 'flowchart LR\n %% comment\n A["开始"] --> B{Ready?}\n'],
   ]) {
     const tokens = (await highlightCode(source, language))?.flat();
     assert.ok(tokens?.length, language);

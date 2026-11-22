@@ -94,7 +94,7 @@ func (g *desktopServerGateway) update(profiles desktopServers) {
 }
 
 func (g *desktopServerGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if "http://"+r.Host != g.url || r.Header.Get("Sec-Fetch-Site") == "cross-site" ||
+	if "http://"+r.Host != g.url || r.Header.Get("Sec-Fetch-Site") == "cross-site" && !g.mermaidScriptRequest(r) ||
 		r.Header.Get("Origin") != "" && r.Header.Get("Origin") != g.url {
 		http.Error(w, "invalid desktop request origin", http.StatusForbidden)
 		return
@@ -130,6 +130,25 @@ func (g *desktopServerGateway) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 	// Only local assets are served here, even when an upstream is offline.
 	http.StripPrefix(strings.TrimSuffix(mount, "/"), g.assets).ServeHTTP(w, r)
+}
+
+// A sandboxed srcdoc has an opaque origin, so browsers mark its classic script
+// requests as cross-site. Permit only the bundled Mermaid scripts; workspace
+// documents and API requests still require the normal origin checks.
+func (g *desktopServerGateway) mermaidScriptRequest(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead || r.Header.Get("Sec-Fetch-Dest") != "script" || r.URL.RawPath != "" {
+		return false
+	}
+	if g.development && (r.URL.Path == "/src/mermaid-frame.js" || r.URL.Path == "/node_modules/mermaid/dist/mermaid.min.js") {
+		return true
+	}
+	parts := strings.SplitN(r.URL.Path, "/", 4)
+	if len(parts) != 4 || parts[1] != "web" || !strings.HasPrefix(parts[3], "assets/") {
+		return false
+	}
+	name := strings.TrimPrefix(parts[3], "assets/")
+	return !strings.Contains(name, "/") && strings.HasSuffix(name, ".js") &&
+		(strings.HasPrefix(name, "mermaid.min-") || strings.HasPrefix(name, "mermaid-frame-"))
 }
 
 func remoteDesktopAPI(target *url.URL, mount string) http.Handler {

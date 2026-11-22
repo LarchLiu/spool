@@ -190,6 +190,7 @@ final class NativeText {
             case "Edited {path}": value = "编辑 {path}"; break;
             case "Enable bypass": value = "确认跳过检查"; break;
             case "Enable full screen": value = "启用全屏"; break;
+            case "Enlarge diagram": value = "放大查看"; break;
             case "Enter a chat title of 1–200 characters": value = "请输入 1–200 个字符的对话标题"; break;
             case "Enter a conversation name": value = "请输入会话名称"; break;
             case "Enter a message of up to 2000 characters.": value = "请输入不超过 2000 字的消息。"; break;
@@ -210,6 +211,7 @@ final class NativeText {
             case "File not found": value = "文件不存在"; break;
             case "File preview": value = "文件预览"; break;
             case "Files": value = "文件"; break;
+            case "Fit diagram": value = "适应窗口"; break;
             case "Fit width": value = "适合宽度"; break;
             case "Follow system": value = "跟随系统"; break;
             case "Form values (JSON)": value = "表单内容（JSON）"; break;
@@ -383,6 +385,7 @@ final class NativeText {
             case "Rename": value = "重命名"; break;
             case "Rename chat": value = "重命名对话"; break;
             case "Rename server": value = "重命名服务器"; break;
+            case "Rendering diagram…": value = "正在渲染图表…"; break;
             case "Request failed": value = "请求失败"; break;
             case "Requested form schema": value = "表单格式要求"; break;
             case "Requested permissions": value = "申请的权限"; break;
@@ -770,6 +773,7 @@ final class NativeText {
             case "Edited {path}": value = "{path} を編集"; break;
             case "Enable bypass": value = "スキップを有効化"; break;
             case "Enable full screen": value = "全画面表示を有効化"; break;
+            case "Enlarge diagram": value = "図を拡大表示"; break;
             case "Enter a chat title of 1–200 characters": value = "チャットのタイトルを1～200文字で入力してください"; break;
             case "Enter a conversation name": value = "会話名を入力してください"; break;
             case "Enter a message of up to 2000 characters.": value = "2000 文字以内のメッセージを入力してください。"; break;
@@ -790,6 +794,7 @@ final class NativeText {
             case "File not found": value = "ファイルが見つかりません"; break;
             case "File preview": value = "ファイルプレビュー"; break;
             case "Files": value = "ファイル"; break;
+            case "Fit diagram": value = "図を全体表示"; break;
             case "Fit width": value = "幅に合わせる"; break;
             case "Follow system": value = "システムに従う"; break;
             case "Form values (JSON)": value = "フォームの値（JSON）"; break;
@@ -963,6 +968,7 @@ final class NativeText {
             case "Rename": value = "名前を変更"; break;
             case "Rename chat": value = "チャット名を変更"; break;
             case "Rename server": value = "サーバー名を変更"; break;
+            case "Rendering diagram…": value = "図を描画しています…"; break;
             case "Request failed": value = "リクエストに失敗しました"; break;
             case "Requested form schema": value = "フォームのスキーマ"; break;
             case "Requested permissions": value = "要求された権限"; break;

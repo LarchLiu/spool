@@ -11,7 +11,7 @@ import org.commonmark.ext.task.list.items.TaskListItemMarker;
 
 /** Immutable block results; retaining a block also retains its selectable document and identity. */
 final class NativeMarkdownBlocks {
-    /** Keep resolved references and only this block's source for the native table renderer. */
+    /** Keep resolved references and only this block's source for the native renderer. */
     static final class NativeBlock extends org.commonmark.node.CustomBlock {
         final Node content;
         final String source;
@@ -35,6 +35,13 @@ final class NativeMarkdownBlocks {
         if (node instanceof TableBlock) return true;
         for (Node child = node.getFirstChild(); child != null; child = child.getNext())
             if (containsTable(child)) return true;
+        return false;
+    }
+    static boolean containsMermaid(Node node) {
+        if (node instanceof org.commonmark.node.FencedCodeBlock && NativeCodeBlock.languageToken(
+                ((org.commonmark.node.FencedCodeBlock) node).getInfo()).equalsIgnoreCase("mermaid")) return true;
+        for (Node child = node.getFirstChild(); child != null; child = child.getNext())
+            if (containsMermaid(child)) return true;
         return false;
     }
 

@@ -15,6 +15,7 @@ final class NativeCodeBlock extends LinearLayout implements NativeMarkdownFlowBo
     interface Copy { void write(String text); }
     final TextView language, code;
     final NativeUi.IconButton copy;
+    final NativeUi.IconButton sourceToggle, enlarge;
     final HorizontalScrollView scroll;
     private final NativeUi ui;
     private final LinearLayout header;
@@ -23,6 +24,10 @@ final class NativeCodeBlock extends LinearLayout implements NativeMarkdownFlowBo
     private String source = "";
     private String syntaxLanguage = "";
     private NativeSyntax.Binding syntaxBinding;
+    private NativeMermaid mermaid;
+    private boolean diagram, sourceVisible, diagramReady;
+    private int diagramHeight;
+    NativeMermaidPreview preview;
     private boolean showingFeedback;
 
     NativeCodeBlock(NativeUi ui, int color, int containerSize) {
@@ -50,6 +55,22 @@ final class NativeCodeBlock extends LinearLayout implements NativeMarkdownFlowBo
         LayoutParams labelParams = new LayoutParams(0, -2, 1);
         labelParams.setMarginStart(ui.dp(8)); labelParams.setMarginEnd(ui.dp(8));
         header.addView(language, labelParams);
+        sourceToggle = ui.icon("code-xml", 13, ui.t("Source"), () -> {
+            sourceVisible = !sourceVisible; displayDiagram();
+        });
+        enlarge = ui.icon("maximize-2", 13, ui.t("Enlarge diagram"), () -> {
+            if (preview != null && preview.isShowing()) return;
+            preview = new NativeMermaidPreview(ui); preview.bind(source); preview.show();
+        });
+        for (NativeUi.IconButton control : new NativeUi.IconButton[] {sourceToggle, enlarge}) {
+            control.setBackground(ui.states(0, 6, 0, ui.soft, 0));
+            int gap = ui.dp(28) - ui.dp(13);
+            control.setPadding(gap / 2, gap / 2, gap - gap / 2, gap - gap / 2);
+            control.setVisibility(GONE);
+            LayoutParams params = new LayoutParams(ui.dp(28), ui.dp(28));
+            if (control == enlarge) params.setMarginStart(ui.dp(8));
+            header.addView(control, params);
+        }
         copy = ui.icon("copy", 13, ui.t("Copy code"), () -> {});
         copy.setBackground(ui.states(0, 6, 0, ui.soft, 0));
         copyPadding();
@@ -77,6 +98,11 @@ final class NativeCodeBlock extends LinearLayout implements NativeMarkdownFlowBo
 
     void bind(String info, String literal) {
         String token = languageToken(info);
+        diagram = token.equalsIgnoreCase("mermaid");
+        sourceToggle.setVisibility(diagram ? VISIBLE : GONE);
+        enlarge.setVisibility(diagram ? VISIBLE : GONE);
+        ((LayoutParams) copy.getLayoutParams()).setMarginStart(diagram ? ui.dp(8) : 0);
+        if (!diagram) sourceVisible = false;
         String label = plainLanguage(token) ? ui.t("Plain text") : token;
         if (!language.getText().toString().equals(label)) language.setText(label);
         if (literal.endsWith("\n")) literal = literal.substring(0, literal.length() - 1);
@@ -94,7 +120,34 @@ final class NativeCodeBlock extends LinearLayout implements NativeMarkdownFlowBo
                 syntaxBinding = ui.syntax.bindCode(code, token, source, ui.dark);
             code.invalidate();
         }
+        if (diagram && !source.isEmpty()) {
+            if (mermaid == null) {
+                mermaid = new NativeMermaid(ui, (state, height) -> {
+                    diagramReady = state == NativeMermaid.State.READY; diagramHeight = height; displayDiagram();
+                });
+                addView(mermaid, new LayoutParams(-1, 0));
+            }
+            mermaid.bind(source);
+        } else if (mermaid != null) {
+            removeView(mermaid); mermaid = null;
+            scroll.setVisibility(VISIBLE);
+        }
+        sourceToggle.setEnabled(!source.isEmpty()); enlarge.setEnabled(!source.isEmpty());
+        if (preview != null && preview.isShowing()) {
+            if (diagram && !source.isEmpty()) preview.bind(source);
+            else preview.dismiss();
+        }
         copy.setEnabled(!source.isEmpty());
+    }
+
+    private void displayDiagram() {
+        boolean visible = diagramReady && !sourceVisible;
+        scroll.setVisibility(visible ? GONE : VISIBLE);
+        if (mermaid != null) mermaid.setLayoutParams(new LayoutParams(-1, visible ? diagramHeight : 0));
+        sourceToggle.setKind(sourceVisible ? "workflow" : "code-xml");
+        int gap = ui.dp(28) - ui.dp(13);
+        sourceToggle.setPadding(gap / 2, gap / 2, gap - gap / 2, gap - gap / 2);
+        sourceToggle.setSelected(sourceVisible); sourceToggle.setContentDescription(ui.t(sourceVisible ? "Preview" : "Source"));
     }
 
     static String languageToken(String info) { return info.trim().split("\\s+", 2)[0]; }
@@ -116,11 +169,13 @@ final class NativeCodeBlock extends LinearLayout implements NativeMarkdownFlowBo
     void resetFeedback() { copy.removeCallbacks(reset); reset.run(); }
 
     @Override public float cssHeight() {
-        return getPaddingTop() + header.getMeasuredHeight() + NativeUi.cssTextHeight(code) + getPaddingBottom();
+        float body = mermaid != null && scroll.getVisibility() == GONE ? mermaid.getMeasuredHeight() : NativeUi.cssTextHeight(code);
+        return getPaddingTop() + header.getMeasuredHeight() + body + getPaddingBottom();
     }
 
     @Override protected void onDetachedFromWindow() {
         resetFeedback();
+        if (preview != null) { preview.dismiss(); preview = null; }
         super.onDetachedFromWindow();
     }
 }

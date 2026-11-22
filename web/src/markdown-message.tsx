@@ -8,7 +8,14 @@ import {
   type ComponentPropsWithoutRef,
   type ReactNode,
 } from "react";
-import { Check, CircleAlert, CodeXml, Copy } from "lucide-react";
+import {
+  Check,
+  CircleAlert,
+  CodeXml,
+  Copy,
+  Maximize2,
+  Workflow,
+} from "lucide-react";
 import ReactMarkdown, {
   defaultUrlTransform,
   type Components,
@@ -20,12 +27,46 @@ import { localFileTarget } from "./local-file-links.js";
 import { copyMessageText } from "./copy-text.js";
 import { remarkCodexFileCitations } from "./codex-file-citations.js";
 import { applyCodeHighlight, highlightCode } from "./code-highlight.js";
+import {
+  MermaidDiagram,
+  MermaidPreview,
+  type MermaidAction,
+} from "./mermaid-diagram.js";
 
 type CodeTranslator = (
-  key: "Plain text" | "Copy code" | "Code copied" | "Could not copy code",
+  key:
+    | "Plain text"
+    | "Copy code"
+    | "Code copied"
+    | "Could not copy code"
+    | MermaidAction,
 ) => string;
 const defaultTranslator: CodeTranslator = (key) => key;
 const MarkdownTranslator = createContext(defaultTranslator);
+
+function MarkdownSource({
+  children,
+  text,
+  language,
+}: {
+  children: ReactNode;
+  text: string;
+  language: string;
+}) {
+  const pre = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    const element = pre.current?.querySelector("code");
+    if (!element) return;
+    const source = element.textContent ?? "";
+    const controller = new AbortController();
+    void highlightCode(source, language, controller.signal).then((tokens) => {
+      if (!controller.signal.aborted)
+        applyCodeHighlight(element, source, tokens);
+    });
+    return () => controller.abort();
+  }, [text, language]);
+  return <pre ref={pre}>{children}</pre>;
+}
 
 function MarkdownCodeBlock({
   children,
@@ -40,6 +81,16 @@ function MarkdownCodeBlock({
     String(value).startsWith("language-"),
   );
   const language = languageClass ? String(languageClass).slice(9) : "";
+  const mermaid = language.toLowerCase() === "mermaid";
+  const [showSource, setShowSource] = useState(false);
+  const [enlarged, setEnlarged] = useState(false);
+  const enlargeButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!mermaid) {
+      setShowSource(false);
+      setEnlarged(false);
+    }
+  }, [mermaid]);
   const label =
     !language || /^(?:text|txt|plaintext)$/i.test(language)
       ? t("Plain text")
@@ -57,18 +108,6 @@ function MarkdownCodeBlock({
     state: "copied" | "failed";
   } | null>(null);
   const request = useRef(0);
-  const pre = useRef<HTMLPreElement>(null);
-  useEffect(() => {
-    const element = pre.current?.querySelector("code");
-    if (!element) return;
-    const source = element.textContent ?? "";
-    const controller = new AbortController();
-    void highlightCode(source, language, controller.signal).then((tokens) => {
-      if (!controller.signal.aborted)
-        applyCodeHighlight(element, source, tokens);
-    });
-    return () => controller.abort();
-  }, [text, language]);
   useEffect(() => {
     setFeedback(null);
     return () => {
@@ -97,6 +136,36 @@ function MarkdownCodeBlock({
         <span className="markdown-code-language" title={label}>
           {label}
         </span>
+        {mermaid && (
+          <>
+            <button
+              type="button"
+              className="markdown-code-copy"
+              aria-label={t(showSource ? "Preview" : "Source")}
+              title={t(showSource ? "Preview" : "Source")}
+              aria-pressed={showSource}
+              disabled={!text}
+              onClick={() => setShowSource(!showSource)}
+            >
+              {showSource ? (
+                <Workflow size={13} aria-hidden="true" />
+              ) : (
+                <CodeXml size={13} aria-hidden="true" />
+              )}
+            </button>
+            <button
+              type="button"
+              className="markdown-code-copy"
+              aria-label={t("Enlarge diagram")}
+              ref={enlargeButton}
+              title={t("Enlarge diagram")}
+              disabled={!text}
+              onClick={() => setEnlarged(true)}
+            >
+              <Maximize2 size={13} aria-hidden="true" />
+            </button>
+          </>
+        )}
         <button
           type="button"
           className="markdown-code-copy"
@@ -121,7 +190,31 @@ function MarkdownCodeBlock({
           {state !== "idle" ? copyLabel : ""}
         </span>
       </div>
-      <pre ref={pre}>{children}</pre>
+      {mermaid && text ? (
+        <MermaidDiagram source={text} showSource={showSource}>
+          <MarkdownSource text={text} language={language}>
+            {children}
+          </MarkdownSource>
+        </MermaidDiagram>
+      ) : (
+        <MarkdownSource text={text} language={language}>
+          {children}
+        </MarkdownSource>
+      )}
+      {mermaid && enlarged && (
+        <MermaidPreview
+          source={text}
+          t={t}
+          onClose={() => {
+            setEnlarged(false);
+            enlargeButton.current?.focus();
+          }}
+        >
+          <MarkdownSource text={text} language={language}>
+            <code>{text}</code>
+          </MarkdownSource>
+        </MermaidPreview>
+      )}
     </div>
   );
 }

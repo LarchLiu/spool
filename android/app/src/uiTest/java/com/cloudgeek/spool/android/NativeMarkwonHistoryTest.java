@@ -128,6 +128,25 @@ public class NativeMarkwonHistoryTest {
         }
     }
 
+    @Test public void mermaidInHistoryQuotesAndListsMountsTheOfflineDiagramAndCopiesItsLiteral() throws Exception {
+        for (String source : new String[] {
+                "```mermaid\nflowchart LR\n A --> B\n```",
+                "> ```mermaid\n> flowchart LR\n>  A --> B\n> ```",
+                "- Diagram\n\n  ```MERMAID\n  flowchart LR\n   A --> B\n  ```"}) {
+            try (Fixture f = new Fixture()) {
+                f.source(source); f.ready();
+                NativeCodeBlock block = code(f.history); assertNotNull(block);
+                assertEquals("flowchart LR\n A --> B", block.code.getText().toString());
+                assertEquals(3, block.getChildCount());
+                assertTrue(block.getChildAt(2) instanceof NativeMermaid);
+                assertEquals(1, ((NativeMermaid) block.getChildAt(2)).getChildCount());
+                block.copy.performClick();
+                android.content.ClipboardManager clipboard = (android.content.ClipboardManager) f.controller.get().getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                assertEquals("flowchart LR\n A --> B", clipboard.getPrimaryClip().getItemAt(0).getText().toString());
+            }
+        }
+    }
+
     @SuppressWarnings({"rawtypes", "unchecked"})
     @Test @Config(sdk = {28, 34, 35}) public void recyclingCodeRetainsItsOwnDocumentButResetsSelectionFeedbackAndChangedOwner() throws Exception {
         try (Fixture f = new Fixture()) {

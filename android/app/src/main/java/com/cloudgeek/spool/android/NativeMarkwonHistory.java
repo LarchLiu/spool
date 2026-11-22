@@ -544,16 +544,18 @@ final class NativeMarkwonHistory extends RecyclerView {
                     // The table span renderer hides cell text behind placeholders and can
                     // calculate negative widths. Use selectable, horizontally scrollable cells,
                     // including tables nested in a quote/list, while keeping the parsed AST.
-                    boolean nativeTable = NativeMarkdownBlocks.containsTable(node);
-                    Spanned text = nativeTable ? new android.text.SpannableString("")
+                    // Nested Mermaid also needs a view rather than a code span.
+                    boolean nativeLayout = NativeMarkdownBlocks.containsTable(node)
+                            || !codeBlock(node) && NativeMarkdownBlocks.containsMermaid(node);
+                    Spanned text = nativeLayout ? new android.text.SpannableString("")
                             : codeBlock(node) ? new android.text.SpannableString(codeLiteral(node)) : markwon.render(node);
-                    if (nativeTable || codeBlock(node)) skipped++;
+                    if (nativeLayout || codeBlock(node)) skipped++;
                     else if (text.getSpans(0, text.length(), android.text.style.ReplacementSpan.class).length == 0) {
                         try { text = PrecomputedTextCompat.create(text, textMetrics); precomputed++; }
                         catch (RuntimeException error) { failures++; }
                     } else skipped++;
                     blocks.add(new NativeMarkdownBlocks.Block(nextBlockId++, signature,
-                            nativeTable ? new NativeMarkdownBlocks.NativeBlock(node, source) : node, text));
+                            nativeLayout ? new NativeMarkdownBlocks.NativeBlock(node, source) : node, text));
                 }
                 // A retained top-level node must not retain every old document via parent/sibling links.
                 for (Node node : nodes) node.unlink();

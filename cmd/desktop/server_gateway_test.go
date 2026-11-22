@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/coder/websocket"
@@ -295,6 +296,63 @@ func TestDesktopServerGatewayServesDisconnectedSidebarsWithoutContactingDisabled
 				t.Fatal("disabled API was not rejected locally", status, body)
 			}
 		}
+	}
+}
+
+func TestDesktopServerGatewayServesMermaidScriptsToOpaqueSandbox(t *testing.T) {
+	const mount = "/web/fixture/"
+	files := fstest.MapFS{}
+	for _, name := range []string{"assets/mermaid.min-fixture.js", "assets/mermaid-frame-fixture.js", "assets/chat-fixture.js", "src/mermaid-frame.js", "node_modules/mermaid/dist/mermaid.min.js"} {
+		files[name] = &fstest.MapFile{Data: []byte("// " + name)}
+	}
+	gateway := &desktopServerGateway{
+		url: "http://127.0.0.1:12345", assets: http.FileServer(http.FS(files)), development: true,
+		routes: map[string]http.Handler{mount: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			t.Error("sandbox request reached the workspace API")
+		})},
+	}
+	for _, test := range []struct {
+		name, path, method, dest, origin string
+		status                           int
+	}{
+		{name: "library", path: mount + "assets/mermaid.min-fixture.js", status: 200},
+		{name: "renderer", path: mount + "assets/mermaid-frame-fixture.js", status: 200},
+		{name: "head", method: "HEAD", path: mount + "assets/mermaid-frame-fixture.js", status: 200},
+		{name: "development renderer", path: "/src/mermaid-frame.js?no-inline", status: 200},
+		{name: "development library", path: "/node_modules/mermaid/dist/mermaid.min.js?no-inline", status: 200},
+		{name: "workspace API", path: mount + "api/me", status: 403},
+		{name: "workspace document", path: mount, dest: "document", status: 403},
+		{name: "unrelated script", path: mount + "assets/chat-fixture.js", status: 403},
+		{name: "post", method: "POST", path: mount + "assets/mermaid-frame-fixture.js", status: 403},
+		{name: "fetch", dest: "empty", path: mount + "assets/mermaid-frame-fixture.js", status: 403},
+		{name: "foreign origin", origin: "https://foreign.test", path: mount + "assets/mermaid-frame-fixture.js", status: 403},
+		{name: "null origin", origin: "null", path: mount + "assets/mermaid-frame-fixture.js", status: 403},
+		{name: "nested path", path: mount + "assets/mermaid-frame-fixture/other.js", status: 403},
+		{name: "encoded path", path: mount + "assets/mermaid%2dframe-fixture.js", status: 403},
+		{name: "unknown workspace", path: "/web/unknown/assets/mermaid-frame-fixture.js", status: 404},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			method := test.method
+			if method == "" {
+				method = "GET"
+			}
+			dest := test.dest
+			if dest == "" {
+				dest = "script"
+			}
+			request := httptest.NewRequest(method, gateway.url+test.path, nil)
+			request.Header.Set("Sec-Fetch-Site", "cross-site")
+			request.Header.Set("Sec-Fetch-Dest", dest)
+			request.Header.Set("Origin", test.origin)
+			response := httptest.NewRecorder()
+			gateway.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d: %s", response.Code, test.status, response.Body.String())
+			}
+			if test.status == 200 && method == "GET" && !strings.HasPrefix(response.Body.String(), "// ") {
+				t.Fatal("script body was not served", response.Body.String())
+			}
+		})
 	}
 }
 

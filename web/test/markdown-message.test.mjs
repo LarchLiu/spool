@@ -116,6 +116,32 @@ test("code block headers follow the selected language", () => {
   }
 });
 
+test("Mermaid fences retain copyable, escaped source until the isolated renderer loads", () => {
+  for (const language of ["mermaid", "MERMAID"]) {
+    const html = render(
+      `\`\`\`${language}\nflowchart LR\n  A[Start] --> B[Finish]\n\`\`\``,
+    );
+    assert.match(html, /class="markdown-mermaid" data-ready="false"/);
+    assert.match(html, /aria-label="Copy code"/);
+    assert.ok(
+      html.indexOf('aria-label="Source"') <
+        html.indexOf('aria-label="Enlarge diagram"'),
+    );
+    assert.ok(
+      html.indexOf('aria-label="Enlarge diagram"') <
+        html.indexOf('aria-label="Copy code"'),
+    );
+    assert.match(html, /A\[Start\] --&gt; B\[Finish\]/);
+    assert.doesNotMatch(html, /<script|<iframe/);
+  }
+  assert.doesNotMatch(render("```mermaid\n```"), /markdown-mermaid/);
+  assert.doesNotMatch(render("```js\nflowchart LR\n```"), /markdown-mermaid/);
+  assert.doesNotMatch(
+    preview("```mermaid\nflowchart LR\n A --> B\n```"),
+    /iframe|markdown-mermaid/,
+  );
+});
+
 test("raw HTML and unsafe link protocols cannot create executable content", () => {
   const html = render(
     "<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>\n\n[unsafe](javascript:alert%281%29)\n\n[encoded](jav&#x61;script:alert%281%29)\n\n[inline](data:text/html,test)\n\n[safe](https://example.com)",

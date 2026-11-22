@@ -96,6 +96,7 @@ final class NativeIcons {
             case "pan": resource = R.drawable.web_icon_pan; break;
             case "minus": resource = R.drawable.web_icon_minus; break;
             case "fit": resource = R.drawable.web_icon_fit; break;
+            case "maximize_2": resource = R.drawable.web_icon_maximize_2; break;
             case "fullscreen": resource = R.drawable.web_icon_fullscreen; break;
             case "fullscreen_exit": resource = R.drawable.web_icon_fullscreen_exit; break;
             case "escape": resource = R.drawable.web_icon_escape; break;

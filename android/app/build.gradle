@@ -78,6 +78,7 @@ android {
 
     sourceSets.test.java.srcDir 'src/uiTest/java'
     sourceSets.main.jniLibs.srcDir '../../build/android/syntax/jni'
+    sourceSets.main.assets.srcDir '../../build/android/mermaid/assets'
     sourceSets.test.resources.srcDir '../../internal/avatar/testdata'
     sourceSets.nativeVerify.assets.srcDir '../../build/android/native-verify/assets'
     testOptions {
@@ -110,6 +111,15 @@ def nativeVerifyFixtures = tasks.register('prepareNativeVerifyFixtures', Copy) {
     from('../../internal/avatar/testdata') { include 'web-fixtures.json' }
     into '../../build/android/native-verify/assets'
 }
+def mermaidAssets = tasks.register('prepareMermaidAssets', Exec) {
+    workingDir rootProject.file('..')
+    commandLine 'bun', 'android/tools/build-mermaid.mjs'
+    inputs.files rootProject.file('../web/src/mermaid-document.ts'),
+            rootProject.file('../web/src/mermaid-frame.js'),
+            rootProject.file('../web/bun.lock'), rootProject.file('tools/build-mermaid.mjs')
+    outputs.dir rootProject.file('../build/android/mermaid/assets')
+}
+tasks.named('preBuild').configure { dependsOn mermaidAssets }
 tasks.matching { it.name == 'preNativeVerifyBuild' }.configureEach { dependsOn nativeVerifyFixtures }
 
 // The standalone host-Java check compiles generated Go bindings itself. Reuse
