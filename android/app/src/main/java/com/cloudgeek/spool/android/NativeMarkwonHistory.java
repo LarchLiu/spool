@@ -422,6 +422,18 @@ final class NativeMarkwonHistory extends RecyclerView {
                 .usePlugin(TaskListPlugin.create(ui.context))
                 .usePlugin(new NativeMarkwonLinks(open))
                 .usePlugin(new AbstractMarkwonPlugin() {
+                    @Override public void configureSpansFactory(io.noties.markwon.MarkwonSpansFactory.Builder builder) {
+                        builder.setFactory(org.commonmark.node.Code.class, (configuration, props) -> new Object[] {
+                                new io.noties.markwon.core.spans.CodeSpan(configuration.theme()) {
+                                    @Override public void updateDrawState(android.text.TextPaint paint) {
+                                        super.updateDrawState(paint);
+                                        // TextPaint.bgColor always fills the complete line box.
+                                        // The TextView paints the rounded font-height background.
+                                        paint.bgColor = 0;
+                                    }
+                                }, new NativeInlineCodeBackground(ui)
+                        });
+                    }
                     @Override public void configureConfiguration(MarkwonConfiguration.Builder builder) {
                         builder.linkResolver((view, link) -> open.accept(link));
                         // Nested fences inside lists/quotes still use Markwon spans. Their

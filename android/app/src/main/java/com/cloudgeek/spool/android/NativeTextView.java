@@ -40,6 +40,10 @@ class NativeTextView extends TextView {
         return result;
     }
     NativeTextView(Context context) { super(context); }
+    @Override protected void onDraw(android.graphics.Canvas canvas) {
+        NativeInlineCodeBackground.draw(this, canvas);
+        super.onDraw(canvas);
+    }
     @Override public boolean onTextContextMenuItem(int id) {
         return NativeCssWrap.source(this, () -> super.onTextContextMenuItem(id));
     }

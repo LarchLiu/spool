@@ -8,6 +8,11 @@ import android.widget.TextView;
 public final class NativeMarkwonTextView extends TextView {
     public NativeMarkwonTextView(Context context, AttributeSet attributes) { super(context, attributes); }
 
+    @Override protected void onDraw(android.graphics.Canvas canvas) {
+        NativeInlineCodeBackground.draw(this, canvas);
+        super.onDraw(canvas);
+    }
+
     @Override protected void onMeasure(int widthSpec, int heightSpec) {
         // WRAP_CONTENT in the layout keeps TextView.setText from synchronously shaping
         // the empty recycled text or a new document at the previous holder's width.

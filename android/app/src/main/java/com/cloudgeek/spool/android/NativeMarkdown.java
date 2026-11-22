@@ -518,7 +518,7 @@ final class NativeMarkdown {
             else {
                 span(out, new android.text.style.TypefaceSpan("monospace"), start, out.length());
                 span(out, new android.text.style.RelativeSizeSpan(.88f), start, out.length());
-                span(out, new android.text.style.BackgroundColorSpan(ui.soft), start, out.length());
+                span(out, new NativeInlineCodeBackground(ui), start, out.length());
             }
         } else if (preview && (node instanceof FencedCodeBlock || node instanceof IndentedCodeBlock)) {
             out.append(node instanceof FencedCodeBlock ? ((FencedCodeBlock) node).getLiteral() : ((IndentedCodeBlock) node).getLiteral());
