@@ -2,10 +2,12 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -191,6 +193,64 @@ func TestDesktopDevFrontendStreamsSSEWithoutWaitingForCompletion(t *testing.T) {
 	line, err := bufio.NewReader(response.Body).ReadString('\n')
 	if err != nil || line != "data: fixture\n" {
 		t.Fatalf("SSE not flushed: %q, %v", line, err)
+	}
+}
+
+func TestDesktopDevProxiesDoNotLogCanceledRequests(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("canceled request reached upstream")
+	}))
+	t.Cleanup(upstream.Close)
+	frontend := newTestDevFrontend(t, upstream.URL, func() (string, error) { return upstream.URL, nil })
+	gateway, err := startDesktopServerGateway(frontend, defaultDesktopServers())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(gateway.close)
+	var logs bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(previous) })
+	for _, route := range []struct {
+		name    string
+		handler http.Handler
+		address string
+	}{
+		{"Vite assets", frontend.server.Handler, frontend.url + "/src/main.tsx"},
+		{"local API", frontend.server.Handler, frontend.url + "/api/events"},
+		{"gateway assets", gateway, gateway.url + "/src/main.tsx"},
+	} {
+		t.Run(route.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			request := httptest.NewRequestWithContext(ctx, "GET", route.address, nil)
+			response := httptest.NewRecorder()
+			route.handler.ServeHTTP(response, request)
+			if response.Code != http.StatusBadGateway {
+				t.Fatal("unexpected proxy response", response.Code)
+			}
+			if logs.Len() != 0 {
+				t.Fatal("client cancellation logged as a proxy error", logs.String())
+			}
+		})
+	}
+}
+
+func TestDesktopDevProxyStillLogsUpstreamErrors(t *testing.T) {
+	var logs bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(previous) })
+	for _, proxyErr := range []error{fmt.Errorf("connection refused"), context.DeadlineExceeded, context.Canceled} {
+		t.Run(proxyErr.Error(), func(t *testing.T) {
+			logs.Reset()
+			request := httptest.NewRequest("GET", "http://localhost/api/events", nil)
+			response := httptest.NewRecorder()
+			desktopDevProxyError(response, request, proxyErr)
+			if response.Code != http.StatusBadGateway || !strings.Contains(logs.String(), proxyErr.Error()) {
+				t.Fatal("upstream failure was hidden", response.Code, logs.String())
+			}
+		})
 	}
 }
 

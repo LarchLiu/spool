@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -40,6 +41,7 @@ func startDesktopDevFrontend(development bool, address string, serviceURL func()
 	}
 	frontend := &desktopDevFrontend{url: "http://" + listener.Addr().String()}
 	assets := httputil.NewSingleHostReverseProxy(target)
+	assets.ErrorHandler = desktopDevProxyError
 	frontend.server = &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -75,6 +77,7 @@ func startDesktopDevFrontend(development bool, address string, serviceURL func()
 					},
 					// Flush SSE immediately rather than buffering streamed chat events.
 					FlushInterval: -1,
+					ErrorHandler:  desktopDevProxyError,
 				}
 				api.ServeHTTP(w, r)
 				return
@@ -89,6 +92,15 @@ func startDesktopDevFrontend(development bool, address string, serviceURL func()
 		}
 	}()
 	return frontend, nil
+}
+
+func desktopDevProxyError(w http.ResponseWriter, r *http.Request, err error) {
+	// Reloads, navigation and HMR cancel in-flight WebView requests. Only
+	// suppress errors when the incoming request was canceled by its client.
+	if r.Context().Err() != context.Canceled {
+		log.Printf("http: proxy error: %v", err)
+	}
+	w.WriteHeader(http.StatusBadGateway)
 }
 
 func (f *desktopDevFrontend) close() {

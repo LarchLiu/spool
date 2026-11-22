@@ -42,7 +42,7 @@ func startDesktopServerGateway(dev *desktopDevFrontend, profiles desktopServers)
 			// The development frontend validates its own loopback Host. This
 			// gateway is a separate origin, so address that frontend explicitly.
 			p.Out.Host = target.Host
-		}, FlushInterval: -1}
+		}, FlushInterval: -1, ErrorHandler: desktopDevProxyError}
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
