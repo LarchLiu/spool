@@ -80,7 +80,12 @@ final class NativeSidebarState {
         for (int i = 0; i < ordered.size(); i++) if (ordered.get(i).optString("id").equals(chat)) limit = Math.max(limit, i + 1);
         chatLimits.put(project, limit);
     }
-    void toggle(String project) { if (!expanded.add(project)) expanded.remove(project); }
+    void toggle(String project) {
+        if (!expanded.add(project)) {
+            expanded.remove(project);
+            chatLimits.remove(project);
+        }
+    }
     void moreProjects() { projectLimit += 5; }
     void moreChats(String project, int total) { if (project == null) recentLimit = nextLimit(total, recentLimit); else chatLimits.put(project, nextLimit(total, limit(project))); }
     void copyFrom(NativeSidebarState other) {

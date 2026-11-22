@@ -279,6 +279,12 @@ export function Sidebar(props: Props) {
                     aria-controls={"project-chats-" + p.id}
                     title={p.name}
                     onClick={() => {
+                      if (isOpen) {
+                        setChatLimits((old) => ({
+                          ...old,
+                          [p.id]: INITIAL_CHAT_LIMIT,
+                        }));
+                      }
                       setExpanded((old) => {
                         const next = new Set(old);
                         if (next.has(p.id)) next.delete(p.id);
