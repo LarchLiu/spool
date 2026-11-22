@@ -1382,6 +1382,13 @@ export function AboutPage({ data, run, t }: PageProps) {
                 {t("Restart to update")}
               </button>
             )}
+            {state.LastCheck && !state.LastCheck.startsWith("0001") && (
+              <span className="settings-update-last-check">
+                {t("Last checked: {time}", {
+                  time: new Date(state.LastCheck).toLocaleString(),
+                })}
+              </span>
+            )}
           </div>
         )}
         {state.Installing && state.Total > 0 && (
@@ -1407,13 +1414,6 @@ export function AboutPage({ data, run, t }: PageProps) {
           )}
         </Hint>
       </SettingsError>
-      {state.LastCheck && !state.LastCheck.startsWith("0001") && (
-        <Hint>
-          {t("Last checked: {time}", {
-            time: new Date(state.LastCheck).toLocaleString(),
-          })}
-        </Hint>
-      )}
       <Card title={t("Automatic updates")}>
         <Row title={t("Automatically check for updates")}>
           <Toggle

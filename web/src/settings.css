@@ -595,6 +595,13 @@
   border-top: 1px solid var(--settings-divider);
   background: var(--surface);
 }
+.settings-update-last-check {
+  margin-left: auto;
+  font-size: 11px;
+  line-height: 1.75;
+  color: var(--muted);
+  text-align: right;
+}
 .settings-relay-section {
   border-bottom: 1px solid var(--settings-divider);
 }
