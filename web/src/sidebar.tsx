@@ -19,9 +19,14 @@ import { UserAvatar } from "./user-avatar";
 import { ChatOperatorAvatars } from "./turn-identity";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { ChatSettingsControl } from "./desktop-settings";
+import { DesktopServerAction, DesktopServerTabs } from "./desktop-servers";
 import { ADBShareControl } from "./adb-share-settings";
 import { RemoteDesktopControl } from "./remote-desktop-settings";
-import { isDesktopChat, isMacDesktop } from "./runtime";
+import {
+  isDesktopChat,
+  isMacDesktop,
+  type DesktopServerStatus,
+} from "./runtime";
 import { canControlChat } from "./chat-state";
 import { ChatActionMenu } from "./chat-title-menu";
 import {
@@ -38,7 +43,9 @@ import { SessionNotificationIcon } from "./session-notification-icon";
 import type { SessionNotifications } from "./use-session-notifications";
 
 type Props = {
-  user: User;
+  user: User | null;
+  account?: User | null;
+  serverLabel?: string;
   serverName: string;
   projects: Project[];
   chats: Chat[];
@@ -69,10 +76,15 @@ type Props = {
   remoteConnected: boolean;
   onAvatar: () => void;
   onLogout: () => void;
+  connectionState?: DesktopServerStatus;
+  onConnect?: () => void;
 };
 
 export function Sidebar(props: Props) {
   const { projects, chats, project, chatID, t } = props;
+  const identity = props.user || props.account;
+  const authenticated =
+    !!props.user && (!isDesktopChat() || props.connectionState === "connected");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [projectLimit, setProjectLimit] = useState(5);
   const [recentLimit, setRecentLimit] = useState(INITIAL_CHAT_LIMIT);
@@ -109,7 +121,7 @@ export function Sidebar(props: Props) {
   function chatButton(chat: Chat, nested: boolean) {
     const title = chat.title === "New chat" ? t("New chat") : chat.title;
     const pinned = props.pinned.includes(chat.id);
-    const canManage = canControlChat(chat, props.user.id);
+    const canManage = canControlChat(chat, props.user?.id || "");
     return (
       <ChatActionMenu
         key={chat.id}
@@ -243,132 +255,164 @@ export function Sidebar(props: Props) {
           {props.open ? <X size={18} /> : <PanelLeftClose size={18} />}
         </button>
       </div>
+      <DesktopServerTabs t={t} />
       <nav className="sidebar-scroll" aria-label={t("Workspace")}>
-        <SidebarSection
-          id="pinned"
-          title={t("Pinned")}
-          collapsed={props.collapsed.pinned}
-          onToggle={() => props.onToggleSection("pinned")}
-        >
-          {pinned.map((chat) => chatButton(chat, false))}
-          {!pinned.length && (
-            <p className="nav-empty">{t("No pinned chats")}</p>
-          )}
-        </SidebarSection>
-        <SidebarSection
-          id="projects"
-          title={t("Projects")}
-          collapsed={props.collapsed.projects}
-          onToggle={() => props.onToggleSection("projects")}
-        >
-          {projects.slice(0, projectLimit).map((p) => {
-            const isOpen = expanded.has(p.id);
-            const list = byProject.get(p.id) || [];
-            const limit = chatLimits[p.id] || INITIAL_CHAT_LIMIT;
-            return (
-              <div className="project-group" key={p.id}>
-                <div
-                  className={
-                    "project-row " + (p.id === project ? "current" : "")
-                  }
-                >
-                  <button
-                    type="button"
-                    className="project-toggle"
-                    aria-expanded={isOpen}
-                    aria-controls={"project-chats-" + p.id}
-                    title={p.name}
-                    onClick={() => {
-                      if (isOpen) {
-                        setChatLimits((old) => ({
-                          ...old,
-                          [p.id]: INITIAL_CHAT_LIMIT,
-                        }));
-                      }
-                      setExpanded((old) => {
-                        const next = new Set(old);
-                        if (next.has(p.id)) next.delete(p.id);
-                        else next.add(p.id);
-                        return next;
-                      });
-                    }}
-                  >
-                    {isOpen ? <FolderOpen size={15} /> : <Folder size={15} />}
-                    <span>{p.name}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="project-new icon"
-                    disabled={props.posting || p.can_create === false}
-                    title={t("New chat in {project}", { project: p.name })}
-                    aria-label={t("New chat in {project}", { project: p.name })}
-                    onClick={() => props.onNew(p.id)}
-                  >
-                    <Plus size={14} />
-                  </button>
-                </div>
-                {isOpen && (
-                  <div id={"project-chats-" + p.id} className="project-chats">
-                    <SidebarChatList
-                      chats={list}
-                      limit={limit}
-                      nested
-                      t={t}
-                      renderChat={(chat) => chatButton(chat, true)}
-                      onLimit={(nextLimit) =>
-                        setChatLimits((old) => ({
-                          ...old,
-                          [p.id]: nextLimit,
-                        }))
-                      }
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {!projects.length && (
-            <p className="nav-empty">{t("No authorized projects")}</p>
-          )}
-          {projects.length > projectLimit && (
-            <button
-              className="show-more"
-              onClick={() => setProjectLimit((old) => old + 5)}
+        {!props.user ? (
+          <p className="nav-empty">
+            {t(
+              props.connectionState === "login"
+                ? "Sign in to view this server’s workspace."
+                : "Connect to view this server’s workspace.",
+            )}
+          </p>
+        ) : (
+          <>
+            <SidebarSection
+              id="pinned"
+              title={t("Pinned")}
+              collapsed={props.collapsed.pinned}
+              onToggle={() => props.onToggleSection("pinned")}
             >
-              {t("Show more")}
-            </button>
-          )}
-        </SidebarSection>
-        <SidebarSection
-          id="recents"
-          title={t("Recents")}
-          collapsed={props.collapsed.recents}
-          onToggle={() => props.onToggleSection("recents")}
-        >
-          <SidebarChatList
-            chats={recents}
-            limit={recentLimit}
-            t={t}
-            renderChat={(chat) => chatButton(chat, false)}
-            onLimit={setRecentLimit}
-          />
-        </SidebarSection>
+              {pinned.map((chat) => chatButton(chat, false))}
+              {!pinned.length && (
+                <p className="nav-empty">{t("No pinned chats")}</p>
+              )}
+            </SidebarSection>
+            <SidebarSection
+              id="projects"
+              title={t("Projects")}
+              collapsed={props.collapsed.projects}
+              onToggle={() => props.onToggleSection("projects")}
+            >
+              {projects.slice(0, projectLimit).map((p) => {
+                const isOpen = expanded.has(p.id);
+                const list = byProject.get(p.id) || [];
+                const limit = chatLimits[p.id] || INITIAL_CHAT_LIMIT;
+                return (
+                  <div className="project-group" key={p.id}>
+                    <div
+                      className={
+                        "project-row " + (p.id === project ? "current" : "")
+                      }
+                    >
+                      <button
+                        type="button"
+                        className="project-toggle"
+                        aria-expanded={isOpen}
+                        aria-controls={"project-chats-" + p.id}
+                        title={p.name}
+                        onClick={() => {
+                          if (isOpen) {
+                            setChatLimits((old) => ({
+                              ...old,
+                              [p.id]: INITIAL_CHAT_LIMIT,
+                            }));
+                          }
+                          setExpanded((old) => {
+                            const next = new Set(old);
+                            if (next.has(p.id)) next.delete(p.id);
+                            else next.add(p.id);
+                            return next;
+                          });
+                        }}
+                      >
+                        {isOpen ? (
+                          <FolderOpen size={15} />
+                        ) : (
+                          <Folder size={15} />
+                        )}
+                        <span>{p.name}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="project-new icon"
+                        disabled={props.posting || p.can_create === false}
+                        title={t("New chat in {project}", { project: p.name })}
+                        aria-label={t("New chat in {project}", {
+                          project: p.name,
+                        })}
+                        onClick={() => props.onNew(p.id)}
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                    {isOpen && (
+                      <div
+                        id={"project-chats-" + p.id}
+                        className="project-chats"
+                      >
+                        <SidebarChatList
+                          chats={list}
+                          limit={limit}
+                          nested
+                          t={t}
+                          renderChat={(chat) => chatButton(chat, true)}
+                          onLimit={(nextLimit) =>
+                            setChatLimits((old) => ({
+                              ...old,
+                              [p.id]: nextLimit,
+                            }))
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {!projects.length && (
+                <p className="nav-empty">{t("No authorized projects")}</p>
+              )}
+              {projects.length > projectLimit && (
+                <button
+                  className="show-more"
+                  onClick={() => setProjectLimit((old) => old + 5)}
+                >
+                  {t("Show more")}
+                </button>
+              )}
+            </SidebarSection>
+            <SidebarSection
+              id="recents"
+              title={t("Recents")}
+              collapsed={props.collapsed.recents}
+              onToggle={() => props.onToggleSection("recents")}
+            >
+              <SidebarChatList
+                chats={recents}
+                limit={recentLimit}
+                t={t}
+                renderChat={(chat) => chatButton(chat, false)}
+                onLimit={setRecentLimit}
+              />
+            </SidebarSection>
+          </>
+        )}
       </nav>
       <div className="side-foot">
-        <button
-          type="button"
-          className="avatar-button"
-          onClick={props.onAvatar}
-          aria-label={t("Change avatar")}
-          title={t("Change avatar")}
-        >
-          <UserAvatar person={props.user} />
-        </button>
-        <div>
-          {props.user.nickname}
-          <small title={props.serverName}>{props.serverName}</small>
-        </div>
-        {!isDesktopChat() && (
+        {identity && (
+          <>
+            <button
+              type="button"
+              className="avatar-button"
+              onClick={props.onAvatar}
+              disabled={!authenticated}
+              aria-label={t("Change avatar")}
+              title={t("Change avatar")}
+            >
+              <UserAvatar person={identity} />
+            </button>
+            <div>
+              {identity.nickname}
+              <small title={props.serverName}>{props.serverName}</small>
+            </div>
+          </>
+        )}
+        {!identity && (
+          <div title={props.serverLabel || props.serverName}>
+            {props.serverLabel || props.serverName}
+          </div>
+        )}
+        {(!isDesktopChat() || authenticated) && (
           <>
             <RemoteDesktopControl
               t={t}
@@ -379,15 +423,36 @@ export function Sidebar(props: Props) {
             <ADBShareControl t={t} active={props.active} />
           </>
         )}
+        {isDesktopChat() &&
+          identity &&
+          props.connectionState &&
+          props.onConnect && (
+            <DesktopServerAction
+              t={t}
+              state={props.connectionState}
+              onConnect={props.onConnect}
+              iconOnly
+            />
+          )}
         <ChatSettingsControl t={t} onAppearance={props.onSettings} />
-        <button
-          className="icon"
-          onClick={props.onLogout}
-          aria-label={t("Sign out")}
-          title={t("Sign out")}
-        >
-          <LogOut size={16} />
-        </button>
+        {!identity && props.connectionState && props.onConnect && (
+          <DesktopServerAction
+            t={t}
+            state={props.connectionState}
+            onConnect={props.onConnect}
+          />
+        )}
+        {identity && (
+          <button
+            className="icon"
+            onClick={props.onLogout}
+            disabled={!authenticated}
+            aria-label={t("Sign out")}
+            title={t("Sign out")}
+          >
+            <LogOut size={16} />
+          </button>
+        )}
       </div>
       <PanelResizeHandle
         side="left"

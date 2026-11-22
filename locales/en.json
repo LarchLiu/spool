@@ -1076,6 +1076,8 @@
   "After pairing, sign in with your Spool account.": "After pairing, sign in with your Spool account.",
   "Confirm and connect": "Confirm and connect",
   "Scan pairing QR code": "Scan pairing QR code",
+  "Could not read this image.": "Could not read this image.",
+  "No Spool pairing QR code was found in this image.": "No Spool pairing QR code was found in this image.",
   "connected": "connected",
   "reconnecting": "reconnecting",
   "connecting": "connecting",
@@ -1260,5 +1262,16 @@
   "{count} tokens": "{count} tokens",
   "{seconds}s": "{seconds}s",
   "{minutes}m {seconds}s": "{minutes}m {seconds}s",
-  "{hours}h {minutes}m": "{hours}h {minutes}m"
+  "{hours}h {minutes}m": "{hours}h {minutes}m",
+  "Display name (optional)": "Display name (optional)",
+  "Leave blank to use the name from the server's settings.": "Leave blank to use the name from the server's settings.",
+  "Use a display name of up to 80 characters.": "Use a display name of up to 80 characters.",
+  "Delete server {name}?": "Delete server {name}?",
+  "Enter an HTTP or HTTPS server address without credentials, query or fragment.": "Enter an HTTP or HTTPS server address without credentials, query or fragment.",
+  "Use a server origin or a public relay server URL.": "Use a server origin or a public relay server URL.",
+  "The local server is managed in Service settings.": "The local server is managed in Service settings.",
+  "Server not found.": "Server not found.",
+  "Approve this device on the server to finish pairing.": "Approve this device on the server to finish pairing.",
+  "Invalid connection mode.": "Invalid connection mode.",
+  "Configure the selected connection before connecting.": "Configure the selected connection before connecting."
 }

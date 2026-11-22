@@ -7,6 +7,8 @@ import (
 	"net"
 	"testing"
 
+	"github.com/egoist/mygo/ui"
+
 	"spool/internal/workspace"
 )
 
@@ -238,32 +240,14 @@ func TestSelectingNativeTabDoesNotResetChatState(t *testing.T) {
 }
 
 func TestChatLayoutReplacesNativeSidebar(t *testing.T) {
-	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
+	p := &panel{tab: "Chat", preferences: workspace.UIPreferences{Language: "en"}}
+	view := ui.NewTester(p.view, 1000, 720)
+	if !view.HasText("Opening chat…") || !view.HasText("Settings") {
+		t.Fatal("chat startup did not retain its status and settings action")
 	}
-	for _, declaration := range file.Decls {
-		fn, ok := declaration.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != "view" {
-			continue
+	for _, text := range []string{"Control Center", "People", "Projects", "Agents"} {
+		if view.HasText(text) {
+			t.Fatal("chat startup showed the native settings sidebar", text)
 		}
-		guard, ok := fn.Body.List[0].(*ast.IfStmt)
-		if !ok {
-			t.Fatal("chat must be handled before building the native sidebar")
-		}
-		condition, ok := guard.Cond.(*ast.BinaryExpr)
-		if !ok || condition.Op != token.EQL {
-			t.Fatal("expected a chat-tab guard")
-		}
-		tab, ok := condition.X.(*ast.SelectorExpr)
-		value, literal := condition.Y.(*ast.BasicLit)
-		if !ok || tab.Sel.Name != "tab" || !literal || value.Value != `"Chat"` {
-			t.Fatal("only the chat tab should bypass the native sidebar")
-		}
-		if _, ok := guard.Body.List[len(guard.Body.List)-1].(*ast.ReturnStmt); !ok {
-			t.Fatal("chat must return before building the native sidebar")
-		}
-		return
 	}
-	t.Fatal("main window view not found")
 }

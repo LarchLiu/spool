@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { requireRunTemp } from "../../tools/test-scratch.mjs";
-import { createTestViteServer } from "./vite-fixture.mjs";
+import { createTestViteServer, mockDesktopNavigation } from "./vite-fixture.mjs";
 
 requireRunTemp();
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -15,7 +15,7 @@ const { chromium } = require("playwright");
 const output = path.join(root, "build/artifacts/connections");
 const cleanup = [];
 const server = await createTestViteServer({ after: (fn) => cleanup.push(fn) }, {
-  configFile: false, root: path.join(root, "web"), plugins: [react()],
+  configFile: false, root: path.join(root, "web"), plugins: [react(), mockDesktopNavigation()],
   server: { host: "127.0.0.1", port: 0 },
 });
 let browser;
@@ -28,6 +28,7 @@ try {
     [1280, true], [390, true], [320, true],
     [1280, false], [390, false], [320, false],
     [1280, true, "darwin"], [1280, true, "win32"], [1280, true, "linux"],
+    [1280, false, "darwin"],
     [1280, true, undefined, true],
   ]) {
     const context = await browser.newContext({
@@ -43,7 +44,11 @@ try {
         localStorage.setItem("spool.ui-preferences.v1", JSON.stringify({ language: "en", theme: "light" }));
         if (desktopPlatform) {
           window.spoolDesktop = true;
-          window.mygo = { platform: desktopPlatform };
+          window.mygo = { platform: desktopPlatform, locale: "en" };
+          window.spoolServers = {
+            selected: "local",
+            entries: [{ id: "local", name: "Home", local: true, status: "connected" }],
+          };
         }
         const alternate = {
           alternateSetting: 0, interfaceClass: 255, interfaceSubclass: 66, interfaceProtocol: 1,
@@ -75,7 +80,11 @@ try {
             if (String(url).includes("/adb/bridge")) {
               window.fixtureADB = this;
               setTimeout(() => { this.readyState = 1; this.onopen?.({}); }, 0);
-            }
+            } else setTimeout(() => {
+              this.readyState = 1;
+              this.onopen?.({});
+              this.onmessage?.({ data: JSON.stringify({ type: "ready" }) });
+            }, 0);
           }
           send() {}
           close() { this.readyState = 3; }
@@ -125,16 +134,7 @@ try {
       if (desktopPlatform) {
         await footer.getByRole("link", { name: "Settings", exact: true }).waitFor();
         assert.equal(await footer.getByRole("link", { name: "Settings", exact: true }).locator(".lucide-settings2").count(), 1);
-        assert.equal(await remote.count(), 0, "Desktop hides the remote connection entry");
-        assert.equal(await adb.count(), 0, "Desktop hides the ADB bridge entry even with WebUSB");
-        assert.equal(desktopReads, 0, "Desktop does not poll remote desktop availability");
-        assert.equal(adbReads, 0, "Desktop does not poll ADB availability");
-        assert.equal(await footer.locator(".connection-status-dot").count(), 0);
-        assert.deepEqual(errors, []);
-        console.log(`PASS: ${desktopPlatform} desktop hides both connection entries and skips availability polling`);
-        continue;
-      }
-      assert.equal(await footer.getByRole("button", { name: "Appearance and language", exact: true }).locator(".lucide-palette").count(), 1);
+      } else assert.equal(await footer.getByRole("button", { name: "Appearance and language", exact: true }).locator(".lucide-palette").count(), 1);
       await remote.waitFor();
       if (missingADB) {
         await (await incompleteResponse).finished();
@@ -148,14 +148,19 @@ try {
         assert.equal(await adb.count(), 0, "Browsers without WebUSB hide the ADB entry");
         assert.equal(adbReads, 0, "Browsers without WebUSB do not poll ADB availability");
         assert.deepEqual(await footer.locator("button.icon").evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label"))),
-          ["Remote connection", "Appearance and language", "Sign out"]);
+          desktopPlatform ? ["Remote connection", "Sign out"] : ["Remote connection", "Appearance and language", "Sign out"]);
         assert.deepEqual(errors, []);
-        console.log(`PASS: connections at ${width}px without WebUSB; ADB entry hidden and no ADB polling`);
+        console.log(`PASS: ${desktopPlatform || "web"} connections at ${width}px without WebUSB; remote entry visible, ADB entry hidden and no ADB polling`);
         continue;
       }
       await adb.waitFor();
       assert.deepEqual(await footer.locator("button.icon").evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label"))),
-        ["Remote connection", "ADB bridge", "Appearance and language", "Sign out"]);
+        desktopPlatform ? ["Remote connection", "ADB bridge", "Sign out"] : ["Remote connection", "ADB bridge", "Appearance and language", "Sign out"]);
+      if (desktopPlatform) {
+        assert.ok(desktopReads > 0 && adbReads > 0, "Desktop checks both server capabilities");
+        const controls = await footer.locator(".connection-control, .desktop-settings").evaluateAll(elements => elements.map(element => element.getAttribute("aria-label")));
+        assert.deepEqual(controls, ["Remote connection", "ADB bridge", "Settings"], "Desktop reuses the web footer order before Settings");
+      }
       assert.equal(await footer.locator(".connection-status-dot").count(), 0);
       assert.equal(await remote.getAttribute("title"), "Remote connection");
       assert.equal(await adb.getAttribute("title"), "ADB bridge");
@@ -216,7 +221,7 @@ try {
       });
       await page.locator('[data-adb-share="online"]').waitFor();
       assert.equal(await adb.locator(".connection-status-dot[data-state=connected]").count(), 1);
-      await page.screenshot({ path: path.join(output, `sharing-${width}.png`) });
+      await page.screenshot({ path: path.join(output, `sharing-${desktopPlatform || "web"}-${width}.png`) });
       await page.keyboard.press("Escape");
       await panel.waitFor({ state: "hidden" });
       assert.equal(await adb.locator(".connection-status-dot").count(), 1, "Closing the panel keeps sharing alive");
@@ -231,34 +236,36 @@ try {
       adbEnabled = true;
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
       await adb.waitFor();
-      await footer.getByRole("button", { name: "Appearance and language", exact: true }).click();
-      const settings = page.getByRole("dialog", { name: "Appearance and language", exact: true });
-      assert.equal(await settings.getByText("ADB bridge", { exact: true }).count(), 0);
-      assert.equal(await settings.getByText("Remote connection", { exact: true }).count(), 0);
-      const repository = settings.getByRole("link", { name: "Open GitHub repository", exact: true });
-      assert.equal(await repository.getAttribute("href"), "https://github.com/LarchLiu/spool");
-      assert.equal(await repository.getAttribute("target"), "_blank");
-      const versionRow = settings.locator(".appearance-version");
-      const versionBounds = await versionRow.locator("span").boundingBox();
-      const repositoryBounds = await repository.boundingBox();
-      assert.ok(repositoryBounds.x > versionBounds.x + versionBounds.width, "GitHub follows the version on the right");
-      assert.ok(Math.abs(repositoryBounds.y + repositoryBounds.height / 2 - versionBounds.y - versionBounds.height / 2) < 2, "Version and GitHub align on the same row");
-      assert.ok(repositoryBounds.x + repositoryBounds.width <= width, "GitHub link stays within the viewport");
-      await settings.screenshot({ path: path.join(output, `settings-${width}.png`) });
-      await context.route("https://github.com/LarchLiu/spool", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Repository fixture</title>" }));
-      const popup = page.waitForEvent("popup");
-      await repository.click();
-      const repositoryPage = await popup;
-      await repositoryPage.waitForLoadState("domcontentloaded");
-      assert.equal(repositoryPage.url(), "https://github.com/LarchLiu/spool");
-      await repositoryPage.close();
-      await settings.getByRole("button", { name: "Close settings", exact: true }).click();
+      if (!desktopPlatform) {
+        await footer.getByRole("button", { name: "Appearance and language", exact: true }).click();
+        const settings = page.getByRole("dialog", { name: "Appearance and language", exact: true });
+        assert.equal(await settings.getByText("ADB bridge", { exact: true }).count(), 0);
+        assert.equal(await settings.getByText("Remote connection", { exact: true }).count(), 0);
+        const repository = settings.getByRole("link", { name: "Open GitHub repository", exact: true });
+        assert.equal(await repository.getAttribute("href"), "https://github.com/LarchLiu/spool");
+        assert.equal(await repository.getAttribute("target"), "_blank");
+        const versionRow = settings.locator(".appearance-version");
+        const versionBounds = await versionRow.locator("span").boundingBox();
+        const repositoryBounds = await repository.boundingBox();
+        assert.ok(repositoryBounds.x > versionBounds.x + versionBounds.width, "GitHub follows the version on the right");
+        assert.ok(Math.abs(repositoryBounds.y + repositoryBounds.height / 2 - versionBounds.y - versionBounds.height / 2) < 2, "Version and GitHub align on the same row");
+        assert.ok(repositoryBounds.x + repositoryBounds.width <= width, "GitHub link stays within the viewport");
+        await settings.screenshot({ path: path.join(output, `settings-${width}.png`) });
+        await context.route("https://github.com/LarchLiu/spool", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Repository fixture</title>" }));
+        const popup = page.waitForEvent("popup");
+        await repository.click();
+        const repositoryPage = await popup;
+        await repositoryPage.waitForLoadState("domcontentloaded");
+        assert.equal(repositoryPage.url(), "https://github.com/LarchLiu/spool");
+        await repositoryPage.close();
+        await settings.getByRole("button", { name: "Close settings", exact: true }).click();
+      }
       authorized = false;
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
       await adb.waitFor({ state: "hidden" });
       await remote.waitFor({ state: "hidden" });
       assert.deepEqual(errors, []);
-      console.log(`PASS: connections at ${width}px; title tooltips, click/keyboard popups, anchoring, dismissal, focus, status, sharing lifetime and settings separation`);
+      console.log(`PASS: ${desktopPlatform || "web"} connections at ${width}px; title tooltips, click/keyboard popups, anchoring, dismissal, focus, status, sharing lifetime and settings separation`);
     } finally { await context.close(); }
   }
 } finally {

@@ -40,7 +40,7 @@ func (p *panel) smokeNotificationsOnly(report string, result chan<- error) {
 		if ready[0] == nil || ready[1] == nil {
 			return fmt.Errorf("notification probe requires the desktop chat and settings pages")
 		}
-		if err := waitChatScript(ctx, ready[0].Page(), `return !!document.querySelector('input[name="password"]');`); err != nil {
+		if err := openSmokeLogin(ctx, ready[0].Page()); err != nil {
 			return err
 		}
 		if err := waitChatScript(ctx, ready[1].Page(), `return !!document.querySelector('.settings-sidebar');`); err != nil {

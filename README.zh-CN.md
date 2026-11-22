@@ -15,7 +15,7 @@ Spool 是面向个人和团队的本地 AI 编程工作区。通过 Desktop、We
 
 ## 功能特性
 
-- **多端工作区**：Desktop、Web/PWA 和 Android 访问同一项目与聊天，Android 支持连接多台服务器。
+- **多端工作区**：Desktop、Web/PWA 和 Android 访问同一项目与聊天，Desktop 和 Android 支持连接多台服务器。
 - **Codex 与 Claude Code**：独立原生会话，支持模型与推理等级选择、[Agent 斜杠命令](docs/agent-commands.md)、流式输出、停止和恢复。
 - **聊天与文件**：Markdown、代码、Diff、工具活动、图片、附件、项目文件、Git worktree，以及 [Word/Excel 预览](docs/office-preview.md)。
 - **多人协作**：项目成员、共享会话、私聊、群聊和在线状态。
@@ -50,4 +50,5 @@ make test     # 运行工具、前端、Go 测试及 vet
 - [Server CLI](docs/server-cli.md)
 - [ADB 桥接](docs/adb-bridge.md)
 - [Android 开发](android/README.md)
+- [Desktop 多服务器连接](docs/desktop-servers.zh-CN.md)
 - [中继部署与配对](relay/README.md)

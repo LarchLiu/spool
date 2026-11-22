@@ -16,7 +16,7 @@ stay on that machine; install and sign in to Codex or Claude Code there before u
 
 ## Features
 
-- **Desktop, Web/PWA, and Android** — Continue the same projects and chats across devices; Android supports multiple servers.
+- **Desktop, Web/PWA, and Android** — Continue the same projects and chats across devices; Desktop and Android support multiple servers.
 - **Codex and Claude Code** — Independent native sessions, model and reasoning selection, [agent slash commands](docs/agent-commands.md), streaming output, stop, and resume.
 - **Rich chat and files** — Markdown, code, diffs, tool activity, images, attachments, project files, Git worktrees, and [Word/Excel previews](docs/office-preview.md).
 - **Collaboration** — Project members, shared sessions, private messages, group chats, and online presence.
@@ -51,4 +51,5 @@ Build output is written to `build/`.
 - [Server CLI](docs/server-cli.md)
 - [ADB bridge](docs/adb-bridge.md)
 - [Android development](android/README.md)
+- [Desktop server connections](docs/desktop-servers.md)
 - [Relay deployment and pairing](relay/README.md)

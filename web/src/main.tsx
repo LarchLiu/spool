@@ -13,6 +13,7 @@ import { createRoot } from "react-dom/client";
 import {
   ArrowUp,
   ArrowDown,
+  ArrowLeft,
   ChevronDown,
   Palette,
   Folder,
@@ -33,8 +34,19 @@ import {
   notifyDesktopViewChanged,
   subscribeDesktopNotifications,
   takeDesktopNotification,
+  notifyDesktopServerName,
+  notifyDesktopServerReady,
+  reportDesktopServerState,
+  subscribeDesktopServerReadyAck,
+  notifyDesktopSidebarWidth,
+  desktopSidebarWidth,
+  desktopServers,
+  subscribeDesktopServers,
+  subscribeDesktopServerSelection,
+  connectDesktopServer,
 } from "./runtime";
 import { DesktopSettingsLink } from "./desktop-settings";
+import { DesktopServerWelcome } from "./desktop-servers";
 import { DesktopWindowChrome } from "./desktop-window-chrome";
 import { LoginStory } from "./login-story";
 import { ComposerSendButton } from "./composer-send-button";
@@ -183,15 +195,34 @@ function App() {
   const [user, setUser] = useState<User | null>(null),
     [ready, setReady] = useState(false),
     [error, setError] = useState("");
+  const [desktopLoginOpen, setDesktopLoginOpen] = useState(false);
+  const [serverSelection, setServerSelection] = useState(0);
+  const [rememberedAccount, setRememberedAccount] = useState<User | null>(null);
+  useEffect(() => {
+    if (user) setRememberedAccount(user);
+  }, [user]);
+  const [loginDraft, setLoginDraft] = useState({ username: "", password: "" });
+  const servers = useSyncExternalStore(
+    subscribeDesktopServers,
+    desktopServers,
+    desktopServers,
+  );
+  const desktopServer = servers.entries.find(
+    (server) => server.id === servers.selected,
+  );
+  const desktopServerName = desktopServer?.name || serverName;
+  const desktopSelection = servers.selection || `${servers.selected}:${servers.transition?.started_at || 0}`;
   const [projects, setProjects] = useState<Project[]>([]),
     [agents, setAgents] = useState<Agent[]>([]),
     [project, setProject] = useState(""),
     [chats, setChats] = useState<Chat[]>([]),
     [chatID, setChatID] = useState(""),
     [chat, setChat] = useState<Chat | null>(null);
-  const selectedChat = !chatID || chat?.id === chatID
-    ? chat
-    : chats.find((item) => item.id === chatID);
+  const selectedChat = !user
+    ? undefined
+    : !chatID || chat?.id === chatID
+      ? chat
+      : chats.find((item) => item.id === chatID);
   const chatLoading = !!chatID && chat?.id !== chatID;
   const sidebarPreferences = useSidebarPreferences(user?.id, fail);
   const sessionNotifications = useSessionNotifications(user?.id, chatID);
@@ -201,6 +232,7 @@ function App() {
     [connected, setConnected] = useState(true),
     [sidebar, setSidebar] = useState(false),
     [showLatest, setShowLatest] = useState(false);
+  const [serverAvailable, setServerAvailable] = useState(true);
   const [profileCache] = useState(createProfileCache);
   const [directInbox] = useState(createDirectInbox);
   const inbox = useSyncExternalStore(
@@ -211,6 +243,11 @@ function App() {
     typeof subscribeWorkspaceEvents
   > | null>(null);
   const [messagingConnected, setMessagingConnected] = useState(false);
+  const desktopConnectionState = !ready
+    ? "connecting"
+    : !serverAvailable
+      ? desktopServer?.status === "disconnected" ? "disconnected" : "error"
+      : user ? messagingConnected ? "connected" : "connecting" : "login";
   const [groupPicker, setGroupPicker] = useState<string | null>(null);
   const chatWindowBounds = useRef<FloatingWindowBounds | null>(null);
   const rememberChatWindowBounds = useCallback((bounds: FloatingWindowBounds) => {
@@ -306,15 +343,69 @@ function App() {
   }, [profiles, chats, chat, online]);
   const [panels, setPanels] = useState(() => {
     try {
-      return parsePanelLayout(localStorage.getItem((appBasePath() === "/" ? "" : appBasePath()) + panelStorageKey));
+      const saved = parsePanelLayout(
+        localStorage.getItem(
+          (appBasePath() === "/" ? "" : appBasePath()) + panelStorageKey,
+        ),
+      );
+      return isDesktopChat()
+        ? { ...saved, leftWidth: desktopSidebarWidth(servers) }
+        : saved;
     } catch {
       return parsePanelLayout(null);
     }
   });
+  useEffect(() => {
+    if (isDesktopChat())
+      setPanels((old) => ({ ...old, leftWidth: desktopSidebarWidth(servers) }));
+  }, [servers.sidebar_width]);
   const [fileSidebarMobile, setFileSidebarMobile] = useState(false);
   const [narrowLayout, setNarrowLayout] = useState(
     () => matchMedia("(max-width: 900px)").matches,
   );
+  useEffect(() => {
+    if (!isDesktopChat()) return;
+    const reveal = () => {
+      setServerSelection((value) => value + 1);
+      setDesktopLoginOpen(false);
+      setSidebar(matchMedia("(max-width: 900px)").matches);
+      setFileSidebarMobile(false);
+      setPanels((old) => ({ ...old, leftOpen: true }));
+    };
+    reveal();
+    return subscribeDesktopServerSelection(reveal);
+  }, [servers.selected]);
+  useEffect(
+    () => reportDesktopServerState(desktopConnectionState),
+    [desktopConnectionState],
+  );
+  useEffect(() => {
+    if (!isDesktopChat()) return;
+    // The incoming native view is mounted behind the current page. Two frames
+    // let its committed shell and selection render before native reveals it.
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let acknowledged = false;
+    const unsubscribe = subscribeDesktopServerReadyAck((paint) => {
+      if (paint.state !== desktopConnectionState || paint.selection !== desktopSelection) return;
+      acknowledged = true;
+      clearTimeout(retry);
+    });
+    const notify = () => {
+      // Other navigation hints may replace this one before WebKit delivers it.
+      // Send the rendered connection state with it, retrying until native
+      // acknowledges that state so signed-out servers cannot stay connecting.
+      notifyDesktopServerReady(desktopConnectionState, desktopSelection);
+      if (!acknowledged) retry = setTimeout(notify, 100);
+    };
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(notify);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(retry);
+      unsubscribe();
+    };
+  }, [serverSelection, desktopSelection, desktopConnectionState, desktopLoginOpen]);
   const [fileSelection, setFileSelection] = useState<FileSelection | null>(
     null,
   );
@@ -360,7 +451,7 @@ function App() {
   useEffect(() => {
     setFileSelection(null);
   }, [fileScope]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const media = matchMedia("(max-width: 900px)");
     const changed = () => {
       setNarrowLayout(media.matches);
@@ -368,6 +459,9 @@ function App() {
       setFileSidebarMobile(false);
     };
     media.addEventListener("change", changed);
+    // Embedded views can acquire their final size between render and
+    // subscription. Recheck before paint instead of waiting for another resize.
+    changed();
     return () => media.removeEventListener("change", changed);
   }, []);
   useEffect(() => {
@@ -524,20 +618,47 @@ function App() {
     setError(e instanceof Error ? e.message : t("Request failed"));
   }
   useEffect(() => {
-    void api<{ version: string; server_name?: string }>("/version")
-      .then((value) => {
-        setVersion(value.version);
-        if (!liveServerName.current)
-          setServerName(value.server_name?.trim() || "Home");
-      })
-      .catch(() => {});
-    api<{ user: User; csrf: string }>("/me")
-      .then((v) => {
-        setUser(v.user);
-        setCSRF(v.csrf);
-      })
-      .catch(() => {})
-      .finally(() => setReady(true));
+    let active = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const version = api<{ version: string; server_name?: string }>(
+      "/version",
+      undefined,
+      controller.signal,
+    ).then((value) => {
+      if (typeof value?.version !== "string" || !value.version)
+        throw new Error(t("The server returned an invalid response"));
+      if (!active) return;
+      setVersion(value.version);
+      if (!liveServerName.current) {
+        setServerName(value.server_name?.trim() || "Home");
+        notifyDesktopServerName(value.server_name?.trim() || "Home");
+      }
+    });
+    const session = api<{ user: User; csrf: string }>(
+      "/me",
+      undefined,
+      controller.signal,
+    ).then((v) => {
+      if (!v?.user?.id || typeof v.csrf !== "string")
+        throw new Error(t("The server returned an invalid response"));
+      if (!active) return;
+      setUser(v.user);
+      setCSRF(v.csrf);
+    });
+    void Promise.allSettled([version, session]).then(([server, account]) => {
+      if (!active) return;
+      clearTimeout(timeout);
+      const failure = server.status === "rejected"
+        ? server.reason
+        : account.status === "rejected" &&
+            !(account.reason instanceof APIError && account.reason.status === 401)
+          ? account.reason
+          : undefined;
+      setServerAvailable(!failure);
+      if (failure) fail(failure);
+      setReady(true);
+    });
     const expire = () => {
       for (const value of localDeliveriesRef.current) retireDelivery(value);
       for (const draft of editedQueueDrafts.current.values())
@@ -547,6 +668,7 @@ function App() {
       setGroupPicker(null);
       profileCache.reset();
       setUser(null);
+      setDesktopLoginOpen(false);
       setChat(null);
       setChats([]);
       setProjects([]);
@@ -565,7 +687,12 @@ function App() {
       setCSRF("");
     };
     window.addEventListener("auth-expired", expire);
-    return () => window.removeEventListener("auth-expired", expire);
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+      controller.abort();
+      window.removeEventListener("auth-expired", expire);
+    };
   }, []);
   useEffect(() => {
     if (!ready || !isDesktopChat()) return;
@@ -860,6 +987,7 @@ function App() {
           if (cancelled) return;
           liveServerName.current = true;
           setServerName(value.server_name.trim() || "Home");
+          notifyDesktopServerName(value.server_name.trim() || "Home");
         },
         presence: (people) => {
           if (!cancelled) setOnline(people);
@@ -867,6 +995,7 @@ function App() {
         connected: (value) => {
           realtimeConnected = value;
           if (!cancelled) setMessagingConnected(value);
+          if (!cancelled) setServerAvailable(value);
           if (!value && !cancelled) setOnline([]);
         },
         expired: () => window.dispatchEvent(new Event("auth-expired")),
@@ -1252,6 +1381,9 @@ function App() {
       });
       setCSRF(v.csrf);
       setUser(v.user);
+      setLoginDraft({ username: "", password: "" });
+      setConnected(true);
+      setServerAvailable(true);
     } catch (e) {
       fail(e);
     } finally {
@@ -1908,6 +2040,7 @@ function App() {
   async function logout() {
     try {
       await api("/logout", {});
+      setRememberedAccount(null);
       window.dispatchEvent(new Event("auth-expired"));
       void clearDevicePush().catch(() => {});
     } catch (e) {
@@ -1998,7 +2131,12 @@ function App() {
       {user && <NotificationSettings key={user.id} t={t} language={locale} />}
     </AppearanceDialog>
   );
-  if (!ready)
+  const serverStart = isDesktopChat() && !user;
+  const connectServer = () => {
+    if (!serverAvailable || user) connectDesktopServer();
+    else setDesktopLoginOpen(true);
+  };
+  if (!ready && !isDesktopChat())
     return (
       <main className="loading">
         <img className="brand-mark" src={appURL("/logo.png")} alt="Spool" />
@@ -2006,11 +2144,10 @@ function App() {
         <DesktopSettingsLink t={t} className="desktop-settings-corner" />
       </main>
     );
-  if (!user)
+  if (!user && (!isDesktopChat() || desktopLoginOpen))
     return (
       <>
         <main className={isDesktopChat() ? "login desktop-login" : "login"}>
-          <DesktopSettingsLink t={t} className="desktop-settings-corner" />
           {!isDesktopChat() && (
             <button
               className="icon login-preferences"
@@ -2022,6 +2159,20 @@ function App() {
           )}
           <LoginStory t={t} />
           <section className="login-panel">
+            {isDesktopChat() && (
+              <div className="desktop-login-header">
+                <button
+                  className="icon"
+                  aria-label={t("Back to list")}
+                  title={t("Back to list")}
+                  onClick={() => setDesktopLoginOpen(false)}
+                >
+                  <ArrowLeft size={18} />
+                </button>
+                <span title={desktopServerName}>{desktopServerName}</span>
+                <DesktopSettingsLink t={t} />
+              </div>
+            )}
             <form onSubmit={login}>
               <span className="eyebrow">{t("Welcome back")}</span>
               <h2>{t("Sign in to your workspace")}</h2>
@@ -2032,6 +2183,10 @@ function App() {
                 {t("Username")}
                 <input
                   name="username"
+                  value={loginDraft.username}
+                  onChange={(event) =>
+                    setLoginDraft((old) => ({ ...old, username: event.target.value }))
+                  }
                   autoComplete="username"
                   required
                   maxLength={64}
@@ -2041,6 +2196,10 @@ function App() {
                 {t("Password")}
                 <input
                   name="password"
+                  value={loginDraft.password}
+                  onChange={(event) =>
+                    setLoginDraft((old) => ({ ...old, password: event.target.value }))
+                  }
                   type="password"
                   autoComplete="current-password"
                   required
@@ -2067,7 +2226,7 @@ function App() {
     );
   const workspace = (
     <div
-      className={`app ${panels.leftOpen ? "" : "left-collapsed"} ${panels.rightOpen ? "" : "right-collapsed"}`}
+      className={`app ${serverStart ? "desktop-server-start" : ""} ${panels.leftOpen ? "" : "left-collapsed"} ${panels.rightOpen && user ? "" : "right-collapsed"}`}
       style={
         {
           "--left-panel-width": `${panels.leftWidth}px`,
@@ -2076,9 +2235,12 @@ function App() {
       }
     >
       <Sidebar
-        key={user!.id}
-        user={displayUser!}
+        user={displayUser}
+        account={rememberedAccount}
         serverName={serverName}
+        serverLabel={desktopServerName}
+        connectionState={desktopConnectionState}
+        onConnect={connectServer}
         resolveProfile={resolveProfile}
         projects={projects}
         chats={chats}
@@ -2089,16 +2251,19 @@ function App() {
         project={project}
         chatID={chatID}
         activeBackend={chat?.turns.length === 0 ? backend : undefined}
-        open={sidebar}
+        open={narrowLayout && sidebar}
         active={narrowLayout ? sidebar : panels.leftOpen}
         posting={posting}
         width={panels.leftWidth}
         t={t}
         onClose={() => {
           setSidebar(false);
-          setPanels((old) => ({ ...old, leftOpen: false }));
+          if (!narrowLayout) setPanels((old) => ({ ...old, leftOpen: false }));
         }}
-        onResize={(width) => setPanels((old) => ({ ...old, leftWidth: width }))}
+        onResize={(width) => {
+          setPanels((old) => ({ ...old, leftWidth: width }));
+          notifyDesktopSidebarWidth(width);
+        }}
         onChat={openChat}
         onTogglePin={sidebarPreferences.togglePin}
         onRename={renameChat}
@@ -2153,17 +2318,17 @@ function App() {
                 ) : (
                   <strong>
                     {(selectedChat?.title === "New chat" ? t("New chat") : selectedChat?.title) ||
-                      (chatID ? t("Loading conversation…") : project ? t("New chat") : t("Workspace"))}
+                      (serverStart ? desktopServerName : chatID ? t("Loading conversation…") : project ? t("New chat") : t("Workspace"))}
                   </strong>
                 )}
               </div>
               <span>
                 {projects.find((p) => p.id === project)?.name ||
-                  t("Local agent workspace")}
+                  (serverStart ? t("Workspace") : t("Local agent workspace"))}
               </span>
             </div>
           </div>
-          <div className="header-actions">
+          {user && <div className="header-actions">
             {install && (
               <button
                 className="quiet"
@@ -2246,8 +2411,11 @@ function App() {
                 <PanelRightOpen size={18} />
               </button>
             )}
-          </div>
+          </div>}
         </header>
+        {serverStart ? (
+          <DesktopServerWelcome t={t} name={desktopServerName} state={desktopConnectionState} onConnect={connectServer} />
+        ) : <>
         {!!chat?.artifacts?.length && (
           <nav className="chat-artifacts" aria-label={t("Pull requests")}>
             {chat.artifacts.map((artifact) => (
@@ -2766,8 +2934,9 @@ function App() {
             </div>
           </form>
         </footer>
+        </>}
       </main>
-      {inbox.active && (
+      {user && inbox.active && (
         <DirectMessagePanel
           user={user!.id}
           self={displayUser!}
@@ -2804,7 +2973,7 @@ function App() {
           onWindowBoundsChange={rememberChatWindowBounds}
         />
       )}
-      {groupPicker !== null && (
+      {user && groupPicker !== null && (
         <PeopleGroupPicker
           key={`people-picker-${groupPicker}`}
           group={inbox.groups.find((group) => group.id === groupPicker)}
@@ -2824,7 +2993,7 @@ function App() {
           }}
         />
       )}
-      <FileSidebar
+      {user && <FileSidebar
         project={projects.find((item) => item.id === project)}
         chatID={fileChatID}
         workspace={sessionWorkspace.workspace}
@@ -2833,7 +3002,7 @@ function App() {
         workspaceError={sessionWorkspace.error}
         onRefreshWorkspace={sessionWorkspace.reload}
         active={narrowLayout ? fileSidebarMobile : panels.rightOpen}
-        mobileOpen={fileSidebarMobile}
+        mobileOpen={narrowLayout && fileSidebarMobile}
         width={panels.rightWidth}
         selection={fileSelection?.scope === fileScope ? fileSelection : null}
         t={t}
@@ -2842,14 +3011,14 @@ function App() {
         onClear={() => setFileSelection(null)}
         onClose={() => {
           setFileSidebarMobile(false);
-          setPanels((old) => ({ ...old, rightOpen: false }));
+          if (!narrowLayout) setPanels((old) => ({ ...old, rightOpen: false }));
         }}
         onResize={(width) =>
           setPanels((old) => ({ ...old, rightWidth: width }))
         }
-      />
+      />}
       {appearance}
-      {avatarOpen && (
+      {user && avatarOpen && (
         <AvatarDialog
           user={displayUser!}
           t={t}

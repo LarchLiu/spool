@@ -12,6 +12,19 @@ var desktopAppearance = mygo.NewEvent[string]("spool:appearance")
 var desktopUpdateAvailable = mygo.NewEvent[bool]("spool:update-available")
 
 const desktopWindowPreload = `Object.defineProperty(window, "spoolDesktop", {value: true});
+window.mygo?.on("spool:servers", servers => {
+  window.spoolServers = servers;
+  window.dispatchEvent(new Event("spool:servers-changed"));
+});
+window.mygo?.on("spool:server-selected", () => {
+  window.dispatchEvent(new Event("spool:server-selected"));
+});
+window.mygo?.on("spool:server-ready-ack", state => {
+  window.dispatchEvent(new CustomEvent("spool:server-ready-ack", {detail: state}));
+});
+window.mygo?.on("spool:server-state-ack", state => {
+  window.dispatchEvent(new CustomEvent("spool:server-state-ack", {detail: state}));
+});
 window.mygo?.on("spool:file-access-result", result => {
   window.dispatchEvent(new CustomEvent("spool:file-access-result", {detail: result}));
 });
@@ -107,7 +120,7 @@ func (p *panel) sendDesktopAppearance(view *mygo.WebView) {
 
 func (p *panel) broadcastDesktopAppearance() {
 	// MyGo 0.6.4 updates top-level WebView2 windows, but not embedded views.
-	for _, view := range []*mygo.WebView{p.chatView, p.settingsView} {
+	for _, view := range []*mygo.WebView{p.chatView, p.settingsView, p.serverDialog} {
 		p.sendDesktopAppearance(view)
 	}
 }

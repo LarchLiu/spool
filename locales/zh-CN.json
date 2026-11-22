@@ -1076,6 +1076,8 @@
   "After pairing, sign in with your Spool account.": "配对后，使用你的 Spool 账号登录。",
   "Confirm and connect": "确认并连接",
   "Scan pairing QR code": "扫描配对二维码",
+  "Could not read this image.": "无法读取这张图片。",
+  "No Spool pairing QR code was found in this image.": "这张图片中未找到 Spool 配对二维码。",
   "connected": "已连接",
   "reconnecting": "正在重连",
   "connecting": "正在连接",
@@ -1260,5 +1262,16 @@
   "{count} tokens": "{count} tokens",
   "{seconds}s": "{seconds} 秒",
   "{minutes}m {seconds}s": "{minutes} 分 {seconds} 秒",
-  "{hours}h {minutes}m": "{hours} 小时 {minutes} 分"
+  "{hours}h {minutes}m": "{hours} 小时 {minutes} 分",
+  "Display name (optional)": "显示名称（可选）",
+  "Leave blank to use the name from the server's settings.": "留空时使用服务器设置中的名称。",
+  "Use a display name of up to 80 characters.": "显示名称最多 80 个字符。",
+  "Delete server {name}?": "删除服务器 {name}？",
+  "Enter an HTTP or HTTPS server address without credentials, query or fragment.": "请输入 HTTP 或 HTTPS 服务器地址，不含登录信息、查询参数或片段。",
+  "Use a server origin or a public relay server URL.": "请使用服务器根地址或中继公开服务器地址。",
+  "The local server is managed in Service settings.": "本地服务请在服务设置中管理。",
+  "Server not found.": "找不到服务器。",
+  "Approve this device on the server to finish pairing.": "请在服务器端批准此设备以完成配对，并核对两端的设备指纹。",
+  "Invalid connection mode.": "连接方式无效。",
+  "Configure the selected connection before connecting.": "请先配置所选连接方式的地址或配对码。"
 }

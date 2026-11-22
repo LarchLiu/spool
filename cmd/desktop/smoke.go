@@ -188,7 +188,7 @@ func (p *panel) probeWindowChrome(ctx context.Context, view *mygo.WebView) error
 func (p *panel) probeStartupChat(ctx context.Context, report string) error {
 	ready := make(chan *mygo.WebView, 1)
 	p.window.Update(func() {
-		if p.tab != "Chat" || !p.service.Status().Running || len(mygo.Windows()) != 1 {
+		if p.tab != "Chat" || !p.service.Status().Running || p.desktopWindowCount() != 1 {
 			ready <- nil
 			return
 		}
@@ -203,7 +203,7 @@ func (p *panel) probeStartupChat(ctx context.Context, report string) error {
 	if view == nil {
 		return fmt.Errorf("desktop launch must show embedded chat with the background service running")
 	}
-	if err := waitChatScript(ctx, view.Page(), `return window.spoolDesktop === true && !!document.querySelector('input[name="password"]') && !!document.querySelector('a.desktop-settings');`); err != nil {
+	if err := openSmokeLogin(ctx, view.Page()); err != nil {
 		return err
 	}
 	if err := p.probeChatViewport(ctx, view.Page()); err != nil {
@@ -286,7 +286,7 @@ func (p *panel) probeEmbeddedChat(ctx context.Context) error {
 		p.selectTab("Chat")
 		if err := p.loadChatView(address); err != nil {
 			failure <- err
-		} else if p.chatView.Window() != p.window || len(mygo.Windows()) != 1 {
+		} else if p.chatView.Window() != p.window || p.desktopWindowCount() != 1 {
 			failure <- fmt.Errorf("chat must be embedded in the only main window")
 		} else {
 			opened <- p.chatView
@@ -303,13 +303,20 @@ func (p *panel) probeEmbeddedChat(ctx context.Context) error {
 	page := view.Page()
 	// Settings change the service port. Wait for the new document so the old
 	// login page cannot accept the draft or settings click during navigation.
-	if err := waitChatScript(ctx, page, fmt.Sprintf(`return location.origin === new URL(%q).origin && window.spoolDesktop === true && window.isSecureContext && !!document.querySelector('input[name="password"]')`, address)); err != nil {
+	if err := waitChatScript(ctx, page, fmt.Sprintf(`return location.origin === new URL(%q).origin && window.spoolDesktop === true && window.isSecureContext && (!!document.querySelector('input[name="password"]') || !!document.querySelector('.desktop-server-start'))`, address)); err != nil {
+		return err
+	}
+	if err := openSmokeLogin(ctx, page); err != nil {
 		return err
 	}
 	if err := p.probeChatViewport(ctx, page); err != nil {
 		return err
 	}
-	if _, err := page.EvalContext(ctx, `document.querySelector('input[name="username"]').value = "smoke-draft";`); err != nil {
+	if _, err := page.EvalContext(ctx, `
+		const input = document.querySelector('input[name="username"]');
+		Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'smoke-draft');
+		input.dispatchEvent(new Event('input', {bubbles: true}));
+	`); err != nil {
 		return err
 	}
 	if err := p.probeChatPresentation(ctx, page); err != nil {
@@ -337,7 +344,7 @@ func (p *panel) probeEmbeddedChat(ctx context.Context) error {
 	}
 	reopened := make(chan error, 1)
 	p.window.Update(func() {
-		if p.chatView != view || view.Window() != p.window || len(mygo.Windows()) != 1 {
+		if p.chatView != view || view.Window() != p.window || p.desktopWindowCount() != 1 {
 			reopened <- fmt.Errorf("switching back to chat created another page or window")
 			return
 		}
@@ -1296,13 +1303,24 @@ func (p *panel) probeChatViewport(ctx context.Context, page *mygo.Page) error {
 		const link = document.querySelector('a.desktop-settings');
 		const bounds = link?.getBoundingClientRect();
 		const login = !!document.querySelector('.desktop-login');
+		const sidebar = document.querySelector('.sidebar')?.getBoundingClientRect();
 		const position = login
 			? bounds?.top <= 22 && bounds?.right >= innerWidth - 22 && bounds?.left > innerWidth / 2
-			: bounds?.left <= 22 && bounds?.bottom >= innerHeight - 22 && bounds?.right < innerWidth / 2;
+			: sidebar && bounds?.left >= sidebar.left && bounds?.right <= sidebar.right && bounds?.bottom >= innerHeight - 50;
 		return Math.abs(innerWidth - %d) <= 2 && Math.abs(innerHeight - %d) <= 2 &&
-			position && getComputedStyle(link).position === 'fixed' &&
+			position &&
 			document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2)?.closest('a') === link;
 	`, width, height))
+}
+
+func openSmokeLogin(ctx context.Context, page *mygo.Page) error {
+	if err := waitChatScript(ctx, page, `return !!document.querySelector('input[name="password"]') || document.querySelector('.desktop-server-start .side-foot > .desktop-server-action')?.disabled === false;`); err != nil {
+		return err
+	}
+	if _, err := page.EvalContext(ctx, `if (!document.querySelector('input[name="password"]')) document.querySelector('.desktop-server-start .side-foot > .desktop-server-action').click();`); err != nil {
+		return err
+	}
+	return waitChatScript(ctx, page, `return !!document.querySelector('input[name="password"]');`)
 }
 
 func (p *panel) waitChatSettings(ctx context.Context, view *mygo.WebView) error {
@@ -1311,7 +1329,7 @@ func (p *panel) waitChatSettings(ctx context.Context, view *mygo.WebView) error 
 	for {
 		selected := make(chan bool, 1)
 		p.window.Update(func() {
-			selected <- p.tab == "Service" && !view.IsDestroyed() && len(mygo.Windows()) == 1
+			selected <- p.tab == "Service" && !view.IsDestroyed() && p.desktopWindowCount() == 1
 		})
 		select {
 		case ready := <-selected:

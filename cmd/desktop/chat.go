@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/url"
@@ -17,6 +18,9 @@ const desktopSessionChangedPath = "/__desktop/session-changed"
 const desktopViewPath = "/__desktop/view"
 
 func (p *panel) startOnLaunch() {
+	if p.selectedDesktopServer() != localDesktopServer {
+		p.tab = "Chat"
+	}
 	if !p.settings.AutoStart {
 		return
 	}
@@ -35,7 +39,27 @@ func (p *panel) openChat() {
 	}
 	p.selectTab("Chat")
 	p.showMainWindow()
-	if p.chatStarting {
+	id := p.selectedDesktopServer()
+	p.chatGeneration++
+	generation := p.chatGeneration
+	if id != localDesktopServer {
+		server, ok := p.servers.find(id)
+		if !ok || p.serverGateway == nil {
+			return
+		}
+		if err := p.loadChatView(p.serverGateway.url + desktopServerMount(server)); err != nil {
+			p.chatError(err)
+		}
+		return
+	}
+	if p.service.Status().Running {
+		address, err := p.service.LocalWebURL()
+		if err == nil {
+			err = p.loadChatView(address)
+		}
+		if err != nil {
+			p.chatError(err)
+		}
 		return
 	}
 	p.chatStarting = true
@@ -46,6 +70,9 @@ func (p *panel) openChat() {
 			address, err = p.service.LocalWebURL()
 		}
 		p.window.Update(func() {
+			if generation != p.chatGeneration {
+				return
+			}
 			p.chatStarting = false
 			if p.quitting {
 				return
@@ -71,24 +98,124 @@ func chatWebViewOptions() mygo.WebViewOptions {
 }
 
 func (p *panel) loadChatView(address string) error {
-	if p.devFrontend != nil {
+	if p.devFrontend != nil && p.selectedDesktopServer() == localDesktopServer {
 		address = p.devFrontend.url + "/"
 	}
+	if p.serverChats == nil {
+		p.serverChats = map[string]*desktopServerChat{}
+	}
+	id := p.selectedDesktopServer()
+	state := p.serverChats[id]
+	if state == nil {
+		state = &desktopServerChat{}
+		p.serverChats[id] = state
+	}
+	p.chatView, p.chatURL, p.chatFailed, p.chatLoaded = state.view, state.address, state.failed, state.loaded
 	if p.chatView == nil {
 		if !mygo.WebViewAvailable() {
 			return fmt.Errorf("Desktop chat requires a system WebView. Install WebView2 (Windows) or WebKitGTK (Linux), or use Open in Browser.")
 		}
-		view, err := p.window.NewWebView(chatWebViewOptions())
+		options := chatWebViewOptions()
+		tabs, _ := json.Marshal(p.desktopServerTabs())
+		options.Page.PreloadScript += "\nwindow.spoolServers = " + string(tabs) + ";"
+		view, err := p.window.NewWebView(options)
 		if err != nil {
 			return err
 		}
 		p.chatView = view
+		state.view = view
 		page := view.Page()
 		// Register guards before the first navigation. Never trust additional
 		// origins or load external content into a privileged desktop window.
 		page.OnWillNavigate(func(e *mygo.NavigateEvent) {
+			if paint, ok := desktopServerReadyNavigation(state.address, e.URL); ok {
+				e.PreventDefault()
+				p.window.Update(func() {
+					if p.quitting || p.serverChats[id] != state {
+						return
+					}
+					// Acknowledge even an outgoing page so its notification retry
+					// stops. Readiness hints can otherwise lose a navigation race
+					// with the page's session/name/status notifications.
+					_ = desktopServerReadyAck.EmitPage(view.Page(), paint)
+					// Cached background pages still report their connection health.
+					// Only presenting a page depends on the current selection token.
+					p.recordDesktopServerState(id, paint.State)
+					if paint.Selection != p.desktopSelectionToken() {
+						return
+					}
+					if p.chatView == view {
+						p.chatPresentedView = view
+						p.window.Invalidate()
+						p.setDesktopNotificationFocused(p.desktopNotificationFocused())
+						if p.tab == "Chat" && !p.serverDialogOpen {
+							view.Focus()
+						}
+					}
+				})
+				return
+			}
+			if name, ok := desktopServerNameNavigation(state.address, e.URL); ok {
+				e.PreventDefault()
+				p.window.Update(func() {
+					if p.serverChats[id] == state {
+						p.recordDesktopServerName(id, name)
+					}
+				})
+				return
+			}
+			if status, ok := desktopServerStateNavigation(state.address, e.URL); ok {
+				e.PreventDefault()
+				p.window.Update(func() {
+					if p.serverChats[id] != state {
+						return
+					}
+					p.recordDesktopServerState(id, status)
+					_ = desktopServerStateAck.EmitPage(view.Page(), status)
+				})
+				return
+			}
+			// Keep the outgoing tab bar usable while its replacement renders.
+			if selection, ok := desktopServerNavigation(state.address, e.URL); ok && (p.chatView == view || p.chatPresentedView == view) {
+				e.PreventDefault()
+				p.window.Update(func() {
+					if selection.ID == "" {
+						p.showServerDialog("")
+					} else if err := p.selectDesktopServerWithScroll(selection.ID, selection.ScrollLeft); err != nil {
+						p.showServerDialog(selection.ID)
+					}
+				})
+				return
+			}
+			if p.chatView != view {
+				e.PreventDefault()
+				return
+			}
+			if width, ok := desktopSidebarWidthNavigation(state.address, e.URL); ok {
+				e.PreventDefault()
+				p.window.Update(func() {
+					if p.chatView == view && !p.quitting {
+						if err := p.recordDesktopSidebarWidth(width); err != nil {
+							log.Printf("event=desktop_sidebar_width_failed error=%q", err)
+						}
+					}
+				})
+				return
+			}
+			if chatReservedNavigation(p.chatURL, e.URL, desktopServerConnectPath) {
+				e.PreventDefault()
+				p.window.Update(func() {
+					if err := p.connectDesktopServer(); err != nil {
+						p.showServerDialog(p.selectedDesktopServer())
+					}
+				})
+				return
+			}
 			if view, ok := desktopViewNavigation(p.chatURL, e.URL); ok {
 				e.PreventDefault()
+				if id != localDesktopServer {
+					return
+				}
 				p.window.Update(func() {
 					p.notificationChat = view.chat
 					p.setDesktopNotificationFocused(p.desktopNotificationFocused())
@@ -100,19 +227,27 @@ func (p *panel) loadChatView(address string) error {
 			}
 			if chatSessionChangedNavigation(p.chatURL, e.URL) {
 				e.PreventDefault()
-				p.window.Update(p.refreshDesktopNotificationSession)
+				if id == localDesktopServer {
+					p.window.Update(p.refreshDesktopNotificationSession)
+				}
 				return
 			}
 			if target, ok := attachmentAccessNavigation(p.chatURL, e.URL); ok {
 				e.PreventDefault()
-				if e.UserInitiated {
+				if e.UserInitiated && id == localDesktopServer {
 					p.window.Update(func() { p.chooseAttachmentAccess(target) })
 				}
 				return
 			}
 			if chatSettingsNavigation(p.chatURL, e.URL) {
 				e.PreventDefault()
-				p.window.Update(p.showControlCenter)
+				p.window.Update(func() {
+					if id == localDesktopServer {
+						p.showControlCenter()
+					} else {
+						p.showServerDialog(id)
+					}
+				})
 				return
 			}
 			if chatNavigationAllowed(p.chatURL, e.URL) {
@@ -131,40 +266,78 @@ func (p *panel) loadChatView(address string) error {
 			p.sendWindowChrome(view)
 			p.sendDesktopAppearance(view)
 			p.sendUpdateAvailability(view)
-			p.chatFailed = false
-			p.chatLoaded = true
+			state.failed, state.loaded = false, true
+			p.sendDesktopServers()
+			if p.chatView != view {
+				return
+			}
+			p.chatFailed, p.chatLoaded = false, true
 			p.setDesktopNotificationFocused(p.desktopNotificationFocused())
 			p.refreshDesktopNotificationSession()
 			p.sendSessionNotifications()
 			p.sendPendingNotification()
-			if p.tab == "Chat" {
+			if p.tab == "Chat" && p.chatPresentedView == view && !p.serverDialogOpen {
 				view.Focus()
 			}
 		})
 		page.OnDidFailLoad(func(err *mygo.LoadError) {
-			p.chatFailed = true
-			p.chatError(err)
+			state.failed = true
+			state.setStatus("error")
+			if p.chatView == view {
+				p.chatFailed = true
+				p.chatError(err)
+			}
 		})
 		page.OnRenderProcessGone(func(reason string) {
-			p.chatFailed = true
-			p.chatError(fmt.Errorf("%s: %s", p.tr("Chat renderer stopped. Reopen Chat to reload."), reason))
+			state.failed = true
+			state.setStatus("error")
+			if p.chatView == view {
+				p.chatFailed = true
+				p.chatError(fmt.Errorf("%s: %s", p.tr("Chat renderer stopped. Reopen Chat to reload."), reason))
+			}
 		})
 	}
 	if p.chatURL != address || p.chatFailed {
 		p.chatLoaded = false
 		p.setDesktopNotificationFocused(p.desktopNotificationFocused())
 		p.chatURL = address
+		state.address, state.loaded, state.failed = address, false, false
+		state.setStatus("connecting")
 		p.chatFailed = false
 		if err := p.chatView.Page().LoadURL(address); err != nil {
 			p.chatFailed = true
 			return err
 		}
 	}
+	p.sendWindowChrome(p.chatView)
+	p.sendDesktopAppearance(p.chatView)
+	p.sendUpdateAvailability(p.chatView)
+	p.sendDesktopServers()
+	p.window.Invalidate()
+	if p.tab == "Chat" && p.chatPresentedView == p.chatView && !p.serverDialogOpen {
+		p.chatView.Focus()
+	}
+	p.setDesktopNotificationFocused(p.desktopNotificationFocused())
+	if p.selectedDesktopServer() == localDesktopServer {
+		p.sendSessionNotifications()
+		p.sendPendingNotification()
+	}
 	return nil
 }
 
 func (p *panel) chatContent(c *ui.Context) {
 	if p.chatView != nil {
+		if p.chatPresentedView != nil && p.chatPresentedView != p.chatView {
+			// Both native views get a full frame. The outgoing page stays on top
+			// until React has rendered the incoming shell and signalled ready.
+			ui.Box(c).Fill().Children(func() {
+				c.Key("incoming-chat")
+				ui.WebView(c, p.chatView).Absolute().Top(0).Right(0).Bottom(0).Left(0)
+				c.Key("presented-chat")
+				ui.WebView(c, p.chatPresentedView).Absolute().Top(0).Right(0).Bottom(0).Left(0)
+			})
+			return
+		}
 		ui.WebView(c, p.chatView).Fill()
 		return
 	}
@@ -204,7 +377,12 @@ func (p *panel) showMainWindow() {
 
 func (p *panel) showControlCenter() {
 	if p.tab == "Chat" {
-		p.selectTab("Service")
+		if p.selectedDesktopServer() == localDesktopServer {
+			p.selectTab("Service")
+		} else {
+			p.showServerDialog(p.selectedDesktopServer())
+			return
+		}
 	}
 	p.showMainWindow()
 }
@@ -212,7 +390,12 @@ func (p *panel) showControlCenter() {
 func (p *panel) chatError(err error) {
 	log.Printf("event=desktop_chat_failed error=%q", err)
 	p.window.Update(func() {
-		p.selectTab("Service")
+		if p.selectedDesktopServer() == localDesktopServer {
+			p.selectTab("Service")
+		} else {
+			p.showServerDialog(p.selectedDesktopServer())
+			return
+		}
 		p.message = p.tr("Could not open desktop chat.") + " " + p.tr(err.Error())
 		p.showControlCenter()
 	})
@@ -230,8 +413,15 @@ func (p *panel) openChatLink(address string) {
 }
 
 func (p *panel) openBrowser() {
+	address := p.service.WebURL()
+	if server, ok := p.servers.find(p.selectedDesktopServer()); ok && server.ID != localDesktopServer {
+		address = server.Address
+		if p.serverGateway != nil && (server.Mode == "tailscale" || server.Mode == "relay") {
+			address = p.serverGateway.url + desktopServerMount(server)
+		}
+	}
 	go func() {
-		if err := mygo.Shell.OpenExternal(p.service.WebURL()); err != nil {
+		if err := mygo.Shell.OpenExternal(address); err != nil {
 			p.chatError(err)
 		}
 	}()

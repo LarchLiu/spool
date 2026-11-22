@@ -19,6 +19,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"spool"
+	"spool/android/transport/spoolnet"
 	"spool/internal/adbbridge"
 	"spool/internal/appupdate"
 	"spool/internal/diagnostics"
@@ -31,6 +32,7 @@ type panel struct {
 	window                 *mygo.Window
 	windowChrome           windowChrome
 	chatView               *mygo.WebView
+	chatPresentedView      *mygo.WebView
 	chatURL                string
 	chatFailed             bool
 	chatLoaded             bool
@@ -39,6 +41,18 @@ type panel struct {
 	settingsView           *mygo.WebView
 	settingsFailed         bool
 	devFrontend            *desktopDevFrontend
+	servers                desktopServers
+	serversPath            string
+	serverGateway          *desktopServerGateway
+	serverChats            map[string]*desktopServerChat
+	serverTabTransition    *desktopTabTransition
+	chatGeneration         uint64
+	serverNetworks         *desktopServerNetworks
+	serverDialog           *mygo.WebView
+	serverDialogID         string
+	serverDialogRequested  bool
+	serverDialogOpen       bool
+	serverPairing          *spoolnet.PairingSession
 	quitting               bool
 	tray                   *mygo.Tray
 	logo                   *ui.Bitmap
@@ -105,16 +119,17 @@ func runDesktop() (runErr error) {
 	// app owns the database. Generation must not start services or acquire locks.
 	if os.Getenv("MYGO_GENERATE") != "" {
 		mygo.BindAs("DesktopSettings", &desktopSettings{})
+		mygo.BindAs("DesktopServers", &desktopServerSettings{})
 		return mygo.App.Run()
 	}
 	development := mygo.IsDev()
 	root := flag.String("data-dir", workspace.DefaultDataDir(development), "Data directory (database in db/spool.sqlite)")
 	smoke := flag.String("release-smoke", "", "Probe the packaged desktop using fresh temporary data; write a JSON report")
-	smokeProbe := flag.String("smoke-probe", "", "Run only the notifications native probe (requires --release-smoke)")
+	smokeProbe := flag.String("smoke-probe", "", "Run only the notifications or servers native probe (requires --release-smoke)")
 	smokeHistoryPath := flag.String("smoke-release-history", "", "ReleaseHistory JSON fixture for --release-smoke screenshots only")
 	flag.Parse()
-	if *smokeProbe != "" && (*smoke == "" || *smokeProbe != "notifications") {
-		return fmt.Errorf("--smoke-probe only accepts notifications and requires --release-smoke")
+	if *smokeProbe != "" && (*smoke == "" || (*smokeProbe != "notifications" && *smokeProbe != "servers")) {
+		return fmt.Errorf("--smoke-probe only accepts notifications or servers and requires --release-smoke")
 	}
 	var smokeHistory *appupdate.ReleaseHistory
 	if *smokeHistoryPath != "" {
@@ -198,6 +213,11 @@ func runDesktop() (runErr error) {
 	}
 	defer devFrontend.close()
 	p := &panel{service: service, devFrontend: devFrontend, tab: "Service", project: workspace.Project{AllowExternalFiles: true}, members: map[string]bool{}, agentPaths: map[chatmodel.Backend]string{}, agentEnabled: map[chatmodel.Backend]bool{}}
+	if err = p.prepareDesktopServers(); err != nil {
+		return err
+	}
+	defer p.serverGateway.close()
+	defer p.serverNetworks.close()
 	if *smoke != "" {
 		// Release probes must not change the installed app's Notification Center.
 		p.notificationClear = func() {}
@@ -221,6 +241,7 @@ func runDesktop() (runErr error) {
 		return err
 	}
 	mygo.BindAs("DesktopSettings", &desktopSettings{panel: p})
+	mygo.BindAs("DesktopServers", &desktopServerSettings{panel: p})
 	mygo.Theme.SetSource(mygo.ThemeSource(p.preferences.Theme))
 	p.startOnLaunch()
 	done := make(chan struct{})
@@ -235,6 +256,11 @@ func runDesktop() (runErr error) {
 		close(done)
 		p.updates.Close()
 		devFrontend.close()
+		p.serverGateway.close()
+		if p.serverPairing != nil {
+			p.serverPairing.Close()
+		}
+		p.serverNetworks.close()
 		// MyGo relaunches after OnQuit, before main's deferred cleanup.
 		if err := service.Close(); err != nil {
 			shutdownErr = err
@@ -275,14 +301,9 @@ func runDesktop() (runErr error) {
 			p.message = err.Error()
 			log.Printf("event=desktop_settings_failed error=%q", err)
 		}
+		p.prepareServerDialog()
 		if p.tab == "Chat" {
-			address, err := service.LocalWebURL()
-			if err == nil {
-				err = p.loadChatView(address)
-			}
-			if err != nil {
-				p.chatError(err)
-			}
+			p.openChat()
 		}
 		if p.pendingNotification != nil {
 			p.openChat()
@@ -324,6 +345,8 @@ func runDesktop() (runErr error) {
 			p.window.Show()
 			if *smokeProbe == "notifications" {
 				go p.smokeNotificationsOnly(*smoke, smokeResult)
+			} else if *smokeProbe == "servers" {
+				go p.smokeServersOnly(*smoke, smokeResult)
 			} else {
 				go p.smoke(*smoke, smokeResult, smokeHistory)
 			}
@@ -373,6 +396,7 @@ func (p *panel) load() {
 		p.refreshDesktopNotificationSession()
 	}
 	p.settings, _ = p.service.Store.Settings()
+	p.sendDesktopServers()
 	p.port = strconv.Itoa(p.settings.Port)
 	p.idle = strconv.Itoa(p.settings.IdleMinutes)
 	p.historyCache = strconv.Itoa(p.settings.HistoryCacheMiB)
@@ -412,6 +436,19 @@ func (p *panel) action(fn func() error) {
 	}()
 }
 func (p *panel) view(c *ui.Context) {
+	if p.serverDialogRequested && !p.serverDialogOpen && p.serverDialog != nil {
+		// Give the editor its final size behind the workspace so its first
+		// native backing frame is ready before the modal is revealed.
+		width, height := c.Size()
+		w, h := min(560, width-40), min(660, height-40)
+		c.Key("preparing-server-settings")
+		ui.WebView(c, p.serverDialog).Absolute().Left((width-w)/2).Top((height-h)/2).Size(w, h)
+	}
+	p.mainContent(c)
+	p.serverDialogContent(c)
+}
+
+func (p *panel) mainContent(c *ui.Context) {
 	if p.tab == "Chat" {
 		p.syncWindowChrome(c.TitleBar())
 		p.chatContent(c)

@@ -131,22 +131,22 @@ func (p *panel) setDesktopNotificationFocused(focused bool) {
 	}
 	chat := p.viewedDesktopNotificationChat(focused)
 	if p.notificationEvents != nil {
-		p.notificationEvents.SetView(focused, chat)
+		p.notificationEvents.SetView(focused && p.selectedDesktopServer() == localDesktopServer, chat)
 	}
-	if !p.quitting && p.chatView != nil && p.chatLoaded && !p.chatFailed {
+	if !p.quitting && p.selectedDesktopServer() == localDesktopServer && p.chatView != nil && p.chatLoaded && !p.chatFailed {
 		_ = desktopSessionView.EmitPage(p.chatView.Page(), chat)
 	}
 }
 
 func (p *panel) viewedDesktopNotificationChat(focused bool) string {
-	if focused && p.tab == "Chat" && p.chatLoaded && !p.chatFailed {
+	if focused && p.selectedDesktopServer() == localDesktopServer && p.tab == "Chat" && p.chatLoaded && !p.chatFailed {
 		return p.notificationChat
 	}
 	return ""
 }
 
 func (p *panel) suppressDesktopNotification(note workspace.DesktopNotification) bool {
-	if !p.desktopNotificationFocused() {
+	if !p.desktopNotificationFocused() || p.selectedDesktopServer() != localDesktopServer {
 		return false
 	}
 	return note.ChatID == "" || note.ChatID == p.viewedDesktopNotificationChat(true)
@@ -312,7 +312,7 @@ func (p *panel) applyDesktopNotificationSession(identity desktopNotificationSess
 }
 
 func (p *panel) sendSessionNotifications() {
-	if p.quitting || p.chatView == nil || !p.chatLoaded || p.chatFailed {
+	if p.quitting || p.selectedDesktopServer() != localDesktopServer || p.chatView == nil || !p.chatLoaded || p.chatFailed {
 		return
 	}
 	for len(p.sessionNotifications) > 0 {
@@ -333,12 +333,18 @@ func (p *panel) openSystemNotification(id string) {
 	if p.window == nil {
 		return
 	}
+	if p.selectedDesktopServer() != localDesktopServer {
+		if err := p.selectDesktopServer(localDesktopServer); err != nil {
+			p.chatError(err)
+		}
+		return
+	}
 	p.openChat()
 	p.sendPendingNotification()
 }
 
 func (p *panel) sendPendingNotification() {
-	if p.pendingNotification == nil || p.chatView == nil || p.chatFailed || !p.chatLoaded {
+	if p.selectedDesktopServer() != localDesktopServer || p.pendingNotification == nil || p.chatView == nil || p.chatFailed || !p.chatLoaded {
 		return
 	}
 	if desktopNotificationOpen.EmitPage(p.chatView.Page(), *p.pendingNotification) == nil {

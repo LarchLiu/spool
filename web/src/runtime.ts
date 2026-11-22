@@ -18,6 +18,201 @@ export function isDesktopChat(
 }
 
 export const desktopSettingsPath = "/__desktop/settings";
+export const desktopServersPath = "/__desktop/servers";
+export const desktopServerConnectPath = "/__desktop/server-connect";
+export const desktopServerReadyPath = "/__desktop/server-ready";
+export const desktopSidebarWidthPath = "/__desktop/sidebar-width";
+
+export type DesktopServerStatus =
+  "connected" | "connecting" | "login" | "error" | "disconnected";
+export type DesktopServerTabsSnapshot = {
+  sidebar_width?: number;
+  selection?: string;
+  transition?: { from: string; started_at: number; scroll_left?: number };
+  entries: {
+    id: string;
+    name: string;
+    local: boolean;
+    status: DesktopServerStatus;
+  }[];
+  selected: string;
+};
+const emptyDesktopServers: DesktopServerTabsSnapshot = {
+  entries: [],
+  selected: "local",
+};
+
+export function desktopServers(
+  surface: unknown = globalThis,
+): DesktopServerTabsSnapshot {
+  if (!isDesktopChat(surface) || !("spoolServers" in surface))
+    return emptyDesktopServers;
+  const value = surface.spoolServers as DesktopServerTabsSnapshot | undefined;
+  return value &&
+    Array.isArray(value.entries) &&
+    value.entries.every(
+      (server) =>
+        server &&
+        typeof server.id === "string" &&
+        typeof server.name === "string" &&
+        typeof server.local === "boolean" &&
+        ["connected", "connecting", "login", "error", "disconnected"].includes(
+          server.status,
+        ),
+    ) &&
+    typeof value.selected === "string"
+    ? value
+    : emptyDesktopServers;
+}
+
+export function subscribeDesktopServers(
+  listener: () => void,
+  surface: unknown = globalThis,
+): () => void {
+  return subscribeDesktopEvent("spool:servers-changed", listener, surface);
+}
+
+export function selectDesktopServer(
+  id: string,
+  surface: unknown = globalThis,
+  scrollLeft = 0,
+): void {
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) return;
+  if (!Number.isFinite(scrollLeft) || scrollLeft < 0 || scrollLeft > 1e7) return;
+  desktopNavigationHint(
+    desktopServersPath +
+      "?" +
+      new URLSearchParams({ id, scroll_left: String(scrollLeft) }),
+    surface,
+  );
+}
+
+export function subscribeDesktopServerSelection(
+  listener: () => void,
+  surface: unknown = globalThis,
+): () => void {
+  return subscribeDesktopEvent("spool:server-selected", listener, surface);
+}
+
+export function notifyDesktopServerState(
+  state: DesktopServerStatus,
+  surface: unknown = globalThis,
+): void {
+  desktopNavigationHint(
+    "/__desktop/server-state?" + new URLSearchParams({ state }),
+    surface,
+  );
+}
+
+export function reportDesktopServerState(
+  state: DesktopServerStatus,
+  surface: unknown = globalThis,
+): () => void {
+  if (!isDesktopChat(surface)) return () => {};
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  const unsubscribe = subscribeDesktopEvent(
+    "spool:server-state-ack",
+    (event) => {
+      if ((event as CustomEvent).detail === state) stop();
+    },
+    surface,
+  );
+  const stop = () => {
+    stopped = true;
+    clearTimeout(retry);
+    unsubscribe();
+  };
+  const notify = () => {
+    if (stopped) return;
+    notifyDesktopServerState(state, surface);
+    if (!stopped) retry = setTimeout(notify, 100);
+  };
+  // Cached native pages can suspend animation frames. Report health without
+  // waiting for paint, and retry navigation hints until native receives one.
+  notify();
+  return stop;
+}
+
+export function connectDesktopServer(surface: unknown = globalThis): void {
+  desktopNavigationHint(desktopServerConnectPath, surface);
+}
+
+export function notifyDesktopServerReady(
+  state: DesktopServerStatus,
+  selection: string,
+  surface: unknown = globalThis,
+): void {
+  desktopNavigationHint(
+    desktopServerReadyPath + "?" + new URLSearchParams({ state, selection }),
+    surface,
+  );
+}
+
+export function subscribeDesktopServerReadyAck(
+  listener: (paint: { state: DesktopServerStatus; selection: string }) => void,
+  surface: unknown = globalThis,
+): () => void {
+  return subscribeDesktopEvent(
+    "spool:server-ready-ack",
+    (event) => {
+      const paint: unknown = (event as CustomEvent).detail;
+      if (
+        !paint ||
+        typeof paint !== "object" ||
+        !("state" in paint) ||
+        !("selection" in paint) ||
+        typeof paint.selection !== "string"
+      )
+        return;
+      const state = paint.state;
+      if (
+        state === "connected" ||
+        state === "connecting" ||
+        state === "login" ||
+        state === "error" ||
+        state === "disconnected"
+      )
+        listener({ state, selection: paint.selection });
+    },
+    surface,
+  );
+}
+
+export function notifyDesktopSidebarWidth(
+  width: number,
+  surface: unknown = globalThis,
+): void {
+  if (!Number.isFinite(width) || width < 220 || width > 480) return;
+  desktopNavigationHint(
+    desktopSidebarWidthPath +
+      "?" +
+      new URLSearchParams({ width: String(Math.round(width)) }),
+    surface,
+  );
+}
+
+export function desktopSidebarWidth(
+  snapshot: DesktopServerTabsSnapshot,
+): number {
+  const width = snapshot.sidebar_width;
+  return typeof width === "number" &&
+    Number.isFinite(width) &&
+    width >= 220 &&
+    width <= 480
+    ? width
+    : 298;
+}
+
+export function notifyDesktopServerName(
+  name: string,
+  surface: unknown = globalThis,
+): void {
+  desktopNavigationHint(
+    "/__desktop/server-name?" + new URLSearchParams({ name }),
+    surface,
+  );
+}
 
 // This carries no identity. Native code rereads and validates its HTTPOnly
 // cookie after the chat has completed a login, logout or initial session load.

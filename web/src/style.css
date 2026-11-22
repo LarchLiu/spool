@@ -1,3 +1,5 @@
+@import "./segmented-tabs.css";
+
 :root {
   font-family:
     system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -569,12 +571,28 @@ button:disabled {
   z-index: 2;
   background: var(--sidebar);
 }
-.desktop-login > .desktop-settings-corner {
-  left: auto;
-  bottom: auto;
-  right: 20px;
+.desktop-login .login-panel {
+  position: relative;
+  padding-top: 80px;
+}
+.desktop-login-header {
+  position: absolute;
   top: 20px;
+  inset-inline: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
   z-index: 13;
+}
+.desktop-login-header > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
 }
 .desktop-login .login-story {
   --login-story-inset: 48px;
@@ -4933,3 +4951,84 @@ option {
 }
 
 .custom-select-menu[data-descriptions="true"] button > span { white-space: normal; overflow-wrap: anywhere; }
+
+/* Server selection stays available while connecting and before sign-in. */
+.desktop-server-tabs {
+  --tab-height: 32px;
+  margin: 6px;
+  padding: 3px;
+}
+.desktop-server-tabs .desktop-server-add {
+  width: var(--tab-height);
+  height: var(--tab-height);
+  flex: 0 0 var(--tab-height);
+  border: 1px solid transparent;
+  border-radius: 50%;
+}
+.desktop-server-tabs .desktop-server-add:hover {
+  border-color: var(--border-strong);
+  background: var(--elevated);
+}
+.server-status-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.server-status-dot[data-state="connected"],
+.server-status-dot[data-state="login"] {
+  background: #22a06b;
+}
+.server-status-dot[data-state="connecting"] {
+  background: #d99b20;
+}
+.server-status-dot[data-state="error"] {
+  background: #e05252;
+}
+.desktop-server-welcome {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 40px;
+  text-align: center;
+  color: var(--muted);
+}
+.desktop-server-welcome h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: 24px;
+  overflow-wrap: anywhere;
+}
+.desktop-server-welcome p {
+  margin: 0;
+  font-size: 13px;
+}
+.desktop-server-welcome > button {
+  justify-content: center;
+  width: auto;
+  min-width: 96px;
+  padding-inline: 24px;
+}
+.side-foot > .desktop-server-action:not(.icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--elevated);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.side-foot > .desktop-server-action:not(.icon):hover:not(:disabled) {
+  background: var(--hover);
+}
+.server-action-spinner {
+  animation: spin 1.1s linear infinite;
+}

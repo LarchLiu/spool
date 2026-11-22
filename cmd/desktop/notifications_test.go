@@ -202,6 +202,7 @@ func TestDesktopNotificationFocusDefaultsToNativeAndSupportsIsolatedProbes(t *te
 func TestDesktopNotificationPresentationFollowsViewedSession(t *testing.T) {
 	for _, test := range []struct {
 		name, tab, viewed, notified string
+		server                      string
 		read                        string
 		focused, loaded, failed     bool
 		suppressed                  bool
@@ -214,9 +215,12 @@ func TestDesktopNotificationPresentationFollowsViewedSession(t *testing.T) {
 		{name: "failed renderer", tab: "Chat", viewed: "chat-current", notified: "chat-current", focused: true, loaded: true, failed: true},
 		{name: "foreground message", tab: "Chat", viewed: "chat-current", read: "chat-current", focused: true, loaded: true, suppressed: true},
 		{name: "background message", tab: "Chat", viewed: "chat-current", loaded: true},
+		{name: "remote server foreground", server: "remote-1234", tab: "Chat", viewed: "chat-current", notified: "chat-current", focused: true, loaded: true},
+		{name: "remote server foreground message", server: "remote-1234", tab: "Chat", viewed: "chat-current", focused: true, loaded: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			p := &panel{tab: test.tab, chatLoaded: test.loaded, chatFailed: test.failed, notificationChat: test.viewed, notificationFocused: func() bool { return test.focused }}
+			p.servers.Selected = test.server
 			if got := p.viewedDesktopNotificationChat(test.focused); got != test.read {
 				t.Fatalf("read session = %q, want %q", got, test.read)
 			}

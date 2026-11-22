@@ -19,6 +19,12 @@ export default defineConfig({
   build: {
     outDir: "../frontend",
     emptyOutDir: true,
-    rollupOptions: { input: { chat: "index.html", desktop: "desktop.html" } },
+    rollupOptions: {
+      input: {
+        chat: "index.html",
+        desktop: "desktop.html",
+        servers: "servers.html",
+      },
+    },
   },
 });

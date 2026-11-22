@@ -2,6 +2,8 @@ module spool
 
 replace spool/relay => ./relay
 
+replace spool/android/transport => ./android/transport
+
 go 1.27.3
 
 require (
@@ -22,6 +24,7 @@ require (
 	golang.org/x/net v0.62.0
 	golang.org/x/sys v0.49.0
 	modernc.org/sqlite v1.61.0
+	spool/android/transport v0.0.0
 	spool/relay v0.0.0
 	tailscale.com v1.104.4
 )

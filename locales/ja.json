@@ -1076,6 +1076,8 @@
   "After pairing, sign in with your Spool account.": "After pairing, sign in with your Spool account.",
   "Confirm and connect": "Confirm and connect",
   "Scan pairing QR code": "Scan pairing QR code",
+  "Could not read this image.": "この画像を読み取れませんでした。",
+  "No Spool pairing QR code was found in this image.": "この画像に Spool のペアリングQRコードが見つかりませんでした。",
   "connected": "connected",
   "reconnecting": "reconnecting",
   "connecting": "connecting",
@@ -1260,5 +1262,16 @@
   "{count} tokens": "{count} トークン",
   "{seconds}s": "{seconds} 秒",
   "{minutes}m {seconds}s": "{minutes} 分 {seconds} 秒",
-  "{hours}h {minutes}m": "{hours} 時間 {minutes} 分"
+  "{hours}h {minutes}m": "{hours} 時間 {minutes} 分",
+  "Display name (optional)": "表示名（任意）",
+  "Leave blank to use the name from the server's settings.": "空欄の場合、サーバー設定の名前を使用します。",
+  "Use a display name of up to 80 characters.": "表示名は80文字以内で入力してください。",
+  "Delete server {name}?": "サーバー {name} を削除しますか？",
+  "Enter an HTTP or HTTPS server address without credentials, query or fragment.": "認証情報、クエリ、フラグメントを含まない HTTP または HTTPS アドレスを入力してください。",
+  "Use a server origin or a public relay server URL.": "サーバーのルートアドレスまたは公開リレー URL を使用してください。",
+  "The local server is managed in Service settings.": "ローカルサーバーはサービス設定で管理します。",
+  "Server not found.": "サーバーが見つかりません。",
+  "Approve this device on the server to finish pairing.": "サーバー側でこのデバイスを承認し、両端のフィンガープリントを確認してください。",
+  "Invalid connection mode.": "接続方式が無効です。",
+  "Configure the selected connection before connecting.": "接続する前に、選択した接続のアドレスまたはペアリングコードを設定してください。"
 }

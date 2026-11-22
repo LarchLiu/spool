@@ -22,7 +22,12 @@ export function mockDesktopNavigation() {
       if (source !== id) return;
       return `export * from ${JSON.stringify(runtime)};
 export async function notifyDesktopSessionChanged() {}
-export async function notifyDesktopViewChanged() {}`;
+export async function notifyDesktopViewChanged() {}
+export function notifyDesktopServerState() {}
+export function reportDesktopServerState() { return () => {}; }
+export function notifyDesktopServerReady(state, selection) { window.dispatchEvent(new CustomEvent('spool:server-ready-ack', {detail: {state, selection}})); }
+export function notifyDesktopSidebarWidth() {}
+export function notifyDesktopServerName() {}`;
     },
   };
 }

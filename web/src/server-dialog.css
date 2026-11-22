@@ -1,0 +1,176 @@
+.server-dialog-shell {
+  display: block;
+  height: 100dvh;
+  overflow: auto;
+  padding: 18px;
+}
+.server-editor {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.server-dialog-shell .settings-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+  min-height: 46px;
+  padding: 10px 12px;
+}
+.server-dialog-shell .settings-row-control {
+  flex-shrink: 0;
+  max-width: 48%;
+  margin-left: auto;
+}
+.server-dialog-shell .settings-row-control > input {
+  width: 208px;
+  max-width: 100%;
+}
+.server-name-field {
+  border-bottom: 1px solid var(--settings-divider);
+}
+.server-name-field > .settings-row {
+  border-bottom: 0;
+  padding-bottom: 8px;
+}
+.server-name-field > p {
+  margin: 0;
+  padding: 0 12px 10px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.server-delete-confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+.server-delete-confirm p {
+  flex-basis: 100%;
+}
+.server-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.server-dialog-header h1 {
+  margin: 0;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+.server-dialog-header p {
+  margin: 3px 0 0;
+  color: var(--muted);
+}
+.server-dialog-header > .icon {
+  margin-left: auto;
+  align-self: flex-start;
+}
+.server-dialog-symbol {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--soft);
+}
+.server-dialog-connections {
+  margin-top: 18px;
+}
+.server-dialog-connections h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+.server-dialog-connections > .settings-row {
+  min-height: 40px;
+  padding: 6px 0 10px;
+  border-bottom: 0;
+}
+.server-connection-tabs {
+  --tab-height: 32px;
+  --tab-font-size: 11px;
+  --tab-min-width: 0px;
+  --tab-max-width: none;
+  --tab-padding: 6px;
+  --tab-gap: 6px;
+  margin-bottom: 10px;
+}
+.server-connection-tabs .segmented-tab {
+  flex: 1;
+}
+.server-connection-field {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+.server-connection-field input {
+  width: 100%;
+}
+.server-connection-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+.server-dialog-shell .server-connection-use {
+  grid-column: 2;
+  min-width: 112px;
+  max-width: 100%;
+  background: var(--soft);
+  white-space: nowrap;
+}
+.server-connection-tools {
+  display: flex;
+  justify-self: end;
+  align-items: center;
+  gap: 2px;
+}
+.server-connection-tools .icon {
+  width: 28px;
+  height: 28px;
+  padding: 4px;
+}
+.server-connection-information {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.server-connection-information h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+.server-connection-information p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.server-connection-information p + p {
+  margin-top: 8px;
+}
+.server-dialog-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  margin-top: 18px;
+  padding-top: 12px;
+}
+.server-dialog-footer .danger {
+  margin-left: auto;
+}
+.server-pairing-status {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+  overflow-wrap: anywhere;
+}

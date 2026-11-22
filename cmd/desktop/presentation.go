@@ -56,6 +56,7 @@ func (p *panel) windowTitle() string {
 func (p *panel) trayMenu() *mygo.Menu {
 	return mygo.NewMenu([]*mygo.MenuItem{
 		{Label: p.tr("Open Chat"), Click: func(*mygo.MenuItem, *mygo.Window) { p.openChat() }},
+		{Label: p.tr("Add server"), Click: func(*mygo.MenuItem, *mygo.Window) { p.showServerDialog("") }},
 		{Label: p.tr("Open in Browser"), Click: func(*mygo.MenuItem, *mygo.Window) { p.openBrowser() }},
 		{Label: p.tr("Settings…"), Click: func(*mygo.MenuItem, *mygo.Window) { p.showControlCenter() }},
 		{Label: p.tr("Check for updates"), Click: func(*mygo.MenuItem, *mygo.Window) {
