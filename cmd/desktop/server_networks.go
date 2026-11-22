@@ -157,7 +157,7 @@ func (t desktopNetworkTransport) RoundTrip(r *http.Request) (*http.Response, err
 }
 
 func (n *desktopServerNetworks) reachable(ctx context.Context, server desktopServer) bool {
-	request, err := http.NewRequestWithContext(ctx, "GET", server.Address+"healthz", nil)
+	request, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(server.Address, "/")+"/healthz", nil)
 	if err != nil {
 		return false
 	}

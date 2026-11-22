@@ -12,9 +12,9 @@ import {
 } from "./runtime";
 
 const labels: Record<DesktopServerStatus, MessageKey> = {
-  connected: "Connected",
+  connected: "Connected · Signed in",
   connecting: "Connecting…",
-  login: "Sign-in required",
+  login: "Connected · Sign-in required",
   error: "Connection failed",
   disconnected: "Disconnected",
 };

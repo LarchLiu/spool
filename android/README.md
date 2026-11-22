@@ -117,7 +117,10 @@ as the PWA (for example `https://chat.example.com`, with an optional port and no
 path). Its reverse proxy must support WebSocket and unbuffered SSE, as described
 in the [Web/PWA setup](../docs/deployment.md#webpwa-and-https).
 
-Enabled servers retain independent connections, sessions and embedded nodes.
+At startup and after a restart, all enabled servers connect automatically,
+including tabs that have never been selected and when the selected tab is disabled.
+Disabled servers make no connection attempts. Selecting a tab only chooses the
+workspace to display. Enabled servers retain independent connections, sessions and embedded nodes.
 Each server has exactly one live network entry. A network handoff closes the old
 client/node before opening the replacement; if the replacement fails, recovery
 tries the next configured entry without keeping two routes alive.
@@ -149,7 +152,8 @@ permissions and never authenticates workspace requests. Explicit logout or an
 authentication rejection clears it; network errors and failed/malformed session
 reads retain it. Once a starting tsnet route becomes HTTPS-ready, `/me` restores
 that route's login and reloads workspace metadata independently of network status.
-Network status dots reflect connectivity independently of Spool authentication.
+Status dots distinguish verified connectivity from Spool authentication and live
+workspace readiness; a cached display account does not establish a login.
 The tsnet information popup contains only node, path, latency and HTTPS details;
 Spool login and session recovery are handled separately in the footer.
 Health/session checks and node notifications update the connecting page and existing settings controls
@@ -157,9 +161,14 @@ in place. An open information popup remains anchored and refreshes its contents
 through retries and session recovery. The active connection-mode tab shows the
 same connection-status dot as the current server tab; the action button contains
 only its Connect/Disconnect label.
-Sidebar tabs show a colored dot before each server name: green for connected,
-yellow for network setup or Tailscale node authorization, red for a network error and gray for disconnected
-or disabled. Explanations and Tailscale path/latency/HTTPS diagnostics open from
+Sidebar tabs show a colored dot before each server name: green for signed-in
+servers with a ready workspace WebSocket, blue for reachable servers requiring
+Spool sign-in, yellow for connection/session setup or Tailscale node authorization,
+red for a failed health check or interrupted WebSocket, and gray for disconnected
+or disabled servers. Accessible labels explain connection and sign-in state.
+The first failed check or socket interruption updates the dot immediately;
+successful health alone cannot turn an interrupted authenticated socket green.
+Explanations and Tailscale path/latency/HTTPS diagnostics open from
 the information icons beside their titles and update while the popup is visible.
 Theme/language preferences are separate, under the palette icon immediately
 before the sidebar close button. The per-server
@@ -2375,8 +2384,8 @@ non-VPN network for its embedded node.
 
 A missing peer/path sample does not establish a disconnect. HTTPS success is
 authoritative even when local status is temporarily unavailable. A single
-transient HTTPS/status failure marks the sample as failed but does not discard
-previous availability. Two consecutive failures mark it unavailable and request
+transient HTTPS/status failure turns the status dot red while the recovery
+supervisor retains previous availability. Two consecutive failures mark it unavailable and request
 a network refresh. At least three consecutive network/backend failures spanning
 30 seconds trigger a refresh of ordinary connections in Public HTTPS mode, or a
 bounded `WantRunning=false/true` cycle on the existing

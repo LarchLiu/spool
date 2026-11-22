@@ -84,8 +84,9 @@ test("server tabs receive native display names and preserve the selected server 
   assert.match(html, /自定义 &amp; &lt;Home&gt;/);
   assert.match(
     html,
-    /aria-current="page"[^>]*title="自定义 &amp; &lt;Home&gt; · Sign-in required"/,
+    /aria-current="page"[^>]*title="自定义 &amp; &lt;Home&gt; · Connected · Sign-in required"/,
   );
+  assert.match(html, /aria-label="本机的名称, Connected · Signed in"/);
   assert.match(html, /href="\/__desktop\/servers"[^>]*aria-label="Add server"/);
   assert.doesNotMatch(html, /Local server/);
   delete globalThis.spoolDesktop;
@@ -138,10 +139,10 @@ test("selection and metadata use display-only navigation hints", () => {
   notifyDesktopSidebarWidth(328, surface);
   assert.deepEqual(calls, [
     "/__desktop/servers?id=remote-1234&scroll_left=0",
-    "/__desktop/server-state?state=connected",
+    "/__desktop/server-state?state=connected&authenticated=true",
     "/__desktop/server-name?name=%E5%AE%B6%E9%87%8C%E7%9A%84+%26+work",
     "/__desktop/server-connect",
-    "/__desktop/server-ready?state=login&selection=local%3A0",
+    "/__desktop/server-ready?state=login&selection=local%3A0&authenticated=false",
     "/__desktop/sidebar-width?width=328",
   ]);
   selectDesktopServer("remote&id=local", surface);
@@ -170,18 +171,18 @@ test("connection health retries without animation frames until native acknowledg
       calls.push(url);
       surface.dispatchEvent(
         new CustomEvent("spool:server-state-ack", {
-          detail: calls.length === 1 ? "connected" : "error",
+          detail: { state: calls.length === 1 ? "connected" : "error", authenticated: false },
         }),
       );
     },
   };
   const stop = reportDesktopServerState("error", surface);
   t.after(stop);
-  assert.deepEqual(calls, ["/__desktop/server-state?state=error"]);
+  assert.deepEqual(calls, ["/__desktop/server-state?state=error&authenticated=false"]);
   await new Promise((resolve) => setTimeout(resolve, 250));
   assert.deepEqual(calls, [
-    "/__desktop/server-state?state=error",
-    "/__desktop/server-state?state=error",
+    "/__desktop/server-state?state=error&authenticated=false",
+    "/__desktop/server-state?state=error&authenticated=false",
   ]);
 });
 
@@ -194,7 +195,30 @@ test("connection health stops retrying when its page or state is retired", async
   stop();
   reportDesktopServerState("login", new EventTarget())();
   await new Promise((resolve) => setTimeout(resolve, 150));
-  assert.deepEqual(calls, ["/__desktop/server-state?state=connecting"]);
+  assert.deepEqual(calls, ["/__desktop/server-state?state=connecting&authenticated=false"]);
+});
+
+test("a restored session reports socket ownership before ready and ignores signed-out acknowledgements", async (t) => {
+  const surface = new EventTarget();
+  surface.spoolDesktop = true;
+  const calls = [];
+  surface.location = {
+    assign(url) {
+      calls.push(url);
+      surface.dispatchEvent(new CustomEvent("spool:server-state-ack", {
+        detail: { state: "error", authenticated: calls.length > 1 },
+      }));
+    },
+  };
+  const stop = reportDesktopServerState("error", surface, true);
+  t.after(stop);
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.deepEqual(calls, [
+    "/__desktop/server-state?state=error&authenticated=true",
+    "/__desktop/server-state?state=error&authenticated=true",
+  ]);
+  notifyDesktopServerReady("connecting", "local:0", surface, true);
+  assert.equal(calls.at(-1), "/__desktop/server-ready?state=connecting&selection=local%3A0&authenticated=true");
 });
 
 test("native tab selection carries its current scroll position with the selected server", () => {
@@ -255,7 +279,7 @@ test("native paint acknowledgements are scoped to desktop and unsubscribe", () =
   surface.spoolDesktop = true;
   let acknowledged = 0;
   const off = subscribeDesktopServerReadyAck((paint) => {
-    assert.deepEqual(paint, { state: "login", selection: "local:42" });
+    assert.deepEqual(paint, { state: "login", selection: "local:42", authenticated: false });
     acknowledged++;
   }, surface);
   surface.dispatchEvent(new Event("spool:server-ready-ack"));
@@ -265,14 +289,14 @@ test("native paint acknowledgements are scoped to desktop and unsubscribe", () =
   assert.equal(acknowledged, 0);
   surface.dispatchEvent(
     new CustomEvent("spool:server-ready-ack", {
-      detail: { state: "login", selection: "local:42" },
+      detail: { state: "login", selection: "local:42", authenticated: false },
     }),
   );
   assert.equal(acknowledged, 1);
   off();
   surface.dispatchEvent(
     new CustomEvent("spool:server-ready-ack", {
-      detail: { state: "login", selection: "local:42" },
+      detail: { state: "login", selection: "local:42", authenticated: false },
     }),
   );
   assert.equal(acknowledged, 1);

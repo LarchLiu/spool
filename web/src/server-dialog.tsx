@@ -30,9 +30,9 @@ const fields: Record<ConnectionMode, MessageKey> = {
   relay: "Pairing code",
 };
 const statuses: Record<string, MessageKey> = {
-  connected: "Connected",
+  connected: "Connected · Signed in",
   connecting: "Connecting…",
-  login: "Sign-in required",
+  login: "Connected · Sign-in required",
   error: "Connection failed",
   disconnected: "Disconnected",
 };

@@ -170,9 +170,16 @@ public class ServerProfilesTest {
             assertNull(tab.getCompoundDrawablesRelative()[0]);
             assertTrue(tab.getText().toString().endsWith("Spool"));
             assertTrue(tab.getContentDescription().toString().contains("Connected"));
+            assertEquals("Spool, Connected · Signed in", tab.getContentDescription());
+            tabs.status(Map.of("legacy", "login"));
+            int blue = dot.color;
+            assertNotEquals(green, blue);
+            assertEquals("Spool, Connected · Sign-in required", tab.getContentDescription());
+            assertEquals(tab.getContentDescription(), tab.getTooltipText());
             tabs.status(Map.of("legacy", "connecting"));
             int yellow = dot.color;
             assertNotEquals(green, yellow);
+            assertNotEquals(blue, yellow);
             tabs.status(Map.of("legacy", "error"));
             int red = dot.color;
             assertNotEquals(yellow, red);

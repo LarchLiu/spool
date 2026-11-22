@@ -81,7 +81,9 @@ final class NativeConnectionSettings extends LinearLayout {
         Button tab = tabs.button(mode.value);
         String label = ui.t(title(mode));
         tab.setText(NativeServerTabs.statusText(ui, label, state, 6, 4));
-        tab.setContentDescription(label + ", " + ui.t(NativeServerTabs.statusLabel(state)));
+        String description = label + ", " + ui.t(NativeServerTabs.statusLabel(state));
+        tab.setContentDescription(description);
+        tab.setTooltipText(description);
     }
 
     void show(ConnectionMode mode) {

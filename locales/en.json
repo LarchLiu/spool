@@ -1007,6 +1007,8 @@
   "Connect to this server": "Connect to this server",
   "Connect using the same public HTTPS address as the PWA. Tailscale is not required.": "Connect using the same public HTTPS address as the PWA. Tailscale is not required.",
   "Connected": "Connected",
+  "Connected · Signed in": "Connected · Signed in",
+  "Connected · Sign-in required": "Connected · Sign-in required",
   "Connection failed": "Connection failed",
   "Connection mode": "Connection mode",
   "Connection priority updated": "Connection priority updated",

@@ -9,6 +9,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.ScrollView;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.json.JSONArray;
@@ -39,11 +40,13 @@ public class MainActivityConnectionTest {
         static String mode, directory, origin, deviceModel;
         static boolean failDirect;
         static String tailnetHealth;
+        static final java.util.List<String> openedOrigins = new java.util.ArrayList<>();
         @Implementation protected static void __staticInitializer__() {}
         @Implementation protected static void updateInterfaces(String value) {}
         @Implementation protected static Client newDirectClient(String data, String address) throws Exception {
             mode = "direct"; directory = data; origin = address;
             if (failDirect) throw new java.io.IOException("Direct connection unavailable");
+            openedOrigins.add(address);
             return new Client("unused", address);
         }
         @Implementation protected static Client newRelayClient(String data, String code) {
@@ -499,7 +502,7 @@ public class MainActivityConnectionTest {
                 h.io.run();
                 assertFalse(h.<Boolean>get("routeLoginRequired")); assertFalse(h.<Boolean>get("restoringSession"));
                 assertEquals("Draft during tailnet startup", h.composer().input.getText().toString());
-                drainWorkspace(h, false);
+                drainWorkspace(h, true);
                 assertEquals(1, h.<org.json.JSONArray>get("projects").length());
                 assertEquals(1, h.<org.json.JSONArray>get("chats").length());
                 assertEquals("Alice", h.<JSONObject>get("user").getString("nickname"));
@@ -576,13 +579,16 @@ public class MainActivityConnectionTest {
                 assertTrue(details.contains("HTTPS: Verified")); assertFalse(details.contains("Spool session"));
                 android.widget.Button tab = settings.tabs.button(ConnectionMode.TAILSCALE.value);
                 NativeServerTabs.Dot dot = ((android.text.Spanned) tab.getText()).getSpans(0, 1, NativeServerTabs.Dot.class)[0];
+                assertEquals(NativeServerTabs.statusColor(h.get("ui"), "connecting"), dot.color);
+                drainWorkspace(h, true);
+                dot = ((android.text.Spanned) tab.getText()).getSpans(0, 1, NativeServerTabs.Dot.class)[0];
                 assertEquals(NativeServerTabs.statusColor(h.get("ui"), "connected"), dot.color);
                 h.io.jobs.clear(); h.call("closeSettings"); assertFalse(popup.isShowing());
             } finally { h.activity.getPreferences(Activity.MODE_PRIVATE).edit().clear().commit(); }
         }
     }
 
-    @Test public void networkDotsAndTransportDetailsRemainIndependentOfSpoolAuthentication() throws Exception {
+    @Test public void reachableSignedOutConnectionsUseBlueWhileTransportDetailsStayAvailable() throws Exception {
         for (ConnectionMode mode : ConnectionMode.values()) try (MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(false)) {
             connectionQueue(h);
             try {
@@ -598,14 +604,14 @@ public class MainActivityConnectionTest {
                 ReflectionHelpers.callInstanceMethod(h.activity, "adoptConnection", ReflectionHelpers.ClassParameter.from(ConnectionRouter.Candidate.class, candidate));
                 h.io.run();
                 java.util.Map<String, String> states = ReflectionHelpers.callInstanceMethod(h.activity, "serverConnectionStates");
-                assertEquals("connected", states.get(profiles.selected));
+                assertEquals("login", states.get(profiles.selected));
                 assertTrue(footerText(h.get("sidebar")).contains("Sign in"));
                 h.call("openSettings");
                 NativeConnectionSettings settings = h.get("connectionSettings");
                 String details = settings.details.get(mode);
                 assertTrue(details.contains("HTTPS: Verified")); assertFalse(details.contains("Spool"));
                 NativeServerTabs.Dot dot = ((android.text.Spanned) settings.tabs.button(mode.value).getText()).getSpans(0, 1, NativeServerTabs.Dot.class)[0];
-                assertEquals(NativeServerTabs.statusColor(h.get("ui"), "connected"), dot.color);
+                assertEquals(NativeServerTabs.statusColor(h.get("ui"), "login"), dot.color);
             } finally { h.activity.getPreferences(Activity.MODE_PRIVATE).edit().clear().commit(); }
         }
     }
@@ -1023,6 +1029,65 @@ public class MainActivityConnectionTest {
         view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));
         view.layout(0, 0, width, height);
+    }
+
+    @Test public void launchAndRestartConnectAllEnabledSavedServersEvenWhenADisabledTabIsSelected() throws Exception {
+        for (boolean disabledSelected : new boolean[] {false, true}) {
+            ServerProfiles profiles = new ServerProfiles(new ConnectionPlan("https://home.example.com", "", ConnectionMode.DIRECT));
+            ServerProfiles.Server office = profiles.add("Office");
+            office.plan = new ConnectionPlan("https://office.example.com", "", ConnectionMode.DIRECT);
+            ServerProfiles.Server disabled = profiles.add("Disabled");
+            disabled.plan = new ConnectionPlan("https://disabled.example.com", "", ConnectionMode.DIRECT); disabled.enabled = false;
+            if (disabledSelected) profiles.selected = disabled.id;
+            for (int launch = 0; launch < 2; launch++) {
+                ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class);
+                MainActivity activity = controller.get();
+                if (launch == 0) activity.getPreferences(Activity.MODE_PRIVATE).edit().clear().putString("servers", profiles.encode())
+                        .putString("selectedServer", profiles.selected).putString("language", "en").commit();
+                MainActivityGoalTest.Queue connections = new MainActivityGoalTest.Queue(), reads = new MainActivityGoalTest.Queue();
+                for (String field : new String[] {"connectionWorker", "io"}) {
+                    ((ExecutorService) ReflectionHelpers.getField(activity, field)).shutdown();
+                    ReflectionHelpers.setField(activity, field, field.equals("connectionWorker") ? connections : reads);
+                }
+                ConnectionRecovery.Scheduler scheduler = new ConnectionRecovery.Scheduler() {
+                    public void post(Runnable task) {}
+                    public void postDelayed(Runnable task, long delay) {}
+                    public void remove(Runnable task) {}
+                    public long now() { return 0; }
+                };
+                ReflectionHelpers.setField(activity, "recovery", new ConnectionRecovery(task -> {}, scheduler));
+                MainActivityGoalTest.ShadowClient.responder = call -> "{status:401,body:'{error:\"Sign in required\"}'}";
+                ShadowSpoolnet.failDirect = false; ShadowSpoolnet.openedOrigins.clear();
+                android.net.ConnectivityManager connectivity = activity.getSystemService(android.net.ConnectivityManager.class);
+                org.robolectric.shadows.ShadowConnectivityManager network = Shadows.shadowOf(connectivity);
+                network.setActiveNetworkInfo(org.robolectric.shadows.ShadowNetworkInfo.newInstance(
+                        android.net.NetworkInfo.DetailedState.CONNECTED, android.net.ConnectivityManager.TYPE_WIFI, 0, true, true));
+                android.net.NetworkCapabilities capabilities = org.robolectric.shadows.ShadowNetworkCapabilities.newInstance();
+                Shadows.shadowOf(capabilities).addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET);
+                network.setNetworkCapabilities(connectivity.getActiveNetwork(), capabilities);
+                try {
+                    controller.create().start().resume().visible();
+                    drain(connections);
+                    while (!reads.jobs.isEmpty()) { reads.jobs.remove(0).run(); idle(); }
+                    assertEquals(java.util.Set.of("https://home.example.com", "https://office.example.com"),
+                            new java.util.HashSet<>(ShadowSpoolnet.openedOrigins));
+                    assertEquals("Each enabled server opens once", 2, ShadowSpoolnet.openedOrigins.size());
+                    Map<String, String> states = ReflectionHelpers.callInstanceMethod(activity, "serverConnectionStates");
+                    assertEquals("login", states.get(profiles.entries.get(0).id)); assertEquals("login", states.get(office.id));
+                    assertEquals("disconnected", states.get(disabled.id));
+                    ServerProfiles restored = ReflectionHelpers.getField(activity, "serverProfiles");
+                    assertEquals(profiles.selected, restored.selected);
+                    assertEquals("sidebar", ReflectionHelpers.getField(activity, "panel"));
+                    if (disabledSelected) {
+                        assertNull(ReflectionHelpers.getField(activity, "client"));
+                        assertFalse(ReflectionHelpers.getField(activity, "restoringSession"));
+                    }
+                } finally {
+                    if (launch == 1) activity.getPreferences(Activity.MODE_PRIVATE).edit().clear().commit();
+                    controller.pause().stop().destroy(); connections.jobs.clear(); reads.jobs.clear();
+                }
+            }
+        }
     }
 
     @Test public void savedServerStartsWithConnectingBeforeAnyTransportWorkAndFreshInstallShowsLogin() {

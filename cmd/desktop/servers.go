@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
 	"math"
 	"net/url"
 	"path/filepath"
@@ -22,14 +23,19 @@ const desktopServerReadyPath = "/__desktop/server-ready"
 const desktopSidebarWidthPath = "/__desktop/sidebar-width"
 
 type desktopServerChat struct {
-	view           *mygo.WebView
-	address        string
-	loaded         bool
-	failed         bool
-	status         string
-	statusRevision uint64
-	retrying       bool
-	lastRetry      time.Time
+	view            *mygo.WebView
+	address         string
+	loaded          bool
+	failed          bool
+	status          string
+	statusRevision  uint64
+	retrying        bool
+	lastRetry       time.Time
+	pageStatus      string
+	healthFailed    bool
+	healthChecking  bool
+	lastHealthCheck time.Time
+	authenticated   bool
 }
 
 func (chat *desktopServerChat) setStatus(status string) bool {
@@ -64,15 +70,20 @@ type desktopTabTransition struct {
 	ScrollLeft *float64 `json:"scroll_left,omitempty"`
 }
 
+type desktopServerConnection struct {
+	State         string `json:"state"`
+	Authenticated bool   `json:"authenticated"`
+}
+
 type desktopServerPaint struct {
-	State     string `json:"state"`
+	desktopServerConnection
 	Selection string `json:"selection"`
 }
 
 var desktopServersChanged = mygo.NewEvent[desktopServerTabs]("spool:servers")
 var desktopServerSelected = mygo.NewEvent[bool]("spool:server-selected")
 var desktopServerReadyAck = mygo.NewEvent[desktopServerPaint]("spool:server-ready-ack")
-var desktopServerStateAck = mygo.NewEvent[string]("spool:server-state-ack")
+var desktopServerStateAck = mygo.NewEvent[desktopServerConnection]("spool:server-state-ack")
 
 func (p *panel) prepareDesktopServers() error {
 	// OpenStore resolves relative paths and symlinks. Native transports require
@@ -128,6 +139,14 @@ func (p *panel) desktopSelectionToken() string {
 	return p.selectedDesktopServer() + ":" + strconv.FormatInt(started, 10)
 }
 
+func (p *panel) desktopServerTabsFor(id string) desktopServerTabs {
+	tabs := p.desktopServerTabs()
+	if id != tabs.Selected {
+		tabs.Selected, tabs.Selection, tabs.Transition = id, id+":0", nil
+	}
+	return tabs
+}
+
 func (p *panel) recordDesktopServerName(id, name string) {
 	name = strings.TrimSpace(name)
 	if id == localDesktopServer {
@@ -153,8 +172,10 @@ func (p *panel) recordDesktopServerName(id, name string) {
 }
 
 func (p *panel) sendDesktopServers() {
-	if p.chatView != nil {
-		_ = desktopServersChanged.EmitPage(p.chatView.Page(), p.desktopServerTabs())
+	for id, chat := range p.serverChats {
+		if chat.view != nil {
+			_ = desktopServersChanged.EmitPage(chat.view.Page(), p.desktopServerTabsFor(id))
+		}
 	}
 }
 
@@ -170,7 +191,7 @@ func (p *panel) setDesktopServers(next desktopServers) error {
 	for id, chat := range p.serverChats {
 		old, _ := previous.find(id)
 		server, exists := next.find(id)
-		if !exists || !server.Enabled || old.Enabled != server.Enabled || old.Address != server.Address || old.Mode != server.Mode {
+		if !exists || old.Enabled != server.Enabled || old.Address != server.Address || old.Mode != server.Mode {
 			if p.chatPresentedView == chat.view {
 				p.chatPresentedView = nil
 			}
@@ -187,7 +208,30 @@ func (p *panel) setDesktopServers(next desktopServers) error {
 		p.serverNetworks.update(next)
 	}
 	p.sendDesktopServers()
+	p.connectEnabledDesktopServers()
 	return nil
+}
+
+func (p *panel) connectEnabledDesktopServers() {
+	if p.quitting || p.window == nil || p.serverGateway == nil {
+		return
+	}
+	for _, server := range p.servers.Entries {
+		if !server.Enabled || p.serverChats[server.ID] != nil {
+			continue
+		}
+		address := p.serverGateway.url + desktopServerMount(server)
+		if server.ID == localDesktopServer {
+			var err error
+			address, err = p.service.LocalWebURL()
+			if err != nil {
+				continue
+			}
+		}
+		if err := p.loadDesktopServerChat(server.ID, address); err != nil {
+			log.Printf("event=desktop_server_connect_failed server=%q error=%q", server.ID, err)
+		}
+	}
 }
 
 // Probe alternative routes without account cookies or replaying a failed write.
@@ -195,7 +239,7 @@ func (p *panel) setDesktopServers(next desktopServers) error {
 func (p *panel) retryDesktopServer(id string) {
 	server, ok := p.servers.find(id)
 	chat := p.serverChats[id]
-	if p.quitting || !ok || !server.Enabled || !server.Automatic || p.selectedDesktopServer() != id || p.serverNetworks == nil || chat == nil || chat.status != "error" || chat.retrying || time.Since(chat.lastRetry) < 5*time.Second {
+	if p.quitting || !ok || !server.Enabled || !server.Automatic || p.serverNetworks == nil || chat == nil || chat.status != "error" || chat.retrying || time.Since(chat.lastRetry) < 5*time.Second {
 		return
 	}
 	chat.retrying, chat.lastRetry = true, time.Now()
@@ -216,7 +260,7 @@ func (p *panel) retryDesktopServer(id string) {
 			}
 		}
 		p.window.Update(func() {
-			if p.applyDesktopServerRetry(server, chat, revision, chosen) {
+			if p.applyDesktopServerRetry(server, chat, revision, chosen) && p.selectedDesktopServer() == id {
 				p.openChat()
 			}
 		})
@@ -228,7 +272,7 @@ func (p *panel) applyDesktopServerRetry(server desktopServer, chat *desktopServe
 	current, exists := p.servers.find(server.ID)
 	// A probe belongs to one failure on one page. A recovered connection, a
 	// later failure, or a replacement page must keep its own workspace state.
-	if p.quitting || !exists || current != server || p.selectedDesktopServer() != server.ID || chosen == "" ||
+	if p.quitting || !exists || current != server || chosen == "" ||
 		p.serverChats[server.ID] != chat || chat.status != "error" || chat.statusRevision != revision {
 		return false
 	}
@@ -330,8 +374,17 @@ func desktopServerNavigation(address, target string) (desktopTabSelection, bool)
 	return selection, true
 }
 
-func desktopServerStateNavigation(address, target string) (string, bool) {
-	return desktopServerStatusNavigation(address, target, desktopServerStatePath)
+func desktopServerStateNavigation(address, target string) (desktopServerConnection, bool) {
+	if !chatNavigationAllowed(address, target) {
+		return desktopServerConnection{}, false
+	}
+	u, _ := url.Parse(target)
+	if u.Path != desktopServerStatePath || u.RawPath != "" || u.Fragment != "" {
+		return desktopServerConnection{}, false
+	}
+	params, err := url.ParseQuery(u.RawQuery)
+	connection, ok := desktopServerConnectionParams(params)
+	return connection, err == nil && ok
 }
 
 func desktopServerReadyNavigation(address, target string) (desktopServerPaint, bool) {
@@ -343,21 +396,70 @@ func desktopServerReadyNavigation(address, target string) (desktopServerPaint, b
 		return desktopServerPaint{}, false
 	}
 	params, err := url.ParseQuery(u.RawQuery)
-	paint := desktopServerPaint{State: params.Get("state"), Selection: params.Get("selection")}
-	return paint, err == nil && len(params) == 2 && len(params["state"]) == 1 && len(params["selection"]) == 1 && validDesktopServerStatus(paint.State) && len(paint.Selection) > 0 && len(paint.Selection) <= 256
+	selection := params.Get("selection")
+	if err != nil || len(params["selection"]) != 1 || len(selection) == 0 || len(selection) > 256 {
+		return desktopServerPaint{}, false
+	}
+	params.Del("selection")
+	connection, ok := desktopServerConnectionParams(params)
+	return desktopServerPaint{desktopServerConnection: connection, Selection: selection}, ok
 }
 
-func desktopServerStatusNavigation(address, target, path string) (string, bool) {
-	return desktopServerHint(address, target, path, "state", func(state string) bool {
-		return validDesktopServerStatus(state)
-	})
+func desktopServerConnectionParams(params url.Values) (desktopServerConnection, bool) {
+	connection := desktopServerConnection{State: params.Get("state")}
+	if len(params["state"]) != 1 || !validDesktopServerStatus(connection.State) {
+		return desktopServerConnection{}, false
+	}
+	// Older display-only hints carry no account state. A connected socket still
+	// proves sign-in, while the bundled client reports it before its first ready.
+	connection.Authenticated = connection.State == "connected"
+	if values, exists := params["authenticated"]; exists {
+		if len(params) != 2 || len(values) != 1 || values[0] != "true" && values[0] != "false" {
+			return desktopServerConnection{}, false
+		}
+		connection.Authenticated = values[0] == "true"
+		return connection, true
+	}
+	return connection, len(params) == 1
 }
 
 func validDesktopServerStatus(state string) bool {
 	return state == "connected" || state == "connecting" || state == "login" || state == "error" || state == "disconnected"
 }
 
+func (p *panel) recordDesktopServerConnection(id string, connection desktopServerConnection) {
+	state := p.serverChats[id]
+	if state == nil || state.failed {
+		return
+	}
+	if state.authenticated != connection.Authenticated {
+		state.authenticated = connection.Authenticated
+		state.statusRevision++
+	}
+	p.recordDesktopServerState(id, connection.State)
+}
+
 func (p *panel) recordDesktopServerState(id, status string) {
+	state := p.serverChats[id]
+	if state == nil || state.failed && status != "error" {
+		return
+	}
+	state.pageStatus = status
+	if status == "connected" {
+		state.authenticated = true
+	} else if status == "login" || status == "disconnected" {
+		state.authenticated = false
+	}
+	if status != "login" {
+		state.healthFailed = false
+	}
+	if status == "login" && state.healthFailed {
+		status = "error"
+	}
+	p.updateDesktopServerState(id, status)
+}
+
+func (p *panel) updateDesktopServerState(id, status string) {
 	state := p.serverChats[id]
 	if state == nil || !state.setStatus(status) {
 		return

@@ -1007,6 +1007,8 @@
   "Connect to this server": "连接当前服务器",
   "Connect using the same public HTTPS address as the PWA. Tailscale is not required.": "使用与 PWA 相同的公网 HTTPS 地址连接，无需 Tailscale。",
   "Connected": "已连接",
+  "Connected · Signed in": "已连通 · 已登录",
+  "Connected · Sign-in required": "已连通 · 待登录",
   "Connection failed": "连接异常",
   "Connection mode": "连接方式",
   "Connection priority updated": "连接优先级已更新",

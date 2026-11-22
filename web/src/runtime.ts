@@ -25,6 +25,10 @@ export const desktopSidebarWidthPath = "/__desktop/sidebar-width";
 
 export type DesktopServerStatus =
   "connected" | "connecting" | "login" | "error" | "disconnected";
+export type DesktopServerConnection = {
+  state: DesktopServerStatus;
+  authenticated: boolean;
+};
 export type DesktopServerTabsSnapshot = {
   sidebar_width?: number;
   selection?: string;
@@ -97,9 +101,10 @@ export function subscribeDesktopServerSelection(
 export function notifyDesktopServerState(
   state: DesktopServerStatus,
   surface: unknown = globalThis,
+  authenticated = state === "connected",
 ): void {
   desktopNavigationHint(
-    "/__desktop/server-state?" + new URLSearchParams({ state }),
+    "/__desktop/server-state?" + new URLSearchParams({ state, authenticated: String(authenticated) }),
     surface,
   );
 }
@@ -107,6 +112,7 @@ export function notifyDesktopServerState(
 export function reportDesktopServerState(
   state: DesktopServerStatus,
   surface: unknown = globalThis,
+  authenticated = state === "connected",
 ): () => void {
   if (!isDesktopChat(surface)) return () => {};
   let retry: ReturnType<typeof setTimeout> | undefined;
@@ -114,7 +120,8 @@ export function reportDesktopServerState(
   const unsubscribe = subscribeDesktopEvent(
     "spool:server-state-ack",
     (event) => {
-      if ((event as CustomEvent).detail === state) stop();
+      const value = (event as CustomEvent<DesktopServerConnection>).detail;
+      if (value?.state === state && value.authenticated === authenticated) stop();
     },
     surface,
   );
@@ -125,7 +132,7 @@ export function reportDesktopServerState(
   };
   const notify = () => {
     if (stopped) return;
-    notifyDesktopServerState(state, surface);
+    notifyDesktopServerState(state, surface, authenticated);
     if (!stopped) retry = setTimeout(notify, 100);
   };
   // Cached native pages can suspend animation frames. Report health without
@@ -142,15 +149,16 @@ export function notifyDesktopServerReady(
   state: DesktopServerStatus,
   selection: string,
   surface: unknown = globalThis,
+  authenticated = state === "connected",
 ): void {
   desktopNavigationHint(
-    desktopServerReadyPath + "?" + new URLSearchParams({ state, selection }),
+    desktopServerReadyPath + "?" + new URLSearchParams({ state, selection, authenticated: String(authenticated) }),
     surface,
   );
 }
 
 export function subscribeDesktopServerReadyAck(
-  listener: (paint: { state: DesktopServerStatus; selection: string }) => void,
+  listener: (paint: DesktopServerConnection & { selection: string }) => void,
   surface: unknown = globalThis,
 ): () => void {
   return subscribeDesktopEvent(
@@ -162,7 +170,9 @@ export function subscribeDesktopServerReadyAck(
         typeof paint !== "object" ||
         !("state" in paint) ||
         !("selection" in paint) ||
-        typeof paint.selection !== "string"
+        typeof paint.selection !== "string" ||
+        !("authenticated" in paint) ||
+        typeof paint.authenticated !== "boolean"
       )
         return;
       const state = paint.state;
@@ -173,7 +183,7 @@ export function subscribeDesktopServerReadyAck(
         state === "error" ||
         state === "disconnected"
       )
-        listener({ state, selection: paint.selection });
+        listener({ state, selection: paint.selection, authenticated: paint.authenticated });
     },
     surface,
   );

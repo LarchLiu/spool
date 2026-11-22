@@ -46,13 +46,15 @@ final class NativeServerTabs extends NativeTabs {
             int color = statusColor(ui, state);
             Dot dot = ((Spanned) tab.getText()).getSpans(0, 1, Dot.class)[0];
             if (dot.color != color) { dot.color = color; tab.invalidate(); }
-            tab.setContentDescription(server.name + ", " + ui.t(statusLabel(state)));
+            String description = server.name + ", " + ui.t(statusLabel(state));
+            tab.setContentDescription(description);
+            tab.setTooltipText(description);
         }
     }
 
     static String statusLabel(String state) {
-        return state.equals("connected") ? "Connected" : state.equals("connecting") ? "Connecting…"
-                : state.equals("login") ? "Sign-in required" : state.equals("error") ? "Connection failed" : "Disconnected";
+        return state.equals("connected") ? "Connected · Signed in" : state.equals("connecting") ? "Connecting…"
+                : state.equals("login") ? "Connected · Sign-in required" : state.equals("error") ? "Connection failed" : "Disconnected";
     }
 
     static CharSequence statusText(NativeUi ui, String label, String state, int size, int gap) {
@@ -64,7 +66,8 @@ final class NativeServerTabs extends NativeTabs {
 
     static int statusColor(NativeUi ui, String state) {
         return state.equals("connected") ? ui.dark ? 0xff4ade80 : 0xff15803d
-                : state.equals("connecting") || state.equals("login") ? ui.dark ? 0xfffbbf24 : 0xffb45309
+                : state.equals("login") ? 0xff3987e0
+                : state.equals("connecting") ? ui.dark ? 0xfffbbf24 : 0xffb45309
                 : state.equals("error") ? ui.error : ui.muted;
     }
 

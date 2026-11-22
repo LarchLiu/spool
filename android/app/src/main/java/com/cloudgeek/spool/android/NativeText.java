@@ -118,7 +118,8 @@ final class NativeText {
             case "Connect": value = "连接"; break;
             case "Connect to this server": value = "连接当前服务器"; break;
             case "Connect to view this server’s workspace.": value = "连接后可查看此服务器的工作区。"; break;
-            case "Connected": value = "已连接"; break;
+            case "Connected · Sign-in required": value = "已连通 · 待登录"; break;
+            case "Connected · Signed in": value = "已连通 · 已登录"; break;
             case "Connecting to your workspace…": value = "连接你的工作空间…"; break;
             case "Connecting…": value = "正在连接…"; break;
             case "Connection failed": value = "连接异常"; break;
@@ -701,7 +702,8 @@ final class NativeText {
             case "Connect": value = "接続"; break;
             case "Connect to this server": value = "このサーバーに接続"; break;
             case "Connect to view this server’s workspace.": value = "接続すると、このサーバーのワークスペースを表示できます。"; break;
-            case "Connected": value = "接続済み"; break;
+            case "Connected · Sign-in required": value = "接続済み · ログインが必要"; break;
+            case "Connected · Signed in": value = "接続済み · ログイン済み"; break;
             case "Connecting to your workspace…": value = "ワークスペースに接続中…"; break;
             case "Connecting…": value = "接続中…"; break;
             case "Connection failed": value = "接続エラー"; break;

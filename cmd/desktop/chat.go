@@ -98,32 +98,58 @@ func chatWebViewOptions() mygo.WebViewOptions {
 }
 
 func (p *panel) loadChatView(address string) error {
-	if p.devFrontend != nil && p.selectedDesktopServer() == localDesktopServer {
+	id := p.selectedDesktopServer()
+	if err := p.loadDesktopServerChat(id, address); err != nil {
+		return err
+	}
+	state := p.serverChats[id]
+	p.chatView, p.chatURL, p.chatFailed, p.chatLoaded = state.view, state.address, state.failed, state.loaded
+	p.sendDesktopServers()
+	p.window.Invalidate()
+	if p.tab == "Chat" && p.chatPresentedView == p.chatView && !p.serverDialogOpen {
+		p.chatView.Focus()
+	}
+	p.setDesktopNotificationFocused(p.desktopNotificationFocused())
+	if id == localDesktopServer {
+		p.sendSessionNotifications()
+		p.sendPendingNotification()
+	}
+	return nil
+}
+
+// Each enabled server owns a page, including servers never selected this run.
+// Loading one must not change the foreground page, selection or window focus.
+func (p *panel) loadDesktopServerChat(id, address string) error {
+	if p.devFrontend != nil && id == localDesktopServer {
 		address = p.devFrontend.url + "/"
 	}
 	if p.serverChats == nil {
 		p.serverChats = map[string]*desktopServerChat{}
 	}
-	id := p.selectedDesktopServer()
 	state := p.serverChats[id]
 	if state == nil {
-		state = &desktopServerChat{}
+		state = &desktopServerChat{status: "connecting", pageStatus: "connecting"}
 		p.serverChats[id] = state
 	}
-	p.chatView, p.chatURL, p.chatFailed, p.chatLoaded = state.view, state.address, state.failed, state.loaded
-	if p.chatView == nil {
+	if state.view == nil {
 		if !mygo.WebViewAvailable() {
+			state.address, state.failed = address, true
+			p.recordDesktopServerState(id, "error")
 			return fmt.Errorf("Desktop chat requires a system WebView. Install WebView2 (Windows) or WebKitGTK (Linux), or use Open in Browser.")
 		}
 		options := chatWebViewOptions()
-		tabs, _ := json.Marshal(p.desktopServerTabs())
+		tabs, _ := json.Marshal(p.desktopServerTabsFor(id))
 		options.Page.PreloadScript += "\nwindow.spoolServers = " + string(tabs) + ";"
 		view, err := p.window.NewWebView(options)
 		if err != nil {
+			state.address, state.failed = address, true
+			p.recordDesktopServerState(id, "error")
 			return err
 		}
-		p.chatView = view
 		state.view = view
+		if id == p.selectedDesktopServer() {
+			p.chatView = view
+		}
 		page := view.Page()
 		// Register guards before the first navigation. Never trust additional
 		// origins or load external content into a privileged desktop window.
@@ -140,7 +166,7 @@ func (p *panel) loadChatView(address string) error {
 					_ = desktopServerReadyAck.EmitPage(view.Page(), paint)
 					// Cached background pages still report their connection health.
 					// Only presenting a page depends on the current selection token.
-					p.recordDesktopServerState(id, paint.State)
+					p.recordDesktopServerConnection(id, paint.desktopServerConnection)
 					if paint.Selection != p.desktopSelectionToken() {
 						return
 					}
@@ -164,14 +190,14 @@ func (p *panel) loadChatView(address string) error {
 				})
 				return
 			}
-			if status, ok := desktopServerStateNavigation(state.address, e.URL); ok {
+			if connection, ok := desktopServerStateNavigation(state.address, e.URL); ok {
 				e.PreventDefault()
 				p.window.Update(func() {
 					if p.serverChats[id] != state {
 						return
 					}
-					p.recordDesktopServerState(id, status)
-					_ = desktopServerStateAck.EmitPage(view.Page(), status)
+					p.recordDesktopServerConnection(id, connection)
+					_ = desktopServerStateAck.EmitPage(view.Page(), connection)
 				})
 				return
 			}
@@ -188,7 +214,12 @@ func (p *panel) loadChatView(address string) error {
 				return
 			}
 			if p.chatView != view {
-				e.PreventDefault()
+				// Background pages still load their own document and accept dev
+				// reloads, but cannot invoke foreground navigation actions.
+				u, _ := url.Parse(e.URL)
+				if !chatNavigationAllowed(state.address, e.URL) || strings.HasPrefix(u.Path, "/__desktop/") {
+					e.PreventDefault()
+				}
 				return
 			}
 			if width, ok := desktopSidebarWidthNavigation(state.address, e.URL); ok {
@@ -263,6 +294,9 @@ func (p *panel) loadChatView(address string) error {
 			return nil
 		})
 		page.OnDidFinishLoad(func() {
+			if p.serverChats[id] != state {
+				return
+			}
 			p.sendWindowChrome(view)
 			p.sendDesktopAppearance(view)
 			p.sendUpdateAvailability(view)
@@ -281,47 +315,49 @@ func (p *panel) loadChatView(address string) error {
 			}
 		})
 		page.OnDidFailLoad(func(err *mygo.LoadError) {
+			if p.serverChats[id] != state {
+				return
+			}
 			state.failed = true
-			state.setStatus("error")
+			p.recordDesktopServerState(id, "error")
 			if p.chatView == view {
 				p.chatFailed = true
 				p.chatError(err)
 			}
 		})
 		page.OnRenderProcessGone(func(reason string) {
+			if p.serverChats[id] != state {
+				return
+			}
 			state.failed = true
-			state.setStatus("error")
+			p.recordDesktopServerState(id, "error")
 			if p.chatView == view {
 				p.chatFailed = true
 				p.chatError(fmt.Errorf("%s: %s", p.tr("Chat renderer stopped. Reopen Chat to reload."), reason))
 			}
 		})
 	}
-	if p.chatURL != address || p.chatFailed {
-		p.chatLoaded = false
-		p.setDesktopNotificationFocused(p.desktopNotificationFocused())
-		p.chatURL = address
+	if state.address != address || state.failed {
 		state.address, state.loaded, state.failed = address, false, false
-		state.setStatus("connecting")
-		p.chatFailed = false
-		if err := p.chatView.Page().LoadURL(address); err != nil {
-			p.chatFailed = true
+		state.authenticated = false
+		if id == p.selectedDesktopServer() {
+			p.chatView, p.chatURL, p.chatFailed, p.chatLoaded = state.view, address, false, false
+			p.setDesktopNotificationFocused(p.desktopNotificationFocused())
+		}
+		p.recordDesktopServerState(id, "connecting")
+		if err := state.view.Page().LoadURL(address); err != nil {
+			if p.chatView == state.view {
+				p.chatFailed = true
+			}
+			state.failed = true
+			p.recordDesktopServerState(id, "error")
 			return err
 		}
 	}
-	p.sendWindowChrome(p.chatView)
-	p.sendDesktopAppearance(p.chatView)
-	p.sendUpdateAvailability(p.chatView)
+	p.sendWindowChrome(state.view)
+	p.sendDesktopAppearance(state.view)
+	p.sendUpdateAvailability(state.view)
 	p.sendDesktopServers()
-	p.window.Invalidate()
-	if p.tab == "Chat" && p.chatPresentedView == p.chatView && !p.serverDialogOpen {
-		p.chatView.Focus()
-	}
-	p.setDesktopNotificationFocused(p.desktopNotificationFocused())
-	if p.selectedDesktopServer() == localDesktopServer {
-		p.sendSessionNotifications()
-		p.sendPendingNotification()
-	}
 	return nil
 }
 

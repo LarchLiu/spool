@@ -1007,6 +1007,8 @@
   "Connect to this server": "このサーバーに接続",
   "Connect using the same public HTTPS address as the PWA. Tailscale is not required.": "PWAと同じ公開HTTPSアドレスで接続します。Tailscaleは不要です。",
   "Connected": "接続済み",
+  "Connected · Signed in": "接続済み · ログイン済み",
+  "Connected · Sign-in required": "接続済み · ログインが必要",
   "Connection failed": "接続エラー",
   "Connection mode": "接続方式",
   "Connection priority updated": "接続の優先順位を更新しました",

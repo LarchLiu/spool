@@ -7,8 +7,11 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -117,7 +120,25 @@ func (p *panel) probeDesktopServers(ctx context.Context, report string) (probeEr
 	if err != nil {
 		return err
 	}
-	profile, _ := json.Marshal(desktopServer{Direct: address, Enabled: true, Mode: "direct", Automatic: true})
+	target, _ := url.Parse(address)
+	proxy := &httputil.ReverseProxy{Rewrite: func(p *httputil.ProxyRequest) {
+		p.SetURL(target)
+		p.Out.Host = target.Host
+		if p.In.Header.Get("Origin") != "" {
+			p.Out.Header.Set("Origin", target.Scheme+"://"+target.Host)
+		}
+	}}
+	var healthStatus atomic.Int32
+	healthStatus.Store(http.StatusOK)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(int(healthStatus.Load()))
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	defer upstream.Close()
+	profile, _ := json.Marshal(desktopServer{Direct: upstream.URL, Enabled: true, Mode: "direct", Automatic: true})
 	stage = "saving remote server"
 	if _, err := page.EvalContext(ctx, fmt.Sprintf(`return await mygo.call('DesktopServers.Save', %s, true);`, profile)); err != nil {
 		return err
@@ -134,8 +155,12 @@ func (p *panel) probeDesktopServers(ctx context.Context, report string) (probeEr
 		return fmt.Errorf("remote did not get an independent page")
 	}
 	stage = "remote sidebar and bridge isolation"
-	if err := waitChatScript(ctx, remote.Page(), `return document.querySelectorAll('.sidebar .desktop-server-track button').length === 2 && document.querySelector('[aria-current="page"]')?.textContent.trim() === 'Home' && !document.querySelector('input[name="password"]') && window.spoolServers.transition?.from === 'local' && window.spoolServers.transition.started_at > 0 && window.spoolServers.entries.find(server => server.id === window.spoolServers.selected)?.status === 'login';`); err != nil {
-		return err
+	remoteCtx, remoteCancel := context.WithTimeout(ctx, 8*time.Second)
+	err = waitChatScript(remoteCtx, remote.Page(), `return document.querySelectorAll('.sidebar .desktop-server-track button').length === 2 && document.querySelector('[aria-current="page"]')?.textContent.trim() === 'Home' && !document.querySelector('input[name="password"]') && window.spoolServers.transition?.from === 'local' && window.spoolServers.transition.started_at > 0 && window.spoolServers.entries.find(server => server.id === window.spoolServers.selected)?.status === 'login';`)
+	remoteCancel()
+	if err != nil {
+		state, _ := remote.Page().EvalContext(ctx, `return JSON.stringify({tabs: window.spoolServers, status: document.querySelector('.desktop-server-welcome [role="status"]')?.textContent, error: document.querySelector('[role="alert"]')?.textContent, requests: await Promise.all(['version', 'me'].map(async name => { const response = await fetch(location.pathname + 'api/' + name, {cache: 'no-store'}); return {name, status: response.status, text: (await response.text()).slice(0, 200)}; }))});`)
+		return fmt.Errorf("remote sidebar was not ready: %w (state: %v)", err, state)
 	}
 	denied, err := remote.Page().EvalContext(ctx, `
 		let rejected = 0;
@@ -285,6 +310,30 @@ func (p *panel) probeDesktopServers(ctx context.Context, report string) (probeEr
 	stage = "background connection status"
 	if err := p.probeBackgroundDesktopServerState(ctx, local, remote); err != nil {
 		return err
+	}
+	stage = "background availability and recovery"
+	for _, status := range []int{http.StatusServiceUnavailable, http.StatusOK} {
+		healthStatus.Store(int32(status))
+		p.window.Update(func() {
+			for id, chat := range p.serverChats {
+				if id != localDesktopServer {
+					chat.lastHealthCheck = time.Time{}
+				}
+			}
+			p.checkDesktopServerHealth()
+		})
+		want := "error"
+		if status == http.StatusOK {
+			want = "login"
+		}
+		if err := waitChatScript(ctx, local.Page(), fmt.Sprintf(`return window.spoolServers.entries.find(server => !server.local)?.status === %q;`, want)); err != nil {
+			return fmt.Errorf("background HTTP %d did not update the foreground tabs: %w", status, err)
+		}
+		if err := p.waitDesktopServerUI(ctx, func() bool {
+			return p.chatView == local && p.chatPresentedView == local && p.serverDialogSnapshot().Status == want
+		}); err != nil {
+			return fmt.Errorf("background availability changed selection or did not update settings: %w", err)
+		}
 	}
 	stage = "restoring local login draft"
 	if err := waitChatScript(ctx, local.Page(), `return !!document.querySelector('.desktop-server-start') && document.querySelector('[aria-current="page"]')?.textContent.trim() === 'Home';`); err != nil {
@@ -494,8 +543,12 @@ func (p *panel) probeDisconnectedDesktopServers(ctx context.Context, local *mygo
 		// Navigation hints are asynchronous. Wait for native selection before
 		// choosing the page to inspect, rather than accidentally polling the
 		// outgoing server's cached page for the incoming server's content.
-		if err := p.waitDesktopServerUI(ctx, func() bool { return p.selectedDesktopServer() == targetID && p.chatView != nil }); err != nil {
-			return fmt.Errorf("selecting %s: %w", name, err)
+		selectionCtx, selectionCancel := context.WithTimeout(ctx, 5*time.Second)
+		err = p.waitDesktopServerUI(selectionCtx, func() bool { return p.selectedDesktopServer() == targetID && p.chatView != nil })
+		selectionCancel()
+		if err != nil {
+			state, _ := page.EvalContext(ctx, `return JSON.stringify({url: location.href, tabs: window.spoolServers, current: document.querySelector('[aria-current="page"]')?.textContent, status: document.querySelector('.desktop-server-welcome [role="status"]')?.textContent});`)
+			return fmt.Errorf("selecting %s: %w (outgoing page: %v)", name, err, state)
 		}
 		selected := make(chan *mygo.Page, 1)
 		p.window.Update(func() { selected <- p.chatView.Page() })

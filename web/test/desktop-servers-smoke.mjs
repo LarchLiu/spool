@@ -296,12 +296,12 @@ navigation.load = function (id) {
       .replace("export function notifyDesktopSidebarWidth() {}", "")
       .replace("export function reportDesktopServerState() { return () => {}; }", "")
       .replace(
-        /export function notifyDesktopServerReady\(state, selection\) \{[^\n]*\}/,
+        /export function notifyDesktopServerReady\([^\n]*\) \{[^\n]*\}/,
         "",
       ) +
       `
 import { reportDesktopServerState as reportHealth } from ${JSON.stringify(path.join(root, "web/src/runtime.ts"))};
-export function reportDesktopServerState(state) {
+export function reportDesktopServerState(state, surface, authenticated) {
   return reportHealth(state, {
     spoolDesktop: true,
     addEventListener: window.addEventListener.bind(window),
@@ -313,11 +313,11 @@ export function reportDesktopServerState(state) {
       const received = new URL(url, location.href).searchParams.get('state');
       window.spoolServers = {...window.spoolServers, entries: window.spoolServers.entries.map(server => server.id === 'local' ? {...server, status: received} : server)};
       window.dispatchEvent(new Event('spool:servers-changed'));
-      window.dispatchEvent(new CustomEvent('spool:server-state-ack', {detail: received}));
+      window.dispatchEvent(new CustomEvent('spool:server-state-ack', {detail: {state: received, authenticated: new URL(url, location.href).searchParams.get('authenticated') === 'true'}}));
     }},
-  });
+  }, authenticated);
 }
-export function notifyDesktopServerReady(state, selection) {
+export function notifyDesktopServerReady(state, selection, surface, authenticated) {
   const dropped = window.fixtureDropReady > 0 || (state === 'login' && window.fixtureLoseLoginReady);
   window.fixtureReadyAttempts.push({server: window.spoolServers.selected, acknowledged: !dropped});
   if (dropped) {
@@ -327,7 +327,7 @@ export function notifyDesktopServerReady(state, selection) {
   } else {
     window.spoolServers = {...window.spoolServers, entries: window.spoolServers.entries.map(server => server.id === 'local' ? {...server, status: state} : server)};
     window.dispatchEvent(new Event('spool:servers-changed'));
-    window.dispatchEvent(new CustomEvent('spool:server-ready-ack', {detail: {state, selection}}));
+    window.dispatchEvent(new CustomEvent('spool:server-ready-ack', {detail: {state, selection, authenticated}}));
   }
 }
 export function selectDesktopServer(id, surface, scrollLeft) {
@@ -508,11 +508,11 @@ try {
       const tabs = page.locator(".sidebar .desktop-server-tabs");
       await tabs.waitFor();
       await tabs
-        .getByRole("button", { name: "本机开发, Connected", exact: true })
+        .getByRole("button", { name: "本机开发, Connected · Signed in", exact: true })
         .waitFor();
       assert.equal(
         await tabs
-          .getByRole("button", { name: "本机开发, Connected", exact: true })
+          .getByRole("button", { name: "本机开发, Connected · Signed in", exact: true })
           .count(),
         1,
       );
@@ -524,6 +524,16 @@ try {
           })
           .count(),
         1,
+      );
+      const signedInDotColor = await tabs
+        .locator('.server-status-dot[data-state="connected"]')
+        .first()
+        .evaluate((dot) => getComputedStyle(dot).backgroundColor);
+      const signedInChannels = signedInDotColor.match(/\d+/g).map(Number);
+      assert.ok(
+        signedInChannels[1] > signedInChannels[0] &&
+          signedInChannels[1] > signedInChannels[2],
+        "a connected signed-in server has a green dot",
       );
       assert.ok(
         await tabs
@@ -763,9 +773,12 @@ try {
       });
       await retryIcon.waitFor({ state: "detached" });
 
-      await page.evaluate(() =>
-        window.dispatchEvent(new Event("auth-expired")),
-      );
+      signedIn = false;
+      await page.evaluate(() => {
+        window.fixtureSockets
+          .findLast((socket) => typeof socket.onerror === "function")
+          .onerror();
+      });
       const loginPlug = page
         .locator(".side-foot")
         .getByRole("button", { name: "Sign in", exact: true });
@@ -838,7 +851,7 @@ try {
       assert.equal(
         await tabs
           .getByRole("button", {
-            name: "本机开发, Sign-in required",
+            name: "本机开发, Connected · Sign-in required",
             exact: true,
           })
           .count(),
@@ -855,9 +868,29 @@ try {
         .evaluate((dot) => getComputedStyle(dot).backgroundColor);
       const channels = reachableDotColor.match(/\d+/g).map(Number);
       assert.ok(
-        channels[1] > channels[0] && channels[1] > channels[2],
-        "a reachable signed-out server has a green dot",
+        channels[2] > channels[0] && channels[2] > channels[1],
+        "a reachable signed-out server has a blue dot",
       );
+      assert.notEqual(reachableDotColor, signedInDotColor);
+      // The native checker can detect an outage while a cached login page has
+      // no socket. Its result updates the sidebar without being overwritten by
+      // the page's last successful session check.
+      for (const [status, action] of [["error", "Retry"], ["login", "Sign in"]]) {
+        await page.evaluate((status) => {
+          window.spoolServers = {
+            ...window.spoolServers,
+            entries: window.spoolServers.entries.map((server) =>
+              server.id === "local" ? { ...server, status } : server,
+            ),
+          };
+          window.dispatchEvent(new Event("spool:servers-changed"));
+        }, status);
+        await verifySignedOutAction(page, action);
+        await tabs.getByRole("button", {
+          name: `本机开发, ${status === "error" ? "Connection failed" : "Connected · Sign-in required"}`,
+          exact: true,
+        }).waitFor();
+      }
       for (const state of ["error", "disconnected"])
         assert.notEqual(
           await tabs
@@ -887,6 +920,16 @@ try {
         0,
         "selecting an unsuccessful server does not open the sign-in page",
       );
+      await verifySignedOutAction(page, "Retry");
+      await page.evaluate(() => {
+        window.spoolServers = {
+          ...window.spoolServers,
+          entries: window.spoolServers.entries.map((server) =>
+            server.id === "custom-1234" ? { ...server, status: "login" } : server,
+          ),
+        };
+        window.dispatchEvent(new Event("spool:servers-changed"));
+      });
       await page
         .locator(".side-foot")
         .getByRole("button", { name: "Sign in", exact: true })
@@ -1395,8 +1438,8 @@ try {
                 `.server-connection-tabs .server-status-dot[data-state="${status}"]`,
               )
               .evaluate((dot) => getComputedStyle(dot).backgroundColor),
-            reachableDotColor,
-            "connection settings use the same green for reachable servers with or without a login",
+            status === "connected" ? signedInDotColor : reachableDotColor,
+            "connection settings distinguish signed-in and signed-out servers just like the sidebar",
           );
         await page
           .getByRole("tab", { name: "Public HTTPS", exact: true })

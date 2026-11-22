@@ -86,6 +86,10 @@ public class MainActivityServerTabsTest {
         void push(Client client, String kind, String raw) { assertNotNull(listener(client)); listener(client).onEvent(kind, raw); idle(); }
         void select(String id) { ReflectionHelpers.callInstanceMethod(h.activity, "selectServer", ReflectionHelpers.ClassParameter.from(String.class, id)); }
         void enable(String id, boolean value) { ReflectionHelpers.callInstanceMethod(h.activity, "enableServer", ReflectionHelpers.ClassParameter.from(String.class, id), ReflectionHelpers.ClassParameter.from(boolean.class, value)); }
+        String status(String id) {
+            Map<String, String> states = ReflectionHelpers.callInstanceMethod(h.activity, "serverConnectionStates");
+            return states.get(id);
+        }
         JSONObject cachedProject(String id) {
             Object cache = h.<Map<String, ?>>get("serverWorkspaces").get(id); assertNotNull(cache);
             return ((JSONArray) ReflectionHelpers.getField(cache, "projects")).optJSONObject(0);
@@ -94,6 +98,56 @@ public class MainActivityServerTabsTest {
         @Override public void close() {
             h.activity.getPreferences(Activity.MODE_PRIVATE).edit().clear().commit();
             MainActivityConnectionTest.ShadowSpoolnet.tailnetHealth = null; h.close();
+        }
+    }
+
+    @Test public void healthyTransportWaitsForSocketReadinessAndSignedOutTabsTurnBlue() throws Exception {
+        try (Fixture f = new Fixture(false)) {
+            assertEquals("connected", f.status(f.home));
+            assertEquals("connecting", f.status(f.office.id));
+            f.drain(); f.push(f.officeClient, "ready", "true");
+            assertEquals("connected", f.status(f.office.id));
+            f.push(f.officeClient, "auth_expired", "{}");
+            assertEquals("login", f.status(f.office.id));
+            NativeServerTabs tabs = ReflectionHelpers.getField(f.h.<NativeSidebar>get("sidebar"), "serverTabs");
+            assertEquals("Office, Connected · Sign-in required", tabs.button(f.office.id).getContentDescription());
+            assertEquals("connected", f.status(f.home));
+            assertEquals(f.home, f.servers.selected);
+        }
+    }
+
+    @Test public void socketInterruptionsTurnRedImmediatelyAndOnlyTheirOwnReadyRestoresGreen() throws Exception {
+        try (Fixture f = new Fixture(true)) {
+            for (String id : new String[] {f.office.id, f.home}) {
+                Client client = id.equals(f.home) ? f.homeClient : f.officeClient;
+                f.push(client, "transport_error", "{}");
+                assertEquals("error", f.status(id));
+                assertEquals("alice", f.servers.entries.stream().filter(server -> server.id.equals(id)).findFirst().orElseThrow().account.optString("id"));
+                f.drainConnections(); f.drain();
+                assertEquals("A successful health/session check cannot establish the realtime connection", "error", f.status(id));
+                Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(650)); f.drain();
+                f.push(client, "ready", "true");
+                assertEquals("connected", f.status(id));
+                assertEquals("connected", f.status(id.equals(f.home) ? f.office.id : f.home));
+            }
+        }
+    }
+
+    @Test public void theFirstFailedHealthSampleTurnsRedWithoutWaitingForTransportResetThresholds() throws Exception {
+        try (Fixture f = new Fixture(true)) {
+            Client client = f.homeClient;
+            ReflectionHelpers.callInstanceMethod(f.h.activity, "acceptConnectionHealth",
+                    ReflectionHelpers.ClassParameter.from(Client.class, client),
+                    ReflectionHelpers.ClassParameter.from(int.class, f.h.<Integer>get("generation")),
+                    ReflectionHelpers.ClassParameter.from(ConnectionRecovery.Snapshot.class,
+                            new ConnectionRecovery.Snapshot("Running", "Failed", "network", "", "offline")),
+                    ReflectionHelpers.ClassParameter.from(boolean.class, true));
+            assertEquals("error", f.status(f.home));
+            assertEquals("connected", f.status(f.office.id));
+            MainActivityGoalTest.ShadowClient shadow = org.robolectric.shadow.api.Shadow.extract(f.officeClient);
+            shadow.healthResponse = "{state:'NeedsLogin',https:'Not checked',problem:'login'}";
+            f.h.call("refreshServerConnections"); f.drainConnections();
+            assertEquals("Node enrollment is pending transport setup, not Spool sign-in", "connecting", f.status(f.office.id));
         }
     }
 
@@ -322,6 +376,54 @@ public class MainActivityServerTabsTest {
             assertEquals("alice", f.h.<JSONObject>get("user").getString("id")); assertSame(f.homeClient, f.h.get("client"));
             f.listener(f.officeClient).onEvent("navigation", navigation("Revoked connection")); idle();
             assertFalse(f.h.<Map<?, ?>>get("serverWorkspaces").containsKey(f.office.id));
+        }
+    }
+
+    @Test public void healthSuccessBeforeTheFirstSocketReadyKeepsTheSessionCacheAndRetryOwner() throws Exception {
+        try (Fixture f = new Fixture(false)) {
+            f.drain();
+            f.push(f.officeClient, "navigation", navigation("Office before first ready"));
+            Object runtime = f.h.<Map<String, ?>>get("serverRuntimes").get(f.office.id);
+            Object feed = ReflectionHelpers.getField(runtime, "feed");
+            NativeWorkspaceEvents<?> events = ReflectionHelpers.getField(feed, "events");
+            Object cache = f.h.<Map<String, ?>>get("serverWorkspaces").get(f.office.id);
+            assertFalse(events.ready());
+            f.push(f.officeClient, "transport_error", "{}");
+            f.drainConnections(); f.drain();
+            f.h.call("refreshServerConnections"); f.drainConnections(); f.drain();
+            assertSame("Healthy HTTP must retain the first socket's retry policy", feed, ReflectionHelpers.getField(runtime, "feed"));
+            assertSame(events, ReflectionHelpers.getField(feed, "events"));
+            assertSame(cache, f.h.<Map<String, ?>>get("serverWorkspaces").get(f.office.id));
+            assertNotNull(((ConnectionRouter.Candidate<?>) ReflectionHelpers.getField(runtime, "candidate")).session);
+            assertEquals("Office before first ready project", f.cachedProject(f.office.id).getString("name"));
+            assertFalse(events.ready());
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(650)); f.drain();
+            f.push(f.officeClient, "ready", "true");
+            assertTrue(events.ready());
+            assertSame(feed, ReflectionHelpers.getField(runtime, "feed"));
+        }
+    }
+
+    @Test public void backgroundNetworkFallbackPreservesTheSelectedDisabledSidebar() throws Exception {
+        try (Fixture f = new Fixture(true)) {
+            f.enable(f.home, false); f.drainConnections();
+            f.h.call("closeSettings"); f.h.call("openSidebar");
+            NativeSidebar sidebar = f.h.get("sidebar");
+            assertNotNull(sidebar);
+            Object cache = f.h.<Map<String, ?>>get("serverWorkspaces").get(f.home);
+            f.office.plan = new ConnectionPlan(f.office.plan.direct, "https://office.example.ts.net", ConnectionMode.DIRECT, true);
+            MainActivityGoalTest.ShadowClient shadow = org.robolectric.shadow.api.Shadow.extract(f.officeClient);
+            shadow.healthResponse = "{state:'Running',https:'Failed',problem:'network'}";
+            f.h.call("refreshServerConnections"); f.drainConnections(); f.drain();
+            Object runtime = f.h.<Map<String, ?>>get("serverRuntimes").get(f.office.id);
+            ConnectionRouter.Candidate<Client> candidate = ReflectionHelpers.getField(runtime, "candidate");
+            assertEquals(ConnectionMode.TAILSCALE, candidate.endpoint.mode);
+            assertEquals(f.home, f.servers.selected);
+            assertFalse(f.servers.active().enabled);
+            assertNull(f.h.get("client"));
+            assertSame(sidebar, f.h.get("sidebar"));
+            assertSame(cache, f.h.<Map<String, ?>>get("serverWorkspaces").get(f.home));
+            assertEquals("sidebar", f.h.<String>get("panel"));
         }
     }
 

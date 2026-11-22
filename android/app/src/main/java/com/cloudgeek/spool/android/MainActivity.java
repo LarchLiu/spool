@@ -227,7 +227,7 @@ public final class MainActivity extends Activity {
         ConnectionRouter<Client> router;
         ConnectionRouter.Candidate<Client> candidate;
         ServerFeed feed;
-        boolean selecting;
+        boolean selecting, socketFailed;
         final Map<ConnectionMode, String> states = new java.util.EnumMap<>(ConnectionMode.class);
         final Map<ConnectionPlan.Endpoint, ConnectionRecovery.Snapshot> health = new HashMap<>();
     }
@@ -366,7 +366,7 @@ public final class MainActivity extends Activity {
             origin = first.origin; connectionMode = first.mode;
         }
         // Resolve the private, origin-scoped Go session before exposing the login form.
-        restoringSession = !origin.isEmpty();
+        restoringSession = !origin.isEmpty() && serverProfiles.active().enabled;
         connectivity = getSystemService(ConnectivityManager.class);
         relayDiscovery = new RelayDiscovery(this, this::relayDiscovered);
         networkCallback =
@@ -1128,7 +1128,7 @@ public final class MainActivity extends Activity {
                         : health.problem.equals("login") ? tr("Tailscale sign-in required", "需要登录 Tailscale")
                         : health.problem.equals("approval") ? tr("Device approval required", "等待设备批准") : tr("Unavailable", "不可用");
                 runtime.states.put(endpoint.mode, state);
-                if (!serverProfiles.selected.equals(serverID)) return;
+                if (!serverProfiles.selected.equals(serverID)) { renderNavigation(); return; }
                 routeStates.put(endpoint.mode, health.healthy() ? tr("Available", "可用")
                         : health.problem.equals("login") ? tr("Tailscale sign-in required", "需要登录 Tailscale")
                         : health.problem.equals("approval") ? tr("Device approval required", "等待设备批准") : tr("Unavailable", "不可用"));
@@ -1136,7 +1136,9 @@ public final class MainActivity extends Activity {
                 updateConnectionSettings();
             }
             public void selected(ConnectionRouter.Candidate<Client> candidate) {
-                runtime.selecting = false; runtime.candidate = candidate;
+                runtime.selecting = false;
+                if (runtime.candidate == null || runtime.candidate.client != candidate.client) runtime.socketFailed = false;
+                runtime.candidate = candidate;
                 if (destroyed) return;
                 if (candidate.session != null) try { rememberServerName(owner, new JSONObject(candidate.session.json)); }
                 catch (Exception ignored) {}
@@ -1701,8 +1703,8 @@ public final class MainActivity extends Activity {
             ConnectionRouter.Candidate<Client> previous = runtime.candidate;
             runtime.candidate = new ConnectionRouter.Candidate<>(previous.endpoint, previous.client, previous.health, null, true);
         }
-        if (server.account.length() == 0) return;
-        server.account = new JSONObject(); saveServers();
+        if (server.account.length() != 0) { server.account = new JSONObject(); saveServers(); }
+        if (!server.id.equals(serverProfiles.selected)) { updateConnectionSettings(); renderNavigation(); }
     }
 
     private void saveServerWorkspace() {
@@ -1928,14 +1930,21 @@ public final class MainActivity extends Activity {
             public void connected(boolean value) {
                 if (!serverFeedCurrent(server, runtime, feed)) return;
                 feed.data.ready(value);
+                if (value) runtime.socketFailed = false;
                 if (!value) feed.desktopAvailable = false;
+                updateConnectionSettings(); renderNavigation();
             }
             public void expired() { if (serverFeedCurrent(server, runtime, feed)) forgetAccount(server); }
             public void authFailed(Exception error) {
                 if (serverFeedCurrent(server, runtime, feed) && error instanceof ApiFailure && ((ApiFailure) error).status == 401)
                     forgetAccount(server);
             }
-            public void failed() { if (serverFeedCurrent(server, runtime, feed)) probeServer(server, true); }
+            public void failed() {
+                if (!serverFeedCurrent(server, runtime, feed)) return;
+                runtime.socketFailed = true;
+                updateConnectionSettings(); renderNavigation();
+                probeServer(server, true);
+            }
             public void event(String kind, String raw) {
                 if (!java.util.Arrays.asList("navigation", "agents", "profiles", "desktop", "presence", "server", "session_notification").contains(kind)) return;
                 EventStream stream = feed.stream;
@@ -2051,10 +2060,12 @@ public final class MainActivity extends Activity {
                 runtime.health.keySet().retainAll(server.plan.ordered(null));
                 runtime.health.put(endpoint, health);
                 runtime.states.put(endpoint.mode, health.healthy() ? tr("Available", "可用") : tr("Unavailable", "不可用"));
+                updateConnectionSettings(); renderNavigation();
             }
             public void selected(ConnectionRouter.Candidate<Client> candidate) {
                 runtime.selecting = false;
                 if (!server.enabled || destroyed) return;
+                if (runtime.candidate == null || runtime.candidate.client != candidate.client) runtime.socketFailed = false;
                 runtime.candidate = candidate;
                 if (candidate.session != null) try {
                     JSONObject value = new JSONObject(candidate.session.json);
@@ -2390,24 +2401,36 @@ public final class MainActivity extends Activity {
 
     private Map<String, String> serverConnectionStates() {
         Map<String, String> states = new HashMap<>();
-        for (ServerProfiles.Server server : serverProfiles.entries) {
-            ServerRuntime runtime = serverRuntimes.get(server.id);
-            String state = "disconnected";
-            if (server.enabled && !server.plan.ordered(null).isEmpty()) {
-                if (runtime != null && runtime.selecting && (runtime.candidate == null || !runtime.candidate.health.healthy())) state = "connecting";
-                else if (server.id.equals(serverProfiles.selected)) {
-                    if (connected) state = "connected";
-                    else if (routeSelecting || connecting && !httpsState.equals("Failed")) state = "connecting";
-                    else state = "error";
-                } else if (runtime != null && runtime.candidate != null) {
-                    ConnectionRecovery.Snapshot health = runtime.candidate.health;
-                    state = health.healthy() ? "connected"
-                            : health.problem.equals("login") || health.problem.equals("approval") ? "login" : "error";
-                } else state = "connecting";
-            }
-            states.put(server.id, state);
-        }
+        for (ServerProfiles.Server server : serverProfiles.entries) states.put(server.id, serverConnectionState(server));
         return states;
+    }
+
+    private String serverConnectionState(ServerProfiles.Server server) {
+        if (!server.enabled || server.plan.ordered(null).isEmpty()) return "disconnected";
+        ServerRuntime runtime = serverRuntimes.get(server.id);
+        ConnectionRouter.Candidate<Client> candidate = runtime == null ? null : runtime.candidate;
+        boolean selected = server.id.equals(serverProfiles.selected);
+        ConnectionPlan.Endpoint endpoint = selected && client != null ? new ConnectionPlan.Endpoint(connectionMode, origin)
+                : candidate != null ? candidate.endpoint : server.plan.candidates(null).get(0);
+        ConnectionRecovery.Snapshot health = runtime == null ? null : runtime.health.get(endpoint);
+        if (health == null && candidate != null) health = candidate.health;
+        if (health != null && !health.healthy())
+            // Node enrollment/approval is transport setup, not Spool sign-in.
+            return health.problem.equals("login") || health.problem.equals("approval") || health.problem.equals("starting") ? "connecting" : "error";
+        if (health == null && !(selected && connected)) return "connecting";
+        boolean ready = selected ? workspaceReady : runtime != null && runtime.feed != null && runtime.feed.events != null && runtime.feed.events.ready();
+        if (selected) {
+            if (user != null && !routeLoginRequired && !restoringSession)
+                return ready ? "connected" : runtime != null && runtime.socketFailed ? "error" : "connecting";
+            if (restoringSession || routeLoginRequired || sessionCheckBusy)
+                return !sessionCheckBusy && candidate != null && !candidate.sessionChecked ? "error" : "connecting";
+            return "login";
+        }
+        if (candidate == null) return "connecting";
+        if (candidate.sessionChecked && candidate.session == null) return "login";
+        if (ready) return "connected";
+        if (candidate.session == null || runtime.socketFailed) return "error";
+        return "connecting";
     }
 
     private void renderNavigation() {
@@ -4175,7 +4198,13 @@ public final class MainActivity extends Activity {
             public void connection(EventStream stream) { workspaceStream = stream; ++workspaceEpoch; }
             public void event(String kind, String value) { decodeWorkspaceEvent(kind, value, workspaceEpoch); }
             public void connected(boolean value) { setWorkspaceConnected(value); }
-            public void failed() { if (client == captured) connectionFailed(captured); }
+            public void failed() {
+                if (client != captured) return;
+                ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
+                if (runtime != null) runtime.socketFailed = true;
+                updateConnectionSettings(); renderNavigation();
+                connectionFailed(captured);
+            }
             public void expired() { expire(); }
             public void authFailed(Exception error) {
                 if (error instanceof ApiFailure && ((ApiFailure) error).status == 401) expire();
@@ -4221,12 +4250,15 @@ public final class MainActivity extends Activity {
 
     private void setWorkspaceConnected(boolean value) {
         workspaceReady = value;
+        ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
+        if (value && runtime != null) runtime.socketFailed = false;
         if (workspaceData != null) workspaceData.ready(value);
         if (!value) {
             setDesktopAvailable(false);
             presenceStale = true;
             disconnectPeople(); updateHeaderPeople(); updateMissingProfiles();
         } else renderPeople();
+        if (value) { updateConnectionSettings(); renderNavigation(); }
     }
 
     private void resumeWorkspace() {

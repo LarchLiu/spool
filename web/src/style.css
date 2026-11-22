@@ -5012,9 +5012,11 @@ option {
   border-radius: 50%;
   background: var(--muted);
 }
-.server-status-dot[data-state="connected"],
-.server-status-dot[data-state="login"] {
+.server-status-dot[data-state="connected"] {
   background: #22a06b;
+}
+.server-status-dot[data-state="login"] {
+  background: #3987e0;
 }
 .server-status-dot[data-state="connecting"] {
   background: #d99b20;

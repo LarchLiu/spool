@@ -276,6 +276,33 @@ func TestDesktopServerHintsValidateOriginAndQuery(t *testing.T) {
 	if _, ok := desktopServerStateNavigation(base, base+desktopServerStatePath+"?state=unknown"); ok {
 		t.Fatal("invalid state accepted")
 	}
+	for _, path := range []string{desktopServerStatePath, desktopServerReadyPath} {
+		selection := ""
+		if path == desktopServerReadyPath {
+			selection = "&selection=local%3A0"
+		}
+		for _, authenticated := range []string{"true", "false"} {
+			target := base + path + "?state=error&authenticated=" + authenticated + selection
+			connection, ok := desktopServerStateNavigation(base, target)
+			if path == desktopServerReadyPath {
+				paint, valid := desktopServerReadyNavigation(base, target)
+				connection, ok = paint.desktopServerConnection, valid
+			}
+			if !ok || connection.State != "error" || connection.Authenticated != (authenticated == "true") {
+				t.Fatal("session state was not preserved before socket ready", target, connection)
+			}
+		}
+		for _, query := range []string{"authenticated=unknown", "authenticated=true&authenticated=false", "authenticated=true&other=value"} {
+			target := base + path + "?state=error&" + query + selection
+			_, ok := desktopServerStateNavigation(base, target)
+			if path == desktopServerReadyPath {
+				_, ok = desktopServerReadyNavigation(base, target)
+			}
+			if ok {
+				t.Fatal("invalid session hint accepted", target)
+			}
+		}
+	}
 	for _, state := range []string{"connecting", "connected", "login", "error", "disconnected"} {
 		if got, ok := desktopServerReadyNavigation(base, base+desktopServerReadyPath+"?state="+state+"&selection=local%3A0"); !ok || got.State != state || got.Selection != "local:0" {
 			t.Fatal("painted state rejected", state, got)

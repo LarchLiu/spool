@@ -25,7 +25,7 @@ export async function notifyDesktopSessionChanged() {}
 export async function notifyDesktopViewChanged() {}
 export function notifyDesktopServerState() {}
 export function reportDesktopServerState() { return () => {}; }
-export function notifyDesktopServerReady(state, selection) { window.dispatchEvent(new CustomEvent('spool:server-ready-ack', {detail: {state, selection}})); }
+export function notifyDesktopServerReady(state, selection, surface, authenticated = state === 'connected') { window.dispatchEvent(new CustomEvent('spool:server-ready-ack', {detail: {state, selection, authenticated}})); }
 export function notifyDesktopSidebarWidth() {}
 export function notifyDesktopServerName() {}`;
     },

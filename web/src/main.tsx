@@ -243,11 +243,18 @@ function App() {
     typeof subscribeWorkspaceEvents
   > | null>(null);
   const [messagingConnected, setMessagingConnected] = useState(false);
-  const desktopConnectionState = !ready
+  const desktopAuthenticated = !!user;
+  const desktopPageState = !ready
     ? "connecting"
     : !serverAvailable
       ? desktopServer?.status === "disconnected" ? "disconnected" : "error"
       : user ? messagingConnected ? "connected" : "connecting" : "login";
+  // Native availability checks keep cached login pages current even when their
+  // renderer is suspended. Report the page's own state so those checks continue
+  // through an outage and can detect recovery.
+  const desktopConnectionState = desktopPageState === "login" && desktopServer?.status === "error"
+    ? "error"
+    : desktopPageState;
   const [groupPicker, setGroupPicker] = useState<string | null>(null);
   const chatWindowBounds = useRef<FloatingWindowBounds | null>(null);
   const rememberChatWindowBounds = useCallback((bounds: FloatingWindowBounds) => {
@@ -376,8 +383,8 @@ function App() {
     return subscribeDesktopServerSelection(reveal);
   }, [servers.selected]);
   useEffect(
-    () => reportDesktopServerState(desktopConnectionState),
-    [desktopConnectionState],
+    () => reportDesktopServerState(desktopPageState, globalThis, desktopAuthenticated),
+    [desktopPageState, desktopAuthenticated],
   );
   useEffect(() => {
     if (!isDesktopChat()) return;
@@ -386,7 +393,7 @@ function App() {
     let retry: ReturnType<typeof setTimeout> | undefined;
     let acknowledged = false;
     const unsubscribe = subscribeDesktopServerReadyAck((paint) => {
-      if (paint.state !== desktopConnectionState || paint.selection !== desktopSelection) return;
+      if (paint.state !== desktopPageState || paint.selection !== desktopSelection || paint.authenticated !== desktopAuthenticated) return;
       acknowledged = true;
       clearTimeout(retry);
     });
@@ -394,7 +401,7 @@ function App() {
       // Other navigation hints may replace this one before WebKit delivers it.
       // Send the rendered connection state with it, retrying until native
       // acknowledges that state so signed-out servers cannot stay connecting.
-      notifyDesktopServerReady(desktopConnectionState, desktopSelection);
+      notifyDesktopServerReady(desktopPageState, desktopSelection, globalThis, desktopAuthenticated);
       if (!acknowledged) retry = setTimeout(notify, 100);
     };
     let frame = requestAnimationFrame(() => {
@@ -405,7 +412,7 @@ function App() {
       clearTimeout(retry);
       unsubscribe();
     };
-  }, [serverSelection, desktopSelection, desktopConnectionState, desktopLoginOpen]);
+  }, [serverSelection, desktopSelection, desktopPageState, desktopAuthenticated, desktopLoginOpen]);
   const [fileSelection, setFileSelection] = useState<FileSelection | null>(
     null,
   );
@@ -660,6 +667,8 @@ function App() {
       setReady(true);
     });
     const expire = () => {
+      // An authentication rejection still confirms the server is reachable.
+      setServerAvailable(true);
       for (const value of localDeliveriesRef.current) retireDelivery(value);
       for (const draft of editedQueueDrafts.current.values())
         releaseAttachments(draft.files);

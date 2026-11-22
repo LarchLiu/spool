@@ -125,11 +125,11 @@ func runDesktop() (runErr error) {
 	development := mygo.IsDev()
 	root := flag.String("data-dir", workspace.DefaultDataDir(development), "Data directory (database in db/spool.sqlite)")
 	smoke := flag.String("release-smoke", "", "Probe the packaged desktop using fresh temporary data; write a JSON report")
-	smokeProbe := flag.String("smoke-probe", "", "Run only the notifications or servers native probe (requires --release-smoke)")
+	smokeProbe := flag.String("smoke-probe", "", "Run only the notifications, servers or server-startup native probe (requires --release-smoke)")
 	smokeHistoryPath := flag.String("smoke-release-history", "", "ReleaseHistory JSON fixture for --release-smoke screenshots only")
 	flag.Parse()
-	if *smokeProbe != "" && (*smoke == "" || (*smokeProbe != "notifications" && *smokeProbe != "servers")) {
-		return fmt.Errorf("--smoke-probe only accepts notifications or servers and requires --release-smoke")
+	if *smokeProbe != "" && (*smoke == "" || (*smokeProbe != "notifications" && *smokeProbe != "servers" && *smokeProbe != "server-startup")) {
+		return fmt.Errorf("--smoke-probe only accepts notifications, servers or server-startup and requires --release-smoke")
 	}
 	var smokeHistory *appupdate.ReleaseHistory
 	if *smokeHistoryPath != "" {
@@ -204,7 +204,7 @@ func runDesktop() (runErr error) {
 	}
 	defer service.Close()
 	devURL := os.Getenv("MYGO_DEV_URL")
-	if *smoke != "" {
+	if *smoke != "" && *smokeProbe != "server-startup" {
 		devURL = ""
 	}
 	devFrontend, err := startDesktopDevFrontend(development, devURL, service.LocalWebURL)
@@ -213,6 +213,14 @@ func runDesktop() (runErr error) {
 	}
 	defer devFrontend.close()
 	p := &panel{service: service, devFrontend: devFrontend, tab: "Service", project: workspace.Project{AllowExternalFiles: true}, members: map[string]bool{}, agentPaths: map[chatmodel.Backend]string{}, agentEnabled: map[chatmodel.Backend]bool{}}
+	var startupProbe *desktopServerStartupProbe
+	if *smokeProbe == "server-startup" {
+		startupProbe, err = prepareDesktopServerStartupProbe(p)
+		if err != nil {
+			return err
+		}
+		defer startupProbe.close()
+	}
 	if err = p.prepareDesktopServers(); err != nil {
 		return err
 	}
@@ -302,12 +310,16 @@ func runDesktop() (runErr error) {
 			log.Printf("event=desktop_settings_failed error=%q", err)
 		}
 		p.prepareServerDialog()
+		if startupProbe != nil {
+			startupProbe.restoreSession(p)
+		}
 		if p.tab == "Chat" {
 			p.openChat()
 		}
 		if p.pendingNotification != nil {
 			p.openChat()
 		}
+		p.connectEnabledDesktopServers()
 		p.refreshGitHubCLI()
 		p.window.OnClose(func(e *mygo.CloseEvent) {
 			if !p.quitting {
@@ -347,6 +359,8 @@ func runDesktop() (runErr error) {
 				go p.smokeNotificationsOnly(*smoke, smokeResult)
 			} else if *smokeProbe == "servers" {
 				go p.smokeServersOnly(*smoke, smokeResult)
+			} else if startupProbe != nil {
+				go startupProbe.run(p, *smoke, smokeResult)
 			} else {
 				go p.smoke(*smoke, smokeResult, smokeHistory)
 			}
@@ -366,6 +380,7 @@ func runDesktop() (runErr error) {
 					p.window.Update(func() {
 						p.status, p.agents, p.projects = status, agents, projects
 						p.sendUpdateAvailability(p.chatView)
+						p.checkDesktopServerHealth()
 					})
 				}
 			}
