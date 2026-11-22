@@ -44,14 +44,18 @@ func tokenHash(token string) string {
 func (s *Store) authenticate(token string) (authIdentity, error) {
 	var v authIdentity
 	v.TokenHash = tokenHash(token)
-	err := s.db.QueryRow(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,a.csrf,COALESCE(av.style,?),COALESCE(av.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0),COALESCE(ae.epoch,0) FROM auth_sessions a JOIN users u ON u.id=a.user_id LEFT JOIN user_avatars av ON av.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id LEFT JOIN user_adb_bridge_epochs ae ON ae.user_id=u.id WHERE a.token_hash=? AND a.expires_at>? AND u.disabled=0`, DefaultAvatar().Style, v.TokenHash, time.Now().UnixMilli()).Scan(&v.User.ID, &v.User.Username, &v.User.Nickname, &v.User.Disabled, &v.User.CreatedAt, &v.CSRF, &v.User.Avatar.Style, &v.User.Avatar.Seed, &v.User.RemoteDesktop, &v.User.ADBBridge, &v.adbEpoch)
+	now := time.Now()
+	err := s.db.QueryRow(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,a.csrf,COALESCE(av.style,?),COALESCE(av.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0),COALESCE(ae.epoch,0),COALESCE(fu.peer_id,'')
+		FROM auth_sessions a JOIN users u ON u.id=a.user_id LEFT JOIN user_avatars av ON av.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id LEFT JOIN user_adb_bridge_epochs ae ON ae.user_id=u.id
+		LEFT JOIN federation_users fu ON fu.user_id=u.id LEFT JOIN federation_sessions fs ON fs.session_hash=a.token_hash
+		WHERE a.token_hash=? AND a.expires_at>? AND u.disabled=0 AND (fu.peer_id IS NULL OR fs.checked_at>?)`, DefaultAvatar().Style, v.TokenHash, now.UnixMilli(), now.Add(-federationOffline).UnixMilli()).Scan(&v.User.ID, &v.User.Username, &v.User.Nickname, &v.User.Disabled, &v.User.CreatedAt, &v.CSRF, &v.User.Avatar.Style, &v.User.Avatar.Seed, &v.User.RemoteDesktop, &v.User.ADBBridge, &v.adbEpoch, &v.User.SourceServerID)
 	return v, err
 }
 func (s *Store) login(username, password string) (string, authIdentity, error) {
 	var id string
 	var hash string
 	var disabled bool
-	err := s.db.QueryRow(`SELECT id,password_hash,disabled FROM users WHERE username=?`, strings.TrimSpace(username)).Scan(&id, &hash, &disabled)
+	err := s.db.QueryRow(`SELECT id,password_hash,disabled FROM users WHERE username=? AND NOT EXISTS(SELECT 1 FROM federation_users WHERE user_id=users.id)`, strings.TrimSpace(username)).Scan(&id, &hash, &disabled)
 	if err != nil {
 		hash = "$2a$12$R9h/cIPz0gi.URNNX3kh2OPST9/PgBkqquzi.Ss7KIUgO2t0jWMUW"
 	}
@@ -69,7 +73,7 @@ func (s *Store) login(username, password string) (string, authIdentity, error) {
 	if _, err = tx.Exec(`DELETE FROM auth_sessions WHERE expires_at<=?`, time.Now().UnixMilli()); err != nil {
 		return "", authIdentity{}, err
 	}
-	if _, err = tx.Exec(`INSERT INTO auth_sessions VALUES(?,?,?,?)`, tokenHash(token), id, csrf, time.Now().Add(7*24*time.Hour).UnixMilli()); err != nil {
+	if _, err = tx.Exec(`INSERT INTO auth_sessions VALUES(?,?,?,?)`, tokenHash(token), id, csrf, time.Now().Add(loginSessionTTL).UnixMilli()); err != nil {
 		return "", authIdentity{}, err
 	}
 	if err = tx.Commit(); err != nil {

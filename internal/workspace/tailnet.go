@@ -40,6 +40,7 @@ type tailnetRuntime struct {
 	loginOnly    bool
 	settings     Settings
 	ingress      *httpIngress
+	dial         func(context.Context, string, string) (net.Conn, error)
 }
 
 func (r *tailnetRuntime) setLogin(login func(context.Context) (string, error)) {
@@ -329,6 +330,12 @@ func (s *Service) attachTailnet(runtime *tailnetRuntime, server *http.Server, co
 	// Publish this ingress separately; never replace the configured proxy origin.
 	if runtime.authRevision == s.tailnetAuthRevision {
 		s.tailnetAuthKey = ""
+	}
+	if endpoint, ok := connection.(interface {
+		DialContext(context.Context, string, string) (net.Conn, error)
+	}); ok {
+		runtime.dial = endpoint.DialContext
+		s.app.federationTailnet.Store(runtime)
 	}
 	s.serveLocked(runtime.ingress.server, connection.Listener())
 	runtime.report(tailnet.Status{State: "Running", URL: origin})

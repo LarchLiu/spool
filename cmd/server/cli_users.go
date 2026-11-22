@@ -32,7 +32,7 @@ func userInput(u workspace.User) workspace.UserInput {
 }
 
 func addUsers(root *command, out io.Writer) {
-	c := root.add("user", "List, create and update local login accounts", "Run while the service is stopped. Password changes read SPOOL_NEW_PASSWORD (12-72 bytes).\nUpdating an account revokes its existing login sessions. Disabled accounts retain history.")
+	c := root.add("user", "List, create and update user accounts", "Run while the service is stopped. Password changes read SPOOL_NEW_PASSWORD (12-72 bytes).\nUpdating an account revokes its existing login sessions. Disabled accounts retain history.\nFederated accounts are listed with source_server_id and cannot use local credentials.")
 	list := c.add("list", "List accounts including disabled users", "")
 	list.run = func(_ context.Context, s *workspace.Service) error {
 		v, err := s.Store.Users()
@@ -89,6 +89,9 @@ func addUsers(root *command, out io.Writer) {
 		u, err := findUser(s.Store, *ref)
 		if err != nil {
 			return err
+		}
+		if u.SourceServerID != "" && (changed(update, "username") || changed(update, "nickname") || *password) {
+			return fmt.Errorf("federated usernames, display names and passwords cannot be edited locally")
 		}
 		v := userInput(u)
 		if changed(update, "username") {

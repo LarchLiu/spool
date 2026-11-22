@@ -129,7 +129,7 @@ func OpenStore(root string) (*Store, error) {
 	if _, err = db.Exec(`PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;`); err != nil {
 		return fail(err)
 	}
-	if _, err = db.Exec(schema); err != nil {
+	if _, err = db.Exec(schema + federationSchema); err != nil {
 		return fail(err)
 	}
 	if err = migrateHistorySchema(db); err != nil {

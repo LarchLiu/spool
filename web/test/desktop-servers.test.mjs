@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   desktopServers,
   subscribeDesktopServers,
+  requestDesktopFederationLogin,
   selectDesktopServer,
   notifyDesktopServerState,
   reportDesktopServerState,
@@ -18,6 +19,7 @@ import {
 } from "../.test-build/runtime.js";
 import { serverDialogCall } from "../.test-build/server-dialog-client.js";
 import {
+  DesktopServerTabBar,
   DesktopServerAction,
   DesktopServerTabs,
 } from "../.test-build/components/web/src/desktop-servers.js";
@@ -94,6 +96,89 @@ test("server tabs receive native display names and preserve the selected server 
     renderToStaticMarkup(createElement(DesktopServerTabs, { t: (key) => key })),
     "",
   );
+});
+
+test("trusted targets follow the current source without duplicating saved servers", () => {
+  const office = {
+    id: "a".repeat(52),
+    name: "Office",
+    clientURL: "https://office.example/",
+  };
+  const lab = { id: "b".repeat(52), name: "Lab" };
+  const paired = { id: "c".repeat(52), name: "Paired" };
+  const entry = (id, name, status = "connected", extra = {}) => ({
+    id,
+    name,
+    local: id === "local",
+    status,
+    ...extra,
+  });
+  const servers = {
+    selected: "home",
+    entries: [
+      entry("local", "Local"),
+      entry("home", "Home"),
+      entry("ordinary", "Ordinary"),
+      entry("office", "Work", "login", {
+        client_url: "https://OFFICE.example:443",
+      }),
+      entry("paired", "Paired", "connected", { server_id: paired.id }),
+    ],
+  };
+  const t = (key, values) => key.replace("{server}", values?.server ?? "");
+  const labels = (snapshot, targets) => {
+    const html = renderToStaticMarkup(
+      createElement(DesktopServerTabBar, { t, servers: snapshot, targets }),
+    );
+    return [...html.matchAll(/<(?:button|a)\b[^>]*aria-label="([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+  };
+  assert.deepEqual(labels(servers, [lab, office, paired]), [
+    "Local, Connected · Signed in",
+    "Home, Connected · Signed in",
+    "Sign in to Lab with this account",
+    "Sign in to Work with this account",
+    "Paired, Connected · Signed in · Federated sign-in",
+    "Ordinary, Connected · Signed in",
+    "Add server",
+  ]);
+  assert.deepEqual(
+    labels({ ...servers, selected: "ordinary" }, [lab, office]),
+    [
+      "Local, Connected · Signed in",
+      "Home, Connected · Signed in",
+      "Ordinary, Connected · Signed in",
+      "Sign in to Lab with this account",
+      "Sign in to Work with this account",
+      "Paired, Connected · Signed in",
+      "Add server",
+    ],
+  );
+  assert.deepEqual(labels(servers, []), [
+    "Local, Connected · Signed in",
+    "Home, Connected · Signed in",
+    "Ordinary, Connected · Signed in",
+    "Work, Connected · Sign-in required",
+    "Paired, Connected · Signed in",
+    "Add server",
+  ]);
+});
+
+test("a federation navigation sends only the selected server ID to native code", () => {
+  const calls = [];
+  const target = "a".repeat(52);
+  const surface = {
+    spoolDesktop: true,
+    location: { assign: (url) => calls.push(url) },
+  };
+  requestDesktopFederationLogin(target, surface);
+  requestDesktopFederationLogin(
+    `${target}&client_url=https://unlisted.example`,
+    surface,
+  );
+  requestDesktopFederationLogin(target, { location: surface.location });
+  assert.deepEqual(calls, [`/__desktop/federation-login?target=${target}`]);
 });
 
 test("server snapshots and subscriptions reject malformed/browser surfaces", () => {

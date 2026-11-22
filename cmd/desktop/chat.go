@@ -201,6 +201,17 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 				})
 				return
 			}
+			if target, reserved, ok := desktopFederationNavigation(state.address, e.URL); reserved {
+				e.PreventDefault()
+				if ok {
+					p.window.Update(func() {
+						if p.serverChats[id] == state {
+							p.startDesktopFederation(id, state, target, p.chatView == view)
+						}
+					})
+				}
+				return
+			}
 			// Keep the outgoing tab bar usable while its replacement renders.
 			if selection, ok := desktopServerNavigation(state.address, e.URL); ok && (p.chatView == view || p.chatPresentedView == view) {
 				e.PreventDefault()
@@ -301,6 +312,7 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 			p.sendDesktopAppearance(view)
 			p.sendUpdateAvailability(view)
 			state.failed, state.loaded = false, true
+			p.learnDesktopServerIdentity(id, state)
 			p.sendDesktopServers()
 			if p.chatView != view {
 				return

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	resources "spool"
@@ -79,6 +80,13 @@ type App struct {
 	desktopViews map[string]*remoteDesktopView
 	adb          *adbbridge.Manager
 	adbEpoch     uint64 // guarded by configMu
+
+	federationLimiter  loginLimiter
+	federationRejected federationFailures
+	federationDial     func(context.Context, FederationPeer, []byte) ([]byte, error)
+	federationStop     context.CancelFunc
+	federationDone     chan struct{}
+	federationTailnet  atomic.Pointer[tailnetRuntime]
 }
 
 type completedTurn struct {
@@ -112,7 +120,9 @@ func NewApp(store *Store, runner agent.AgentRunner, _, _ string) *App {
 			prefix = relay.WebPath(id.ID())
 		}
 	}
-	return &App{relayWebPrefix: prefix, store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, realtimePing: 15 * time.Second, realtimeTimeout: 45 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{changed: func() { store.changes.publish(changePresence) }}, assets: http.FileServer(http.FS(assets)), pushClient: newPushHTTPClient(), avatars: avatar.NewRenderer()}
+	app := &App{relayWebPrefix: prefix, store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, realtimePing: 15 * time.Second, realtimeTimeout: 45 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{changed: func() { store.changes.publish(changePresence) }}, assets: http.FileServer(http.FS(assets)), pushClient: newPushHTTPClient(), avatars: avatar.NewRenderer()}
+	app.federationDial = app.dialFederation
+	return app
 }
 
 func (a *App) activeSettings() Settings {
@@ -147,6 +157,15 @@ func apiError(w http.ResponseWriter, status int, message string) {
 	apiJSON(w, status, map[string]string{"error": i18n.Translate(w.Header().Get("Content-Language"), message)})
 }
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == FederationControlPath {
+		w.Header().Set("Cache-Control", "no-store")
+		if r.URL.EscapedPath() != FederationControlPath || r.URL.RawQuery != "" || !a.allowFederationControl(r) {
+			http.NotFound(w, r)
+			return
+		}
+		a.federationControl(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/web/") {
 		var ok bool
 		r, ok = a.relayWebRequest(w, r)
@@ -211,7 +230,15 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 			apiError(w, http.StatusInternalServerError, "Could not load server information")
 			return
 		}
-		apiJSON(w, http.StatusOK, map[string]string{"version": resources.Version(), "server_name": settings.ServerName})
+		response := map[string]string{"version": resources.Version(), "server_name": settings.ServerName}
+		if identity, err := a.store.federationIdentityIfConfigured(); err == nil && identity != "" {
+			response["server_id"] = identity
+		}
+		apiJSON(w, http.StatusOK, response)
+		return
+	}
+	if path == "/api/federation/exchange" && r.Method == http.MethodPost {
+		a.federationExchange(w, r)
 		return
 	}
 	if path == "/api/login" && r.Method == "POST" {
@@ -252,6 +279,10 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case path == "/api/federation/targets" && r.Method == http.MethodGet:
+		a.federationTargets(w, id)
+	case path == "/api/federation/issue" && r.Method == http.MethodPost:
+		a.federationIssue(w, r, id)
 	case path == "/api/desktop" && r.Method == http.MethodGet:
 		apiJSON(w, http.StatusOK, map[string]bool{"available": a.remoteDesktopViewAvailable(id, r.URL.Query().Get("token"))})
 	case path == "/api/desktop/connect" && r.Method == http.MethodPost:
@@ -443,7 +474,11 @@ func (a *App) signedInResponse(w http.ResponseWriter, id authIdentity) {
 		apiError(w, 500, "Could not load server information")
 		return
 	}
-	apiJSON(w, 200, map[string]any{"user": id.User, "csrf": id.CSRF, "preferences": preferences, "server_name": settings.ServerName})
+	response := map[string]any{"user": id.User, "csrf": id.CSRF, "preferences": preferences, "server_name": settings.ServerName}
+	if targets, err := a.store.federationTargets(id); err == nil && len(targets) > 0 {
+		response["federation_targets"] = targets
+	}
+	apiJSON(w, 200, response)
 }
 func (a *App) enabled(backend chatmodel.Backend) bool {
 	all, err := a.store.Agents()
@@ -1258,6 +1293,10 @@ func (a *App) executeTurn(ctx context.Context, id, prompt string, turn chatmodel
 }
 func (a *App) Close() error {
 	a.closeOnce.Do(func() { close(a.shutdown) })
+	if a.federationStop != nil {
+		a.federationStop()
+		<-a.federationDone
+	}
 	a.turnMu.Lock()
 	a.closing = true
 	for _, control := range a.activeTurns {

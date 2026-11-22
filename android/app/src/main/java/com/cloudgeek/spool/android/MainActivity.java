@@ -232,6 +232,10 @@ public final class MainActivity extends Activity {
         final Map<ConnectionPlan.Endpoint, ConnectionRecovery.Snapshot> health = new HashMap<>();
     }
     private final Map<String, ServerRuntime> serverRuntimes = new HashMap<>();
+    /** 当前已验证会话的互信目标。不保存到服务器配置。 */
+    private JSONArray federationTargets;
+    private int federationAttempt;
+    private ServerRuntime federationRuntime;
     private final Runnable serverRefresh = this::refreshServerConnections;
     private static final class ServerWorkspace {
         String userID = "", projectID = "", chatID = "", backend = "codex", model = "", effort = "", permission = "";
@@ -929,6 +933,7 @@ public final class MainActivity extends Activity {
                                     routeSelecting = false;
                                     user = account;
                                     csrf = value.optString("csrf");
+                                    federationTargets = value.optJSONArray("federation_targets");
                                     rememberServerName(serverProfiles.active(), value);
                                     restoreServerWorkspace();
                                     loginErrorText = "";
@@ -1169,6 +1174,7 @@ public final class MainActivity extends Activity {
     }
 
     private void beginNetworkHandoff() {
+        finishFederation();
         saveServerWorkspace(); closeDesktop(); stopStreams();
         // The draft was cleared when it was sent to the queue, and its answer will not arrive.
         final boolean unanswered = delivering() && deliveringDraft;
@@ -1206,11 +1212,13 @@ public final class MainActivity extends Activity {
         }
         busy = false;
         routeLoginRequired = false;
+        federationTargets = null;
         if (candidate.sessionChecked && candidate.session == null) { forgetAccount(); clearWorkspaceData(true); }
         if (retained && candidate.session != null && user.optString("id").equals(candidate.session.userID)) {
             try {
                 JSONObject value = new JSONObject(candidate.session.json);
                 user = value.optJSONObject("user"); csrf = value.optString("csrf");
+                federationTargets = value.optJSONArray("federation_targets");
             } catch (Exception error) { routeLoginRequired = true; csrf = ""; }
             restoringSession = false;
         } else if (retained) {
@@ -1222,7 +1230,9 @@ public final class MainActivity extends Activity {
             routeLoginRequired = false; restoringSession = true;
             if (candidate.session != null) try {
                 JSONObject value = new JSONObject(candidate.session.json);
-                user = value.optJSONObject("user"); csrf = value.optString("csrf"); restoringSession = false;
+                user = value.optJSONObject("user"); csrf = value.optString("csrf");
+                federationTargets = value.optJSONArray("federation_targets");
+                restoringSession = false;
                 restoreServerWorkspace();
             } catch (Exception ignored) {}
         }
@@ -1353,6 +1363,7 @@ public final class MainActivity extends Activity {
                                     restoringSession = false; routeLoginRequired = false;
                                     user = account;
                                     csrf = result.optString("csrf");
+                                    federationTargets = result.optJSONArray("federation_targets");
                                     rememberServerName(serverProfiles.active(), result);
                                     ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
                                     if (runtime != null && runtime.candidate != null && runtime.candidate.client == captured) {
@@ -1435,8 +1446,10 @@ public final class MainActivity extends Activity {
     private void clearWorkspace() { clearWorkspace(true); }
 
     private void clearWorkspace(boolean forget) {
+        finishFederation();
         ++authEpoch;
         user = null;
+        federationTargets = null;
         routeLoginRequired = false;
         restoringSession = false;
         sessionCheckBusy = false;
@@ -1676,6 +1689,11 @@ public final class MainActivity extends Activity {
     private void rememberAccount(ServerProfiles.Server server, JSONObject user) {
         if (server == null || user == null || user.optString("id").isEmpty()) return;
         JSONObject account = ServerProfiles.displayAccount(user);
+        // 资料列表中的简版用户没有登录来源；不要因此清除当前账号的互信标记。
+        if (account.optString("id").equals(server.account.optString("id"))
+                && !user.has("username") && !server.account.optString("source_server_id").isEmpty()) {
+            NativeChatState.put(account, "source_server_id", server.account.optString("source_server_id"));
+        }
         ServerWorkspace cached = serverWorkspaces.get(server.id);
         if (cached != null && !cached.userID.equals(account.optString("id"))) serverWorkspaces.remove(server.id);
         if (server.account.toString().equals(account.toString())) return;
@@ -1734,7 +1752,7 @@ public final class MainActivity extends Activity {
         if (user != null && !routeLoginRequired && runtime != null && runtime.candidate != null && runtime.candidate.client == client) {
             ConnectionRouter.Candidate<Client> previous = runtime.candidate;
             runtime.candidate = new ConnectionRouter.Candidate<>(previous.endpoint, previous.client, previous.health,
-                    new ConnectionRouter.Session(owner, object("user", user, "csrf", csrf).toString()));
+                    new ConnectionRouter.Session(owner, object("user", user, "csrf", csrf, "federation_targets", federationTargets).toString()));
         }
     }
 
@@ -1796,6 +1814,116 @@ public final class MainActivity extends Activity {
             if (next.enabled && !connectionPlan.ordered(null).isEmpty()) selectConnections(null, true);
         }
         if (previous != null) syncServerFeed(previous);
+    }
+
+    private List<NativeFederation.Tab> federationTabs() {
+        if (user == null || routeLoginRequired || restoringSession || client == null) return List.of();
+        return NativeFederation.tabs(serverProfiles, NativeFederation.parse(federationTargets));
+    }
+
+    private void chooseServer(String key) {
+        NativeFederation.Tab tab = NativeFederation.find(federationTabs(), key);
+        if (tab == null) { if (!key.startsWith(NativeFederation.PREFIX)) selectServer(key); return; }
+        if (federationRuntime != null) return;
+        if (tab.server != null) { openFederatedServer(tab.target, tab.server); return; }
+        if (tab.target.origin.isEmpty()) {
+            Toast.makeText(this, tr("Add a Relay connection or ask the administrator for a trusted HTTPS address.",
+                    "请添加 Relay 连接，或请管理员配置可信的 HTTPS 地址。"), Toast.LENGTH_LONG).show();
+            return;
+        }
+        final int source = authEpoch, view = generation;
+        NativeDialog confirm = new NativeDialog(ui, ui.t("Add server"), ui.t("Close"));
+        confirm.body.addView(ui.text(tab.target.name + "\n" + tab.target.origin, 13, ui.text));
+        confirm.actions.addView(ui.quietButton(ui.t("Cancel"), confirm::dismiss));
+        confirm.actions.addView(ui.button(ui.t("Add server"), true, () -> {
+            confirm.dismiss();
+            NativeFederation.Tab latest = NativeFederation.find(federationTabs(), key);
+            if (destroyed || !foreground || source != authEpoch || view != generation || federationRuntime != null
+                    || latest == null || !latest.target.origin.equals(tab.target.origin)) return;
+            ServerProfiles.Server server = serverProfiles.add(tab.target.name);
+            server.plan = new ConnectionPlan(tab.target.origin, "", ConnectionMode.DIRECT);
+            saveServers();
+            openFederatedServer(tab.target, server);
+        }));
+        confirm.show();
+    }
+
+    private void openFederatedServer(NativeFederation.Target target, ServerProfiles.Server server) {
+        if (client == null || user == null || federationRuntime != null) return;
+        final Client source = client;
+        final int auth = authEpoch, view = generation;
+        final String account = user.optString("id"), language = locale();
+        final ConnectionPlan plan = server.plan;
+        ServerRuntime runtime = serverRuntimes.computeIfAbsent(server.id, key -> new ServerRuntime());
+        ConnectionRouter.Candidate<Client> current = runtime.candidate;
+        ConnectionMode mode = NativeFederation.route(server, target, current == null ? plan.selected : current.endpoint.mode);
+        if (mode == null) return;
+        federationRuntime = runtime;
+        final int attempt = ++federationAttempt;
+        runtime.selecting = true;
+        if (!server.enabled) { server.enabled = true; saveServers(); }
+        Toast.makeText(this, ui.t("Signing in…"), Toast.LENGTH_SHORT).show();
+        ConnectionPlan.Endpoint endpoint = new ConnectionPlan.Endpoint(mode, plan.origin(mode));
+        routes(server).select(List.of(endpoint), "", true, true, new ConnectionRouter.Listener<Client>() {
+            public void replacing(Client previous) { stopServerFeed(runtime); runtime.candidate = null; }
+            public void sampled(ConnectionPlan.Endpoint route, ConnectionRecovery.Snapshot health, boolean signedIn) {
+                runtime.health.put(route, health);
+                runtime.states.put(route.mode, health.healthy() ? tr("Available", "可用") : tr("Unavailable", "不可用"));
+            }
+            public void selected(ConnectionRouter.Candidate<Client> candidate) {
+                if (federationAttempt != attempt) return;
+                runtime.candidate = candidate;
+                if (!federationSourceCurrent(attempt, source, auth, view, server, plan) || !candidate.health.healthy()) {
+                    finishFederationFailure(attempt, auth, view);
+                    return;
+                }
+                io.execute(() -> {
+                    try {
+                        spoolnet.FederationSession result = source.prepareFederatedSession(candidate.client, target.id, account, language);
+                        main.post(() -> {
+                            if (!federationSourceCurrent(attempt, source, auth, view, server, plan) || runtime.candidate != candidate) {
+                                finishFederationFailure(attempt, auth, view);
+                                return;
+                            }
+                            try {
+                                JSONObject profile = new JSONObject(result.activate());
+                                JSONObject person = profile.getJSONObject("user");
+                                runtime.candidate = new ConnectionRouter.Candidate<>(candidate.endpoint, candidate.client, candidate.health,
+                                        new ConnectionRouter.Session(person.getString("id"), profile.toString()));
+                                server.plan = plan.select(candidate.endpoint.mode);
+                                rememberAccount(server, person);
+                                rememberServerName(server, profile);
+                                finishFederation();
+                                selectServer(server.id);
+                            } catch (Exception error) { finishFederationFailure(attempt, auth, view); }
+                        });
+                    } catch (Exception error) { main.post(() -> finishFederationFailure(attempt, auth, view)); }
+                });
+            }
+            public void unavailable() { finishFederationFailure(attempt, auth, view); }
+        });
+    }
+
+    private boolean federationSourceCurrent(int attempt, Client source, int auth, int view, ServerProfiles.Server server, ConnectionPlan plan) {
+        return federationAttempt == attempt && federationRuntime != null && !destroyed && foreground
+                && generation == view && authEpoch == auth && client == source && user != null && !routeLoginRequired
+                && server.enabled && server.plan == plan && serverProfiles.entries.contains(server);
+    }
+
+    private void finishFederation() {
+        if (federationRuntime == null) return;
+        federationRuntime.router.cancel();
+        federationRuntime.selecting = false;
+        federationRuntime = null;
+        ++federationAttempt;
+    }
+
+    private void finishFederationFailure(int attempt, int auth, int view) {
+        if (federationAttempt != attempt) return;
+        finishFederation();
+        if (destroyed || authEpoch != auth || generation != view) return;
+        Toast.makeText(this, tr("Could not sign in to the trusted server. Try again.", "无法登录互信服务器，请重试。"), Toast.LENGTH_LONG).show();
+        renderNavigation();
     }
 
     private void deferWorkspacePage() {
@@ -2438,7 +2566,7 @@ public final class MainActivity extends Activity {
         restoreSidebarPreferences();
         sidebarState.select(projectID, chatID, projects, chats);
         if (!panel.equals("sidebar") || sidebar == null) return;
-        sidebar.servers(serverProfiles, serverConnectionStates(), this::selectServer, () -> editServer(true));
+        sidebar.servers(serverProfiles, serverConnectionStates(), this::chooseServer, () -> editServer(true), federationTabs());
         boolean signedIn = user != null && !routeLoginRequired;
         boolean showWorkspace = signedIn || hasWorkspaceCache();
         boolean networkPending = routeSelecting || connecting && !httpsState.equals("Failed");
@@ -5019,6 +5147,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onStop() {
+        finishFederation();
         closeChatMenu();
         foreground = false;
         if (relayDiscovery != null) relayDiscovery.close();

@@ -186,6 +186,10 @@ func (c *Client) apiURL(path string) (string, error) {
 }
 
 func (c *Client) request(ctx context.Context, method, path string, body io.Reader, contentType, csrf, language string) (*http.Response, error) {
+	return c.requestWithHTTP(ctx, c.http, method, path, body, contentType, csrf, language)
+}
+
+func (c *Client) requestWithHTTP(ctx context.Context, client *http.Client, method, path string, body io.Reader, contentType, csrf, language string) (*http.Response, error) {
 	address, err := c.apiURL(path)
 	if err != nil {
 		return nil, err
@@ -209,7 +213,7 @@ func (c *Client) request(ctx context.Context, method, path string, body io.Reade
 	if method == http.MethodPost {
 		req.Header.Set("X-CSRF-Token", csrf)
 	}
-	resp, err := c.http.Do(req)
+	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode >= 500 {
 		c.responseActivity.Store(nil)
 	}

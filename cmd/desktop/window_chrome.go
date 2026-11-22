@@ -25,6 +25,9 @@ window.mygo?.on("spool:server-ready-ack", state => {
 window.mygo?.on("spool:server-state-ack", state => {
   window.dispatchEvent(new CustomEvent("spool:server-state-ack", {detail: state}));
 });
+window.mygo?.on("spool:federation", state => {
+  window.dispatchEvent(new CustomEvent("spool:federation", {detail: state}));
+});
 window.mygo?.on("spool:file-access-result", result => {
   window.dispatchEvent(new CustomEvent("spool:file-access-result", {detail: result}));
 });

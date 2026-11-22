@@ -524,6 +524,7 @@ final class NativeText {
             case "Tool result": value = "工具结果"; break;
             case "Toon Head": value = "Toon Head"; break;
             case "Tracked": value = "已跟踪"; break;
+            case "Trusted server": value = "互信服务器"; break;
             case "Tracked files will be restored to their staged version. Untracked files will be deleted. Staged changes are kept. This cannot be undone.": value = "已跟踪文件将恢复到暂存区的版本，未跟踪文件将被删除。已暂存的修改会保留。此操作无法撤销。"; break;
             case "Turn on Wireless debugging in Developer options, then try again.": value = "请在开发者选项中打开“无线调试”，然后重试。"; break;
             case "Turn plan mode on": value = "开启计划模式"; break;
@@ -1108,6 +1109,7 @@ final class NativeText {
             case "Tool result": value = "ツール結果"; break;
             case "Toon Head": value = "Toon Head"; break;
             case "Tracked": value = "追跡済み"; break;
+            case "Trusted server": value = "信頼済みサーバー"; break;
             case "Tracked files will be restored to their staged version. Untracked files will be deleted. Staged changes are kept. This cannot be undone.": value = "追跡済みファイルをステージ済みの内容に戻し、未追跡ファイルを削除します。ステージ済みの変更は保持されます。この操作は元に戻せません。"; break;
             case "Turn on Wireless debugging in Developer options, then try again.": value = "開発者向けオプションで「ワイヤレスデバッグ」をオンにしてから、もう一度お試しください。"; break;
             case "Turn plan mode on": value = "プランモードを有効にする"; break;

@@ -36,6 +36,11 @@ type desktopServerChat struct {
 	healthChecking  bool
 	lastHealthCheck time.Time
 	authenticated   bool
+	// Public federation identity, when the server reports one.
+	serverID         string
+	identityChecking bool
+	// The current session was obtained by a federated sign-in.
+	federated bool
 }
 
 func (chat *desktopServerChat) setStatus(status string) bool {
@@ -52,6 +57,11 @@ type desktopServerTab struct {
 	Name   string `json:"name"`
 	Local  bool   `json:"local"`
 	Status string `json:"status"`
+	// 用于将已保存的连接与互信目标合并显示，不参与登录校验。
+	ServerID  string `json:"server_id,omitempty"`
+	ClientURL string `json:"client_url,omitempty"`
+	// Signed in through another server's account rather than a password.
+	Federated bool `json:"federated,omitempty"`
 }
 
 type desktopServerTabs struct {
@@ -126,7 +136,17 @@ func (p *panel) desktopServerTabs() desktopServerTabs {
 		if server.ID == localDesktopServer {
 			server.ServerName = p.settings.ServerName
 		}
-		tabs.Entries = append(tabs.Entries, desktopServerTab{server.ID, server.displayName(), server.ID == localDesktopServer, status})
+		tab := desktopServerTab{ID: server.ID, Name: server.displayName(), Local: server.ID == localDesktopServer, Status: status}
+		if chat := p.serverChats[server.ID]; server.Enabled && chat != nil {
+			tab.ServerID = chat.serverID
+			tab.Federated = chat.federated && chat.authenticated
+		}
+		if id := desktopRelayServerID(server); id != "" {
+			tab.ServerID = id
+		} else if server.Mode == "direct" || server.Mode == "tailscale" {
+			tab.ClientURL = desktopFederationClientAddress(server.Address)
+		}
+		tabs.Entries = append(tabs.Entries, tab)
 	}
 	return tabs
 }
@@ -209,6 +229,7 @@ func (p *panel) setDesktopServers(next desktopServers) error {
 	}
 	p.sendDesktopServers()
 	p.connectEnabledDesktopServers()
+	p.advanceDesktopFederation()
 	return nil
 }
 
@@ -449,6 +470,11 @@ func (p *panel) recordDesktopServerState(id, status string) {
 		state.authenticated = true
 	} else if status == "login" || status == "disconnected" {
 		state.authenticated = false
+		if state.federated {
+			state.federated = false
+			state.statusRevision++
+			defer p.sendDesktopServers()
+		}
 	}
 	if status != "login" {
 		state.healthFailed = false
@@ -457,6 +483,7 @@ func (p *panel) recordDesktopServerState(id, status string) {
 		status = "error"
 	}
 	p.updateDesktopServerState(id, status)
+	p.advanceDesktopFederation()
 }
 
 func (p *panel) updateDesktopServerState(id, status string) {

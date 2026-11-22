@@ -253,7 +253,11 @@ func (d *Devices) Revoke(id string) error {
 // Listener selects client-certificate policy before the handshake. The Web
 // exception is available only on the outbound relay, never the LAN listener.
 func (d *Devices) Listener(base net.Listener, config *tls.Config, serverID string, webAllowed func() bool, web bool) net.Listener {
-	return &deviceListener{Listener: base, devices: d, config: config, serverID: serverID, webAllowed: webAllowed, web: web}
+	return d.ListenerWithFederation(base, config, serverID, webAllowed, web, FederationAdmission{})
+}
+
+func (d *Devices) ListenerWithFederation(base net.Listener, config *tls.Config, serverID string, webAllowed func() bool, web bool, federation FederationAdmission) net.Listener {
+	return &deviceListener{Listener: base, devices: d, config: config, serverID: serverID, webAllowed: webAllowed, web: web, federation: federation}
 }
 
 type deviceListener struct {
@@ -263,6 +267,7 @@ type deviceListener struct {
 	serverID   string
 	webAllowed func() bool
 	web        bool
+	federation FederationAdmission
 }
 type deviceConn struct {
 	net.Conn
@@ -294,6 +299,16 @@ func (l *deviceListener) Accept() (net.Conn, error) {
 		if name == l.serverID+".spool.invalid" && l.web && l.webAllowed() {
 			return selected, nil
 		}
+		if name == federationServerName(l.serverID) && l.federation.Allow != nil {
+			selected.ClientAuth = tls.RequireAnyClientCert
+			selected.VerifyConnection = func(state tls.ConnectionState) error {
+				if !l.federation.allows(state) {
+					return errors.New("unpaired federation server")
+				}
+				return nil
+			}
+			return selected, nil
+		}
 		if name != DeviceServerName(l.serverID) && name != PairingServerName(l.serverID) {
 			return nil, errors.New("paired device required")
 		}
@@ -322,6 +337,10 @@ func (l *deviceListener) Accept() (net.Conn, error) {
 // Handler confines unapproved keys to pairing, and Web clients to the locally
 // enabled path. Neither HTTP headers nor a relay-supplied flag grant access.
 func (d *Devices) Handler(next http.Handler, serverID string, webAllowed func() bool) http.Handler {
+	return d.HandlerWithFederation(next, serverID, webAllowed, FederationAdmission{})
+}
+
+func (d *Devices) HandlerWithFederation(next http.Handler, serverID string, webAllowed func() bool, federation FederationAdmission) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.TLS == nil {
@@ -329,6 +348,8 @@ func (d *Devices) Handler(next http.Handler, serverID string, webAllowed func() 
 			return
 		}
 		switch r.TLS.ServerName {
+		case federationServerName(serverID):
+			federation.serve(w, r, next)
 		case PairingServerName(serverID):
 			d.pair(w, r)
 		case DeviceServerName(serverID):
@@ -348,7 +369,7 @@ func (d *Devices) Handler(next http.Handler, serverID string, webAllowed func() 
 				d.syncAdmission(w, r, DeviceFingerprint(key))
 				return
 			}
-			if strings.HasPrefix(r.URL.Path, "/web/") {
+			if strings.HasPrefix(r.URL.Path, "/web/") || (federation.Path != "" && r.URL.Path == federation.Path) {
 				http.NotFound(w, r)
 				return
 			}

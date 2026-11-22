@@ -231,6 +231,7 @@ func newCLI(out io.Writer) *command {
 	addGitHub(c, out)
 	addRelay(c, out)
 	addTailscale(c, out)
+	addFederation(c, out)
 	return c
 }
 

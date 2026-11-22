@@ -90,7 +90,8 @@ func (s *Service) startRelayLocked(settings Settings) error {
 	// only when ApplyServiceChanges replaces it, including rollback on failure.
 	webAllowed := func() bool { return ctx.Err() == nil && settings.RelayEnabled && settings.RelayWebEnabled }
 	ingress := s.newIngressLocked()
-	ingress.server.Handler = devices.Handler(s.app, id.ID(), webAllowed)
+	federation := s.Store.federationRelayAdmission()
+	ingress.server.Handler = devices.HandlerWithFederation(s.app, id.ID(), webAllowed, federation)
 	runtime := &relayRuntime{ingress: ingress, cancel: cancel, host: host, lan: listener, devices: devices, status: RelayStatus{State: "connecting", ServerID: id.ID(), LANAddress: listener.Addr().String(), RegistrationTokenSet: token != ""}}
 	host.WebEnabled = settings.RelayWebEnabled
 	host.OnWebURL = func(address string) {
@@ -148,8 +149,8 @@ func (s *Service) startRelayLocked(settings Settings) error {
 		}
 		return s.confirmRelayRegistrationLocked(settings.RelayURL, id, credential)
 	}
-	s.serveLocked(runtime.ingress.server, devices.Listener(host, tlsConfig, id.ID(), webAllowed, true))
-	s.serveLocked(runtime.ingress.server, devices.Listener(listener, tlsConfig, id.ID(), webAllowed, false))
+	s.serveLocked(runtime.ingress.server, devices.ListenerWithFederation(host, tlsConfig, id.ID(), webAllowed, true, federation))
+	s.serveLocked(runtime.ingress.server, devices.ListenerWithFederation(listener, tlsConfig, id.ID(), webAllowed, false, federation))
 	s.workers.Add(2)
 	go func() { defer s.workers.Done(); defer transport.CloseIdleConnections(); host.Run(); host.Wait() }()
 	go func() {

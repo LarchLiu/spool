@@ -5005,6 +5005,25 @@ option {
   border-color: var(--border-strong);
   background: var(--elevated);
 }
+.server-federated-mark {
+  flex: 0 0 auto;
+  color: #3987e0;
+}
+/* 需要互信登录的目标用虚线边框标识。 */
+.desktop-server-tabs .desktop-federation-target {
+  height: calc(var(--tab-height) - 6px);
+  max-width: 160px;
+  flex: 0 0 auto;
+  border: 1px dashed var(--border-strong);
+  border-radius: 999px;
+}
+.desktop-server-tabs .desktop-federation-target:hover:not(:disabled) {
+  background: var(--elevated);
+  color: inherit;
+}
+.desktop-server-tabs .desktop-federation-target[data-state="failed"] {
+  border-color: #e05252;
+}
 .server-status-dot {
   width: 7px;
   height: 7px;

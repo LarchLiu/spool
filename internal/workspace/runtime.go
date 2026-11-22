@@ -233,6 +233,7 @@ func (s *Service) startWithSettingsLocked(settings Settings) error {
 	app.adb = s.adb
 	app.startLocalSessionSync()
 	app.startIssueScheduler(s.lease)
+	app.startFederation()
 	server := &http.Server{Handler: app, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
 	s.server = server
 	s.app = app

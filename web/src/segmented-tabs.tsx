@@ -9,6 +9,10 @@ export type SegmentedTab<T extends string> = {
   id?: string;
   controls?: string;
   disabled?: boolean;
+  // 标签栏中的动作按钮不改变当前选项，也不参与方向键自动切换。
+  action?: () => void;
+  className?: string;
+  state?: string;
 };
 
 export type TabTransition<T extends string> = {
@@ -271,26 +275,38 @@ export function SegmentedTabs<T extends string>({
                 else buttons.current.delete(option.value);
               }}
               type="button"
-              className={`segmented-tab ${option.value === value ? "selected" : ""}`}
+              className={`segmented-tab ${option.value === value ? "selected" : ""} ${option.className ?? ""}`.trimEnd()}
+              data-state={option.state}
               id={option.id}
-              role={navigation ? undefined : "tab"}
+              role={navigation || option.action ? undefined : "tab"}
               aria-controls={option.controls}
-              aria-selected={navigation ? undefined : option.value === value}
+              aria-selected={
+                navigation || option.action ? undefined : option.value === value
+              }
               aria-current={
                 navigation && option.value === value ? "page" : undefined
               }
               title={option.title}
               aria-label={option.accessibleLabel}
-              tabIndex={option.value === value ? 0 : -1}
+              tabIndex={option.action || option.value === value ? 0 : -1}
               disabled={option.disabled}
               onClick={() => {
-                if (option.value !== value)
+                if (option.action) option.action();
+                else if (option.value !== value)
                   onChange(option.value, viewport.current?.scrollLeft || 0);
                 else reveal(option.value);
               }}
               onKeyDown={(event) => {
-                if (event.altKey || event.ctrlKey || event.metaKey) return;
-                const available = options.filter((item) => !item.disabled);
+                if (
+                  option.action ||
+                  event.altKey ||
+                  event.ctrlKey ||
+                  event.metaKey
+                )
+                  return;
+                const available = options.filter(
+                  (item) => !item.disabled && !item.action,
+                );
                 const at = available.indexOf(option);
                 const direction =
                   getComputedStyle(event.currentTarget).direction === "rtl"

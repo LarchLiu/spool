@@ -130,9 +130,15 @@ func singleProxyHeader(r *http.Request, name string) (string, bool) {
 // Plain HTTP is for this computer or an explicitly trusted HTTPS terminator.
 // PublicURL and client-supplied headers alone never establish that trust.
 func (a *App) allowWebTransport(r *http.Request) bool {
-	if r.TLS != nil || directLoopbackRequest(r) {
-		return true
-	}
+	return r.TLS != nil || directLoopbackRequest(r) || a.trustedHTTPSProxy(r)
+}
+
+func (a *App) allowFederationControl(r *http.Request) bool {
+	ordinary, _ := r.Context().Value(ordinaryWebKey{}).(bool)
+	return r.TLS != nil || (ordinary && a.trustedHTTPSProxy(r))
+}
+
+func (a *App) trustedHTTPSProxy(r *http.Request) bool {
 	settings := a.activeSettings()
 	public, err := url.Parse(settings.PublicURL)
 	if err != nil || public.Scheme != "https" || public.Host == "" {

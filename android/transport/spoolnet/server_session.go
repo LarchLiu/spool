@@ -29,6 +29,7 @@ type serverSessionJar struct {
 	mode     string
 	sessions map[string]savedSession
 	cookie   *http.Cookie
+	revision uint64
 	closed   bool
 }
 
@@ -225,8 +226,43 @@ func (j *serverSessionJar) SetCookies(origin *url.URL, cookies []*http.Cookie) {
 			saved.MaxAge = 0
 			j.cookie = &saved
 		}
+		j.revision++
 		_ = j.persist()
 	}
+}
+
+func (j *serverSessionJar) federationState() uint64 {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.revision
+}
+
+func (j *serverSessionJar) federationCurrent(revision uint64) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return !j.closed && j.revision == revision
+}
+
+func (j *serverSessionJar) adoptFederation(revision uint64, cookie *http.Cookie) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.closed || j.revision != revision || !validSession(cookie, j.origin) || !validProfileSession(cookie) {
+		return false
+	}
+	saved, previous := *cookie, j.cookie
+	saved.Domain, saved.MaxAge = "", 0
+	j.cookie = &saved
+	if err := j.persist(); err != nil {
+		j.cookie = previous
+		if previous == nil {
+			delete(j.sessions, j.mode)
+		} else {
+			j.sessions[j.mode] = savedSession{Origin: j.origin.String(), Cookie: *previous}
+		}
+		return false
+	}
+	j.revision++
+	return true
 }
 
 func (j *serverSessionJar) persist() error {

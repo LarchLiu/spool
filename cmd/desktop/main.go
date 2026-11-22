@@ -102,6 +102,7 @@ type panel struct {
 	notificationCookies    func(string) ([]mygo.Cookie, error)
 	notificationFocused    func() bool
 	notificationChat       string
+	federation             desktopFederation
 }
 
 func main() {
@@ -381,6 +382,7 @@ func runDesktop() (runErr error) {
 						p.status, p.agents, p.projects = status, agents, projects
 						p.sendUpdateAvailability(p.chatView)
 						p.checkDesktopServerHealth()
+						p.advanceDesktopFederation()
 					})
 				}
 			}
@@ -811,6 +813,9 @@ func (p *panel) peopleView(c *ui.Context) {
 			c.Key(u.ID)
 			ui.Row(c).Gap(8).AlignItems(ui.Center).FillWidth().Children(func() {
 				label := u.Nickname
+				if u.SourceServerID != "" {
+					label += " · " + p.tr("Federated sign-in")
+				}
 				if u.Disabled {
 					label += " (" + p.tr("Disabled") + ")"
 				}
@@ -830,10 +835,22 @@ func (p *panel) peopleView(c *ui.Context) {
 			})
 		}
 	})
-	p.field(c, "Username", &p.user.Username)
-	p.field(c, "Display name", &p.user.Nickname)
-	ui.Text(c, p.tr("Password (12–72 bytes; blank keeps existing password)")).FontSize(12)
-	ui.TextInput(c, &p.user.Password).Password().FillWidth().Label(p.tr("Password"))
+	var source string
+	for _, user := range p.users {
+		if user.ID == p.user.ID {
+			source = user.SourceServerID
+			break
+		}
+	}
+	if source == "" {
+		p.field(c, "Username", &p.user.Username)
+		p.field(c, "Display name", &p.user.Nickname)
+		ui.Text(c, p.tr("Password (12–72 bytes; blank keeps existing password)")).FontSize(12)
+		ui.TextInput(c, &p.user.Password).Password().FillWidth().Label(p.tr("Password"))
+	} else {
+		ui.Text(c, p.user.Nickname).Wrap()
+		ui.Text(c, p.tr("Federation source: {server}", "server", source)).Wrap().FontSize(12)
+	}
 	ui.Checkbox(c, &p.user.Disabled, p.tr("Disable account"))
 	ui.Checkbox(c, &p.user.RemoteDesktop, p.tr("Allow remote desktop connection"))
 	ui.Text(c, p.tr("Allows control of this computer's entire desktop, beyond project permissions.")).Wrap().FontSize(12)

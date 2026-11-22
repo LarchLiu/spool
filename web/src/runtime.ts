@@ -38,9 +38,62 @@ export type DesktopServerTabsSnapshot = {
     name: string;
     local: boolean;
     status: DesktopServerStatus;
+    // 仅用于合并标签；实际登录由原生端核验目标和线路。
+    server_id?: string;
+    client_url?: string;
+    // The session came from a federated sign-in, not a password.
+    federated?: boolean;
   }[];
   selected: string;
 };
+
+export type DesktopFederationProgress = {
+  target: string;
+  state: "pending" | "done" | "failed";
+  reason?: string;
+};
+
+// Names an authorized server only. Native code selects a trusted route and
+// performs the whole sign-in; no ticket or session ever reaches this page.
+export function requestDesktopFederationLogin(
+  target: string,
+  surface: unknown = globalThis,
+): void {
+  if (!/^[a-z2-7]{52}$/.test(target)) return;
+  desktopNavigationHint("/__desktop/federation-login?target=" + target, surface);
+}
+
+export function subscribeDesktopFederation(
+  listener: (progress: DesktopFederationProgress) => void,
+  surface: unknown = globalThis,
+): () => void {
+  return subscribeDesktopEvent(
+    "spool:federation",
+    (event) => {
+      const value: unknown = (event as CustomEvent).detail;
+      if (
+        typeof value !== "object" ||
+        value === null ||
+        !("target" in value) ||
+        typeof value.target !== "string" ||
+        !("state" in value) ||
+        (value.state !== "pending" &&
+          value.state !== "done" &&
+          value.state !== "failed")
+      )
+        return;
+      listener({
+        target: value.target,
+        state: value.state,
+        reason:
+          "reason" in value && typeof value.reason === "string"
+            ? value.reason
+            : undefined,
+      });
+    },
+    surface,
+  );
+}
 const emptyDesktopServers: DesktopServerTabsSnapshot = {
   entries: [],
   selected: "local",

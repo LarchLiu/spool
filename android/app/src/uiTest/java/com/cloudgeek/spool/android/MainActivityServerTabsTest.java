@@ -43,10 +43,14 @@ public class MainActivityServerTabsTest {
         final Client homeClient, officeClient;
 
         Fixture(boolean finishBackgroundReads) throws Exception {
+            this(finishBackgroundReads, null);
+        }
+
+        Fixture(boolean finishBackgroundReads, JSONArray homeTargets) throws Exception {
             MainActivityConnectionTest.ShadowSpoolnet.failDirect = false;
             MainActivityConnectionTest.ShadowSpoolnet.tailnetHealth = null;
             MainActivityWorkspaceEventsTest.install(h);
-            responses(200);
+            responses(200, homeTargets);
             ConnectionPlan plan = new ConnectionPlan("https://home.example.com", "", ConnectionMode.DIRECT);
             servers.active().plan = plan; h.set("connectionPlan", plan); h.set("connectionDraft", plan);
             h.call("openSidebar");
@@ -54,6 +58,7 @@ public class MainActivityServerTabsTest {
                     ReflectionHelpers.ClassParameter.from(boolean.class, true));
             drainConnections(); drain(); homeClient = h.get("client");
             push(homeClient, "ready", "true"); push(homeClient, "navigation", navigation("Home"));
+            if (homeTargets != null) responses(200);
             office = servers.add("Office"); office.plan = new ConnectionPlan("https://office.example.com", "", ConnectionMode.DIRECT);
             h.call("refreshServerConnections"); drainConnections();
             Object runtime = h.<Map<String, ?>>get("serverRuntimes").get(office.id);
@@ -61,10 +66,13 @@ public class MainActivityServerTabsTest {
             if (finishBackgroundReads) { drain(); push(officeClient, "ready", "true"); }
         }
 
-        void responses(int meStatus) {
+        void responses(int meStatus) { responses(meStatus, null); }
+
+        void responses(int meStatus, JSONArray targets) {
             MainActivityGoalTest.ShadowClient.responder = call -> {
                 String path = call.get(1);
-                String body = path.equals("/api/me") ? "{user:{id:'alice',nickname:'Alice'},csrf:'shared-csrf',server_name:'Server from sign-in'}"
+                String body = path.equals("/api/me") ? "{user:{id:'alice',nickname:'Alice'},csrf:'shared-csrf',server_name:'Server from sign-in'"
+                        + (targets == null ? "}" : ",federation_targets:" + targets + "}")
                         : path.equals("/api/navigation") ? navigation("REST snapshot")
                         : path.equals("/api/profiles") ? "{revision:1,people:[{id:'alice',nickname:'Alice'}]}"
                         : path.equals("/api/agents") ? "[]" : "{}";
@@ -98,6 +106,28 @@ public class MainActivityServerTabsTest {
         @Override public void close() {
             h.activity.getPreferences(Activity.MODE_PRIVATE).edit().clear().commit();
             MainActivityConnectionTest.ShadowSpoolnet.tailnetHealth = null; h.close();
+        }
+    }
+
+    @Test public void trustedTabsStayWithTheirSignedInServerWhenTheSidebarReopens() throws Exception {
+        String target = "b".repeat(52), key = NativeFederation.PREFIX + target;
+        JSONArray targets = new JSONArray().put(new JSONObject().put("id", target).put("name", "Lab"));
+        try (Fixture f = new Fixture(true, targets)) {
+            f.h.call("closeDrawer");
+            f.h.call("openSidebar");
+            NativeServerTabs tabs = ReflectionHelpers.getField(f.h.<NativeSidebar>get("sidebar"), "serverTabs");
+            assertEquals("Lab, Trusted server", tabs.button(key).getContentDescription().toString());
+
+            f.select(f.office.id);
+            tabs = ReflectionHelpers.getField(f.h.<NativeSidebar>get("sidebar"), "serverTabs");
+            assertNull(tabs.button(key));
+
+            f.select(f.home);
+            tabs = ReflectionHelpers.getField(f.h.<NativeSidebar>get("sidebar"), "serverTabs");
+            assertNotNull(tabs.button(key));
+            f.push(f.homeClient, "auth_expired", "{}");
+            tabs = ReflectionHelpers.getField(f.h.<NativeSidebar>get("sidebar"), "serverTabs");
+            assertNull(tabs.button(key));
         }
     }
 

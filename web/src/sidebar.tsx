@@ -255,7 +255,7 @@ export function Sidebar(props: Props) {
           {props.open ? <X size={18} /> : <PanelLeftClose size={18} />}
         </button>
       </div>
-      <DesktopServerTabs t={t} />
+      <DesktopServerTabs t={t} account={props.user?.id} />
       <nav className="sidebar-scroll" aria-label={t("Workspace")}>
         {!props.user ? (
           <p className="nav-empty">
