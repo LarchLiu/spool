@@ -13,6 +13,7 @@ func (p *panel) checkDesktopServerHealth() {
 	if p.quitting || p.serverNetworks == nil {
 		return
 	}
+	p.checkDesktopFederationHealth(time.Now())
 	for id, chat := range p.serverChats {
 		server, ok := p.servers.find(id)
 		if !ok || !server.Enabled || chat.authenticated && !chat.failed || chat.pageStatus != "login" && chat.pageStatus != "error" || chat.healthChecking || time.Since(chat.lastHealthCheck) < 15*time.Second {

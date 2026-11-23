@@ -68,6 +68,12 @@ func TestSettingsBridgeRejectsCallsWithoutDesktopPage(t *testing.T) {
 		if _, err := bridge.TSNetRegister(context.Background(), rand.Text()); err == nil {
 			t.Fatal("key registration allowed without calling page")
 		}
+		if _, err := bridge.SetFederationTrustUsers(context.Background(), "target", true, nil); err == nil {
+			t.Fatal("federation allowlist changed without the private settings page")
+		}
+		if _, err := bridge.UpdateFederationTrustReturnRoute(context.Background(), "target", "https", "https://peer.example.test"); err == nil {
+			t.Fatal("federation return route changed without the private settings page")
+		}
 		if _, err := bridge.RelayPairing(context.Background()); err == nil {
 			t.Fatal("pairing secret exposed without private desktop page")
 		}
@@ -188,7 +194,7 @@ func TestSettingsAssetsForbidRemoteContentAndHTTPAdminFallback(t *testing.T) {
 }
 
 func TestSettingsSectionsAreAllowlisted(t *testing.T) {
-	for _, section := range []string{"Service", "People", "Projects", "Agents", "Online", "Network", "Appearance", "About"} {
+	for _, section := range []string{"Service", "Server trust", "People", "Projects", "Agents", "Online", "Network", "Appearance", "About"} {
 		if !settingsTabAllowed(section) {
 			t.Fatal(section)
 		}

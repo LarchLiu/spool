@@ -24,6 +24,15 @@ CREATE TABLE IF NOT EXISTS federation_trust_requests(
   expires_at INTEGER NOT NULL, request TEXT NOT NULL, decision TEXT NOT NULL DEFAULT '', receipt TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS federation_trust_peer ON federation_trust_requests(peer_id,outgoing,expires_at);
+CREATE TABLE IF NOT EXISTS federation_trust_inbox(id INTEGER PRIMARY KEY CHECK(id=1));
+CREATE TABLE IF NOT EXISTS federation_trust_routes(
+  request_id TEXT PRIMARY KEY REFERENCES federation_trust_requests(id) ON DELETE CASCADE,
+  config TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS federation_trust_grants(
+  peer_id TEXT PRIMARY KEY REFERENCES federation_peers(id) ON DELETE CASCADE,
+  incoming INTEGER NOT NULL, outgoing INTEGER NOT NULL, managed INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS federation_users(peer_id TEXT NOT NULL, subject TEXT NOT NULL, user_id TEXT NOT NULL UNIQUE REFERENCES users(id), PRIMARY KEY(peer_id,subject));
 CREATE TABLE IF NOT EXISTS federation_sources(ref TEXT PRIMARY KEY, peer_id TEXT NOT NULL, session_hash TEXT NOT NULL, subject TEXT NOT NULL, expires_at INTEGER NOT NULL, notified INTEGER NOT NULL DEFAULT 0, revoked INTEGER NOT NULL DEFAULT 0);
 CREATE UNIQUE INDEX IF NOT EXISTS federation_source_active ON federation_sources(peer_id,session_hash) WHERE revoked=0;
@@ -41,6 +50,9 @@ const (
 	loginSessionTTL     = 7 * 24 * time.Hour
 )
 
+// FederationClientModeTailscale identifies a client URL that needs a tailnet connection.
+const FederationClientModeTailscale = "tailscale"
+
 var errFederationDenied = errors.New("federated login was not permitted")
 
 type FederationProject struct {
@@ -50,17 +62,18 @@ type FederationProject struct {
 }
 
 type FederationPeer struct {
-	ID        string              `json:"id"`
-	PublicKey string              `json:"public_key"`
-	Name      string              `json:"name"`
-	Transport string              `json:"transport"`
-	Address   string              `json:"address,omitempty"`
-	RelayCode string              `json:"relay_code,omitempty"`
-	ClientURL string              `json:"client_url,omitempty"`
-	Accept    bool                `json:"accept"`
-	AllUsers  bool                `json:"all_users"`
-	Users     []string            `json:"users,omitempty"`
-	Projects  []FederationProject `json:"projects,omitempty"`
+	ID         string              `json:"id"`
+	PublicKey  string              `json:"public_key"`
+	Name       string              `json:"name"`
+	Transport  string              `json:"transport"`
+	Address    string              `json:"address,omitempty"`
+	RelayCode  string              `json:"relay_code,omitempty"`
+	ClientURL  string              `json:"client_url,omitempty"`
+	ClientMode string              `json:"client_mode,omitempty"`
+	Accept     bool                `json:"accept"`
+	AllUsers   bool                `json:"all_users"`
+	Users      []string            `json:"users,omitempty"`
+	Projects   []FederationProject `json:"projects,omitempty"`
 
 	generation string
 }
@@ -175,7 +188,8 @@ func federationHTTPSURL(address string) (*url.URL, error) {
 	return u, nil
 }
 
-func (s *Store) SaveFederationPeer(p FederationPeer) error {
+// UpdateFederationPeer 修改已批准或此前手工配置的关系，不创建新对端。
+func (s *Store) UpdateFederationPeer(p FederationPeer) error {
 	if _, ok := p.key(); !ok {
 		return errors.New("invalid federation public key or server ID")
 	}
@@ -190,10 +204,17 @@ func (s *Store) SaveFederationPeer(p FederationPeer) error {
 	if p.Name == "" || len(p.Name) > 128 {
 		return errors.New("federation peer name is required (128 byte maximum)")
 	}
+	if p.ClientMode != "" && p.ClientMode != FederationClientModeTailscale {
+		return errors.New("unknown federation client mode")
+	}
 	p.ClientURL = strings.TrimSpace(p.ClientURL)
-	if p.ClientURL != "" {
+	if p.ClientURL != "" || p.ClientMode != "" {
 		u, err := federationHTTPSURL(p.ClientURL)
-		if err != nil || (u.Path != "" && u.Path != "/" && u.Path != relay.WebPath(p.ID)) {
+		if p.ClientMode == FederationClientModeTailscale {
+			if err != nil || (u.Path != "" && u.Path != "/") {
+				return errors.New("a Tailscale client_url must be an HTTPS origin")
+			}
+		} else if err != nil || (u.Path != "" && u.Path != "/" && u.Path != relay.WebPath(p.ID)) {
 			return errors.New("client_url must be an HTTPS origin or this server's Relay Web URL")
 		}
 		p.ClientURL = strings.TrimRight(u.String(), "/") + "/"
@@ -228,28 +249,17 @@ func (s *Store) SaveFederationPeer(p FederationPeer) error {
 		return err
 	}
 	defer tx.Rollback()
-	for _, id := range p.Users {
-		var one int
-		if err = tx.QueryRow(`SELECT 1 FROM users WHERE id=? AND NOT EXISTS(SELECT 1 FROM federation_users WHERE user_id=?)`, id, id).Scan(&one); err != nil {
-			return fmt.Errorf("unknown local user %q", id)
-		}
-	}
-	projects := make(map[string]bool)
-	for _, project := range p.Projects {
-		if projects[project.ID] || (project.Access != "read-only" && project.Access != "control") || (project.OwnAccess != "read-only" && project.OwnAccess != "create") {
-			return fmt.Errorf("invalid default access for project %q", project.ID)
-		}
-		projects[project.ID] = true
-		var one int
-		if err = tx.QueryRow(`SELECT 1 FROM projects WHERE id=? AND archived=0`, project.ID).Scan(&one); err != nil {
-			return fmt.Errorf("unknown active project %q", project.ID)
-		}
-	}
-	data, err := json.Marshal(p)
-	if err != nil {
+	if err := validateFederationTrustPolicy(tx, p); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(`INSERT INTO federation_peers VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET config=excluded.config,generation=excluded.generation`, p.ID, data, randomToken()); err != nil {
+	if err := validateFederationUsers(tx, p.Users); err != nil {
+		return err
+	}
+	if err := validateFederationProjects(tx, p.Projects); err != nil {
+		return err
+	}
+	p.generation = randomToken()
+	if err := updateFederationPeerConfig(tx, p); err != nil {
 		return err
 	}
 	if !p.Accept {
@@ -257,8 +267,42 @@ func (s *Store) SaveFederationPeer(p FederationPeer) error {
 			return err
 		}
 	}
-	// Losing outbound eligibility permanently invalidates existing references;
-	// granting it again creates a new reference rather than restoring sessions.
+	return s.commitFederationUsers(tx, p)
+}
+
+func updateFederationPeerConfig(tx *sql.Tx, p FederationPeer) error {
+	data, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	updated, err := tx.Exec(`UPDATE federation_peers SET config=?,generation=? WHERE id=?`, data, p.generation, p.ID)
+	if err != nil {
+		return err
+	}
+	if n, err := updated.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return errors.New("Complete server trust approval before configuring this peer")
+	}
+	return nil
+}
+
+func validateFederationUsers(tx *sql.Tx, users []string) error {
+	for _, id := range users {
+		var one int
+		err := tx.QueryRow(`SELECT 1 FROM users WHERE id=? AND NOT EXISTS(SELECT 1 FROM federation_users WHERE user_id=?)`, id, id).Scan(&one)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("unknown local user %q", id)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) commitFederationUsers(tx *sql.Tx, p FederationPeer) error {
+	// 放行资格一旦撤销，之后重新放行也不能恢复旧会话。
 	rows, err := tx.Query(`SELECT ref,subject FROM federation_sources WHERE peer_id=? AND revoked=0`, p.ID)
 	if err != nil {
 		return err
@@ -284,7 +328,22 @@ func (s *Store) SaveFederationPeer(p FederationPeer) error {
 			return err
 		}
 	}
-	return s.notify(tx.Commit(), changeAuth)
+	return s.notify(tx.Commit(), changeAuth|changeFederationTargets)
+}
+
+func validateFederationProjects(tx *sql.Tx, defaults []FederationProject) error {
+	seen := make(map[string]bool, len(defaults))
+	for _, project := range defaults {
+		if seen[project.ID] || (project.Access != "read-only" && project.Access != "control") || (project.OwnAccess != "read-only" && project.OwnAccess != "create") {
+			return fmt.Errorf("invalid default access for project %q", project.ID)
+		}
+		seen[project.ID] = true
+		var active int
+		if err := tx.QueryRow(`SELECT 1 FROM projects WHERE id=? AND archived=0`, project.ID).Scan(&active); err != nil {
+			return fmt.Errorf("unknown active project %q", project.ID)
+		}
+	}
+	return nil
 }
 
 func (s *Store) federationIssue(id authIdentity, target string) (string, error) {

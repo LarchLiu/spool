@@ -6,12 +6,14 @@ import (
 	"net/http"
 )
 
-func federationServerName(id string) string { return "federation." + id + ".spool.invalid" }
+func federationServerName(id string) string      { return "federation." + id + ".spool.invalid" }
+func federationTrustServerName(id string) string { return "federation-trust." + id + ".spool.invalid" }
 
-// FederationAdmission grants access only to the server control endpoint.
+// FederationAdmission separates paired control from the trust application path.
 type FederationAdmission struct {
-	Path  string
-	Allow func(ed25519.PublicKey) bool
+	Path      string
+	TrustPath string
+	Allow     func(ed25519.PublicKey) bool
 }
 
 func (f FederationAdmission) allows(state tls.ConnectionState) bool {
@@ -29,6 +31,24 @@ func FederationTLSConfig(p Pairing, id *Identity) (*tls.Config, error) {
 	}
 	cfg.ServerName = federationServerName(p.ID())
 	return cfg, nil
+}
+
+func FederationTrustTLSConfig(p Pairing, id *Identity) (*tls.Config, error) {
+	cfg, err := FederationTLSConfig(p, id)
+	if err != nil {
+		return nil, err
+	}
+	cfg.ServerName = federationTrustServerName(p.ID())
+	return cfg, nil
+}
+
+// FederationTrustPeerKey identifies an applicant, not an approved peer.
+func FederationTrustPeerKey(r *http.Request, id string) (ed25519.PublicKey, bool) {
+	if r.TLS == nil || r.TLS.ServerName != federationTrustServerName(id) {
+		return nil, false
+	}
+	key, err := DevicePublicKey(*r.TLS)
+	return key, err == nil
 }
 
 // FederationPeerKey returns the peer key only on the dedicated control ingress.

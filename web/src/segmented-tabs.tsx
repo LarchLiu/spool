@@ -11,6 +11,7 @@ export type SegmentedTab<T extends string> = {
   disabled?: boolean;
   // 标签栏中的动作按钮不改变当前选项，也不参与方向键自动切换。
   action?: () => void;
+  activateCurrent?: boolean;
   className?: string;
   state?: string;
 };
@@ -292,7 +293,7 @@ export function SegmentedTabs<T extends string>({
               disabled={option.disabled}
               onClick={() => {
                 if (option.action) option.action();
-                else if (option.value !== value)
+                else if (option.value !== value || option.activateCurrent)
                   onChange(option.value, viewport.current?.scrollLeft || 0);
                 else reveal(option.value);
               }}

@@ -87,8 +87,10 @@ test("people management shows live per-user remote connection counts and a separ
     { id: "bob", username: "bob", nickname: "Bob", remote_desktop: true },
     {
       id: "charlie",
-      username: "charlie",
+      username: "external:charlie",
       nickname: "Charlie",
+      source_server_id: "source-server-id",
+      disabled: true,
       remote_desktop: false,
     },
   ];
@@ -116,6 +118,7 @@ test("people management shows live per-user remote connection counts and a separ
   assert.match(bobRow, /class="settings-remote-count"[^>]*>0<\/span>/);
   assert.match(bobRow, /role="img" aria-label="Remote desktop allowed"/);
   assert.doesNotMatch(bobRow, /Disconnect desktop/);
+  assert.match(charlieRow, /Federated sign-in · Disabled/);
   assert.doesNotMatch(
     charlieRow,
     /settings-remote-count|Remote desktop allowed|Disconnect desktop/,

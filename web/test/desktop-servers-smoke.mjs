@@ -1,5 +1,6 @@
 // Production chat and embedded settings pages with synthetic native/API boundaries.
-// Run through tools/run.sh; SPOOL_NODE_MODULES can point to a Playwright install.
+// Run through tools/run.sh. Set SPOOL_NODE_MODULES for Playwright or
+// SPOOL_SMOKE_ENGINE=chromium|webkit to select one browser.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -25,6 +26,14 @@ const { chromium, webkit } = createRequire(
   ),
 )("playwright");
 const output = path.join(root, "build/artifacts/desktop-servers");
+const engines = [
+  ["chromium", chromium, { channel: "chrome" }],
+  ["webkit", webkit, { executablePath: process.env.WEBKIT_BIN }],
+].filter(
+  ([engine]) =>
+    !process.env.SPOOL_SMOKE_ENGINE || process.env.SPOOL_SMOKE_ENGINE === engine,
+);
+assert.ok(engines.length, "SPOOL_SMOKE_ENGINE must be chromium or webkit");
 const cleanup = [],
   reports = [];
 const pairingFixture = path.join(process.env.TMPDIR, "server-pairing");
@@ -240,7 +249,9 @@ async function verifyTabSlide(page, selector, button, animate = true) {
 }
 
 async function verifyTabPositions(tabs) {
-  const geometry = await tabs.evaluate((tabs) => {
+  const geometry = await tabs.evaluate(async (tabs) => {
+    const indicator = tabs.querySelector(".segmented-tabs-indicator");
+    await Promise.allSettled(indicator.getAnimations().map((animation) => animation.finished));
     const selected = tabs.querySelector(
       '[aria-current="page"], [aria-selected="true"]',
     );
@@ -340,6 +351,9 @@ export function selectDesktopServer(id, surface, scrollLeft) {
   window.dispatchEvent(new Event('spool:servers-changed'));
   window.dispatchEvent(new Event('spool:server-selected'));
 }
+export function requestDesktopFederationLogin(source, target, surface, scrollLeft) {
+  window.fixtureFederationSelections.push({source, target, scrollLeft});
+}
 export function connectDesktopServer() {
   window.fixtureConnections++;
 }
@@ -363,10 +377,7 @@ try {
   await mkdir(output, { recursive: true });
   await server.listen();
   const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
-  for (const [engine, type, options] of [
-    ["chromium", chromium, { channel: "chrome" }],
-    ["webkit", webkit, { executablePath: process.env.WEBKIT_BIN }],
-  ]) {
+  for (const [engine, type, options] of engines) {
     browser = await type.launch({ ...options, headless: true });
     const context = await browser.newContext({
       viewport: { width: 1280, height: 860 },
@@ -403,6 +414,7 @@ try {
         else
           document.addEventListener("DOMContentLoaded", chrome, { once: true });
         window.fixtureSelections = [];
+        window.fixtureFederationSelections = [];
         window.fixtureReadyAttempts = [];
         window.fixtureHealthAttempts = [];
         window.fixtureDroppedStates = [];
@@ -410,6 +422,9 @@ try {
         window.fixtureConnections = 0;
         window.fixtureSockets = [];
         window.fixtureSocketReady = true;
+        const setInterval = window.setInterval.bind(window);
+        window.setInterval = (callback, delay, ...args) =>
+          setInterval(callback, delay === 15000 ? 250 : delay, ...args);
         window.spoolServers = {
           selected: "local",
           entries: [
@@ -424,6 +439,7 @@ try {
               name: "家里的服务器",
               local: false,
               status: "login",
+              client_url: "https://home.example/",
             },
             {
               id: "custom-1234",
@@ -466,7 +482,9 @@ try {
         sessionStatus = 0,
         invalidSession = false,
         versionStatus = 200,
-        invalidVersion = false;
+        invalidVersion = false,
+        httpTargets = [];
+      let targetPolls = 0;
       await page.route("**/api/**", (route) => {
         const endpoint = new URL(route.request().url()).pathname;
         const json = (value, status = 200) =>
@@ -495,6 +513,10 @@ try {
               : { version: "fixture", server_name: "本机开发" },
             versionStatus,
           );
+        if (endpoint === "/api/federation/targets") {
+          targetPolls++;
+          return json(httpTargets);
+        }
         if (endpoint === "/api/navigation")
           return json({ projects: [], chats: [] });
         if (endpoint === "/api/agents") return json([]);
@@ -525,6 +547,158 @@ try {
           .count(),
         1,
       );
+      const lab = tabs.getByRole("button", {
+        name: "Sign in to Shared Lab with this account",
+      });
+      const savedHome = tabs.getByRole("button", {
+        name: "家里的服务器, Connected · Sign-in required",
+        exact: true,
+      });
+      const publishTargets = (targets) => page.evaluate((data) => {
+        const socket = window.fixtureSockets.at(-1);
+        socket.onmessage({ data: JSON.stringify({ type: "federation_targets", data }) });
+      }, targets);
+      const labTarget = {
+        id: "b".repeat(52), name: "Shared Lab", client_url: "https://lab.example/chat/", client_mode: "tailscale",
+      };
+      const homeTarget = { id: "c".repeat(52), name: "Home", client_url: "https://home.example/" };
+      const readDotColor = (state) => tabs.locator(`.server-status-dot[data-state="${state}"]`)
+        .first().evaluate((dot) => getComputedStyle(dot).backgroundColor);
+      const dotColors = {
+        connected: await readDotColor("connected"),
+        login: await readDotColor("login"),
+        error: await readDotColor("error"),
+        disconnected: await readDotColor("disconnected"),
+      };
+      const verifyKey = async (button, color) => {
+        const icon = button.locator("svg.lucide-key-round");
+        await icon.waitFor();
+        assert.equal(await button.locator("svg, .server-status-dot").count(), 1);
+        const stroke = await icon.evaluate((key) => getComputedStyle(key).stroke);
+        if (color) assert.equal(stroke, color);
+        return stroke;
+      };
+      const publishNativeTargets = (targets, federated = false) => page.evaluate(({ targets, federated }) => {
+        window.spoolServers = {
+          ...window.spoolServers,
+          entries: window.spoolServers.entries.map((server) => server.id === "local"
+            ? { ...server, federation_targets: targets, federated }
+            : server),
+        };
+        window.dispatchEvent(new Event("spool:servers-changed"));
+      }, { targets, federated });
+      const publishProgress = (state) => page.evaluate(({ target, state }) => {
+        window.dispatchEvent(new CustomEvent("spool:federation", { detail: { source: "local", target, state } }));
+      }, { target: labTarget.id, state });
+      const labWithStatus = (status) => tabs.getByRole("button", {
+        name: `本机开发 → Sign in to Shared Lab with this account, ${status}`,
+        exact: true,
+      });
+      // An API response grants the link, but can't provide its status.
+      await publishTargets([{ ...labTarget, status: "connected" }, homeTarget]);
+      await verifyKey(labWithStatus("Disconnected"), dotColors.disconnected);
+      const homeAlias = tabs.getByRole("button", {
+        name: "本机开发 → Sign in to 家里的服务器 with this account, Connected · Sign-in required",
+        exact: true,
+      });
+      await verifyKey(homeAlias, dotColors.login);
+      assert.equal(await homeAlias.evaluate((button) => getComputedStyle(button).borderTopStyle), "dashed");
+
+      // Native snapshots repaint the keys on the existing page, without a new live list.
+      const nativeLab = { ...labTarget, client_url: "https://LAB.example:443/chat" };
+      await publishNativeTargets([{ ...nativeLab, status: "connecting" }]);
+      const connectingColor = await verifyKey(labWithStatus("Connecting…"));
+      assert.ok(!Object.values(dotColors).includes(connectingColor));
+      await publishNativeTargets([{ ...nativeLab, status: "login" }, { ...homeTarget, status: "error" }], true);
+      await verifyKey(labWithStatus("Connected · Sign-in required"), dotColors.login);
+      await verifyKey(homeAlias, dotColors.login);
+      await verifyKey(tabs.getByRole("button", {
+        name: "本机开发, Connected · Signed in · Federated sign-in", exact: true,
+      }), dotColors.connected);
+      await publishNativeTargets([{ ...nativeLab, status: "error" }]);
+      await verifyKey(labWithStatus("Connection failed"), dotColors.error);
+      const unknownTarget = { id: "d".repeat(52), name: "Studio" };
+      await publishTargets([labTarget, homeTarget, unknownTarget]);
+      await verifyKey(tabs.getByRole("button", { name: /Sign in to Studio with this account, Disconnected/ }),
+        dotColors.disconnected);
+      const setFixtureSidebarWidth = (sidebar_width) => page.evaluate((width) => {
+        window.spoolServers = { ...window.spoolServers, sidebar_width: width };
+        window.dispatchEvent(new Event("spool:servers-changed"));
+      }, sidebar_width);
+      await page.setViewportSize({ width: 1600, height: 860 });
+      await setFixtureSidebarWidth(480);
+      await page.waitForFunction(() => Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 480);
+      await tabs.screenshot({ path: path.join(output, `${engine}-tabs-federation.png`) });
+      await setFixtureSidebarWidth(undefined);
+      await page.setViewportSize({ width: 1280, height: 860 });
+      await publishTargets([{ ...labTarget, client_mode: "" }, homeTarget]);
+      await verifyKey(labWithStatus("Disconnected"), dotColors.disconnected);
+
+      await publishProgress("pending");
+      const signingIn = tabs.getByRole("button", { name: /Signing in to Shared Lab…/ });
+      await signingIn.locator("svg.lucide-loader-circle").waitFor();
+      assert.equal(await signingIn.locator("svg, .server-status-dot").count(), 1);
+      assert.ok(await signingIn.isDisabled());
+      await publishProgress("failed");
+      const retry = tabs.getByRole("button", { name: /Could not sign in to Shared Lab\. Try again\./ });
+      await verifyKey(retry, dotColors.disconnected);
+      assert.deepEqual(await retry.evaluate((button) => {
+        const style = getComputedStyle(button);
+        return [style.borderTopStyle, style.borderTopColor];
+      }), ["dashed", dotColors.error]);
+      await publishProgress("done");
+      await publishNativeTargets([]);
+      await labWithStatus("Disconnected").waitFor();
+
+      // 模拟另外两个页面已登录后，从与来源无关的 C 页面选择其中一个入口。
+      await publishTargets([]);
+      await lab.waitFor({ state: "detached" });
+      await page.evaluate(() => {
+        window.fixtureOriginalServers = window.spoolServers;
+        const target = { id: "c".repeat(52), name: "Home", client_url: "https://home.example/" };
+        window.spoolServers = {
+          ...window.spoolServers,
+          selected: "office-1234",
+          entries: window.spoolServers.entries.map((server) => {
+            if (server.id !== "local" && server.id !== "custom-1234") return server;
+            return { ...server, status: "connected", federation_targets: [target] };
+          }),
+        };
+        window.dispatchEvent(new Event("spool:servers-changed"));
+      });
+      const aliases = tabs.locator(".desktop-federation-target");
+      const groupedOffice = aliases.filter({ hasText: "家里的服务器" });
+      await groupedOffice.nth(1).waitFor({ state: "attached" });
+      assert.deepEqual(await groupedOffice.evaluateAll((buttons) => buttons.map((button) => [
+        button.previousElementSibling.textContent, button.getAttribute("aria-label"),
+      ])), [
+        ["本机开发", "本机开发 → Sign in to 家里的服务器 with this account, Connected · Sign-in required"],
+        ["自定义显示名称", "自定义显示名称 → Sign in to 家里的服务器 with this account, Connected · Sign-in required"],
+      ]);
+      await groupedOffice.nth(1).click();
+      await groupedOffice.nth(0).click();
+      const trustedSelections = await page.evaluate(() => window.fixtureFederationSelections);
+      assert.deepEqual(trustedSelections.map(({ source, target }) => [source, target]), [
+        ["custom-1234", "c".repeat(52)], ["local", "c".repeat(52)],
+      ]);
+      assert.ok(trustedSelections.every(({ scrollLeft }) => Number.isFinite(scrollLeft)));
+      await page.evaluate(() => {
+        window.spoolServers = {
+          ...window.spoolServers,
+          selected: "home-1234",
+          selected_tab: `federation:custom-1234:${"c".repeat(52)}`,
+        };
+        window.dispatchEvent(new Event("spool:servers-changed"));
+      });
+      await tabs.locator('[aria-current="page"][aria-label^="自定义显示名称 →"]').waitFor();
+      await page.evaluate(() => {
+        window.spoolServers = window.fixtureOriginalServers;
+        delete window.fixtureOriginalServers;
+        window.dispatchEvent(new Event("spool:servers-changed"));
+      });
+      await publishTargets([]);
+      await lab.waitFor({ state: "detached" });
+      await savedHome.waitFor();
       const signedInDotColor = await tabs
         .locator('.server-status-dot[data-state="connected"]')
         .first()
@@ -727,7 +901,7 @@ try {
         );
       }
 
-      // Android keeps account details and puts connection icons before Settings.
+      // 不触发 focus 或标签选择，让周期性 HTTP 回退独自刷新权限。
       await page.evaluate(() => {
         window.fixtureSocketReady = false;
         window.fixtureSockets
@@ -740,6 +914,12 @@ try {
         exact: true,
       });
       await retryIcon.waitFor();
+      const pollsBeforeChange = targetPolls;
+      httpTargets = [{ id: "b".repeat(52), name: "Shared Lab" }];
+      await lab.waitFor();
+      assert.ok(targetPolls > pollsBeforeChange);
+      httpTargets = [];
+      await lab.waitFor({ state: "detached" });
       assert.ok(
         await page.evaluate(() =>
           window.fixtureShell.every(
@@ -770,6 +950,9 @@ try {
       assert.equal(await page.evaluate(() => window.fixtureConnections), 1);
       await page.evaluate(() => {
         window.fixtureSocketReady = true;
+        // A reconnect may already have opened while the fixture withheld ready.
+        const socket = window.fixtureSockets.at(-1);
+        if (socket?.readyState === 1) socket.onmessage?.({ data: JSON.stringify({ type: "ready" }) });
       });
       await retryIcon.waitFor({ state: "detached" });
 

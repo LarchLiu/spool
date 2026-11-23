@@ -1,8 +1,11 @@
 package com.cloudgeek.spool.android;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
@@ -16,7 +19,17 @@ final class NativeFederation {
         final String id, name;
         /** Normalized HTTPS origin supplied by the source administrator, or empty. */
         final String origin;
-        Target(String id, String name, String origin) { this.id = id; this.name = name; this.origin = origin; }
+        final ConnectionMode clientMode;
+        Target(String id, String name, String origin) { this(id, name, origin, ConnectionMode.DIRECT); }
+        Target(String id, String name, String origin, ConnectionMode clientMode) {
+            this.id = id; this.name = name; this.origin = origin; this.clientMode = clientMode;
+        }
+
+        ConnectionPlan newPlan() {
+            if (origin.isEmpty() || clientMode == null) return null;
+            return clientMode == ConnectionMode.TAILSCALE ? new ConnectionPlan("", origin, clientMode)
+                    : new ConnectionPlan(origin, "", clientMode);
+        }
     }
 
     /**
@@ -25,13 +38,17 @@ final class NativeFederation {
      */
     static final class Tab {
         final Target target;
-        final ServerProfiles.Server server;
-        Tab(Target target, ServerProfiles.Server server) { this.target = target; this.server = server; }
-        String key() { return server == null ? PREFIX + target.id : server.id; }
-        boolean reachable() { return server != null || !target.origin.isEmpty(); }
+        final ServerProfiles.Server source, server;
+        Tab(ServerProfiles.Server source, Target target, ServerProfiles.Server server) {
+            this.source = source; this.target = target; this.server = server;
+        }
+        String key() { return tabKey(source.id, target.id); }
+        boolean reachable() { return server != null || target.newPlan() != null; }
     }
 
     private NativeFederation() {}
+
+    static String tabKey(String source, String target) { return PREFIX + source + ":" + target; }
 
     static List<Target> parse(Object value) {
         List<Target> result = new ArrayList<>();
@@ -41,12 +58,36 @@ final class NativeFederation {
             JSONObject entry = array.optJSONObject(i);
             if (entry == null) continue;
             String id = entry.optString("id"), name = entry.optString("name").trim();
-            if (!id.matches("[a-z2-7]{52}") || result.stream().anyMatch(target -> target.id.equals(id))) continue;
+            if (!validID(id) || result.stream().anyMatch(target -> target.id.equals(id))) continue;
             if (name.isEmpty()) name = id.substring(0, 8);
             if (name.length() > 80) name = name.substring(0, 80);
-            result.add(new Target(id, name, origin(entry.optString("client_url"))));
+            result.add(new Target(id, name, origin(entry.optString("client_url")), clientMode(entry.opt("client_mode"))));
         }
         return result;
+    }
+
+    private static ConnectionMode clientMode(Object mode) {
+        if (mode == null || "".equals(mode)) return ConnectionMode.DIRECT;
+        return ConnectionMode.TAILSCALE.value.equals(mode) ? ConnectionMode.TAILSCALE : null;
+    }
+
+    static boolean validID(String id) { return id.matches("[a-z2-7]{52}"); }
+
+    /** Unlike tab rendering, automatic sign-in must distinguish a malformed list from a denial. */
+    static boolean authorizedRoute(JSONArray peers, String id, ConnectionMode mode, String address,
+                                   boolean requirePublishedMode) throws JSONException {
+        Set<String> seen = new HashSet<>();
+        boolean authorized = false;
+        for (int i = 0; i < peers.length(); i++) {
+            JSONObject peer = peers.getJSONObject(i);
+            Object key = peer.opt("id"), url = peer.opt("client_url"), advertised = peer.opt("client_mode");
+            if (!(key instanceof String) || !validID((String) key) || !seen.add((String) key)
+                    || url != null && !(url instanceof String) || advertised != null && !(advertised instanceof String))
+                throw new JSONException("Invalid trusted server list");
+            if (id.equals(key)) authorized = (!requirePublishedMode || clientMode(advertised) == mode)
+                    && allows(new Target(id, "", origin((String) url)), mode, address);
+        }
+        return authorized;
     }
 
     /** Native transports address one HTTPS origin; URLs with a path (Relay Web) are not usable here. */
@@ -76,16 +117,15 @@ final class NativeFederation {
         return !target.origin.isEmpty() && target.origin.equals(origin(address));
     }
 
-    static List<Tab> tabs(ServerProfiles profiles, List<Target> targets) {
+    static List<Tab> tabs(ServerProfiles profiles, ServerProfiles.Server source, List<Target> targets) {
         List<Tab> result = new ArrayList<>();
         for (Target target : targets) {
+            if (route(source, target, null) != null) continue;
             ServerProfiles.Server saved = null;
-            for (ServerProfiles.Server server : profiles.entries)
-                if (saved == null && route(server, target, null) != null) saved = server;
-            if (saved != null && saved.id.equals(profiles.selected)) continue;
-            ServerProfiles.Server match = saved;
-            if (saved != null && result.stream().anyMatch(tab -> tab.server == match)) continue;
-            result.add(new Tab(target, saved));
+            for (ServerProfiles.Server server : profiles.entries) {
+                if (route(server, target, null) != null && (saved == null || !saved.enabled && server.enabled)) saved = server;
+            }
+            result.add(new Tab(source, target, saved));
         }
         return result;
     }

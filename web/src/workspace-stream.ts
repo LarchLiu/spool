@@ -11,6 +11,7 @@ import {
 
 import type { SidebarSnapshot } from "./sidebar-sync";
 import { isSessionNotification, type SessionNotification } from "./runtime";
+import { parseFederationTargets, type FederationTarget } from "./desktop-federation";
 export type Navigation = {
   projects: Project[];
   chats: Chat[];
@@ -39,6 +40,7 @@ export function subscribeWorkspaceEvents(
     presence: (value: Online[]) => void;
     profiles: (value: ProfileSnapshot) => void;
     server?: (value: { server_name: string }) => void;
+    federationTargets?: (value: FederationTarget[]) => void;
     connected: (value: boolean) => void;
     expired: () => void;
     directMessage?: (value: DirectMessage) => void;
@@ -155,6 +157,12 @@ export function subscribeWorkspaceEvents(
         case "server":
           handlers.server?.(message.data as { server_name: string });
           break;
+        case "federation_targets": {
+          if (!handlers.federationTargets) break;
+          const targets = parseFederationTargets(message.data);
+          if (targets) handlers.federationTargets(targets);
+          break;
+        }
         case "navigation":
           handlers.navigation(message.data as Navigation);
           break;

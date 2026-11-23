@@ -6,6 +6,8 @@ import android.app.Activity;
 import android.os.Looper;
 import android.view.View;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -14,7 +16,10 @@ import org.junit.runner.RunWith;
 import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
+import org.robolectric.annotation.Implementation;
+import org.robolectric.annotation.Implements;
 import org.robolectric.annotation.LooperMode;
+import org.robolectric.shadow.api.Shadow;
 import org.robolectric.util.ReflectionHelpers;
 import spoolnet.Client;
 import spoolnet.EventListener;
@@ -23,7 +28,8 @@ import spoolnet.EventStream;
 /** Independent authenticated workspace streams, including servers that have never been selected. */
 @RunWith(org.robolectric.RobolectricTestRunner.class)
 @Config(sdk = {26, 35}, shadows = {MainActivityGoalTest.ShadowClient.class, MainActivityGoalTest.ShadowSeq.class,
-        MainActivityConnectionTest.ShadowSpoolnet.class, MainActivityWorkspaceEventsTest.ShadowStream.class})
+        MainActivityConnectionTest.ShadowSpoolnet.class, MainActivityWorkspaceEventsTest.ShadowStream.class,
+        MainActivityServerTabsTest.ShadowFederationSession.class})
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class MainActivityServerTabsTest {
@@ -47,6 +53,10 @@ public class MainActivityServerTabsTest {
         }
 
         Fixture(boolean finishBackgroundReads, JSONArray homeTargets) throws Exception {
+            this(finishBackgroundReads, homeTargets, new ConnectionPlan("https://office.example.com", "", ConnectionMode.DIRECT));
+        }
+
+        Fixture(boolean finishBackgroundReads, JSONArray homeTargets, ConnectionPlan officePlan) throws Exception {
             MainActivityConnectionTest.ShadowSpoolnet.failDirect = false;
             MainActivityConnectionTest.ShadowSpoolnet.tailnetHealth = null;
             MainActivityWorkspaceEventsTest.install(h);
@@ -54,12 +64,11 @@ public class MainActivityServerTabsTest {
             ConnectionPlan plan = new ConnectionPlan("https://home.example.com", "", ConnectionMode.DIRECT);
             servers.active().plan = plan; h.set("connectionPlan", plan); h.set("connectionDraft", plan);
             h.call("openSidebar");
-            ReflectionHelpers.callInstanceMethod(h.activity, "selectConnections", ReflectionHelpers.ClassParameter.from(ConnectionMode.class, ConnectionMode.DIRECT),
-                    ReflectionHelpers.ClassParameter.from(boolean.class, true));
+            checkDirectRoute();
             drainConnections(); drain(); homeClient = h.get("client");
             push(homeClient, "ready", "true"); push(homeClient, "navigation", navigation("Home"));
             if (homeTargets != null) responses(200);
-            office = servers.add("Office"); office.plan = new ConnectionPlan("https://office.example.com", "", ConnectionMode.DIRECT);
+            office = servers.add("Office"); office.plan = officePlan;
             h.call("refreshServerConnections"); drainConnections();
             Object runtime = h.<Map<String, ?>>get("serverRuntimes").get(office.id);
             officeClient = ((ConnectionRouter.Candidate<Client>) ReflectionHelpers.getField(runtime, "candidate")).client;
@@ -68,10 +77,12 @@ public class MainActivityServerTabsTest {
 
         void responses(int meStatus) { responses(meStatus, null); }
 
-        void responses(int meStatus, JSONArray targets) {
+        void responses(int meStatus, JSONArray targets) { responses(meStatus, targets, "alice", "shared-csrf"); }
+
+        void responses(int meStatus, JSONArray targets, String account, String csrf) {
             MainActivityGoalTest.ShadowClient.responder = call -> {
                 String path = call.get(1);
-                String body = path.equals("/api/me") ? "{user:{id:'alice',nickname:'Alice'},csrf:'shared-csrf',server_name:'Server from sign-in'"
+                String body = path.equals("/api/me") ? "{user:{id:'" + account + "',nickname:'Alice'},csrf:'" + csrf + "',server_name:'Server from sign-in'"
                         + (targets == null ? "}" : ",federation_targets:" + targets + "}")
                         : path.equals("/api/navigation") ? navigation("REST snapshot")
                         : path.equals("/api/profiles") ? "{revision:1,people:[{id:'alice',nickname:'Alice'}]}"
@@ -81,6 +92,11 @@ public class MainActivityServerTabsTest {
             };
         }
 
+        void checkDirectRoute() {
+            ReflectionHelpers.callInstanceMethod(h.activity, "selectConnections", ReflectionHelpers.ClassParameter.from(ConnectionMode.class, ConnectionMode.DIRECT),
+                    ReflectionHelpers.ClassParameter.from(boolean.class, true));
+        }
+        NativeServerTabs tabs() { return ReflectionHelpers.getField(h.<NativeSidebar>get("sidebar"), "serverTabs"); }
         void drainConnections() { MainActivityConnectionTest.drain(connections); }
         void drain() {
             int turns = 0;
@@ -110,24 +126,417 @@ public class MainActivityServerTabsTest {
     }
 
     @Test public void trustedTabsStayWithTheirSignedInServerWhenTheSidebarReopens() throws Exception {
-        String target = "b".repeat(52), key = NativeFederation.PREFIX + target;
+        String target = "b".repeat(52);
         JSONArray targets = new JSONArray().put(new JSONObject().put("id", target).put("name", "Lab"));
         try (Fixture f = new Fixture(true, targets)) {
+            String key = NativeFederation.tabKey(f.home, target);
             f.h.call("closeDrawer");
             f.h.call("openSidebar");
-            NativeServerTabs tabs = ReflectionHelpers.getField(f.h.<NativeSidebar>get("sidebar"), "serverTabs");
-            assertEquals("Lab, Trusted server", tabs.button(key).getContentDescription().toString());
+            assertEquals("Spool → Lab, Trusted server", f.tabs().button(key).getContentDescription());
 
             f.select(f.office.id);
-            tabs = ReflectionHelpers.getField(f.h.<NativeSidebar>get("sidebar"), "serverTabs");
-            assertNull(tabs.button(key));
-
-            f.select(f.home);
-            tabs = ReflectionHelpers.getField(f.h.<NativeSidebar>get("sidebar"), "serverTabs");
-            assertNotNull(tabs.button(key));
+            assertNotNull(f.tabs().button(key));
             f.push(f.homeClient, "auth_expired", "{}");
-            tabs = ReflectionHelpers.getField(f.h.<NativeSidebar>get("sidebar"), "serverTabs");
-            assertNull(tabs.button(key));
+            assertNull(f.tabs().button(key));
+            assertEquals(f.office.id, f.servers.selected);
+        }
+    }
+
+    private static JSONArray target(String id, String name, String address) throws Exception {
+        return new JSONArray().put(new JSONObject().put("id", id).put("name", name).put("client_url", address));
+    }
+
+    @Test public void aTrustedTabKeepsItsSignedInRelayEvenWhenTrustOnlyMatchesHttps() throws Exception {
+        String id = "b".repeat(52), address = "https://office.example.com";
+        String relay = RelayPairingTest.code("https://relay.example.com");
+        ConnectionPlan plan = new ConnectionPlan(address, "", relay, ConnectionMode.RELAY, false);
+        try (Fixture f = new Fixture(true, target(id, "Office", address), plan)) {
+            assertNotEquals(id, new RelayPairing(relay).id);
+            assertSame(ConnectionMode.DIRECT, NativeFederation.route(f.office, NativeFederation.parse(target(id, "Office", address)).get(0), ConnectionMode.RELAY));
+            String key = NativeFederation.tabKey(f.home, id);
+            assertEquals("Spool → Office, Connected · Signed in, Trusted server", f.tabs().button(key).getContentDescription());
+            MainActivityGoalTest.ShadowClient relayClient = org.robolectric.shadow.api.Shadow.extract(f.officeClient);
+            MainActivityWorkspaceEventsTest.ShadowStream socket = f.socket(f.officeClient);
+            f.tabs().button(key).performClick();
+            f.drainConnections(); f.drain();
+
+            assertEquals(f.office.id, f.servers.selected);
+            assertSame(ConnectionMode.RELAY, f.h.get("connectionMode"));
+            assertSame(f.officeClient, f.h.get("client"));
+            assertSame(plan, f.office.plan);
+            assertEquals("alice", f.h.<JSONObject>get("user").getString("id"));
+            assertEquals(0, relayClient.closes);
+            assertSame(socket, f.socket(f.officeClient));
+            assertFalse(socket.closed);
+        }
+    }
+
+    @Implements(value = spoolnet.FederationSession.class, isInAndroidSdk = false)
+    public static class ShadowFederationSession {
+        int activations;
+        @Implementation protected static void __staticInitializer__() {}
+        @Implementation protected void __constructor__() {}
+        @Implementation protected String activate() {
+            activations++;
+            return "{user:{id:'external-office',nickname:'Alice',source_server_id:'" + "a".repeat(52) + "'},csrf:'office-csrf'}";
+        }
+    }
+
+    private static String reply(int status, Object body) {
+        try { return new JSONObject().put("status", status).put("body", body.toString()).toString(); }
+        catch (Exception error) { throw new AssertionError(error); }
+    }
+
+    private static MainActivityGoalTest.ShadowClient clientShadow(Client client) { return Shadow.extract(client); }
+
+    @Test public void newTrustedTailscaleServerExposesEnrollmentAndRetriesTheChosenAccount() throws Exception {
+        checkTrustedTailscaleEnrollment(false);
+    }
+
+    @Test public void enrollmentRecoveryDoesNotPrepareATicketIfThePublishedModeChanges() throws Exception {
+        checkTrustedTailscaleEnrollment(true);
+    }
+
+    private void checkTrustedTailscaleEnrollment(boolean modeChanged) throws Exception {
+        String id = "b".repeat(52), address = "https://lab.example.ts.net";
+        JSONArray allowed = target(id, "Lab", address);
+        allowed.getJSONObject(0).put("client_mode", "tailscale");
+        try (Fixture f = new Fixture(true, allowed)) {
+            MainActivityConnectionTest.ShadowSpoolnet.tailnetHealth = "{state:'Starting',https:'Not checked',problem:'starting'}";
+            f.tabs().button(NativeFederation.tabKey(f.home, id)).performClick();
+            NativeDialog confirm = (NativeDialog) org.robolectric.shadows.ShadowDialog.getLatestDialog();
+            assertTrue(confirm.isShowing());
+            confirm.actions.getChildAt(1).performClick();
+            f.drainConnections(); f.drain();
+
+            ServerProfiles.Server lab = f.servers.active();
+            Client labClient = f.h.get("client");
+            assertEquals("Lab", lab.name);
+            assertSame(ConnectionMode.TAILSCALE, lab.plan.selected);
+            assertSame(ConnectionMode.TAILSCALE, f.h.get("connectionMode"));
+            assertEquals("", lab.plan.direct);
+            assertEquals(address, lab.plan.tailscale);
+            assertEquals("tailscale", MainActivityConnectionTest.ShadowSpoolnet.mode);
+            assertEquals(address, clientShadow(labClient).tailscaleOrigin);
+            assertNull(f.h.get("user"));
+
+            JSONArray freshTargets = modeChanged ? target(id, "Lab", address) : allowed;
+            clientShadow(f.homeClient).responses = call -> reply(200, call.get(1).equals("/api/me")
+                    ? "{user:{id:'alice'},csrf:'shared-csrf'}" : freshTargets);
+            clientShadow(labClient).responses = call -> reply(call.get(1).equals("/api/me") ? 401 : 200, "{}");
+            spoolnet.FederationSession exchange = Shadow.newInstanceOf(spoolnet.FederationSession.class);
+            ShadowFederationSession result = Shadow.extract(exchange);
+            clientShadow(f.homeClient).federationPreparation = (destination, target, account, language) -> {
+                assertFalse("Do not prepare a ticket on the stale route", modeChanged);
+                assertSame(labClient, destination);
+                assertEquals(id, target);
+                assertEquals("alice", account);
+                return exchange;
+            };
+
+            health(f, labClient, new ConnectionRecovery.Snapshot("NeedsLogin", "Not checked", "login", "", ""));
+            NativeConnectionSettings settings = f.h.get("connectionSettings");
+            assertNotNull(settings);
+            assertTrue(settings.login.isEnabled());
+            settings.login.performClick();
+            f.drainConnections();
+            assertEquals("https://login.tailscale.com/a/test", Shadows.shadowOf(f.h.activity).getNextStartedActivity().getDataString());
+            assertEquals(0, result.activations);
+
+            health(f, labClient, new ConnectionRecovery.Snapshot("Running", "Verified", "", "", ""));
+            f.drain();
+            assertEquals(modeChanged ? 0 : 1, result.activations);
+            if (modeChanged) {
+                assertNull(f.h.get("user"));
+                assertFalse(f.h.<Boolean>get("restoringSession"));
+            } else assertEquals("external-office", f.h.<JSONObject>get("user").getString("id"));
+        }
+    }
+
+    private static void health(Fixture f, Client client, ConnectionRecovery.Snapshot value) {
+        ReflectionHelpers.callInstanceMethod(f.h.activity, "acceptConnectionHealth",
+                ReflectionHelpers.ClassParameter.from(Client.class, client),
+                ReflectionHelpers.ClassParameter.from(int.class, f.h.<Integer>get("generation")),
+                ReflectionHelpers.ClassParameter.from(ConnectionRecovery.Snapshot.class, value),
+                ReflectionHelpers.ClassParameter.from(boolean.class, value.healthy()));
+    }
+
+    private void checkAutomaticSignIn(String scenario) throws Exception {
+        String id = "b".repeat(52), address = "https://office.example.com";
+        JSONArray allowed = target(id, "Office", address);
+        try (Fixture f = new Fixture(true)) {
+            ServerProfiles.Server studio = f.servers.add("Studio");
+            studio.plan = new ConnectionPlan("https://studio.example.com", "", ConnectionMode.DIRECT);
+            f.h.call("refreshServerConnections"); f.drainConnections(); f.drain();
+            f.select(studio.id); f.drain();
+            Client studioClient = f.h.get("client");
+            assertSame(studio, f.servers.active());
+            assertNotNull(f.h.get("user"));
+            spoolnet.FederationSession exchange = Shadow.newInstanceOf(spoolnet.FederationSession.class);
+            ShadowFederationSession result = Shadow.extract(exchange);
+            int[] prepared = {0};
+            clientShadow(f.homeClient).federationPreparation = (destination, target, account, language) -> {
+                assertSame(f.officeClient, destination);
+                assertEquals(id, target);
+                assertEquals("alice", account);
+                prepared[0]++;
+                if (scenario.equals("switch")) f.select(studio.id);
+                return exchange;
+            };
+            String sourceAccount = "{user:{id:'alice'},csrf:'shared-csrf'}";
+            clientShadow(f.homeClient).responses = call -> reply(200, call.get(1).equals("/api/me") ? sourceAccount
+                    : scenario.equals("revoked") ? new JSONArray() : allowed);
+            clientShadow(studioClient).responses = call -> {
+                if (call.get(1).equals("/api/me")) {
+                    if (scenario.equals("source-unavailable")) return reply(503, "{}");
+                    if (scenario.equals("source-signed-out")) return reply(401, "{}");
+                    return reply(200, sourceAccount);
+                }
+                if (call.get(1).equals("/api/federation/targets")) {
+                    if (scenario.equals("targets-unavailable")) return reply(500, "{}");
+                    if (scenario.equals("targets-malformed")) return reply(200, "[{}]");
+                }
+                return reply(200, scenario.equals("ambiguous") ? allowed : new JSONArray());
+            };
+            clientShadow(f.officeClient).responses = call -> {
+                if (call.get(1).equals("/api/version")) return reply(200, "{server_id:'" + id + "'}");
+                if (!call.get(1).equals("/api/me")) return reply(200, "{}");
+                if (scenario.equals("existing")) return reply(200, "{user:{id:'office-local'},csrf:'office-local'}");
+                if (scenario.equals("unavailable")) return reply(503, "{}");
+                return reply(401, "{}");
+            };
+
+            // B 的后台仍缓存原会话。只有点普通 B 标签后，才重新核对并尝试使用 A。
+            assertEquals(0, prepared[0]);
+            assertFalse(f.tabs().button(f.office.id).getContentDescription().toString().contains("Trusted server"));
+            f.tabs().button(f.office.id).performClick();
+            f.drain();
+            boolean signedIn = scenario.equals("success") || scenario.equals("source-signed-out");
+            assertEquals(signedIn || scenario.equals("switch") ? 1 : 0, prepared[0]);
+            assertEquals(signedIn ? 1 : 0, result.activations);
+            if (signedIn) {
+                assertSame(f.office, f.servers.active());
+                assertEquals("external-office", f.h.<JSONObject>get("user").getString("id"));
+                assertEquals("office-csrf", f.h.<String>get("csrf"));
+            } else if (scenario.equals("existing")) {
+                assertEquals("office-local", f.h.<JSONObject>get("user").getString("id"));
+            } else if (scenario.equals("switch")) {
+                assertSame(studio, f.servers.active());
+                assertSame(studioClient, f.h.get("client"));
+            } else {
+                assertNull(f.h.get("user"));
+                boolean waitingForDestination = scenario.equals("unavailable");
+                assertEquals(waitingForDestination, f.h.<Boolean>get("restoringSession"));
+                f.h.call("closeDrawer");
+                idle();
+                if (waitingForDestination) assertNotNull(f.h.get("connectingView"));
+                else assertNotNull(f.h.get("username"));
+            }
+        }
+    }
+
+    @Test public void eachTrustedAliasUsesItsOwnSourceFromAnUnrelatedServer() throws Exception {
+        checkGroupedSignIn("home");
+        checkGroupedSignIn("studio");
+    }
+
+    @Test public void revokingTheClickedAliasDoesNotUseTheOtherSourceOrActivateTheExchange() throws Exception {
+        checkGroupedSignIn("revoked");
+    }
+
+    @Test public void changingTheClickingPageOrSourceAccountDiscardsTheExchange() throws Exception {
+        checkGroupedSignIn("switched");
+        checkGroupedSignIn("expired");
+    }
+
+    private void checkGroupedSignIn(String scenario) throws Exception {
+        String id = "b".repeat(52);
+        JSONArray peers = target(id, "Office", "https://office.example.com");
+        try (Fixture f = new Fixture(true)) {
+            ServerProfiles.Server studio = f.servers.add("Studio"), third = f.servers.add("Third");
+            studio.plan = new ConnectionPlan("https://studio.example.com", "", ConnectionMode.DIRECT);
+            third.plan = new ConnectionPlan("https://third.example.com", "", ConnectionMode.DIRECT);
+            f.responses(200, null, "studio-user", "studio-csrf");
+            f.h.call("refreshServerConnections"); f.drainConnections(); f.drain();
+            Object runtime = f.h.<Map<String, ?>>get("serverRuntimes").get(studio.id);
+            Client studioClient = ((ConnectionRouter.Candidate<Client>) ReflectionHelpers.getField(runtime, "candidate")).client;
+            f.push(studioClient, "ready", "true");
+            f.select(third.id); f.drain();
+            String fromHome = NativeFederation.tabKey(f.home, id), fromStudio = NativeFederation.tabKey(studio.id, id);
+            f.push(f.homeClient, "federation_targets", peers.toString());
+            f.push(studioClient, "federation_targets", peers.toString());
+            assertNotNull(f.tabs().button(fromHome));
+            assertNotNull(f.tabs().button(fromStudio));
+            assertNull(f.tabs().button(f.office.id));
+            assertEquals(4, f.servers.entries.size());
+
+            clientShadow(f.officeClient).responses = call -> reply(call.get(1).equals("/api/me") ? 401 : 200, "{}");
+            clientShadow(f.homeClient).responses = call -> reply(200, call.get(1).equals("/api/me")
+                    ? "{user:{id:'alice'},csrf:'shared-csrf'}" : peers);
+            clientShadow(studioClient).responses = call -> reply(200, call.get(1).equals("/api/me")
+                    ? "{user:{id:'studio-user'},csrf:'studio-csrf'}" : peers);
+            spoolnet.FederationSession exchange = Shadow.newInstanceOf(spoolnet.FederationSession.class);
+            ShadowFederationSession result = Shadow.extract(exchange);
+            List<String> prepared = new ArrayList<>();
+            clientShadow(f.homeClient).federationPreparation = (destination, target, account, language) -> {
+                assertSame(f.officeClient, destination);
+                assertEquals(id, target);
+                prepared.add(account);
+                if (scenario.equals("revoked")) f.push(f.homeClient, "federation_targets", "[]");
+                if (scenario.equals("expired")) f.push(f.homeClient, "auth_expired", "{}");
+                if (scenario.equals("switched")) f.select(studio.id);
+                return exchange;
+            };
+            clientShadow(studioClient).federationPreparation = (destination, target, account, language) -> {
+                assertSame(f.officeClient, destination);
+                assertEquals(id, target);
+                prepared.add(account);
+                return exchange;
+            };
+            boolean useStudio = scenario.equals("studio");
+            f.tabs().button(useStudio ? fromStudio : fromHome).performClick();
+            f.drainConnections(); f.drain();
+            assertEquals(List.of(useStudio ? "studio-user" : "alice"), prepared);
+            if (scenario.equals("home") || useStudio) {
+                assertEquals(1, result.activations);
+                assertSame(f.office, f.servers.active());
+                assertTrue(f.tabs().button(useStudio ? fromStudio : fromHome).isSelected());
+                assertFalse(f.tabs().button(useStudio ? fromHome : fromStudio).isSelected());
+            } else {
+                assertEquals(0, result.activations);
+                assertSame(scenario.equals("switched") ? studio : third, f.servers.active());
+                if (!scenario.equals("switched")) assertNull(f.tabs().button(fromHome));
+                assertNotNull(f.tabs().button(fromStudio));
+            }
+            assertEquals(4, f.servers.entries.size());
+        }
+    }
+
+    @Test public void savedTabUsesTheUniqueAuthorizedAccountFromAnotherServer() throws Exception { checkAutomaticSignIn("success"); }
+    @Test public void savedTabKeepsAnExistingSignIn() throws Exception { checkAutomaticSignIn("existing"); }
+    @Test public void savedTabDoesNotGuessBetweenAuthorizedAccounts() throws Exception { checkAutomaticSignIn("ambiguous"); }
+    @Test public void savedTabDoesNotReuseRevokedAccess() throws Exception { checkAutomaticSignIn("revoked"); }
+    @Test public void savedTabDoesNotTreatNetworkFailureAsSignedOut() throws Exception { checkAutomaticSignIn("unavailable"); }
+    @Test public void savedTabDoesNotActivateAnExchangeAfterLeaving() throws Exception { checkAutomaticSignIn("switch"); }
+    @Test public void signedOutCompetingSourceDoesNotBlockTheUniqueAccount() throws Exception { checkAutomaticSignIn("source-signed-out"); }
+    @Test public void failedCompetingSourceProbeDoesNotEstablishUniqueness() throws Exception { checkAutomaticSignIn("source-unavailable"); }
+    @Test public void failedAuthorizationListDoesNotEstablishUniqueness() throws Exception { checkAutomaticSignIn("targets-unavailable"); }
+    @Test public void malformedAuthorizationListDoesNotEstablishUniqueness() throws Exception { checkAutomaticSignIn("targets-malformed"); }
+
+    @Test public void signedOutDestinationWithNoSourceShowsTheNormalLoginForm() throws Exception {
+        try (Fixture f = new Fixture(true)) {
+            f.push(f.homeClient, "auth_expired", "{}");
+            clientShadow(f.officeClient).responses = call -> reply(401, "{}");
+            f.tabs().button(f.office.id).performClick();
+            f.drain();
+            f.h.call("closeDrawer"); idle();
+            assertSame(f.office, f.servers.active());
+            assertNull(f.h.get("connectingView"));
+            assertNotNull(f.h.get("username"));
+        }
+    }
+
+    @Test public void workspaceSnapshotsUpdateTrustedTabsWithoutReselectingTheServer() throws Exception {
+        String lab = "b".repeat(52), office = "c".repeat(52);
+        JSONArray labOnly = target(lab, "Lab", "https://lab.example.com");
+        JSONArray targets = target(office, "Office", "https://office.example.com").put(labOnly.getJSONObject(0));
+        try (Fixture f = new Fixture(true)) {
+            String labKey = NativeFederation.tabKey(f.home, lab), officeKey = NativeFederation.tabKey(f.home, office);
+            JSONObject account = f.h.get("user");
+            f.push(f.homeClient, "federation_targets", targets.toString());
+            assertNotNull(f.tabs().button(labKey));
+            assertNotNull(f.tabs().button(officeKey));
+            assertNull(f.tabs().button(f.office.id));
+
+            f.responses(200, targets);
+            f.checkDirectRoute();
+            f.connections.jobs.remove(0).run(); // 在线撤销不能被已经读到旧名单的会话检查覆盖。
+            f.listener(f.homeClient).onEvent("federation_targets", "[]");
+            idle();
+            assertNull(f.tabs().button(labKey));
+            assertNotNull(f.tabs().button(f.office.id));
+            assertFalse(f.tabs().button(f.office.id).getContentDescription().toString().contains("Trusted server"));
+            assertSame(account, f.h.get("user"));
+
+            f.select(f.office.id); f.drain();
+            f.push(f.homeClient, "federation_targets", labOnly.toString());
+            assertNotNull(f.tabs().button(labKey));
+            f.select(f.home);
+            assertNotNull(f.tabs().button(labKey));
+            assertNotNull(f.tabs().button(f.office.id));
+        }
+    }
+
+    @Test public void recheckingTheSameSessionAddsAndRemovesTrustedTabsWithoutChangingTheAccount() throws Exception {
+        String added = "b".repeat(52), replacement = "c".repeat(52);
+        try (Fixture f = new Fixture(true)) {
+            String addedKey = NativeFederation.tabKey(f.home, added), replacementKey = NativeFederation.tabKey(f.home, replacement);
+            JSONObject account = f.h.get("user");
+            EventStream stream = f.stream(f.homeClient);
+            assertNull(f.tabs().button(addedKey));
+
+            f.responses(200, target(added, "Lab", "https://lab.example.com"), "alice", "other-csrf");
+            f.checkDirectRoute(); f.drainConnections();
+            assertEquals("Spool → Lab, Trusted server", f.tabs().button(addedKey).getContentDescription());
+            assertSame(account, f.h.get("user"));
+            assertEquals("shared-csrf", f.h.<String>get("csrf"));
+
+            f.responses(503, target(replacement, "Studio", "https://studio.example.com"));
+            f.checkDirectRoute(); f.drainConnections();
+            assertNotNull(f.tabs().button(addedKey));
+            assertNull(f.tabs().button(replacementKey));
+
+            f.responses(200, target(replacement, "Studio", "https://studio.example.com"));
+            f.checkDirectRoute(); f.drainConnections();
+            assertNull(f.tabs().button(addedKey));
+            assertNotNull(f.tabs().button(replacementKey));
+
+            f.responses(200, new JSONArray());
+            f.checkDirectRoute(); f.drainConnections();
+            assertNull(f.tabs().button(replacementKey));
+
+            f.responses(200, target(added, "Lab", "https://lab.example.com"));
+            f.checkDirectRoute(); f.drainConnections();
+            assertNotNull(f.tabs().button(addedKey));
+            f.responses(200);
+            f.checkDirectRoute(); f.drainConnections();
+            assertNull(f.tabs().button(addedKey));
+            assertSame(account, f.h.get("user"));
+            assertSame(f.homeClient, f.h.get("client"));
+            assertSame(stream, f.h.get("workspaceStream"));
+        }
+    }
+
+    @Test public void anInactiveProbeRefreshesTrustedTabsIfItsServerIsSelectedBeforeDelivery() throws Exception {
+        String id = "b".repeat(52);
+        try (Fixture f = new Fixture(true)) {
+            String key = NativeFederation.tabKey(f.office.id, id);
+            f.responses(200, target(id, "Lab", "https://lab.example.com"));
+            f.h.call("refreshServerConnections");
+            f.connections.jobs.remove(0).run(); // Office /me was sampled while Home was selected.
+            f.select(f.office.id);
+            assertNull(f.tabs().button(key));
+            idle();
+            assertEquals("Office → Lab, Trusted server", f.tabs().button(key).getContentDescription());
+            assertSame(f.officeClient, f.h.get("client"));
+        }
+    }
+
+    @Test public void aSessionCheckAlreadyInFlightCannotBringBackTrustedTabsAfterSessionExpiry() throws Exception {
+        String original = "b".repeat(52), late = "c".repeat(52);
+        try (Fixture f = new Fixture(true, target(original, "Lab", "https://lab.example.com"))) {
+            String oldKey = NativeFederation.tabKey(f.home, original), lateKey = NativeFederation.tabKey(f.home, late);
+            assertNotNull(f.tabs().button(oldKey));
+            f.responses(200, target(late, "Studio", "https://studio.example.com"));
+            f.checkDirectRoute();
+            f.connections.jobs.remove(0).run(); // /me has completed, but its result has not been delivered.
+            f.h.call("expire"); idle();
+            assertNull(f.h.get("user"));
+            assertNull(f.tabs().button(oldKey));
+            assertNull(f.tabs().button(lateKey));
+            f.select(f.office.id); f.select(f.home);
+            assertNull(f.h.get("user"));
+            assertNull(f.tabs().button(lateKey));
         }
     }
 
@@ -407,6 +816,39 @@ public class MainActivityServerTabsTest {
             f.listener(f.officeClient).onEvent("navigation", navigation("Revoked connection")); idle();
             assertFalse(f.h.<Map<?, ?>>get("serverWorkspaces").containsKey(f.office.id));
         }
+    }
+
+    @Test public void anInconclusiveBackgroundProbePreservesTheSameClientsVerifiedSessionUntil401() throws Exception {
+        String id = "b".repeat(52);
+        JSONArray allowed = target(id, "Lab", "https://lab.example.com");
+        try (Fixture f = new Fixture(true)) {
+            String key = NativeFederation.tabKey(f.office.id, id);
+            f.push(f.officeClient, "federation_targets", allowed.toString());
+            assertNotNull(f.tabs().button(key));
+            MainActivityWorkspaceEventsTest.ShadowStream socket = f.socket(f.officeClient);
+            clientShadow(f.officeClient).responses = call -> reply(503, "{}");
+            f.h.call("refreshServerConnections"); f.drainConnections();
+            assertFalse(socket.closed);
+
+            f.select(f.office.id);
+            assertSame(f.officeClient, f.h.get("client"));
+            assertEquals("alice", f.h.<JSONObject>get("user").getString("id"));
+            assertNotNull(f.tabs().button(key));
+            assertSame(socket, f.socket(f.officeClient));
+
+            clientShadow(f.officeClient).responses = call -> reply(401, "{}");
+            f.checkDirectRoute(); f.drainConnections();
+            assertNull(f.h.get("user"));
+            assertNull(f.tabs().button(key));
+            assertEquals(0, f.office.account.length());
+            assertSingleNormalLogin(f);
+        }
+    }
+
+    private void assertSingleNormalLogin(Fixture f) {
+        f.h.call("closeDrawer"); idle();
+        assertNull(f.h.get("connectingView"));
+        assertNotNull(f.h.get("username"));
     }
 
     @Test public void healthSuccessBeforeTheFirstSocketReadyKeepsTheSessionCacheAndRetryOwner() throws Exception {

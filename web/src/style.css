@@ -5005,10 +5005,6 @@ option {
   border-color: var(--border-strong);
   background: var(--elevated);
 }
-.server-federated-mark {
-  flex: 0 0 auto;
-  color: #3987e0;
-}
 /* 需要互信登录的目标用虚线边框标识。 */
 .desktop-server-tabs .desktop-federation-target {
   height: calc(var(--tab-height) - 6px);
@@ -5024,24 +5020,31 @@ option {
 .desktop-server-tabs .desktop-federation-target[data-state="failed"] {
   border-color: #e05252;
 }
+:is(.server-status-dot, .server-status-key) {
+  --server-status-color: var(--muted);
+}
+:is(.server-status-dot, .server-status-key)[data-state="connected"] {
+  --server-status-color: #22a06b;
+}
+:is(.server-status-dot, .server-status-key)[data-state="login"] {
+  --server-status-color: #3987e0;
+}
+:is(.server-status-dot, .server-status-key)[data-state="connecting"] {
+  --server-status-color: #d99b20;
+}
+:is(.server-status-dot, .server-status-key)[data-state="error"] {
+  --server-status-color: #e05252;
+}
 .server-status-dot {
   width: 7px;
   height: 7px;
   flex: 0 0 7px;
   border-radius: 50%;
-  background: var(--muted);
+  background: var(--server-status-color);
 }
-.server-status-dot[data-state="connected"] {
-  background: #22a06b;
-}
-.server-status-dot[data-state="login"] {
-  background: #3987e0;
-}
-.server-status-dot[data-state="connecting"] {
-  background: #d99b20;
-}
-.server-status-dot[data-state="error"] {
-  background: #e05252;
+.server-status-key {
+  flex: 0 0 auto;
+  color: var(--server-status-color);
 }
 .desktop-server-welcome {
   flex: 1;

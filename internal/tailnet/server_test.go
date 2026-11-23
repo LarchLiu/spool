@@ -224,6 +224,29 @@ func TestTailnetStartupHonorsCancellation(t *testing.T) {
 	}
 }
 
+func TestTailnetEndpointConnectDoesNotPublishHTTPS(t *testing.T) {
+	// 出站节点不需要自己的 HTTPS 证书或 MagicDNS 名称。
+	node := &fakeTailnet{status: &ipnstate.Status{BackendState: "Running"}}
+	endpoint, err := startTailnet(t.Context(), node, 443, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = endpoint.Close() })
+	if err := endpoint.Connect(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if endpoint.Listener() != nil || endpoint.Origin() != "" || node.address != "" {
+		t.Fatal("outbound-only connection published an HTTPS listener")
+	}
+
+	node.waitForCancel = true
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := endpoint.Connect(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("connect did not honor cancellation: %v", err)
+	}
+}
+
 func TestTailnetLoginStatusIsAvailableBeforeEnrollment(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

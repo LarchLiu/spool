@@ -51,10 +51,12 @@ test("management calls use the native methods and propagate native failures", as
   });
   await settingsCall("ChoosePath", "directory", "/tmp/project");
   await settingsCall("ReleaseNotes");
+  await settingsCall("FederationTrust", "list", "");
   assert.deepEqual(calls, [
     ["DesktopSettings.Execute", command],
     ["DesktopSettings.ChoosePath", "directory", "/tmp/project"],
     ["DesktopSettings.ReleaseNotes"],
+    ["DesktopSettings.FederationTrust", "list", ""],
   ]);
   globalThis.mygo.call = async () => {
     throw new Error("only the desktop settings page");

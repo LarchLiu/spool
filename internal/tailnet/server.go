@@ -189,6 +189,12 @@ func startTailnet(ctx context.Context, node tailnetNode, port int, report func(S
 	return endpoint, nil
 }
 
+// Connect 在不发布入站监听器的情况下启动节点，以便管理命令出站拨号。
+func (e *Endpoint) Connect(ctx context.Context) error {
+	_, err := e.node.Up(ctx)
+	return err
+}
+
 func (e *Endpoint) Up(ctx context.Context) error {
 	status, err := e.node.Up(ctx)
 	if err != nil {

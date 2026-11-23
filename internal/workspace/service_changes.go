@@ -100,6 +100,8 @@ func (s *Service) ApplyServiceChanges(target string) error {
 		}
 		if next.TSNetEnabled {
 			s.startTailnetLocked(next)
+		} else {
+			s.ensureFederationTailnetLocked(next)
 		}
 		s.activeSettings.ProxyEnabled, s.activeSettings.UseSystemProxy, s.activeSettings.ProxyURL, s.activeSettings.NoProxy = next.ProxyEnabled, next.UseSystemProxy, next.ProxyURL, next.NoProxy
 	default:
@@ -168,6 +170,7 @@ func (s *Service) CancelServiceChanges(target string) error {
 				runtime.ingress.close()
 				s.tailnet = nil
 				s.activeSettings.TSNetEnabled = false
+				s.ensureFederationTailnetLocked(next)
 			}
 		} else if next.TSNetEnabled {
 			// Saving a disable can cancel an enrollment that was already in progress.

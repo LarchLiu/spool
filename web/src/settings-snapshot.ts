@@ -37,6 +37,8 @@ export function settingsPageDataEqual(
   b: SettingsSnapshot,
 ) {
   switch (section) {
+    case "Server trust":
+      return true;
     case "Service":
       return (
         a.settings === b.settings &&

@@ -32,7 +32,8 @@ export type DesktopServerConnection = {
 export type DesktopServerTabsSnapshot = {
   sidebar_width?: number;
   selection?: string;
-  transition?: { from: string; started_at: number; scroll_left?: number };
+  selected_tab?: string;
+  transition?: { from: string; from_tab?: string; started_at: number; scroll_left?: number };
   entries: {
     id: string;
     name: string;
@@ -43,24 +44,42 @@ export type DesktopServerTabsSnapshot = {
     client_url?: string;
     // The session came from a federated sign-in, not a password.
     federated?: boolean;
+    federation_targets?: {
+      id: string;
+      name: string;
+      client_url?: string;
+      client_mode?: string;
+      status?: DesktopServerStatus;
+    }[];
   }[];
   selected: string;
 };
 
 export type DesktopFederationProgress = {
+  source?: string;
   target: string;
   state: "pending" | "done" | "failed";
   reason?: string;
 };
 
-// Names an authorized server only. Native code selects a trusted route and
-// performs the whole sign-in; no ticket or session ever reaches this page.
+// 只发送标签的来源和目标标识。原生端重新核验授权和线路。
 export function requestDesktopFederationLogin(
+  source: string,
   target: string,
   surface: unknown = globalThis,
+  scrollLeft = 0,
 ): void {
-  if (!/^[a-z2-7]{52}$/.test(target)) return;
-  desktopNavigationHint("/__desktop/federation-login?target=" + target, surface);
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(source) || !/^[a-z2-7]{52}$/.test(target)) return;
+  if (!Number.isFinite(scrollLeft) || scrollLeft < 0 || scrollLeft > 1e7) return;
+  desktopNavigationHint(
+    "/__desktop/federation-login?" + new URLSearchParams({ source, target, scroll_left: String(scrollLeft) }),
+    surface,
+  );
+}
+
+// The page signals a change; native reads that page's own account and list.
+export function notifyDesktopFederationTargets(surface: unknown = globalThis): void {
+  desktopNavigationHint("/__desktop/federation-targets", surface);
 }
 
 export function subscribeDesktopFederation(
@@ -83,6 +102,7 @@ export function subscribeDesktopFederation(
       )
         return;
       listener({
+        source: "source" in value && typeof value.source === "string" ? value.source : undefined,
         target: value.target,
         state: value.state,
         reason:

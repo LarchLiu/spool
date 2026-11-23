@@ -28,15 +28,13 @@ final class NativeServerTabs extends NativeTabs {
         super(ui, ui.t("Servers")); this.ui = ui; this.profiles = profiles; this.trusted = trusted;
         setPadding(ui.dp(18), ui.dp(8), ui.dp(18), ui.dp(8));
         setBackgroundColor(ui.sidebar);
-        boolean groupTrusted = !trusted.isEmpty() && profiles.active() != null && (includeDisabled || profiles.active().enabled);
         for (ServerProfiles.Server server : profiles.entries) {
-            if ((!includeDisabled && !server.enabled) || (groupTrusted && NativeFederation.find(trusted, server.id) != null)) continue;
-            addServer(server, choose);
-            if (groupTrusted && server.id.equals(profiles.selected)) {
-                for (NativeFederation.Tab entry : trusted) {
-                    if (entry.server == null) addTrusted(entry, choose);
-                    else if (includeDisabled || entry.server.enabled) addServer(entry.server, choose);
-                }
+            if (!includeDisabled && !server.enabled) continue;
+            boolean hasGroup = trusted.stream().anyMatch(entry -> entry.source == server);
+            if (hasGroup || trusted.stream().noneMatch(entry -> entry.server == server && (includeDisabled || entry.source.enabled)))
+                addServer(server, choose);
+            for (NativeFederation.Tab entry : trusted) {
+                if (entry.source == server && (entry.server == null || includeDisabled || entry.server.enabled)) addTrusted(entry, choose);
             }
         }
         if (create != null) {
@@ -59,35 +57,53 @@ final class NativeServerTabs extends NativeTabs {
     }
 
     private void addTrusted(NativeFederation.Tab entry, Consumer<String> choose) {
-        Button tab = addTab(entry.key(), entry.target.name, () -> choose.accept(entry.key()));
-        SpannableString label = new SpannableString("\ufffc" + entry.target.name);
-        Link link = new Link(ui.dp(14), ui.dp(6), true);
-        label.setSpan(link, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        String name = entry.server == null ? entry.target.name : entry.server.name;
+        Button tab = addTab(entry.key(), name, () -> choose.accept(entry.key()));
+        boolean unsaved = entry.server == null;
+        SpannableString label = new SpannableString(unsaved ? "\ufffc" + name : "\ufffc" + name + "\ufffc");
+        Link link = new Link(ui.dp(14), ui.dp(6), unsaved);
+        int mark = unsaved ? 0 : label.length() - 1;
+        label.setSpan(link, mark, mark + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (!unsaved) label.setSpan(new Dot(ui.dp(8), ui.dp(8)), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         tab.setText(label);
-        tab.setPaddingRelative(tab.getPaddingStart(), tab.getPaddingTop(), tab.getPaddingEnd() + link.size + link.gap, tab.getPaddingBottom());
-        String description = entry.target.name + ", " + ui.t("Trusted server");
+        if (unsaved) tab.setPaddingRelative(tab.getPaddingStart(), tab.getPaddingTop(), tab.getPaddingEnd() + link.size + link.gap, tab.getPaddingBottom());
+    }
+
+    void status(Map<String, String> states) { status(states, ""); }
+
+    void status(Map<String, String> states, String selectedFederationTab) {
+        String selected = button(profiles.selected) == null ? "" : profiles.selected;
+        for (ServerProfiles.Server server : profiles.entries) {
+            Button tab = button(server.id); if (tab == null) continue;
+            String description = server.name + ", " + connectionStatus(tab, server, states);
+            describe(tab, description + (trusted(server) ? ", " + ui.t("Trusted server") : ""));
+        }
+        for (NativeFederation.Tab entry : trusted) {
+            Button tab = button(entry.key()); if (tab == null) continue;
+            ServerProfiles.Server server = entry.server;
+            String description = entry.source.name + " → " + (server == null ? entry.target.name
+                    : server.name + ", " + connectionStatus(tab, server, states));
+            describe(tab, description + ", " + ui.t("Trusted server"));
+            if ((selected.isEmpty() || entry.key().equals(selectedFederationTab)) && server != null && server.id.equals(profiles.selected))
+                selected = entry.key();
+        }
+        select(selected);
+    }
+
+    private String connectionStatus(Button tab, ServerProfiles.Server server, Map<String, String> states) {
+        String state = server.enabled ? states.getOrDefault(server.id, "disconnected") : "disconnected";
+        int color = statusColor(ui, state);
+        Dot dot = ((Spanned) tab.getText()).getSpans(0, 1, Dot.class)[0];
+        if (dot.color != color) { dot.color = color; tab.invalidate(); }
+        return ui.t(statusLabel(state));
+    }
+
+    private static void describe(Button tab, String description) {
         tab.setContentDescription(description); tab.setTooltipText(description);
     }
 
-    void status(Map<String, String> states) {
-        select(profiles.selected);
-        for (ServerProfiles.Server server : profiles.entries) {
-            Button tab = button(server.id); if (tab == null) continue;
-            String state = server.enabled ? states.getOrDefault(server.id, "disconnected") : "disconnected";
-            int color = statusColor(ui, state);
-            Dot dot = ((Spanned) tab.getText()).getSpans(0, 1, Dot.class)[0];
-            if (dot.color != color) { dot.color = color; tab.invalidate(); }
-            String description = server.name + ", " + ui.t(statusLabel(state)) + (trusted(server) ? ", " + ui.t("Trusted server") : "");
-            tab.setContentDescription(description);
-            tab.setTooltipText(description);
-        }
-    }
-
-    /** Offered by the selected server, or already signed in with an account that came from another server. */
     private boolean trusted(ServerProfiles.Server server) {
-        if (!server.account.optString("source_server_id").isEmpty()) return true;
-        for (NativeFederation.Tab entry : trusted) if (entry.server == server) return true;
-        return false;
+        return !server.account.optString("source_server_id").isEmpty();
     }
 
     static String statusLabel(String state) {

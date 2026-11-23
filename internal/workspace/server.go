@@ -81,12 +81,14 @@ type App struct {
 	adb          *adbbridge.Manager
 	adbEpoch     uint64 // guarded by configMu
 
-	federationLimiter  loginLimiter
-	federationRejected federationFailures
-	federationDial     func(context.Context, FederationPeer, []byte) ([]byte, error)
-	federationStop     context.CancelFunc
-	federationDone     chan struct{}
-	federationTailnet  atomic.Pointer[tailnetRuntime]
+	federationLimiter      loginLimiter
+	federationTrustLimiter loginLimiter
+	trustDial              func(context.Context, FederationPeer, string, []byte) ([]byte, error)
+	federationRejected     federationFailures
+	federationDial         func(context.Context, FederationPeer, []byte) ([]byte, error)
+	federationStop         context.CancelFunc
+	federationDone         chan struct{}
+	federationTailnet      atomic.Pointer[tailnetRuntime]
 }
 
 type completedTurn struct {
@@ -122,6 +124,7 @@ func NewApp(store *Store, runner agent.AgentRunner, _, _ string) *App {
 	}
 	app := &App{relayWebPrefix: prefix, store: store, runner: runner, settings: settings, streamHeartbeat: 15 * time.Second, realtimePing: 15 * time.Second, realtimeTimeout: 45 * time.Second, live: map[string]chatmodel.Turn{}, liveBase: map[string]chatmodel.Transcript{}, liveTurns: map[string][]chatmodel.Turn{}, completed: map[string]completedTurn{}, approvals: map[string]*pendingApproval{}, shutdown: make(chan struct{}), presence: &Presence{changed: func() { store.changes.publish(changePresence) }}, assets: http.FileServer(http.FS(assets)), pushClient: newPushHTTPClient(), avatars: avatar.NewRenderer()}
 	app.federationDial = app.dialFederation
+	app.trustDial = app.dialFederationPath
 	return app
 }
 
@@ -157,6 +160,15 @@ func apiError(w http.ResponseWriter, status int, message string) {
 	apiJSON(w, status, map[string]string{"error": i18n.Translate(w.Header().Get("Content-Language"), message)})
 }
 func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == FederationTrustPath {
+		w.Header().Set("Cache-Control", "no-store")
+		if r.Method != http.MethodPost || r.URL.EscapedPath() != FederationTrustPath || r.URL.RawQuery != "" || r.URL.ForceQuery || !a.allowFederationControl(r) {
+			http.NotFound(w, r)
+			return
+		}
+		a.serveFederationTrust(w, r)
+		return
+	}
 	if r.URL.Path == FederationControlPath {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.URL.EscapedPath() != FederationControlPath || r.URL.RawQuery != "" || !a.allowFederationControl(r) {

@@ -15,11 +15,15 @@ import (
 )
 
 func federationHTTP(ctx context.Context, origin string, body []byte, transport *http.Transport) ([]byte, error) {
+	return federationHTTPPost(ctx, origin, FederationControlPath, body, transport)
+}
+
+func federationHTTPPost(ctx context.Context, origin, path string, body []byte, transport *http.Transport) ([]byte, error) {
 	if len(body) > federationMaxBody {
 		return nil, errors.New("federation request too large")
 	}
 	defer transport.CloseIdleConnections()
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+FederationControlPath, bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+path, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -52,11 +56,15 @@ func federationHTTPTransport() *http.Transport {
 }
 
 func (a *App) dialFederation(ctx context.Context, peer FederationPeer, body []byte) ([]byte, error) {
+	return a.dialFederationPath(ctx, peer, FederationControlPath, body)
+}
+
+func (a *App) dialFederationPath(ctx context.Context, peer FederationPeer, path string, body []byte) ([]byte, error) {
 	transport := federationHTTPTransport()
 	switch peer.Transport {
 	case "https":
 		transport.Proxy = netproxy.Proxy
-		return federationHTTP(ctx, peer.Address, body, transport)
+		return federationHTTPPost(ctx, peer.Address, path, body, transport)
 	case "tailscale":
 		runtime := a.federationTailnet.Load()
 		if runtime == nil || runtime.ctx.Err() != nil {
@@ -71,7 +79,7 @@ func (a *App) dialFederation(ctx context.Context, peer FederationPeer, body []by
 		transport.DialContext = func(_ context.Context, network, address string) (net.Conn, error) {
 			return runtime.dial(call, network, address)
 		}
-		return federationHTTP(call, peer.Address, body, transport)
+		return federationHTTPPost(call, peer.Address, path, body, transport)
 	case "relay":
 		route, err := relay.ParsePairing(peer.RelayCode)
 		key, ok := peer.key()
@@ -82,7 +90,11 @@ func (a *App) dialFederation(ctx context.Context, peer FederationPeer, body []by
 		if err != nil {
 			return nil, err
 		}
-		cfg, err := relay.FederationTLSConfig(route, local)
+		tlsConfig := relay.FederationTLSConfig
+		if path == FederationTrustPath {
+			tlsConfig = relay.FederationTrustTLSConfig
+		}
+		cfg, err := tlsConfig(route, local)
 		if err != nil {
 			return nil, err
 		}
@@ -99,14 +111,14 @@ func (a *App) dialFederation(ctx context.Context, peer FederationPeer, body []by
 		defer dialer.Close()
 		dialer.TLSConfig = cfg
 		transport.DialTLSContext = dialer.DialTLSContext
-		return federationHTTP(ctx, relay.Origin(peer.ID), body, transport)
+		return federationHTTPPost(ctx, relay.Origin(peer.ID), path, body, transport)
 	default:
 		return nil, errors.New("federation transport not available")
 	}
 }
 
 func (s *Store) federationRelayAdmission() relay.FederationAdmission {
-	return relay.FederationAdmission{Path: FederationControlPath, Allow: func(key ed25519.PublicKey) bool {
+	return relay.FederationAdmission{Path: FederationControlPath, TrustPath: FederationTrustPath, Allow: func(key ed25519.PublicKey) bool {
 		peer, err := federationPeer(s.db, relay.ServerID(key))
 		if err != nil {
 			return false

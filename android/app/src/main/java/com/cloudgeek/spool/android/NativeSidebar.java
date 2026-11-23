@@ -96,23 +96,30 @@ final class NativeSidebar extends LinearLayout {
     }
 
     void servers(ServerProfiles profiles, java.util.Map<String, String> online, Consumer<String> choose, Runnable add) {
-        servers(profiles, online, choose, add, new java.util.ArrayList<>());
+        servers(profiles, online, choose, add, java.util.List.of(), "");
     }
-    void servers(ServerProfiles profiles, java.util.Map<String, String> online, Consumer<String> choose, Runnable add, java.util.List<NativeFederation.Tab> trusted) {
+    void servers(ServerProfiles profiles, java.util.Map<String, String> online, Consumer<String> choose, Runnable add,
+                 java.util.List<NativeFederation.Tab> trusted, String selectedFederationTab) {
         hasServer = profiles.active() != null;
         serverLabel = hasServer ? profiles.active().name : ui.t("No servers yet.");
         serverName = hasServer ? profiles.active().serverName : "Home";
         serverID = profiles.selected;
         StringBuilder structure = new StringBuilder();
         for (ServerProfiles.Server server : profiles.entries) structure.append(server.id).append('\0').append(server.name).append('\0').append(server.account.optString("source_server_id")).append('\0');
-        if (!trusted.isEmpty()) structure.append('\1').append(profiles.selected);
-        for (NativeFederation.Tab entry : trusted) structure.append('\1').append(entry.key()).append('\0').append(entry.target.name).append('\0');
+        for (NativeFederation.Tab entry : trusted) structure.append('\1').append(entry.key()).append('\0')
+                .append(entry.server == null ? "" : entry.server.id).append('\0').append(entry.target.name).append('\0');
         String signature = structure.toString();
-        if (serverTabs != null && serverSignature.equals(signature)) { serverTabs.status(online); return; }
+        if (serverTabs != null && serverSignature.equals(signature)) { serverTabs.status(online, selectedFederationTab); return; }
         serverSignature = signature;
+        int scroll = serverTabs == null ? 0 : serverTabs.scroll.getScrollX();
+        View focused = serverTabs == null ? null : serverTabs.findFocus();
         if (serverTabs != null) removeView(serverTabs);
         serverTabs = new NativeServerTabs(ui, profiles, online, id -> { if (active) choose.accept(id); }, true, () -> { if (active) add.run(); }, trusted);
+        serverTabs.status(online, selectedFederationTab);
+        serverTabs.startAtScroll(scroll);
         addView(serverTabs, indexOfChild(brand) + 1, new LayoutParams(-1, -2));
+        if (focused != null && focused.getTag() instanceof String && serverTabs.button((String) focused.getTag()) != null)
+            serverTabs.button((String) focused.getTag()).requestFocus();
     }
     private boolean heading(String title, String section) {
         boolean open = !state.collapsed.contains(section);

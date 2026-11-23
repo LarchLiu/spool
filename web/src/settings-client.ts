@@ -3,6 +3,7 @@ import type { Online, User } from "./types";
 
 export const settingsSections = [
   "Service",
+  "Server trust",
   "People",
   "Projects",
   "Agents",
@@ -41,6 +42,7 @@ export type ServerSettings = {
 };
 export type Person = User & {
   disabled: boolean;
+  source_server_id?: string;
   remote_desktop?: boolean;
   adb_bridge?: boolean;
 };
@@ -140,6 +142,7 @@ export type SettingsSnapshot = {
     Error: string;
     Online: (Online & Pick<User, "nickname" | "avatar">)[];
     TSNet?: { State: string; AuthURL: string; URL: string; Error: string };
+    TSNetOutboundReady?: boolean;
     TSNetAuthKeySet?: boolean;
     Relay?: {
       State: string;
@@ -215,7 +218,10 @@ export type SettingsCommand =
   | { kind: "copy-relay-pairing-code"; text: string }
   | { kind: "test-notification" }
   | { kind: "save-updates"; update_preferences: UpdatePreferences }
-  | { kind: "save-person"; person: PersonDraft }
+  | {
+      kind: "save-person";
+      person: PersonDraft | Pick<Person, "id" | "disabled" | "remote_desktop" | "adb_bridge">;
+    }
   | { kind: "save-project"; project: ManagedProject }
   | { kind: "save-agent"; backend: Backend; enabled: boolean; path: string }
   | { kind: "save-github" | "check-repository"; path: string }
@@ -271,6 +277,12 @@ export function settingsCall<T>(
     | "TSNetLogin"
     | "TSNetRegister"
     | "RelayPairing"
+    | "FederationTrust"
+    | "PreviewFederationTrust"
+    | "SubmitFederationTrust"
+    | "ApproveFederationTrust"
+    | "UpdateFederationTrustReturnRoute"
+    | "SetFederationTrustUsers"
     | "RelayDevices"
     | "DecideRelayDevice"
     | "RevokeRelayDevice"

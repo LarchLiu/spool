@@ -299,6 +299,14 @@ func (l *deviceListener) Accept() (net.Conn, error) {
 		if name == l.serverID+".spool.invalid" && l.web && l.webAllowed() {
 			return selected, nil
 		}
+		if name == federationTrustServerName(l.serverID) && l.federation.TrustPath != "" {
+			selected.ClientAuth = tls.RequireAnyClientCert
+			selected.VerifyConnection = func(state tls.ConnectionState) error {
+				_, err := DevicePublicKey(state)
+				return err
+			}
+			return selected, nil
+		}
 		if name == federationServerName(l.serverID) && l.federation.Allow != nil {
 			selected.ClientAuth = tls.RequireAnyClientCert
 			selected.VerifyConnection = func(state tls.ConnectionState) error {
@@ -350,6 +358,12 @@ func (d *Devices) HandlerWithFederation(next http.Handler, serverID string, webA
 		switch r.TLS.ServerName {
 		case federationServerName(serverID):
 			federation.serve(w, r, next)
+		case federationTrustServerName(serverID):
+			if federation.TrustPath == "" || r.Method != http.MethodPost || r.URL.EscapedPath() != federation.TrustPath || r.URL.RawQuery != "" {
+				http.NotFound(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
 		case PairingServerName(serverID):
 			d.pair(w, r)
 		case DeviceServerName(serverID):
@@ -369,7 +383,7 @@ func (d *Devices) HandlerWithFederation(next http.Handler, serverID string, webA
 				d.syncAdmission(w, r, DeviceFingerprint(key))
 				return
 			}
-			if strings.HasPrefix(r.URL.Path, "/web/") || (federation.Path != "" && r.URL.Path == federation.Path) {
+			if strings.HasPrefix(r.URL.Path, "/web/") || r.URL.Path == federation.Path || r.URL.Path == federation.TrustPath {
 				http.NotFound(w, r)
 				return
 			}

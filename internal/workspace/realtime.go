@@ -157,6 +157,12 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 				return false
 			}
 		}
+		if changes&changeFederationTargets != 0 {
+			targets, err := a.store.federationTargets(current)
+			if err != nil || send("federation_targets", targets) != nil {
+				return false
+			}
+		}
 		var people []PresenceUser
 		if changes&(changeNavigation|changeProfiles|changePresence) != 0 {
 			people = a.presence.List(a.store)
@@ -201,7 +207,8 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 	syncGroups := func() bool {
 		return syncState(changeAuth) && send("chat_groups", a.directMessages.groupsFor(identity.User.ID)) == nil
 	}
-	if !syncState(changeNavigation|changeAgents|changePresence|changeRemoteDesktop|changeServer) || !syncGroups() || send("ready", true) != nil {
+	const initialChanges = changeNavigation | changeAgents | changePresence | changeRemoteDesktop | changeServer | changeFederationTargets
+	if !syncState(initialChanges) || !syncGroups() || send("ready", true) != nil {
 		return
 	}
 	incoming := make(chan realtimeInput)
@@ -311,7 +318,7 @@ func (a *App) realtimeStream(w http.ResponseWriter, r *http.Request, identity au
 					return
 				}
 			}
-			if input.Type == "refresh" && !syncState(changeNavigation|changeAgents|changePresence|changeRemoteDesktop|changeServer) {
+			if input.Type == "refresh" && !syncState(initialChanges) {
 				return
 			}
 		case <-ticker.C:

@@ -108,17 +108,24 @@ export function Hint({ children }: { children: ReactNode }) {
 export function CopyAddressButton({
   t,
   kind = "copy-tsnet-url",
+  label: copyLabel,
   iconOnly = false,
   disabled = false,
   text,
 }: {
   t: Translator;
-  kind?: "copy-tsnet-url" | "copy-relay-web-url" | "copy-relay-pairing-code";
+  kind?:
+    | "copy-tsnet-url"
+    | "copy-relay-web-url"
+    | "copy-relay-pairing-code"
+    | "copy-server-trust-id"
+    | "copy-server-trust-relay-route";
+  label?: string;
   iconOnly?: boolean;
   disabled?: boolean;
   text?: string;
 }) {
-  const pairing = kind === "copy-relay-pairing-code";
+  const isCode = kind === "copy-relay-pairing-code" || kind === "copy-server-trust-relay-route";
   const [state, setState] = useState<"idle" | "pending" | "copied" | "failed">(
     "idle",
   );
@@ -153,15 +160,15 @@ export function CopyAddressButton({
   };
   const message =
     state === "copied"
-      ? t(pairing ? "Code copied" : "Copied")
+      ? t(isCode ? "Code copied" : "Copied")
       : state === "failed"
         ? t(
-            pairing
+            isCode
               ? "Could not copy code"
               : "Could not copy address. Try again.",
           )
         : "";
-  const label = t(pairing ? "Copy code" : "Copy address");
+  const label = copyLabel ?? t(isCode ? "Copy code" : "Copy address");
   const Icon =
     state === "copied" ? Check : state === "failed" ? CircleAlert : Copy;
   return (
@@ -183,7 +190,7 @@ export function CopyAddressButton({
         <span className="settings-copy-labels" aria-hidden="true">
           <span className={state === "copied" ? "" : "active"}>{label}</span>
           <span className={state === "copied" ? "active" : ""}>
-            {t(pairing ? "Code copied" : "Copied")}
+            {t(isCode ? "Code copied" : "Copied")}
           </span>
         </span>
       )}

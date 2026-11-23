@@ -34,7 +34,7 @@ func (p *panel) startOnLaunch() {
 }
 
 func (p *panel) openChat() {
-	if p.quitting {
+	if p.quitting || p.window == nil {
 		return
 	}
 	p.selectTab("Chat")
@@ -201,12 +201,17 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 				})
 				return
 			}
-			if target, reserved, ok := desktopFederationNavigation(state.address, e.URL); reserved {
+			if chatReservedNavigation(state.address, e.URL, desktopFederationTargetsPath) {
+				e.PreventDefault()
+				p.window.Update(func() { p.refreshDesktopFederationTargets(id, state) })
+				return
+			}
+			if request, reserved, ok := desktopFederationNavigation(state.address, e.URL); reserved {
 				e.PreventDefault()
 				if ok {
 					p.window.Update(func() {
-						if p.serverChats[id] == state {
-							p.startDesktopFederation(id, state, target, p.chatView == view)
+						if p.chatView == view && p.serverChats[id] == state {
+							p.selectDesktopFederationTab(id, state, request)
 						}
 					})
 				}
@@ -216,9 +221,12 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 			if selection, ok := desktopServerNavigation(state.address, e.URL); ok && (p.chatView == view || p.chatPresentedView == view) {
 				e.PreventDefault()
 				p.window.Update(func() {
+					if p.quitting || p.serverChats[id] != state || (p.chatView != view && p.chatPresentedView != view) {
+						return
+					}
 					if selection.ID == "" {
 						p.showServerDialog("")
-					} else if err := p.selectDesktopServerWithScroll(selection.ID, selection.ScrollLeft); err != nil {
+					} else if err := p.selectDesktopServerTab(selection.ID, selection.ScrollLeft); err != nil {
 						p.showServerDialog(selection.ID)
 					}
 				})
@@ -312,7 +320,9 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 			p.sendDesktopAppearance(view)
 			p.sendUpdateAvailability(view)
 			state.failed, state.loaded = false, true
+			p.maybeDesktopAutomaticFederation()
 			p.learnDesktopServerIdentity(id, state)
+			p.refreshDesktopFederationTargets(id, state)
 			p.sendDesktopServers()
 			if p.chatView != view {
 				return
@@ -352,6 +362,9 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 	if state.address != address || state.failed {
 		state.address, state.loaded, state.failed = address, false, false
 		state.authenticated = false
+		state.federationTargets = nil
+		state.federationFingerprint = ""
+		state.federationRevision++
 		if id == p.selectedDesktopServer() {
 			p.chatView, p.chatURL, p.chatFailed, p.chatLoaded = state.view, address, false, false
 			p.setDesktopNotificationFocused(p.desktopNotificationFocused())

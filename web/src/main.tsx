@@ -36,6 +36,7 @@ import {
   takeDesktopNotification,
   notifyDesktopServerName,
   notifyDesktopServerReady,
+  notifyDesktopFederationTargets,
   reportDesktopServerState,
   subscribeDesktopServerReadyAck,
   notifyDesktopSidebarWidth,
@@ -125,6 +126,7 @@ import {
   type ProfileSnapshot,
 } from "./user-profiles";
 import { Sidebar } from "./sidebar";
+import { loadFederationTargets, type FederationTarget } from "./desktop-federation";
 import { FileSidebar, type FileSelection } from "./file-sidebar";
 import { LocalFileContext } from "./local-file-context";
 import { projectFileURL, type LocalFileTarget } from "./local-file-links";
@@ -195,6 +197,7 @@ function App() {
   const [user, setUser] = useState<User | null>(null),
     [ready, setReady] = useState(false),
     [error, setError] = useState("");
+  const [federationDisplay, setFederationDisplay] = useState<{ account: string; targets: FederationTarget[] }>();
   const [desktopLoginOpen, setDesktopLoginOpen] = useState(false);
   const [serverSelection, setServerSelection] = useState(0);
   const [rememberedAccount, setRememberedAccount] = useState<User | null>(null);
@@ -244,6 +247,10 @@ function App() {
   > | null>(null);
   const [messagingConnected, setMessagingConnected] = useState(false);
   const desktopAuthenticated = !!user;
+  const federationTargets = user && federationDisplay?.account === user.id ? federationDisplay.targets : undefined;
+  useEffect(() => {
+    if (user && federationTargets) notifyDesktopFederationTargets();
+  }, [user?.id, federationTargets]);
   const desktopPageState = !ready
     ? "connecting"
     : !serverAvailable
@@ -677,6 +684,7 @@ function App() {
       setGroupPicker(null);
       profileCache.reset();
       setUser(null);
+      setFederationDisplay(undefined);
       setDesktopLoginOpen(false);
       setChat(null);
       setChats([]);
@@ -983,7 +991,30 @@ function App() {
           loading = false;
         });
     };
+    const desktop = isDesktopChat();
+    let federationSyncedBySocket = false;
+    let federationLoading = false;
+    let federationRevision = 0;
+    const loadTargets = () => {
+      if (!desktop || federationSyncedBySocket || federationLoading) return;
+      federationLoading = true;
+      const revision = federationRevision;
+      void loadFederationTargets(controller.signal)
+        .then(
+          (value) => {
+            // 迟到的 HTTP 响应不能覆盖更新的 WebSocket 快照。
+            if (!cancelled && revision === federationRevision)
+              setFederationDisplay({ account: user.id, targets: value });
+          },
+          () => {},
+        )
+        .finally(() => {
+          federationLoading = false;
+        });
+    };
     loadNavigation(true);
+    loadTargets();
+    const offSelection = desktop ? subscribeDesktopServerSelection(loadTargets) : undefined;
     const stream = subscribeWorkspaceEvents(
       {
         navigation: receiveNavigation,
@@ -998,11 +1029,20 @@ function App() {
           setServerName(value.server_name.trim() || "Home");
           notifyDesktopServerName(value.server_name.trim() || "Home");
         },
+        federationTargets: desktop
+          ? (targets) => {
+              if (cancelled) return;
+              federationSyncedBySocket = true;
+              ++federationRevision;
+              setFederationDisplay({ account: user.id, targets });
+            }
+          : undefined,
         presence: (people) => {
           if (!cancelled) setOnline(people);
         },
         connected: (value) => {
           realtimeConnected = value;
+          if (!value) federationSyncedBySocket = false;
           if (!cancelled) setMessagingConnected(value);
           if (!cancelled) setServerAvailable(value);
           if (!value && !cancelled) setOnline([]);
@@ -1040,6 +1080,7 @@ function App() {
     const resume = () => {
       if (document.visibilityState === "visible") directInbox.read();
       stream.resume();
+      loadTargets();
       if (!realtimeConnected) loadNavigation();
     };
     const visibility = () => {
@@ -1047,9 +1088,10 @@ function App() {
       if (document.visibilityState === "visible") resume();
     };
     const blur = () => stream.view();
-    // Poll only as a fallback for unavailable/blocked WebSocket connections.
+    // 各自按是否收到实时快照回退；旧服务可能支持 WebSocket 却不发送互信事件。
     const refresh = setInterval(() => {
       if (!realtimeConnected) loadNavigation();
+      loadTargets();
     }, 15000);
     window.addEventListener("focus", resume);
     window.addEventListener("blur", blur);
@@ -1058,6 +1100,7 @@ function App() {
     return () => {
       cancelled = true;
       controller.abort();
+      offSelection?.();
       stream.close();
       if (messageStream.current === stream) messageStream.current = null;
       clearInterval(refresh);
@@ -2246,6 +2289,7 @@ function App() {
       <Sidebar
         user={displayUser}
         account={rememberedAccount}
+        federationTargets={federationTargets}
         serverName={serverName}
         serverLabel={desktopServerName}
         connectionState={desktopConnectionState}

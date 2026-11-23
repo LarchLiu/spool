@@ -53,6 +53,11 @@ public class MainActivityGoalTest {
         static final List<List<String>> workspaceSubscriptions = new ArrayList<>();
         static java.util.function.Supplier<spoolnet.EventStream> workspaceFactory = () -> null;
         String healthResponse = "{state:'Running',https:'Verified'}";
+        java.util.function.Function<List<String>, String> responses;
+        FederationPreparation federationPreparation;
+        interface FederationPreparation {
+            spoolnet.FederationSession prepare(Client destination, String target, String account, String language);
+        }
         long responseAge = -1;
         String sessionDirectory, directOrigin, tailscaleOrigin, relayCode;
         int closes;
@@ -60,7 +65,11 @@ public class MainActivityGoalTest {
         @Implementation protected void __constructor__(String data, String origin) {}
         @Implementation protected String request(String method, String path, String body, String auth, String locale) {
             List<String> call = java.util.Arrays.asList(method, path, body, auth, locale); calls.add(call);
-            return responder == null ? response : responder.apply(call);
+            return responses != null ? responses.apply(call) : responder == null ? response : responder.apply(call);
+        }
+        @Implementation protected spoolnet.FederationSession prepareFederatedSession(Client destination, String target, String account, String language) {
+            if (federationPreparation == null) throw new AssertionError("Unexpected federated sign-in");
+            return federationPreparation.prepare(destination, target, account, language);
         }
         @Implementation protected void close() { closes++; }
         @Implementation protected void useServerSession(String directory, String direct, String tailscale) {

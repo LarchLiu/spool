@@ -20,6 +20,7 @@ import { ChatOperatorAvatars } from "./turn-identity";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { ChatSettingsControl } from "./desktop-settings";
 import { DesktopServerAction, DesktopServerTabs } from "./desktop-servers";
+import type { FederationTarget } from "./desktop-federation";
 import { ADBShareControl } from "./adb-share-settings";
 import { RemoteDesktopControl } from "./remote-desktop-settings";
 import {
@@ -45,6 +46,7 @@ import type { SessionNotifications } from "./use-session-notifications";
 type Props = {
   user: User | null;
   account?: User | null;
+  federationTargets?: FederationTarget[];
   serverLabel?: string;
   serverName: string;
   projects: Project[];
@@ -255,7 +257,7 @@ export function Sidebar(props: Props) {
           {props.open ? <X size={18} /> : <PanelLeftClose size={18} />}
         </button>
       </div>
-      <DesktopServerTabs t={t} account={props.user?.id} />
+      <DesktopServerTabs t={t} account={props.user?.id} targets={props.federationTargets} />
       <nav className="sidebar-scroll" aria-label={t("Workspace")}>
         {!props.user ? (
           <p className="nav-empty">

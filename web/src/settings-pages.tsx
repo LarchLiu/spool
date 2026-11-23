@@ -882,13 +882,18 @@ export function PeoplePage({ data, run, t }: PageProps) {
   const [editing, setEditing] = useState(false);
   const [original, setOriginal] = useState<PersonDraft>(newPerson);
   const form = useRef<HTMLFormElement>(null);
+  const source = draft.source_server_id;
   const edit = (person: PersonDraft) => {
     setDraft(person);
     setOriginal(person);
     setEditing(true);
   };
   const save = async () => {
-    const next = await run({ kind: "save-person", person: draft });
+    const { id, disabled, remote_desktop, adb_bridge } = draft;
+    const next = await run({
+      kind: "save-person",
+      person: source ? { id, disabled, remote_desktop, adb_bridge } : draft,
+    });
     const person = next?.users.find((person) => person.id === next.saved_id);
     if (person) edit({ ...person, password: "" });
   };
@@ -920,7 +925,12 @@ export function PeoplePage({ data, run, t }: PageProps) {
           id: person.id,
           title: person.nickname || person.username,
           description: person.username,
-          status: person.disabled ? t("Disabled") : "",
+          status: [
+            person.source_server_id && t("Federated sign-in"),
+            person.disabled && t("Disabled"),
+          ]
+            .filter(Boolean)
+            .join(" · "),
           action: (person.remote_desktop || person.adb_bridge) && (
             <div className="settings-person-remote">
               {person.adb_bridge && (
@@ -1007,32 +1017,50 @@ export function PeoplePage({ data, run, t }: PageProps) {
         }}
       />
       <form ref={form} onSubmit={(e) => submit(e, () => void save())}>
+        {source && (
+          <Hint>
+            {t("Federation source: {server}", { server: source })}
+            <br />
+            {t("This account’s identity is managed by its source server. Only local access can be changed here.")}
+          </Hint>
+        )}
         <Card title={draft.id ? t("Edit person") : t("New person")}>
-          <TextField
-            title={t("Username")}
-            value={draft.username}
-            onChange={(v) => setDraft({ ...draft, username: v })}
-            required
-          />
-          <TextField
-            title={t("Display name")}
-            value={draft.nickname}
-            onChange={(v) => setDraft({ ...draft, nickname: v })}
-            required
-          />
-          <Row
-            title={t("Password")}
-            help={t("Password (12–72 bytes; blank keeps existing password)")}
-          >
-            <input
-              aria-label={t("Password")}
-              type="password"
-              value={draft.password}
-              autoComplete="new-password"
-              onChange={(e) => setDraft({ ...draft, password: e.target.value })}
-              required={!draft.id}
-            />
-          </Row>
+          {source ? (
+            <>
+              <Row title={t("Username")} help={draft.username} />
+              <Row title={t("Display name")} help={draft.nickname} />
+            </>
+          ) : (
+            <>
+              <TextField
+                title={t("Username")}
+                value={draft.username}
+                onChange={(v) => setDraft({ ...draft, username: v })}
+                required
+              />
+              <TextField
+                title={t("Display name")}
+                value={draft.nickname}
+                onChange={(v) => setDraft({ ...draft, nickname: v })}
+                required
+              />
+              <Row
+                title={t("Password")}
+                help={t("Password (12–72 bytes; blank keeps existing password)")}
+              >
+                <input
+                  aria-label={t("Password")}
+                  type="password"
+                  value={draft.password}
+                  autoComplete="new-password"
+                  onChange={(e) =>
+                    setDraft({ ...draft, password: e.target.value })
+                  }
+                  required={!draft.id}
+                />
+              </Row>
+            </>
+          )}
           <Row
             title={t("Allow remote desktop connection")}
             help={t(

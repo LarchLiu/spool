@@ -2,7 +2,7 @@ package workspace
 
 import "sync"
 
-type changeKind uint8
+type changeKind uint16
 
 const (
 	changeNavigation changeKind = 1 << iota
@@ -13,6 +13,7 @@ const (
 	changeRemoteDesktop
 	changeADBBridge
 	changeServer
+	changeFederationTargets
 )
 
 // Notifications carry no user data. Each subscriber reads a fresh, authorized

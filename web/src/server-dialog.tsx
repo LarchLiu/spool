@@ -17,6 +17,7 @@ import {
 import type { MessageKey } from "./i18n";
 import "./style.css";
 import "./settings.css";
+import "./server-connection-tabs.css";
 import "./server-dialog.css";
 
 const names: Record<ConnectionMode, MessageKey> = {

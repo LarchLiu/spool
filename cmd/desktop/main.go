@@ -483,7 +483,7 @@ func (p *panel) mainContent(c *ui.Context) {
 			}
 			ui.Text(c, "Spool").Bold().FontSize(16)
 			ui.Text(c, p.tr("Control Center")).FontSize(12)
-			for _, tab := range []string{"Chat", "Service", "People", "Projects", "Agents", "Online", "Appearance", "Network", "About"} {
+			for _, tab := range []string{"Chat", "Service", "Server trust", "People", "Projects", "Agents", "Online", "Appearance", "Network", "About"} {
 				c.Key("tab-" + tab)
 				button := ui.Button
 				if p.tab == tab {
@@ -514,6 +514,8 @@ func (p *panel) mainContent(c *ui.Context) {
 				switch p.tab {
 				case "Service":
 					p.serviceView(c)
+				case "Server trust":
+					ui.Text(c, p.tr("Server trust requires the settings WebView. Use the spool-server federation CLI when the service is stopped.")).Wrap()
 				case "People":
 					p.peopleView(c)
 				case "Projects":
@@ -858,6 +860,9 @@ func (p *panel) peopleView(c *ui.Context) {
 	ui.Text(c, p.tr("Lets this person add Android devices to this computer's adb, where every agent can use them, beyond project permissions.")).Wrap().FontSize(12)
 	if ui.PrimaryButton(c, p.tr("Save person")).Disabled(p.busy).Clicked() {
 		input := p.user
+		if source != "" {
+			input.Username, input.Nickname, input.Password = "", "", ""
+		}
 		p.user.Password = ""
 		p.action(func() error { _, err := p.service.Store.SaveUser(input); return err })
 	}

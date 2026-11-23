@@ -38,6 +38,27 @@ public class NativeFederationTest {
         assertTrue(NativeFederation.parse(null).isEmpty());
     }
 
+    @Test public void modeSetsOnlyTheNewProfilesTransport() throws Exception {
+        String address = "https://office.example.com:8443";
+        List<NativeFederation.Target> targets = NativeFederation.parse(new JSONArray("[{id:'" + B + "',client_url:'" + address
+                + "',client_mode:'tailscale'},{id:'" + C + "',client_url:'" + address + "',client_mode:''},"
+                + "{id:'" + D + "',client_url:'" + address + "'}]"));
+        ConnectionPlan tailnet = targets.get(0).newPlan();
+        assertEquals(ConnectionMode.TAILSCALE, tailnet.selected);
+        assertEquals(address, tailnet.tailscale);
+        assertEquals("", tailnet.direct);
+        for (NativeFederation.Target target : targets.subList(1, 3)) {
+            assertEquals(ConnectionMode.DIRECT, target.newPlan().selected);
+            assertEquals(address, target.newPlan().direct);
+        }
+        assertEquals(ConnectionMode.DIRECT, NativeFederation.route(profiles().entries.get(1), targets.get(0), ConnectionMode.DIRECT));
+        assertFalse(NativeFederation.allows(targets.get(0), ConnectionMode.TAILSCALE, "https://office.example.com"));
+        JSONArray changed = new JSONArray("[{id:'" + B + "',client_url:'" + address + "'}]");
+        assertFalse(NativeFederation.authorizedRoute(changed, B, ConnectionMode.TAILSCALE, address, true));
+        assertTrue(NativeFederation.authorizedRoute(changed, B, ConnectionMode.TAILSCALE, address, false));
+        assertTrue(NativeFederation.authorizedRoute(changed, B, ConnectionMode.DIRECT, address, true));
+    }
+
     @Test public void savedConnectionsMatchOnlyTheAuthorizedOriginOrPinnedRelayIdentity() throws Exception {
         ServerProfiles profiles = profiles();
         ServerProfiles.Server office = profiles.entries.get(1);
@@ -54,50 +75,59 @@ public class NativeFederationTest {
 
     @Test public void everyAuthorizedTargetIsListedEvenWithoutARoute() {
         ServerProfiles profiles = profiles();
-        List<NativeFederation.Tab> tabs = NativeFederation.tabs(profiles, List.of(
+        List<NativeFederation.Tab> tabs = NativeFederation.tabs(profiles, profiles.entries.get(0), List.of(
                 new NativeFederation.Target(B, "Office", "https://office.example.com:8443"),
                 new NativeFederation.Target(C, "Lab", "https://lab.example.com"),
                 new NativeFederation.Target(D, "Relay only", "")));
         assertEquals(3, tabs.size());
-        assertSame(profiles.entries.get(1), tabs.get(0).server); assertEquals(profiles.entries.get(1).id, tabs.get(0).key());
-        assertNull(tabs.get(1).server); assertTrue(tabs.get(1).reachable()); assertEquals(NativeFederation.PREFIX + C, tabs.get(1).key());
+        assertSame(profiles.entries.get(1), tabs.get(0).server);
+        assertEquals(NativeFederation.tabKey("legacy", B), tabs.get(0).key());
+        assertNull(tabs.get(1).server); assertTrue(tabs.get(1).reachable());
+        assertEquals(NativeFederation.tabKey("legacy", C), tabs.get(1).key());
         assertFalse(tabs.get(2).reachable());
-        assertSame(tabs.get(2), NativeFederation.find(tabs, NativeFederation.PREFIX + D));
+        assertSame(tabs.get(2), NativeFederation.find(tabs, NativeFederation.tabKey("legacy", D)));
     }
 
     @Test public void trustedTabsCarryALinkMarkAndDescription() {
         try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
             ServerProfiles profiles = profiles();
-            ServerProfiles.Server office = profiles.entries.get(1);
-            List<NativeFederation.Tab> trusted = NativeFederation.tabs(profiles, List.of(
+            String savedKey = NativeFederation.tabKey("legacy", B), pendingKey = NativeFederation.tabKey("legacy", C);
+            List<NativeFederation.Tab> trusted = NativeFederation.tabs(profiles, profiles.entries.get(0), List.of(
                     new NativeFederation.Target(B, "Office", "https://office.example.com:8443"), new NativeFederation.Target(C, "Lab", "")));
             java.util.List<String> chosen = new java.util.ArrayList<>();
             NativeServerTabs tabs = new NativeServerTabs(new NativeUi(controller.get(), false), profiles, Map.of(), chosen::add, true, () -> {}, trusted);
-            Button home = tabs.button("legacy"), saved = tabs.button(office.id), pending = tabs.button(NativeFederation.PREFIX + C);
+            Button home = tabs.button("legacy"), saved = tabs.button(savedKey), pending = tabs.button(pendingKey);
             assertEquals(0, links(home)); assertEquals(1, links(saved)); assertEquals(1, links(pending));
             assertEquals(1, ((Spanned) saved.getText()).getSpans(0, 1, NativeServerTabs.Dot.class).length);
             assertEquals("An unsaved target has no connection state to show", 0, ((Spanned) pending.getText()).getSpans(0, pending.length(), NativeServerTabs.Dot.class).length);
-            assertEquals("Office, Disconnected, Trusted server", saved.getContentDescription().toString());
-            assertEquals("Lab, Trusted server", pending.getContentDescription().toString());
+            assertEquals("Spool → Office, Disconnected, Trusted server", saved.getContentDescription().toString());
+            assertEquals("Spool → Lab, Trusted server", pending.getContentDescription().toString());
             assertEquals("Spool, Disconnected", home.getContentDescription().toString());
             pending.performClick(); saved.performClick();
-            assertEquals(List.of(NativeFederation.PREFIX + C, office.id), chosen);
+            assertEquals(List.of(pendingKey, savedKey), chosen);
         }
     }
 
-    @Test public void trustedTabsFollowTheSelectedSourceWithoutRepeatingSavedServers() {
+    @Test public void trustedAliasesKeepBothSourceGroupsAndSelectOnlyTheClickedAlias() {
         try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
             ServerProfiles profiles = profiles();
-            ServerProfiles.Server office = profiles.entries.get(1), ordinary = profiles.add("Ordinary"), source = profiles.add("Source");
-            profiles.selected = source.id;
-            List<NativeFederation.Target> targets = List.of(new NativeFederation.Target(C, "Lab", ""),
-                    new NativeFederation.Target(B, "Office", "https://office.example.com:8443"));
+            ServerProfiles.Server home = profiles.entries.get(0), office = profiles.entries.get(1);
+            ServerProfiles.Server ordinary = profiles.add("Ordinary"), source = profiles.add("Source");
+            NativeFederation.Target work = new NativeFederation.Target(B, "Office", "https://office.example.com:8443");
+            List<NativeFederation.Tab> groups = NativeFederation.tabs(profiles, home, List.of(work));
+            groups.addAll(NativeFederation.tabs(profiles, source, List.of(new NativeFederation.Target(C, "Lab", ""), work)));
+            profiles.selected = ordinary.id;
             NativeUi ui = new NativeUi(controller.get(), false);
-            NativeServerTabs tabs = new NativeServerTabs(ui, profiles, Map.of(), id -> {}, true, () -> {}, NativeFederation.tabs(profiles, targets));
-            assertEquals(List.of("legacy", ordinary.id, source.id, NativeFederation.PREFIX + C, office.id), tabOrder(tabs));
-            profiles.selected = "legacy";
-            NativeServerTabs home = new NativeServerTabs(ui, profiles, Map.of(), id -> {}, true, () -> {}, NativeFederation.tabs(profiles, targets));
-            assertEquals(List.of("legacy", NativeFederation.PREFIX + C, office.id, ordinary.id, source.id), tabOrder(home));
+            NativeServerTabs tabs = new NativeServerTabs(ui, profiles, Map.of(), id -> {}, true, () -> {}, groups);
+            String first = NativeFederation.tabKey(home.id, B), second = NativeFederation.tabKey(source.id, B);
+            List<String> order = List.of("legacy", first, ordinary.id, source.id, NativeFederation.tabKey(source.id, C), second);
+            assertEquals(order, tabOrder(tabs));
+            assertTrue(tabs.button(ordinary.id).isSelected());
+            profiles.selected = office.id;
+            tabs.status(Map.of(), second);
+            assertEquals(order, tabOrder(tabs));
+            assertFalse(tabs.button(first).isSelected());
+            assertTrue(tabs.button(second).isSelected());
         }
     }
 

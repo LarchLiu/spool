@@ -19,7 +19,7 @@ func federationPairForTest(t *testing.T, store, remote *Store, address string, a
 		t.Fatal(err)
 	}
 	p.Transport, p.Address, p.Accept, p.Users, p.Projects = "https", address, accept, users, projects
-	if err = store.SaveFederationPeer(p); err != nil {
+	if err = seedLegacyFederationPeer(store, p); err != nil {
 		t.Fatal(err)
 	}
 	return p
@@ -29,6 +29,7 @@ func TestFederationExchangeUsesTargetMembershipAndRevokes(t *testing.T) {
 	sa, sb := testStore(t), testStore(t)
 	alice := testUser(t, sa, "alice")
 	project := testProject(t, sb)
+	project2 := testProject(t, sb)
 	a, b := NewApp(sa, nil, "", ""), NewApp(sb, nil, "", "")
 	as := httptest.NewTLSServer(a)
 	defer as.Close()
@@ -39,12 +40,44 @@ func TestFederationExchangeUsesTargetMembershipAndRevokes(t *testing.T) {
 			return federationHTTP(ctx, peer.Address, body, remote.Client().Transport.(*http.Transport).Clone())
 		}
 	}
-	pb := federationPairForTest(t, sa, sb, bs.URL, false, []string{alice.ID}, nil)
-	pb.ClientURL = "https://chat.example.test"
-	if err := sa.SaveFederationPeer(pb); err != nil {
+	source, target := trustServicesForTest(t, a, b, as, bs)
+	pb, err := sb.FederationIdentity()
+	if err != nil {
 		t.Fatal(err)
 	}
-	pa := federationPairForTest(t, sb, sa, as.URL, true, nil, []FederationProject{{project.ID, "read-only", "create"}})
+	pendingTrust := submitTrustForTest(t, source, target, bs.URL)
+	policy := FederationTrustApproval{Transport: "https", Address: as.URL, Projects: []FederationProject{
+		{project.ID, "read-only", "create"}, {project2.ID, "control", "read-only"},
+	}}
+	invalid := policy
+	invalid.Projects = []FederationProject{{"missing-project", "read-only", "read-only"}}
+	if err := sb.DecideFederationTrust(pendingTrust.ID, true, invalid); err == nil {
+		t.Fatal("approval accepted an unknown default project")
+	}
+	if err := sb.DecideFederationTrust(pendingTrust.ID, true, policy); err != nil {
+		t.Fatal(err)
+	}
+	if err := source.CheckFederationTrust(t.Context(), pendingTrust.ID); err != nil {
+		t.Fatal(err)
+	}
+	pb.Transport, pb.Address = "https", bs.URL
+	pb.ClientURL = "https://chat.example.test"
+	if err := sa.UpdateFederationPeer(pb); err != nil {
+		t.Fatal(err)
+	}
+	if err := sa.SetFederationTrustUsers(pb.ID, false, []string{alice.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if snap, err := sa.FederationTrustSnapshot(); err != nil || len(snap.Peers) != 1 || len(snap.Peers[0].Users) != 1 || snap.Peers[0].Users[0] != alice.ID {
+		t.Fatalf("saved allowlist did not appear in the trust settings: %v", err)
+	}
+	pa, err := federationPeer(sb.db, pendingTrust.PeerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pa.Accept || pa.Address != as.URL || len(pa.Projects) != 2 {
+		t.Fatalf("approval did not save the return route and default projects: %+v", pa.Projects)
+	}
 	ac, csrf := loginRequest(t, a, "alice")
 
 	request := func(handler *App, path string, body any, cookie *http.Cookie, csrf string) *httptest.ResponseRecorder {
@@ -127,6 +160,20 @@ func TestFederationExchangeUsesTargetMembershipAndRevokes(t *testing.T) {
 	if err != nil || id.User.SourceServerID != pa.ID || !sb.CanCreateChat(id.User.ID, project.ID) || id.User.RemoteDesktop || id.User.ADBBridge {
 		t.Fatalf("unexpected first-login access: %v", err)
 	}
+	projects, err := sb.Projects()
+	if err != nil || len(projects) != 2 {
+		t.Fatalf("could not inspect approved projects: %v", err)
+	}
+	for _, loaded := range projects {
+		wantAccess, wantOwn := "read-only", "create"
+		if loaded.ID == project2.ID {
+			wantAccess, wantOwn = "control", "read-only"
+		}
+		if !sb.CanAccessProject(id.User.ID, loaded.ID) || loaded.MemberAccess[id.User.ID] != wantAccess || loaded.MemberOwnAccess[id.User.ID] != wantOwn ||
+			sb.CanCreateChat(id.User.ID, loaded.ID) != (wantOwn == "create") {
+			t.Errorf("first login did not grant %s/%s on %s, got %s/%s", wantAccess, wantOwn, loaded.ID, loaded.MemberAccess[id.User.ID], loaded.MemberOwnAccess[id.User.ID])
+		}
+	}
 	if got := request(b, "/api/login", map[string]string{"username": id.User.Username, "password": "test-password-2026"}, nil, "").Code; got != http.StatusUnauthorized {
 		t.Fatalf("external user got password login status %d", got)
 	}
@@ -135,6 +182,20 @@ func TestFederationExchangeUsesTargetMembershipAndRevokes(t *testing.T) {
 	}
 	if _, err = sb.SaveUser(UserInput{ID: id.User.ID, Password: "new-test-password"}); err == nil {
 		t.Fatal("an external user could be assigned a local password")
+	}
+	// 即使 B 也有到 A 的出站批准，外部账号也不能作为下一跳身份。
+	if err := sb.SetFederationTrustUsers(pa.ID, true, nil); err == nil {
+		t.Fatal("incoming-only approval accepted an outbound allowlist")
+	}
+	incoming := submitTrustForTest(t, target, source, as.URL)
+	if err := sa.DecideFederationTrust(incoming.ID, true, FederationTrustApproval{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := target.CheckFederationTrust(t.Context(), incoming.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := sb.SetFederationTrustUsers(pa.ID, false, []string{id.User.ID}); err == nil {
+		t.Fatal("external account was accepted on an outbound allowlist")
 	}
 	if _, err = sb.SaveProject(project); err != nil {
 		t.Fatal(err)
@@ -145,6 +206,25 @@ func TestFederationExchangeUsesTargetMembershipAndRevokes(t *testing.T) {
 		t.Fatal("repeated login changed the account or restored a removed project")
 	}
 	pending := issue()
+	if err := sa.SetFederationTrustUsers(pb.ID, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := request(a, "/api/federation/targets", nil, ac, ""); got.Code != http.StatusOK || strings.TrimSpace(got.Body.String()) != "[]" {
+		t.Fatal("removed target remained visible to the signed-in user")
+	}
+	exchange(pending, http.StatusUnauthorized)
+	a.federationMaintain(t.Context())
+	if _, err := sb.authenticate(bc.Value); err == nil {
+		t.Fatal("B session remained valid after removing the user from the allowlist")
+	}
+	if err := sa.SetFederationTrustUsers(pb.ID, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := request(a, "/api/federation/targets", nil, bobCookie, ""); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), pb.ID) {
+		t.Fatal("all-local mode did not allow another local user to discover the target")
+	}
+	bc = exchange(issue(), http.StatusOK)
+	pending = issue()
 	if got := request(a, "/api/logout", map[string]string{}, ac, csrf).Code; got != http.StatusOK {
 		t.Fatalf("A logout got %d", got)
 	}
@@ -213,6 +293,66 @@ func TestFederationTicketIsBoundToTargetAndExpires(t *testing.T) {
 	}
 }
 
+func TestSaveFederationUserRejectsIdentityEditsWithoutRevokingSession(t *testing.T) {
+	local, remote := testStore(t), testStore(t)
+	peer := federationPairForTest(t, local, remote, "https://source.spool.test", true, nil, nil)
+	peer, err := federationPeer(local.db, peer.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	person := federationSubject{ID: "source-user", Nickname: "External", Avatar: DefaultAvatar(), SourceRef: randomToken(), Remaining: loginSessionTTL.Milliseconds()}
+	token, _, err := local.federationLogin(peer, person, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := local.authenticate(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := identity.User
+	for _, tc := range []struct {
+		name  string
+		input UserInput
+	}{
+		{"username", UserInput{Username: "new-name"}},
+		{"display name", UserInput{Nickname: "Other name"}},
+		{"password", UserInput{Password: "new-test-password"}},
+		{"mixed update", UserInput{Nickname: "Other name", Disabled: true, RemoteDesktop: true, ADBBridge: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := tc.input
+			input.ID = user.ID
+			if _, err := local.SaveUser(input); err == nil {
+				t.Fatal("external identity edit was accepted")
+			}
+			current, err := local.authenticate(token)
+			if err != nil || current.User != user {
+				t.Fatalf("rejected update changed the user or revoked the session: %+v, %v", current.User, err)
+			}
+		})
+	}
+	for _, input := range []UserInput{{ID: user.ID}, {ID: user.ID, Username: user.Username, Nickname: user.Nickname}} {
+		if saved, err := local.SaveUser(input); err != nil || saved != user {
+			t.Fatalf("no-op update did not return existing user: %+v, %v", saved, err)
+		}
+		if _, err := local.authenticate(token); err != nil {
+			t.Fatalf("no-op update revoked the session: %v", err)
+		}
+	}
+	want := user
+	want.RemoteDesktop, want.ADBBridge = true, true
+	if saved, err := local.SaveUser(UserInput{ID: user.ID, RemoteDesktop: true, ADBBridge: true}); err != nil || saved != want {
+		t.Fatalf("local permissions did not update: %+v, %v", saved, err)
+	}
+	if _, err := local.authenticate(token); err == nil {
+		t.Fatal("changing local permissions must still revoke the old session")
+	}
+	users, err := local.Users()
+	if err != nil || len(users) != 1 || users[0] != want {
+		t.Fatalf("local permissions or source profile did not persist: %+v, %v", users, err)
+	}
+}
+
 func TestFederationDelayedVerificationCannotRestoreAccess(t *testing.T) {
 	local, remote := testStore(t), testStore(t)
 	configured := federationPairForTest(t, local, remote, "https://source.spool.test", true, nil, nil)
@@ -234,11 +374,11 @@ func TestFederationDelayedVerificationCannotRestoreAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	configured.Accept = false
-	if err = local.SaveFederationPeer(configured); err != nil {
+	if err = local.UpdateFederationPeer(configured); err != nil {
 		t.Fatal(err)
 	}
 	configured.Accept = true
-	if err = local.SaveFederationPeer(configured); err != nil {
+	if err = local.UpdateFederationPeer(configured); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err = local.federationLogin(original, person, started); !errors.Is(err, errFederationDenied) {

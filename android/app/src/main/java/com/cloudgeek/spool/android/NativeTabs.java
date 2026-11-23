@@ -24,6 +24,9 @@ class NativeTabs extends FrameLayout {
     private final Map<String, Button> buttons = new LinkedHashMap<>();
     private String selection;
     private boolean revealSelection = true;
+    private int initialScroll = -1;
+
+    void startAtScroll(int offset) { initialScroll = offset; }
 
     NativeTabs(NativeUi ui, String label) {
         this(ui, label, Size.REGULAR);
@@ -111,7 +114,8 @@ class NativeTabs extends FrameLayout {
         Button selected = buttons.get(selection);
         int viewport = scroll.getWidth();
         if (selected == null || viewport <= 0) return;
-        int target = scroll.getScrollX();
+        int target = initialScroll >= 0 ? initialScroll : scroll.getScrollX();
+        initialScroll = -1;
         if (selected.getLeft() < target) target = selected.getLeft();
         else if (selected.getRight() > target + viewport) target = selected.getRight() - viewport;
         scroll.scrollTo(Math.max(0, Math.min(target, tabs.getWidth() - viewport)), 0);

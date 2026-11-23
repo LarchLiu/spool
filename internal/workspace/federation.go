@@ -166,9 +166,10 @@ func (a *App) federationCall(ctx context.Context, peer FederationPeer, action, v
 }
 
 type federationTarget struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	ClientURL string `json:"client_url,omitempty"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	ClientURL  string `json:"client_url,omitempty"`
+	ClientMode string `json:"client_mode,omitempty"`
 }
 
 func (s *Store) federationTargets(id authIdentity) ([]federationTarget, error) {
@@ -182,7 +183,7 @@ func (s *Store) federationTargets(id authIdentity) ([]federationTarget, error) {
 	}
 	for _, peer := range peers {
 		if peer.allows(id.User.ID) {
-			targets = append(targets, federationTarget{ID: peer.ID, Name: peer.Name, ClientURL: peer.ClientURL})
+			targets = append(targets, federationTarget{ID: peer.ID, Name: peer.Name, ClientURL: peer.ClientURL, ClientMode: peer.ClientMode})
 		}
 	}
 	return targets, nil

@@ -44,6 +44,7 @@ import {
 import { SettingsChanges } from "./settings-changes";
 import { PendingSettingsProvider } from "./settings-pending";
 import { ProjectsPage } from "./settings-projects";
+import { ServerTrustPage } from "./settings-federation";
 import { createSettingsCommandQueue } from "./settings-autosave";
 import { UpdateIndicator } from "./update-controls";
 import {
@@ -67,7 +68,7 @@ const SettingsPageBody = memo(
   function SettingsPageBody({
     section,
     ...props
-  }: PageProps & { section: SettingsSection }) {
+  }: PageProps & { section: keyof typeof pages }) {
     const Page = pages[section];
     return <Page {...props} />;
   },
@@ -80,6 +81,7 @@ const SettingsPageBody = memo(
 
 const icons = {
   Service: Server,
+  "Server trust": ShieldCheck,
   People: Users,
   Projects: FolderOpen,
   Agents: Workflow,
@@ -90,6 +92,7 @@ const icons = {
 };
 const descriptions: Record<SettingsSection, MessageKey> = {
   Service: "Manage your local server and workspace access.",
+  "Server trust": "Request and approve trust for this local server.",
   People:
     "Accounts are created here. Web clients cannot register or administer users.",
   Projects: "Local directories, project access and scheduled tasks.",
@@ -230,7 +233,7 @@ export function SettingsApp() {
         <div className="settings-sidebar-content">
           <h1>{t("Settings")}</h1>
           <nav aria-label={t("Settings")}>
-            {[settingsSections.slice(0, 5), settingsSections.slice(5)].map(
+            {[settingsSections.slice(0, 6), settingsSections.slice(6)].map(
               (group, index) => (
                 <div className="settings-nav-group" key={index}>
                   <p>{t(index ? "Application" : "Workspace")}</p>
@@ -323,7 +326,11 @@ export function SettingsApp() {
                           disabled={pendingScope === key}
                           aria-busy={pendingScope === key}
                         >
-                          <SettingsPageBody section={key} {...props} />
+                          {key === "Server trust" ? (
+                            section === key && <ServerTrustPage {...props} />
+                          ) : (
+                            <SettingsPageBody section={key} {...props} />
+                          )}
                         </fieldset>
                       </div>
                     ))}

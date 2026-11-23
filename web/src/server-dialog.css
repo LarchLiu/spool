@@ -95,18 +95,6 @@
   padding: 6px 0 10px;
   border-bottom: 0;
 }
-.server-connection-tabs {
-  --tab-height: 32px;
-  --tab-font-size: 11px;
-  --tab-min-width: 0px;
-  --tab-max-width: none;
-  --tab-padding: 6px;
-  --tab-gap: 6px;
-  margin-bottom: 10px;
-}
-.server-connection-tabs .segmented-tab {
-  flex: 1;
-}
 .server-connection-field {
   display: grid;
   gap: 8px;

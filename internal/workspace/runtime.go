@@ -69,6 +69,7 @@ type ServiceStatus struct {
 	Error                    string
 	Online                   []PresenceUser
 	TSNet                    tailnet.Status
+	TSNetOutboundReady       bool
 	TSNetAuthKeySet          bool
 	Voxl                     voxl.Status
 	RemoteDesktopConnections map[string]int
@@ -257,6 +258,8 @@ func (s *Service) startWithSettingsLocked(settings Settings) error {
 	}
 	if settings.TSNetEnabled {
 		s.startTailnetLocked(settings)
+	} else {
+		s.ensureFederationTailnetLocked(settings)
 	}
 	s.desktop.SetEnabled(s.ctx, settings.RemoteDesktopEnabled)
 	log.Printf("event=service_started address=%q", s.runningAddress)
@@ -366,8 +369,11 @@ func (s *Service) Status() ServiceStatus {
 	if settings.TSNetEnabled {
 		tailnetStatus.State = "Stopped"
 	}
+	tailnetOutboundReady := false
 	if s.tailnet != nil {
 		tailnetStatus = s.tailnet.snapshot()
+		tailnetOutboundReady = s.tailnet.ctx.Err() == nil && s.tailnet.dial != nil &&
+			(tailnetStatus.State == "Running" || s.tailnet.loginOnly && tailnetStatus.State == "Registered")
 	}
 	var desktopStatus voxl.Status
 	if s.desktop != nil {
@@ -395,7 +401,7 @@ func (s *Service) Status() ServiceStatus {
 		webDetecting = webDetecting || s.app.webProxyProbe != nil
 		s.app.webProxyMu.Unlock()
 	}
-	return ServiceStatus{Running: s.server != nil, RestartRequired: len(pending) > 0, PendingChanges: pending, WebError: s.webError, WebDetecting: webDetecting, WebProxyCheck: s.webProxyCheck, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetAuthKeySet: s.tailnetAuthKey != "", Voxl: desktopStatus, RemoteDesktopConnections: connections, ADB: s.adbBridgeStatusLocked(), Relay: relayStatus}
+	return ServiceStatus{Running: s.server != nil, RestartRequired: len(pending) > 0, PendingChanges: pending, WebError: s.webError, WebDetecting: webDetecting, WebProxyCheck: s.webProxyCheck, Address: address, Error: message, Online: online, TSNet: tailnetStatus, TSNetOutboundReady: tailnetOutboundReady, TSNetAuthKeySet: s.tailnetAuthKey != "", Voxl: desktopStatus, RemoteDesktopConnections: connections, ADB: s.adbBridgeStatusLocked(), Relay: relayStatus}
 }
 func (s *Service) WebURL() string {
 	s.mu.Lock()

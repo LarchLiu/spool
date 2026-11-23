@@ -55,6 +55,7 @@ function fixture(t, view) {
         "presence",
         "profiles",
         "server",
+        "federationTargets",
         "connected",
         "expired",
         "directMessage",
@@ -199,6 +200,34 @@ test("workspace socket delivers the server's name on initial sync and rename", (
     ["connected", true],
     ["server", { server_name: "办公室 · Mac" }],
   ]);
+});
+
+test("workspace snapshots grant and revoke targets, with a fresh list after reconnect", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
+  const f = fixture(t);
+  const id = "b".repeat(52);
+  const lab = {
+    id, name: "Lab", client_url: "https://lab.example", client_mode: "tailscale",
+    address: "private", status: "connected",
+  };
+  const parsed = [{ id, name: "Lab", clientURL: "https://lab.example/", clientMode: "tailscale" }];
+  const socket = f.sockets[0];
+  socket.opened();
+  socket.emit("federation_targets", []);
+  socket.emit("ready", true);
+  socket.emit("federation_targets", [lab]);
+  socket.emit("federation_targets", {});
+  socket.emit("federation_targets", []);
+  socket.onerror();
+  socket.emit("federation_targets", [lab]);
+  t.mock.timers.tick(610);
+  f.sockets[1].opened();
+  f.sockets[1].emit("federation_targets", [lab]);
+  f.sockets[1].emit("ready", true);
+  assert.deepEqual(
+    f.received.filter(([kind]) => kind === "federationTargets").map(([, targets]) => targets),
+    [[], parsed, [], parsed],
+  );
 });
 
 test("disconnect retries with backoff and rejects frames from stale sockets", (t) => {

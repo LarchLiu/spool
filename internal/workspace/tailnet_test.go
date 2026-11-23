@@ -419,6 +419,15 @@ type testTailnetLoginConnection struct {
 	close func()
 }
 
+type testTailnetOutboundConnection struct {
+	*testTailnetLoginConnection
+	dial func(context.Context, string, string) (net.Conn, error)
+}
+
+func (c *testTailnetOutboundConnection) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	return c.dial(ctx, network, address)
+}
+
 func (c *testTailnetLoginConnection) ReauthenticateURL(ctx context.Context) (string, error) {
 	return c.login(ctx)
 }
@@ -479,6 +488,123 @@ func TestTailnetDisabledLoginPreservesOffStateAndActivatesExplicitly(t *testing.
 	}
 	if service.app != app || service.runner != runner || service.web != web {
 		t.Fatal("activation replaced unrelated service state")
+	}
+}
+
+func TestFederationTailnetLoginEnablesOutboundWithoutPublishingHTTPS(t *testing.T) {
+	for _, running := range []bool{true, false} {
+		t.Run(fmt.Sprint(running), func(t *testing.T) {
+			service, settings := settingsService(t)
+			if !running {
+				if err := service.Stop(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			dials := make(chan string, 1)
+			closed := make(chan struct{})
+			const link = "https://login.tailscale.com/a/trust-test"
+			service.openTailnetLogin = func(_ context.Context, _ string, _ tailnet.Options, report func(tailnet.Status)) (tailnetLoginConnection, error) {
+				return &testTailnetOutboundConnection{
+					testTailnetLoginConnection: &testTailnetLoginConnection{
+						login: func(context.Context) (string, error) {
+							report(tailnet.Status{State: "Running"})
+							return link, nil
+						},
+						close: func() { close(closed) },
+					},
+					dial: func(_ context.Context, _, address string) (net.Conn, error) {
+						dials <- address
+						return nil, fmt.Errorf("test dial finished")
+					},
+				}, nil
+			}
+			if got, err := service.TSNetLoginURL(t.Context()); err != nil || got != link {
+				t.Fatalf("could not request local node login: %v", err)
+			}
+			status := waitTailnet(t, service, func(s ServiceStatus) bool { return s.TSNet.State == "Registered" })
+			if !status.TSNetOutboundReady || status.TSNet.URL != "" || status.Running != running || settings.TSNetEnabled {
+				t.Fatal("federation login did not enable outbound-only dialing")
+			}
+			preview := func() {
+				t.Helper()
+				ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+				defer cancel()
+				if _, err := service.PreviewFederationTrust(ctx, "tailscale", "https://peer.example.ts.net"); err == nil {
+					t.Fatal("preview unexpectedly succeeded")
+				}
+				select {
+				case got := <-dials:
+					if got != "peer.example.ts.net:443" {
+						t.Fatalf("dialed a different peer: %q", got)
+					}
+				default:
+					t.Fatal("preview did not use the login node for the outbound connection")
+				}
+			}
+			preview()
+			if !running {
+				if err := service.Start(); err != nil {
+					t.Fatal(err)
+				}
+				preview()
+			}
+			if err := service.Stop(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-closed:
+			case <-time.After(time.Second):
+				t.Fatal("the outbound node did not close when the service stopped")
+			}
+		})
+	}
+}
+
+func TestFederationOutboundTailnetRestartsForSavedRoutes(t *testing.T) {
+	service, settings := settingsService(t)
+	if settings.TSNetEnabled || service.Status().TSNetOutboundReady {
+		t.Fatal("outbound node started without a configured route")
+	}
+	peer, err := testStore(t).FederationIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer.Transport, peer.Address = "tailscale", "https://peer.example.ts.net"
+	if _, err := service.Store.requestFederationTrust(peer); err != nil {
+		t.Fatal(err)
+	}
+	var opens, closes, logins, dials atomic.Int32
+	service.openTailnetLogin = func(_ context.Context, _ string, _ tailnet.Options, report func(tailnet.Status)) (tailnetLoginConnection, error) {
+		opens.Add(1)
+		report(tailnet.Status{State: "Running", URL: "https://local.example.ts.net"})
+		return &testTailnetOutboundConnection{
+			testTailnetLoginConnection: &testTailnetLoginConnection{
+				login: func(context.Context) (string, error) {
+					logins.Add(1)
+					return "", fmt.Errorf("unexpected interactive login")
+				},
+				close: func() { closes.Add(1) },
+			},
+			dial: func(_ context.Context, _, _ string) (net.Conn, error) {
+				dials.Add(1)
+				return nil, fmt.Errorf("test dial finished")
+			},
+		}, nil
+	}
+	for attempt := int32(1); attempt <= 2; attempt++ {
+		if err := service.Restart(); err != nil {
+			t.Fatal(err)
+		}
+		status := waitTailnet(t, service, func(s ServiceStatus) bool { return s.TSNetOutboundReady })
+		if status.TSNet.State != "Registered" || status.TSNet.URL != "" || status.RestartRequired {
+			t.Fatalf("outbound restart published or staged an ingress: %+v", status.TSNet)
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		_, err := service.PreviewFederationTrust(ctx, "tailscale", peer.Address)
+		cancel()
+		if err == nil || opens.Load() != attempt || closes.Load() != attempt-1 || logins.Load() != 0 || dials.Load() != attempt {
+			t.Fatalf("outbound node was not restored cleanly: opens=%d closes=%d logins=%d dials=%d err=%v", opens.Load(), closes.Load(), logins.Load(), dials.Load(), err)
+		}
 	}
 }
 

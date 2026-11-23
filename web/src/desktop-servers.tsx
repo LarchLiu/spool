@@ -11,7 +11,7 @@ import type { MessageKey, Translator } from "./i18n";
 import { SegmentedTabs, type SegmentedTab } from "./segmented-tabs";
 import {
   federationClientURL,
-  loadFederationTargets,
+  parseFederationTargets,
   type FederationTarget,
 } from "./desktop-federation";
 import {
@@ -21,7 +21,6 @@ import {
   requestDesktopFederationLogin,
   selectDesktopServer,
   subscribeDesktopFederation,
-  subscribeDesktopServerSelection,
   subscribeDesktopServers,
   type DesktopFederationProgress,
   type DesktopServerStatus,
@@ -85,46 +84,55 @@ export function DesktopServerAction({
 type FederationProgress = Record<string, DesktopFederationProgress>;
 
 type DesktopServerEntry = DesktopServerTabsSnapshot["entries"][number];
-const federationTabPrefix = "federation:";
+const federationTabKey = (source: string, target: string) => `federation:${source}:${target}`;
 
-function serverOption(
-  t: Translator,
-  server: DesktopServerEntry,
-  trusted = server.federated,
-): SegmentedTab<string> {
+function ServerStatusIcon({
+  status,
+  trusted,
+}: {
+  status: DesktopServerStatus;
+  trusted?: boolean;
+}) {
+  return trusted ? (
+    <KeyRound size={13} className="server-status-key" data-state={status} aria-hidden="true" />
+  ) : (
+    <span className="server-status-dot" data-state={status} aria-hidden="true" />
+  );
+}
+
+function serverOption(t: Translator, server: DesktopServerEntry): SegmentedTab<string> {
   const status =
-    t(labels[server.status]) + (trusted ? ` · ${t("Federated sign-in")}` : "");
+    t(labels[server.status]) + (server.federated ? ` · ${t("Federated sign-in")}` : "");
   return {
     value: server.id,
     label: server.name,
     title: `${server.name} · ${status}`,
     accessibleLabel: `${server.name}, ${status}`,
-    icon: (
-      <>
-        <span
-          className="server-status-dot"
-          data-state={server.status}
-          aria-hidden="true"
-        />
-        {trusted && (
-          <KeyRound
-            size={12}
-            className="server-federated-mark"
-            aria-hidden="true"
-          />
-        )}
-      </>
-    ),
+    icon: <ServerStatusIcon status={server.status} trusted={server.federated} />,
   };
+}
+
+function federationTargetStatus(source: DesktopServerEntry, target: FederationTarget): DesktopServerStatus {
+  if (!target.clientURL || !Array.isArray(source.federation_targets)) return "disconnected";
+  // Only the matching native route has a health result. An anonymous probe
+  // can report reachability, but cannot establish a signed-in session.
+  const status = source.federation_targets.find((entry) =>
+    entry?.id === target.id &&
+    federationClientURL(entry.client_url) === target.clientURL &&
+    (entry.client_mode ?? "") === (target.clientMode ?? ""),
+  )?.status;
+  return status === "login" || status === "error" || status === "connecting" ? status : "disconnected";
 }
 
 function federationOption(
   t: Translator,
+  source: DesktopServerEntry,
   target: FederationTarget,
   current?: DesktopFederationProgress,
   server?: DesktopServerEntry,
 ): SegmentedTab<string> {
   const name = server?.name ?? target.name;
+  const status = server?.status ?? federationTargetStatus(source, target);
   const pending = current?.state === "pending";
   const failed = current?.state === "failed";
   const label = t(
@@ -137,13 +145,15 @@ function federationOption(
           : "Sign in to {server} with this account",
     { server: name },
   );
+  const action = `${source.name} → ${label}`;
+  const statusLabel = t(labels[status]);
   return {
-    value: server?.id ?? federationTabPrefix + target.id,
+    value: federationTabKey(source.id, target.id),
     label: name,
-    title: label,
-    accessibleLabel: label,
-    action: () => requestDesktopFederationLogin(target.id),
+    title: pending ? action : `${action} · ${statusLabel}`,
+    accessibleLabel: pending ? action : `${action}, ${statusLabel}`,
     className: "desktop-federation-target",
+    activateCurrent: true,
     state: current?.state,
     disabled: pending,
     icon: pending ? (
@@ -153,11 +163,7 @@ function federationOption(
         aria-hidden="true"
       />
     ) : (
-      <KeyRound
-        size={13}
-        className="server-federated-mark"
-        aria-hidden="true"
-      />
+      <ServerStatusIcon status={status} trusted />
     ),
   };
 }
@@ -166,89 +172,72 @@ function federationOption(
 function serverOptions(
   t: Translator,
   servers: DesktopServerTabsSnapshot,
-  targets: FederationTarget[],
+  targets: FederationTarget[] | undefined,
   progress: FederationProgress,
 ) {
-  const matched = new Set<string>();
-  const trusted: SegmentedTab<string>[] = [];
-  if (servers.entries.some((server) => server.id === servers.selected)) {
-    for (const target of targets) {
-      const matches = (server: DesktopServerEntry) =>
-        server.server_id
-          ? server.server_id === target.id
-          : !!target.clientURL &&
-            federationClientURL(server.client_url) === target.clientURL;
-      if (
-        servers.entries.some(
-          (server) => server.id === servers.selected && matches(server),
-        )
-      )
-        continue;
-      const candidates = servers.entries.filter(
-        (server) => !matched.has(server.id) && matches(server),
-      );
-      const saved =
-        candidates.find((server) => server.status === "connected") ??
-        candidates[0];
-      if (saved) matched.add(saved.id);
-      trusted.push(
-        saved?.status === "connected"
-          ? serverOption(t, saved, true)
-          : federationOption(t, target, progress[target.id], saved),
-      );
-    }
-  }
-  return servers.entries.flatMap((server) => {
-    if (matched.has(server.id)) return [];
-    const option = serverOption(t, server);
-    return server.id === servers.selected ? [option, ...trusted] : [option];
-  });
+  const groups = servers.entries.map((source) => ({
+    source,
+    targets: (source.id === servers.selected ? targets : undefined) ??
+      parseFederationTargets(source.federation_targets) ?? [],
+  }));
+  const aliases = new Map<string, { source: string; target: string }>();
+  const savedAliases = new Map<string, string[]>();
+  const options = groups.map(({ source, targets }) => targets.flatMap((target) => {
+    const candidates = servers.entries.filter((server) => server.server_id
+      ? server.server_id === target.id
+      : !!target.clientURL && federationClientURL(server.client_url) === target.clientURL);
+    const saved = candidates.find((server) => server.status === "connected") ?? candidates[0];
+    if (saved?.id === source.id) return [];
+    const key = federationTabKey(source.id, target.id);
+    aliases.set(key, { source: source.id, target: target.id });
+    if (saved) savedAliases.set(saved.id, [...(savedAliases.get(saved.id) ?? []), key]);
+    return [federationOption(t, source, target, progress[key], saved)];
+  }));
+  const owners = new Set(groups.filter((_, i) => options[i].length).map(({ source }) => source.id));
+  const selection = (id: string, alias?: string) => {
+    const saved = savedAliases.get(id);
+    if (alias && saved?.includes(alias)) return alias;
+    return !owners.has(id) && saved?.length ? saved[0] : id;
+  };
+  return {
+    aliases,
+    selection,
+    options: groups.flatMap(({ source }, i) => [
+      ...(!savedAliases.has(source.id) || owners.has(source.id) ? [serverOption(t, source)] : []),
+      ...options[i],
+    ]),
+  };
 }
 
-function useFederationTargets(account: string | undefined) {
-  const [targets, setTargets] = useState<FederationTarget[]>([]);
+function useFederationProgress(account: string | undefined) {
   const [progress, setProgress] = useState<FederationProgress>({});
   useEffect(() => {
-    setTargets([]);
     setProgress({});
-    if (!account || !isDesktopChat()) return;
-    const controller = new AbortController();
-    const load = () =>
-      void loadFederationTargets(controller.signal).then(
-        (value) => {
-          if (!controller.signal.aborted) setTargets(value);
-        },
-        () => {},
-      );
-    load();
-    // Authorization may have changed while another server was presented.
-    const offSelection = subscribeDesktopServerSelection(load);
-    const offProgress = subscribeDesktopFederation((value) =>
+    if (!isDesktopChat()) return;
+    return subscribeDesktopFederation((value) =>
       setProgress((old) => {
+        const key = federationTabKey(value.source ?? desktopServers().selected, value.target);
         const next = { ...old };
         if (value.state === "done" || value.reason === "cancelled")
-          delete next[value.target];
-        else next[value.target] = value;
+          delete next[key];
+        else next[key] = value;
         return next;
       }),
     );
-    return () => {
-      controller.abort();
-      offSelection();
-      offProgress();
-    };
   }, [account]);
-  return { targets, progress };
+  return progress;
 }
 
 export function DesktopServerTabs({
   t,
   account,
+  targets,
   className = "",
 }: {
   t: Translator;
-  // The signed-in account of this page; federated sign-in starts only here.
+  // 用于在当前页面换账号时清除旧的登录进度。
   account?: string;
+  targets?: FederationTarget[];
   className?: string;
 }) {
   const servers = useSyncExternalStore(
@@ -256,13 +245,14 @@ export function DesktopServerTabs({
     desktopServers,
     desktopServers,
   );
-  const federation = useFederationTargets(account);
+  const progress = useFederationProgress(account);
   if (!isDesktopChat()) return null;
   return (
     <DesktopServerTabBar
       t={t}
       servers={servers}
-      {...federation}
+      targets={account ? targets : undefined}
+      progress={progress}
       className={className}
     />
   );
@@ -277,28 +267,31 @@ export function DesktopServerTabBar({
 }: {
   t: Translator;
   servers: DesktopServerTabsSnapshot;
-  targets: FederationTarget[];
+  targets?: FederationTarget[];
   progress?: FederationProgress;
   className?: string;
 }) {
+  const { aliases, selection, options } = serverOptions(t, servers, targets, progress);
   return (
     <SegmentedTabs
       className={`desktop-server-tabs ${className}`}
       trackClassName="desktop-server-track"
       label={t("Servers")}
       navigation
-      value={servers.selected}
-      onChange={(id, scrollLeft) =>
-        selectDesktopServer(id, globalThis, scrollLeft)
-      }
+      value={selection(servers.selected, servers.selected_tab)}
+      onChange={(id, scrollLeft) => {
+        const alias = aliases.get(id);
+        if (alias) requestDesktopFederationLogin(alias.source, alias.target, globalThis, scrollLeft);
+        else selectDesktopServer(id, globalThis, scrollLeft);
+      }}
       transition={
         servers.transition && {
-          from: servers.transition.from,
+          from: selection(servers.transition.from, servers.transition.from_tab),
           startedAt: servers.transition.started_at,
           scrollLeft: servers.transition.scroll_left,
         }
       }
-      options={serverOptions(t, servers, targets, progress)}
+      options={options}
       trailing={
         <a
           className="icon desktop-server-add"

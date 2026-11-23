@@ -27,7 +27,8 @@ export function notifyDesktopServerState() {}
 export function reportDesktopServerState() { return () => {}; }
 export function notifyDesktopServerReady(state, selection, surface, authenticated = state === 'connected') { window.dispatchEvent(new CustomEvent('spool:server-ready-ack', {detail: {state, selection, authenticated}})); }
 export function notifyDesktopSidebarWidth() {}
-export function notifyDesktopServerName() {}`;
+export function notifyDesktopServerName() {}
+export function notifyDesktopFederationTargets() {}`;
     },
   };
 }

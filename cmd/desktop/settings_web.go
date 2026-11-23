@@ -256,9 +256,90 @@ func (s *desktopSettings) Snapshot(ctx context.Context) (settingsSnapshot, error
 	return v, err
 }
 
+// FederationTrust 只管理本机服务，远端聊天页不能调用此绑定。
+func (s *desktopSettings) PreviewFederationTrust(ctx context.Context, transport, address string) (workspace.FederationTrustPreview, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return workspace.FederationTrustPreview{}, err
+	}
+	return s.panel.service.PreviewFederationTrust(ctx, transport, address)
+}
+
+func (s *desktopSettings) SubmitFederationTrust(ctx context.Context, transport, address, expected string) (workspace.FederationTrustSnapshot, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return workspace.FederationTrustSnapshot{}, err
+	}
+	if err := s.panel.service.SubmitFederationTrust(ctx, transport, address, expected); err != nil {
+		return workspace.FederationTrustSnapshot{}, err
+	}
+	return s.panel.service.Store.FederationTrustSnapshot()
+}
+
+func (s *desktopSettings) ApproveFederationTrust(ctx context.Context, id string, settings workspace.FederationTrustApproval) (workspace.FederationTrustSnapshot, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return workspace.FederationTrustSnapshot{}, err
+	}
+	store := s.panel.service.Store
+	if err := store.DecideFederationTrust(id, true, settings); err != nil {
+		return workspace.FederationTrustSnapshot{}, err
+	}
+	if settings.Transport == "tailscale" {
+		s.panel.service.EnsureFederationTailnet()
+	}
+	return store.FederationTrustSnapshot()
+}
+
+func (s *desktopSettings) UpdateFederationTrustReturnRoute(ctx context.Context, target, transport, address string) (workspace.FederationTrustSnapshot, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return workspace.FederationTrustSnapshot{}, err
+	}
+	service := s.panel.service
+	if err := service.Store.UpdateFederationTrustReturnRoute(target, transport, address); err != nil {
+		return workspace.FederationTrustSnapshot{}, err
+	}
+	if transport == "tailscale" {
+		service.EnsureFederationTailnet()
+	}
+	return service.Store.FederationTrustSnapshot()
+}
+
+func (s *desktopSettings) SetFederationTrustUsers(ctx context.Context, target string, allUsers bool, users []string) (workspace.FederationTrustSnapshot, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return workspace.FederationTrustSnapshot{}, err
+	}
+	store := s.panel.service.Store
+	if err := store.SetFederationTrustUsers(target, allUsers, users); err != nil {
+		return workspace.FederationTrustSnapshot{}, err
+	}
+	return store.FederationTrustSnapshot()
+}
+
+func (s *desktopSettings) FederationTrust(ctx context.Context, action, value string) (workspace.FederationTrustSnapshot, error) {
+	p := s.panel
+	if _, err := settingsUI(ctx, p, func() (bool, error) { return true, nil }); err != nil {
+		return workspace.FederationTrustSnapshot{}, err
+	}
+	store := p.service.Store
+	var err error
+	switch action {
+	case "list":
+	case "open-inbox", "close-inbox":
+		err = store.SetFederationTrustInbox(action == "open-inbox")
+	case "check":
+		err = p.service.CheckFederationTrust(ctx, value)
+	case "reject":
+		err = store.DecideFederationTrust(value, false, workspace.FederationTrustApproval{})
+	default:
+		err = errors.New("unknown server trust action")
+	}
+	if err != nil {
+		return workspace.FederationTrustSnapshot{}, err
+	}
+	return store.FederationTrustSnapshot()
+}
+
 func settingsTabAllowed(tab string) bool {
 	switch tab {
-	case "Service", "People", "Projects", "Agents", "Online", "Network", "Appearance", "About":
+	case "Service", "Server trust", "People", "Projects", "Agents", "Online", "Network", "Appearance", "About":
 		return true
 	}
 	return false
@@ -392,7 +473,7 @@ func (s *desktopSettings) TSNetRegister(ctx context.Context, key string) (bool, 
 
 func settingsActionAllowed(kind string) bool {
 	switch kind {
-	case "navigate", "open-chat", "open-browser", "show-file", "copy-tsnet-url", "copy-relay-web-url", "copy-relay-pairing-code":
+	case "navigate", "open-chat", "open-browser", "show-file", "copy-tsnet-url", "copy-relay-web-url", "copy-relay-pairing-code", "copy-server-trust-id", "copy-server-trust-relay-route":
 		return true
 	}
 	return false
@@ -430,6 +511,18 @@ func (s *desktopSettings) Action(ctx context.Context, command settingsCommand) (
 				return false, errors.New("Could not copy code")
 			}
 			mygo.Clipboard.WriteText(command.Text)
+		case "copy-server-trust-relay-route":
+			code, err := p.service.Store.FederationRelayRoute()
+			if err != nil {
+				return false, err
+			}
+			mygo.Clipboard.WriteText(code)
+		case "copy-server-trust-id":
+			id, err := p.service.Store.FederationIdentity()
+			if err != nil {
+				return false, err
+			}
+			mygo.Clipboard.WriteText(id.ID)
 		case "show-file":
 			path := ""
 			switch command.Target {

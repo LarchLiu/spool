@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -40,7 +41,11 @@ type desktopServerChat struct {
 	serverID         string
 	identityChecking bool
 	// The current session was obtained by a federated sign-in.
-	federated bool
+	federated             bool
+	federationTargets     []desktopFederationTarget
+	federationFingerprint string
+	federationRevision    uint64
+	federationChecking    bool
 }
 
 func (chat *desktopServerChat) setStatus(status string) bool {
@@ -61,12 +66,14 @@ type desktopServerTab struct {
 	ServerID  string `json:"server_id,omitempty"`
 	ClientURL string `json:"client_url,omitempty"`
 	// Signed in through another server's account rather than a password.
-	Federated bool `json:"federated,omitempty"`
+	Federated         bool                         `json:"federated,omitempty"`
+	FederationTargets []desktopFederationTargetTab `json:"federation_targets,omitempty"`
 }
 
 type desktopServerTabs struct {
 	Entries      []desktopServerTab    `json:"entries"`
 	Selected     string                `json:"selected"`
+	SelectedTab  string                `json:"selected_tab,omitempty"`
 	Selection    string                `json:"selection"`
 	SidebarWidth int                   `json:"sidebar_width"`
 	Transition   *desktopTabTransition `json:"transition,omitempty"`
@@ -76,6 +83,7 @@ type desktopServerTabs struct {
 // This is transient presentation state and is never written to profiles.
 type desktopTabTransition struct {
 	From       string   `json:"from"`
+	FromTab    string   `json:"from_tab,omitempty"`
 	StartedAt  int64    `json:"started_at"`
 	ScrollLeft *float64 `json:"scroll_left,omitempty"`
 }
@@ -123,7 +131,7 @@ func (p *panel) selectedDesktopServer() string {
 }
 
 func (p *panel) desktopServerTabs() desktopServerTabs {
-	tabs := desktopServerTabs{Selected: p.selectedDesktopServer(), SidebarWidth: p.servers.SidebarWidth, Transition: p.serverTabTransition}
+	tabs := desktopServerTabs{Selected: p.selectedDesktopServer(), SelectedTab: p.federation.selectedTab, SidebarWidth: p.servers.SidebarWidth, Transition: p.serverTabTransition}
 	tabs.Selection = p.desktopSelectionToken()
 	if tabs.SidebarWidth == 0 {
 		tabs.SidebarWidth = 298
@@ -140,6 +148,17 @@ func (p *panel) desktopServerTabs() desktopServerTabs {
 		if chat := p.serverChats[server.ID]; server.Enabled && chat != nil {
 			tab.ServerID = chat.serverID
 			tab.Federated = chat.federated && chat.authenticated
+			if chat.authenticated && !chat.failed {
+				for _, target := range chat.federationTargets {
+					entry := desktopFederationTargetTab{desktopFederationTarget: target}
+					if key, ok := desktopFederationHealthRoute(target); ok {
+						if health := p.federation.health[key]; health != nil {
+							entry.Status = health.status
+						}
+					}
+					tab.FederationTargets = append(tab.FederationTargets, entry)
+				}
+			}
 		}
 		if id := desktopRelayServerID(server); id != "" {
 			tab.ServerID = id
@@ -162,7 +181,7 @@ func (p *panel) desktopSelectionToken() string {
 func (p *panel) desktopServerTabsFor(id string) desktopServerTabs {
 	tabs := p.desktopServerTabs()
 	if id != tabs.Selected {
-		tabs.Selected, tabs.Selection, tabs.Transition = id, id+":0", nil
+		tabs.Selected, tabs.SelectedTab, tabs.Selection, tabs.Transition = id, "", id+":0", nil
 	}
 	return tabs
 }
@@ -188,6 +207,27 @@ func (p *panel) recordDesktopServerName(id, name string) {
 		}
 		p.servers = next
 	}
+	p.sendDesktopServers()
+}
+
+func (p *panel) recordDesktopFederationTargets(chat *desktopServerChat, targets []desktopFederationTarget) {
+	if len(targets) > 64 {
+		targets = targets[:64]
+	}
+	clean := make([]desktopFederationTarget, 0, len(targets))
+	seen := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		if !validDesktopFederationID(target.ID) || seen[target.ID] || utf8.RuneCountInString(target.Name) > 80 || len(target.ClientURL) > 2048 || len(target.ClientMode) > 32 {
+			continue
+		}
+		seen[target.ID] = true
+		target.ClientURL = desktopFederationClientAddress(target.ClientURL)
+		clean = append(clean, target)
+	}
+	if slices.Equal(chat.federationTargets, clean) {
+		return
+	}
+	chat.federationTargets = clean
 	p.sendDesktopServers()
 }
 
@@ -305,25 +345,40 @@ func (p *panel) selectDesktopServer(id string) error {
 	return p.selectDesktopServerWithScroll(id, nil)
 }
 
+func (p *panel) selectDesktopServerTab(id string, scrollLeft *float64) error {
+	if err := p.selectDesktopServerWithScroll(id, scrollLeft); err != nil {
+		return err
+	}
+	p.federation.selected = id
+	p.maybeDesktopAutomaticFederation()
+	return nil
+}
+
 func (p *panel) selectDesktopServerWithScroll(id string, scrollLeft *float64) error {
+	return p.selectDesktopServerEntry(id, scrollLeft, "")
+}
+
+func (p *panel) selectDesktopServerEntry(id string, scrollLeft *float64, alias string) error {
 	_, ok := p.servers.find(id)
 	if !ok {
 		return errors.New("Server not found.")
 	}
+	p.federation.selected = ""
 	next := p.servers
 	next.Selected = id
-	previousTransition := p.serverTabTransition
-	if previous := p.selectedDesktopServer(); previous != id {
+	previousTransition, previousAlias := p.serverTabTransition, p.federation.selectedTab
+	p.federation.selectedTab = alias
+	if previous := p.selectedDesktopServer(); previous != id || previousAlias != alias {
 		started := time.Now().UnixMilli()
 		if previousTransition != nil && started <= previousTransition.StartedAt {
 			started = previousTransition.StartedAt + 1
 		}
-		p.serverTabTransition = &desktopTabTransition{From: previous, StartedAt: started, ScrollLeft: scrollLeft}
+		p.serverTabTransition = &desktopTabTransition{From: previous, FromTab: previousAlias, StartedAt: started, ScrollLeft: scrollLeft}
 	}
 	// A local service start may still be in flight when another tab is chosen.
 	p.chatStarting = false
 	if err := p.setDesktopServers(next); err != nil {
-		p.serverTabTransition = previousTransition
+		p.serverTabTransition, p.federation.selectedTab = previousTransition, previousAlias
 		return err
 	}
 	p.openChat()
@@ -381,18 +436,24 @@ func desktopServerNavigation(address, target string) (desktopTabSelection, bool)
 		return desktopTabSelection{}, false
 	}
 	if values, ok := params["scroll_left"]; ok {
-		if len(values) != 1 || len(params) != 2 {
+		if selection.ScrollLeft = desktopTabScroll(values); selection.ScrollLeft == nil || len(params) != 2 {
 			return desktopTabSelection{}, false
 		}
-		scroll, err := strconv.ParseFloat(values[0], 64)
-		if err != nil || math.IsNaN(scroll) || math.IsInf(scroll, 0) || scroll < 0 || scroll > 1e7 {
-			return desktopTabSelection{}, false
-		}
-		selection.ScrollLeft = &scroll
 	} else if len(params) != 1 {
 		return desktopTabSelection{}, false
 	}
 	return selection, true
+}
+
+func desktopTabScroll(values []string) *float64 {
+	if len(values) != 1 {
+		return nil
+	}
+	scroll, err := strconv.ParseFloat(values[0], 64)
+	if err != nil || math.IsNaN(scroll) || math.IsInf(scroll, 0) || scroll < 0 || scroll > 1e7 {
+		return nil
+	}
+	return &scroll
 }
 
 func desktopServerStateNavigation(address, target string) (desktopServerConnection, bool) {
@@ -453,11 +514,22 @@ func (p *panel) recordDesktopServerConnection(id string, connection desktopServe
 	if state == nil || state.failed {
 		return
 	}
-	if state.authenticated != connection.Authenticated {
+	changed := state.authenticated != connection.Authenticated
+	if changed {
 		state.authenticated = connection.Authenticated
 		state.statusRevision++
+		if connection.Authenticated {
+			p.refreshDesktopFederationTargets(id, state)
+		} else {
+			state.federationRevision++
+			state.federationFingerprint = ""
+			state.federationTargets = nil
+		}
 	}
 	p.recordDesktopServerState(id, connection.State)
+	if changed {
+		p.sendDesktopServers()
+	}
 }
 
 func (p *panel) recordDesktopServerState(id, status string) {
@@ -466,6 +538,14 @@ func (p *panel) recordDesktopServerState(id, status string) {
 		return
 	}
 	state.pageStatus = status
+	if status == "login" || status == "disconnected" || state.failed {
+		state.federationRevision++
+		state.federationFingerprint = ""
+		if len(state.federationTargets) != 0 {
+			state.federationTargets = nil
+			defer p.sendDesktopServers()
+		}
+	}
 	if status == "connected" {
 		state.authenticated = true
 	} else if status == "login" || status == "disconnected" {
@@ -484,6 +564,9 @@ func (p *panel) recordDesktopServerState(id, status string) {
 	}
 	p.updateDesktopServerState(id, status)
 	p.advanceDesktopFederation()
+	if id == p.federation.selected {
+		p.maybeDesktopAutomaticFederation()
+	}
 }
 
 func (p *panel) updateDesktopServerState(id, status string) {

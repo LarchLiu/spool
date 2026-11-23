@@ -91,6 +91,61 @@ func realtimeReady(t *testing.T, conn *websocket.Conn) {
 	realtimeUntil(t, conn, func(m realtimeMessage) bool { return m.Type == "ready" })
 }
 
+func TestRealtimeFederationTargetsFollowTheSignedInAccount(t *testing.T) {
+	a, server, alice, _, aliceCookie, aliceCSRF := realtimeFixture(t)
+	bob := testUser(t, a.store, "bob")
+	bobCookie, bobCSRF := loginRequest(t, a, bob.Username)
+	peer, err := testStore(t).FederationIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	peer.Transport, peer.Address = "https", "https://private.example.test"
+	peer.ClientURL, peer.ClientMode = "https://chat.example.ts.net/", FederationClientModeTailscale
+	tx, err := a.store.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if err := saveFederationTrustGrant(tx, peer, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	aliceConn := realtimeConnect(t, server, aliceCookie, aliceCSRF, true)
+	bobConn := realtimeConnect(t, server, bobCookie, bobCSRF, true)
+	expectTargets := func(conn *websocket.Conn, expected []federationTarget) {
+		t.Helper()
+		frame := realtimeUntil(t, conn, func(m realtimeMessage) bool { return m.Type == "federation_targets" })
+		want, err := json.Marshal(expected)
+		if err != nil || string(frame.Data) != string(want) {
+			t.Fatal("unexpected authorized federation target snapshot")
+		}
+	}
+	empty := []federationTarget{}
+	lab := []federationTarget{{ID: peer.ID, Name: peer.Name, ClientURL: peer.ClientURL, ClientMode: FederationClientModeTailscale}}
+	expectTargets(aliceConn, empty)
+	expectTargets(bobConn, empty)
+	if err := a.store.SetFederationTrustUsers(peer.ID, false, []string{alice.ID}); err != nil {
+		t.Fatal(err)
+	}
+	expectTargets(aliceConn, lab)
+	if err := a.store.SetFederationTrustUsers(peer.ID, false, []string{bob.ID}); err != nil {
+		t.Fatal(err)
+	}
+	expectTargets(aliceConn, empty)
+	expectTargets(bobConn, lab)
+
+	_ = bobConn.CloseNow()
+	if err := a.store.SetFederationTrustUsers(peer.ID, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	bobConn = realtimeConnect(t, server, bobCookie, bobCSRF, true)
+	expectTargets(bobConn, empty)
+	realtimeReady(t, bobConn)
+}
+
 func TestRealtimePublishesAuthorizedNavigationAndActors(t *testing.T) {
 	a, server, alice, project, cookie, csrf := realtimeFixture(t)
 	bob := testUser(t, a.store, "bob")

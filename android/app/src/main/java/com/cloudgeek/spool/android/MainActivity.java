@@ -228,14 +228,29 @@ public final class MainActivity extends Activity {
         ConnectionRouter.Candidate<Client> candidate;
         ServerFeed feed;
         boolean selecting, socketFailed;
+        int sessionEpoch;
         final Map<ConnectionMode, String> states = new java.util.EnumMap<>(ConnectionMode.class);
         final Map<ConnectionPlan.Endpoint, ConnectionRecovery.Snapshot> health = new HashMap<>();
+
+        ConnectionRouter.Candidate<Client> recordSample(ConnectionRouter.Candidate<Client> sample, boolean currentSession) {
+            boolean sameClient = candidate != null && candidate.client == sample.client;
+            if (!sameClient) socketFailed = false;
+            // An inconclusive probe does not invalidate a verified session on the same transport.
+            // A stale probe must not undo a newer login or expiry, either.
+            if (currentSession && (sample.sessionChecked || !sameClient)) candidate = sample;
+            else candidate = new ConnectionRouter.Candidate<>(sample.endpoint, sample.client, sample.health,
+                    sameClient ? candidate.session : null, !currentSession && sameClient && candidate.sessionChecked);
+            return candidate;
+        }
     }
     private final Map<String, ServerRuntime> serverRuntimes = new HashMap<>();
     /** 当前已验证会话的互信目标。不保存到服务器配置。 */
     private JSONArray federationTargets;
     private int federationAttempt;
     private ServerRuntime federationRuntime;
+    private boolean automaticFederationOnSelection;
+    private FederationEnrollment federationEnrollment;
+    private String selectedFederationTab = "";
     private final Runnable serverRefresh = this::refreshServerConnections;
     private static final class ServerWorkspace {
         String userID = "", projectID = "", chatID = "", backend = "codex", model = "", effort = "", permission = "";
@@ -934,6 +949,7 @@ public final class MainActivity extends Activity {
                                     user = account;
                                     csrf = value.optString("csrf");
                                     federationTargets = value.optJSONArray("federation_targets");
+                                    recordActiveSession(captured, value);
                                     rememberServerName(serverProfiles.active(), value);
                                     restoreServerWorkspace();
                                     loginErrorText = "";
@@ -1113,6 +1129,7 @@ public final class MainActivity extends Activity {
         connectionWanted = true; routeSelecting = true;
         main.removeCallbacks(connectionRetry);
         final String account = user == null ? "" : user.optString("id");
+        final int sessionEpoch = runtime.sessionEpoch;
         if (client == null) {
             connecting = true; restoringSession = true;
             if (connectingView == null) render(); else updateConnectingPage();
@@ -1140,24 +1157,23 @@ public final class MainActivity extends Activity {
                 if (endpoint.mode == ConnectionMode.TAILSCALE && !health.authURL.isEmpty()) authURL = health.authURL;
                 updateConnectionSettings();
             }
-            public void selected(ConnectionRouter.Candidate<Client> candidate) {
+            public void selected(ConnectionRouter.Candidate<Client> sample) {
                 runtime.selecting = false;
-                if (runtime.candidate == null || runtime.candidate.client != candidate.client) runtime.socketFailed = false;
-                runtime.candidate = candidate;
                 if (destroyed) return;
-                if (candidate.session != null) try { rememberServerName(owner, new JSONObject(candidate.session.json)); }
+                boolean currentSession = runtime.sessionEpoch == sessionEpoch;
+                ConnectionRouter.Candidate<Client> candidate = runtime.recordSample(sample, currentSession);
+                if (currentSession && candidate.session != null) try { rememberServerName(owner, new JSONObject(candidate.session.json)); }
                 catch (Exception ignored) {}
                 if (!serverProfiles.selected.equals(serverID)) {
-                    if (candidate.session != null) try {
-                        JSONObject value = new JSONObject(candidate.session.json);
-                        rememberAccount(owner, value.optJSONObject("user"));
+                    if (currentSession && candidate.sessionChecked) {
+                        if (candidate.session == null) forgetAccount(owner);
+                        else try { rememberAccount(owner, new JSONObject(candidate.session.json).optJSONObject("user")); }
+                        catch (Exception ignored) {}
                     }
-                    catch (Exception ignored) {}
-                    else if (candidate.sessionChecked) forgetAccount(owner);
                     syncServerFeed(owner); renderNavigation(); return;
                 }
                 routeSelecting = false; nextRouteProbe = android.os.SystemClock.elapsedRealtime() + 30000;
-                adoptConnection(candidate);
+                adoptConnection(candidate, currentSession && candidate.sessionChecked);
             }
             public void unavailable() {
                 runtime.selecting = false;
@@ -1190,10 +1206,21 @@ public final class MainActivity extends Activity {
     }
 
     private void adoptConnection(ConnectionRouter.Candidate<Client> candidate) {
+        adoptConnection(candidate, candidate.sessionChecked);
+    }
+
+    private void adoptConnection(ConnectionRouter.Candidate<Client> candidate, boolean freshSessionCheck) {
         connectionWanted = true;
         if (client == candidate.client) {
-            if (candidate.sessionChecked && candidate.session == null && (user != null || hasWorkspaceCache())) {
-                forgetAccount(); stopStreams(); clearWorkspace(); render();
+            if (freshSessionCheck) {
+                if (candidate.session == null && (user != null || hasWorkspaceCache())
+                        && !automaticFederationOnSelection && federationEnrollment == null) {
+                    forgetAccount(); stopStreams(); clearWorkspace(); render();
+                } else if (candidate.session != null && user != null && !routeLoginRequired && !restoringSession
+                        && user.optString("id").equals(candidate.session.userID)) {
+                    try { federationTargets = new JSONObject(candidate.session.json).optJSONArray("federation_targets"); }
+                    catch (Exception ignored) {}
+                }
             }
             acceptConnectionHealth(client, generation, candidate.health, candidate.health.healthy());
             updateConnectionSettings(); return;
@@ -1213,28 +1240,34 @@ public final class MainActivity extends Activity {
         busy = false;
         routeLoginRequired = false;
         federationTargets = null;
-        if (candidate.sessionChecked && candidate.session == null) { forgetAccount(); clearWorkspaceData(true); }
-        if (retained && candidate.session != null && user.optString("id").equals(candidate.session.userID)) {
-            try {
-                JSONObject value = new JSONObject(candidate.session.json);
-                user = value.optJSONObject("user"); csrf = value.optString("csrf");
-                federationTargets = value.optJSONArray("federation_targets");
-            } catch (Exception error) { routeLoginRequired = true; csrf = ""; }
-            restoringSession = false;
-        } else if (retained) {
-            // An unavailable network has not rejected the login. Keep API access
-            // blocked until health recovers and /me validates this route's session.
-            routeLoginRequired = true; restoringSession = !candidate.sessionChecked; csrf = "";
-        }
-        else {
-            routeLoginRequired = false; restoringSession = true;
-            if (candidate.session != null) try {
-                JSONObject value = new JSONObject(candidate.session.json);
-                user = value.optJSONObject("user"); csrf = value.optString("csrf");
-                federationTargets = value.optJSONArray("federation_targets");
+        if (automaticFederationOnSelection && !freshSessionCheck) {
+            // 后台缓存只用于展示，切换标签时由 /me 决定是否保留会话或尝试互信登录。
+            restoringSession = true;
+            routeLoginRequired = retained;
+            csrf = "";
+        } else {
+            if (candidate.sessionChecked && candidate.session == null) { forgetAccount(); clearWorkspaceData(true); }
+            if (retained && candidate.session != null && user.optString("id").equals(candidate.session.userID)) {
+                try {
+                    JSONObject value = new JSONObject(candidate.session.json);
+                    user = value.optJSONObject("user"); csrf = value.optString("csrf");
+                    federationTargets = value.optJSONArray("federation_targets");
+                } catch (Exception error) { routeLoginRequired = true; csrf = ""; }
                 restoringSession = false;
-                restoreServerWorkspace();
-            } catch (Exception ignored) {}
+            } else if (retained) {
+                // 网络不可用不等于会话失效；等待 /me 核对后再恢复访问。
+                routeLoginRequired = true; restoringSession = !candidate.sessionChecked; csrf = "";
+            } else {
+                routeLoginRequired = false; restoringSession = true;
+                if (candidate.session != null) try {
+                    JSONObject value = new JSONObject(candidate.session.json);
+                    user = value.optJSONObject("user"); csrf = value.optString("csrf");
+                    federationTargets = value.optJSONArray("federation_targets");
+                    restoringSession = false;
+                    restoreServerWorkspace();
+                } catch (Exception ignored) {}
+            }
+            if (!restoringSession) automaticFederationOnSelection = false;
         }
         final int token = generation;
         if (connectionMode != ConnectionMode.DIRECT) monitor.start(client::connectionInfo, snapshot -> {
@@ -1326,6 +1359,13 @@ public final class MainActivity extends Activity {
         updateConnectionSettings();
         renderNavigation();
         if (restoringSession && !value.healthy()) updateConnectingPage();
+        if (foreground && federationEnrollment != null && !federationEnrollment.settingsShown
+                && federationEnrollment.endpoint.equals(new ConnectionPlan.Endpoint(connectionMode, origin))
+                && (value.problem.equals("login") || value.problem.equals("approval"))) {
+            federationEnrollment.settingsShown = true;
+            openSettings();
+            if (connectionSettings != null) connectionSettings.show(ConnectionMode.TAILSCALE);
+        }
         probeAlternate(value);
         if (!value.healthy()) {
             if (definitiveConnectionFailure(value)) clearWorkspaceNavigation();
@@ -1340,12 +1380,176 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void adoptRestoredSession(Client captured, JSONObject result, JSONObject account) {
+        automaticFederationOnSelection = false;
+        federationEnrollment = null;
+        sessionCheckBusy = false;
+        restoringSession = false; routeLoginRequired = false;
+        user = account;
+        csrf = result.optString("csrf");
+        federationTargets = result.optJSONArray("federation_targets");
+        rememberAccount(serverProfiles.active(), account);
+        rememberServerName(serverProfiles.active(), result);
+        recordActiveSession(captured, result);
+        restoreServerWorkspace();
+        render();
+        refreshWorkspace();
+        startWorkspace();
+    }
+
+    private static final class AutomaticFederationSource {
+        final ServerProfiles.Server server;
+        final ServerRuntime runtime;
+        final Client client;
+        final String account, csrf;
+        AutomaticFederationSource(ServerProfiles.Server server, ServerRuntime runtime, Client client, String account, String csrf) {
+            this.server = server; this.runtime = runtime; this.client = client; this.account = account; this.csrf = csrf;
+        }
+
+        boolean current() { return currentProfile() != null; }
+
+        JSONObject currentProfile() {
+            ConnectionRouter.Candidate<Client> candidate = runtime.candidate;
+            if (!server.enabled || candidate == null || candidate.client != client || candidate.session == null
+                    || !candidate.session.userID.equals(account) || !server.plan.origin(candidate.endpoint.mode).equals(candidate.endpoint.origin)) return null;
+            try {
+                JSONObject profile = new JSONObject(candidate.session.json);
+                return csrf.equals(profile.optString("csrf")) ? profile : null;
+            } catch (Exception ignored) { return null; }
+        }
+
+        boolean offers(String target) {
+            JSONObject profile = currentProfile();
+            return profile != null && NativeFederation.parse(profile.opt("federation_targets")).stream().anyMatch(peer -> peer.id.equals(target));
+        }
+    }
+
+    private AutomaticFederationSource federationSource(ServerProfiles.Server server) {
+        if (!server.enabled) return null;
+        ServerRuntime runtime = serverRuntimes.get(server.id);
+        ConnectionRouter.Candidate<Client> candidate = runtime == null ? null : runtime.candidate;
+        if (candidate == null || candidate.session == null || !server.plan.origin(candidate.endpoint.mode).equals(candidate.endpoint.origin)) return null;
+        try {
+            JSONObject profile = new JSONObject(candidate.session.json);
+            JSONObject account = profile.getJSONObject("user");
+            String auth = profile.optString("csrf");
+            if (!auth.isEmpty() && account.optString("source_server_id").isEmpty())
+                return new AutomaticFederationSource(server, runtime, candidate.client, candidate.session.userID, auth);
+        } catch (Exception ignored) { /* No verified local account. */ }
+        return null;
+    }
+
+    private static final class FederationEnrollment {
+        final AutomaticFederationSource source;
+        final String target;
+        final ConnectionPlan.Endpoint endpoint;
+        final boolean requirePublishedMode;
+        boolean settingsShown;
+        FederationEnrollment(AutomaticFederationSource source, String target, ConnectionPlan.Endpoint endpoint, boolean requirePublishedMode) {
+            this.source = source; this.target = target; this.endpoint = endpoint; this.requirePublishedMode = requirePublishedMode;
+        }
+    }
+
+    private boolean federationAuthorized(AutomaticFederationSource source, String target, ConnectionMode mode,
+                                         String address, String language, boolean requirePublishedMode) throws Exception {
+        JSONObject profile = (JSONObject) decodeResponse(source.client.request("GET", "/api/me", "", "", language));
+        JSONObject account = profile.getJSONObject("user");
+        Object id = account.opt("id"), csrf = profile.opt("csrf"), from = account.opt("source_server_id");
+        if (!(id instanceof String) || ((String) id).isEmpty() || !(csrf instanceof String) || ((String) csrf).isEmpty()
+                || from != null && !(from instanceof String)) throw new IOException("Invalid session response");
+        if (!source.account.equals(id) || !source.csrf.equals(csrf)) throw new IOException("Source session changed");
+        if (from != null && !((String) from).isEmpty()) return false;
+        JSONArray peers = (JSONArray) decodeResponse(source.client.request("GET", "/api/federation/targets", "", "", language));
+        return NativeFederation.authorizedRoute(peers, target, mode, address, requirePublishedMode);
+    }
+
+    private boolean startAutomaticFederation(Client destination, int token) {
+        if ((!automaticFederationOnSelection && federationEnrollment == null) || !foreground || destroyed || user != null) return false;
+        automaticFederationOnSelection = false;
+        final FederationEnrollment enrollment = federationEnrollment;
+        federationEnrollment = null;
+        ServerProfiles.Server server = serverProfiles.active();
+        if (server == null || !server.enabled) return false;
+        final ConnectionPlan plan = server.plan;
+        final ConnectionMode mode = connectionMode;
+        final String address = origin, language = locale();
+        final ServerRuntime targetRuntime = serverRuntimes.get(server.id);
+        final int targetSession = targetRuntime == null ? 0 : targetRuntime.sessionEpoch;
+        List<AutomaticFederationSource> sources = new ArrayList<>();
+        if (enrollment != null) {
+            if (!enrollment.endpoint.equals(new ConnectionPlan.Endpoint(mode, address))
+                    || !federationOwnerCurrent(enrollment.source, enrollment.target)) return false;
+            sources.add(enrollment.source);
+        } else {
+            for (ServerProfiles.Server other : serverProfiles.entries) {
+                if (other == server) continue;
+                AutomaticFederationSource source = federationSource(other);
+                if (source != null && source.client != destination) sources.add(source);
+            }
+        }
+        if (sources.isEmpty()) return false;
+        final int session = authEpoch;
+        sessionCheckBusy = true;
+        sessionCheckGeneration = token; sessionCheckAuth = session;
+        updateConnectingPage();
+        io.execute(() -> {
+            if (token != generation || session != authEpoch || destroyed) return;
+            AutomaticFederationSource chosen = null;
+            spoolnet.FederationSession result = null;
+            try {
+                // An explicit enrollment retry keeps the target identity selected before switching tabs.
+                String target = enrollment != null ? enrollment.target
+                        : ((JSONObject) decodeResponse(destination.request("GET", "/api/version", "", "", language))).optString("server_id");
+                if (NativeFederation.validID(target)) {
+                    for (AutomaticFederationSource source : sources) {
+                        if (token != generation || session != authEpoch || destroyed) return;
+                        try {
+                            if (!federationAuthorized(source, target, mode, address, language,
+                                    enrollment != null && enrollment.requirePublishedMode)) continue;
+                            if (chosen != null) { chosen = null; break; }
+                            chosen = source;
+                        } catch (ApiFailure error) {
+                            if (error.status != 401) { chosen = null; break; }
+                        } catch (Exception error) {
+                            // 无法核对全部候选时，不替用户选择账号。
+                            chosen = null; break;
+                        }
+                    }
+                    if (chosen != null && token == generation && session == authEpoch && !destroyed)
+                        result = chosen.client.prepareFederatedSession(destination, target, chosen.account, language);
+                }
+            } catch (Exception ignored) { /* 回到普通登录，不自动重试。 */ }
+            AutomaticFederationSource source = chosen;
+            spoolnet.FederationSession exchange = result;
+            post(token, () -> {
+                if (session != authEpoch || client != destination || user != null) return;
+                if (!foreground || !server.enabled || server.plan != plan || serverProfiles.active() != server
+                        || serverRuntimes.get(server.id) != targetRuntime || targetRuntime != null && targetRuntime.sessionEpoch != targetSession) {
+                    // 配置或目标会话已经变更，交给普通恢复流程重新核对。
+                    sessionCheckBusy = false;
+                    if (foreground && connected) restoreSession(destination, token);
+                    return;
+                }
+                if (exchange != null && source != null && (enrollment != null ? federationOwnerCurrent(source, enrollment.target)
+                        : serverProfiles.entries.contains(source.server) && serverRuntimes.get(source.server.id) == source.runtime && source.current())) {
+                    try {
+                        JSONObject profile = new JSONObject(exchange.activate());
+                        adoptRestoredSession(destination, profile, profile.getJSONObject("user"));
+                        return;
+                    } catch (Exception ignored) { /* 目标会话可能已被替换。 */ }
+                }
+                forgetAccount(); stopStreams(); clearWorkspace(); render();
+            });
+        });
+        return true;
+    }
+
     private void restoreSession(Client captured, int token) {
         final int session = authEpoch;
         if (sessionCheckBusy && sessionCheckGeneration == token && sessionCheckAuth == session) return;
         sessionCheckBusy = true;
         sessionCheckGeneration = token; sessionCheckAuth = session;
-        renderNavigation();
+        updateConnectingPage();
         final String loc = locale();
         io.execute(
                 () -> {
@@ -1359,22 +1563,7 @@ public final class MainActivity extends Activity {
                                 () -> {
                                     if (session != authEpoch) return;
                                     if (user != null && !user.optString("id").equals(account.optString("id"))) clearWorkspace();
-                                    sessionCheckBusy = false;
-                                    restoringSession = false; routeLoginRequired = false;
-                                    user = account;
-                                    csrf = result.optString("csrf");
-                                    federationTargets = result.optJSONArray("federation_targets");
-                                    rememberServerName(serverProfiles.active(), result);
-                                    ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
-                                    if (runtime != null && runtime.candidate != null && runtime.candidate.client == captured) {
-                                        ConnectionRouter.Candidate<Client> previous = runtime.candidate;
-                                        runtime.candidate = new ConnectionRouter.Candidate<>(previous.endpoint, captured, previous.health,
-                                                new ConnectionRouter.Session(account.optString("id"), result.toString()));
-                                    }
-                                    restoreServerWorkspace();
-                                    render();
-                                    refreshWorkspace();
-                                    startWorkspace();
+                                    adoptRestoredSession(captured, result, account);
                                 });
                     } catch (Exception e) {
                         post(
@@ -1383,12 +1572,18 @@ public final class MainActivity extends Activity {
                                     if (session != authEpoch) return;
                                     sessionCheckBusy = false;
                                     if (e instanceof ApiFailure && ((ApiFailure) e).status == 401) {
+                                        // Invalidate the rejected session before any asynchronous federation work.
                                         forgetAccount();
-                                        stopStreams(); clearWorkspace();
-                                        restoringSession = false;
-                                    } else
+                                        stopStreams();
+                                        if (user == null && (automaticFederationOnSelection || federationEnrollment != null)) {
+                                            clearWorkspaceData(true);
+                                            if (startAutomaticFederation(captured, token)) return;
+                                        }
+                                        clearWorkspace(); render();
+                                    } else {
                                         connectionMessage = e.getMessage();
-                                    if (restoringSession && connectingView != null) updateConnectingPage(); else render();
+                                        updateConnectingPage();
+                                    }
                                 });
                     }
                 });
@@ -1447,6 +1642,8 @@ public final class MainActivity extends Activity {
 
     private void clearWorkspace(boolean forget) {
         finishFederation();
+        automaticFederationOnSelection = false;
+        federationEnrollment = null;
         ++authEpoch;
         user = null;
         federationTargets = null;
@@ -1707,6 +1904,27 @@ public final class MainActivity extends Activity {
         server.serverName = name; saveServers();
     }
 
+    private void recordActiveSession(Client captured, JSONObject value) {
+        ServerRuntime runtime = serverRuntimes.get(serverProfiles.selected);
+        if (runtime == null) return;
+        ++runtime.sessionEpoch;
+        ConnectionRouter.Candidate<Client> previous = runtime.candidate;
+        if (user != null && previous != null && previous.client == captured) {
+            runtime.candidate = new ConnectionRouter.Candidate<>(previous.endpoint, captured, previous.health,
+                    new ConnectionRouter.Session(user.optString("id"), value.toString()));
+        }
+    }
+
+    private void rememberFederationTargets(ServerRuntime runtime, String account, JSONArray targets) throws Exception {
+        ConnectionRouter.Candidate<Client> previous = runtime == null ? null : runtime.candidate;
+        if (previous == null || previous.session == null || !previous.session.userID.equals(account)) return;
+        JSONObject profile = new JSONObject(previous.session.json).put("federation_targets", targets);
+        // 会话检查可能在 WebSocket 消息到达之前就已读取旧名单。
+        ++runtime.sessionEpoch;
+        runtime.candidate = new ConnectionRouter.Candidate<>(previous.endpoint, previous.client, previous.health,
+                new ConnectionRouter.Session(account, profile.toString()), previous.sessionChecked);
+    }
+
     private void forgetAccount() {
         workspaceUserID = ""; workspaceCached = false;
         forgetAccount(serverProfiles.active());
@@ -1717,9 +1935,12 @@ public final class MainActivity extends Activity {
         serverWorkspaces.remove(server.id);
         ServerRuntime runtime = serverRuntimes.get(server.id);
         stopServerFeed(runtime);
-        if (runtime != null && runtime.candidate != null) {
-            ConnectionRouter.Candidate<Client> previous = runtime.candidate;
-            runtime.candidate = new ConnectionRouter.Candidate<>(previous.endpoint, previous.client, previous.health, null, true);
+        if (runtime != null) {
+            ++runtime.sessionEpoch;
+            if (runtime.candidate != null) {
+                ConnectionRouter.Candidate<Client> previous = runtime.candidate;
+                runtime.candidate = new ConnectionRouter.Candidate<>(previous.endpoint, previous.client, previous.health, null, true);
+            }
         }
         if (server.account.length() != 0) { server.account = new JSONObject(); saveServers(); }
         if (!server.id.equals(serverProfiles.selected)) { updateConnectionSettings(); renderNavigation(); }
@@ -1783,7 +2004,11 @@ public final class MainActivity extends Activity {
                 && workspaceUserID.equals(serverProfiles.active().account.optString("id"));
     }
 
-    private void selectServer(String id) {
+    private void selectServer(String id) { selectServer(id, false); }
+
+    private void selectServer(String id, boolean automaticSignIn) { selectServer(id, automaticSignIn, null, ""); }
+
+    private void selectServer(String id, boolean automaticSignIn, FederationEnrollment enrollment, String federationTab) {
         if (serverProfiles.selected.equals(id)) return;
         ServerProfiles.Server next = null;
         for (ServerProfiles.Server server : serverProfiles.entries) if (server.id.equals(id)) next = server;
@@ -1802,13 +2027,16 @@ public final class MainActivity extends Activity {
         client = null; connectionRouter = null; origin = authURL = connectionMessage = networkMessage = "";
         connectionInfo = null; httpsState = "Not checked"; tailnetState = "Disconnected";
         serverProfiles.selected = next.id;
+        selectedFederationTab = federationTab;
+        automaticFederationOnSelection = automaticSignIn && next.enabled;
+        federationEnrollment = enrollment;
         connectionPlan = connectionDraft = next.plan;
         routeStates.clear(); nextRouteProbe = 0; routeFailures = 0;
         ServerRuntime runtime = serverRuntimes.get(next.id);
         if (runtime != null) { connectionRouter = runtime.router; routeStates.putAll(runtime.states); }
         restoreServerWorkspace();
         saveServers(); panel = "sidebar";
-        if (next.enabled && runtime != null && runtime.candidate != null) adoptConnection(runtime.candidate);
+        if (next.enabled && runtime != null && runtime.candidate != null) adoptConnection(runtime.candidate, !automaticSignIn && runtime.candidate.sessionChecked);
         else {
             render();
             if (next.enabled && !connectionPlan.ordered(null).isEmpty()) selectConnections(null, true);
@@ -1817,16 +2045,25 @@ public final class MainActivity extends Activity {
     }
 
     private List<NativeFederation.Tab> federationTabs() {
-        if (user == null || routeLoginRequired || restoringSession || client == null) return List.of();
-        return NativeFederation.tabs(serverProfiles, NativeFederation.parse(federationTargets));
+        List<NativeFederation.Tab> tabs = new ArrayList<>();
+        for (ServerProfiles.Server server : serverProfiles.entries) {
+            AutomaticFederationSource source = federationSource(server);
+            JSONObject profile = source == null ? null : source.currentProfile();
+            if (profile != null) tabs.addAll(NativeFederation.tabs(serverProfiles, server,
+                    NativeFederation.parse(profile.opt("federation_targets"))));
+        }
+        return tabs;
     }
 
     private void chooseServer(String key) {
         NativeFederation.Tab tab = NativeFederation.find(federationTabs(), key);
-        if (tab == null) { if (!key.startsWith(NativeFederation.PREFIX)) selectServer(key); return; }
+        if (tab == null) { if (!key.startsWith(NativeFederation.PREFIX)) selectServer(key, true); return; }
+        AutomaticFederationSource owner = federationSource(tab.source);
+        if (owner == null || !owner.offers(tab.target.id)) return;
+        if (tab.server != null) { openFederatedServer(owner, tab.target, tab.server, false); return; }
         if (federationRuntime != null) return;
-        if (tab.server != null) { openFederatedServer(tab.target, tab.server); return; }
-        if (tab.target.origin.isEmpty()) {
+        ConnectionPlan newPlan = tab.target.newPlan();
+        if (newPlan == null) {
             Toast.makeText(this, tr("Add a Relay connection or ask the administrator for a trusted HTTPS address.",
                     "请添加 Relay 连接，或请管理员配置可信的 HTTPS 地址。"), Toast.LENGTH_LONG).show();
             return;
@@ -1839,49 +2076,90 @@ public final class MainActivity extends Activity {
             confirm.dismiss();
             NativeFederation.Tab latest = NativeFederation.find(federationTabs(), key);
             if (destroyed || !foreground || source != authEpoch || view != generation || federationRuntime != null
-                    || latest == null || !latest.target.origin.equals(tab.target.origin)) return;
-            ServerProfiles.Server server = serverProfiles.add(tab.target.name);
-            server.plan = new ConnectionPlan(tab.target.origin, "", ConnectionMode.DIRECT);
+                    || !federationOwnerCurrent(owner, tab.target.id)
+                    || latest == null || !latest.target.origin.equals(tab.target.origin) || latest.target.clientMode != tab.target.clientMode) return;
+            if (latest.server != null) { openFederatedServer(owner, latest.target, latest.server, false); return; }
+            ServerProfiles.Server server = serverProfiles.add(latest.target.name);
+            server.plan = newPlan;
             saveServers();
-            openFederatedServer(tab.target, server);
+            openFederatedServer(owner, latest.target, server, true);
         }));
         confirm.show();
     }
 
-    private void openFederatedServer(NativeFederation.Target target, ServerProfiles.Server server) {
-        if (client == null || user == null || federationRuntime != null) return;
-        final Client source = client;
-        final int auth = authEpoch, view = generation;
-        final String account = user.optString("id"), language = locale();
+    private void openFederatedServer(AutomaticFederationSource owner, NativeFederation.Target target, ServerProfiles.Server server, boolean requirePublishedMode) {
+        if (federationRuntime != null || !foreground || destroyed || !federationOwnerCurrent(owner, target.id)) return;
         final ConnectionPlan plan = server.plan;
         ServerRuntime runtime = serverRuntimes.computeIfAbsent(server.id, key -> new ServerRuntime());
         ConnectionRouter.Candidate<Client> current = runtime.candidate;
         ConnectionMode mode = NativeFederation.route(server, target, current == null ? plan.selected : current.endpoint.mode);
         if (mode == null) return;
+        final ConnectionPlan.Endpoint endpoint = new ConnectionPlan.Endpoint(mode, plan.origin(mode));
+        final FederationEnrollment enrollment = new FederationEnrollment(owner, target.id, endpoint, requirePublishedMode);
+        final String tab = NativeFederation.tabKey(owner.server.id, target.id);
+        if (server == serverProfiles.active() && client != null) {
+            selectedFederationTab = tab;
+            renderNavigation();
+            // 当前页已经在目标上；复用原生会话恢复流程，不重新接管正在使用的线路。
+            if (user != null && !routeLoginRequired) return;
+            if (!endpoint.equals(new ConnectionPlan.Endpoint(connectionMode, origin))) return;
+            federationEnrollment = enrollment;
+            restoreSession(client, generation);
+            return;
+        }
+        final int auth = authEpoch, view = generation, targetSession = runtime.sessionEpoch;
+        final String language = locale();
         federationRuntime = runtime;
         final int attempt = ++federationAttempt;
         runtime.selecting = true;
         if (!server.enabled) { server.enabled = true; saveServers(); }
         Toast.makeText(this, ui.t("Signing in…"), Toast.LENGTH_SHORT).show();
-        ConnectionPlan.Endpoint endpoint = new ConnectionPlan.Endpoint(mode, plan.origin(mode));
-        routes(server).select(List.of(endpoint), "", true, true, new ConnectionRouter.Listener<Client>() {
+        // 先复核目标现有线路上的会话，即使该线路不允许收取互信票据。
+        List<ConnectionPlan.Endpoint> endpoints = current != null && current.session != null && !endpoint.equals(current.endpoint)
+                && plan.origin(current.endpoint.mode).equals(current.endpoint.origin) ? List.of(current.endpoint, endpoint) : List.of(endpoint);
+        routes(server).select(endpoints, "", true, true, new ConnectionRouter.Listener<Client>() {
             public void replacing(Client previous) { stopServerFeed(runtime); runtime.candidate = null; }
             public void sampled(ConnectionPlan.Endpoint route, ConnectionRecovery.Snapshot health, boolean signedIn) {
                 runtime.health.put(route, health);
-                runtime.states.put(route.mode, health.healthy() ? tr("Available", "可用") : tr("Unavailable", "不可用"));
+                runtime.states.put(route.mode, health.healthy() ? tr("Available", "可用")
+                        : health.problem.equals("login") ? tr("Tailscale sign-in required", "需要登录 Tailscale")
+                        : health.problem.equals("approval") ? tr("Device approval required", "等待设备批准") : tr("Unavailable", "不可用"));
             }
             public void selected(ConnectionRouter.Candidate<Client> candidate) {
                 if (federationAttempt != attempt) return;
-                runtime.candidate = candidate;
-                if (!federationSourceCurrent(attempt, source, auth, view, server, plan) || !candidate.health.healthy()) {
+                runtime.recordSample(candidate, runtime.sessionEpoch == targetSession);
+                if (!federationViewCurrent(attempt, auth, view, server, plan) || !federationOwnerCurrent(owner, target.id)
+                        || runtime.sessionEpoch != targetSession) {
                     finishFederationFailure(attempt, auth, view);
                     return;
                 }
+                if (candidate.session != null) {
+                    finishFederation();
+                    selectServer(server.id, false, null, tab);
+                    return;
+                }
+                if (!candidate.endpoint.equals(endpoint)) {
+                    finishFederationFailure(attempt, auth, view);
+                    return;
+                }
+                if (!candidate.health.healthy()) {
+                    if (mode == ConnectionMode.TAILSCALE && !candidate.health.problem.equals("endpoint")) {
+                        finishFederation();
+                        selectServer(server.id, false, enrollment, tab);
+                    } else finishFederationFailure(attempt, auth, view);
+                    return;
+                }
+                if (!candidate.sessionChecked) { finishFederationFailure(attempt, auth, view); return; }
                 io.execute(() -> {
                     try {
-                        spoolnet.FederationSession result = source.prepareFederatedSession(candidate.client, target.id, account, language);
+                        if (generation != view || authEpoch != auth || destroyed) return;
+                        if (!federationAuthorized(owner, target.id, mode, endpoint.origin, language, requirePublishedMode))
+                            throw new IOException("Trusted server route changed");
+                        if (generation != view || authEpoch != auth || destroyed) return;
+                        spoolnet.FederationSession result = owner.client.prepareFederatedSession(candidate.client, target.id, owner.account, language);
                         main.post(() -> {
-                            if (!federationSourceCurrent(attempt, source, auth, view, server, plan) || runtime.candidate != candidate) {
+                            if (!federationViewCurrent(attempt, auth, view, server, plan) || !federationOwnerCurrent(owner, target.id)
+                                    || runtime.sessionEpoch != targetSession || runtime.candidate != candidate) {
                                 finishFederationFailure(attempt, auth, view);
                                 return;
                             }
@@ -1890,11 +2168,10 @@ public final class MainActivity extends Activity {
                                 JSONObject person = profile.getJSONObject("user");
                                 runtime.candidate = new ConnectionRouter.Candidate<>(candidate.endpoint, candidate.client, candidate.health,
                                         new ConnectionRouter.Session(person.getString("id"), profile.toString()));
-                                server.plan = plan.select(candidate.endpoint.mode);
                                 rememberAccount(server, person);
                                 rememberServerName(server, profile);
                                 finishFederation();
-                                selectServer(server.id);
+                                selectServer(server.id, false, null, tab);
                             } catch (Exception error) { finishFederationFailure(attempt, auth, view); }
                         });
                     } catch (Exception error) { main.post(() -> finishFederationFailure(attempt, auth, view)); }
@@ -1904,10 +2181,13 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private boolean federationSourceCurrent(int attempt, Client source, int auth, int view, ServerProfiles.Server server, ConnectionPlan plan) {
+    private boolean federationOwnerCurrent(AutomaticFederationSource owner, String target) {
+        return serverProfiles.entries.contains(owner.server) && serverRuntimes.get(owner.server.id) == owner.runtime && owner.offers(target);
+    }
+
+    private boolean federationViewCurrent(int attempt, int auth, int view, ServerProfiles.Server server, ConnectionPlan plan) {
         return federationAttempt == attempt && federationRuntime != null && !destroyed && foreground
-                && generation == view && authEpoch == auth && client == source && user != null && !routeLoginRequired
-                && server.enabled && server.plan == plan && serverProfiles.entries.contains(server);
+                && generation == view && authEpoch == auth && server.enabled && server.plan == plan && serverProfiles.entries.contains(server);
     }
 
     private void finishFederation() {
@@ -2074,7 +2354,7 @@ public final class MainActivity extends Activity {
                 probeServer(server, true);
             }
             public void event(String kind, String raw) {
-                if (!java.util.Arrays.asList("navigation", "agents", "profiles", "desktop", "presence", "server", "session_notification").contains(kind)) return;
+                if (!java.util.Arrays.asList("navigation", "agents", "profiles", "desktop", "presence", "server", "session_notification", "federation_targets").contains(kind)) return;
                 EventStream stream = feed.stream;
                 workspaceDecode.execute(() -> {
                     if (destroyed) return;
@@ -2131,6 +2411,12 @@ public final class MainActivity extends Activity {
         else if (kind.equals("desktop") && value instanceof JSONObject) feed.desktopAvailable = ((JSONObject) value).optBoolean("available");
         else if (kind.equals("presence") && value instanceof JSONArray) feed.presence = (JSONArray) value;
         else if (kind.equals("server") && value instanceof JSONObject) rememberServerName(server, (JSONObject) value);
+        else if (kind.equals("federation_targets") && value instanceof JSONArray) {
+            try {
+                rememberFederationTargets(runtime, account, (JSONArray) value);
+                renderNavigation();
+            } catch (Exception ignored) { /* 保留上一次有效的会话快照。 */ }
+        }
         else if (kind.equals("session_notification") && value instanceof JSONObject) feed.cache.notifications.receive((JSONObject) value, feed.userID, "");
     }
 
@@ -2176,13 +2462,15 @@ public final class MainActivity extends Activity {
             if (age >= 0 && age < ConnectionRecovery.QUIET_CHECK_MILLIS) return;
         }
         runtime.selecting = true;
-        String account = runtime.candidate == null || runtime.candidate.session == null ? "" : runtime.candidate.session.userID;
+        final int sessionEpoch = runtime.sessionEpoch;
+        String account = current == null || current.session == null ? "" : current.session.userID;
         boolean awaitingLogin = current != null && (current.health.problem.equals("login") || current.health.problem.equals("approval")
                 || current.health.problem.equals("starting") || current.health.healthy() && current.session == null);
         List<ConnectionPlan.Endpoint> endpoints = server.plan.autoSwitch && !awaitingLogin
                 ? server.plan.ordered(current == null ? null : current.endpoint.mode)
                 : server.plan.candidates(current == null ? server.plan.selected : current.endpoint.mode);
-        routes(server).select(endpoints, account, false, true, new ConnectionRouter.Listener<Client>() {
+        // 所有可用线路都没有原会话时，也要接收明确的未登录结果，清理旧缓存。
+        routes(server).select(endpoints, account, true, true, new ConnectionRouter.Listener<Client>() {
             public void replacing(Client previous) { stopServerFeed(runtime); runtime.candidate = null; }
             public void sampled(ConnectionPlan.Endpoint endpoint, ConnectionRecovery.Snapshot health, boolean signedIn) {
                 runtime.health.keySet().retainAll(server.plan.ordered(null));
@@ -2190,17 +2478,20 @@ public final class MainActivity extends Activity {
                 runtime.states.put(endpoint.mode, health.healthy() ? tr("Available", "可用") : tr("Unavailable", "不可用"));
                 updateConnectionSettings(); renderNavigation();
             }
-            public void selected(ConnectionRouter.Candidate<Client> candidate) {
+            public void selected(ConnectionRouter.Candidate<Client> sample) {
                 runtime.selecting = false;
                 if (!server.enabled || destroyed) return;
-                if (runtime.candidate == null || runtime.candidate.client != candidate.client) runtime.socketFailed = false;
-                runtime.candidate = candidate;
-                if (candidate.session != null) try {
+                boolean currentSession = runtime.sessionEpoch == sessionEpoch;
+                boolean freshSessionCheck = currentSession && sample.sessionChecked;
+                ConnectionRouter.Candidate<Client> candidate = runtime.recordSample(sample, currentSession);
+                boolean selected = server.id.equals(serverProfiles.selected);
+                if (freshSessionCheck && candidate.session != null) try {
                     JSONObject value = new JSONObject(candidate.session.json);
-                    rememberAccount(server, value.optJSONObject("user")); rememberServerName(server, value);
+                    rememberServerName(server, value);
+                    if (!selected) rememberAccount(server, value.optJSONObject("user"));
                 } catch (Exception ignored) {}
-                else if (candidate.sessionChecked && !server.id.equals(serverProfiles.selected)) forgetAccount(server);
-                if (server.id.equals(serverProfiles.selected)) { routeStates.putAll(runtime.states); adoptConnection(candidate); }
+                else if (freshSessionCheck && !selected) forgetAccount(server);
+                if (selected) { routeStates.putAll(runtime.states); adoptConnection(candidate, freshSessionCheck); }
                 else syncServerFeed(server);
                 renderNavigation();
             }
@@ -2566,7 +2857,7 @@ public final class MainActivity extends Activity {
         restoreSidebarPreferences();
         sidebarState.select(projectID, chatID, projects, chats);
         if (!panel.equals("sidebar") || sidebar == null) return;
-        sidebar.servers(serverProfiles, serverConnectionStates(), this::chooseServer, () -> editServer(true), federationTabs());
+        sidebar.servers(serverProfiles, serverConnectionStates(), this::chooseServer, () -> editServer(true), federationTabs(), selectedFederationTab);
         boolean signedIn = user != null && !routeLoginRequired;
         boolean showWorkspace = signedIn || hasWorkspaceCache();
         boolean networkPending = routeSelecting || connecting && !httpsState.equals("Failed");
@@ -4408,7 +4699,7 @@ public final class MainActivity extends Activity {
         if (kind.equals("ready")) { setWorkspaceConnected(true); return; }
         if (kind.equals("transport_error")) { if (workspaceEvents != null) workspaceEvents.failed(); return; }
         if (kind.equals("auth_expired")) { expire(); return; }
-        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result", "desktop", "server", "session_notification").contains(kind)) return;
+        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result", "desktop", "server", "session_notification", "federation_targets").contains(kind)) return;
         Object value = new JSONTokener(raw).nextValue();
         applyWorkspaceEvent(kind, value, epoch);
     }
@@ -4418,7 +4709,7 @@ public final class MainActivity extends Activity {
             try { workspaceEvent(kind, raw, epoch); } catch (Exception error) { toast(error); }
             return;
         }
-        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result", "desktop", "server", "session_notification").contains(kind)) return;
+        if (!java.util.Arrays.asList("navigation", "agents", "profiles", "presence", "chat_groups", "direct_message", "group_message", "direct_message_error", "group_result", "desktop", "server", "session_notification", "federation_targets").contains(kind)) return;
         final int token = generation, session = authEpoch;
         final ServerProfiles.Server server = serverProfiles.active();
         final Client sourceClient = client;
@@ -4449,6 +4740,13 @@ public final class MainActivity extends Activity {
             case "server":
                 rememberServerName(serverProfiles.active(), (JSONObject) value);
                 renderNavigation();
+                break;
+            case "federation_targets":
+                if (value instanceof JSONArray && !routeLoginRequired) {
+                    federationTargets = (JSONArray) value;
+                    rememberFederationTargets(serverRuntimes.get(serverProfiles.selected), user.optString("id"), federationTargets);
+                    renderNavigation();
+                }
                 break;
             case "desktop":
                 setDesktopAvailable(((JSONObject) value).optBoolean("available"));

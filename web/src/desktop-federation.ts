@@ -1,6 +1,11 @@
 import { appURL } from "./app-path";
 
-export type FederationTarget = { id: string; name: string; clientURL?: string };
+export type FederationTarget = {
+  id: string;
+  name: string;
+  clientURL?: string;
+  clientMode?: string;
+};
 
 // 只用于匹配已有标签；实际登录仍由 Desktop 原生端重新核验。
 export function federationClientURL(value: unknown): string | undefined {
@@ -34,9 +39,12 @@ export async function loadFederationTargets(
     redirect: "error",
     signal,
   });
-  if (!response.ok) return [];
-  const value: unknown = await response.json().catch(() => null);
-  if (!Array.isArray(value)) return [];
+  if (!response.ok) throw new Error("Could not load federation targets");
+  return parseFederationTargets(await response.json()) ?? [];
+}
+
+export function parseFederationTargets(value: unknown): FederationTarget[] | undefined {
+  if (!Array.isArray(value)) return;
   const targets: FederationTarget[] = [];
   for (const item of value.slice(0, 64)) {
     if (
@@ -45,15 +53,15 @@ export async function loadFederationTargets(
       typeof item.id !== "string" ||
       !/^[a-z2-7]{52}$/.test(item.id) ||
       typeof item.name !== "string" ||
+      (item.client_mode !== undefined && typeof item.client_mode !== "string") ||
       targets.some((target) => target.id === item.id)
     )
       continue;
     targets.push({
       id: item.id,
       name: item.name.trim().slice(0, 80) || item.id.slice(0, 8),
-      clientURL: federationClientURL(
-        "client_url" in item ? item.client_url : undefined,
-      ),
+      clientURL: federationClientURL(item.client_url),
+      ...(item.client_mode ? { clientMode: item.client_mode } : {}),
     });
   }
   return targets;

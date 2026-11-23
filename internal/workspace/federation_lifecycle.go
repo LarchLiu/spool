@@ -157,10 +157,21 @@ func (s *Store) saveFederationUser(input UserInput, source string) (User, error)
 		return User{}, err
 	}
 	defer tx.Rollback()
-	v := User{ID: input.ID, Disabled: input.Disabled, SourceServerID: source, RemoteDesktop: input.RemoteDesktop, ADBBridge: input.ADBBridge}
-	if err := tx.QueryRow(`SELECT u.username,u.nickname,u.created_at,COALESCE(v.style,?),COALESCE(v.seed,'') FROM users u LEFT JOIN user_avatars v ON v.user_id=u.id WHERE u.id=?`, DefaultAvatar().Style, v.ID).Scan(&v.Username, &v.Nickname, &v.CreatedAt, &v.Avatar.Style, &v.Avatar.Seed); err != nil {
+	v := User{ID: input.ID, SourceServerID: source}
+	if err := tx.QueryRow(`SELECT u.username,u.nickname,u.created_at,u.disabled,COALESCE(v.style,?),COALESCE(v.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0)
+		FROM users u LEFT JOIN user_avatars v ON v.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id WHERE u.id=?`, DefaultAvatar().Style, v.ID).
+		Scan(&v.Username, &v.Nickname, &v.CreatedAt, &v.Disabled, &v.Avatar.Style, &v.Avatar.Seed, &v.RemoteDesktop, &v.ADBBridge); err != nil {
 		return User{}, err
 	}
+	// Older management clients send the current profile, while permissions-only
+	// updates can omit it. A rejected or unchanged update must not sign users out.
+	if (input.Username != "" && input.Username != v.Username) || (input.Nickname != "" && input.Nickname != v.Nickname) {
+		return User{}, errors.New("External account usernames and display names cannot be edited locally.")
+	}
+	if input.Disabled == v.Disabled && input.RemoteDesktop == v.RemoteDesktop && input.ADBBridge == v.ADBBridge {
+		return v, nil
+	}
+	v.Disabled, v.RemoteDesktop, v.ADBBridge = input.Disabled, input.RemoteDesktop, input.ADBBridge
 	if _, err = tx.Exec(`UPDATE users SET disabled=? WHERE id=?`, v.Disabled, v.ID); err != nil {
 		return User{}, err
 	}

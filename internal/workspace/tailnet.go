@@ -205,8 +205,48 @@ func (s *Service) RegisterTSNetAuthKey(ctx context.Context, key string) error {
 	return nil
 }
 
-// Keep the node alive for browser authorization while its HTTPS entry is off.
-// Activation still belongs to the normal explicit Apply action.
+// Only locally saved routes can require an outbound node. Merely receiving a
+// trust request must not bring up Tailscale or enable an HTTPS listener.
+func (s *Store) federationNeedsOutboundTailnet() (bool, error) {
+	var needed bool
+	err := s.db.QueryRow(`SELECT EXISTS(
+		SELECT 1 FROM federation_peers WHERE json_extract(config,'$.transport')='tailscale'
+		UNION ALL
+		SELECT 1 FROM federation_trust_routes t JOIN federation_trust_requests r ON r.id=t.request_id
+		WHERE r.outgoing=1 AND r.decision='' AND r.expires_at>? AND json_extract(t.config,'$.transport')='tailscale'
+	)`, time.Now().Unix()).Scan(&needed)
+	return needed, err
+}
+
+func (s *Service) ensureFederationTailnetLocked(settings Settings) {
+	if settings.TSNetEnabled {
+		return
+	}
+	if runtime := s.tailnet; runtime != nil && runtime.loginOnly && runtime.ctx.Err() == nil && runtime.snapshot().State != "Error" {
+		if s.app != nil && runtime.dial != nil {
+			s.app.federationTailnet.Store(runtime)
+		}
+		return
+	}
+	if needed, err := s.Store.federationNeedsOutboundTailnet(); err != nil {
+		log.Printf("event=federation_tailnet_routes_unavailable error=%q", err)
+	} else if needed {
+		s.startTailnetLoginLocked(settings)
+	}
+}
+
+// EnsureFederationTailnet applies a newly saved control route without changing
+// the running service's ingress configuration or forcing a new login.
+func (s *Service) EnsureFederationTailnet() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.closed && s.app != nil {
+		s.ensureFederationTailnetLocked(s.activeSettings)
+	}
+}
+
+// Keep the node alive for outbound calls and browser authorization while the
+// HTTPS entry is off. Publishing an ingress still requires explicit Apply.
 func (s *Service) startTailnetLoginLocked(settings Settings) {
 	if s.tailnet != nil {
 		s.tailnet.cancel()
@@ -243,6 +283,19 @@ func (s *Service) startTailnetLoginLocked(settings Settings) {
 			return
 		}
 		defer node.Close()
+		// 已登录的本机节点也可用于跨服出站，不必开启入站 HTTPS。
+		if dialer, ok := node.(interface {
+			DialContext(context.Context, string, string) (net.Conn, error)
+		}); ok {
+			s.mu.Lock()
+			if ctx.Err() == nil && s.tailnet == runtime {
+				runtime.dial = dialer.DialContext
+				if s.app != nil {
+					s.app.federationTailnet.Store(runtime)
+				}
+			}
+			s.mu.Unlock()
+		}
 		runtime.setLogin(node.ReauthenticateURL)
 		<-ctx.Done()
 	}()
@@ -263,7 +316,7 @@ func (s *Service) TSNetLoginURL(ctx context.Context) (string, error) {
 			s.mu.Unlock()
 			return "", err
 		}
-		if !settings.TSNetEnabled && (runtime == nil || !runtime.loginOnly || runtime.ctx.Err() != nil || runtime.snapshot().State == "Error") {
+		if runtime == nil || runtime.ctx.Err() != nil || (!settings.TSNetEnabled && (!runtime.loginOnly || runtime.snapshot().State == "Error")) {
 			s.startTailnetLoginLocked(settings)
 			runtime = s.tailnet
 		}

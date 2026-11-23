@@ -67,7 +67,7 @@ func TestFederationRelayUsesControlOnlyAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	bPeer.Users = []string{alice.ID}
-	if err := aStore.SaveFederationPeer(bPeer); err != nil {
+	if err := seedLegacyFederationPeer(aStore, bPeer); err != nil {
 		t.Fatal(err)
 	}
 	broker, token := testRelayBroker(t)
@@ -135,7 +135,7 @@ func TestFederationRelayUsesControlOnlyAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := bStore.SaveFederationPeer(aPeer); err != nil {
+	if err := seedLegacyFederationPeer(bStore, aPeer); err != nil {
 		t.Fatal(err)
 	}
 	cookie, _ := loginRequest(t, a, alice.Username)
@@ -151,14 +151,38 @@ func TestFederationRelayUsesControlOnlyAdmission(t *testing.T) {
 	if err != nil || result.Subject == nil || result.Subject.ID != alice.ID {
 		t.Fatalf("paired servers cannot redeem through relay with Web and device admission off: %v", err)
 	}
+	// 未配对服务器只使用独立 Relay TLS 名称提交及查询申请。
+	if err := aStore.SetFederationTrustInbox(true); err != nil {
+		t.Fatal(err)
+	}
+	relayCode, err := p.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := NewApp(otherStore, nil, "", "")
+	source := &Service{Store: otherStore, app: other, ctx: t.Context()}
+	preview, err := source.PreviewFederationTrust(t.Context(), "relay", relayCode)
+	if err != nil || preview.ID != local.ID() || !preview.Accepting {
+		t.Fatalf("unpaired Relay client did not reach the trust inbox: %+v: %v", preview, err)
+	}
+	if err := source.SubmitFederationTrust(t.Context(), "relay", relayCode, preview.ID); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := aStore.FederationTrustSnapshot()
+	if err != nil || len(pending.Requests) != 1 || pending.Requests[0].Outgoing {
+		t.Fatalf("Relay application did not reach the inbox: %+v, %v", pending, err)
+	}
 	for _, tc := range []struct {
 		name  string
 		store *Store
 		path  string
 		want  int
+		trust bool
 	}{
-		{"paired server on business path", bStore, "/api/me", http.StatusNotFound},
-		{"unpaired server on control path", otherStore, FederationControlPath, 0},
+		{"paired server on business path", bStore, "/api/me", http.StatusNotFound, false},
+		{"unpaired server on control path", otherStore, FederationControlPath, 0, false},
+		{"application client on business path", otherStore, "/api/me", http.StatusNotFound, true},
+		{"application client on control path", otherStore, FederationControlPath, http.StatusNotFound, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			key, err := tc.store.federationKey()
@@ -170,7 +194,11 @@ func TestFederationRelayUsesControlOnlyAdmission(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer dial.Close()
-			dial.TLSConfig, err = relay.FederationTLSConfig(p, key)
+			makeTLS := relay.FederationTLSConfig
+			if tc.trust {
+				makeTLS = relay.FederationTrustTLSConfig
+			}
+			dial.TLSConfig, err = makeTLS(p, key)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -194,6 +222,15 @@ func TestFederationRelayUsesControlOnlyAdmission(t *testing.T) {
 				t.Fatalf("status=%d, want=%d", res.StatusCode, tc.want)
 			}
 		})
+	}
+	if err := aStore.DecideFederationTrust(pending.Requests[0].ID, true, FederationTrustApproval{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := source.CheckFederationTrust(t.Context(), pending.Requests[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if saved, err := federationPeer(otherStore.db, local.ID()); err != nil || saved.Transport != "relay" || saved.RelayCode != relayCode || saved.ClientURL != "" {
+		t.Fatalf("Relay trust did not retain a distinct control route: %v", err)
 	}
 }
 
