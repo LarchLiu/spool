@@ -26,7 +26,7 @@ func workspaceGitIndex(ctx context.Context, directory string) string {
 	return fmt.Sprintf("%x", sha256.Sum256(body))
 }
 
-// Commit subjects and authors follow the same file boundaries as previews.
+// Commit information follows the same file boundaries as previews.
 // Scan past commits that only touch protected files or nested private projects.
 func workspaceGitLastCommit(ctx context.Context, directory string, allowed func(string) bool) *workspaceGitCommit {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -59,7 +59,11 @@ func workspaceGitLastCommit(ctx context.Context, directory string, allowed func(
 			}
 			if visible {
 				stamp, _ := strconv.ParseInt(fields[i+3], 10, 64)
-				return &workspaceGitCommit{ID: id, Subject: fields[i+1], Author: fields[i+2], Time: stamp}
+				latest := &workspaceGitCommit{ID: id, Subject: fields[i+1], Author: fields[i+2], Time: stamp}
+				if message, err := readWorkspaceGit(ctx, directory, 4*1024*1024, "show", "--no-patch", "--format=%B", id, "--"); err == nil {
+					latest.Message = strings.TrimRight(string(message), "\r\n")
+				}
+				return latest
 			}
 		}
 		if count < workspaceGitHistoryPage {

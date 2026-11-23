@@ -92,13 +92,22 @@ func TestWorkspaceGitOperationsCompleteCommitWorkflow(t *testing.T) {
 	writeSessionFile(t, f.directory, "a.txt", "initial\n")
 	requireGitOperation(t, f.operation("stage", "", "a.txt"))
 	requireGitOperation(t, f.operation("commit", "First commit\n\nMessage body"))
-	if view := f.view(); view.LastCommit == nil || view.LastCommit.Subject != "First commit" || !view.Writable {
+	view := f.view()
+	if view.LastCommit == nil || view.LastCommit.Subject != "First commit" || view.LastCommit.Message != "First commit\n\nMessage body" || !view.Writable {
 		t.Fatalf("commit metadata: %+v", view)
+	}
+	response := apiRequest(f.app, "GET", f.base+"?view=history", "", f.cookie, "")
+	var history workspaceGitView
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &history) != nil || len(history.Commits) != 1 {
+		t.Fatalf("commit history: %d %s", response.Code, response.Body.String())
+	}
+	if history.Commits[0].ID != view.LastCommit.ID || history.Commits[0].Message != view.LastCommit.Message {
+		t.Fatalf("latest commit and history information differ: %+v, %+v", view.LastCommit, history.Commits[0])
 	}
 	writeSessionFile(t, f.directory, "a.txt", "staged\n")
 	requireGitOperation(t, f.operation("stage", "", "a.txt"))
 	writeSessionFile(t, f.directory, "a.txt", "working\n")
-	view := f.view()
+	view = f.view()
 	if len(view.Files) != 1 || !view.Files[0].Staged || !view.Files[0].Unstaged || view.Files[0].StagedAdditions != 1 || view.Files[0].UnstagedDeletions != 1 {
 		t.Fatalf("partial state: %+v", view.Files)
 	}
@@ -490,9 +499,10 @@ func TestWorkspaceGitOperationsPushPinsReviewedCommit(t *testing.T) {
 func TestWorkspaceGitLastCommitRespectsDirectoryAndProjectBoundaries(t *testing.T) {
 	t.Parallel()
 	f := newGitOperationFixture(t)
+	publicMessage := "Public project update\n\nVisible commit details.\n第二行提交说明\n\nFinal paragraph."
 	writeSessionFile(t, f.directory, "public/a.txt", "public\n")
 	requireGitOperation(t, f.operation("stage", "", "public/a.txt"))
-	requireGitOperation(t, f.operation("commit", "Public project update"))
+	requireGitOperation(t, f.operation("commit", publicMessage))
 	publicHead := f.view().Commit
 	writeSessionFile(t, f.directory, "private/secret.txt", "private\n")
 	sessionFileGit(t, f.directory, "add", "private/secret.txt")
@@ -514,7 +524,7 @@ func TestWorkspaceGitLastCommitRespectsDirectoryAndProjectBoundaries(t *testing.
 	sessionFileGit(t, f.directory, "commit", "-m", "Protected configuration update")
 	f.base = "/api/projects/" + public.ID + "/git"
 	view := f.view()
-	if view.LastCommit == nil || view.LastCommit.ID != publicHead || view.LastCommit.Subject != "Public project update" {
+	if view.LastCommit == nil || view.LastCommit.ID != publicHead || view.LastCommit.Subject != "Public project update" || view.LastCommit.Message != publicMessage {
 		t.Fatalf("latest commit crossed the visible file boundary: %+v", view.LastCommit)
 	}
 	// A directory with no accessible committed files has no latest commit.

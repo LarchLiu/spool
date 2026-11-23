@@ -40,6 +40,10 @@ import {
 } from "./git-panel-state";
 import "./git-panel.css";
 
+function gitCommitTooltip(commit: GitCommit) {
+  return `${commit.id}\n\n${commit.message || commit.subject}`;
+}
+
 function GitCommitBadges({ commit, t }: { commit: GitCommit; t: Translator }) {
   return (
     <>
@@ -783,7 +787,7 @@ export function GitPanel({
                           setData(undefined);
                           setSelected("");
                         }}
-                        title={`${item.id}\n\n${item.message || item.subject}`}
+                        title={gitCommitTooltip(item)}
                       >
                         <span className="git-history-title">
                           <strong>{item.subject}</strong>
@@ -1065,11 +1069,7 @@ export function GitPanel({
       {mode === "changes" && data?.repository && (
         <div
           className="git-last-commit"
-          title={
-            data.last_commit
-              ? `${data.last_commit.id} · ${data.last_commit.author}`
-              : ""
-          }
+          title={data.last_commit ? gitCommitTooltip(data.last_commit) : ""}
         >
           {data.last_commit ? (
             <>

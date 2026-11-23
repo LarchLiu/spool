@@ -58,6 +58,7 @@ try {
       let fail = false, blocked;
       let fileRevision = 0, diffRevision = 0;
       let staged = true, unstaged = true, notes = true, lastSubject = "Latest commit summary", detailPushed = false;
+      let lastMessage = `${lastSubject}\n\nPreserve the complete latest commit message.\n第二行提交说明\n\nFinal paragraph.`;
       const mutations = [];
       await page.route("**/api/**", async route => {
         const url = new URL(route.request().url()), scope = url.searchParams.get("workspace"); requests.push(url.pathname + url.search);
@@ -70,7 +71,7 @@ try {
           assert.equal(body.head, commit);
           if (body.action === "stage") { staged = true; unstaged = false; }
           if (body.action === "unstage") { staged = false; unstaged = true; }
-          if (body.action === "commit") { lastSubject = body.message; staged = false; }
+          if (body.action === "commit") { lastMessage = body.message; lastSubject = body.message.split("\n")[0]; staged = false; }
           if (body.action === "discard") {
             if (body.paths.includes("src/example.ts")) unstaged = false;
             if (body.paths.includes("notes.txt")) notes = false;
@@ -85,7 +86,7 @@ try {
           return json({ path: "src/example.ts", patch: `diff --git a/src/example.ts b/src/example.ts\n--- a/src/example.ts\n+++ b/src/example.ts\n@@ -1,2 +1,3 @@\n first\n-old\n+new-${scope === "/repo/feature" ? "feature" : "main"}\n+revision-${diffRevision}\n`, truncated: false });
         }
         const base = { repository: true, writable: true, index: "index-snapshot", commit, remote: "origin", remote_branch: "dev", remote_allowed: true, upstream: "origin/dev", ahead: 2, behind: 0,
-          last_commit: { id: commit, subject: lastSubject, author: "Developer", time: 1794900000 },
+          last_commit: { id: commit, subject: lastSubject, message: lastMessage, author: "Developer", time: 1794900000 },
           branch: scope === "/repo/feature" ? "feature/git" : "dev", files: [], commits: [] };
         if (url.searchParams.get("view") === "history") return json({ ...base, commits: [{ id: commit, subject: "Fix Git panel preview", message: detailMessage, author: "Developer", time: 1794900000, tags: ["v1.2.0"], unpushed: true }] });
         return json({ ...base, ...(url.searchParams.has("commit") ? { selected_commit: {
@@ -182,7 +183,12 @@ try {
       assert.match(await confirmation.innerText(), /Staged changes are kept/);
       await page.screenshot({ path: path.join(output, `discard-${width}-${theme}.png`) });
       await page.keyboard.press("Escape"); assert.equal(mutations.length, 0, "Cancel must not write to Git");
-      await page.locator(".git-last-commit").getByText("Latest commit summary", { exact: true }).waitFor();
+      const latestCommit = page.locator(".git-last-commit");
+      await latestCommit.getByText("Latest commit summary", { exact: true }).waitFor();
+      await latestCommit.locator("span").hover();
+      assert.equal(await latestCommit.getAttribute("title"), `${commit}\n\n${lastMessage}`, "Latest commit hover includes the full SHA and complete message, like History");
+      await latestCommit.locator("code").hover();
+      assert.equal(await latestCommit.getAttribute("title"), `${commit}\n\n${lastMessage}`, "Hovering the short SHA shows the same commit information");
       const commitInput = page.getByRole("textbox", { name: "Commit message", exact: true });
       assert.ok(await commitInput.isVisible(), "The commit input is expanded by default");
       assert.equal(await commitInput.inputValue(), "");
@@ -335,6 +341,7 @@ try {
       await commitInput.fill("Commit from Git panel");
       await commitInput.press(width === 1280 ? "Meta+Enter" : "Control+Enter");
       await page.locator(".git-last-commit").getByText("Commit from Git panel", { exact: true }).waitFor();
+      assert.equal(await latestCommit.getAttribute("title"), `${commit}\n\nCommit from Git panel`, "Latest commit hover updates after a commit");
       assert.ok(await commitInput.isVisible(), "A successful commit keeps the input expanded");
       assert.equal(await commitInput.inputValue(), "", "A successful commit clears its message");
       await page.getByRole("button", { name: "Git remote actions", exact: true }).click();
