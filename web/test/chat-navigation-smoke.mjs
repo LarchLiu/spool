@@ -158,7 +158,6 @@ try {
   ]);
   await page.getByRole("tab", { name: "Changes", exact: true }).click();
   await page.locator(".git-file-row").waitFor();
-  await page.getByRole("button", { name: "Expand commit area", exact: true }).click();
   await page.getByRole("textbox", { name: "Commit message", exact: true }).fill("Unsent commit draft");
   offset = requests.length;
   await navigate("alpha-chat");
@@ -166,7 +165,7 @@ try {
   assert.ok(requests.slice(offset).every(url => !url.includes("/git?")), "Commit drafts survive without refreshing Git");
   await navigate("gamma");
   await page.locator(".git-summary").getByText("feature", { exact: true }).waitFor();
-  assert.equal(await page.getByRole("textbox", { name: "Commit message", exact: true }).count(), 0, "A different directory resets Git state");
+  assert.equal(await page.getByRole("textbox", { name: "Commit message", exact: true }).inputValue(), "", "A different directory opens an empty commit input");
   await navigate("alpha-chat");
   offset = requests.length;
   await navigate("delta");
@@ -224,7 +223,6 @@ try {
   assertNoDirectoryReload(offset);
   assert.ok(await page.locator(".git-diff-source").isVisible(), "A new draft retains the selected Git diff");
   await page.getByRole("button", { name: "Close diff", exact: true }).click();
-  await page.getByRole("button", { name: "Expand commit area", exact: true }).click();
   await page.getByRole("textbox", { name: "Commit message", exact: true }).fill("Keep this commit draft");
   await newChat();
   assertNoDirectoryReload(offset);
@@ -248,7 +246,7 @@ try {
   await page.locator(".git-summary").getByText("dev", { exact: true }).waitFor();
   assert.ok(requests.slice(offset).some(url => url.startsWith("/api/projects/other/files?")), "A draft in another project loads its own files");
   assert.ok(requests.slice(offset).some(url => url.startsWith("/api/projects/other/git?")), "A draft in another project loads its own Git state");
-  assert.equal(await page.getByRole("textbox", { name: "Commit message", exact: true }).count(), 0, "Another project cannot inherit a commit draft");
+  assert.equal(await page.getByRole("textbox", { name: "Commit message", exact: true }).inputValue(), "", "Another project opens an empty commit input");
   await navigate("gamma");
   await page.locator(".git-summary").getByText("feature", { exact: true }).waitFor();
   offset = requests.length;

@@ -226,7 +226,7 @@ export function GitPanel({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [operation, setOperation] = useState("");
   const [operationError, setOperationError] = useState("");
-  const [composer, setComposer] = useState(false);
+  const [composer, setComposer] = useState(true);
   const [remoteAction, setRemoteAction] = useState<"push" | "fetch">("push");
   const [message, setMessage] = useState("");
   const [discard, setDiscard] = useState<{
@@ -411,6 +411,14 @@ export function GitPanel({
   const additions = files.reduce((sum, file) => sum + file.additions, 0);
   const deletions = files.reduce((sum, file) => sum + file.deletions, 0);
   const staged = files.filter((file) => file.staged);
+  const canCommit = !!(
+    active &&
+    ready &&
+    !operation &&
+    data?.writable &&
+    staged.length &&
+    message.trim()
+  );
   const pushRemote = data?.push_remote ?? data?.remote;
   const pushBranch = data?.push_remote_branch ?? data?.remote_branch;
   const pushUpstream = data?.push_upstream ?? data?.upstream;
@@ -436,6 +444,7 @@ export function GitPanel({
   }
   async function mutate(action: string, paths?: string[], snapshot = data) {
     if (operation || !data?.writable) return;
+    if (action === "commit" && !canCommit) return;
     if (!snapshot) return;
     setOperation(action);
     setOperationError("");
@@ -459,7 +468,6 @@ export function GitPanel({
       if (!mounted.current) return;
       if (action === "commit") {
         setMessage("");
-        setComposer(false);
       }
     } catch (err) {
       if (!mounted.current) return;
@@ -936,11 +944,25 @@ export function GitPanel({
               <AutosizeTextarea
                 className="git-commit-message"
                 aria-label={t("Commit message")}
+                aria-keyshortcuts="Meta+Enter Control+Enter"
                 placeholder={t("Enter commit message")}
                 value={message}
                 maxLength={32768}
-                disabled={!!operation}
+                disabled={!data.writable || !!operation}
                 onChange={(event) => setMessage(event.target.value)}
+                onKeyDown={(event) => {
+                  if (
+                    event.key !== "Enter" ||
+                    (!event.metaKey && !event.ctrlKey) ||
+                    event.shiftKey ||
+                    event.altKey ||
+                    event.nativeEvent.isComposing ||
+                    event.nativeEvent.keyCode === 229
+                  )
+                    return;
+                  event.preventDefault();
+                  void mutate("commit");
+                }}
               />
               <div className="git-commit-actions">
                 <FilePanelButton
@@ -955,12 +977,7 @@ export function GitPanel({
                 </FilePanelButton>
                 <FilePanelButton
                   onClick={() => void mutate("commit")}
-                  disabled={
-                    !!operation ||
-                    !data.writable ||
-                    !staged.length ||
-                    !message.trim()
-                  }
+                  disabled={!canCommit}
                 >
                   {t("Commit staged changes")} ({staged.length})
                 </FilePanelButton>
