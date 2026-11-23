@@ -11,6 +11,10 @@ import (
 // NetworkChanged wakes tsnet's network monitor after Android publishes its
 // interface snapshot. Updating the snapshot alone does not notify the engine.
 func (c *Client) NetworkChanged() {
+	if c.transportOwner != nil {
+		c.transportOwner.NetworkChanged()
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {

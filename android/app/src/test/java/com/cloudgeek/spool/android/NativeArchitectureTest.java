@@ -74,7 +74,7 @@ public class NativeArchitectureTest {
     @Test public void healthRecoveryDoesNotBlockInterfaceUpdatesOrDisconnectAndDropsStaleResults() throws Exception {
         String activity = source();
         assertTrue(activity.contains("new ConnectionRecovery(httpsWorker,"));
-        String probe = activity.substring(activity.indexOf("private void watchConnection("), activity.indexOf("private void restoreSession("));
+        String probe = activity.substring(activity.indexOf("private void watchConnection("), activity.indexOf("private void adoptRestoredSession("));
         assertTrue(probe.contains("captured.health()"));
         assertTrue(probe.contains("generation != token || client != captured"));
         assertTrue(probe.contains("captured.reconnect()"));

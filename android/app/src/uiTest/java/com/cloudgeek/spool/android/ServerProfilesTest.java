@@ -15,6 +15,29 @@ import org.robolectric.annotation.Config;
 @RunWith(org.robolectric.RobolectricTestRunner.class)
 @Config(sdk = {26, 35})
 public class ServerProfilesTest {
+    @Test public void trustedProfilesPersistIndependentSessionsWhileSharingTheirDeviceDirectories() throws Exception {
+        ServerProfiles profiles = new ServerProfiles(new ConnectionPlan("https://home.example.com", "", ConnectionMode.DIRECT));
+        ServerProfiles.Server home = profiles.active(), office = profiles.add("Office"), studio = profiles.add("Studio");
+        office.plan = new ConnectionPlan("https://office.example.com", "https://office.example.ts.net", ConnectionMode.TAILSCALE);
+        office.account = new org.json.JSONObject("{id:'office-local'}");
+        String account = NativeFederation.accountKey("alice", "csrf-a");
+        ServerProfiles.Server a = profiles.trustedProfile(office, home, "b".repeat(52), account);
+        ServerProfiles.Server d = profiles.trustedProfile(office, studio, "b".repeat(52), NativeFederation.accountKey("alice", "csrf-d"));
+        File root = new File("/private/profile-fixture");
+        assertNotEquals(office.id, a.id); assertNotEquals(a.id, d.id);
+        assertNotEquals(office.sessionDirectory(root), a.sessionDirectory(root)); assertNotEquals(a.sessionDirectory(root), d.sessionDirectory(root));
+        for (ConnectionMode mode : ConnectionMode.values()) assertEquals(office.directory(root, mode), a.directory(root, mode));
+        ServerProfiles restored = ServerProfiles.restore(profiles.encode(), a.id, home.plan);
+        assertEquals(a.sessionDirectory(root), restored.active().sessionDirectory(root));
+        assertEquals(office.id, restored.active().connectionID());
+        String oldDirectory = a.sessionDirectory(root);
+        a.account = new org.json.JSONObject("{id:'external-alice'}");
+        ServerProfiles.Server replacement = profiles.trustedProfile(office, home, "b".repeat(52), NativeFederation.accountKey("bob", "csrf-b"));
+        assertSame(a, replacement); assertNotEquals(oldDirectory, replacement.sessionDirectory(root));
+        assertEquals(0, replacement.account.length()); assertEquals("office-local", office.account.getString("id"));
+        assertEquals(5, profiles.entries.size());
+    }
+
     @Test public void serverDefinedNamesPersistSeparatelyFromLocalNamesAndAppearBelowTheAccount() throws Exception {
         ConnectionPlan plan = new ConnectionPlan("", "", ConnectionMode.DIRECT);
         ServerProfiles profiles = ServerProfiles.restore("[{id:'legacy',name:'My custom label'}]", "legacy", plan);

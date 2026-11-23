@@ -120,12 +120,14 @@ in the [Web/PWA setup](../docs/deployment.md#webpwa-and-https).
 At startup and after a restart, all enabled servers connect automatically,
 including tabs that have never been selected and when the selected tab is disabled.
 Disabled servers make no connection attempts. Selecting a tab only chooses the
-workspace to display. Enabled servers retain independent connections, sessions and embedded nodes.
-Each server has exactly one live network entry. A network handoff closes the old
-client/node before opening the replacement; if the replacement fails, recovery
+workspace to display. Ordinary servers retain independent connections, sessions and embedded nodes.
+Trusted entries keep separate sessions while sharing their target's approved device connection.
+Each login profile has exactly one live network entry. A network handoff closes the old
+session client before opening the replacement; a shared device connection closes after its
+last session client is released. If the replacement fails, recovery
 tries the next configured entry without keeping two routes alive.
 Tabs below the sidebar logo row share a rounded background track with small
-rounded active segments. They select the workspace to display without closing
+capsule active segments. They select the workspace to display without closing
 other servers. Each connected, signed-in server keeps a workspace WebSocket while
 the app is in the foreground, including inactive tabs. Navigation, agent and profile
 pushes update only that server's memory cache; inactive tabs also use a batched
@@ -168,6 +170,14 @@ red for a failed health check or interrupted WebSocket, and gray for disconnecte
 or disabled servers. Accessible labels explain connection and sign-in state.
 The first failed check or socket interruption updates the dot immediately;
 successful health alone cannot turn an interrupted authenticated socket green.
+Trusted entries appear immediately after their signed-in source and use a key
+with the same status colors. Ordinary B, A → B and D → B remain separate tabs
+with private sessions. Selecting ordinary B uses only its own login; selecting an
+already signed-in trusted entry restores its cached workspace without exchanging
+another ticket. Source logout, account changes or revoked access clear only that
+source's trusted workspaces. Startup verifies the source before restoring its
+trusted entries. See the [federation design](../docs/server-federation-design.zh-CN.md)
+for trust, people and permission management on the server.
 Explanations and Tailscale path/latency/HTTPS diagnostics open from
 the information icons beside their titles and update while the popup is visible.
 Theme/language preferences are separate, under the palette icon immediately

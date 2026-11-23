@@ -38,17 +38,24 @@ final class NativeFederation {
      */
     static final class Tab {
         final Target target;
-        final ServerProfiles.Server source, server;
-        Tab(ServerProfiles.Server source, Target target, ServerProfiles.Server server) {
-            this.source = source; this.target = target; this.server = server;
+        final ServerProfiles.Server source, server, route;
+        Tab(ServerProfiles.Server source, Target target, ServerProfiles.Server server, ServerProfiles.Server route) {
+            this.source = source; this.target = target; this.server = server; this.route = route;
         }
         String key() { return tabKey(source.id, target.id); }
-        boolean reachable() { return server != null || target.newPlan() != null; }
+        boolean reachable() { return route != null || target.newPlan() != null; }
     }
 
     private NativeFederation() {}
 
     static String tabKey(String source, String target) { return PREFIX + source + ":" + target; }
+
+    static String accountKey(String account, String csrf) {
+        try {
+            byte[] bytes = java.security.MessageDigest.getInstance("SHA-256").digest((account + "\0" + csrf).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return android.util.Base64.encodeToString(bytes, android.util.Base64.URL_SAFE | android.util.Base64.NO_WRAP | android.util.Base64.NO_PADDING);
+        } catch (java.security.NoSuchAlgorithmException error) { throw new IllegalStateException(error); }
+    }
 
     static List<Target> parse(Object value) {
         List<Target> result = new ArrayList<>();
@@ -118,14 +125,21 @@ final class NativeFederation {
     }
 
     static List<Tab> tabs(ServerProfiles profiles, ServerProfiles.Server source, List<Target> targets) {
+        return tabs(profiles, source, targets, "");
+    }
+
+    static List<Tab> tabs(ServerProfiles profiles, ServerProfiles.Server source, List<Target> targets, String account) {
         List<Tab> result = new ArrayList<>();
         for (Target target : targets) {
             if (route(source, target, null) != null) continue;
-            ServerProfiles.Server saved = null;
+            ServerProfiles.Server saved = null, connection = null;
             for (ServerProfiles.Server server : profiles.entries) {
-                if (route(server, target, null) != null && (saved == null || !saved.enabled && server.enabled)) saved = server;
+                if (server.federationSource.equals(source.id) && server.federationTarget.equals(target.id)
+                        && (account.isEmpty() || server.federationAccount.equals(account))) saved = server;
+                if (route(server, target, null) != null && (connection == null || connection.trusted() && !server.trusted()
+                        || !connection.enabled && server.enabled)) connection = server;
             }
-            result.add(new Tab(source, target, saved));
+            result.add(new Tab(source, target, saved, connection));
         }
         return result;
     }

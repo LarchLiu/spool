@@ -23,16 +23,15 @@ final class NativeServerTabs extends NativeTabs {
     NativeServerTabs(NativeUi ui, ServerProfiles profiles, Map<String, String> states, Consumer<String> choose, boolean includeDisabled, Runnable create) {
         this(ui, profiles, states, choose, includeDisabled, create, List.of());
     }
-    /** \u4e92\u4fe1\u6807\u7b7e\u7d27\u8ddf\u5f53\u524d\u6765\u6e90\u670d\u52a1\u5668\uff1b\u5339\u914d\u5df2\u6709\u8fde\u63a5\u65f6\u4e0d\u91cd\u590d\u6dfb\u52a0\u3002 */
+    /** Each source keeps its own trusted entries; ordinary profiles always remain visible. */
     NativeServerTabs(NativeUi ui, ServerProfiles profiles, Map<String, String> states, Consumer<String> choose, boolean includeDisabled, Runnable create, List<NativeFederation.Tab> trusted) {
         super(ui, ui.t("Servers")); this.ui = ui; this.profiles = profiles; this.trusted = trusted;
         setPadding(ui.dp(18), ui.dp(8), ui.dp(18), ui.dp(8));
         setBackgroundColor(ui.sidebar);
         for (ServerProfiles.Server server : profiles.entries) {
+            if (server.trusted()) continue;
             if (!includeDisabled && !server.enabled) continue;
-            boolean hasGroup = trusted.stream().anyMatch(entry -> entry.source == server);
-            if (hasGroup || trusted.stream().noneMatch(entry -> entry.server == server && (includeDisabled || entry.source.enabled)))
-                addServer(server, choose);
+            addServer(server, choose);
             for (NativeFederation.Tab entry : trusted) {
                 if (entry.source == server && (entry.server == null || includeDisabled || entry.server.enabled)) addTrusted(entry, choose);
             }
@@ -59,14 +58,11 @@ final class NativeServerTabs extends NativeTabs {
     private void addTrusted(NativeFederation.Tab entry, Consumer<String> choose) {
         String name = entry.server == null ? entry.target.name : entry.server.name;
         Button tab = addTab(entry.key(), name, () -> choose.accept(entry.key()));
-        boolean unsaved = entry.server == null;
-        SpannableString label = new SpannableString(unsaved ? "\ufffc" + name : "\ufffc" + name + "\ufffc");
-        Link link = new Link(ui.dp(14), ui.dp(6), unsaved);
-        int mark = unsaved ? 0 : label.length() - 1;
-        label.setSpan(link, mark, mark + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        if (!unsaved) label.setSpan(new Dot(ui.dp(8), ui.dp(8)), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        SpannableString label = new SpannableString("\ufffc" + name);
+        Link link = new Link(ui.dp(14), ui.dp(6), true);
+        label.setSpan(link, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         tab.setText(label);
-        if (unsaved) tab.setPaddingRelative(tab.getPaddingStart(), tab.getPaddingTop(), tab.getPaddingEnd() + link.size + link.gap, tab.getPaddingBottom());
+        tab.setPaddingRelative(tab.getPaddingStart(), tab.getPaddingTop(), tab.getPaddingEnd() + link.size + link.gap, tab.getPaddingBottom());
     }
 
     void status(Map<String, String> states) { status(states, ""); }
@@ -93,8 +89,12 @@ final class NativeServerTabs extends NativeTabs {
     private String connectionStatus(Button tab, ServerProfiles.Server server, Map<String, String> states) {
         String state = server.enabled ? states.getOrDefault(server.id, "disconnected") : "disconnected";
         int color = statusColor(ui, state);
-        Dot dot = ((Spanned) tab.getText()).getSpans(0, 1, Dot.class)[0];
-        if (dot.color != color) { dot.color = color; tab.invalidate(); }
+        for (Dot dot : ((Spanned) tab.getText()).getSpans(0, 1, Dot.class)) {
+            if (dot.color != color) { dot.color = color; tab.invalidate(); }
+        }
+        for (Link link : ((Spanned) tab.getText()).getSpans(0, 1, Link.class)) {
+            if (link.color != color) { link.color = color; tab.invalidate(); }
+        }
         return ui.t(statusLabel(state));
     }
 
@@ -103,8 +103,10 @@ final class NativeServerTabs extends NativeTabs {
     }
 
     private boolean trusted(ServerProfiles.Server server) {
-        return !server.account.optString("source_server_id").isEmpty();
+        return server.trusted() || !server.account.optString("source_server_id").isEmpty();
     }
+
+    @Override int tabRadius() { return 999; }
 
     static String statusLabel(String state) {
         return state.equals("connected") ? "Connected · Signed in" : state.equals("connecting") ? "Connecting…"
@@ -125,21 +127,25 @@ final class NativeServerTabs extends NativeTabs {
                 : state.equals("error") ? ui.error : ui.muted;
     }
 
-    /** Two joined rings marking a server reached through the selected server's trust rather than its own sign-in. */
+    /** A key marks a login owned by a particular source server. */
     static final class Link extends ReplacementSpan {
         static final int COLOR = 0xff3987e0;
         final int size, gap;
         final boolean leading;
+        int color = COLOR;
         Link(int size, int gap, boolean leading) { this.size = size; this.gap = gap; this.leading = leading; }
         @Override public int getSize(Paint paint, CharSequence text, int start, int end, Paint.FontMetricsInt metrics) { return size + gap; }
         @Override public void draw(Canvas canvas, CharSequence text, int start, int end, float x, int top, int baseline, int bottom, Paint paint) {
             int previous = paint.getColor(); Paint.Style style = paint.getStyle(); float width = paint.getStrokeWidth();
             Paint.FontMetrics metrics = paint.getFontMetrics();
-            float stroke = Math.max(1f, size / 9f), radius = size * .3f - stroke / 2, left = leading ? x : x + gap;
+            float stroke = Math.max(1f, size / 9f), radius = size * .23f, left = leading ? x : x + gap;
             float center = baseline + (metrics.ascent + metrics.descent) / 2f;
-            paint.setColor(COLOR); paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(stroke);
-            canvas.drawCircle(left + radius + stroke / 2, center, radius, paint);
-            canvas.drawCircle(left + size - radius - stroke / 2, center, radius, paint);
+            paint.setColor(color); paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(stroke);
+            canvas.drawCircle(left + size * .29f, center - size * .15f, radius, paint);
+            float from = left + size * .46f, tip = left + size * .88f;
+            canvas.drawLine(from, center, tip, center + size * .42f, paint);
+            canvas.drawLine(tip, center + size * .42f, tip, center + size * .18f, paint);
+            canvas.drawLine(left + size * .72f, center + size * .26f, left + size * .72f, center + size * .08f, paint);
             paint.setColor(previous); paint.setStyle(style); paint.setStrokeWidth(width);
         }
     }

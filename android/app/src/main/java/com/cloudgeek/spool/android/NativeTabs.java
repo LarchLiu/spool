@@ -96,12 +96,14 @@ class NativeTabs extends FrameLayout {
         int fill = selected ? ui.dark ? ui.sidebar : ui.elevated : 0x00000000;
         int border = selected && ui.dark ? ui.borderStrong : 0;
         StateListDrawable background = new StateListDrawable();
-        background.addState(new int[] {-android.R.attr.state_enabled}, ui.shape(ui.controlActive, 4, border));
-        background.addState(new int[] {android.R.attr.state_pressed}, ui.shape(selected ? fill : ui.hover, 4, border));
-        background.addState(new int[] {android.R.attr.state_hovered}, ui.shape(selected ? fill : ui.controlHover, 4, border));
-        background.addState(new int[0], ui.shape(fill, 4, border));
+        background.addState(new int[] {-android.R.attr.state_enabled}, ui.shape(ui.controlActive, tabRadius(), border));
+        background.addState(new int[] {android.R.attr.state_pressed}, ui.shape(selected ? fill : ui.hover, tabRadius(), border));
+        background.addState(new int[] {android.R.attr.state_hovered}, ui.shape(selected ? fill : ui.controlHover, tabRadius(), border));
+        background.addState(new int[0], ui.shape(fill, tabRadius(), border));
         return background;
     }
+
+    int tabRadius() { return 4; }
 
     @Override protected void onSizeChanged(int width, int height, int previousWidth, int previousHeight) {
         super.onSizeChanged(width, height, previousWidth, previousHeight);

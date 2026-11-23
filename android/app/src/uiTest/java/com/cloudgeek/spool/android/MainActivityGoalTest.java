@@ -60,6 +60,8 @@ public class MainActivityGoalTest {
         }
         long responseAge = -1;
         String sessionDirectory, directOrigin, tailscaleOrigin, relayCode;
+        Client device;
+        java.util.function.Function<String, Client> sessionFactory;
         int closes;
         @Implementation protected static void __staticInitializer__() {}
         @Implementation protected void __constructor__(String data, String origin) {}
@@ -72,6 +74,18 @@ public class MainActivityGoalTest {
             return federationPreparation.prepare(destination, target, account, language);
         }
         @Implementation protected void close() { closes++; }
+        @Implementation protected Client newSessionClient(String directory, String direct, String tailscale, String code) {
+            if (sessionFactory != null) return sessionFactory.apply(directory);
+            Client session = new Client("unused", "https://fixture.example.com");
+            ShadowClient shadow = org.robolectric.shadow.api.Shadow.extract(session);
+            shadow.device = real; shadow.healthResponse = healthResponse;
+            shadow.usePairedServerSession(directory, direct, tailscale, code);
+            if (directory.matches(".*/[A-Za-z0-9_-]{43}")) shadow.responses = call -> {
+                try { return new org.json.JSONObject().put("status", call.get(1).equals("/api/me") ? 401 : 200).put("body", "{}").toString(); }
+                catch (Exception error) { throw new AssertionError(error); }
+            };
+            return session;
+        }
         @Implementation protected void useServerSession(String directory, String direct, String tailscale) {
             sessionDirectory = directory; directOrigin = direct; tailscaleOrigin = tailscale;
         }

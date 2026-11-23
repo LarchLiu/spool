@@ -1,6 +1,7 @@
 package spoolnet
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -36,6 +37,34 @@ type serverSessionJar struct {
 type savedServerSessions struct {
 	Version  int                     `json:"version"`
 	Sessions map[string]savedSession `json:"sessions"`
+}
+
+// NewSessionClient opens an independent login on this already approved device
+// connection. Closing the view never closes the device; its owner must outlive
+// its views. Closing the owner cancels all views, including in-flight exchanges.
+func (c *Client) NewSessionClient(directory, directURL, tailscaleURL, code string) (*Client, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed || c.transportOwner != nil {
+		return nil, errors.New("device connection is unavailable")
+	}
+	mode := "tsnet"
+	if c.direct {
+		mode = "https"
+	}
+	if c.relay != nil {
+		mode = "relay"
+	}
+	jar, err := newServerSessionJar(directory, c.origin, directURL, tailscaleURL, mode, relaySessionOrigin(code))
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithCancel(c.ctx)
+	httpClient := *c.http
+	httpClient.Jar = jar
+	return &Client{transportOwner: c, server: c.server, local: c.local, node: c.node,
+		origin: c.origin, http: &httpClient, transport: c.transport, direct: c.direct,
+		ctx: ctx, cancel: cancel, relay: c.relay}, nil
 }
 
 // UseServerSession binds a newly created transport to its server profile before

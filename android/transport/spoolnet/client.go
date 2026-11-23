@@ -29,7 +29,9 @@ import (
 const maxResponseBytes = 16 << 20
 
 type Client struct {
-	mu               sync.Mutex
+	mu sync.Mutex
+	// Session views share a live device transport, but own their cookies and cancellation.
+	transportOwner   *Client
 	server           *tsnet.Server
 	local            *local.Client
 	node             *nodeStatus
@@ -282,6 +284,9 @@ func (c *Client) Close() error {
 		jar.close()
 	}
 	c.cancel()
+	if c.transportOwner != nil {
+		return nil
+	}
 	if c.relay != nil {
 		c.relay.Close()
 		c.relayHTTP.CloseIdleConnections()

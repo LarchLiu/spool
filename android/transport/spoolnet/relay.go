@@ -82,6 +82,9 @@ func NewRelayClient(dataDir, code string) (*Client, error) {
 // Discovery is untrusted: TLS still verifies the paired key before each request.
 // Existing requests finish on their current path; only idle connections retire.
 func (c *Client) SetLANAddresses(addresses string) error {
+	if c.transportOwner != nil {
+		return c.transportOwner.SetLANAddresses(addresses)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {

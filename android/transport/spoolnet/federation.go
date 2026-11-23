@@ -29,6 +29,9 @@ type FederationSession struct {
 // Activate installs only the new session for the original destination. An
 // independently signed-in account, logout, or retired transport wins instead.
 func (s *FederationSession) Activate() (string, error) {
+	if s.target.ctx.Err() != nil {
+		return "", errFederation
+	}
 	if s.cookie != nil {
 		if !s.jar.adoptFederation(s.previous, s.cookie) {
 			return "", errFederation
