@@ -31,7 +31,7 @@ func TestCodexCompactionPreservesRetainedInputOrigins(t *testing.T) {
 		source = append(source, carryItem{Kind: "user", Text: "Repeated question", Images: images, Origin: origin}, carryItem{Kind: "assistant", Text: "Earlier answer", Origin: origin})
 		retained = append(retained, map[string]any{"type": "message", "role": "user", "content": content})
 	}
-	converted, err := writeCodexCarry(filepath.Join(root, "codex"), root, source, time.Now())
+	converted, err := writeCodexCarry(filepath.Join(root, "codex"), root, "openai", source, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestCodexCompactionPreservesRetainedInputOrigins(t *testing.T) {
 		if backend == "claude" {
 			to = "codex"
 		}
-		converted, err = ConvertSession(backend, to, converted.Path, root)
+		converted, err = ConvertSession(backend, to, converted.Path, root, "openai")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -141,7 +141,7 @@ func TestConvertedHistoryKeepsOriginsAcrossFormatsAndPages(t *testing.T) {
 		if backend == to {
 			to = chatmodel.BackendClaude
 		}
-		converted, err = ConvertSession(backend, to, converted.Path, root)
+		converted, err = ConvertSession(backend, to, converted.Path, root, "openai")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -155,7 +155,10 @@ func TestLegacyConvertedHistoryOriginsEndAtNativeTurns(t *testing.T) {
 			writer := writeClaudeCarry
 			original := chatmodel.BackendCodex
 			if backend == "codex" {
-				writer, original = writeCodexCarry, chatmodel.BackendClaude
+				original = chatmodel.BackendClaude
+				writer = func(home, cwd string, items []carryItem, now time.Time) (ConvertedSession, error) {
+					return writeCodexCarry(home, cwd, "openai", items, now)
+				}
 			}
 			// No origin fields: the envelope is identical to existing conversions.
 			converted, err := writer(root, root, []carryItem{{Kind: "user", Text: "old question"}, {Kind: "assistant", Text: "old answer"}}, time.Now())
@@ -231,7 +234,7 @@ func TestLegacyClaudeCarryAttributesUserOnlyTurns(t *testing.T) {
 			t.Fatalf("next conversion would lose the user-only origin: %+v", item)
 		}
 	}
-	back, err := ConvertSession("claude", "codex", converted.Path, root)
+	back, err := ConvertSession("claude", "codex", converted.Path, root, "openai")
 	if err != nil {
 		t.Fatal(err)
 	}

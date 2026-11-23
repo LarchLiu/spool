@@ -80,7 +80,7 @@ func TestSlashCommandsBrowser(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			converted, err := agent.ConvertSession("codex", "claude", source, p.Path)
+			converted, err := agent.ConvertSession("codex", "claude", source, p.Path, "")
 			if err != nil {
 				t.Fatal(err)
 			}

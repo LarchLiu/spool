@@ -232,7 +232,7 @@ func TestCodexArchiveNativeSmoke(t *testing.T) {
 	}
 	home, project := t.TempDir(), t.TempDir()
 	t.Setenv("CODEX_HOME", home)
-	converted, err := writeCodexCarry(home, project, []carryItem{{Kind: "user", Text: "Preserve native history"}}, time.Now())
+	converted, err := writeCodexCarry(home, project, "openai", []carryItem{{Kind: "user", Text: "Preserve native history"}}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

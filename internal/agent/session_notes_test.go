@@ -53,9 +53,11 @@ func TestConvertedHistoryRestoresToolsInFullAndTurnReads(t *testing.T) {
 				{Kind: "call", Name: "Read", Input: `{"file_path":"missing.html"}`, Result: "file not found", Done: true, IsError: true},
 				{Kind: "assistant", Text: "The file is missing."},
 			}
-			write := writeCodexCarry
-			if backend == chatmodel.BackendClaude {
-				write = writeClaudeCarry
+			write := writeClaudeCarry
+			if backend == chatmodel.BackendCodex {
+				write = func(home, cwd string, items []carryItem, now time.Time) (ConvertedSession, error) {
+					return writeCodexCarry(home, cwd, "openai", items, now)
+				}
 			}
 			now := time.Date(2026, 11, 6, 12, 0, 0, 123_000_000, time.UTC)
 			converted, err := write(root, root, items, now)
@@ -158,7 +160,7 @@ func TestToolActivitiesSurviveNativeConversionRoundTrip(t *testing.T) {
 	}
 	from := chatmodel.BackendCodex
 	for _, to := range []chatmodel.Backend{chatmodel.BackendClaude, chatmodel.BackendCodex, chatmodel.BackendClaude} {
-		converted, err := ConvertSession(from, to, path, root)
+		converted, err := ConvertSession(from, to, path, root, "openai")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -173,7 +175,7 @@ func TestToolActivitiesSurviveNativeConversionRoundTrip(t *testing.T) {
 func TestResumedCodexDoesNotTreatNewAnswersAsImportedTools(t *testing.T) {
 	root := t.TempDir()
 	note := (carryItem{Name: "apply_patch", Input: "example patch", Result: "example result", Done: true}).note()
-	converted, err := writeCodexCarry(root, root, []carryItem{
+	converted, err := writeCodexCarry(root, root, "openai", []carryItem{
 		{Kind: "user", Text: "old question"},
 		{Kind: "assistant", Text: "old answer"},
 	}, time.Now())

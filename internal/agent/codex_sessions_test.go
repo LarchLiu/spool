@@ -96,7 +96,7 @@ func TestCodexSessionListNativeSmoke(t *testing.T) {
 	}
 	home, directory := t.TempDir(), t.TempDir()
 	t.Setenv("CODEX_HOME", home)
-	converted, err := writeCodexCarry(home, directory, []carryItem{{Kind: "user", Text: "Isolated list smoke"}}, time.Now())
+	converted, err := writeCodexCarry(home, directory, "openai", []carryItem{{Kind: "user", Text: "Isolated list smoke"}}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

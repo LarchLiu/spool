@@ -182,7 +182,7 @@ func TestArchiveChatReservesSessionAndCancelsOnShutdown(t *testing.T) {
 	if err := app.startTurn(chat, "Concurrent message", chatmodel.CodexOptions{}); err == nil {
 		t.Fatal("archive raced a new turn")
 	}
-	if _, err := app.forkChat(chat.ID, chatmodel.BackendCodex, chatmodel.CodexOptions{}, owner.ID); err == nil {
+	if _, err := app.forkChat(context.Background(), chat.ID, chatmodel.BackendCodex, chatmodel.CodexOptions{}, owner.ID); err == nil {
 		t.Fatal("archive raced conversion")
 	}
 	if _, err := app.queueWhileRunning(chat, messageInput{Message: "Concurrent queue"}, chatmodel.CodexOptions{}, false); err == nil {

@@ -60,7 +60,7 @@ func TestCodexNativeSkillInputKeepsTheRequestWithoutExposingInstructions(t *test
 				}
 			}
 			check(chatmodel.BackendCodex, path)
-			converted, err := ConvertSession(chatmodel.BackendCodex, chatmodel.BackendClaude, path, conversionHomes(t))
+			converted, err := ConvertSession(chatmodel.BackendCodex, chatmodel.BackendClaude, path, conversionHomes(t), "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -92,12 +92,12 @@ func TestSlashCommandHistoriesKeepCommandsAndContinuationForBothAgents(t *testin
 			if backend == target {
 				target = chatmodel.BackendCodex
 			}
-			converted, err := ConvertSession(backend, target, path, root)
+			converted, err := ConvertSession(backend, target, path, root, "openai")
 			if err != nil {
 				t.Fatal(err)
 			}
 			assertSlashHistory(t, target, converted.Path, want)
-			back, err := ConvertSession(target, backend, converted.Path, root)
+			back, err := ConvertSession(target, backend, converted.Path, root, "openai")
 			if err != nil {
 				t.Fatal(err)
 			}

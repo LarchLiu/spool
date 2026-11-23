@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -14,8 +15,8 @@ var errTaskSessionConversion = errors.New("Task chats cannot switch agents. Cont
 
 // A conversion is a new native session and a new chat, not a link to a mutable
 // source. Subsequent messages on either side cannot alter the other's context.
-func (s *Store) forkChat(id string, backend chatmodel.Backend, options chatmodel.CodexOptions, owner ...string) (chatmodel.Session, error) {
-	chat, err := s.createFork(id, backend, options, owner...)
+func (s *Store) forkChat(ctx context.Context, id string, backend chatmodel.Backend, options chatmodel.CodexOptions, owner ...string) (chatmodel.Session, error) {
+	chat, err := s.createFork(ctx, id, backend, options, owner...)
 	if err != nil {
 		return chat, err
 	}
@@ -25,7 +26,7 @@ func (s *Store) forkChat(id string, backend chatmodel.Backend, options chatmodel
 	return chat, nil
 }
 
-func (s *Store) createFork(id string, backend chatmodel.Backend, options chatmodel.CodexOptions, owner ...string) (chatmodel.Session, error) {
+func (s *Store) createFork(ctx context.Context, id string, backend chatmodel.Backend, options chatmodel.CodexOptions, owner ...string) (chatmodel.Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	source, ok := s.getSession(id)
@@ -66,7 +67,24 @@ func (s *Store) createFork(id string, backend chatmodel.Backend, options chatmod
 	if err != nil {
 		return source, errSessionConversion
 	}
-	converted, err := agent.ConvertSession(source.Backend, backend, path, directory)
+	provider := ""
+	if backend == chatmodel.BackendCodex {
+		all, err := s.Agents()
+		if err != nil {
+			return source, err
+		}
+		runner := agent.NewCLIRunner()
+		runner.ConfigureBinaries(agentBinaries(all))
+		provider, err = runner.CodexModelProvider(ctx, directory)
+		_ = runner.Close()
+		if err != nil {
+			return source, errSessionConversion
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return source, err
+	}
+	converted, err := agent.ConvertSession(source.Backend, backend, path, directory, provider)
 	if err != nil {
 		return source, errSessionConversion
 	}
@@ -100,19 +118,26 @@ func (s *Store) createFork(id string, backend chatmodel.Backend, options chatmod
 	return chat, nil
 }
 
-func (a *App) forkChat(id string, backend chatmodel.Backend, options chatmodel.CodexOptions, owner ...string) (chatmodel.Session, error) {
+func (a *App) forkChat(ctx context.Context, id string, backend chatmodel.Backend, options chatmodel.CodexOptions, owner ...string) (chatmodel.Session, error) {
 	a.turnMu.Lock()
-	defer a.turnMu.Unlock()
 	if a.closing {
+		a.turnMu.Unlock()
 		return chatmodel.Session{}, fmt.Errorf("agent service is stopping")
 	}
 	if a.updating {
+		a.turnMu.Unlock()
 		return chatmodel.Session{}, ErrUpdateInProgress
 	}
-	if a.nativeCommandRunning(id) {
+	if a.activeTurns[id] != nil {
+		a.turnMu.Unlock()
 		return chatmodel.Session{}, fmt.Errorf("this chat already has a running turn")
 	}
-	return a.store.forkChat(id, backend, options, owner...)
+	ctx, control := a.registerTurn(ctx, id, "command:"+chatmodel.NewID())
+	a.turns.Add(1)
+	a.turnMu.Unlock()
+	defer a.turns.Done()
+	defer a.releaseTurn(id, control)
+	return a.store.forkChat(ctx, id, backend, options, owner...)
 }
 
 // Only for a newly created conversion whose first request failed admission.

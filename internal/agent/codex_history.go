@@ -71,13 +71,6 @@ type CodexTurnPage struct {
 	Before string
 }
 
-type codexRPCError struct {
-	method, message string
-	code            float64
-}
-
-func (e *codexRPCError) Error() string { return "Codex " + e.method + ": " + e.message }
-
 func (h *CodexHistory) Close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()

@@ -784,7 +784,7 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 		if input.Backend == chat.Backend {
 			fork, err = a.forkNativeChat(r.Context(), chat, options, id.User.ID)
 		} else {
-			fork, err = a.forkChat(chat.ID, input.Backend, options, id.User.ID)
+			fork, err = a.forkChat(r.Context(), chat.ID, input.Backend, options, id.User.ID)
 		}
 		if err != nil {
 			apiError(w, 409, err.Error())
@@ -893,7 +893,7 @@ func (a *App) chatRoute(w http.ResponseWriter, r *http.Request, id authIdentity,
 			apiError(w, 403, "无权在该项目创建聊天")
 			return
 		}
-		forked, err := a.forkChat(source.ID, chat.Backend, options, id.User.ID)
+		forked, err := a.forkChat(r.Context(), source.ID, chat.Backend, options, id.User.ID)
 		if err != nil {
 			apiError(w, 409, err.Error())
 			return

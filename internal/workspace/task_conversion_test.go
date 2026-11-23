@@ -62,7 +62,7 @@ func TestTaskChatRejectsAgentForkWithoutChangingItsClaim(t *testing.T) {
 		t.Error("agent started for a rejected task fork")
 		return agent.AgentResult{}, errors.New("unexpected task fork")
 	}
-	if _, err := app.store.forkChat(chat.ID, chatmodel.BackendClaude, chatmodel.CodexOptions{}); !errors.Is(err, errTaskSessionConversion) {
+	if _, err := app.store.forkChat(context.Background(), chat.ID, chatmodel.BackendClaude, chatmodel.CodexOptions{}); !errors.Is(err, errTaskSessionConversion) {
 		t.Fatalf("store fork error = %v", err)
 	}
 	cookie, csrf := loginRequest(t, app, "automation")

@@ -4,11 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
 	chatmodel "spool/internal/model"
 )
+
+type codexRPCError struct {
+	method, message string
+	code            float64
+}
+
+func (e *codexRPCError) Error() string { return "Codex " + e.method + ": " + e.message }
 
 func (p *agentProcess) codexRPC(ctx context.Context, method string, params map[string]any) (map[string]any, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -26,7 +34,8 @@ func (p *agentProcess) codexRPC(ctx context.Context, method string, params map[s
 		}
 		if value["id"] == float64(id) && value["method"] == nil {
 			if rpcError, ok := value["error"].(map[string]any); ok {
-				return nil, fmt.Errorf("Codex %s: %s", method, chatmodel.Clip(stringValue(rpcError["message"]), maxStderrBytes))
+				code, _ := rpcError["code"].(float64)
+				return nil, &codexRPCError{method: method, message: chatmodel.Clip(stringValue(rpcError["message"]), maxStderrBytes), code: code}
 			}
 			result, ok := value["result"].(map[string]any)
 			if !ok {
@@ -50,6 +59,47 @@ func (p *agentProcess) codexRPC(ctx context.Context, method string, params map[s
 			p.queued = append(p.queued, value)
 		}
 	}
+}
+
+func (p *agentProcess) resumeCodex(ctx context.Context, params map[string]any) (map[string]any, error) {
+	response, err := p.codexRPC(ctx, "thread/resume", params)
+	var failure *codexRPCError
+	if !errors.As(err, &failure) || failure.message != "This chat uses model provider “”, which is no longer configured. Restore this provider’s configuration to continue." {
+		return response, err
+	}
+	if _, explicit := params["modelProvider"]; explicit {
+		return nil, err
+	}
+	// Older converted rollouts omitted the provider. Codex can index that as an
+	// empty binding and reject resume before applying the project's default.
+	// Recover that missing binding without replacing a named, removed provider.
+	provider, configErr := p.codexModelProvider(ctx, stringValue(params["cwd"]))
+	if configErr != nil {
+		return nil, fmt.Errorf("%w; read current provider: %v", err, configErr)
+	}
+	retry := maps.Clone(params)
+	retry["modelProvider"] = provider
+	return p.codexRPC(ctx, "thread/resume", retry)
+}
+
+func (p *agentProcess) codexModelProvider(ctx context.Context, directory string) (string, error) {
+	config, err := p.codexRPC(ctx, "config/read", map[string]any{"includeLayers": false, "cwd": directory})
+	if err != nil {
+		return "", err
+	}
+	current, ok := config["config"].(map[string]any)
+	if !ok {
+		return "", errors.New("Codex config/read returned no configuration")
+	}
+	provider := stringValue(current["model_provider"])
+	// config/read leaves this null when using Codex's built-in OpenAI default.
+	if current["model_provider"] == nil {
+		provider = "openai"
+	}
+	if strings.TrimSpace(provider) == "" {
+		return "", errors.New("Codex config/read returned an empty model provider")
+	}
+	return provider, nil
 }
 
 // A request is answered for the thread and turn it was raised in: the chat's
@@ -139,7 +189,13 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 			}
 			params["excludeTurns"] = true
 		}
-		response, err := p.codexRPC(ctx, method, params)
+		var response map[string]any
+		var err error
+		if method == "thread/resume" {
+			response, err = p.resumeCodex(ctx, params)
+		} else {
+			response, err = p.codexRPC(ctx, method, params)
+		}
 		if err != nil {
 			return result, err, false
 		}

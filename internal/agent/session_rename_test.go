@@ -89,7 +89,7 @@ func TestCodexRenameNativeSmoke(t *testing.T) {
 	}
 	home, directory := t.TempDir(), t.TempDir()
 	t.Setenv("CODEX_HOME", home)
-	converted, err := writeCodexCarry(home, directory, []carryItem{{Kind: "user", Text: "Original prompt"}}, time.Now())
+	converted, err := writeCodexCarry(home, directory, "openai", []carryItem{{Kind: "user", Text: "Original prompt"}}, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -28,7 +28,7 @@ type ConvertedSession struct{ ID, Path string }
 // ConvertSession carries native user/assistant messages, images and tool results
 // into another provider's session. Instructions and signed/encrypted reasoning
 // are intentionally excluded, as in Magpie. This never submits a model prompt.
-func ConvertSession(from, to chatmodel.Backend, path, directory string) (ConvertedSession, error) {
+func ConvertSession(from, to chatmodel.Backend, path, directory, codexProvider string) (ConvertedSession, error) {
 	if !from.Valid() || !to.Valid() || from == to {
 		return ConvertedSession{}, errors.New("unsupported session conversion")
 	}
@@ -56,7 +56,7 @@ func ConvertSession(from, to chatmodel.Backend, path, directory string) (Convert
 	if to == chatmodel.BackendClaude {
 		return writeClaudeCarry(home, directory, items, time.Now())
 	}
-	return writeCodexCarry(home, directory, items, time.Now())
+	return writeCodexCarry(home, directory, codexProvider, items, time.Now())
 }
 
 func nativeSessionHome(backend chatmodel.Backend) (string, error) {
@@ -762,11 +762,14 @@ func splitDataURL(u string) (string, string, bool) {
 
 // writeCodexCarry writes items as a new Codex session of the folder cwd:
 // <codex home>/sessions/YYYY/MM/DD/rollout-<local time>-<uuid v7>.jsonl.
-// Its session_meta omits provider and base_instructions so the app-server
-// applies its effective project configuration. Each message is also a native
+// Its session_meta binds the effective project provider before Codex indexes it.
+// Base instructions remain the app-server's configuration. Each message is a native
 // event, which its TUI shows a resumed session's history from. Codex
 // adds the thread to its state database itself when it opens it.
-func writeCodexCarry(home, cwd string, items []carryItem, now time.Time) (ConvertedSession, error) {
+func writeCodexCarry(home, cwd, provider string, items []carryItem, now time.Time) (ConvertedSession, error) {
+	if strings.TrimSpace(provider) == "" {
+		return ConvertedSession{}, errors.New("Codex session conversion requires a model provider")
+	}
 	u, err := uuid.NewV7()
 	if err != nil {
 		return ConvertedSession{}, err
@@ -779,7 +782,7 @@ func writeCodexCarry(home, cwd string, items []carryItem, now time.Time) (Conver
 	stamp := carryStamp(now, now)
 	lines := [][]byte{jsonLine(o("timestamp", stamp, "type", "session_meta", "payload", o(
 		"session_id", id, "id", id, "timestamp", stamp, "cwd", cwd, "originator", "codex_cli_rs",
-		"cli_version", version, "source", "cli")))}
+		"cli_version", version, "source", "cli", "model_provider", provider)))}
 	var origin sessionOrigin
 	add := func(at time.Time, typ string, payload ord) {
 		record := o("timestamp", carryStamp(at, now), "type", typ, "payload", payload)

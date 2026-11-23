@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"spool/internal/agent"
 	chatmodel "spool/internal/model"
+	"spool/internal/testutil/agentfixture"
 )
 
 // Persists minimal provider-owned records, unlike fakeRunner which deliberately
@@ -98,6 +100,7 @@ func TestAgentSwitchCreatesIndependentChatsWithoutSourceLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	testAgent(t, store)
+	configureConversionFixture(t, store)
 	_ = store.saveAgent(AgentInfo{Backend: chatmodel.BackendClaude, Enabled: true, Installed: true})
 	runner := &historyRunner{}
 	app := NewApp(store, runner, "", "")
@@ -223,6 +226,162 @@ func TestAgentSwitchCreatesIndependentChatsWithoutSourceLinks(t *testing.T) {
 	}
 }
 
+func TestClaudeCodexRepeatedSwitchesPreserveConversationAfterEachMessage(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CODEX_HOME", filepath.Join(root, "codex"))
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(root, "claude"))
+	store := testStore(t)
+	user := testUser(t, store, "alice")
+	project := testProject(t, store, user)
+	testAgent(t, store)
+	configureConversionFixture(t, store)
+	if err := store.saveAgent(AgentInfo{Backend: chatmodel.BackendClaude, Enabled: true, Installed: true}); err != nil {
+		t.Fatal(err)
+	}
+	app := NewApp(store, &historyRunner{}, "", "")
+	t.Cleanup(func() { app.Close() })
+	cookie, csrf := loginRequest(t, app, "alice")
+	chat, err := store.CreateChat(user.ID, project.ID, chatmodel.BackendClaude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backends := []chatmodel.Backend{"claude", "codex", "claude", "codex"}
+	previous := map[string][]byte{}
+	for step, backend := range backends {
+		if !t.Run(fmt.Sprintf("step-%d-%s", step+1, backend), func(t *testing.T) {
+			previousID, previousNativeID := chat.ID, chat.NativeSessionID
+			body, _ := json.Marshal(map[string]string{"backend": string(backend), "model": "test-" + string(backend), "message": fmt.Sprintf("message-%d", step)})
+			response := apiRequest(app, "POST", "/api/chats/"+chat.ID+"/messages", string(body), cookie, csrf)
+			if response.Code != 202 {
+				t.Fatal(response.Code, response.Body.String())
+			}
+			var accepted chatmodel.Session
+			if err := json.Unmarshal(response.Body.Bytes(), &accepted); err != nil {
+				t.Fatal(err)
+			}
+			chat = waitChat(t, store, accepted.ID)
+			if step > 0 && (chat.ID == previousID || chat.NativeSessionID == previousNativeID) {
+				t.Fatal("switch reused the source chat or native session")
+			}
+			for path, before := range previous {
+				after, err := os.ReadFile(path)
+				if err != nil || !bytes.Equal(before, after) {
+					t.Fatalf("later switch changed earlier history: %s, %v", path, err)
+				}
+			}
+			reopened, err := OpenStore(store.Root())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			restored, ok := reopened.Get(chat.ID)
+			if !ok || restored.Status != chatmodel.StatusCompleted || restored.Backend != backend || len(restored.Turns) != step+1 {
+				t.Fatalf("converted conversation did not survive reopening: %+v", restored)
+			}
+			for i, turn := range restored.Turns {
+				prompt := fmt.Sprintf("message-%d", i)
+				reply := "Reply from " + string(backends[i]) + ": " + prompt
+				if turn.Prompt != prompt || turn.Reply != reply || turn.Backend != backends[i] || turn.Model != "test-"+string(backends[i]) {
+					t.Fatalf("turn %d changed after repeated switching: %+v", i, turn)
+				}
+			}
+			data, err := os.ReadFile(chat.NativeSessionPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if step > 0 && backend == chatmodel.BackendCodex {
+				var meta struct {
+					Payload struct {
+						ModelProvider string `json:"model_provider"`
+					}
+				}
+				if err := json.Unmarshal(bytes.SplitN(data, []byte("\n"), 2)[0], &meta); err != nil || meta.Payload.ModelProvider != "fixture-provider" {
+					t.Fatalf("conversion lost the effective project provider: %+v, %v", meta, err)
+				}
+			}
+			previous[chat.NativeSessionPath] = data
+		}) {
+			return
+		}
+	}
+}
+
+func configureConversionFixture(t *testing.T, store *Store) agentfixture.Fixture {
+	t.Helper()
+	fixture := agentfixture.New(t)
+	if err := store.saveAgent(AgentInfo{Backend: chatmodel.BackendCodex, Enabled: true, Installed: true, Executable: fixture.Binary, Catalog: fixtureCatalog()}); err != nil {
+		t.Fatal(err)
+	}
+	return fixture
+}
+
+func TestCodexConversionConfigFailureLeavesSourceIntact(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CODEX_HOME", filepath.Join(root, "codex"))
+	store := testStore(t)
+	user := testUser(t, store, "alice")
+	project := testProject(t, store, user)
+	fixture := configureConversionFixture(t, store)
+	if err := os.WriteFile(filepath.Join(fixture.Directory, "fixture-config-error"), []byte("configuration unavailable"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	chat, err := store.CreateChat(user.ID, project.ID, chatmodel.BackendClaude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := filepath.Abs("../agent/testdata/carry/claude-tools.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetNativeSessionPath(chat.ID, "original-session", source); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := NewApp(store, &historyRunner{}, "", "")
+	t.Cleanup(func() { app.Close() })
+	if _, err := app.forkChat(context.Background(), chat.ID, chatmodel.BackendCodex, chatmodel.CodexOptions{}, user.ID); err == nil {
+		t.Fatal("conversion ignored the config lookup failure")
+	}
+	var count int
+	if err := store.db.QueryRow(`SELECT count(*) FROM sessions`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("failed conversion left a new chat: %d, %v", count, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "codex", "sessions")); !os.IsNotExist(err) {
+		t.Fatalf("failed conversion wrote native history: %v", err)
+	}
+	saved, ok := store.Get(chat.ID)
+	after, err := os.ReadFile(source)
+	if !ok || saved.Backend != chatmodel.BackendClaude || saved.NativeSessionID != "original-session" || err != nil || !bytes.Equal(before, after) {
+		t.Fatal("failed conversion changed the source", err)
+	}
+	app.turnMu.Lock()
+	defer app.turnMu.Unlock()
+	if app.activeTurns[chat.ID] != nil || app.runningTurns != 0 {
+		t.Fatal("failed conversion retained a running command")
+	}
+}
+
+func TestAgentConversionDoesNotReplaceActiveTurnControl(t *testing.T) {
+	app := NewApp(testStore(t), &historyRunner{}, "", "")
+	t.Cleanup(func() { app.Close() })
+	id := chatmodel.NewID()
+	app.turnMu.Lock()
+	_, control := app.registerTurn(context.Background(), id, chatmodel.NewID())
+	app.turnMu.Unlock()
+	defer app.releaseTurn(id, control)
+	if _, err := app.forkChat(context.Background(), id, chatmodel.BackendCodex, chatmodel.CodexOptions{}); err == nil {
+		t.Fatal("conversion accepted a chat with an active turn")
+	}
+	app.turnMu.Lock()
+	defer app.turnMu.Unlock()
+	if app.activeTurns[id] != control || app.runningTurns != 1 {
+		t.Fatal("conversion replaced the active turn's cancellation control")
+	}
+}
+
 func TestConvertedSessionRollbackRemovesOnlyNewNativeFile(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(root, "claude"))
@@ -237,7 +396,7 @@ func TestConvertedSessionRollbackRemovesOnlyNewNativeFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.forkChat(chat.ID, chatmodel.BackendClaude, chatmodel.CodexOptions{}); err == nil {
+	if _, err := store.forkChat(context.Background(), chat.ID, chatmodel.BackendClaude, chatmodel.CodexOptions{}); err == nil {
 		t.Fatal("expected transaction failure")
 	}
 	saved, _ := store.Get(chat.ID)

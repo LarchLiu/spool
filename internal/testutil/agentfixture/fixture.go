@@ -161,7 +161,15 @@ func Run(t *testing.T) {
 			case "initialize":
 				send(map[string]any{"id": value["id"], "result": map[string]any{}})
 			case "config/read":
-				send(map[string]any{"id": value["id"], "result": map[string]any{"config": map[string]any{"model": "test-model", "model_reasoning_effort": "high"}}})
+				if message, err := os.ReadFile("fixture-config-error"); err == nil {
+					send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32603, "message": string(message)}})
+					continue
+				}
+				config := map[string]any{"model": "test-model", "model_reasoning_effort": "high", "model_provider": "fixture-provider"}
+				if data, err := os.ReadFile("fixture-config.json"); err == nil {
+					_ = json.Unmarshal(data, &config)
+				}
+				send(map[string]any{"id": value["id"], "result": map[string]any{"config": config}})
 			case "configRequirements/read":
 				var requirements any
 				if data, err := os.ReadFile("fixture-policy.json"); err == nil {
@@ -294,6 +302,10 @@ func Run(t *testing.T) {
 				send(map[string]any{"id": value["id"], "result": map[string]any{"data": entry.Turns[min(start, end):end], "nextCursor": next}})
 			case "thread/start", "thread/resume":
 				if method == "thread/resume" {
+					if provider, err := os.ReadFile("fixture-resume-provider"); err == nil && StringValue(params["modelProvider"]) == "" {
+						send(map[string]any{"id": value["id"], "error": map[string]any{"code": -32600, "message": fmt.Sprintf("This chat uses model provider “%s”, which is no longer configured. Restore this provider’s configuration to continue.", provider)}})
+						continue
+					}
 					thread = StringValue(params["threadId"])
 				}
 				model := StringValue(params["model"])
