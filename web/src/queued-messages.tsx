@@ -442,7 +442,6 @@ export function composerEnterAction(
     shiftKey: boolean;
     metaKey: boolean;
     ctrlKey: boolean;
-    altKey: boolean;
     isComposing: boolean;
     keyCode: number;
   },
@@ -451,6 +450,5 @@ export function composerEnterAction(
   if (inputMethodKey(event)) return null;
   if (event.key !== "Enter" || event.shiftKey) return null;
   if (event.metaKey || event.ctrlKey) return "steer";
-  if (event.altKey) return "send";
   return touchKeyboard ? null : "send";
 }

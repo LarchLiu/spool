@@ -18,13 +18,17 @@ test("Enter sends, Shift+Enter breaks the line and the command key steers", () =
   assert.equal(composerEnterAction(key({ shiftKey: true }), false), null);
   assert.equal(composerEnterAction(key({ metaKey: true }), false), "steer");
   assert.equal(composerEnterAction(key({ ctrlKey: true }), false), "steer");
+  assert.equal(composerEnterAction(key({ altKey: true }), false), "send");
   assert.equal(composerEnterAction(key({ metaKey: true, shiftKey: true }), false), null);
   assert.equal(composerEnterAction(key({ key: "a" }), false), null);
 });
 
 test("a touch keyboard keeps Enter for line breaks", () => {
   assert.equal(composerEnterAction(key(), true), null);
+  assert.equal(composerEnterAction(key({ altKey: true }), true), null);
+  assert.equal(composerEnterAction(key({ shiftKey: true }), true), null);
   assert.equal(composerEnterAction(key({ metaKey: true }), true), "steer");
+  assert.equal(composerEnterAction(key({ ctrlKey: true }), true), "steer");
 });
 
 test("Enter that confirms an input method choice does not send", () => {

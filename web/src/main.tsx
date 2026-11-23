@@ -2866,7 +2866,15 @@ function App() {
                 );
                 if (action) {
                   e.preventDefault();
-                  submitDraft(action === "steer");
+                  if (
+                    action === "steer" &&
+                    !draft.trim() &&
+                    !files.length
+                  ) {
+                    const next = chat?.queued_messages?.[0];
+                    if (next && composerWritable && !preparingFiles)
+                      void queueAction(next.id, "steer");
+                  } else submitDraft(action === "steer");
                 }
               }}
               maxLength={131072}

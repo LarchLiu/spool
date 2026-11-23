@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { mkdir } from "node:fs/promises";
 import react from "@vitejs/plugin-react";
 import { requireRunTemp } from "../../tools/test-scratch.mjs";
-import { createTestViteServer } from "./vite-fixture.mjs";
+import { createTestViteServer, mockDesktopNavigation } from "./vite-fixture.mjs";
 
 requireRunTemp();
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -17,7 +17,7 @@ const cleanup = [];
 const server = await createTestViteServer({ after: fn => cleanup.push(fn) }, {
   configFile: false,
   root: path.join(root, "web"),
-  plugins: [react()],
+  plugins: [react(), mockDesktopNavigation()],
   server: { host: "127.0.0.1", port: 0 },
 });
 let browser;
@@ -36,9 +36,11 @@ try {
   await server.listen();
   browser = await chromium.launch({ channel: "chrome", headless: true });
   const origin = `http://127.0.0.1:${server.httpServer.address().port}`;
-  for (const scenario of ["queue", "steer", "same-chat", "queue-stream", "steer-stream", "steer-pending-error", "queue-error", "steer-error", "queue-attachment-error", "steer-attachment-error", "queue-navigation", "edit", "edit-conflict", "edit-error", "edit-navigation", "edit-limit"]) {
+  for (const scenario of ["queued-shortcuts-web", "queued-shortcuts-desktop", "queued-shortcuts-touch", "queue", "queue-alt", "queue-touch", "steer", "steer-meta", "steer-touch", "same-chat", "queue-stream", "steer-stream", "steer-pending-error", "queue-error", "steer-error", "queue-attachment-error", "steer-attachment-error", "queue-navigation", "edit", "edit-conflict", "edit-error", "edit-navigation", "edit-limit"]) {
     const editing = scenario.startsWith("edit");
-    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: "block" });
+    const shortcuts = scenario.startsWith("queued-shortcuts");
+    const touch = scenario.endsWith("-touch");
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, hasTouch: touch, serviceWorkers: "block" });
     let releaseFirst;
     const acceptance = new Promise(resolve => { releaseFirst = resolve; });
     let releaseDelivery;
@@ -49,8 +51,12 @@ try {
       const errors = [];
       const requests = [];
       page.on("pageerror", error => errors.push(String(error)));
-      await page.addInitScript(() => {
+      await page.addInitScript(desktop => {
         localStorage.setItem("spool.ui-preferences.v1", JSON.stringify({ language: "en", theme: "light" }));
+        if (desktop) {
+          window.spoolDesktop = true;
+          window.mygo = { platform: "darwin" };
+        }
         // Navigation uses the REST fallback. No live server or provider is used.
         window.WebSocket = class extends EventTarget {
           readyState = 0;
@@ -62,9 +68,15 @@ try {
         window.EventSource = class extends Source {
           constructor(url, options) { super(url, options); window.__chatSources.push(this); }
         };
-      });
+      }, scenario === "queued-shortcuts-desktop");
       const a = fixture("chat-A"), b = fixture("chat-B", true);
       if (editing) b.queued_messages = [{ id: "queued", message: "  Queued original\nmessage  ", attachments: ["notes.txt"], created_at: 2 }];
+      if (shortcuts) b.queued_messages = [
+        { id: "second", message: "Moved to the front", created_at: 3 },
+        { id: "first", message: "Originally first", created_at: 2 },
+        { id: "attachment", message: "", attachments: ["notes.txt"], created_at: 4 },
+      ];
+      let rejectSteer = shortcuts;
       const accepted = {
         ...a, status: "running", updated_at: 2,
         transcript: { parts: [{ role: "user", kind: "text", text: "First in A" }] },
@@ -82,6 +94,19 @@ try {
         if (request.method() === "POST" && endpoint.endsWith("/queue")) {
           const payload = request.postDataJSON();
           requests.push({ endpoint, ...payload });
+          if (shortcuts) {
+            assert.equal(payload.action, "steer");
+            if (rejectSteer) {
+              rejectSteer = false;
+              return json({ error: "Steer request failed" }, 409);
+            }
+            if (payload.id === "second") await deliveryAcceptance;
+            const next = b.queued_messages.shift();
+            assert.equal(payload.id, next.id, "shortcuts follow the current queue order");
+            b.transcript.parts.push({ role: "user", kind: "text", text: next.message, timestamp: ++b.updated_at });
+            b.turns[0].part_end = b.transcript.parts.length;
+            return json(b);
+          }
           if (payload.action === "draft") return json({ message: b.queued_messages[0].message, files: [{ name: "notes.txt", media_type: "text/plain", data: Buffer.from("Original attachment\n").toString("base64") }] });
           if (scenario === "edit-conflict") return json({ error: "This message is no longer queued" }, 409);
           if (scenario === "edit-error") return json({ error: "Edit request failed" }, 500);
@@ -123,6 +148,81 @@ try {
       });
       await page.goto(origin + "/?chat=chat-A");
       const composer = page.locator("#chat-message");
+      if (touch) {
+        assert.equal(await page.evaluate(() => matchMedia("(pointer: coarse)").matches), true);
+        let draft = "Touch draft";
+        await composer.fill(draft);
+        for (const shortcut of ["Enter", "Shift+Enter"]) {
+          await composer.press(shortcut);
+          draft += "\n";
+          assert.equal(await composer.inputValue(), draft, `${shortcut} keeps its line break on touch devices`);
+        }
+        await composer.press("Alt+Enter");
+        assert.ok((await composer.inputValue()).startsWith(draft), "Alt+Enter leaves the touch draft intact");
+        assert.equal(requests.length, 0);
+        await composer.fill("");
+      }
+      if (shortcuts) {
+        await page.locator(".nav-chat").filter({ hasText: "Running B" }).first().click();
+        await page.getByText("B is working", { exact: true }).waitFor();
+        const queueIDs = () => page.locator(".queued-message").evaluateAll(rows => rows.map(row => row.dataset.queueId));
+        const queueResponse = () => page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/queue"));
+        const settled = () => page.waitForFunction(() => !document.querySelector(".queued-message-steer:disabled"));
+        assert.deepEqual(await queueIDs(), ["second", "first", "attachment"]);
+        // Plain/Alt+Enter, line breaks and IME confirmation leave the queue alone.
+        await composer.press("Enter");
+        await composer.press("Alt+Enter");
+        await composer.press("Shift+Enter");
+        await composer.press("Meta+Shift+Enter");
+        await composer.fill("");
+        await composer.evaluate(element => {
+          element.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, isComposing: true, bubbles: true }));
+          element.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, keyCode: 229, bubbles: true }));
+        });
+        assert.equal(requests.length, 0);
+
+        // A failed request leaves the first entry available to retry.
+        let response = queueResponse();
+        await composer.press("Meta+Enter");
+        await response;
+        await page.getByText("Steer request failed", { exact: true }).waitFor();
+        await settled();
+        assert.deepEqual(await queueIDs(), ["second", "first", "attachment"]);
+
+        // Only one queue action may be in flight, even with different modifiers.
+        response = queueResponse();
+        const posted = page.waitForRequest(request => new URL(request.url()).pathname.endsWith("/queue"));
+        await composer.fill(" \n\t ");
+        await composer.press("Meta+Enter");
+        await posted;
+        await composer.press("Alt+Enter");
+        await composer.press("Control+Enter");
+        assert.equal(requests.length, 2);
+        releaseDelivery();
+        await response;
+        await page.waitForFunction(() => document.querySelectorAll(".queued-message").length === 2);
+        await settled();
+        assert.equal(await composer.inputValue(), " \n\t ");
+
+        response = queueResponse();
+        await composer.press("Control+Enter");
+        await response;
+        await page.waitForFunction(() => document.querySelectorAll(".queued-message").length === 1);
+        await settled();
+        response = queueResponse();
+        await composer.fill("");
+        await composer.press("Control+Enter");
+        await response;
+        await page.waitForFunction(() => !document.querySelector(".queued-message"));
+        assert.deepEqual(requests.map(request => request.id), ["second", "second", "first", "attachment"]);
+        assert.ok(requests.every(request => request.endpoint === "/api/chats/chat-B/queue"));
+        for (const shortcut of ["Meta+Enter", "Alt+Enter", "Control+Enter"]) await composer.press(shortcut);
+        assert.equal(requests.length, 4, "an empty queue produces no requests");
+        assert.equal(await composer.inputValue(), "");
+        assert.deepEqual(errors, []);
+        console.log(`${scenario}: empty composer steers one queued message at a time in order`);
+        continue;
+      }
       if (editing) {
         await page.locator(".nav-chat").filter({ hasText: "Running B" }).first().click();
         await page.getByText("B is working", { exact: true }).waitFor();
@@ -199,7 +299,9 @@ try {
         (request.headers()["content-type"]?.startsWith("multipart/") ? request.postData().includes(`\r\n\r\n${delivery}\r\n`) : request.postDataJSON().delivery === delivery);
       const posted = page.waitForRequest(matchesDelivery, { timeout: 5000 });
       const answered = page.waitForResponse(response => matchesDelivery(response.request()), { timeout: 5000 });
-      if (delivery === "queue" && scenario !== "same-chat") await action.click();
+      if (scenario === "queue-alt") await composer.press("Alt+Enter");
+      else if (scenario === "steer-meta") await composer.press("Meta+Enter");
+      else if (delivery === "queue" && scenario !== "same-chat") await action.click();
       else await composer.press(delivery === "steer" ? "Control+Enter" : "Enter");
       await assertAction("Stop response", "button");
       await originalAction.dispose();
