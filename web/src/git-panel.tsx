@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { api } from "./api";
 import type { Translator } from "./i18n";
-import { FilePanelTabs } from "./file-panel-tabs";
+import { SegmentedTabs } from "./segmented-tabs";
 import { FilePreviewSplit } from "./file-preview-split";
 import { FilePanelButton } from "./file-panel-button";
 import { CustomSelect } from "./custom-select";
@@ -38,6 +38,7 @@ import {
   type GitFile,
   type GitCommit,
 } from "./git-panel-state";
+import "./git-panel.css";
 
 function GitCommitBadges({ commit, t }: { commit: GitCommit; t: Translator }) {
   return (
@@ -663,7 +664,8 @@ export function GitPanel({
           }}
         />
       )}
-      <FilePanelTabs
+      <SegmentedTabs
+        className="git-view-tabs"
         label={t("Git views")}
         value={mode}
         onChange={chooseMode}

@@ -71,8 +71,16 @@
   color: var(--text);
   font-weight: 600;
 }
-.git-panel > .file-panel-tabs {
-  background: var(--elevated);
+.git-view-tabs {
+  --tab-height: 30px;
+  --tab-min-width: 0px;
+  --tab-max-width: none;
+  --tab-padding: 8px;
+  flex-shrink: 0;
+  margin: 6px 10px;
+}
+.git-view-tabs .segmented-tab {
+  flex: 1;
 }
 .file-panel-tabs.segmented {
   gap: 4px;

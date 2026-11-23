@@ -115,7 +115,33 @@ try {
       await Promise.all([page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/file")), page.getByRole("button", { name: "Refresh file preview", exact: true }).click()]);
       assert.ok(requests.slice(offset).every(url => url.includes("/file?")), "File preview refresh must leave tree alone");
       await git.click();
-      await page.getByRole("tab", { name: "Changes", exact: true }).click();
+      const views = page.getByRole("tablist", { name: "Git views", exact: true });
+      const changesTab = views.getByRole("tab", { name: "Changes", exact: true });
+      const historyTab = views.getByRole("tab", { name: "History", exact: true });
+      const assertSelectedView = async tab => {
+        assert.equal(await tab.getAttribute("aria-selected"), "true");
+        const bounds = await tab.boundingBox();
+        const marker = views.locator(".segmented-tabs-indicator");
+        await marker.evaluate(async element => {
+          await Promise.all(element.getAnimations().map(animation => animation.finished));
+        });
+        const selected = await marker.boundingBox();
+        assert.ok(selected && Math.abs(selected.x - bounds.x) < 1 && Math.abs(selected.width - bounds.width) < 1, "The shared tab indicator follows the selected view");
+      };
+      await assertSelectedView(changesTab);
+      await changesTab.press("ArrowRight");
+      await page.locator(".git-history-list").waitFor();
+      await assertSelectedView(historyTab);
+      assert.equal(await historyTab.evaluate(element => element === document.activeElement), true);
+      await historyTab.press("ArrowLeft");
+      await page.locator(".git-change-list").waitFor();
+      await assertSelectedView(changesTab);
+      await changesTab.press("End");
+      await page.locator(".git-history-list").waitFor();
+      await assertSelectedView(historyTab);
+      await historyTab.press("Home");
+      await page.locator(".git-change-list").waitFor();
+      await assertSelectedView(changesTab);
       const row = page.locator(".git-file-row").filter({ hasText: "example.ts" }).first();
       assert.equal(await page.getByRole("button", { name: "Stage src/example.ts", exact: true }).textContent(), "+");
       assert.equal(await page.getByRole("button", { name: "Unstage src/example.ts", exact: true }).textContent(), "−");

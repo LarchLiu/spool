@@ -18,7 +18,7 @@ import org.json.JSONObject;
 
 /** Directory-scoped Git operations, custom actions and a resizable unified diff. */
 final class NativeGitPanel extends LinearLayout {
-    final NativePanelTabs tabs;
+    final NativeTabs tabs;
     final NativeFileSplit split;
     final LinearLayout content, preview;
     final ScrollView scroll;
@@ -37,7 +37,7 @@ final class NativeGitPanel extends LinearLayout {
     private HorizontalScrollView diffHorizontal;
     private String renderedSelected, renderedSide, renderedCommit, renderedDiffError;
     private String mode = "changes", commit = "", selected = "", side = "", error = "", diffError = "", operation = "", operationError = "";
-    private boolean composer;
+    private boolean composer = true;
     private NativePanelAction commitButton;
     private LinearLayout commitCollapsed, commitComposer;
     private NativeTextView commitLabel, remoteTarget, remoteBehind, remoteNotice;
@@ -58,9 +58,10 @@ final class NativeGitPanel extends LinearLayout {
     NativeGitPanel(NativeUi ui, NativeFileModel state, NativeFileBrowser.Read read, DoubleConsumer resize) {
         super(ui.context); this.ui = ui; this.state = state; this.read = read; setOrientation(VERTICAL); setBackgroundColor(ui.elevated);
         setContentDescription(ui.t("Git panel"));
-        tabs = new NativePanelTabs(ui, ui.t("Git views"), false);
-        tabs.add("changes", ui.t("Changes"), "", () -> chooseMode("changes"));
-        tabs.add("history", ui.t("History"), "", () -> chooseMode("history")); tabs.select(mode); addView(tabs);
+        tabs = new NativeTabs(ui, ui.t("Git views"), NativeTabs.Size.COMPACT);
+        tabs.addTab("changes", ui.t("Changes"), () -> chooseMode("changes"));
+        tabs.addTab("history", ui.t("History"), () -> chooseMode("history")); tabs.select(mode);
+        LayoutParams tabLayout = new LayoutParams(-1, -2); tabLayout.setMargins(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6)); addView(tabs, tabLayout);
         content = ui.column(); historyViews = new NativeKeyedViews(content);
         scroll = new ScrollView(ui.context); scroll.setFillViewport(true); scroll.addView(content);
         scroll.setOnScrollChangeListener((view, x, y, oldX, oldY) -> loadHistoryAtBottom());
@@ -97,7 +98,7 @@ final class NativeGitPanel extends LinearLayout {
         ++request; ++diffRequest; ++operationRequest; pending = diffPending = false;
         data = diff = null; selected = side = commit = error = diffError = operation = operationError = "";
         historyCache = null; historyMoreError = ""; historyMorePending = false; scroll.scrollTo(0, 0);
-        composer = false; remoteAction = "push"; commitInput.setText(""); render();
+        composer = true; remoteAction = "push"; commitInput.setText(""); render();
         if (active) reload();
     }
     private String path(String view) {
@@ -414,7 +415,7 @@ final class NativeGitPanel extends LinearLayout {
         String label = ui.t("Commit staged changes") + " (" + stagedCount() + ")";
         commitLabel.setText(label); commitExpand.setEnabled(writable());
         commitButton.setText(label); commitButton.setContentDescription(label); commitCollapse.setEnabled(operation.isEmpty());
-        commitInput.setEnabled(operation.isEmpty()); updateCommitEnabled();
+        commitInput.setEnabled(writable()); updateCommitEnabled();
         lastCommit.setVisibility(changes ? VISIBLE : GONE);
         JSONObject latest = data == null ? null : data.optJSONObject("last_commit");
         lastCommit.bind(latest);
@@ -458,7 +459,7 @@ final class NativeGitPanel extends LinearLayout {
             if (token != operationRequest || epoch != state.epoch) return;
             operation = ""; operationError = failure == null ? "" : failure.getMessage();
             if (operationError == null || failure != null && operationError.isEmpty()) operationError = ui.t("Request failed");
-            if (failure == null && action.equals("commit")) { commitInput.setText(""); composer = false; }
+            if (failure == null && action.equals("commit")) commitInput.setText("");
             ++request; pending = false; render();
             if (active) { reload(); if (!selected.isEmpty()) loadDiff(); }
         });

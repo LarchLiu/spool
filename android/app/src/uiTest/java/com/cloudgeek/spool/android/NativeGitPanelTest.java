@@ -130,7 +130,7 @@ public class NativeGitPanelTest {
             List<NativeFilesTest.Pending> requests = new ArrayList<>();
             NativeGitPanel panel = new NativeGitPanel(ui, model, (path, done) -> requests.add(new NativeFilesTest.Pending(path, done)), value -> {});
             activity.get().setContentView(panel); panel.activate(true); take(requests, "view=changes").result.done(changes(), null);
-            panel.tabs.action("history").performClick(); JSONObject history = historyPage(0, false); take(requests, "view=history").result.done(history, null);
+            panel.tabs.button("history").performClick(); JSONObject history = historyPage(0, false); take(requests, "view=history").result.done(history, null);
             find(panel.content, "History row 1").performClick();
             JSONObject selected = new JSONObject(history.getJSONArray("commits").getJSONObject(0).toString());
             String message = "History row 1\n\nPreserve the full commit message and its paragraphs.\n第二行提交说明\n\nFinal paragraph.";
@@ -141,7 +141,7 @@ public class NativeGitPanelTest {
             String stamp = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.MEDIUM).format(new java.util.Date(selected.getLong("time") * 1000));
             assertNotNull(find(panel.content, "Developer · " + stamp));
             TextView body = (TextView) find(panel.content, "Final paragraph."); assertEquals(message, body.getText().toString()); assertTrue(body.getLineCount() >= 6);
-            assertTrue(body.getRight() <= panel.getWidth()); assertNull(child(panel, android.widget.Button.class));
+            assertTrue(body.getRight() <= panel.getWidth()); assertNull(child(panel.content, android.widget.Button.class));
             assertNotNull(find(panel.content, selected.getString("id")));
             View copy = action(panel.content, "Copy SHA"); assertNotNull(copy);
             assertTrue(copy.getLeft() >= find(panel.content, selected.getString("id")).getRight());
@@ -165,7 +165,7 @@ public class NativeGitPanelTest {
             List<NativeFilesTest.Pending> requests = new ArrayList<>();
             NativeGitPanel panel = new NativeGitPanel(ui, model, (path, done) -> requests.add(new NativeFilesTest.Pending(path, done)), value -> {});
             activity.get().setContentView(panel); panel.activate(true); take(requests, "view=changes").result.done(changes(), null);
-            panel.tabs.action("history").performClick(); take(requests, "view=history").result.done(historyPage(0, false), null); layout(panel);
+            panel.tabs.button("history").performClick(); take(requests, "view=history").result.done(historyPage(0, false), null); layout(panel);
             assertEquals(50, historyRows(panel)); assertTrue(requests.isEmpty());
             View first = panel.content.getChildAt(1); assertTrue(first.getContentDescription().toString().contains("Not pushed")); assertTrue(first.getContentDescription().toString().contains("v1.2.0"));
             assertEquals("History row 1 v1.2.0 ↑", child(first, NativeTextView.class).getText().toString());
@@ -305,7 +305,8 @@ public class NativeGitPanelTest {
             take(requests, "/files?").result.done(new JSONObject().put("entries", new JSONArray()), null);
             assertTrue(requests.isEmpty()); browser.panelTabs.action("git").performClick();
             assertEquals(View.GONE, browser.split.getVisibility()); assertEquals(View.VISIBLE, browser.gitPanel.getVisibility());
-            assertNull(child(browser.gitPanel, android.widget.Button.class));
+            assertTrue(browser.gitPanel.tabs.button("changes").isSelected());
+            assertFalse(browser.gitPanel.tabs.button("history").isSelected());
             NativeFilesTest.Pending listing = take(requests, "/git?"); assertTrue(listing.path.contains("workspace=%2Frepo%2Fmain")); listing.result.done(changes(), null);
             find(browser.gitPanel.content, "file.txt").performClick();
             take(requests, "view=diff").result.done(new JSONObject().put("patch", PATCH), null); layout(browser);
@@ -317,7 +318,7 @@ public class NativeGitPanelTest {
             File output = new File(System.getProperty("spool.ui.artifacts"), "git-panel"); assertTrue(output.isDirectory() || output.mkdirs());
             Bitmap image = Bitmap.createBitmap(360, 800, Bitmap.Config.ARGB_8888); browser.draw(new Canvas(image));
             try (java.io.OutputStream stream = Files.newOutputStream(new File(output, "git-" + (dark ? "dark" : "light") + "-api" + android.os.Build.VERSION.SDK_INT + ".png").toPath())) { image.compress(Bitmap.CompressFormat.PNG, 100, stream); } finally { image.recycle(); }
-            browser.gitPanel.tabs.action("history").performClick();
+            browser.gitPanel.tabs.button("history").performClick();
             String id = "a".repeat(40);
             take(requests, "view=history").result.done(new JSONObject().put("repository", true).put("files", new JSONArray()).put("commits", new JSONArray().put(new JSONObject().put("id", id).put("subject", "Historical commit").put("author", "Author"))), null);
             find(browser.gitPanel.content, "Historical commit").performClick();
@@ -351,6 +352,11 @@ public class NativeGitPanelTest {
             assertEquals(View.VISIBLE, panel.commitArea.getVisibility()); assertTrue(panel.lastCommit.getText().toString().contains("Latest commit"));
             assertNotNull(find(panel.content, "feature/git-panel")); assertTrue(panel.commitArea.getTop() >= panel.split.getBottom());
             assertTrue(panel.remoteArea.getTop() >= panel.commitArea.getBottom()); assertNull(action(panel.remoteArea, "Fetch"));
+            assertTrue("The commit input is expanded by default", panel.commitInput.isShown());
+            assertTrue(panel.commitInput.isEnabled());
+            assertFalse(action(panel.commitArea, "Commit staged changes (1)").isEnabled());
+            screenshot(panel, "commit-default-" + (dark ? "dark" : "light"));
+            action(panel.commitArea, "Collapse commit area").performClick(); layout(panel);
             String collapsedLabel = ((TextView) find(panel.commitArea, "Commit staged changes")).getText().toString();
             action(panel.commitArea, "Expand commit area").setHovered(true);
             screenshot(panel, "collapsed-" + (dark ? "dark" : "light"));
@@ -402,6 +408,7 @@ public class NativeGitPanelTest {
             completions.remove(0).done(new JSONObject().put("ok", true), null);
             file.put("staged", false); listing.getJSONObject("last_commit").put("subject", "Commit from Android"); take(requests, "view=changes").result.done(listing, null);
             assertEquals("", panel.commitInput.getText().toString()); assertTrue(panel.lastCommit.getText().toString().contains("Commit from Android"));
+            assertTrue("A successful commit keeps the input expanded", panel.commitInput.isShown());
             action(panel.remoteArea, "Git remote actions").performClick(); assertNotNull(ui.activePopover); assertEquals(2, ui.activePopover.content.getChildCount());
             action(ui.activePopover.content, "Fetch").performClick(); assertEquals(3, writes.size()); assertTrue(completions.isEmpty());
             TextView fetch = (TextView) action(panel.remoteArea, "Fetch"); assertNotNull(fetch); assertNotNull(fetch.getCompoundDrawablesRelative()[0]);
@@ -422,6 +429,38 @@ public class NativeGitPanelTest {
             assertNotNull(find(panel.content, "Push rejected")); assertNotNull(action(panel.content, "Dismiss"));
             screenshot(panel, "operations-" + (dark ? "dark" : "light"));
             action(panel.content, "Dismiss").performClick(); assertNull(find(panel.content, "Push rejected"));
+            panel.activate(false);
+        }
+    }
+
+    @Test public void sharedTabsPreserveTheCommitDraftAndDirectoryChangesOpenAnEmptyInput() throws Exception {
+        RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
+        for (boolean dark : new boolean[]{false, true}) try (ActivityController<Activity> activity = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(activity.get(), dark, "en"); NativeFileModel model = new NativeFileModel("p", "c");
+            JSONObject main = workspace("/repo/main"), other = workspace("/repo/other");
+            model.receiveWorkspace(new JSONObject(main.toString()).put("workspaces", new JSONArray().put(main).put(other)));
+            List<NativeFilesTest.Pending> requests = new ArrayList<>();
+            NativeGitPanel panel = new NativeGitPanel(ui, model, (path, done) -> requests.add(new NativeFilesTest.Pending(path, done)), value -> {});
+            panel.write = (path, body, done) -> fail("Changing views must not write to Git");
+            activity.get().setContentView(panel); panel.activate(true);
+            JSONObject listing = changes().put("writable", true);
+            take(requests, "view=changes").result.done(listing, null); layout(panel);
+            assertTrue(panel.tabs.button("changes").isSelected()); assertFalse(panel.tabs.button("history").isSelected());
+            assertTrue(panel.commitInput.isShown()); panel.commitInput.setText("Keep this commit draft");
+            panel.tabs.button("changes").dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_RIGHT));
+            take(requests, "view=history").result.done(historyPage(0, false), null); layout(panel);
+            assertTrue(panel.tabs.button("history").isSelected()); assertFalse(panel.tabs.button("changes").isSelected());
+            assertEquals(View.GONE, panel.commitArea.getVisibility());
+            panel.tabs.button("history").dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT));
+            take(requests, "view=changes").result.done(listing, null); layout(panel);
+            assertTrue(panel.tabs.button("changes").isSelected()); assertTrue(panel.commitInput.isShown());
+            assertEquals("Keep this commit draft", panel.commitInput.getText().toString());
+            action(panel.commitArea, "Collapse commit area").performClick();
+            assertTrue(model.selectWorkspace("/repo/other")); panel.scopeChanged();
+            NativeFilesTest.Pending next = take(requests, "view=changes"); assertTrue(next.path.contains("workspace=%2Frepo%2Fother"));
+            next.result.done(listing.put("writable", false), null); layout(panel);
+            assertTrue("A new directory opens the commit input", panel.commitInput.isShown());
+            assertEquals("", panel.commitInput.getText().toString()); assertFalse(panel.commitInput.isEnabled());
             panel.activate(false);
         }
     }
