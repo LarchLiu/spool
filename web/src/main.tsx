@@ -135,6 +135,7 @@ import { panelStorageKey, parsePanelLayout } from "./panel-layout";
 import { AgentModelMenu } from "./agent-model-menu";
 import { AgentIcon } from "./agent-icon";
 import { AutosizeTextarea } from "./autosize-textarea";
+import { useComposerHistory } from "./composer-history";
 import { SlashCommandMenu } from "./slash-command-menu";
 import {
   commandSuggestions,
@@ -533,6 +534,12 @@ function App() {
     requestAnimationFrame(() => document.getElementById("chat-message")?.focus());
   }
   const [draftVersion, setDraftVersion] = useState(0);
+  const composerHistory = useComposerHistory(
+    JSON.stringify([user?.id, project, chatID, draftVersion]),
+    chat?.id === chatID ? chat : null,
+    draft,
+    setDraft,
+  );
   const [commandDismissed, setCommandDismissed] = useState(false);
   const [commandFocused, setCommandFocused] = useState(false);
   const [commandSelection, setCommandSelection] = useState({
@@ -2813,6 +2820,7 @@ function App() {
               disabled={!composerWritable || editingQueue}
               onPaste={(event) => pasteAttachments(event, addFiles)}
               onChange={(e) => {
+                composerHistory.reset();
                 setDraft(e.target.value);
                 setCommandDismissed(false);
               }}
@@ -2857,6 +2865,10 @@ function App() {
                 }
                 if (commandOpen && e.key === "Escape") {
                   e.preventDefault();
+                  setCommandDismissed(true);
+                  return;
+                }
+                if (composerHistory.onKeyDown(e)) {
                   setCommandDismissed(true);
                   return;
                 }
