@@ -145,6 +145,17 @@ func TestDesktopServerModesKeepIndependentAddressesAndSessions(t *testing.T) {
 	}
 }
 
+func TestServerDialogNewProfileCanAutosaveBeforeConnecting(t *testing.T) {
+	snapshot := (&panel{}).serverDialogSnapshot()
+	if snapshot.Server.Enabled || snapshot.Active || snapshot.Status != "disconnected" {
+		t.Fatalf("new server must wait for an explicit connection: %+v", snapshot)
+	}
+	snapshot.Server.Name = "New home"
+	if _, err := validateDesktopServer(snapshot.Server); err != nil {
+		t.Fatalf("name cannot autosave before the address is configured: %v", err)
+	}
+}
+
 func TestServerDialogOnlyAllowsItsExactPrivateDocument(t *testing.T) {
 	p := &panel{}
 	for _, address := range []string{serverDialogURL, "http://mygo.localhost/servers.html"} {
@@ -166,7 +177,7 @@ func TestServerDialogOnlyAllowsItsExactPrivateDocument(t *testing.T) {
 		if _, err := bridge.Snapshot(ctx); err == nil {
 			t.Fatal("snapshot exposed without dialog")
 		}
-		if _, err := bridge.Ready(ctx, ""); err == nil {
+		if _, err := bridge.Ready(ctx, "", 420); err == nil {
 			t.Fatal("dialog shown without its page")
 		}
 		if _, err := bridge.Save(ctx, desktopServer{}, true); err == nil {

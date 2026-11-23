@@ -88,6 +88,20 @@ async function verifySignedOutAction(page, action) {
   }
 }
 
+async function verifyServerDialogSize(page, availableHeight = 860) {
+  await page.waitForFunction((availableHeight) => {
+    const content = document.querySelector(".server-dialog-content");
+    const reported = window.fixtureCalls
+      .filter(([method]) => method === "DesktopServers.Ready")
+      .at(-1)?.[2];
+    return (
+      content &&
+      reported === Math.ceil(content.getBoundingClientRect().height) &&
+      innerHeight === Math.min(reported, 660, availableHeight - 40)
+    );
+  }, availableHeight);
+}
+
 async function verifyWideWorkspace(page) {
   await page.waitForFunction(() => {
     const sidebar = document.querySelector(".sidebar");
@@ -388,6 +402,24 @@ try {
     page.on("pageerror", (error) => errors.push(String(error)));
     page.setDefaultTimeout(10000);
     try {
+      let serverDialogAvailableHeight = 860;
+      await page.exposeFunction("fixtureResizeServerDialog", async (height) => {
+        await page.setViewportSize({
+          width: page.viewportSize().width,
+          height: Math.min(height, 660, serverDialogAvailableHeight - 40),
+        });
+      });
+      const resizeServerDialog = async (width, availableHeight = 860) => {
+        serverDialogAvailableHeight = availableHeight;
+        const height = await page.locator(".server-dialog-content").evaluate(
+          (element) => Math.ceil(element.getBoundingClientRect().height),
+        );
+        await page.setViewportSize({
+          width,
+          height: Math.min(height, 660, availableHeight - 40),
+        });
+        await verifyServerDialogSize(page, availableHeight);
+      };
       await page.addInitScript(() => {
         const nativeMatchMedia = window.matchMedia.bind(window);
         let sampledLayout = false;
@@ -1309,7 +1341,7 @@ try {
             name: "",
             server_name: "",
             address: "",
-            enabled: true,
+            enabled: false,
             automatic: true,
             direct: "",
             tailscale: "",
@@ -1327,6 +1359,9 @@ try {
         window.mygo.call = async (method, ...args) => {
           calls.push([method, ...structuredClone(args)]);
           if (method === "DesktopServers.Save") {
+            if (window.fixtureRejectSave) throw new Error("Fixture save failed.");
+            if (args[0].enabled && !args[0][args[0].mode])
+              throw new Error("Configure the selected connection before connecting.");
             const previous = data.server;
             data.server = {
               ...args[0],
@@ -1365,6 +1400,7 @@ try {
               theme: document.documentElement.dataset.theme,
               error: document.querySelector('[role="alert"]')?.textContent,
             };
+            await window.fixtureResizeServerDialog(args[1]);
             return true;
           } else if (
             method !== "DesktopServers.Snapshot" &&
@@ -1381,12 +1417,21 @@ try {
         };
       });
       await page.goto(origin + "/servers.html");
-      await page.setViewportSize({ width: 560, height: 660 });
       const name = page.getByRole("textbox", {
         name: "Display name (optional)",
         exact: true,
       });
       await name.waitFor();
+      await resizeServerDialog(560);
+      let compactDialogHeight = page.viewportSize().height;
+      assert.ok(compactDialogHeight < 600, "the form does not reserve empty rows");
+      const footerGap = await page.locator("form").evaluate(
+        (form) => innerHeight - form.getBoundingClientRect().bottom,
+      );
+      assert.ok(footerGap >= 18 && footerGap < 19, "only bottom padding follows the form");
+      const pendingChanges = page.getByRole("region", { name: "Pending changes", exact: true });
+      assert.equal(await pendingChanges.count(), 0);
+      assert.equal(await page.getByRole("button", { name: "Save settings", exact: true }).count(), 0);
       await page.waitForFunction(() => window.fixtureFirstDialogView);
       assert.deepEqual(
         await page.evaluate(() => window.fixtureFirstDialogView),
@@ -1421,7 +1466,7 @@ try {
         true,
       );
       for (const width of [460, 560]) {
-        await page.setViewportSize({ width, height: 660 });
+        await resizeServerDialog(width);
         for (const control of [
           name,
           page.getByRole("switch", {
@@ -1486,7 +1531,7 @@ try {
         .fill("https://home.example.ts.net");
       await page.getByRole("button", { name: "Connect", exact: true }).click();
       await page.waitForFunction(() =>
-        window.fixtureCalls.some((call) => call[0] === "DesktopServers.Save"),
+        window.fixtureCalls.some((call) => call[0] === "DesktopServers.Save" && call[2] === true),
       );
       let saved = await page.evaluate(() =>
         window.fixtureCalls
@@ -1511,6 +1556,9 @@ try {
       await page
         .getByRole("heading", { name: "服务器原名 · Settings", exact: true })
         .waitFor();
+      await verifyServerDialogSize(page);
+      compactDialogHeight = page.viewportSize().height;
+      assert.equal(await pendingChanges.count(), 0, "Connect also commits the draft");
       await name.fill("我的自定义名称");
       await page.getByRole("tab", { name: "Spool Relay", exact: true }).click();
       await page
@@ -1525,14 +1573,9 @@ try {
           .inputValue(),
         "https://public.example.com",
       );
-      await page
-        .getByRole("button", { name: "Save settings", exact: true })
-        .click();
       await page.waitForFunction(
-        () =>
-          window.fixtureCalls.filter(
-            (call) => call[0] === "DesktopServers.Save",
-          ).length === 2,
+        () => window.fixtureDialogData.server.relay === "spool-pair:fixture" &&
+          window.fixtureDialogData.server.name === "我的自定义名称",
       );
       saved = await page.evaluate(() =>
         window.fixtureCalls
@@ -1546,10 +1589,23 @@ try {
       );
       assert.equal(saved[1].relay, "spool-pair:fixture");
       assert.equal(saved[1].name, "我的自定义名称");
+      await pendingChanges.waitFor({ state: "hidden" });
+
+      await name.fill("Retry name");
+      await page.evaluate(() => { window.fixtureRejectSave = true; });
+      await name.press("Enter");
+      await page.getByRole("alert").getByText("Fixture save failed.", { exact: true }).waitFor();
+      assert.equal(await name.inputValue(), "Retry name");
+      assert.equal(await pendingChanges.count(), 0, "autosave has no manual save prompt");
+      assert.equal(await page.evaluate(() => window.fixtureDialogData.server.name), "我的自定义名称");
+      await page.evaluate(() => { window.fixtureRejectSave = false; });
+      await name.press("Enter");
+      await page.waitForFunction(() => window.fixtureDialogData.server.name === "Retry name");
+      assert.equal(await page.evaluate(() => window.fixtureDialogData.server.name), "Retry name");
 
       // All modes use a centered primary action and right-aligned tools.
       for (const width of [460, 560]) {
-        await page.setViewportSize({ width, height: 660 });
+        await resizeServerDialog(width);
         for (const mode of ["Public HTTPS", "Tailscale", "Spool Relay"]) {
           await page.getByRole("tab", { name: mode, exact: true }).click();
           const panel = page.getByRole("tabpanel");
@@ -1636,7 +1692,7 @@ try {
           })
           .inputValue(),
         "",
-        "disconnect preserves unsaved edits",
+        "disconnect preserves an input that could not be saved",
       );
       assert.equal(
         await page.evaluate(() => window.fixtureDialogData.server.tailscale),
@@ -1647,6 +1703,31 @@ try {
         await page.evaluate(() => window.fixtureDialogData.server.enabled),
         false,
       );
+
+      await name.fill("Autosaved name beside switches");
+      for (const [label, key] of [
+        ["Connect to this server", "enabled"],
+        ["Allow automatic connection switching", "automatic"],
+      ]) {
+        const toggle = page.getByRole("switch", { name: label, exact: true });
+        const previous = await toggle.getAttribute("aria-checked");
+        await toggle.click();
+        await page.waitForFunction(
+          ({ key, previous }) => window.fixtureDialogData.server[key] === (previous !== "true"),
+          { key, previous },
+        );
+        await page.waitForFunction(() => !document.querySelector('.server-dialog-shell [role="switch"]').disabled);
+        assert.equal(await name.inputValue(), "Autosaved name beside switches");
+        assert.equal(await page.getByRole("textbox", { name: "Tailscale HTTPS address", exact: true }).inputValue(), "");
+        const persisted = await page.evaluate(() => window.fixtureDialogData.server);
+        assert.equal(persisted.name, "Autosaved name beside switches");
+        assert.equal(await pendingChanges.count(), 0);
+      }
+      await page.getByRole("textbox", { name: "Tailscale HTTPS address", exact: true }).fill("https://home.example.ts.net");
+      await page.getByRole("textbox", { name: "Tailscale HTTPS address", exact: true }).press("Enter");
+      assert.equal(await pendingChanges.count(), 0);
+      assert.equal(await page.getByRole("switch", { name: "Connect to this server", exact: true }).getAttribute("aria-checked"), "true");
+      assert.equal(await page.getByRole("switch", { name: "Allow automatic connection switching", exact: true }).getAttribute("aria-checked"), "false");
 
       for (const [status, active, action] of [
         ["connected", true, "Disconnect"],
@@ -1734,6 +1815,11 @@ try {
       await page.waitForFunction(
         () => typeof window.fixtureFinishPairing === "function",
       );
+      await verifyServerDialogSize(page);
+      assert.ok(
+        page.viewportSize().height > compactDialogHeight,
+        "pairing approval expands the dialog",
+      );
       assert.equal(
         await page
           .getByRole("button", { name: "Disconnect", exact: true })
@@ -1767,6 +1853,8 @@ try {
         0,
         "a late pairing result cannot restore a cancelled operation",
       );
+      await verifyServerDialogSize(page);
+      assert.equal(page.viewportSize().height, compactDialogHeight);
       await page.locator(".server-dialog-shell").evaluate((el) => {
         el.scrollTop = 0;
       });
@@ -1791,6 +1879,26 @@ try {
       await page
         .getByRole("button", { name: "Delete server", exact: true })
         .click();
+      await verifyServerDialogSize(page);
+      assert.ok(
+        page.viewportSize().height > compactDialogHeight,
+        "delete confirmation expands the dialog",
+      );
+      await resizeServerDialog(460, 380);
+      assert.equal(page.viewportSize().height, 340);
+      const confirmDelete = page
+        .getByRole("alert")
+        .getByRole("button", { name: "Delete server", exact: true });
+      await confirmDelete.scrollIntoViewIfNeeded();
+      const confirmBounds = await confirmDelete.boundingBox();
+      assert.ok(
+        confirmBounds.y >= 0 && confirmBounds.y + confirmBounds.height <= 340,
+        "the confirmation stays reachable by scrolling in a short window",
+      );
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await resizeServerDialog(560);
+      assert.equal(page.viewportSize().height, compactDialogHeight);
+      await page.getByRole("button", { name: "Delete server", exact: true }).click();
       await page
         .getByRole("alert")
         .getByRole("button", { name: "Delete server", exact: true })
@@ -1942,6 +2050,7 @@ try {
         sharedScrollHandoff: true,
         reducedMotion: true,
         compactSettings: true,
+        automaticSettingsSave: true,
         connectionActions: true,
         connectionInformation: true,
         localQRDecoding: true,

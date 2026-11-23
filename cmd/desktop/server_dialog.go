@@ -144,13 +144,22 @@ func (p *panel) serverDialogContent(c *ui.Context) {
 		return
 	}
 	width, height := c.Size()
+	w, h := p.serverDialogSize(width, height)
 	c.Key("server-settings-modal")
 	modal := ui.Modal(c, &p.serverDialogOpen, func() {
 		ui.WebView(c, p.serverDialog).Fill().Radius(16)
-	}).Width(min(560, width-40)).Height(min(660, height-40)).Padding(0).Gap(0).Radius(16)
+	}).Width(w).Height(h).Padding(0).Gap(0).Radius(16)
 	if modal.Dismissed() {
 		p.hideServerDialog()
 	}
+}
+
+func (p *panel) serverDialogSize(width, height float32) (float32, float32) {
+	contentHeight := p.serverDialogHeight
+	if contentHeight <= 0 {
+		contentHeight = 660
+	}
+	return min(560, width-40), min(contentHeight, 660, height-40)
 }
 
 func (p *panel) desktopWindowCount() int {
@@ -191,7 +200,7 @@ func serverDialogUI[T any](ctx context.Context, p *panel, fn func() (T, error)) 
 func (p *panel) serverDialogSnapshot() desktopServerSnapshot {
 	server, ok := p.servers.find(p.serverDialogID)
 	if !ok {
-		server = desktopServer{Enabled: true, Mode: "direct", Automatic: true}
+		server = desktopServer{Mode: "direct", Automatic: true}
 	}
 	status := "disconnected"
 	active := false
@@ -206,7 +215,7 @@ func (s *desktopServerSettings) Snapshot(ctx context.Context) (desktopServerSnap
 	return serverDialogUI(ctx, s.panel, func() (desktopServerSnapshot, error) { return s.panel.serverDialogSnapshot(), nil })
 }
 
-func (s *desktopServerSettings) Ready(ctx context.Context, id string) (bool, error) {
+func (s *desktopServerSettings) Ready(ctx context.Context, id string, height int) (bool, error) {
 	return serverDialogUI(ctx, s.panel, func() (bool, error) {
 		// DOM ready precedes React's initial snapshot and theme. Let the editor
 		// reveal its modal once the first usable view has been committed.
@@ -216,6 +225,13 @@ func (s *desktopServerSettings) Ready(ctx context.Context, id string) (bool, err
 		if id != s.panel.serverDialogID {
 			_ = serverDialogChanged.EmitPage(s.panel.serverDialog.Page(), s.panel.serverDialogSnapshot())
 			return false, nil
+		}
+		if height <= 0 {
+			return false, errors.New("invalid server settings height")
+		}
+		if next := float32(min(height, 660)); next != s.panel.serverDialogHeight {
+			s.panel.serverDialogHeight = next
+			s.panel.window.Invalidate()
 		}
 		if !s.panel.serverDialogOpen {
 			s.panel.serverDialogOpen = true

@@ -52,6 +52,7 @@ type panel struct {
 	serverDialogID         string
 	serverDialogRequested  bool
 	serverDialogOpen       bool
+	serverDialogHeight     float32
 	serverPairing          *spoolnet.PairingSession
 	quitting               bool
 	tray                   *mygo.Tray
@@ -454,10 +455,10 @@ func (p *panel) action(fn func() error) {
 }
 func (p *panel) view(c *ui.Context) {
 	if p.serverDialogRequested && !p.serverDialogOpen && p.serverDialog != nil {
-		// Give the editor its final size behind the workspace so its first
+		// Give the editor its measured size behind the workspace so its first
 		// native backing frame is ready before the modal is revealed.
 		width, height := c.Size()
-		w, h := min(560, width-40), min(660, height-40)
+		w, h := p.serverDialogSize(width, height)
 		c.Key("preparing-server-settings")
 		ui.WebView(c, p.serverDialog).Absolute().Left((width-w)/2).Top((height-h)/2).Size(w, h)
 	}
