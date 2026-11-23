@@ -41,6 +41,9 @@
 .desktop-settings-shell button:disabled {
   opacity: 0.45;
 }
+.desktop-settings-shell button.settings-destructive {
+  color: var(--error-text);
+}
 .desktop-settings-shell :is(input, select) {
   min-width: 0;
   min-height: 32px;
@@ -816,6 +819,55 @@
   color: var(--muted);
   margin: 12px 2px 20px;
   overflow-wrap: anywhere;
+}
+.settings-trust-revoked > summary {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 9px 1px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.settings-trust-directions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-trust-controls {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.settings-trust-direction {
+  flex: 0 0 9em;
+  padding-top: 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.settings-trust-direction + .settings-trust-status {
+  padding-top: 8px;
+}
+.settings-trust-details {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+}
+.settings-trust-revoke {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.settings-trust-status {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.settings-trust-status > span + span::before {
+  content: " · ";
 }
 .settings-error {
   display: flex;

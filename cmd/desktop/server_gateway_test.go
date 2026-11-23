@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -47,6 +48,48 @@ func newTestServerGateway(t *testing.T, profiles desktopServers) *desktopServerG
 	}
 	t.Cleanup(gateway.close)
 	return gateway
+}
+
+func TestDesktopTrustedLocalGatewayUsesTheActiveService(t *testing.T) {
+	old := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("sent a local trusted session to the saved listener")
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	t.Cleanup(old.Close)
+	active := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("spool_session")
+		if err != nil || cookie.Value != "trusted-local" || r.URL.Path != "/api/me" {
+			t.Error("active local service received the wrong session", r.URL.Path, err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(active.Close)
+	profiles, trusted, err := defaultDesktopServers().trustedProfile(desktopServer{ID: localDesktopServer, Direct: old.URL}, "remote-source", testFederationTarget, strings.Repeat("a", 43))
+	if err != nil {
+		t.Fatal(err)
+	}
+	trusted.Enabled = true
+	profiles, err = profiles.save(trusted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway := newTestServerGateway(t, profiles)
+	mount := desktopServerMount(trusted)
+	request := func(want int) {
+		t.Helper()
+		r, _ := http.NewRequest("GET", gateway.url+mount+"api/me", nil)
+		r.AddCookie(&http.Cookie{Name: "spool_remote_" + strings.Split(mount, "/")[2] + "_spool_session", Value: "trusted-local"})
+		if status, body := devRequest(t, http.DefaultClient, r); status != want {
+			t.Fatalf("status=%d body=%s", status, body)
+		}
+	}
+	request(http.StatusServiceUnavailable)
+	gateway.localURL = func() (string, error) { return active.URL, nil }
+	gateway.update(profiles)
+	request(http.StatusOK)
+	gateway.localURL = func() (string, error) { return "", errors.New("stopped") }
+	gateway.update(profiles)
+	request(http.StatusServiceUnavailable)
 }
 
 func TestDesktopServerGatewayIsolatesAccountsOnTheSameHost(t *testing.T) {

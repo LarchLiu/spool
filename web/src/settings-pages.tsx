@@ -917,95 +917,108 @@ export function PeoplePage({ data, run, t }: PageProps) {
   });
   if (!editing)
     return (
-      <SettingsList
-        label={t("People")}
-        summary={t("{count} people", { count: data.users.length })}
-        empty={t("No people yet. Create an account to get started.")}
-        items={data.users.map((person) => ({
-          id: person.id,
-          title: person.nickname || person.username,
-          description: person.username,
-          status: [
-            person.source_server_id && t("Federated sign-in"),
-            person.disabled && t("Disabled"),
-          ]
-            .filter(Boolean)
-            .join(" · "),
-          action: (person.remote_desktop || person.adb_bridge) && (
-            <div className="settings-person-remote">
-              {person.adb_bridge && (
-                <span
-                  className="settings-person-remote-icon"
-                  role="img"
-                  aria-label={t("ADB bridge allowed")}
-                  title={t("ADB bridge allowed")}
-                >
-                  <Smartphone size={17} aria-hidden="true" />
-                </span>
-              )}
-              {person.remote_desktop && (
-                <>
+      <>
+        <Hint>
+          {t(
+            "External people appear after their first trusted sign-in. Manage account access here and project permissions in Projects.",
+          )}
+        </Hint>
+        <SettingsList
+          label={t("People")}
+          summary={t("{count} people", { count: data.users.length })}
+          empty={t("No people yet. Create an account to get started.")}
+          items={data.users.map((person) => ({
+            id: person.id,
+            title: person.nickname || person.username,
+            description: person.source_server_id
+              ? t("Federation source: {server}", {
+                  server: person.source_server_name || person.source_server_id,
+                })
+              : person.username,
+            status: [
+              person.source_server_id && t("Federated sign-in"),
+              person.disabled && t("Disabled"),
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            action: (person.remote_desktop || person.adb_bridge) && (
+              <div className="settings-person-remote">
+                {person.adb_bridge && (
                   <span
                     className="settings-person-remote-icon"
                     role="img"
-                    aria-label={t("Remote desktop allowed")}
-                    title={t("Remote desktop allowed")}
+                    aria-label={t("ADB bridge allowed")}
+                    title={t("ADB bridge allowed")}
                   >
-                    <MonitorUp size={17} aria-hidden="true" />
+                    <Smartphone size={17} aria-hidden="true" />
                   </span>
-                  <span
-                    className={`settings-remote-count${(data.status.RemoteDesktopConnections?.[person.id] ?? 0) > 0 ? " is-connected" : ""}`}
-                    role="status"
-                    aria-label={t("Remote connections · {count}", {
-                      count:
-                        data.status.RemoteDesktopConnections?.[person.id] ?? 0,
-                    })}
-                    title={t("Remote connections · {count}", {
-                      count:
-                        data.status.RemoteDesktopConnections?.[person.id] ?? 0,
-                    })}
-                  >
-                    {data.status.RemoteDesktopConnections?.[person.id] ?? 0}
-                  </span>
-                  {(data.status.RemoteDesktopConnections?.[person.id] ?? 0) >
-                    0 && (
-                    <button
-                      type="button"
-                      aria-label={`${t("Disconnect desktop")} · ${person.nickname || person.username}`}
-                      onClick={() =>
-                        void run({
-                          kind: "disconnect-remote-desktop",
-                          target: person.id,
-                        })
-                      }
+                )}
+                {person.remote_desktop && (
+                  <>
+                    <span
+                      className="settings-person-remote-icon"
+                      role="img"
+                      aria-label={t("Remote desktop allowed")}
+                      title={t("Remote desktop allowed")}
                     >
-                      {t("Disconnect desktop")}
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-          ),
-          icon: <UserAvatar person={person} size={34} />,
-        }))}
-        onSelect={(id) => {
-          const person = data.users.find((person) => person.id === id);
-          if (person) {
-            edit({ ...person, password: "" });
+                      <MonitorUp size={17} aria-hidden="true" />
+                    </span>
+                    <span
+                      className={`settings-remote-count${(data.status.RemoteDesktopConnections?.[person.id] ?? 0) > 0 ? " is-connected" : ""}`}
+                      role="status"
+                      aria-label={t("Remote connections · {count}", {
+                        count:
+                          data.status.RemoteDesktopConnections?.[person.id] ??
+                          0,
+                      })}
+                      title={t("Remote connections · {count}", {
+                        count:
+                          data.status.RemoteDesktopConnections?.[person.id] ??
+                          0,
+                      })}
+                    >
+                      {data.status.RemoteDesktopConnections?.[person.id] ?? 0}
+                    </span>
+                    {(data.status.RemoteDesktopConnections?.[person.id] ?? 0) >
+                      0 && (
+                      <button
+                        type="button"
+                        aria-label={`${t("Disconnect desktop")} · ${person.nickname || person.username}`}
+                        onClick={() =>
+                          void run({
+                            kind: "disconnect-remote-desktop",
+                            target: person.id,
+                          })
+                        }
+                      >
+                        {t("Disconnect desktop")}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            ),
+            icon: <UserAvatar person={person} size={34} />,
+          }))}
+          onSelect={(id) => {
+            const person = data.users.find((person) => person.id === id);
+            if (person) {
+              edit({ ...person, password: "" });
+            }
+          }}
+          action={
+            <button
+              type="button"
+              className="settings-primary"
+              data-new-entity
+              onClick={() => edit(newPerson())}
+            >
+              <Plus size={15} />
+              {t("New person")}
+            </button>
           }
-        }}
-        action={
-          <button
-            type="button"
-            className="settings-primary"
-            data-new-entity
-            onClick={() => edit(newPerson())}
-          >
-            <Plus size={15} />
-            {t("New person")}
-          </button>
-        }
-      />
+        />
+      </>
     );
   return (
     <>
@@ -1019,15 +1032,21 @@ export function PeoplePage({ data, run, t }: PageProps) {
       <form ref={form} onSubmit={(e) => submit(e, () => void save())}>
         {source && (
           <Hint>
-            {t("Federation source: {server}", { server: source })}
+            {t("Federation source: {server}", {
+              server: draft.source_server_name || source,
+            })}
             <br />
-            {t("This account’s identity is managed by its source server. Only local access can be changed here.")}
+            {source}
+            <br />
+            {t(
+              "This account’s identity is managed by its source server. Only local access can be changed here.",
+            )}
           </Hint>
         )}
         <Card title={draft.id ? t("Edit person") : t("New person")}>
           {source ? (
             <>
-              <Row title={t("Username")} help={draft.username} />
+              <Row title={t("Source user ID")} help={draft.source_user_id} />
               <Row title={t("Display name")} help={draft.nickname} />
             </>
           ) : (
@@ -1046,7 +1065,9 @@ export function PeoplePage({ data, run, t }: PageProps) {
               />
               <Row
                 title={t("Password")}
-                help={t("Password (12–72 bytes; blank keeps existing password)")}
+                help={t(
+                  "Password (12–72 bytes; blank keeps existing password)",
+                )}
               >
                 <input
                   aria-label={t("Password")}

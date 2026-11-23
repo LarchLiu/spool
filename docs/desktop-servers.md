@@ -68,3 +68,27 @@ dialog. It can edit, disable, or delete that profile. A disabled tab remains
 selectable and can be connected again from its sidebar. Local Settings continues
 to manage the local service. Connection profiles are kept on this desktop,
 separately from server settings and account preferences.
+
+Profiles live in `desktop-servers.json` in the local data directory, normally
+`~/.spool/` (`~/.spool-dev/` in development), overridden by `SPOOL_HOME` or
+`-data-dir`. Each manually added profile has its own ID; names, addresses and
+public Server IDs do not merge profiles. The system WebView stores login cookies;
+the profile file stores neither account passwords nor session cookies.
+
+Trusted entries follow their source server and use a key icon. Ordinary B,
+B through A, and B through D keep separate login sessions. Changing the source
+account also starts a separate destination session. They can reuse an existing
+Tailscale node or Relay device connection. Selecting a signed-in trusted entry
+restores its cached page directly. On first sign-in or session expiry, its spinner
+indicates source authorization, destination identity checks, a one-time ticket
+exchange and session storage. Ordinary tabs use their own login and do not
+automatically borrow a trusted source.
+
+Manage people on the destination host. An external user appears in
+**Settings → People** after the first successful trusted sign-in, with the source
+server name, Server ID and source user ID. Source allowlists are not imported
+before sign-in. People settings control account disablement, remote desktop and
+ADB access; **Settings → Projects** controls membership, personal chat creation
+and shared session access. Remote chat settings manage the connection. Use
+Desktop on the destination host or the [server CLI](server-cli.md) to administer
+its people and permissions.

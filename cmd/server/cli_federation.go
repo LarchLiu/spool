@@ -145,6 +145,13 @@ func federationTrustStatusAfter(out io.Writer, s *workspace.Service, err error) 
 
 func addFederationTrust(c *command, out io.Writer) {
 	addOnlineFederationTrust(c, out)
+	revoke := c.add("revoke", "Revoke one direction of server trust", "Revokes the selected sign-in direction locally and immediately notifies the peer. Failed notifications are saved for retry while the server is running. The reverse direction and existing people and project memberships are preserved. New approval is required to restore access.")
+	peer := revoke.flags.String("peer", "", "Peer server ID (required)")
+	direction := revoke.flags.String("direction", "", "incoming or outgoing (defaults to incoming, or outgoing when it is the only approved direction)")
+	revoke.validate = func() error { return required("peer", *peer) }
+	revoke.run = func(ctx context.Context, s *workspace.Service) error {
+		return federationTrustStatusAfter(out, s, s.RevokeFederationTrust(ctx, *peer, *direction))
+	}
 	status := c.add("status", "List server trust requests and approved directions", "Use check to fetch the decision for a submitted request.")
 	status.run = func(_ context.Context, s *workspace.Service) error {
 		v, err := s.Store.FederationTrustSnapshot()

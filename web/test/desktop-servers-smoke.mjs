@@ -598,11 +598,11 @@ try {
       await publishTargets([{ ...labTarget, status: "connected" }, homeTarget]);
       await verifyKey(labWithStatus("Disconnected"), dotColors.disconnected);
       const homeAlias = tabs.getByRole("button", {
-        name: "本机开发 → Sign in to 家里的服务器 with this account, Connected · Sign-in required",
-        exact: true,
+        name: /^本机开发 → Sign in to Home with this account, /,
       });
-      await verifyKey(homeAlias, dotColors.login);
-      assert.equal(await homeAlias.evaluate((button) => getComputedStyle(button).borderTopStyle), "dashed");
+      await verifyKey(homeAlias, dotColors.disconnected);
+      await savedHome.waitFor();
+      assert.equal(await homeAlias.evaluate((button) => getComputedStyle(button).borderTopStyle), "solid");
 
       // Native snapshots repaint the keys on the existing page, without a new live list.
       const nativeLab = { ...labTarget, client_url: "https://LAB.example:443/chat" };
@@ -611,7 +611,7 @@ try {
       assert.ok(!Object.values(dotColors).includes(connectingColor));
       await publishNativeTargets([{ ...nativeLab, status: "login" }, { ...homeTarget, status: "error" }], true);
       await verifyKey(labWithStatus("Connected · Sign-in required"), dotColors.login);
-      await verifyKey(homeAlias, dotColors.login);
+      await verifyKey(homeAlias, dotColors.error);
       await verifyKey(tabs.getByRole("button", {
         name: "本机开发, Connected · Signed in · Federated sign-in", exact: true,
       }), dotColors.connected);
@@ -645,7 +645,7 @@ try {
       assert.deepEqual(await retry.evaluate((button) => {
         const style = getComputedStyle(button);
         return [style.borderTopStyle, style.borderTopColor];
-      }), ["dashed", dotColors.error]);
+      }), ["solid", dotColors.error]);
       await publishProgress("done");
       await publishNativeTargets([]);
       await labWithStatus("Disconnected").waitFor();
@@ -659,22 +659,26 @@ try {
         window.spoolServers = {
           ...window.spoolServers,
           selected: "office-1234",
-          entries: window.spoolServers.entries.map((server) => {
+          entries: [...window.spoolServers.entries.map((server) => {
             if (server.id !== "local" && server.id !== "custom-1234") return server;
             return { ...server, status: "connected", federation_targets: [target] };
           }),
+            { id: "trusted-local-home", name: "Home", local: false, status: "connected", federation_source: "local", federation_target: target.id },
+            { id: "trusted-custom-home", name: "Home", local: false, status: "login", federation_source: "custom-1234", federation_target: target.id },
+          ],
         };
         window.dispatchEvent(new Event("spool:servers-changed"));
       });
       const aliases = tabs.locator(".desktop-federation-target");
-      const groupedOffice = aliases.filter({ hasText: "家里的服务器" });
+      const groupedOffice = aliases.filter({ hasText: "Home" });
       await groupedOffice.nth(1).waitFor({ state: "attached" });
       assert.deepEqual(await groupedOffice.evaluateAll((buttons) => buttons.map((button) => [
         button.previousElementSibling.textContent, button.getAttribute("aria-label"),
       ])), [
-        ["本机开发", "本机开发 → Sign in to 家里的服务器 with this account, Connected · Sign-in required"],
-        ["自定义显示名称", "自定义显示名称 → Sign in to 家里的服务器 with this account, Connected · Sign-in required"],
+        ["本机开发", "本机开发 → Sign in to Home with this account, Connected · Signed in"],
+        ["自定义显示名称", "自定义显示名称 → Sign in to Home with this account, Connected · Sign-in required"],
       ]);
+      await savedHome.waitFor();
       await groupedOffice.nth(1).click();
       await groupedOffice.nth(0).click();
       const trustedSelections = await page.evaluate(() => window.fixtureFederationSelections);
@@ -685,17 +689,66 @@ try {
       await page.evaluate(() => {
         window.spoolServers = {
           ...window.spoolServers,
-          selected: "home-1234",
+          selected: "trusted-custom-home",
           selected_tab: `federation:custom-1234:${"c".repeat(52)}`,
         };
         window.dispatchEvent(new Event("spool:servers-changed"));
       });
       await tabs.locator('[aria-current="page"][aria-label^="自定义显示名称 →"]').waitFor();
+      await page.waitForFunction(() => {
+        const tabs = document.querySelector(".sidebar .desktop-server-tabs");
+        const selected = tabs.querySelector(".desktop-federation-target.selected");
+        const indicator = tabs.querySelector(".segmented-tabs-indicator");
+        if (!selected || !indicator) return false;
+        const button = selected.getBoundingClientRect();
+        const marker = indicator.getBoundingClientRect();
+        return parseFloat(getComputedStyle(indicator).borderTopLeftRadius) >= marker.height / 2 &&
+          Math.abs(button.x - marker.x) < 1 && Math.abs(button.y - marker.y) < 1 &&
+          Math.abs(button.width - marker.width) < 1 && Math.abs(button.height - marker.height) < 1;
+      });
+      // Capture an unclipped source and its selected trusted capsule together.
+      await setFixtureSidebarWidth(480);
+      await page.evaluate(() => {
+        window.spoolServers = {
+          ...window.spoolServers,
+          selected: "trusted-local-home",
+          selected_tab: `federation:local:${"c".repeat(52)}`,
+        };
+        window.dispatchEvent(new Event("spool:servers-changed"));
+      });
+      await page.waitForFunction(() => {
+        const tabs = document.querySelector(".sidebar .desktop-server-tabs");
+        const selected = tabs.querySelector('.desktop-federation-target[aria-current="page"]');
+        const indicator = tabs.querySelector(".segmented-tabs-indicator");
+        const marker = indicator.getBoundingClientRect();
+        const button = selected?.getBoundingClientRect();
+        const viewport = tabs.getBoundingClientRect();
+        return button && Math.abs(button.x - marker.x) < 1 &&
+          button.left >= viewport.left && button.right <= viewport.right;
+      });
+      await page.mouse.move(800, 300);
+      await page.screenshot({ path: path.join(output, `${engine}-trusted-selected.png`) });
+      await tabs.screenshot({ path: path.join(output, `${engine}-trusted-selected-tabs.png`) });
+      const theme = await page.evaluate(() => {
+        const previous = document.documentElement.dataset.theme;
+        document.documentElement.dataset.theme = "dark";
+        return previous;
+      });
+      assert.ok(await tabs.locator(".segmented-tabs-indicator").evaluate((marker) =>
+        parseFloat(getComputedStyle(marker).borderTopLeftRadius) >= marker.getBoundingClientRect().height / 2));
+      await tabs.screenshot({ path: path.join(output, `${engine}-trusted-selected-tabs-dark.png`) });
+      await page.evaluate((theme) => {
+        if (theme) document.documentElement.dataset.theme = theme;
+        else delete document.documentElement.dataset.theme;
+      }, theme);
+      await setFixtureSidebarWidth(undefined);
       await page.evaluate(() => {
         window.spoolServers = window.fixtureOriginalServers;
         delete window.fixtureOriginalServers;
         window.dispatchEvent(new Event("spool:servers-changed"));
       });
+      assert.ok(await tabs.locator(".segmented-tabs-indicator").evaluate((marker) =>
+        parseFloat(getComputedStyle(marker).borderTopLeftRadius) < marker.getBoundingClientRect().height / 2));
       await publishTargets([]);
       await lab.waitFor({ state: "detached" });
       await savedHome.waitFor();

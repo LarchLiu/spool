@@ -106,7 +106,7 @@ func TestRealtimeFederationTargetsFollowTheSignedInAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tx.Rollback()
-	if err := saveFederationTrustGrant(tx, peer, true); err != nil {
+	if err := saveFederationTrustGrant(tx, peer, true, randomToken()); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {

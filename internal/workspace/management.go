@@ -23,15 +23,17 @@ import (
 )
 
 type User struct {
-	ID             string `json:"id"`
-	Username       string `json:"username"`
-	Nickname       string `json:"nickname"`
-	Disabled       bool   `json:"disabled"`
-	CreatedAt      int64  `json:"created_at"`
-	Avatar         Avatar `json:"avatar"`
-	RemoteDesktop  bool   `json:"remote_desktop"`
-	ADBBridge      bool   `json:"adb_bridge"`
-	SourceServerID string `json:"source_server_id,omitempty"`
+	ID               string `json:"id"`
+	Username         string `json:"username"`
+	Nickname         string `json:"nickname"`
+	Disabled         bool   `json:"disabled"`
+	CreatedAt        int64  `json:"created_at"`
+	Avatar           Avatar `json:"avatar"`
+	RemoteDesktop    bool   `json:"remote_desktop"`
+	ADBBridge        bool   `json:"adb_bridge"`
+	SourceServerID   string `json:"source_server_id,omitempty"`
+	SourceServerName string `json:"source_server_name,omitempty"`
+	SourceUserID     string `json:"source_user_id,omitempty"`
 }
 type UserInput struct {
 	ID            string
@@ -197,7 +199,7 @@ func (s *Store) saveSettingsLocked(v Settings) error {
 	return s.notify(err, changeServer)
 }
 func (s *Store) Users() ([]User, error) {
-	rows, err := s.db.Query(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,COALESCE(a.style,?),COALESCE(a.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0),COALESCE(fu.peer_id,'') FROM users u LEFT JOIN user_avatars a ON a.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id LEFT JOIN federation_users fu ON fu.user_id=u.id ORDER BY u.username`, DefaultAvatar().Style)
+	rows, err := s.db.Query(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,COALESCE(a.style,?),COALESCE(a.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0),COALESCE(fu.peer_id,''),COALESCE(json_extract(fp.config,'$.name'),''),COALESCE(fu.subject,'') FROM users u LEFT JOIN user_avatars a ON a.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id LEFT JOIN federation_users fu ON fu.user_id=u.id LEFT JOIN federation_peers fp ON fp.id=fu.peer_id ORDER BY u.username`, DefaultAvatar().Style)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +207,7 @@ func (s *Store) Users() ([]User, error) {
 	out := []User{}
 	for rows.Next() {
 		var v User
-		if err = rows.Scan(&v.ID, &v.Username, &v.Nickname, &v.Disabled, &v.CreatedAt, &v.Avatar.Style, &v.Avatar.Seed, &v.RemoteDesktop, &v.ADBBridge, &v.SourceServerID); err != nil {
+		if err = rows.Scan(&v.ID, &v.Username, &v.Nickname, &v.Disabled, &v.CreatedAt, &v.Avatar.Style, &v.Avatar.Seed, &v.RemoteDesktop, &v.ADBBridge, &v.SourceServerID, &v.SourceServerName, &v.SourceUserID); err != nil {
 			return nil, err
 		}
 		out = append(out, v)

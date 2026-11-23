@@ -63,6 +63,17 @@ func TestFederationCLIOnlineTrust(t *testing.T) {
 	if len(peers) != 1 || peers[0].ID != local.ID || !peers[0].Accept || peers[0].Address != local.Address {
 		t.Fatalf("unexpected saved peers: %+v", peers)
 	}
+	revoked := decode[workspace.FederationTrustSnapshot](t, cliOK(t, b, "federation", "revoke", "--peer", local.ID))
+	if len(revoked.Peers) != 1 || revoked.Peers[0].Incoming || revoked.Peers[0].Accept || !revoked.Peers[0].Revoked {
+		t.Fatalf("CLI did not revoke incoming authorization: %+v", revoked.Peers)
+	}
+	if _, err := invoke(t, b, "federation", "set", "--file", config); err == nil {
+		t.Fatal("CLI policy configuration restored revoked approval")
+	}
+	revoked = decode[workspace.FederationTrustSnapshot](t, cliOK(t, a, "federation", "revoke", "--peer", peer.ID))
+	if len(revoked.Peers) != 1 || revoked.Peers[0].Outgoing || !revoked.Peers[0].Revoked {
+		t.Fatalf("CLI source could not revoke its trust: %+v", revoked.Peers)
+	}
 }
 
 func federationCLIRelayTarget(t *testing.T, root string) string {

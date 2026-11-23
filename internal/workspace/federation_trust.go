@@ -112,13 +112,33 @@ type FederationTrustRequest struct {
 }
 
 type FederationTrustPeer struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Incoming bool     `json:"incoming"`
-	Outgoing bool     `json:"outgoing"`
-	Accept   bool     `json:"accept"`
-	AllUsers bool     `json:"all_users,omitempty"`
-	Users    []string `json:"users,omitempty"`
+	ID          string                            `json:"id"`
+	Name        string                            `json:"name"`
+	Incoming    bool                              `json:"incoming"`
+	Outgoing    bool                              `json:"outgoing"`
+	Accept      bool                              `json:"accept"`
+	Revoked     bool                              `json:"revoked,omitempty"`
+	SyncPending bool                              `json:"sync_pending,omitempty"`
+	AllUsers    bool                              `json:"all_users,omitempty"`
+	Users       []string                          `json:"users,omitempty"`
+	Revocations []FederationTrustRevocationRecord `json:"revocations,omitempty"`
+}
+
+type FederationTrustRevocationRecord struct {
+	Outgoing    bool   `json:"outgoing"`
+	Initiator   string `json:"initiator"`
+	RecordedAt  int64  `json:"recorded_at"`
+	SyncPending bool   `json:"sync_pending,omitempty"`
+}
+
+// RevokeFederationTrust 撤销本机对来源的信任，保留独立的反方向授权。
+func (s *Store) RevokeFederationTrust(target string) error {
+	return s.revokeFederationTrust(target, false)
+}
+
+// WithdrawFederationTrust 停止本服用户访问目标，并通知目标关闭该方向。
+func (s *Store) WithdrawFederationTrust(target string) error {
+	return s.revokeFederationTrust(target, true)
 }
 
 // SetFederationTrustUsers 修改已确认的出站授权，不重写连接凭据或入站策略。
@@ -169,7 +189,15 @@ func (s *Store) UpdateFederationTrustReturnRoute(target, transport, address stri
 		return err
 	}
 	if !approved {
-		return errors.New("Approve an incoming server trust request before configuring its return route")
+		var pending bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM federation_trust_notifications n
+			JOIN federation_trust_epochs e ON e.peer_id=n.peer_id AND e.outgoing=n.outgoing AND e.request_id=n.request_id
+			WHERE n.peer_id=? AND n.outgoing=0 AND e.revoked=1)`, target).Scan(&pending); err != nil {
+			return err
+		}
+		if !pending {
+			return errors.New("Approve an incoming server trust request before configuring its return route")
+		}
 	}
 	p, err := federationPeer(tx, target)
 	if err != nil {
@@ -179,13 +207,14 @@ func (s *Store) UpdateFederationTrustReturnRoute(target, transport, address stri
 	if err := setFederationTrustReturnRoute(&p, transport, address); err != nil {
 		return err
 	}
+	p.Accept = approved
 	if p.generation == generation {
 		return nil
 	}
 	if err := updateFederationPeerConfig(tx, p); err != nil {
 		return err
 	}
-	return s.notify(tx.Commit(), changeAuth)
+	return s.notify(tx.Commit(), changeAuth|changeFederationTargets)
 }
 
 func setFederationTrustReturnRoute(p *FederationPeer, transport, address string) error {
@@ -270,17 +299,21 @@ func (s *Store) FederationTrustSnapshot() (FederationTrustSnapshot, error) {
 	if err != nil {
 		return v, err
 	}
-	rows, err = tx.Query(`SELECT p.id,json_extract(p.config,'$.name'),coalesce(g.incoming,0),coalesce(g.outgoing,0),
-		coalesce(json_extract(p.config,'$.accept'),0),coalesce(json_extract(p.config,'$.all_users'),0),coalesce(json_extract(p.config,'$.users'),'[]')
-		FROM federation_peers p LEFT JOIN federation_trust_grants g ON g.peer_id=p.id ORDER BY 2,p.id`)
+	rows, err = tx.Query(`SELECT p.id,json_extract(p.config,'$.name'),
+		g.incoming,g.outgoing,
+		g.incoming AND coalesce(json_extract(p.config,'$.accept'),0),g.incoming=0 AND g.outgoing=0,
+		coalesce(json_extract(p.config,'$.all_users'),0),coalesce(json_extract(p.config,'$.users'),'[]'),
+		EXISTS(SELECT 1 FROM federation_trust_notifications n WHERE n.peer_id=p.id)
+		FROM federation_peers p JOIN federation_trust_grants g ON g.peer_id=p.id ORDER BY 2,p.id`)
 	if err != nil {
 		return v, err
 	}
 	defer rows.Close()
+	peerIndexes := make(map[string]int)
 	for rows.Next() {
 		var p FederationTrustPeer
 		var users string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Incoming, &p.Outgoing, &p.Accept, &p.AllUsers, &users); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Incoming, &p.Outgoing, &p.Accept, &p.Revoked, &p.AllUsers, &users, &p.SyncPending); err != nil {
 			return v, err
 		}
 		if p.Outgoing {
@@ -290,7 +323,35 @@ func (s *Store) FederationTrustSnapshot() (FederationTrustSnapshot, error) {
 		} else {
 			p.AllUsers = false
 		}
+		peerIndexes[p.ID] = len(v.Peers)
 		v.Peers = append(v.Peers, p)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return v, err
+	}
+	// Show the current revoked epochs; a newly approved direction no longer
+	// displays a previous cancellation, while its durable log remains intact.
+	rows, err = tx.Query(`SELECT l.peer_id,l.outgoing,l.initiator,l.recorded_at,
+		EXISTS(SELECT 1 FROM federation_trust_notifications n
+			WHERE n.peer_id=l.peer_id AND n.outgoing=l.outgoing AND n.request_id=l.request_id)
+		FROM federation_trust_revocation_log l JOIN federation_trust_epochs e
+		ON e.peer_id=l.peer_id AND e.outgoing=l.outgoing AND e.request_id=l.request_id
+		WHERE e.revoked=1 ORDER BY l.outgoing DESC,l.peer_id`)
+	if err != nil {
+		return v, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var peer string
+		var record FederationTrustRevocationRecord
+		if err := rows.Scan(&peer, &record.Outgoing, &record.Initiator, &record.RecordedAt, &record.SyncPending); err != nil {
+			return v, err
+		}
+		if i, ok := peerIndexes[peer]; ok {
+			v.Peers[i].Revocations = append(v.Peers[i].Revocations, record)
+		}
 	}
 	return v, rows.Err()
 }
@@ -310,7 +371,7 @@ func (s *Store) requestFederationTrust(route FederationPeer) (string, error) {
 		return "", err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM federation_trust_requests WHERE expires_at<=?`, now.Unix()); err != nil {
+	if err := deleteExpiredFederationTrustRequests(tx, now.Unix()); err != nil {
 		return "", err
 	}
 	var id, code string
@@ -379,7 +440,7 @@ func (s *Store) DecideFederationTrust(requestID string, approve bool, settings F
 			return err
 		}
 		identity := m.Sender.peer()
-		if err := saveFederationTrustGrant(tx, identity, false); err != nil {
+		if err := saveFederationTrustGrant(tx, identity, false, m.ID); err != nil {
 			return err
 		}
 		if settings.Projects != nil || settings.Transport != "" || settings.Address != "" {
@@ -460,7 +521,7 @@ func (s *Store) confirmFederationTrust(code string) (FederationTrustRequest, err
 				}
 			}
 		}
-		if err := saveFederationTrustGrant(tx, peer, true); err != nil {
+		if err := saveFederationTrustGrant(tx, peer, true, m.ID); err != nil {
 			return r, err
 		}
 	}
@@ -475,7 +536,10 @@ func (s *Store) confirmFederationTrust(code string) (FederationTrustRequest, err
 }
 
 // 新关系采用管理员预览后确认的线路；出站回执只能补齐已有关系的空线路，不覆盖权限。
-func saveFederationTrustGrant(tx *sql.Tx, p FederationPeer, outgoing bool) error {
+func saveFederationTrustGrant(tx *sql.Tx, p FederationPeer, outgoing bool, requestID string) error {
+	if err := recordFederationTrustGrant(tx, p.ID, outgoing, requestID); err != nil {
+		return err
+	}
 	data, err := json.Marshal(p)
 	if err != nil {
 		return err
@@ -488,40 +552,34 @@ func saveFederationTrustGrant(tx *sql.Tx, p FederationPeer, outgoing bool) error
 	if err != nil {
 		return err
 	}
-	if added == 0 && outgoing {
+	if added == 0 {
 		current, err := federationPeer(tx, p.ID)
 		if err != nil {
 			return err
 		}
-		var changed bool
-		if current.Transport == "" && current.Address == "" && current.RelayCode == "" && p.Transport != "" {
+		if outgoing && current.Transport == "" && current.Address == "" && current.RelayCode == "" && p.Transport != "" {
 			current.Transport, current.Address, current.RelayCode = p.Transport, p.Address, p.RelayCode
 			// In-flight control requests must not cross a change of route.
 			current.generation = randomToken()
-			changed = true
 		}
-		if current.ClientURL == "" && current.ClientMode == "" && p.ClientURL != "" {
+		if outgoing && current.ClientURL == "" && current.ClientMode == "" && p.ClientURL != "" {
 			current.ClientURL, current.ClientMode = p.ClientURL, p.ClientMode
-			changed = true
 		}
-		if changed {
-			if err := updateFederationPeerConfig(tx, current); err != nil {
-				return err
-			}
+		if err := updateFederationPeerConfig(tx, current); err != nil {
+			return err
 		}
 	}
-	_, err = tx.Exec(`INSERT INTO federation_trust_grants(peer_id,incoming,outgoing,managed) VALUES(?,?,?,?)
-		ON CONFLICT(peer_id) DO UPDATE SET incoming=max(incoming,excluded.incoming),outgoing=max(outgoing,excluded.outgoing)`,
-		p.ID, !outgoing, outgoing, added > 0)
+	_, err = tx.Exec(`INSERT INTO federation_trust_grants(peer_id,incoming,outgoing,managed) VALUES(?,?,?,1)
+		ON CONFLICT(peer_id) DO UPDATE SET incoming=max(incoming,excluded.incoming),outgoing=max(outgoing,excluded.outgoing),managed=1`,
+		p.ID, !outgoing, outgoing)
 	return err
 }
 
 func validateFederationTrustPolicy(tx *sql.Tx, p FederationPeer) error {
-	var incoming, outgoing, managed bool
-	err := tx.QueryRow(`SELECT incoming,outgoing,managed FROM federation_trust_grants WHERE peer_id=?`, p.ID).Scan(&incoming, &outgoing, &managed)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !managed) {
-		// 兼容此前由双方管理员手工保存的对端。
-		return nil
+	var incoming, outgoing bool
+	err := tx.QueryRow(`SELECT incoming,outgoing FROM federation_trust_grants WHERE peer_id=?`, p.ID).Scan(&incoming, &outgoing)
+	if errors.Is(err, sql.ErrNoRows) {
+		return errors.New("Complete server trust approval before configuring this peer")
 	}
 	if err != nil {
 		return err
@@ -533,4 +591,13 @@ func validateFederationTrustPolicy(tx *sql.Tx, p FederationPeer) error {
 		return errors.New("Confirm the target server’s approval before allowing users")
 	}
 	return nil
+}
+
+func deleteExpiredFederationTrustRequests(tx *sql.Tx, now int64) error {
+	// Retain approval evidence from the previous release until its durable epoch
+	// has been recorded. Request expiry does not expire an established grant.
+	_, err := tx.Exec(`DELETE FROM federation_trust_requests WHERE expires_at<=? AND NOT (
+		decision='approved' AND NOT EXISTS(SELECT 1 FROM federation_trust_epochs e
+			WHERE e.peer_id=federation_trust_requests.peer_id AND e.outgoing=federation_trust_requests.outgoing AND e.request_id<>''))`, now)
+	return err
 }

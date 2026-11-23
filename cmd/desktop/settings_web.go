@@ -328,6 +328,10 @@ func (s *desktopSettings) FederationTrust(ctx context.Context, action, value str
 		err = p.service.CheckFederationTrust(ctx, value)
 	case "reject":
 		err = store.DecideFederationTrust(value, false, workspace.FederationTrustApproval{})
+	case "revoke":
+		err = p.service.RevokeFederationTrust(ctx, value, "incoming")
+	case "withdraw":
+		err = p.service.RevokeFederationTrust(ctx, value, "outgoing")
 	default:
 		err = errors.New("unknown server trust action")
 	}

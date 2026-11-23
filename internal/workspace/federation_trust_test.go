@@ -13,16 +13,101 @@ import (
 	"spool/relay"
 )
 
-// 旧关系夹具模拟从早期数据库保留手工配对；生产配置入口不允许新建。
-func seedLegacyFederationPeer(s *Store, p FederationPeer) error {
-	data, err := json.Marshal(FederationPeer{ID: p.ID, Name: p.Name, PublicKey: p.PublicKey})
+// Data-plane fixtures start with both directions approved. Approval tests use
+// the online request and receipt flow instead.
+func seedApprovedFederationPeer(s *Store, p FederationPeer) error {
+	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
-	if _, err := s.db.Exec(`INSERT INTO federation_peers VALUES(?,?,?)`, p.ID, data, randomToken()); err != nil {
+	defer tx.Rollback()
+	identity := FederationPeer{ID: p.ID, Name: p.Name, PublicKey: p.PublicKey}
+	for _, outgoing := range []bool{false, true} {
+		if err := saveFederationTrustGrant(tx, identity, outgoing, randomToken()); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return err
 	}
 	return s.UpdateFederationPeer(p)
+}
+
+func TestFederationConfigurationRequiresApprovedDirections(t *testing.T) {
+	for _, direction := range []string{"none", "incoming", "outgoing"} {
+		t.Run(direction, func(t *testing.T) {
+			local, remote := testStore(t), testStore(t)
+			alice := testUser(t, local, "alice")
+			peer := federationPairForTest(t, local, remote, "https://remote.example.test", true, []string{alice.ID}, nil)
+			peer = mustFederationPeer(t, local, peer.ID)
+			_, identity, err := local.login(alice.Username, "test-password-2026")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ticket, err := local.federationIssue(identity, peer.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			person := federationSubject{ID: "external-user", Nickname: "Visitor", Avatar: DefaultAvatar(), SourceRef: randomToken(), Remaining: loginSessionTTL.Milliseconds()}
+			session, _, err := local.federationLogin(peer, person, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Leave the saved policy intact, including both active directions. A
+			// historical managed=0 marker must not exempt it from approval checks.
+			incoming, outgoing := direction == "incoming", direction == "outgoing"
+			if direction == "none" {
+				_, err = local.db.Exec(`DELETE FROM federation_trust_grants`)
+			} else {
+				_, err = local.db.Exec(`UPDATE federation_trust_grants SET incoming=?,outgoing=?,managed=0`, incoming, outgoing)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := local.UpdateFederationPeer(peer); err == nil {
+				t.Fatal("configuration enabled a direction without approval")
+			}
+			if _, _, err := local.federationLogin(peer, person, time.Now()); (err == nil) != incoming {
+				t.Fatalf("incoming login approval=%v: %v", incoming, err)
+			}
+			if _, err := local.authenticate(session); (err == nil) != incoming {
+				t.Fatalf("existing session approval=%v: %v", incoming, err)
+			}
+			if _, err := local.federationIssue(identity, peer.ID); (err == nil) != outgoing {
+				t.Fatalf("outgoing ticket approval=%v: %v", outgoing, err)
+			}
+			if _, err := local.federationVerify(peer, ticket, true); (err == nil) != outgoing {
+				t.Fatalf("outstanding ticket approval=%v: %v", outgoing, err)
+			}
+			targets, err := local.federationTargets(identity)
+			if err != nil || (len(targets) == 1) != outgoing {
+				t.Fatalf("outgoing targets approval=%v: %+v, %v", outgoing, targets, err)
+			}
+			snapshot, err := local.FederationTrustSnapshot()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if direction == "none" {
+				if len(snapshot.Peers) != 0 {
+					t.Fatal("configuration appeared as an approved trust relationship")
+				}
+				return
+			}
+			if len(snapshot.Peers) != 1 || snapshot.Peers[0].Incoming != incoming || snapshot.Peers[0].Outgoing != outgoing || snapshot.Peers[0].Accept != incoming {
+				t.Fatalf("configuration overrode approved directions: %+v", snapshot.Peers)
+			}
+			if err := local.revokeFederationTrust(peer.ID, outgoing); err != nil {
+				t.Fatal(err)
+			}
+			current := mustFederationPeer(t, local, peer.ID)
+			if current.Accept || current.AllUsers || len(current.Users) != 0 {
+				t.Fatal("revocation preserved an unapproved configured direction")
+			}
+			if _, err := local.authenticate(session); err == nil {
+				t.Fatal("external session survived removal of approved trust")
+			}
+		})
+	}
 }
 
 func TestFederationTrustApprovalIsDirectionalAndDoesNotGrantLogin(t *testing.T) {
@@ -311,13 +396,164 @@ func TestUpdateFederationTrustReturnRoutePreservesPolicy(t *testing.T) {
 	}
 }
 
+func TestRevokeFederationTrustRequiresNewApproval(t *testing.T) {
+	for _, scenario := range []struct {
+		name, transport, address string
+		reciprocal               bool
+	}{
+		{name: "without return route"},
+		{name: "incoming only", transport: "https", address: "https://source.example.test"},
+		{name: "reciprocal", transport: "https", address: "https://source.example.test", reciprocal: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			a, b, c := testStore(t), testStore(t), testStore(t)
+			local := testUser(t, b, "local")
+			localToken, _, err := b.login(local.Username, "test-password-2026")
+			if err != nil {
+				t.Fatal(err)
+			}
+			source, target, address := onlineTrustPairForTest(t, a, b)
+			pending := submitTrustForTest(t, source, target, address)
+			project := FederationProject{ID: testProject(t, b).ID, Access: "read-only", OwnAccess: "create"}
+			policy := FederationTrustApproval{Transport: scenario.transport, Address: scenario.address, Projects: []FederationProject{project}}
+			if err := b.DecideFederationTrust(pending.ID, true, policy); err != nil {
+				t.Fatal(err)
+			}
+			if err := source.CheckFederationTrust(t.Context(), pending.ID); err != nil {
+				t.Fatal(err)
+			}
+			if scenario.reciprocal {
+				reverseSource, reverseTarget, reverseAddress := onlineTrustPairForTest(t, b, a)
+				reverse := submitTrustForTest(t, reverseSource, reverseTarget, reverseAddress)
+				if err := a.DecideFederationTrust(reverse.ID, true, FederationTrustApproval{}); err != nil {
+					t.Fatal(err)
+				}
+				if err := reverseSource.CheckFederationTrust(t.Context(), reverse.ID); err != nil {
+					t.Fatal(err)
+				}
+				if err := b.SetFederationTrustUsers(pending.PeerID, false, []string{local.ID}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := federationPeer(b.db, pending.PeerID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			person := federationSubject{ID: "source-user", Nickname: "External", Avatar: DefaultAvatar(), SourceRef: randomToken(), Remaining: loginSessionTTL.Milliseconds()}
+			var token, externalID string
+			if before.Accept {
+				token, _, err = b.federationLogin(before, person, time.Now())
+				if err != nil {
+					t.Fatal(err)
+				}
+				identity, err := b.authenticate(token)
+				if err != nil || !b.CanCreateChat(identity.User.ID, project.ID) {
+					t.Fatal("the approved visitor could not access the default project", err)
+				}
+				externalID = identity.User.ID
+			}
+			other := federationPairForTest(t, b, c, "https://other.example.test", true, nil, nil)
+			other, err = federationPeer(b.db, other.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			otherToken, _, err := b.federationLogin(other, person, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := b.RevokeFederationTrust(before.ID); err != nil {
+				t.Fatal(err)
+			}
+			if token != "" {
+				if _, err := b.authenticate(token); err == nil {
+					t.Fatal("revocation left the visitor signed in")
+				}
+				users, err := b.Users()
+				if err != nil {
+					t.Fatal(err)
+				}
+				found := false
+				for _, user := range users {
+					if user.ID == externalID && user.SourceServerID == before.ID && user.SourceServerName == before.Name {
+						found = true
+					}
+				}
+				if !found || !b.CanCreateChat(externalID, project.ID) {
+					t.Fatal("revocation removed the external person or their project permissions")
+				}
+			}
+			for _, unaffected := range []string{localToken, otherToken} {
+				if _, err := b.authenticate(unaffected); err != nil {
+					t.Fatal("revocation signed out an unrelated person", err)
+				}
+			}
+			if _, _, err := b.federationLogin(before, person, time.Now()); !errors.Is(err, errFederationDenied) {
+				t.Fatal("an in-flight login crossed revocation", err)
+			}
+			if err := b.UpdateFederationTrustReturnRoute(before.ID, "https", "https://source.example.test"); err != nil {
+				t.Fatal("could not configure a route for the queued revocation", err)
+			}
+			if err := b.DecideFederationTrust(pending.ID, true, policy); err != nil {
+				t.Fatal(err)
+			}
+			after, err := federationPeer(b.db, before.ID)
+			if err != nil || after.Accept || len(after.Projects) != 0 {
+				t.Fatal("replaying an old approval restored inbound access", err)
+			}
+			want := before
+			want.Accept, want.Projects, want.generation = false, nil, after.generation
+			want.Transport, want.Address = "https", "https://source.example.test"
+			if !reflect.DeepEqual(after, want) {
+				t.Fatal("revocation did not preserve the independent outgoing policy")
+			}
+			snapshot, err := b.FederationTrustSnapshot()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, peer := range snapshot.Peers {
+				if peer.ID == before.ID && (peer.Incoming || peer.Accept || peer.Outgoing != scenario.reciprocal || peer.Revoked == scenario.reciprocal || !peer.SyncPending) {
+					t.Fatalf("incorrect revoked direction: %+v", peer)
+				}
+			}
+			if scenario.reciprocal {
+				targets, err := b.federationTargets(authIdentity{User: local})
+				if err != nil || len(targets) != 1 {
+					t.Fatal("revocation removed the independent reverse target", err)
+				}
+			}
+			fresh := submitTrustForTest(t, source, target, address)
+			if fresh.ID == pending.ID {
+				t.Fatal("restoring access reused the old request")
+			}
+			if err := b.DecideFederationTrust(fresh.ID, true, FederationTrustApproval{Transport: "https", Address: "https://source.example.test"}); err != nil {
+				t.Fatal(err)
+			}
+			restored, err := federationPeer(b.db, before.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := b.federationLogin(before, person, time.Now()); !errors.Is(err, errFederationDenied) {
+				t.Fatal("re-approval allowed a stale in-flight login", err)
+			}
+			if _, _, err := b.federationLogin(restored, person, time.Now()); err != nil {
+				t.Fatal("new approval did not allow a fresh login", err)
+			}
+			if token != "" {
+				if _, err := b.authenticate(token); err == nil {
+					t.Fatal("re-approval restored the old session")
+				}
+			}
+		})
+	}
+}
+
 func TestFederationPeerValidatesClientMode(t *testing.T) {
 	a, b := testStore(t), testStore(t)
 	p, err := b.FederationIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := seedLegacyFederationPeer(a, p); err != nil {
+	if err := seedApprovedFederationPeer(a, p); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {

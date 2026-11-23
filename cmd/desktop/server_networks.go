@@ -42,7 +42,14 @@ func (n *desktopServerNetworks) run(fn func(context.Context)) {
 }
 
 func desktopNetworkKey(server desktopServer) string {
-	return server.ID + "\x00" + server.Mode + "\x00" + server.Address + "\x00" + server.Relay
+	return server.connectionID() + "\x00" + server.Mode + "\x00" + server.Address + "\x00" + server.Relay
+}
+
+func (server desktopServer) connectionID() string {
+	if server.ConnectionID != "" {
+		return server.ConnectionID
+	}
+	return server.ID
 }
 
 func (n *desktopServerNetworks) directory(id, mode string) string {
@@ -60,7 +67,7 @@ func (n *desktopServerNetworks) client(server desktopServer) (*spoolnet.Client, 
 		return client, nil
 	}
 	for previous, client := range n.clients {
-		if strings.HasPrefix(previous, server.ID+"\x00"+server.Mode+"\x00") {
+		if strings.HasPrefix(previous, server.connectionID()+"\x00"+server.Mode+"\x00") {
 			_ = client.Close()
 			delete(n.clients, previous)
 		}
@@ -69,9 +76,9 @@ func (n *desktopServerNetworks) client(server desktopServer) (*spoolnet.Client, 
 	var err error
 	switch server.Mode {
 	case "tailscale":
-		client, err = spoolnet.NewClientForDevice(n.directory(server.ID, "tailscale"), server.Address, "Desktop")
+		client, err = spoolnet.NewClientForDevice(n.directory(server.connectionID(), "tailscale"), server.Address, "Desktop")
 	case "relay":
-		client, err = spoolnet.NewRelayClient(n.directory(server.ID, "relay"), server.Relay)
+		client, err = spoolnet.NewRelayClient(n.directory(server.connectionID(), "relay"), server.Relay)
 	default:
 		return nil, errors.New("native transport is only used for Tailscale and Relay")
 	}

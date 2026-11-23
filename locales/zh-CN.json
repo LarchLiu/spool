@@ -1,4 +1,6 @@
 {
+  "Source user ID": "来源用户 ID",
+  "External people appear after their first trusted sign-in. Manage account access here and project permissions in Projects.": "外部人员在首次互信登录成功后出现在这里。可在此管理账号访问，在「项目」中设置项目权限。",
   "The operating system denied Spool access to this file.": "操作系统阻止了 Spool 读取此文件。",
   "Allow access to attached file": "选择文件允许访问",
   "Select this attached file to allow Spool to read it.": "请选择这份附件，允许 Spool 读取它。",
@@ -1080,6 +1082,14 @@
   "Save return route": "保存回连线路",
   "Cross-server sign-in enabled": "已开启跨服登录",
   "Return route not configured": "尚未配置回连线路",
+  "Revoke trust": "撤销信任",
+  "Revoke trust with {name}?": "撤销与 {name} 的信任？",
+  "Revokes {direction} and immediately notifies the peer. If unreachable, synchronization is retried. The reverse direction is preserved. New approval is required to restore access.": "撤销 {direction}，并立即通知对方；暂时无法连接时会重试同步。反方向授权保持独立，恢复访问需要重新申请并批准。",
+  "Confirm revocation": "确认撤销",
+  "Trust revoked": "已撤销信任",
+  "Revoked by this server": "本机主动撤销",
+  "Revoked by peer": "对方主动撤销",
+  "Approve a new trust request to restore access.": "需要重新批准互信申请才能恢复访问。",
   "Review trust request": "审核互信申请",
   "Default projects for new users": "向新用户默认开放的项目",
   "These permissions apply the first time an approved person signs in.": "获准人员首次登录时自动获得这些权限。",
@@ -1089,6 +1099,8 @@
   "Review incoming requests": "审核收到的申请",
   "Trusted servers": "已建立信任的服务器",
   "No trusted servers yet": "尚未与其他服务器建立信任",
+  "No active server trust": "暂无有效的服务器信任",
+  "Revoked trust ({count})": "已撤销的信任（{count}）",
   "This server → peer": "本机 → 对端",
   "Peer → this server": "对端 → 本机",
   "Manually configured": "手工配置",
@@ -1354,5 +1366,7 @@
   "Server not found.": "找不到服务器。",
   "Approve this device on the server to finish pairing.": "请在服务器端批准此设备以完成配对，并核对两端的设备指纹。",
   "Invalid connection mode.": "连接方式无效。",
-  "Configure the selected connection before connecting.": "请先配置所选连接方式的地址或配对码。"
+  "Configure the selected connection before connecting.": "请先配置所选连接方式的地址或配对码。",
+  "Trust direction": "信任方向",
+  "Waiting to sync revocation": "等待同步撤销"
 }

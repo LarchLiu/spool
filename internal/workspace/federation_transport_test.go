@@ -67,7 +67,7 @@ func TestFederationRelayUsesControlOnlyAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	bPeer.Users = []string{alice.ID}
-	if err := seedLegacyFederationPeer(aStore, bPeer); err != nil {
+	if err := seedApprovedFederationPeer(aStore, bPeer); err != nil {
 		t.Fatal(err)
 	}
 	broker, token := testRelayBroker(t)
@@ -135,7 +135,7 @@ func TestFederationRelayUsesControlOnlyAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := seedLegacyFederationPeer(bStore, aPeer); err != nil {
+	if err := seedApprovedFederationPeer(bStore, aPeer); err != nil {
 		t.Fatal(err)
 	}
 	cookie, _ := loginRequest(t, a, alice.Username)

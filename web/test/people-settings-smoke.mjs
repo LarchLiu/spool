@@ -52,6 +52,8 @@ try {
           username: "external:visitor",
           nickname: "External visitor",
           source_server_id: "source-server-id",
+          source_server_name: "Source Office",
+          source_user_id: "source-person-id",
           disabled: false,
           remote_desktop: false,
           adb_bridge: false,
@@ -89,6 +91,8 @@ try {
   const visitor = page.getByRole("button", {
     name: /External visitor.*Federated sign-in/,
   });
+  await page.getByText(/External people appear after their first trusted sign-in/).waitFor();
+  await page.getByText("Federation source: Source Office", { exact: true }).waitFor();
   try {
     await visitor.click({ timeout: 5000 });
   } catch (error) {
@@ -101,10 +105,11 @@ try {
     .locator("form")
     .filter({ has: page.getByRole("heading", { name: "Edit user" }) });
   await editor
-    .getByText("Federation source: source-server-id", { exact: false })
+    .getByText("Federation source: Source Office", { exact: false })
     .waitFor();
   await editor.getByText(/managed by its source server/).waitFor();
-  await editor.getByText("external:visitor", { exact: true }).waitFor();
+  await editor.getByText("source-server-id", { exact: false }).waitFor();
+  await editor.getByText("source-person-id", { exact: true }).waitFor();
   await editor.getByText("External visitor", { exact: true }).waitFor();
   assert.equal(await editor.getByRole("textbox").count(), 0);
   assert.equal(await editor.getByLabel("Password", { exact: true }).count(), 0);

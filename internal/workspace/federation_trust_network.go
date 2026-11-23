@@ -123,7 +123,7 @@ func (a *App) trustNetworkCall(ctx context.Context, route FederationPeer, action
 		return peer, "", "", errFederationTrustRoute
 	}
 	var answer federationMessage
-	if len(data) > federationMaxBody || json.Unmarshal(data, &answer) != nil || answer.Subject != nil || !answer.Response || !answer.fresh() || answer.Nonce != call.Nonce || answer.Action != "trust-"+action || answer.To != tokenHash(code) {
+	if len(data) > federationMaxBody || json.Unmarshal(data, &answer) != nil || answer.Subject != nil || answer.Trust != nil || !answer.Response || !answer.fresh() || answer.Nonce != call.Nonce || answer.Action != "trust-"+action || answer.To != tokenHash(code) {
 		return peer, "", "", errFederationTrustPeer
 	}
 	var result trustNetworkResult
@@ -152,6 +152,7 @@ func (s *Service) federationTrustClient(ctx context.Context, transport string, c
 	if app == nil {
 		app = &App{store: s.Store}
 		app.trustDial = app.dialFederationPath
+		app.federationDial = app.dialFederation
 		if transport == "tailscale" && reuseOutbound {
 			app.federationTailnet.Store(runtime)
 		} else if transport == "tailscale" {
@@ -364,7 +365,7 @@ func (a *App) serveFederationTrust(w http.ResponseWriter, r *http.Request) {
 		m, parseErr := parseFederationTrustCode(call.Code, time.Now())
 		var auth federationMessage
 		if parseErr != nil || m.Decision != "" || m.RequestHash != "" || m.Target != local.ID() || json.Unmarshal(call.Auth, &auth) != nil ||
-			!auth.signedBy(m.Sender.peer()) || auth.Response || auth.Active || auth.Subject != nil || auth.To != local.ID() || !auth.fresh() || auth.Nonce != call.Nonce || auth.Action != "trust-"+call.Action || auth.Value != tokenHash(m.code()) {
+			!auth.signedBy(m.Sender.peer()) || auth.Response || auth.Active || auth.Subject != nil || auth.Trust != nil || auth.To != local.ID() || !auth.fresh() || auth.Nonce != call.Nonce || auth.Action != "trust-"+call.Action || auth.Value != tokenHash(m.code()) {
 			refuse()
 			return
 		}
@@ -420,13 +421,13 @@ func (s *Store) federationTrustNetworkResult(m federationTrustMessage, submit bo
 	if err != nil || !open {
 		return "closed", "", err
 	}
-	if _, err := tx.Exec(`DELETE FROM federation_trust_requests WHERE expires_at<=?`, now); err != nil {
+	if err := deleteExpiredFederationTrustRequests(tx, now); err != nil {
 		return "", "", err
 	}
 	var total, pending int
 	var duplicate bool
 	if err := tx.QueryRow(`SELECT count(*),count(*) FILTER (WHERE decision=''),
-		count(*) FILTER (WHERE peer_id=? AND decision='')>0 FROM federation_trust_requests WHERE outgoing=0`, m.Sender.ID).
+		count(*) FILTER (WHERE peer_id=? AND decision='')>0 FROM federation_trust_requests WHERE outgoing=0 AND expires_at>?`, m.Sender.ID, now).
 		Scan(&total, &pending, &duplicate); err != nil {
 		return "", "", err
 	}

@@ -320,7 +320,6 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 			p.sendDesktopAppearance(view)
 			p.sendUpdateAvailability(view)
 			state.failed, state.loaded = false, true
-			p.maybeDesktopAutomaticFederation()
 			p.learnDesktopServerIdentity(id, state)
 			p.refreshDesktopFederationTargets(id, state)
 			p.sendDesktopServers()

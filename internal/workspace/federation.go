@@ -30,17 +30,18 @@ const (
 )
 
 type federationMessage struct {
-	Version   int                `json:"version"`
-	From      string             `json:"from"`
-	To        string             `json:"to"`
-	Action    string             `json:"action"`
-	Nonce     string             `json:"nonce"`
-	SentAt    int64              `json:"sent_at"`
-	Value     string             `json:"value,omitempty"`
-	Response  bool               `json:"response,omitempty"`
-	Active    bool               `json:"active,omitempty"`
-	Subject   *federationSubject `json:"subject,omitempty"`
-	Signature string             `json:"signature"`
+	Version   int                        `json:"version"`
+	From      string                     `json:"from"`
+	To        string                     `json:"to"`
+	Action    string                     `json:"action"`
+	Nonce     string                     `json:"nonce"`
+	SentAt    int64                      `json:"sent_at"`
+	Value     string                     `json:"value,omitempty"`
+	Response  bool                       `json:"response,omitempty"`
+	Active    bool                       `json:"active,omitempty"`
+	Subject   *federationSubject         `json:"subject,omitempty"`
+	Trust     *federationTrustRevocation `json:"trust,omitempty"`
+	Signature string                     `json:"signature"`
 }
 
 func federationSecret(s string) bool {
@@ -86,7 +87,14 @@ func (a *App) federationControl(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusForbidden, "Federation request refused")
 		return
 	}
+	if (m.Action == federationTrustRevoke) != (m.Trust != nil) || m.Trust != nil && !federationSecret(m.Trust.Grant) {
+		apiError(w, http.StatusForbidden, "Federation request refused")
+		return
+	}
 	peer, err := federationPeer(a.store.db, m.From)
+	if err != nil && m.Action == federationTrustRevoke {
+		peer, err = a.store.pendingFederationTrustPeer(m.From)
+	}
 	if err != nil || !m.signedBy(peer) {
 		apiError(w, http.StatusForbidden, "Federation request refused")
 		return
@@ -102,14 +110,17 @@ func (a *App) federationControl(w http.ResponseWriter, r *http.Request) {
 	}
 	answer := federationMessage{Version: federationVersion, From: local.ID(), To: peer.ID, Action: m.Action, Nonce: m.Nonce, SentAt: time.Now().UnixMilli(), Response: true}
 	switch m.Action {
+	case federationTrustRevoke:
+		if err := a.store.receiveFederationTrustRevocation(peer, *m.Trust); err != nil {
+			apiError(w, http.StatusServiceUnavailable, "Federation source unavailable")
+			return
+		}
+		answer.Active = true
 	case federationRedeem, federationCheck:
 		person, err := a.store.federationVerify(peer, m.Value, m.Action == federationRedeem)
 		if err == nil {
 			answer.Active = true
-			// Periodic checks confirm eligibility without returning profile data.
-			if m.Action == federationRedeem {
-				answer.Subject = &person
-			}
+			answer.Subject = &person
 		} else if !errors.Is(err, errFederationDenied) {
 			apiError(w, http.StatusServiceUnavailable, "Federation source unavailable")
 			return
@@ -137,12 +148,16 @@ func (a *App) federationControl(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) federationCall(ctx context.Context, peer FederationPeer, action, value string) (federationMessage, error) {
+	return a.federationSend(ctx, peer, federationMessage{Action: action, Value: value})
+}
+
+func (a *App) federationSend(ctx context.Context, peer FederationPeer, m federationMessage) (federationMessage, error) {
 	var answer federationMessage
 	local, err := a.store.federationKey()
 	if err != nil {
 		return answer, err
 	}
-	m := federationMessage{Version: federationVersion, From: local.ID(), To: peer.ID, Action: action, Nonce: randomToken(), SentAt: time.Now().UnixMilli(), Value: value}
+	m.Version, m.From, m.To, m.Nonce, m.SentAt = federationVersion, local.ID(), peer.ID, randomToken(), time.Now().UnixMilli()
 	body, err := m.encode(local)
 	if err != nil {
 		return answer, err
@@ -156,7 +171,7 @@ func (a *App) federationCall(ctx context.Context, peer FederationPeer, action, v
 	if err != nil {
 		return answer, err
 	}
-	if len(data) > federationMaxBody || json.Unmarshal(data, &answer) != nil || !answer.Response || !answer.fresh() || answer.To != local.ID() || answer.Nonce != m.Nonce || answer.Action != action || answer.Value != "" || !answer.signedBy(peer) {
+	if len(data) > federationMaxBody || json.Unmarshal(data, &answer) != nil || !answer.Response || !answer.fresh() || answer.To != local.ID() || answer.Nonce != m.Nonce || answer.Action != m.Action || answer.Value != "" || answer.Trust != nil || !answer.signedBy(peer) {
 		return federationMessage{}, errors.New("invalid federation control response")
 	}
 	if !answer.Active {

@@ -1,4 +1,6 @@
 {
+  "Source user ID": "接続元のユーザー ID",
+  "External people appear after their first trusted sign-in. Manage account access here and project permissions in Projects.": "外部ユーザーは初回の信頼済みログイン後に表示されます。ここでアカウントのアクセスを管理し、「プロジェクト」でプロジェクト権限を設定できます。",
   "The operating system denied Spool access to this file.": "OS により Spool のファイルへのアクセスが拒否されました。",
   "Allow access to attached file": "添付ファイルへのアクセスを許可",
   "Select this attached file to allow Spool to read it.": "この添付ファイルを選択して、Spool による読み取りを許可してください。",
@@ -1080,6 +1082,14 @@
   "Save return route": "接続経路を保存",
   "Cross-server sign-in enabled": "サーバー間ログインを有効化済み",
   "Return route not configured": "接続経路が未設定",
+  "Revoke trust": "信頼を取り消す",
+  "Revoke trust with {name}?": "{name} との信頼を取り消しますか？",
+  "Revokes {direction} and immediately notifies the peer. If unreachable, synchronization is retried. The reverse direction is preserved. New approval is required to restore access.": "{direction} を取り消し、相手側に直ちに通知します。接続できない場合は同期を再試行します。逆方向の許可は維持され、アクセスの復元には新たな申請と承認が必要です。",
+  "Confirm revocation": "取り消しを確定",
+  "Trust revoked": "信頼を取り消しました",
+  "Revoked by this server": "このサーバーから取り消し",
+  "Revoked by peer": "相手側から取り消し",
+  "Approve a new trust request to restore access.": "アクセスを復元するには、新しい信頼リクエストを承認してください。",
   "Review trust request": "信頼申請を審査",
   "Default projects for new users": "新規ユーザーの既定プロジェクト",
   "These permissions apply the first time an approved person signs in.": "承認されたユーザーの初回ログイン時にこの権限が適用されます。",
@@ -1089,6 +1099,8 @@
   "Review incoming requests": "受信した申請を確認",
   "Trusted servers": "信頼済みサーバー",
   "No trusted servers yet": "信頼済みサーバーはまだありません",
+  "No active server trust": "有効なサーバーの信頼はありません",
+  "Revoked trust ({count})": "取り消した信頼（{count}）",
   "This server → peer": "このサーバー → 相手",
   "Peer → this server": "相手 → このサーバー",
   "Manually configured": "手動で設定済み",
@@ -1354,5 +1366,7 @@
   "Server not found.": "サーバーが見つかりません。",
   "Approve this device on the server to finish pairing.": "サーバー側でこのデバイスを承認し、両端のフィンガープリントを確認してください。",
   "Invalid connection mode.": "接続方式が無効です。",
-  "Configure the selected connection before connecting.": "接続する前に、選択した接続のアドレスまたはペアリングコードを設定してください。"
+  "Configure the selected connection before connecting.": "接続する前に、選択した接続のアドレスまたはペアリングコードを設定してください。",
+  "Trust direction": "信頼の方向",
+  "Waiting to sync revocation": "取り消しの同期待ち"
 }

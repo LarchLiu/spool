@@ -20,7 +20,7 @@ func (p *panel) checkDesktopServerHealth() {
 			continue
 		}
 		chat.lastHealthCheck = time.Now()
-		if id == localDesktopServer {
+		if id == localDesktopServer || server.ConnectionID == localDesktopServer {
 			address, err := p.service.LocalWebURL()
 			if err != nil {
 				p.applyDesktopServerHealth(server, chat, chat.statusRevision, false)
@@ -45,7 +45,7 @@ func (p *panel) applyDesktopServerHealth(server desktopServer, chat *desktopServ
 	if p.quitting || !exists || !current.Enabled || p.serverChats[server.ID] != chat || chat.authenticated && !chat.failed || chat.pageStatus != "login" && chat.pageStatus != "error" || chat.statusRevision != revision {
 		return
 	}
-	if server.ID != localDesktopServer && desktopNetworkKey(current) != desktopNetworkKey(server) {
+	if server.ID != localDesktopServer && server.ConnectionID != localDesktopServer && desktopNetworkKey(current) != desktopNetworkKey(server) {
 		return
 	}
 	if reachable && (chat.pageStatus == "error" || chat.failed) {

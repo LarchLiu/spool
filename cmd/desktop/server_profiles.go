@@ -31,6 +31,12 @@ type desktopServer struct {
 	Relay      string `json:"relay"`
 	Mode       string `json:"mode"`
 	Automatic  bool   `json:"automatic"`
+	// A trusted sign-in owns its profile and cookie mount. The route may use
+	// an existing device connection, but never that connection's login session.
+	FederationSource  string `json:"federation_source,omitempty"`
+	FederationTarget  string `json:"federation_target,omitempty"`
+	FederationAccount string `json:"federation_account,omitempty"`
+	ConnectionID      string `json:"connection_id,omitempty"`
 }
 
 type desktopServers struct {
@@ -116,6 +122,14 @@ func readDesktopServers(path string) (desktopServers, error) {
 }
 
 func validateDesktopServer(server desktopServer) (desktopServer, error) {
+	if server.FederationTarget != "" || server.FederationSource != "" || server.FederationAccount != "" || server.ConnectionID != "" {
+		if !validDesktopFederationID(server.FederationTarget) ||
+			(server.FederationSource != localDesktopServer && !chatmodel.ValidID(server.FederationSource)) ||
+			len(server.FederationAccount) != 43 || strings.Trim(server.FederationAccount, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != "" ||
+			(server.ConnectionID != "" && server.ConnectionID != localDesktopServer && !chatmodel.ValidID(server.ConnectionID)) {
+			return server, errors.New("Invalid trusted server profile.")
+		}
+	}
 	server.Name = strings.TrimSpace(server.Name)
 	if utf8.RuneCountInString(server.Name) > 80 {
 		return server, errors.New("Use a display name of up to 80 characters.")
@@ -213,6 +227,11 @@ func (profiles desktopServers) save(server desktopServer) (desktopServers, error
 		found := false
 		for i, old := range next.Entries {
 			if old.ID == server.ID {
+				// The connection editor does not edit the sign-in identity.
+				if old.FederationTarget != "" && server.FederationTarget == "" {
+					server.FederationSource, server.FederationTarget = old.FederationSource, old.FederationTarget
+					server.FederationAccount, server.ConnectionID = old.FederationAccount, old.ConnectionID
+				}
 				// Metadata comes from the server, independently of an editor draft.
 				server.ServerName = old.ServerName
 				if old.Address != server.Address && old.Mode == server.Mode {
@@ -223,6 +242,15 @@ func (profiles desktopServers) save(server desktopServer) (desktopServers, error
 		}
 		if !found {
 			return profiles, errors.New("Server not found.")
+		}
+		// Trusted sessions keep their own cookies while following the device's
+		// connection settings. A shared native node must have one active route.
+		for i, shared := range next.Entries {
+			if shared.ID != server.ID && shared.connectionID() == server.connectionID() {
+				shared.Direct, shared.Tailscale, shared.Relay = server.Direct, server.Tailscale, server.Relay
+				shared.Mode, shared.Address, shared.Automatic = server.Mode, server.Address, server.Automatic
+				next.Entries[i] = shared
+			}
 		}
 	}
 	return next, nil
@@ -275,7 +303,11 @@ func desktopServerMount(server desktopServer) string {
 	if mode == "" {
 		mode = "direct"
 	}
-	hash := sha256.Sum256([]byte(server.ID + "\x00" + mode + "\x00" + server.Address))
+	identity := server.ID + "\x00" + mode + "\x00" + server.Address
+	if server.FederationTarget != "" {
+		identity += "\x00" + server.FederationSource + "\x00" + server.FederationTarget + "\x00" + server.FederationAccount
+	}
+	hash := sha256.Sum256([]byte(identity))
 	id := strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(hash[:]))
 	return "/web/" + id + "/"
 }

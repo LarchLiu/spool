@@ -43,6 +43,8 @@ export type ServerSettings = {
 export type Person = User & {
   disabled: boolean;
   source_server_id?: string;
+  source_server_name?: string;
+  source_user_id?: string;
   remote_desktop?: boolean;
   adb_bridge?: boolean;
 };

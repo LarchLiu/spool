@@ -53,16 +53,15 @@ type desktopFederationAttempt struct {
 	phase     string
 	exchanged bool
 	detached  bool
-	automatic bool
 	server    desktopServer
 	chat      *desktopServerChat
 	started   time.Time
-	// 自动登录核对 Cookie 后，允许替换尚未收到过期通知的缓存页面。
+	// A fresh session check may replace a page still showing an expired login.
 	destinationAuthRevision uint64
 }
 
 func (a *desktopFederationAttempt) destinationSignedIn() bool {
-	return a.chat.authenticated && (!a.automatic && !a.grouped || a.chat.statusRevision != a.destinationAuthRevision)
+	return a.chat.authenticated && (!a.grouped || a.chat.statusRevision != a.destinationAuthRevision)
 }
 
 type desktopFederationResolution struct {
@@ -88,8 +87,6 @@ func (desktopWebViewCookies) Set(cookie mygo.Cookie) error { return mygo.Cookies
 
 type desktopFederation struct {
 	attempt *desktopFederationAttempt
-	// 仅响应一次服务器标签选择，不因后台状态变化或退出登录而重试。
-	selected string
 	// Selected alias for the foreground server; not persisted in the profile.
 	selectedTab   string
 	health        map[desktopFederationHealthKey]*desktopFederationHealth
@@ -377,8 +374,12 @@ func (p *panel) refreshDesktopFederationTargets(id string, chat *desktopServerCh
 				return
 			}
 			if valid {
+				changed := chat.federationFingerprint != fingerprint
 				chat.federationFingerprint = fingerprint
 				p.recordDesktopFederationTargets(chat, targets)
+				if changed {
+					p.sendDesktopServers()
+				}
 				p.advanceDesktopFederation()
 			}
 		}
@@ -529,7 +530,7 @@ func (p *panel) emitDesktopFederation(chat *desktopServerChat, state desktopFede
 }
 
 func (p *panel) emitDesktopFederationAttempt(a *desktopFederationAttempt, state, reason string) {
-	if !a.automatic && p.serverChats[a.origin] == a.originChat {
+	if p.serverChats[a.origin] == a.originChat {
 		p.emitDesktopFederation(a.originChat, desktopFederationState{Target: a.target, Source: a.source, State: state, Reason: reason})
 	}
 }
@@ -566,7 +567,7 @@ func (p *panel) finishDesktopFederation(reload bool) {
 		_ = p.loadDesktopServerChat(a.server.ID, a.chat.address)
 	}
 	// 写入一旦发起就不能取消，但不应再覆盖用户随后的标签选择。
-	if !a.automatic && !a.detached && p.window != nil && p.selectedDesktopServer() == a.origin {
+	if !a.detached && p.window != nil && p.selectedDesktopServer() == a.origin {
 		tab := ""
 		if a.grouped {
 			tab = desktopFederationTabKey(a.source, a.target)
@@ -585,153 +586,6 @@ func (s desktopFederationSite) identity(ctx context.Context, client *http.Client
 		return ""
 	}
 	return desktopFederationServerID(response.Body)
-}
-
-type desktopFederationSource struct {
-	id   string
-	chat *desktopServerChat
-	site desktopFederationSite
-}
-
-// Use the dedicated list, since /api/me omits targets both when the list is
-// empty and when the server could not load it. An unavailable source is not
-// evidence that the user has only one eligible account.
-func (s desktopFederationSite) automaticEligibility(ctx context.Context, client *http.Client, account []mygo.Cookie, target, address string) (eligible, known bool) {
-	if len(account) == 0 {
-		return false, true
-	}
-	response, err := s.do(ctx, client, "GET", "/api/federation/targets", nil, account, "")
-	if err != nil {
-		return false, false
-	}
-	if response.StatusCode == http.StatusUnauthorized {
-		response.Body.Close()
-		return false, true
-	}
-	var peers []desktopFederationTarget
-	if !desktopFederationJSON(response, &peers) || peers == nil {
-		return false, false
-	}
-	seen := make(map[string]bool, len(peers))
-	for _, peer := range peers {
-		if !validDesktopFederationID(peer.ID) || seen[peer.ID] {
-			return false, false
-		}
-		seen[peer.ID] = true
-		if peer.ID == target && (address == "" || desktopFederationClientAddress(peer.ClientURL) == address) {
-			eligible = true
-		}
-	}
-	return eligible, true
-}
-
-// Only choose an account when the complete candidate set leaves exactly one.
-func desktopAutomaticFederation(ctx context.Context, client *http.Client, store desktopFederationCookies, destination desktopFederationSite, server desktopServer, sources []desktopFederationSource) (desktopFederationSource, desktopFederationWork) {
-	existing, err := destination.sessions(store)
-	if err != nil {
-		return desktopFederationSource{}, desktopFederationWork{}
-	}
-	response, err := destination.do(ctx, client, "GET", "/api/me", nil, existing, "")
-	if err != nil {
-		return desktopFederationSource{}, desktopFederationWork{}
-	}
-	response.Body.Close()
-	if response.StatusCode != http.StatusUnauthorized {
-		return desktopFederationSource{}, desktopFederationWork{}
-	}
-	target := destination.identity(ctx, client)
-	if target == "" {
-		return desktopFederationSource{}, desktopFederationWork{}
-	}
-	address := ""
-	switch {
-	case server.ID == localDesktopServer, desktopRelayServerID(server) == target:
-	case server.Mode == "direct" || server.Mode == "tailscale":
-		address = desktopFederationClientAddress(server.Address)
-		if address == "" {
-			return desktopFederationSource{}, desktopFederationWork{}
-		}
-	default:
-		return desktopFederationSource{}, desktopFederationWork{}
-	}
-	var chosen desktopFederationSource
-	var fingerprint string
-	for _, source := range sources {
-		account, err := source.site.sessions(store)
-		if err != nil {
-			return desktopFederationSource{}, desktopFederationWork{}
-		}
-		probe, cancel := context.WithTimeout(ctx, 2*time.Second)
-		eligible, known := source.site.automaticEligibility(probe, client, account, target, address)
-		cancel()
-		if !known {
-			return desktopFederationSource{}, desktopFederationWork{}
-		}
-		if !eligible {
-			continue
-		}
-		if chosen.id != "" {
-			return desktopFederationSource{}, desktopFederationWork{}
-		}
-		chosen, fingerprint = source, desktopFederationFingerprint(account)
-	}
-	if chosen.id == "" || ctx.Err() != nil {
-		return desktopFederationSource{}, desktopFederationWork{}
-	}
-	return chosen, desktopFederationWork{
-		source: chosen.site, destination: destination, target: target, address: address,
-		checkDestination: true, sourceFingerprint: fingerprint,
-	}
-}
-
-func (p *panel) maybeDesktopAutomaticFederation() {
-	id := p.federation.selected
-	if p.quitting || id == "" || p.selectedDesktopServer() != id {
-		return
-	}
-	chat := p.serverChats[id]
-	if chat == nil || !chat.loaded {
-		return
-	}
-	if chat.pageStatus == "connecting" {
-		return
-	}
-	p.federation.selected = ""
-	server, ok := p.servers.find(id)
-	if !ok || !server.Enabled || (!chat.authenticated && chat.status != "login") || p.federation.attempt != nil {
-		return
-	}
-	var sources []desktopFederationSource
-	for _, profile := range p.servers.Entries {
-		if source := p.serverChats[profile.ID]; profile.ID != id && profile.Enabled && source != nil && source.authenticated {
-			sources = append(sources, desktopFederationSource{profile.ID, source, p.desktopFederationSite(profile, source)})
-		}
-	}
-	if len(sources) == 0 {
-		return
-	}
-	a := &desktopFederationAttempt{automatic: true, server: server, chat: chat, phase: "resolving", started: time.Now()}
-	p.federation.attempt = a
-	destination, store := p.desktopFederationSite(server, chat), p.desktopFederationCookies()
-	p.runDesktopFederation(func(lifetime context.Context) func() {
-		ctx, cancel := context.WithTimeout(lifetime, 8*time.Second)
-		defer cancel()
-		source, work := desktopAutomaticFederation(ctx, desktopFederationClient(), store, destination, server, sources)
-		return func() {
-			if p.quitting || p.federation.attempt != a || a.phase != "resolving" {
-				return
-			}
-			a.source, a.sourceChat, a.target = source.id, source.chat, work.target
-			if source.id == "" || p.desktopFederationBlocked(a) != "" {
-				p.failDesktopFederation("cancelled")
-				return
-			}
-			// 刚失效的 Cookie 可能仍对应一个显示为已登录的缓存页面。
-			// 后台任务已收到 401，提交前仍会重新核对当前 Cookie。
-			a.destinationAuthRevision = chat.statusRevision
-			p.exchangeDesktopFederation(a, work)
-		}
-	})
 }
 
 func (p *panel) selectDesktopFederationTab(origin string, page *desktopServerChat, request desktopFederationSelection) {
@@ -768,12 +622,24 @@ func (p *panel) startDesktopFederationFrom(origin string, page *desktopServerCha
 		p.failDesktopFederation("cancelled")
 	}
 	p.federation.attempt = a
-	p.emitDesktopFederationAttempt(a, "pending", "")
 	server, _ := p.servers.find(source)
 	site := p.desktopFederationSite(server, chat)
 	fingerprint := chat.federationFingerprint
 	store := p.desktopFederationCookies()
-	candidates := p.desktopFederationCandidates(source)
+	candidates := p.desktopFederationCandidates(source, target)
+	// A cached trusted page belongs to this source session, independently of
+	// any ordinary login to the same destination. Check the local cookie jar
+	// before reusing it; no network round trip or new ticket is needed.
+	var cached desktopServer
+	for _, candidate := range p.servers.Entries {
+		if candidate.FederationSource == source && candidate.FederationTarget == target && candidate.FederationAccount == fingerprint {
+			cached = candidate
+			break
+		}
+	}
+	if cached.ID == "" {
+		p.emitDesktopFederationAttempt(a, "pending", "")
+	}
 	p.runDesktopFederation(func(lifetime context.Context) func() {
 		ctx, cancel := context.WithTimeout(lifetime, 8*time.Second)
 		defer cancel()
@@ -781,6 +647,22 @@ func (p *panel) startDesktopFederationFrom(origin string, page *desktopServerCha
 		current := desktopFederationFingerprint(account)
 		if err != nil || grouped && current != fingerprint {
 			return func() { p.failDesktopFederationResolution(a, "source") }
+		}
+		if grouped && cached.ID != "" && current == cached.FederationAccount {
+			return func() {
+				if p.quitting || p.federation.attempt != a || !p.desktopFederationSourceCurrent(a) {
+					p.failDesktopFederationResolution(a, "source")
+					return
+				}
+				if profile, ok := p.servers.find(cached.ID); ok && profile == cached {
+					if destination := p.serverChats[cached.ID]; cached.Enabled && destination != nil && destination.loaded && destination.authenticated && !destination.failed {
+						a.server, a.chat = cached, destination
+						p.finishDesktopFederation(false)
+						return
+					}
+				}
+				p.resolveDesktopFederationAttempt(a, site, current, candidates)
+			}
 		}
 		_, peer, reason := site.authorization(ctx, desktopFederationClient(), account, target)
 		if reason != "" {
@@ -794,6 +676,28 @@ func (p *panel) startDesktopFederationFrom(origin string, page *desktopServerCha
 	})
 }
 
+func (p *panel) resolveDesktopFederationAttempt(a *desktopFederationAttempt, site desktopFederationSite, fingerprint string, candidates []desktopServer) {
+	p.emitDesktopFederationAttempt(a, "pending", "")
+	store := p.desktopFederationCookies()
+	p.runDesktopFederation(func(lifetime context.Context) func() {
+		ctx, cancel := context.WithTimeout(lifetime, 8*time.Second)
+		defer cancel()
+		account, err := site.sessions(store)
+		if err != nil || desktopFederationFingerprint(account) != fingerprint {
+			return func() { p.failDesktopFederationResolution(a, "source") }
+		}
+		_, peer, reason := site.authorization(ctx, desktopFederationClient(), account, a.target)
+		if reason != "" {
+			return func() { p.failDesktopFederationResolution(a, reason) }
+		}
+		resolution := p.resolveDesktopFederation(ctx, candidates, peer)
+		return func() {
+			a.sourceFingerprint = fingerprint
+			p.applyDesktopFederationResolution(a, resolution)
+		}
+	})
+}
+
 func (p *panel) failDesktopFederationResolution(a *desktopFederationAttempt, reason string) {
 	if !p.quitting && p.federation.attempt == a && a.phase == "resolving" {
 		p.failDesktopFederation(reason)
@@ -802,10 +706,17 @@ func (p *panel) failDesktopFederationResolution(a *desktopFederationAttempt, rea
 
 // Every other configured server may be the destination. Each is asked through
 // its own configured connection only.
-func (p *panel) desktopFederationCandidates(source string) []desktopServer {
+func (p *panel) desktopFederationCandidates(source, target string) []desktopServer {
 	var candidates []desktopServer
+	// Prefer this entry's saved route when it needs a fresh login, including
+	// routes originally added from a published client URL.
 	for _, server := range p.servers.Entries {
-		if server.ID == source {
+		if server.FederationSource == source && server.FederationTarget == target {
+			candidates = append(candidates, server)
+		}
+	}
+	for _, server := range p.servers.Entries {
+		if server.ID == source || server.FederationTarget != "" {
 			continue
 		}
 		if server.ID == localDesktopServer {
@@ -816,7 +727,7 @@ func (p *panel) desktopFederationCandidates(source string) []desktopServer {
 			if err != nil {
 				continue
 			}
-			server.Address, server.Mode, server.Enabled = address, "direct", true
+			server.Address, server.Direct, server.Mode, server.Enabled = address, address, "direct", true
 		}
 		// A saved inactive endpoint is still useful as a settings fallback,
 		// even if the selected connection has not been configured.
@@ -928,7 +839,16 @@ func (p *panel) applyDesktopFederationResolution(a *desktopFederationAttempt, re
 			server = current
 		}
 		a.address = resolution.address
-		p.attachDesktopFederation(a, server, p.servers)
+		profiles := p.servers
+		if a.grouped {
+			var err error
+			profiles, server, err = profiles.trustedProfile(server, a.source, a.target, a.sourceFingerprint)
+			if err != nil {
+				p.failDesktopFederation("unconfigured")
+				return
+			}
+		}
+		p.attachDesktopFederation(a, server, profiles)
 		return
 	}
 	if resolution.proposed.Address == "" {
@@ -962,13 +882,52 @@ func (p *panel) applyDesktopFederationResolution(a *desktopFederationAttempt, re
 		p.failDesktopFederation("cancelled")
 		return
 	}
-	next, err := p.servers.save(resolution.proposed)
+	var next desktopServers
+	var server desktopServer
+	var err error
+	if a.grouped {
+		next, server, err = p.servers.trustedProfile(resolution.proposed, a.source, a.target, a.sourceFingerprint)
+	} else {
+		next, err = p.servers.save(resolution.proposed)
+		if err == nil {
+			server = next.Entries[len(next.Entries)-1]
+		}
+	}
 	if err != nil {
 		p.failDesktopFederation("unconfigured")
 		return
 	}
 	a.started, a.address, a.publishedMode = time.Now(), resolution.address, &resolution.publishedMode
-	p.attachDesktopFederation(a, next.Entries[len(next.Entries)-1], next)
+	p.attachDesktopFederation(a, server, next)
+}
+
+// Keep one independent login per source/target pair. Changing the source
+// account changes the cookie mount, so an earlier account cannot be inherited.
+func (profiles desktopServers) trustedProfile(route desktopServer, source, target, account string) (desktopServers, desktopServer, error) {
+	server := route
+	server.ID, server.Enabled = "", false
+	server.FederationSource, server.FederationTarget, server.FederationAccount = source, target, account
+	server.ConnectionID = route.connectionID()
+	for _, saved := range profiles.Entries {
+		if saved.FederationSource == source && saved.FederationTarget == target {
+			server.ID = saved.ID
+			server.Enabled = saved.Enabled
+			// An automatically added route has no separate device profile.
+			if server.ConnectionID == "" {
+				server.ConnectionID = saved.ConnectionID
+			}
+			break
+		}
+	}
+	next, err := profiles.save(server)
+	if err == nil {
+		if server.ID == "" {
+			server = next.Entries[len(next.Entries)-1]
+		} else {
+			server, _ = next.find(server.ID)
+		}
+	}
+	return next, server, err
 }
 
 func (p *panel) confirmDesktopFederationServer(address string) bool {
@@ -1059,10 +1018,16 @@ func (p *panel) attachDesktopFederation(a *desktopFederationAttempt, server desk
 		server.Enabled = true
 		next, err := profiles.save(server)
 		if err == nil {
+			profiles = next
 			a.server, _ = next.find(server.ID)
-			err = p.setDesktopServers(next)
 		}
 		if err != nil {
+			p.failDesktopFederation("unconfigured")
+			return
+		}
+	}
+	if current, ok := p.servers.find(a.server.ID); !ok || current != a.server {
+		if err := p.setDesktopServers(profiles); err != nil {
 			p.failDesktopFederation("unconfigured")
 			return
 		}
@@ -1081,15 +1046,7 @@ func (p *panel) attachDesktopFederation(a *desktopFederationAttempt, server desk
 }
 
 func (p *panel) desktopFederationSourceCurrent(a *desktopFederationAttempt) bool {
-	if a.automatic {
-		if p.selectedDesktopServer() != a.server.ID {
-			return false
-		}
-		// 查找候选来源时还未绑定某一个账号。
-		if a.sourceChat == nil {
-			return true
-		}
-	} else if p.selectedDesktopServer() != a.origin || p.serverChats[a.origin] != a.originChat {
+	if p.selectedDesktopServer() != a.origin || p.serverChats[a.origin] != a.originChat {
 		return false
 	}
 	if a.sourceChat == nil || p.serverChats[a.source] != a.sourceChat || !a.sourceChat.authenticated || a.sourceChat.failed {
@@ -1275,9 +1232,8 @@ func (p *panel) applyDesktopFederationOutcome(a *desktopFederationAttempt, work 
 	})
 }
 
-// Tabs use an identity only to hide sign-in entries for connected servers.
-// Only this desktop's own service is asked; remote ones come from a Relay
-// pairing key or a completed sign-in.
+// Public identity metadata never merges login profiles. Only this desktop's
+// own service is asked; remote identities come from a Relay key or sign-in.
 func (p *panel) learnDesktopServerIdentity(id string, chat *desktopServerChat) {
 	if id != localDesktopServer || p.quitting || p.service == nil || p.serverNetworks == nil || p.window == nil || chat.identityChecking {
 		return

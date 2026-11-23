@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/subtle"
+	"database/sql"
 	"errors"
 	"io"
 	"net"
@@ -120,6 +121,9 @@ func (a *App) dialFederationPath(ctx context.Context, peer FederationPeer, path 
 func (s *Store) federationRelayAdmission() relay.FederationAdmission {
 	return relay.FederationAdmission{Path: FederationControlPath, TrustPath: FederationTrustPath, Allow: func(key ed25519.PublicKey) bool {
 		peer, err := federationPeer(s.db, relay.ServerID(key))
+		if errors.Is(err, sql.ErrNoRows) {
+			peer, err = s.pendingFederationTrustPeer(relay.ServerID(key))
+		}
 		if err != nil {
 			return false
 		}

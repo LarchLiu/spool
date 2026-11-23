@@ -42,6 +42,9 @@ func (a *App) startFederation() {
 	a.federationDone = make(chan struct{})
 	go func() {
 		defer close(a.federationDone)
+		var workers sync.WaitGroup
+		workers.Go(func() { a.runFederationTrustRevocations(ctx) })
+		defer workers.Wait()
 		sub := a.store.changes.subscribe()
 		defer sub.close()
 		tick := time.NewTicker(15 * time.Second)
@@ -106,7 +109,7 @@ func (a *App) federationMaintain(ctx context.Context) {
 		}
 		started := time.Now()
 		_, _ = a.store.db.ExecContext(ctx, `UPDATE federation_sessions SET retry_at=? WHERE peer_id=? AND source_ref=? AND retry_at<=?`, started.Add(federationRetry).UnixMilli(), ref.peer, ref.ref, now)
-		_, err = a.federationCall(ctx, peer, federationCheck, ref.ref)
+		answer, err := a.federationCall(ctx, peer, federationCheck, ref.ref)
 		if errors.Is(err, errFederationDenied) {
 			_ = a.store.federationRevoke(peer, ref.ref)
 			continue
@@ -114,7 +117,7 @@ func (a *App) federationMaintain(ctx context.Context) {
 		if err != nil {
 			continue
 		}
-		_ = a.store.federationRefresh(peer, ref.ref, started)
+		_ = a.store.federationRefresh(peer, ref.ref, started, answer.Subject)
 	}
 }
 
@@ -138,14 +141,72 @@ func (a *App) federationRefs(ctx context.Context, query string, args ...any) []f
 	return refs
 }
 
-func (s *Store) federationRefresh(peer FederationPeer, ref string, started time.Time) error {
+func (s *Store) federationRefresh(peer FederationPeer, ref string, started time.Time, person *federationSubject) error {
+	if person != nil && (!person.valid() || person.SourceRef != ref) {
+		return errFederationDenied
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	// Only extend freshness for still-live sessions associated with the same
-	// current relationship. A delayed positive reply cannot re-create a row.
-	_, err := s.db.Exec(`UPDATE federation_sessions SET checked_at=?,retry_at=?
+	// current relationship. A delayed positive reply cannot re-create a row or
+	// update a profile after the session has been revoked.
+	now := time.Now()
+	result, err := tx.Exec(`UPDATE federation_sessions SET checked_at=?,retry_at=?
 		WHERE peer_id=? AND source_ref=? AND checked_at<=? AND checked_at>?
-		AND EXISTS(SELECT 1 FROM federation_peers WHERE id=? AND generation=?)`,
-		started.UnixMilli(), started.Add(federationRecheck).UnixMilli(), peer.ID, ref, started.UnixMilli(), time.Now().Add(-federationOffline).UnixMilli(), peer.ID, peer.generation)
-	return err
+		AND EXISTS(SELECT 1 FROM auth_sessions a JOIN users u ON u.id=a.user_id
+			WHERE a.token_hash=session_hash AND a.expires_at>? AND u.disabled=0)
+		AND EXISTS(SELECT 1 FROM federation_peers p JOIN federation_trust_grants g ON g.peer_id=p.id
+			WHERE p.id=? AND p.generation=? AND g.incoming=1 AND json_extract(p.config,'$.accept')=1)`,
+		started.UnixMilli(), started.Add(federationRecheck).UnixMilli(), peer.ID, ref, started.UnixMilli(), now.Add(-federationOffline).UnixMilli(), now.UnixMilli(), peer.ID, peer.generation)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil || n == 0 {
+		return err
+	}
+	// Older peers only confirm eligibility. They can still refresh freshness
+	// without overwriting the profile received during login.
+	if person == nil {
+		return tx.Commit()
+	}
+	var profile UserProfile
+	var subject string
+	err = tx.QueryRow(`SELECT u.id,f.subject,u.nickname,COALESCE(v.style,?),COALESCE(v.seed,'')
+		FROM federation_sessions fs JOIN auth_sessions a ON a.token_hash=fs.session_hash
+		JOIN federation_users f ON f.user_id=a.user_id AND f.peer_id=fs.peer_id
+		JOIN users u ON u.id=f.user_id LEFT JOIN user_avatars v ON v.user_id=u.id
+		WHERE fs.peer_id=? AND fs.source_ref=? AND fs.checked_at=? LIMIT 1`,
+		DefaultAvatar().Style, peer.ID, ref, started.UnixMilli()).Scan(&profile.ID, &subject, &profile.Nickname, &profile.Avatar.Style, &profile.Avatar.Seed)
+	if err != nil {
+		return err
+	}
+	if subject != person.ID {
+		return errFederationDenied
+	}
+	var changes changeKind
+	if profile.Nickname != person.Nickname || profile.Avatar != person.Avatar {
+		if _, err = tx.Exec(`UPDATE users SET nickname=? WHERE id=?`, person.Nickname, profile.ID); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`INSERT INTO user_avatars VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET style=excluded.style,seed=excluded.seed`, profile.ID, person.Avatar.Style, person.Avatar.Seed); err != nil {
+			return err
+		}
+		if err = bumpProfileRevision(tx); err != nil {
+			return err
+		}
+		changes = changeProfiles | changePresence
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if changes != 0 {
+		s.changes.publish(changes)
+	}
+	return nil
 }
 
 func (s *Store) saveFederationUser(input UserInput, source string) (User, error) {

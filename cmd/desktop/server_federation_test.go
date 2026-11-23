@@ -425,96 +425,92 @@ func (f *federationPanel) last() desktopFederationState {
 	return f.events[len(f.events)-1]
 }
 
-func TestDesktopAutomaticFederationFromAnotherTab(t *testing.T) {
-	addSource := func(p *federationPanel, f *federationFixture) *federationFixture {
-		other := newFederationFixture(t)
-		other.clientURL = f.clientURL
-		p.servers.Entries = append(p.servers.Entries, other.sourceProfile)
-		p.serverChats[other.sourceProfile.ID] = &desktopServerChat{loaded: true, authenticated: true, address: other.work.source.base}
-		p.store.items = append(p.store.items, other.store.items[0])
-		return other
+func TestDesktopOrdinaryTabNeverStartsFederation(t *testing.T) {
+	p := newFederationPanel(t)
+	fixture := p.useSource(t, "https://b.example")
+	if err := p.selectDesktopServerTab(p.destination.ID, nil); err != nil {
+		t.Fatal(err)
 	}
-	for _, test := range []struct {
-		name           string
-		change         func(*federationPanel, *federationFixture)
-		beforeCommit   func(*federationPanel, *federationFixture)
-		issued, writes int
-	}{
-		{name: "reuse A from C", issued: 1, writes: 1},
-		{name: "B page still shows an expired session", issued: 1, writes: 1, change: func(p *federationPanel, f *federationFixture) {
-			p.chat.authenticated, p.chat.status, p.chat.pageStatus = true, "connected", "connected"
-			p.store.items = append(p.store.items, mygo.Cookie{Name: f.work.destination.prefix + "spool_session", Value: "expired-session", Path: f.work.destination.path(), HTTPOnly: true})
-		}},
-		{name: "keep existing B", change: func(p *federationPanel, f *federationFixture) {
-			p.store.items = append(p.store.items, mygo.Cookie{Name: f.work.destination.prefix + "spool_session", Value: "existing-session", Path: f.work.destination.path(), HTTPOnly: true})
-		}},
-		{name: "unpublished route", change: func(_ *federationPanel, f *federationFixture) { f.clientURL = "https://elsewhere.example" }},
-		{name: "authorization lookup unavailable", change: func(_ *federationPanel, f *federationFixture) { f.targetsStatus = http.StatusServiceUnavailable }},
-		{name: "multiple authorized sources", change: func(p *federationPanel, f *federationFixture) { addSource(p, f) }},
-		{name: "second source lookup fails", change: func(p *federationPanel, f *federationFixture) {
-			addSource(p, f).targetsStatus = http.StatusInternalServerError
-		}},
-		{name: "second source transport fails", change: func(p *federationPanel, f *federationFixture) {
-			other := addSource(p, f)
-			server := httptest.NewServer(nil)
-			server.Close()
-			p.serverChats[other.sourceProfile.ID].address = server.URL + other.work.source.path()
-		}},
-		{name: "second source cookie lookup fails", change: func(p *federationPanel, f *federationFixture) {
-			p.store.unreadable = addSource(p, f).work.source.base
-		}},
-		{name: "second source list is malformed", change: func(p *federationPanel, f *federationFixture) {
-			addSource(p, f).targetsBody = `[] {}`
-		}},
-		{name: "second source signed out", issued: 1, writes: 1, change: func(p *federationPanel, f *federationFixture) {
-			addSource(p, f).targetsStatus = http.StatusUnauthorized
-		}},
-		{name: "second source conclusively unauthorized", issued: 1, writes: 1, change: func(p *federationPanel, f *federationFixture) {
-			addSource(p, f).targetsBody = `[]`
-		}},
-		{name: "C selected again", issued: 1, beforeCommit: func(p *federationPanel, _ *federationFixture) {
-			if err := p.selectDesktopServer(localDesktopServer); err != nil {
-				t.Fatal(err)
-			}
-		}},
-		{name: "A account changed", issued: 1, beforeCommit: func(p *federationPanel, _ *federationFixture) { p.store.items[0].Value = "other-source-session" }},
-		{name: "B signed in meanwhile", issued: 1, beforeCommit: func(p *federationPanel, f *federationFixture) {
-			p.store.items = append(p.store.items, mygo.Cookie{Name: f.work.destination.prefix + "spool_session", Value: "existing-session", Path: f.work.destination.path(), HTTPOnly: true})
-		}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
+	if len(p.jobs) != 0 || fixture.issued != 0 || p.store.sets != 0 || p.federation.attempt != nil {
+		t.Fatal("ordinary selection started a trusted login")
+	}
+}
+
+func TestDesktopFederationReusesOnlyItsOwnCachedAccount(t *testing.T) {
+	for _, changed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "same source account", true: "changed source account"}[changed], func(t *testing.T) {
 			p := newFederationPanel(t)
-			f := p.useSource(t, "https://b.example")
-			p.destination.Direct, p.destination.Address = "https://b.example/", "https://b.example/"
-			p.servers.Entries[2] = p.destination
-			// 保留真实 HTTPS 配置和由它派生的 Cookie 作用域，仅在测试网关内替换上游。
-			mount := desktopServerMount(p.destination)
-			target, err := url.Parse(f.destinationURL)
+			fixture := p.useSource(t, "https://b.example")
+			p.refreshDesktopFederationTargets(p.source.ID, p.sourceChat)
+			p.jobs[0](t.Context())()
+			p.jobs = nil
+			profiles, trusted, err := p.servers.trustedProfile(p.destination, p.source.ID, testFederationTarget, p.sourceChat.federationFingerprint)
 			if err != nil {
 				t.Fatal(err)
 			}
-			f.gateway.mu.Lock()
-			f.gateway.routes[mount] = remoteDesktopAPI(target, mount)
-			f.gateway.mu.Unlock()
-			p.chat.address = f.gateway.url + mount
-			f.work.destination = p.desktopFederationSite(p.destination, p.chat)
-			p.servers.Selected = localDesktopServer
-			if test.change != nil {
-				test.change(p, f)
-			}
-			if err := p.selectDesktopServerTab(p.destination.ID, nil); err != nil {
+			trusted.Enabled = true
+			p.servers, err = profiles.save(trusted)
+			if err != nil {
 				t.Fatal(err)
 			}
-			for i := 0; i < len(p.jobs); i++ {
-				if i == 2 && test.beforeCommit != nil {
-					test.beforeCommit(p, f)
-				}
-				p.jobs[i](t.Context())()
+			cached := &desktopServerChat{loaded: true, authenticated: true, status: "connected", pageStatus: "connected", address: fixture.gateway.url + desktopServerMount(trusted)}
+			p.serverChats[trusted.ID] = cached
+			if changed {
+				p.store.items[0].Value = "another-source-session"
 			}
-			if f.issued != test.issued || f.exchanged != test.issued || p.store.sets != test.writes || len(p.events) != 0 || p.federation.attempt != nil || f.sourceSawOthers || f.destinationSawOther {
-				t.Fatalf("jobs=%d issued=%d exchanged=%d writes=%d events=%v attempt=%v sourceSawOthers=%v destinationSawOther=%v", len(p.jobs), f.issued, f.exchanged, p.store.sets, p.events, p.federation.attempt != nil, f.sourceSawOthers, f.destinationSawOther)
+			p.selectDesktopFederationTab(p.source.ID, p.sourceChat, desktopFederationSelection{source: p.source.ID, target: testFederationTarget})
+			p.jobs[0](t.Context())()
+			if changed {
+				if len(p.presented) != 0 || p.last().Reason != "source" {
+					t.Fatal("reused a previous source account")
+				}
+			} else if len(p.presented) != 2 || p.presented[0] != trusted.ID || p.presented[1] != "kept" || len(p.events) != 1 || p.last().State != "done" {
+				t.Fatalf("cached selection did not finish directly: jobs=%d presented=%v events=%v", len(p.jobs), p.presented, p.events)
+			}
+			if fixture.issued != 0 || p.store.sets != 0 || len(p.jobs) != 1 {
+				t.Fatal("cached switch performed a login exchange")
 			}
 		})
+	}
+}
+
+func TestDesktopTrustedProfilesSeparateSourcesAndFollowRoutes(t *testing.T) {
+	p := newFederationPanel(t)
+	first := strings.Repeat("a", 43)
+	profiles, a, err := p.servers.trustedProfile(p.destination, p.source.ID, testFederationTarget, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profiles, b, err := profiles.trustedProfile(p.destination, localDesktopServer, testFederationTarget, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.ID == b.ID || a.ID == p.destination.ID || desktopServerMount(a) == desktopServerMount(b) || desktopServerMount(a) == desktopServerMount(p.destination) {
+		t.Fatal("trusted source sessions share a cookie mount")
+	}
+	if desktopNetworkKey(a) != desktopNetworkKey(p.destination) || desktopNetworkKey(b) != desktopNetworkKey(p.destination) {
+		t.Fatal("independent logins failed to reuse the device connection")
+	}
+	profiles, replacement, err := profiles.trustedProfile(p.destination, p.source.ID, testFederationTarget, strings.Repeat("b", 43))
+	if err != nil || replacement.ID != a.ID || desktopServerMount(replacement) == desktopServerMount(a) || len(profiles.Entries) != 5 {
+		t.Fatal("new source account inherited an old cookie mount", err)
+	}
+	route := p.destination
+	route.Direct, route.Address = "https://new.example/", "https://new.example/"
+	profiles, err = profiles.save(route)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, _ := profiles.find(a.ID)
+	if updated.Address != route.Address || updated.FederationAccount != replacement.FederationAccount || desktopNetworkKey(updated) != desktopNetworkKey(route) {
+		t.Fatal("route update changed login identity or split a shared native connection")
+	}
+	if err = writeDesktopServers(p.serversPath, profiles); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := readDesktopServers(p.serversPath)
+	if saved, ok := restored.find(a.ID); err != nil || !ok || saved != updated {
+		t.Fatal("trusted session namespace did not survive restart", err)
 	}
 }
 
@@ -606,14 +602,23 @@ func TestDesktopFederationUsesTheClickedGroupFromAnotherPage(t *testing.T) {
 					}
 				}
 				apply()
+				if a := p.federation.attempt; a != nil && a.phase == "waiting" {
+					if a.server.ID == p.destination.ID || a.server.FederationSource != selected {
+						t.Fatal("trusted login reused the ordinary profile")
+					}
+					mount := desktopServerMount(a.server)
+					first.gateway.mu.Lock()
+					first.gateway.routes[mount] = remoteDesktopAPI(upstream, mount)
+					first.gateway.mu.Unlock()
+					p.serverChats[a.server.ID] = &desktopServerChat{loaded: true, pageStatus: "login", status: "login", address: first.gateway.url + mount}
+					p.advanceDesktopFederation()
+				}
 			}
 			wantFirst, wantSecond, writes := 1, 0, 1
 			success := true
 			switch scenario {
 			case "second":
 				wantFirst, wantSecond = 0, 1
-			case "existing":
-				wantFirst, writes = 0, 0
 			case "revoked", "switch", "account changed":
 				writes, success = 0, false
 			case "stale account":
@@ -621,6 +626,15 @@ func TestDesktopFederationUsesTheClickedGroupFromAnotherPage(t *testing.T) {
 			}
 			if first.issued != wantFirst || second.issued != wantSecond || p.store.sets != writes || (len(p.presented) != 0) != success || p.last().Source != selected {
 				t.Fatalf("requests A=%d D=%d writes=%d presented=%v events=%v", first.issued, second.issued, p.store.sets, p.presented, p.events)
+			}
+			if success && p.presented[0] == p.destination.ID {
+				t.Fatal("trusted login replaced the ordinary tab")
+			}
+			if scenario == "existing" || scenario == "expired" {
+				cookies, err := p.desktopFederationSite(p.destination, p.chat).sessions(p.store)
+				if err != nil || len(cookies) != 1 || cookies[0].Value != scenario+"-session" {
+					t.Fatal("ordinary destination session was changed", cookies, err)
+				}
 			}
 		})
 	}

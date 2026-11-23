@@ -62,11 +62,13 @@ type desktopServerTab struct {
 	Name   string `json:"name"`
 	Local  bool   `json:"local"`
 	Status string `json:"status"`
-	// 用于将已保存的连接与互信目标合并显示，不参与登录校验。
+	// Public identity and route metadata; never merges account sessions.
 	ServerID  string `json:"server_id,omitempty"`
 	ClientURL string `json:"client_url,omitempty"`
 	// Signed in through another server's account rather than a password.
 	Federated         bool                         `json:"federated,omitempty"`
+	FederationSource  string                       `json:"federation_source,omitempty"`
+	FederationTarget  string                       `json:"federation_target,omitempty"`
 	FederationTargets []desktopFederationTargetTab `json:"federation_targets,omitempty"`
 }
 
@@ -119,6 +121,7 @@ func (p *panel) prepareDesktopServers() error {
 	}
 	p.serverNetworks = newDesktopServerNetworks(filepath.Join(root, "desktop-connections"))
 	p.serverGateway.networks = p.serverNetworks
+	p.serverGateway.localURL = p.service.LocalWebURL
 	p.serverGateway.update(p.servers)
 	return nil
 }
@@ -137,6 +140,12 @@ func (p *panel) desktopServerTabs() desktopServerTabs {
 		tabs.SidebarWidth = 298
 	}
 	for _, server := range p.servers.Entries {
+		if server.FederationTarget != "" {
+			source := p.serverChats[server.FederationSource]
+			if source == nil || !source.authenticated || source.federationFingerprint != server.FederationAccount {
+				continue
+			}
+		}
 		status := "disconnected"
 		if chat := p.serverChats[server.ID]; server.Enabled && chat != nil && chat.status != "" {
 			status = chat.status
@@ -145,6 +154,7 @@ func (p *panel) desktopServerTabs() desktopServerTabs {
 			server.ServerName = p.settings.ServerName
 		}
 		tab := desktopServerTab{ID: server.ID, Name: server.displayName(), Local: server.ID == localDesktopServer, Status: status}
+		tab.FederationSource, tab.FederationTarget = server.FederationSource, server.FederationTarget
 		if chat := p.serverChats[server.ID]; server.Enabled && chat != nil {
 			tab.ServerID = chat.serverID
 			tab.Federated = chat.federated && chat.authenticated
@@ -251,7 +261,7 @@ func (p *panel) setDesktopServers(next desktopServers) error {
 	for id, chat := range p.serverChats {
 		old, _ := previous.find(id)
 		server, exists := next.find(id)
-		if !exists || old.Enabled != server.Enabled || old.Address != server.Address || old.Mode != server.Mode {
+		if !exists || old.Enabled != server.Enabled || desktopServerMount(old) != desktopServerMount(server) || old.ConnectionID != server.ConnectionID {
 			if p.chatPresentedView == chat.view {
 				p.chatPresentedView = nil
 			}
@@ -346,12 +356,7 @@ func (p *panel) selectDesktopServer(id string) error {
 }
 
 func (p *panel) selectDesktopServerTab(id string, scrollLeft *float64) error {
-	if err := p.selectDesktopServerWithScroll(id, scrollLeft); err != nil {
-		return err
-	}
-	p.federation.selected = id
-	p.maybeDesktopAutomaticFederation()
-	return nil
+	return p.selectDesktopServerWithScroll(id, scrollLeft)
 }
 
 func (p *panel) selectDesktopServerWithScroll(id string, scrollLeft *float64) error {
@@ -363,7 +368,6 @@ func (p *panel) selectDesktopServerEntry(id string, scrollLeft *float64, alias s
 	if !ok {
 		return errors.New("Server not found.")
 	}
-	p.federation.selected = ""
 	next := p.servers
 	next.Selected = id
 	previousTransition, previousAlias := p.serverTabTransition, p.federation.selectedTab
@@ -564,9 +568,6 @@ func (p *panel) recordDesktopServerState(id, status string) {
 	}
 	p.updateDesktopServerState(id, status)
 	p.advanceDesktopFederation()
-	if id == p.federation.selected {
-		p.maybeDesktopAutomaticFederation()
-	}
 }
 
 func (p *panel) updateDesktopServerState(id, status string) {

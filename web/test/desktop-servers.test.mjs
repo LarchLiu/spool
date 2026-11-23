@@ -99,7 +99,7 @@ test("server tabs receive native display names and preserve the selected server 
   );
 });
 
-test("trusted aliases stay beside both sources from any server, with one active alias", () => {
+test("trusted tabs preserve ordinary logins and isolate each source", () => {
   const office = {
     id: "a".repeat(52),
     name: "Office",
@@ -127,6 +127,8 @@ test("trusted aliases stay beside both sources from any server, with one active 
       }),
       entry("paired", "Paired", "connected", { server_id: paired.id }),
       entry("studio", "Studio", "connected", { federation_targets: [{ ...office, client_url: office.clientURL }] }),
+      entry("home-office", "Home Office", "connected", { federation_source: "home", federation_target: office.id }),
+      entry("studio-office", "Studio Office", "login", { federation_source: "studio", federation_target: office.id }),
     ],
   };
   const t = (key, values) => key.replace("{server}", values?.server ?? "");
@@ -141,23 +143,29 @@ test("trusted aliases stay beside both sources from any server, with one active 
   const order = [
     "Local, Connected · Signed in",
     "Home, Connected · Signed in",
-    "Home → Sign in to Work with this account, Connected · Sign-in required",
+    "Home → Sign in to Home Office with this account, Connected · Signed in",
     "Home → Sign in to Lab with this account, Disconnected",
-    "Home → Sign in to Paired with this account, Connected · Signed in",
+    "Home → Sign in to Paired with this account, Disconnected",
     "Ordinary, Connected · Signed in",
+    "Work, Connected · Sign-in required",
+    "Paired, Connected · Signed in",
     "Studio, Connected · Signed in",
-    "Studio → Sign in to Work with this account, Connected · Sign-in required",
+    "Studio → Sign in to Studio Office with this account, Connected · Sign-in required",
     "Add server",
   ];
   assert.deepEqual(labels(servers), order);
   assert.deepEqual(labels({ ...servers, selected: "ordinary" }), order);
-  assert.deepEqual(labels(servers, []), order.filter((label) => !label.startsWith("Home →"))
-    .toSpliced(3, 0, "Paired, Connected · Signed in"));
+  assert.deepEqual(labels(servers, []), order.filter((label) => !label.startsWith("Home →")));
   const selected = renderToStaticMarkup(createElement(DesktopServerTabBar, {
-    t, servers: { ...servers, selected: "office", selected_tab: `federation:studio:${office.id}` },
+    t, servers: { ...servers, selected: "studio-office", selected_tab: `federation:studio:${office.id}` },
   }));
   assert.deepEqual([...selected.matchAll(/aria-current="page"[^>]*aria-label="([^"]+)"/g)].map((match) => match[1]),
-    ["Studio → Sign in to Work with this account, Connected · Sign-in required"]);
+    ["Studio → Sign in to Studio Office with this account, Connected · Sign-in required"]);
+  const ordinary = renderToStaticMarkup(createElement(DesktopServerTabBar, {
+    t, servers: { ...servers, selected: "office" },
+  }));
+  assert.deepEqual([...ordinary.matchAll(/aria-current="page"[^>]*aria-label="([^"]+)"/g)].map((match) => match[1]),
+    ["Work, Connected · Sign-in required"]);
 });
 
 test("live trusted aliases only use native status for the same source and route", () => {
@@ -206,6 +214,10 @@ test("live trusted aliases only use native status for the same source and route"
   }
   assertStatus(render([native], live, {
     id: "stored", name: "Saved Lab", local: false, status: "connected", server_id: id,
+  }), "login", "Connected · Sign-in required");
+  assertStatus(render([native], live, {
+    id: "stored", name: "Trusted Lab", local: false, status: "connected", server_id: id,
+    federation_source: selected.id, federation_target: id,
   }), "connected", "Connected · Signed in");
 });
 

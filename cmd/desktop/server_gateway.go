@@ -26,6 +26,7 @@ type desktopServerGateway struct {
 	done        chan struct{}
 	networks    *desktopServerNetworks
 	development bool
+	localURL    func() (string, error)
 }
 
 func startDesktopServerGateway(dev *desktopDevFrontend, profiles desktopServers) (*desktopServerGateway, error) {
@@ -78,6 +79,29 @@ func (g *desktopServerGateway) update(profiles desktopServers) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusServiceUnavailable)
 					_, _ = w.Write([]byte(`{"error":"Connect to view this server’s workspace."}`))
+				})
+				continue
+			}
+			if server.ConnectionID == localDesktopServer {
+				localURL := g.localURL
+				routes[mount] = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					// A local-only listener can change ports across service restarts.
+					// Never send a saved session to the old port's next owner.
+					if localURL == nil {
+						http.Error(w, "local service is unavailable", http.StatusServiceUnavailable)
+						return
+					}
+					address, err := localURL()
+					if err != nil {
+						http.Error(w, "local service is unavailable", http.StatusServiceUnavailable)
+						return
+					}
+					target, err := url.Parse(address)
+					if err != nil {
+						http.Error(w, "local service is unavailable", http.StatusServiceUnavailable)
+						return
+					}
+					remoteDesktopAPI(target, mount).ServeHTTP(w, r)
 				})
 				continue
 			}

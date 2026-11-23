@@ -1,4 +1,6 @@
 {
+  "Source user ID": "Source user ID",
+  "External people appear after their first trusted sign-in. Manage account access here and project permissions in Projects.": "External people appear after their first trusted sign-in. Manage account access here and project permissions in Projects.",
   "The operating system denied Spool access to this file.": "The operating system denied Spool access to this file.",
   "Allow access to attached file": "Allow access to attached file",
   "Select this attached file to allow Spool to read it.": "Select this attached file to allow Spool to read it.",
@@ -1080,6 +1082,14 @@
   "Save return route": "Save return route",
   "Cross-server sign-in enabled": "Cross-server sign-in enabled",
   "Return route not configured": "Return route not configured",
+  "Revoke trust": "Revoke trust",
+  "Revoke trust with {name}?": "Revoke trust with {name}?",
+  "Revokes {direction} and immediately notifies the peer. If unreachable, synchronization is retried. The reverse direction is preserved. New approval is required to restore access.": "Revokes {direction} and immediately notifies the peer. If unreachable, synchronization is retried. The reverse direction is preserved. New approval is required to restore access.",
+  "Confirm revocation": "Confirm revocation",
+  "Trust revoked": "Trust revoked",
+  "Revoked by this server": "Revoked by this server",
+  "Revoked by peer": "Revoked by peer",
+  "Approve a new trust request to restore access.": "Approve a new trust request to restore access.",
   "Review trust request": "Review trust request",
   "Default projects for new users": "Default projects for new users",
   "These permissions apply the first time an approved person signs in.": "These permissions apply the first time an approved person signs in.",
@@ -1089,6 +1099,8 @@
   "Review incoming requests": "Review incoming requests",
   "Trusted servers": "Trusted servers",
   "No trusted servers yet": "No trusted servers yet",
+  "No active server trust": "No active server trust",
+  "Revoked trust ({count})": "Revoked trust ({count})",
   "This server → peer": "This server → peer",
   "Peer → this server": "Peer → this server",
   "Manually configured": "Manually configured",
@@ -1354,5 +1366,7 @@
   "Server not found.": "Server not found.",
   "Approve this device on the server to finish pairing.": "Approve this device on the server to finish pairing.",
   "Invalid connection mode.": "Invalid connection mode.",
-  "Configure the selected connection before connecting.": "Configure the selected connection before connecting."
+  "Configure the selected connection before connecting.": "Configure the selected connection before connecting.",
+  "Trust direction": "Trust direction",
+  "Waiting to sync revocation": "Waiting to sync revocation"
 }

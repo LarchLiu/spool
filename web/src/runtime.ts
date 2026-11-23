@@ -33,15 +33,22 @@ export type DesktopServerTabsSnapshot = {
   sidebar_width?: number;
   selection?: string;
   selected_tab?: string;
-  transition?: { from: string; from_tab?: string; started_at: number; scroll_left?: number };
+  transition?: {
+    from: string;
+    from_tab?: string;
+    started_at: number;
+    scroll_left?: number;
+  };
   entries: {
     id: string;
     name: string;
     local: boolean;
     status: DesktopServerStatus;
-    // 仅用于合并标签；实际登录由原生端核验目标和线路。
+    // Public identity and route hints; native code verifies sign-in destinations.
     server_id?: string;
     client_url?: string;
+    federation_source?: string;
+    federation_target?: string;
     // The session came from a federated sign-in, not a password.
     federated?: boolean;
     federation_targets?: {
@@ -69,16 +76,21 @@ export function requestDesktopFederationLogin(
   surface: unknown = globalThis,
   scrollLeft = 0,
 ): void {
-  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(source) || !/^[a-z2-7]{52}$/.test(target)) return;
-  if (!Number.isFinite(scrollLeft) || scrollLeft < 0 || scrollLeft > 1e7) return;
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(source) || !/^[a-z2-7]{52}$/.test(target))
+    return;
+  if (!Number.isFinite(scrollLeft) || scrollLeft < 0 || scrollLeft > 1e7)
+    return;
   desktopNavigationHint(
-    "/__desktop/federation-login?" + new URLSearchParams({ source, target, scroll_left: String(scrollLeft) }),
+    "/__desktop/federation-login?" +
+      new URLSearchParams({ source, target, scroll_left: String(scrollLeft) }),
     surface,
   );
 }
 
 // The page signals a change; native reads that page's own account and list.
-export function notifyDesktopFederationTargets(surface: unknown = globalThis): void {
+export function notifyDesktopFederationTargets(
+  surface: unknown = globalThis,
+): void {
   desktopNavigationHint("/__desktop/federation-targets", surface);
 }
 
@@ -102,7 +114,10 @@ export function subscribeDesktopFederation(
       )
         return;
       listener({
-        source: "source" in value && typeof value.source === "string" ? value.source : undefined,
+        source:
+          "source" in value && typeof value.source === "string"
+            ? value.source
+            : undefined,
         target: value.target,
         state: value.state,
         reason:
@@ -155,7 +170,8 @@ export function selectDesktopServer(
   scrollLeft = 0,
 ): void {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) return;
-  if (!Number.isFinite(scrollLeft) || scrollLeft < 0 || scrollLeft > 1e7) return;
+  if (!Number.isFinite(scrollLeft) || scrollLeft < 0 || scrollLeft > 1e7)
+    return;
   desktopNavigationHint(
     desktopServersPath +
       "?" +
@@ -177,7 +193,8 @@ export function notifyDesktopServerState(
   authenticated = state === "connected",
 ): void {
   desktopNavigationHint(
-    "/__desktop/server-state?" + new URLSearchParams({ state, authenticated: String(authenticated) }),
+    "/__desktop/server-state?" +
+      new URLSearchParams({ state, authenticated: String(authenticated) }),
     surface,
   );
 }
@@ -194,7 +211,8 @@ export function reportDesktopServerState(
     "spool:server-state-ack",
     (event) => {
       const value = (event as CustomEvent<DesktopServerConnection>).detail;
-      if (value?.state === state && value.authenticated === authenticated) stop();
+      if (value?.state === state && value.authenticated === authenticated)
+        stop();
     },
     surface,
   );
@@ -225,7 +243,13 @@ export function notifyDesktopServerReady(
   authenticated = state === "connected",
 ): void {
   desktopNavigationHint(
-    desktopServerReadyPath + "?" + new URLSearchParams({ state, selection, authenticated: String(authenticated) }),
+    desktopServerReadyPath +
+      "?" +
+      new URLSearchParams({
+        state,
+        selection,
+        authenticated: String(authenticated),
+      }),
     surface,
   );
 }
@@ -256,7 +280,11 @@ export function subscribeDesktopServerReadyAck(
         state === "error" ||
         state === "disconnected"
       )
-        listener({ state, selection: paint.selection, authenticated: paint.authenticated });
+        listener({
+          state,
+          selection: paint.selection,
+          authenticated: paint.authenticated,
+        });
     },
     surface,
   );

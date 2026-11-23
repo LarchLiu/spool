@@ -74,6 +74,12 @@ func TestSettingsBridgeRejectsCallsWithoutDesktopPage(t *testing.T) {
 		if _, err := bridge.UpdateFederationTrustReturnRoute(context.Background(), "target", "https", "https://peer.example.test"); err == nil {
 			t.Fatal("federation return route changed without the private settings page")
 		}
+		if _, err := bridge.FederationTrust(context.Background(), "revoke", "target"); err == nil {
+			t.Fatal("federation authorization revoked without the private settings page")
+		}
+		if _, err := bridge.FederationTrust(context.Background(), "withdraw", "target"); err == nil {
+			t.Fatal("outgoing federation trust revoked without the private settings page")
+		}
 		if _, err := bridge.RelayPairing(context.Background()); err == nil {
 			t.Fatal("pairing secret exposed without private desktop page")
 		}

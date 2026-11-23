@@ -24,6 +24,9 @@ func onlineTrustPairForTest(t *testing.T, sa, sb *Store) (source, target *Servic
 func trustServicesForTest(t *testing.T, a, b *App, as, bs *httptest.Server) (*Service, *Service) {
 	t.Helper()
 	for app, remote := range map[*App]*httptest.Server{a: bs, b: as} {
+		app.federationDial = func(ctx context.Context, peer FederationPeer, body []byte) ([]byte, error) {
+			return federationHTTP(ctx, peer.Address, body, remote.Client().Transport.(*http.Transport).Clone())
+		}
 		app.trustDial = func(ctx context.Context, peer FederationPeer, path string, body []byte) ([]byte, error) {
 			return federationHTTPPost(ctx, peer.Address, path, body, remote.Client().Transport.(*http.Transport).Clone())
 		}
@@ -193,6 +196,21 @@ func TestFederationTrustInboxSeparatesPendingCapacityFromReceipts(t *testing.T) 
 		t.Fatal(err)
 	}
 	check(third, true, federationTrustPending)
+	// Expired approval evidence retained for an unresolved epoch must not use
+	// the capacity reserved for pending requests and unexpired receipts.
+	if err := destination.DecideFederationTrust(third.ID, false, FederationTrustApproval{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := destination.db.Exec(`DELETE FROM federation_trust_epochs WHERE peer_id=?`, second.Sender.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := destination.db.Exec(`UPDATE federation_trust_requests SET expires_at=? WHERE id=?`, time.Now().Unix(), second.ID); err != nil {
+		t.Fatal(err)
+	}
+	check(request(b), true, federationTrustPending)
+	if r, _, _, err := federationTrustRequest(destination.db, second.ID); err != nil || r.Status != federationTrustApproved {
+		t.Fatal("new application discarded unresolved approval evidence", err)
+	}
 }
 
 func TestFederationTrustRejectsPlainHTTPAndUnsignedApplications(t *testing.T) {

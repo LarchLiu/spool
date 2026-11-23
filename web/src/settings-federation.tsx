@@ -31,8 +31,16 @@ type TrustPeer = {
   incoming: boolean;
   outgoing: boolean;
   accept: boolean;
+  revoked?: boolean;
+  sync_pending?: boolean;
   users?: string[];
   all_users?: boolean;
+  revocations?: {
+    outgoing: boolean;
+    initiator: string;
+    recorded_at: number;
+    sync_pending?: boolean;
+  }[];
 };
 type Preview = { id: string; name: string; accepting: boolean };
 type DefaultProject = {
@@ -55,7 +63,14 @@ type TrustSnapshot = {
   requests: TrustRequest[];
   peers: TrustPeer[];
 };
-type TrustAction = "list" | "reject" | "open-inbox" | "close-inbox" | "check";
+type TrustAction =
+  | "list"
+  | "reject"
+  | "revoke"
+  | "withdraw"
+  | "open-inbox"
+  | "close-inbox"
+  | "check";
 const settings = (action: TrustAction, value = "") =>
   settingsCall<TrustSnapshot>("FederationTrust", action, value);
 
@@ -77,9 +92,11 @@ export function ServerTrustPage({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const operation = useRef(false);
+  const revision = useRef(0);
   const run = async (fn: () => Promise<void>, refreshOnError = false) => {
     if (operation.current) return false;
     operation.current = true;
+    revision.current++;
     setBusy(true);
     setError("");
     try {
@@ -104,12 +121,40 @@ export function ServerTrustPage({
     run(async () => setData(await settings(action, value)));
   useEffect(() => {
     void act("list");
+    let active = true;
+    let reading = false;
+    const timer = window.setInterval(async () => {
+      if (reading || operation.current || document.hidden) return;
+      reading = true;
+      const before = revision.current;
+      try {
+        const next = await settings("list");
+        if (active && !operation.current && revision.current === before)
+          setData(next);
+      } catch {
+        // A background refresh must not interrupt an open editor.
+      } finally {
+        reading = false;
+      }
+    }, 1000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, []);
   const outgoing =
     data?.requests.filter(
       (r) =>
         r.outgoing &&
         (r.status === "rejected" || (r.status === "pending" && r.network)),
+    ) ?? [];
+  const activePeers =
+    data?.peers.filter(
+      (peer) => !peer.revoked || peer.incoming || peer.outgoing,
+    ) ?? [];
+  const revokedPeers =
+    data?.peers.filter(
+      (peer) => peer.revoked && !peer.incoming && !peer.outgoing,
     ) ?? [];
   const tailnet = local?.status.TSNet;
   const tailnetReady = !!local?.status.TSNetOutboundReady;
@@ -124,6 +169,40 @@ export function ServerTrustPage({
       setRequestingLogin(false);
     }
   };
+  const renderPeer = (peer: TrustPeer) => (
+    <TrustedServer
+      key={peer.id}
+      t={t}
+      peer={peer}
+      localServerID={data?.server_id ?? ""}
+      users={local?.users ?? []}
+      revoke={(outgoing) => act(outgoing ? "withdraw" : "revoke", peer.id)}
+      saveReturnRoute={(route) =>
+        run(async () => {
+          setData(
+            await settingsCall<TrustSnapshot>(
+              "UpdateFederationTrustReturnRoute",
+              peer.id,
+              route.transport,
+              route.address,
+            ),
+          );
+        })
+      }
+      saveUsers={(all, people) =>
+        run(async () => {
+          setData(
+            await settingsCall<TrustSnapshot>(
+              "SetFederationTrustUsers",
+              peer.id,
+              all,
+              people,
+            ),
+          );
+        })
+      }
+    />
+  );
 
   return (
     <>
@@ -153,6 +232,7 @@ export function ServerTrustPage({
                 t={t}
                 kind="copy-server-trust-id"
                 label={t("Copy server ID")}
+                iconOnly
               />
             </Row>
           </Card>
@@ -353,43 +433,40 @@ export function ServerTrustPage({
                 />
               ))}
           </Card>
-          <Card title={t("Trusted servers")}>
-            {data.peers.length === 0 && (
-              <Row title={t("No trusted servers yet")} />
+          <div className="settings-trust-lists">
+            <Card title={t("Trusted servers")}>
+              {activePeers.length === 0 && (
+                <Row
+                  title={t(
+                    revokedPeers.length
+                      ? "No active server trust"
+                      : "No trusted servers yet",
+                  )}
+                />
+              )}
+              {activePeers.map(renderPeer)}
+            </Card>
+            {revokedPeers.length > 0 && (
+              <details className="settings-group settings-trust-revoked">
+                <summary>
+                  <span>
+                    {t("Revoked trust ({count})", {
+                      count: revokedPeers.length,
+                    })}
+                  </span>
+                  {revokedPeers.some((peer) => peer.sync_pending) && (
+                    <span className="settings-trust-status">
+                      {" "}
+                      · {t("Waiting to sync revocation")}
+                    </span>
+                  )}
+                </summary>
+                <div className="settings-card">
+                  {revokedPeers.map(renderPeer)}
+                </div>
+              </details>
             )}
-            {data.peers.map((peer) => (
-              <TrustedServer
-                key={peer.id}
-                t={t}
-                peer={peer}
-                users={local?.users ?? []}
-                saveReturnRoute={(route) =>
-                  run(async () => {
-                    setData(
-                      await settingsCall<TrustSnapshot>(
-                        "UpdateFederationTrustReturnRoute",
-                        peer.id,
-                        route.transport,
-                        route.address,
-                      ),
-                    );
-                  })
-                }
-                saveUsers={(all, people) =>
-                  run(async () => {
-                    setData(
-                      await settingsCall<TrustSnapshot>(
-                        "SetFederationTrustUsers",
-                        peer.id,
-                        all,
-                        people,
-                      ),
-                    );
-                  })
-                }
-              />
-            ))}
-          </Card>
+          </div>
         </fieldset>
       )}
     </>
@@ -499,18 +576,40 @@ function RouteFields({
 function TrustedServer({
   t,
   peer,
+  localServerID,
   users,
   saveReturnRoute,
   saveUsers,
+  revoke,
 }: {
   t: Translator;
   peer: TrustPeer;
+  localServerID: string;
   users: Person[];
   saveReturnRoute: (route: Route) => Promise<boolean>;
   saveUsers: (all: boolean, users: string[]) => Promise<boolean>;
+  revoke: (outgoing: boolean) => Promise<boolean>;
 }) {
   const [returnRoute, setReturnRoute] = useState<Route>();
   const [draft, setDraft] = useState<{ all: boolean; selected: string[] }>();
+  const [confirmRevocation, setConfirmRevocation] = useState(false);
+  const [revokeOutgoing, setRevokeOutgoing] = useState(!peer.incoming);
+  const outgoing = revokeOutgoing;
+  const confirming =
+    confirmRevocation && (outgoing ? peer.outgoing : peer.incoming);
+  const pendingReturnRoute = !!peer.revocations?.some(
+    (record) =>
+      !record.outgoing &&
+      record.initiator === localServerID &&
+      record.sync_pending,
+  );
+  useEffect(() => {
+    if (!peer.incoming && !pendingReturnRoute) setReturnRoute(undefined);
+  }, [peer.incoming, pendingReturnRoute]);
+  useEffect(() => {
+    if (confirmRevocation && !(outgoing ? peer.outgoing : peer.incoming))
+      setConfirmRevocation(false);
+  }, [confirmRevocation, outgoing, peer.incoming, peer.outgoing]);
   const local = users.filter((person) => !person.source_server_id);
   const count = local.filter(
     (person) => !person.disabled && peer.users?.includes(person.id),
@@ -518,162 +617,268 @@ function TrustedServer({
   return (
     <>
       <Row title={peer.name} help={<code>{peer.id}</code>} wide>
-        {[
-          peer.outgoing && t("This server → peer"),
-          peer.incoming && t("Peer → this server"),
-          !peer.outgoing && !peer.incoming && t("Manually configured"),
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-        {peer.outgoing && !draft && (
+        <div className="settings-trust-directions">
+          {([true, false] as const).map((isOutgoing) => {
+            if (!(isOutgoing ? peer.outgoing : peer.incoming)) return null;
+            const direction = t(
+              isOutgoing ? "This server → peer" : "Peer → this server",
+            );
+            return (
+              <div
+                key={String(isOutgoing)}
+                className="settings-trust-controls"
+                role="group"
+                aria-label={direction}
+              >
+                <span className="settings-trust-direction">{direction}</span>
+                <div className="settings-trust-details">
+                  {isOutgoing
+                    ? !draft && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDraft({
+                              all: !!peer.all_users,
+                              selected: peer.users ?? [],
+                            })
+                          }
+                        >
+                          {t("Manage allowed users")}
+                        </button>
+                      )
+                    : !returnRoute && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setReturnRoute({ transport: "https", address: "" })
+                          }
+                        >
+                          {t(
+                            peer.accept
+                              ? "Change return route"
+                              : "Configure return route",
+                          )}
+                        </button>
+                      )}
+                  <span className="settings-trust-status">
+                    {isOutgoing
+                      ? peer.all_users
+                        ? t("All enabled local users are allowed.")
+                        : t("Allowed users: {count}", { count: String(count) })
+                      : t(
+                          peer.accept
+                            ? "Cross-server sign-in enabled"
+                            : "Return route not configured",
+                        )}
+                  </span>
+                </div>
+                {!(confirming && outgoing === isOutgoing) && (
+                  <button
+                    type="button"
+                    className="settings-destructive settings-trust-revoke"
+                    onClick={() => {
+                      setRevokeOutgoing(isOutgoing);
+                      setConfirmRevocation(true);
+                    }}
+                  >
+                    {t("Revoke trust")}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          {((!peer.outgoing && !peer.incoming) || peer.sync_pending) && (
+            <div className="settings-trust-details">
+              {pendingReturnRoute && !peer.incoming && !returnRoute && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setReturnRoute({ transport: "https", address: "" })
+                  }
+                >
+                  {t("Configure return route")}
+                </button>
+              )}
+              <span className="settings-trust-status">
+                {[
+                  !peer.outgoing &&
+                    !peer.incoming &&
+                    t(peer.revoked ? "Trust revoked" : "Manually configured"),
+                  peer.revoked &&
+                    t("Approve a new trust request to restore access."),
+                  peer.sync_pending && t("Waiting to sync revocation"),
+                ]
+                  .filter(Boolean)
+                  .map((status, index) => (
+                    <span key={index}>{status}</span>
+                  ))}
+              </span>
+            </div>
+          )}
+          {!peer.incoming &&
+            !peer.outgoing &&
+            peer.revocations?.map((record) => (
+              <div
+                className="settings-trust-controls"
+                key={String(record.outgoing)}
+              >
+                <span className="settings-trust-direction">
+                  {t(
+                    record.outgoing
+                      ? "This server → peer"
+                      : "Peer → this server",
+                  )}
+                </span>
+                <span
+                  className="settings-trust-status"
+                  title={record.initiator}
+                >
+                  {t(
+                    record.initiator === localServerID
+                      ? "Revoked by this server"
+                      : "Revoked by peer",
+                  )}
+                </span>
+              </div>
+            ))}
+        </div>
+      </Row>
+      {confirming && !peer.revoked && (
+        <Row
+          title={t("Revoke trust with {name}?", {
+            name: peer.name,
+          })}
+          help={t(
+            "Revokes {direction} and immediately notifies the peer. If unreachable, synchronization is retried. The reverse direction is preserved. New approval is required to restore access.",
+            {
+              direction: t(
+                outgoing ? "This server → peer" : "Peer → this server",
+              ),
+            },
+          )}
+          wide
+        >
+          <button type="button" onClick={() => setConfirmRevocation(false)}>
+            {t("Cancel")}
+          </button>
           <button
             type="button"
-            onClick={() =>
-              setDraft({ all: !!peer.all_users, selected: peer.users ?? [] })
-            }
+            className="settings-destructive"
+            onClick={async () => {
+              if (await revoke(outgoing)) {
+                setConfirmRevocation(false);
+                if (outgoing) setDraft(undefined);
+                else setReturnRoute(undefined);
+              }
+            }}
           >
-            {t("Manage allowed users")}
+            {t("Confirm revocation")}
           </button>
-        )}
-      </Row>
-      {peer.incoming && (
-        <>
+        </Row>
+      )}
+      {(peer.incoming || pendingReturnRoute) && returnRoute && (
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (
+              returnRoute.address.trim() &&
+              (await saveReturnRoute(returnRoute))
+            )
+              setReturnRoute(undefined);
+          }}
+        >
+          <RouteFields
+            t={t}
+            route={returnRoute}
+            onChange={setReturnRoute}
+            returnRoute
+          />
+          <div className="settings-card-actions">
+            <button
+              className="settings-primary"
+              type="submit"
+              disabled={!returnRoute.address.trim()}
+            >
+              {t("Save return route")}
+            </button>
+            <button type="button" onClick={() => setReturnRoute(undefined)}>
+              {t("Cancel")}
+            </button>
+          </div>
+        </form>
+      )}
+      {peer.outgoing && draft && (
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (
+              await saveUsers(
+                draft.all,
+                draft.all
+                  ? []
+                  : local
+                      .filter((person) => draft.selected.includes(person.id))
+                      .map((person) => person.id),
+              )
+            )
+              setDraft(undefined);
+          }}
+        >
           <Row
-            title={t(
-              peer.accept
-                ? "Cross-server sign-in enabled"
-                : "Return route not configured",
+            title={t("Allow all local users")}
+            help={t(
+              "Includes new local users. Disabled and external accounts cannot sign in to the target.",
             )}
             wide
           >
-            {!returnRoute && (
-              <button
-                type="button"
-                onClick={() =>
-                  setReturnRoute({ transport: "https", address: "" })
+            <Toggle
+              label={t("Allow all local users")}
+              value={draft.all}
+              onChange={(all) => setDraft({ ...draft, all })}
+            />
+          </Row>
+          {!draft.all &&
+            local.map((person) => (
+              <Row
+                key={person.id}
+                title={person.nickname || person.username}
+                help={
+                  person.disabled
+                    ? `${person.username} · ${t("Disabled")}`
+                    : person.username
                 }
               >
-                {t(
-                  peer.accept
-                    ? "Change return route"
-                    : "Configure return route",
-                )}
-              </button>
-            )}
-          </Row>
-          {returnRoute && (
-            <form
-              onSubmit={async (event) => {
-                event.preventDefault();
-                if (
-                  returnRoute.address.trim() &&
-                  (await saveReturnRoute(returnRoute))
-                )
-                  setReturnRoute(undefined);
-              }}
-            >
-              <RouteFields
-                t={t}
-                route={returnRoute}
-                onChange={setReturnRoute}
-                returnRoute
-              />
-              <div className="settings-card-actions">
-                <button
-                  className="settings-primary"
-                  type="submit"
-                  disabled={!returnRoute.address.trim()}
-                >
-                  {t("Save return route")}
-                </button>
-                <button type="button" onClick={() => setReturnRoute(undefined)}>
-                  {t("Cancel")}
-                </button>
-              </div>
-            </form>
-          )}
-        </>
-      )}
-      {peer.outgoing &&
-        (draft ? (
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (
-                await saveUsers(
-                  draft.all,
-                  draft.all
-                    ? []
-                    : local
-                        .filter((person) => draft.selected.includes(person.id))
-                        .map((person) => person.id),
-                )
-              )
-                setDraft(undefined);
-            }}
-          >
-            <Row
-              title={t("Allow all local users")}
-              help={t(
-                "Includes new local users. Disabled and external accounts cannot sign in to the target.",
-              )}
-              wide
-            >
-              <Toggle
-                label={t("Allow all local users")}
-                value={draft.all}
-                onChange={(all) => setDraft({ ...draft, all })}
-              />
-            </Row>
-            {!draft.all &&
-              local.map((person) => (
-                <Row
-                  key={person.id}
-                  title={person.nickname || person.username}
-                  help={
-                    person.disabled
-                      ? `${person.username} · ${t("Disabled")}`
+                <Toggle
+                  label={
+                    person.nickname && person.nickname !== person.username
+                      ? `${person.nickname} (${person.username})`
                       : person.username
                   }
-                >
-                  <input
-                    type="checkbox"
-                    aria-label={
-                      person.nickname && person.nickname !== person.username
-                        ? `${person.nickname} (${person.username})`
-                        : person.username
-                    }
-                    checked={draft.selected.includes(person.id)}
-                    disabled={
-                      person.disabled && !draft.selected.includes(person.id)
-                    }
-                    onChange={(e) =>
-                      setDraft({
-                        ...draft,
-                        selected: e.target.checked
-                          ? [...draft.selected, person.id]
-                          : draft.selected.filter((id) => id !== person.id),
-                      })
-                    }
-                  />
-                </Row>
-              ))}
-            <div className="settings-card-actions">
-              <button className="settings-primary" type="submit">
-                {t("Save allowed users")}
-              </button>
-              <button type="button" onClick={() => setDraft(undefined)}>
-                {t("Cancel")}
-              </button>
-            </div>
-          </form>
-        ) : (
-          <Hint>
-            {peer.all_users
-              ? t("All enabled local users are allowed.")
-              : t("Allowed users: {count}", { count: String(count) })}
-          </Hint>
-        ))}
+                  value={draft.selected.includes(person.id)}
+                  disabled={
+                    person.disabled && !draft.selected.includes(person.id)
+                  }
+                  onChange={(allowed) =>
+                    setDraft({
+                      ...draft,
+                      selected: allowed
+                        ? [...draft.selected, person.id]
+                        : draft.selected.filter((id) => id !== person.id),
+                    })
+                  }
+                />
+              </Row>
+            ))}
+          <div className="settings-card-actions">
+            <button className="settings-primary" type="submit">
+              {t("Save allowed users")}
+            </button>
+            <button type="button" onClick={() => setDraft(undefined)}>
+              {t("Cancel")}
+            </button>
+          </div>
+        </form>
+      )}
     </>
   );
 }
@@ -769,67 +974,77 @@ function IncomingRequest({
           {active.map((p) => {
             const rule = selected[p.id];
             return (
-              <div key={p.id}>
-                <Row title={p.name}>
-                  <input
-                    type="checkbox"
-                    aria-label={p.name}
-                    checked={!!rule}
-                    onChange={(e) => {
-                      if (e.target.checked)
-                        update({
-                          id: p.id,
-                          access: "read-only",
-                          own_access: "read-only",
-                        });
-                      else {
-                        const next = { ...selected };
-                        delete next[p.id];
-                        setSelected(next);
-                      }
-                    }}
-                  />
-                </Row>
+              <Row key={p.id} title={p.name}>
                 {rule && (
-                  <Row title={t("Project permissions")} wide>
-                    <label>
-                      {t("Shared session permissions")}{" "}
-                      <select
-                        aria-label={`${p.name} · ${t("Shared session permissions")}`}
-                        value={rule.access}
-                        onChange={(e) =>
-                          update({
-                            ...rule,
-                            access: e.target.value as DefaultProject["access"],
-                          })
-                        }
-                      >
-                        <option value="read-only">{t("Read-only")}</option>
-                        <option value="control">
-                          {t("Can control sessions")}
-                        </option>
-                      </select>
-                    </label>
-                    <label>
-                      {t("In-app permissions")}{" "}
-                      <select
+                  <div className="settings-member-permissions">
+                    <div className="settings-member-permission">
+                      <span>{t("In-app permissions")}</span>
+                      <div
+                        className="settings-member-access"
+                        role="group"
                         aria-label={`${p.name} · ${t("In-app permissions")}`}
-                        value={rule.own_access}
-                        onChange={(e) =>
-                          update({
-                            ...rule,
-                            own_access: e.target
-                              .value as DefaultProject["own_access"],
-                          })
-                        }
                       >
-                        <option value="read-only">{t("Read-only")}</option>
-                        <option value="create">{t("Can create")}</option>
-                      </select>
-                    </label>
-                  </Row>
+                        {(["read-only", "create"] as const).map((access) => (
+                          <button
+                            key={access}
+                            type="button"
+                            aria-pressed={rule.own_access === access}
+                            onClick={() =>
+                              update({ ...rule, own_access: access })
+                            }
+                          >
+                            {t(
+                              access === "read-only"
+                                ? "Read-only"
+                                : "Can create",
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="settings-member-permission">
+                      <span>{t("Shared session permissions")}</span>
+                      <div
+                        className="settings-member-access"
+                        role="group"
+                        aria-label={`${p.name} · ${t("Shared session permissions")}`}
+                      >
+                        {(["read-only", "control"] as const).map((access) => (
+                          <button
+                            key={access}
+                            type="button"
+                            aria-pressed={rule.access === access}
+                            onClick={() => update({ ...rule, access })}
+                          >
+                            {t(
+                              access === "read-only"
+                                ? "Read-only"
+                                : "Can control sessions",
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 )}
-              </div>
+                <Toggle
+                  label={p.name}
+                  value={!!rule}
+                  onChange={(enabled) => {
+                    if (enabled)
+                      update({
+                        id: p.id,
+                        access: "read-only",
+                        own_access: "read-only",
+                      });
+                    else {
+                      const next = { ...selected };
+                      delete next[p.id];
+                      setSelected(next);
+                    }
+                  }}
+                />
+              </Row>
             );
           })}
           <Hint>

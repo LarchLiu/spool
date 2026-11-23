@@ -33,6 +33,19 @@ CREATE TABLE IF NOT EXISTS federation_trust_grants(
   peer_id TEXT PRIMARY KEY REFERENCES federation_peers(id) ON DELETE CASCADE,
   incoming INTEGER NOT NULL, outgoing INTEGER NOT NULL, managed INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS federation_trust_epochs(
+  peer_id TEXT NOT NULL, outgoing INTEGER NOT NULL, request_id TEXT NOT NULL, revoked INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(peer_id,outgoing)
+);
+CREATE TABLE IF NOT EXISTS federation_trust_notifications(
+  peer_id TEXT NOT NULL REFERENCES federation_peers(id), outgoing INTEGER NOT NULL, request_id TEXT NOT NULL,
+  nonce TEXT NOT NULL, retry_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(peer_id,outgoing,request_id)
+);
+CREATE TABLE IF NOT EXISTS federation_trust_revocation_log(
+  peer_id TEXT NOT NULL, outgoing INTEGER NOT NULL, request_id TEXT NOT NULL,
+  initiator TEXT NOT NULL, recorded_at INTEGER NOT NULL,
+  PRIMARY KEY(peer_id,outgoing,request_id)
+);
 CREATE TABLE IF NOT EXISTS federation_users(peer_id TEXT NOT NULL, subject TEXT NOT NULL, user_id TEXT NOT NULL UNIQUE REFERENCES users(id), PRIMARY KEY(peer_id,subject));
 CREATE TABLE IF NOT EXISTS federation_sources(ref TEXT PRIMARY KEY, peer_id TEXT NOT NULL, session_hash TEXT NOT NULL, subject TEXT NOT NULL, expires_at INTEGER NOT NULL, notified INTEGER NOT NULL DEFAULT 0, revoked INTEGER NOT NULL DEFAULT 0);
 CREATE UNIQUE INDEX IF NOT EXISTS federation_source_active ON federation_sources(peer_id,session_hash) WHERE revoked=0;
@@ -127,30 +140,42 @@ type federationQuery interface {
 	QueryRow(query string, args ...any) *sql.Row
 }
 
-func federationPeer(q federationQuery, id string) (FederationPeer, error) {
+const federationPeerSelect = `SELECT p.config,p.generation,coalesce(g.incoming,0),coalesce(g.outgoing,0)
+	FROM federation_peers p LEFT JOIN federation_trust_grants g ON g.peer_id=p.id`
+
+func scanFederationPeer(row interface{ Scan(...any) error }) (FederationPeer, error) {
 	var peer FederationPeer
 	var data string
-	if err := q.QueryRow(`SELECT config,generation FROM federation_peers WHERE id=?`, id).Scan(&data, &peer.generation); err != nil {
+	var incoming, outgoing bool
+	if err := row.Scan(&data, &peer.generation, &incoming, &outgoing); err != nil {
 		return peer, err
 	}
-	err := json.Unmarshal([]byte(data), &peer)
-	return peer, err
+	if err := json.Unmarshal([]byte(data), &peer); err != nil {
+		return peer, err
+	}
+	if !incoming {
+		peer.Accept, peer.Projects = false, nil
+	}
+	if !outgoing {
+		peer.AllUsers, peer.Users = false, nil
+	}
+	return peer, nil
+}
+
+func federationPeer(q federationQuery, id string) (FederationPeer, error) {
+	return scanFederationPeer(q.QueryRow(federationPeerSelect+` WHERE p.id=?`, id))
 }
 
 func (s *Store) FederationPeers() ([]FederationPeer, error) {
-	rows, err := s.db.Query(`SELECT config,generation FROM federation_peers ORDER BY id`)
+	rows, err := s.db.Query(federationPeerSelect + ` WHERE g.peer_id IS NOT NULL ORDER BY p.id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	peers := []FederationPeer{}
 	for rows.Next() {
-		var peer FederationPeer
-		var data string
-		if err := rows.Scan(&data, &peer.generation); err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal([]byte(data), &peer); err != nil {
+		peer, err := scanFederationPeer(rows)
+		if err != nil {
 			return nil, err
 		}
 		peers = append(peers, peer)
@@ -188,7 +213,7 @@ func federationHTTPSURL(address string) (*url.URL, error) {
 	return u, nil
 }
 
-// UpdateFederationPeer 修改已批准或此前手工配置的关系，不创建新对端。
+// UpdateFederationPeer 只配置已批准的关系，不能创建关系或开启未批准的方向。
 func (s *Store) UpdateFederationPeer(p FederationPeer) error {
 	if _, ok := p.key(); !ok {
 		return errors.New("invalid federation public key or server ID")
@@ -386,6 +411,10 @@ type federationSubject struct {
 	Remaining int64  `json:"session_remaining_millis"`
 }
 
+func (p federationSubject) valid() bool {
+	return chatmodel.ValidID(p.ID) && len(p.Nickname) > 0 && len(p.Nickname) <= 100 && p.Avatar.Validate() == nil && federationSecret(p.SourceRef) && p.Remaining > 0
+}
+
 // Verify and consume in the same transaction. A revoked or expired local
 // session cannot be resurrected by a previously issued ticket.
 func (s *Store) federationVerify(peer FederationPeer, value string, consume bool) (federationSubject, error) {
@@ -431,7 +460,7 @@ func (s *Store) federationVerify(peer FederationPeer, value string, consume bool
 
 func (s *Store) federationLogin(peer FederationPeer, person federationSubject, checked time.Time) (string, time.Time, error) {
 	now := time.Now()
-	if !chatmodel.ValidID(person.ID) || len(person.Nickname) == 0 || len(person.Nickname) > 100 || person.Avatar.Validate() != nil || !federationSecret(person.SourceRef) || person.Remaining <= 0 {
+	if !person.valid() {
 		return "", time.Time{}, errFederationDenied
 	}
 	expires := checked.Add(time.Duration(min(person.Remaining, loginSessionTTL.Milliseconds())) * time.Millisecond)

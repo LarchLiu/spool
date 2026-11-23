@@ -19,7 +19,7 @@ func federationPairForTest(t *testing.T, store, remote *Store, address string, a
 		t.Fatal(err)
 	}
 	p.Transport, p.Address, p.Accept, p.Users, p.Projects = "https", address, accept, users, projects
-	if err = seedLegacyFederationPeer(store, p); err != nil {
+	if err = seedApprovedFederationPeer(store, p); err != nil {
 		t.Fatal(err)
 	}
 	return p
@@ -153,12 +153,18 @@ func TestFederationExchangeUsesTargetMembershipAndRevokes(t *testing.T) {
 		t.Fatalf("unlisted user got %d", got)
 	}
 
+	if users, err := sb.Users(); err != nil || len(users) != 0 {
+		t.Fatal("target imported source users before their first login", users, err)
+	}
 	ticket := issue()
 	bc := exchange(ticket, http.StatusOK)
 	exchange(ticket, http.StatusUnauthorized)
 	id, err := sb.authenticate(bc.Value)
 	if err != nil || id.User.SourceServerID != pa.ID || !sb.CanCreateChat(id.User.ID, project.ID) || id.User.RemoteDesktop || id.User.ADBBridge {
 		t.Fatalf("unexpected first-login access: %v", err)
+	}
+	if users, err := sb.Users(); err != nil || len(users) != 1 || users[0].ID != id.User.ID || users[0].SourceServerID != pa.ID || users[0].SourceServerName != pa.Name || users[0].SourceUserID != alice.ID {
+		t.Fatal("external visitor missing from target's managed people", users, err)
 	}
 	projects, err := sb.Projects()
 	if err != nil || len(projects) != 2 {
@@ -250,6 +256,134 @@ func TestFederationExchangeUsesTargetMembershipAndRevokes(t *testing.T) {
 	}
 	ac, csrf = loginRequest(t, a, "alice")
 	exchange(issue(), http.StatusUnauthorized)
+}
+
+func TestFederationSourceCanRevokeTrust(t *testing.T) {
+	for _, notify := range []bool{true, false} {
+		name := "notification"
+		if !notify {
+			name = "recheck without notification route"
+		}
+		t.Run(name, func(t *testing.T) {
+			sa, sb := testStore(t), testStore(t)
+			alice := testUser(t, sa, "alice")
+			a, b := NewApp(sa, nil, "", ""), NewApp(sb, nil, "", "")
+			as, bs := httptest.NewTLSServer(a), httptest.NewTLSServer(b)
+			t.Cleanup(as.Close)
+			t.Cleanup(bs.Close)
+			for app, remote := range map[*App]*httptest.Server{a: bs, b: as} {
+				app.federationDial = func(ctx context.Context, peer FederationPeer, body []byte) ([]byte, error) {
+					return federationHTTP(ctx, peer.Address, body, remote.Client().Transport.(*http.Transport).Clone())
+				}
+			}
+			source, target := trustServicesForTest(t, a, b, as, bs)
+			pending := submitTrustForTest(t, source, target, bs.URL)
+			if err := sb.DecideFederationTrust(pending.ID, true, FederationTrustApproval{Transport: "https", Address: as.URL}); err != nil {
+				t.Fatal(err)
+			}
+			if err := source.CheckFederationTrust(t.Context(), pending.ID); err != nil {
+				t.Fatal(err)
+			}
+			pb, err := sb.FederationIdentity()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := sa.SetFederationTrustUsers(pb.ID, true, nil); err != nil {
+				t.Fatal(err)
+			}
+			pb, err = federationPeer(sa.db, pb.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !notify {
+				pb.Transport, pb.Address = "", ""
+				if err := sa.UpdateFederationPeer(pb); err != nil {
+					t.Fatal(err)
+				}
+				pb, err = federationPeer(sa.db, pb.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			pa, err := federationPeer(sb.db, pending.PeerID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			localToken, localIdentity, err := sa.login(alice.Username, "test-password-2026")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ticket, err := sa.federationIssue(localIdentity, pb.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			person, err := sa.federationVerify(pb, ticket, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			remoteToken, _, err := sb.federationLogin(pa, person, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			pendingTicket, err := sa.federationIssue(localIdentity, pb.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A delayed approval of an application already sent before revocation must not restore it.
+			late := submitTrustForTest(t, source, target, bs.URL)
+			if err := sb.DecideFederationTrust(late.ID, true, FederationTrustApproval{}); err != nil {
+				t.Fatal(err)
+			}
+			_, _, receipt, err := federationTrustRequest(sb.db, late.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := sa.WithdrawFederationTrust(pb.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := sa.authenticate(localToken); err != nil {
+				t.Fatal("source revocation signed out the local account", err)
+			}
+			if targets, err := sa.federationTargets(localIdentity); err != nil || len(targets) != 0 {
+				t.Fatal("source revocation left the target discoverable", err)
+			}
+			if _, err := sa.federationIssue(localIdentity, pb.ID); !errors.Is(err, errFederationDenied) {
+				t.Fatal("source issued another ticket after revoking trust", err)
+			}
+			current, err := federationPeer(sa.db, pb.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, peer := range []FederationPeer{pb, current} {
+				if _, err := sa.federationVerify(peer, pendingTicket, true); !errors.Is(err, errFederationDenied) {
+					t.Fatal("a previously issued ticket survived source revocation", err)
+				}
+			}
+			if _, err := sa.confirmFederationTrust(receipt); !errors.Is(err, errFederationTrustRequest) {
+				t.Fatal("a delayed receipt restored source trust", err)
+			}
+			if err := sa.SetFederationTrustUsers(pb.ID, true, nil); err == nil {
+				t.Fatal("changing the allowlist restored revoked trust")
+			}
+			if notify {
+				a.federationMaintain(t.Context())
+			} else {
+				if _, err := sb.db.Exec(`UPDATE federation_sessions SET retry_at=0 WHERE session_hash=?`, tokenHash(remoteToken)); err != nil {
+					t.Fatal(err)
+				}
+				b.federationMaintain(t.Context())
+			}
+			if _, err := sb.authenticate(remoteToken); err == nil {
+				t.Fatal("remote session survived source revocation notification or recheck")
+			}
+			if err := source.CheckFederationTrust(t.Context(), pending.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := sa.federationIssue(localIdentity, pb.ID); !errors.Is(err, errFederationDenied) {
+				t.Fatal("replaying an old confirmed request restored trust", err)
+			}
+		})
+	}
 }
 
 func TestFederationTicketIsBoundToTargetAndExpires(t *testing.T) {
@@ -348,6 +482,7 @@ func TestSaveFederationUserRejectsIdentityEditsWithoutRevokingSession(t *testing
 		t.Fatal("changing local permissions must still revoke the old session")
 	}
 	users, err := local.Users()
+	want.SourceServerName, want.SourceUserID = peer.Name, person.ID
 	if err != nil || len(users) != 1 || users[0] != want {
 		t.Fatalf("local permissions or source profile did not persist: %+v, %v", users, err)
 	}
@@ -384,7 +519,7 @@ func TestFederationDelayedVerificationCannotRestoreAccess(t *testing.T) {
 	if _, _, err = local.federationLogin(original, person, started); !errors.Is(err, errFederationDenied) {
 		t.Fatalf("response from before the policy change was accepted: %v", err)
 	}
-	if err = local.federationRefresh(original, person.SourceRef, started); err != nil {
+	if err = local.federationRefresh(original, person.SourceRef, started, &person); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = local.authenticate(token); err == nil {

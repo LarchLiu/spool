@@ -84,7 +84,8 @@ export function DesktopServerAction({
 type FederationProgress = Record<string, DesktopFederationProgress>;
 
 type DesktopServerEntry = DesktopServerTabsSnapshot["entries"][number];
-const federationTabKey = (source: string, target: string) => `federation:${source}:${target}`;
+const federationTabKey = (source: string, target: string) =>
+  `federation:${source}:${target}`;
 
 function ServerStatusIcon({
   status,
@@ -94,34 +95,56 @@ function ServerStatusIcon({
   trusted?: boolean;
 }) {
   return trusted ? (
-    <KeyRound size={13} className="server-status-key" data-state={status} aria-hidden="true" />
+    <KeyRound
+      size={13}
+      className="server-status-key"
+      data-state={status}
+      aria-hidden="true"
+    />
   ) : (
-    <span className="server-status-dot" data-state={status} aria-hidden="true" />
+    <span
+      className="server-status-dot"
+      data-state={status}
+      aria-hidden="true"
+    />
   );
 }
 
-function serverOption(t: Translator, server: DesktopServerEntry): SegmentedTab<string> {
+function serverOption(
+  t: Translator,
+  server: DesktopServerEntry,
+): SegmentedTab<string> {
   const status =
-    t(labels[server.status]) + (server.federated ? ` · ${t("Federated sign-in")}` : "");
+    t(labels[server.status]) +
+    (server.federated ? ` · ${t("Federated sign-in")}` : "");
   return {
     value: server.id,
     label: server.name,
     title: `${server.name} · ${status}`,
     accessibleLabel: `${server.name}, ${status}`,
-    icon: <ServerStatusIcon status={server.status} trusted={server.federated} />,
+    icon: (
+      <ServerStatusIcon status={server.status} trusted={server.federated} />
+    ),
   };
 }
 
-function federationTargetStatus(source: DesktopServerEntry, target: FederationTarget): DesktopServerStatus {
-  if (!target.clientURL || !Array.isArray(source.federation_targets)) return "disconnected";
+function federationTargetStatus(
+  source: DesktopServerEntry,
+  target: FederationTarget,
+): DesktopServerStatus {
+  if (!target.clientURL || !Array.isArray(source.federation_targets))
+    return "disconnected";
   // Only the matching native route has a health result. An anonymous probe
   // can report reachability, but cannot establish a signed-in session.
-  const status = source.federation_targets.find((entry) =>
-    entry?.id === target.id &&
-    federationClientURL(entry.client_url) === target.clientURL &&
-    (entry.client_mode ?? "") === (target.clientMode ?? ""),
+  const status = source.federation_targets.find(
+    (entry) =>
+      entry?.id === target.id &&
+      federationClientURL(entry.client_url) === target.clientURL &&
+      (entry.client_mode ?? "") === (target.clientMode ?? ""),
   )?.status;
-  return status === "login" || status === "error" || status === "connecting" ? status : "disconnected";
+  return status === "login" || status === "error" || status === "connecting"
+    ? status
+    : "disconnected";
 }
 
 function federationOption(
@@ -175,35 +198,36 @@ function serverOptions(
   targets: FederationTarget[] | undefined,
   progress: FederationProgress,
 ) {
-  const groups = servers.entries.map((source) => ({
-    source,
-    targets: (source.id === servers.selected ? targets : undefined) ??
-      parseFederationTargets(source.federation_targets) ?? [],
-  }));
+  const groups = servers.entries
+    .filter((server) => !server.federation_target)
+    .map((source) => ({
+      source,
+      targets:
+        (source.id === servers.selected ? targets : undefined) ??
+        parseFederationTargets(source.federation_targets) ??
+        [],
+    }));
   const aliases = new Map<string, { source: string; target: string }>();
-  const savedAliases = new Map<string, string[]>();
-  const options = groups.map(({ source, targets }) => targets.flatMap((target) => {
-    const candidates = servers.entries.filter((server) => server.server_id
-      ? server.server_id === target.id
-      : !!target.clientURL && federationClientURL(server.client_url) === target.clientURL);
-    const saved = candidates.find((server) => server.status === "connected") ?? candidates[0];
-    if (saved?.id === source.id) return [];
-    const key = federationTabKey(source.id, target.id);
-    aliases.set(key, { source: source.id, target: target.id });
-    if (saved) savedAliases.set(saved.id, [...(savedAliases.get(saved.id) ?? []), key]);
-    return [federationOption(t, source, target, progress[key], saved)];
-  }));
-  const owners = new Set(groups.filter((_, i) => options[i].length).map(({ source }) => source.id));
-  const selection = (id: string, alias?: string) => {
-    const saved = savedAliases.get(id);
-    if (alias && saved?.includes(alias)) return alias;
-    return !owners.has(id) && saved?.length ? saved[0] : id;
-  };
+  const savedAliases = new Map<string, string>();
+  const options = groups.map(({ source, targets }) =>
+    targets.flatMap((target) => {
+      const saved = servers.entries.find(
+        (server) =>
+          server.federation_source === source.id &&
+          server.federation_target === target.id,
+      );
+      const key = federationTabKey(source.id, target.id);
+      aliases.set(key, { source: source.id, target: target.id });
+      if (saved) savedAliases.set(saved.id, key);
+      return [federationOption(t, source, target, progress[key], saved)];
+    }),
+  );
+  const selection = (id: string, _alias?: string) => savedAliases.get(id) ?? id;
   return {
     aliases,
     selection,
     options: groups.flatMap(({ source }, i) => [
-      ...(!savedAliases.has(source.id) || owners.has(source.id) ? [serverOption(t, source)] : []),
+      serverOption(t, source),
       ...options[i],
     ]),
   };
@@ -216,7 +240,10 @@ function useFederationProgress(account: string | undefined) {
     if (!isDesktopChat()) return;
     return subscribeDesktopFederation((value) =>
       setProgress((old) => {
-        const key = federationTabKey(value.source ?? desktopServers().selected, value.target);
+        const key = federationTabKey(
+          value.source ?? desktopServers().selected,
+          value.target,
+        );
         const next = { ...old };
         if (value.state === "done" || value.reason === "cancelled")
           delete next[key];
@@ -271,7 +298,12 @@ export function DesktopServerTabBar({
   progress?: FederationProgress;
   className?: string;
 }) {
-  const { aliases, selection, options } = serverOptions(t, servers, targets, progress);
+  const { aliases, selection, options } = serverOptions(
+    t,
+    servers,
+    targets,
+    progress,
+  );
   return (
     <SegmentedTabs
       className={`desktop-server-tabs ${className}`}
@@ -281,7 +313,13 @@ export function DesktopServerTabBar({
       value={selection(servers.selected, servers.selected_tab)}
       onChange={(id, scrollLeft) => {
         const alias = aliases.get(id);
-        if (alias) requestDesktopFederationLogin(alias.source, alias.target, globalThis, scrollLeft);
+        if (alias)
+          requestDesktopFederationLogin(
+            alias.source,
+            alias.target,
+            globalThis,
+            scrollLeft,
+          );
         else selectDesktopServer(id, globalThis, scrollLeft);
       }}
       transition={
