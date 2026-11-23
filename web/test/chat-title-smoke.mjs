@@ -286,6 +286,42 @@ try {
             0,
             "A fully visible short title needs no tooltip",
           );
+          if (width < 500)
+            await page
+              .getByRole("button", { name: "Open sidebar", exact: true })
+              .click();
+          for (const section of ["recents", "projects"]) {
+            const shortRow = page
+              .locator(`.${section} .nav-chat-open`)
+              .filter({ hasText: titles[2] });
+            assert.ok(
+              await shortRow
+                .locator(".nav-chat-title")
+                .evaluate((el) => el.scrollWidth <= el.clientWidth),
+              "The short sidebar title fits without truncation",
+            );
+            await shortRow.hover();
+            await tooltip.waitFor();
+            assert.equal(await tooltip.textContent(), titles[2]);
+            assert.equal(await tooltip.getAttribute("data-side"), "right");
+            assert.equal(
+              await shortRow.getAttribute("aria-describedby"),
+              await tooltip.getAttribute("id"),
+            );
+            if (width >= 500) {
+              const sidebar = await page.locator(".sidebar").boundingBox();
+              const box = await tooltip.boundingBox();
+              assert.ok(
+                box.x >= sidebar.x + sidebar.width,
+                "A fully visible sidebar title also shows its tooltip to the right",
+              );
+            }
+            await page.screenshot({
+              path: path.join(output, `${engine}-${width}-${section}-short.png`),
+            });
+            await page.mouse.move(width - 10, 400);
+            await tooltip.waitFor({ state: "detached" });
+          }
           await page.setViewportSize({ width, height: 600 });
           assert.ok(
             await page.evaluate(
@@ -302,6 +338,7 @@ try {
             keyboard: true,
             wrappingAndScroll: true,
             headerLayout: true,
+            shortSidebarTooltip: true,
           });
         } catch (error) {
           await page.screenshot({ path: path.join(output, "failure.png") });

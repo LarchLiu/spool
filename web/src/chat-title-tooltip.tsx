@@ -33,7 +33,11 @@ export function useChatTitleTooltip(
     const label = trigger.current?.querySelector<HTMLElement>(
       ".nav-chat-title, strong",
     );
-    if (!disabled && label && label.scrollWidth > label.clientWidth) {
+    if (
+      !disabled &&
+      label &&
+      (side === "right" || label.scrollWidth > label.clientWidth)
+    ) {
       setOpen(true);
     }
   }
