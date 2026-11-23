@@ -93,7 +93,7 @@ func chatWebViewOptions() mygo.WebViewOptions {
 		BackgroundColor: "light-dark(#ffffff, #242423)",
 		// This is only a presentation hint. It grants no native methods or API
 		// privileges; login, project authorization and CSRF remain unchanged.
-		Page: mygo.PageOptions{PreloadScript: desktopWindowPreload},
+		Page: mygo.PageOptions{PreloadScript: desktopWindowPreload + "\n" + desktopRemoteDesktopPreload},
 	}
 }
 
@@ -252,6 +252,16 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 				})
 				return
 			}
+			if chatReservedNavigation(state.address, e.URL, desktopRemoteDesktopPath) {
+				e.PreventDefault()
+				p.window.Update(func() { p.openRemoteDesktop(id, state) })
+				return
+			}
+			if chatReservedNavigation(state.address, e.URL, desktopRemoteDesktopClosePath) {
+				e.PreventDefault()
+				p.window.Update(func() { closeDesktopRemoteDesktop(state) })
+				return
+			}
 			if chatReservedNavigation(p.chatURL, e.URL, desktopServerConnectPath) {
 				e.PreventDefault()
 				p.window.Update(func() {
@@ -359,6 +369,9 @@ func (p *panel) loadDesktopServerChat(id, address string) error {
 		})
 	}
 	if state.address != address || state.failed {
+		if state.address != address {
+			closeDesktopRemoteDesktop(state)
+		}
 		state.address, state.loaded, state.failed = address, false, false
 		state.authenticated = false
 		state.federationTargets = nil

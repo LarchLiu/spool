@@ -1025,6 +1025,7 @@
   "Connection mode": "Connection mode",
   "Connection priority updated": "Connection priority updated",
   "Disconnected": "Disconnected",
+  "Allow pop-up windows to connect to the remote desktop.": "Allow pop-up windows to connect to the remote desktop.",
   "Drag to change connection priority": "Drag to change connection priority",
   "Enable only when both addresses reach the same Spool service. When off, switching is manual.": "Enable only when both addresses reach the same Spool service. When off, switching is manual.",
   "Enabled servers": "Enabled servers",

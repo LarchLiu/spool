@@ -361,7 +361,11 @@ func (p *panel) probeDesktopServers(ctx context.Context, report string) (probeEr
 		return err
 	}
 	stage = "disconnected sidebars"
-	return p.probeDisconnectedDesktopServers(ctx, local)
+	if err := p.probeDisconnectedDesktopServers(ctx, local); err != nil {
+		return err
+	}
+	stage = "independent remote desktop windows"
+	return p.probeRemoteDesktopWindows(ctx)
 }
 
 func (p *panel) probeBackgroundDesktopServerState(ctx context.Context, foreground, background *mygo.WebView) error {

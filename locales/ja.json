@@ -1025,6 +1025,7 @@
   "Connection mode": "接続方式",
   "Connection priority updated": "接続の優先順位を更新しました",
   "Disconnected": "未接続",
+  "Allow pop-up windows to connect to the remote desktop.": "リモートデスクトップに接続するにはポップアップを許可してください。",
   "Drag to change connection priority": "ドラッグして接続の優先順位を変更",
   "Enable only when both addresses reach the same Spool service. When off, switching is manual.": "両方のアドレスが同じSpoolサービスに接続する場合のみ有効にしてください。無効時は手動で切り替えます。",
   "Enabled servers": "接続を許可するサーバー",

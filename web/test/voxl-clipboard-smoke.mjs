@@ -24,10 +24,10 @@ const output = join(root, "build/artifacts/voxl-clipboard");
 const parentFixture = `
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { RemoteDesktopDialog } from './web/src/remote-desktop-settings.tsx';
+import { RemoteDesktopViewer } from './web/src/remote-desktop-settings.tsx';
 import { translator } from './web/src/i18n.ts';
 createRoot(document.getElementById('root')).render(
-  <RemoteDesktopDialog t={translator('zh-CN')} onClose={() => {}} />
+  <RemoteDesktopViewer t={translator('zh-CN')} onClose={() => {}} />
 );
 `;
 const viewerFixture = `

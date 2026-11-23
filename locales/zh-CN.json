@@ -1025,6 +1025,7 @@
   "Connection mode": "连接方式",
   "Connection priority updated": "连接优先级已更新",
   "Disconnected": "未连接",
+  "Allow pop-up windows to connect to the remote desktop.": "请允许弹出窗口以连接远程桌面。",
   "Drag to change connection priority": "拖动调整连接优先级",
   "Enable only when both addresses reach the same Spool service. When off, switching is manual.": "仅当两个地址连接同一个 Spool 服务时开启。关闭时需要手动切换。",
   "Enabled servers": "允许连接的服务器",

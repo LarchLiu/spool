@@ -32,6 +32,9 @@ func (p *panel) applyPresentation() {
 
 func (p *panel) updateNativeLabels() {
 	p.updateWindowTitle()
+	for id, chat := range p.serverChats {
+		p.syncRemoteDesktopTitle(id, chat)
+	}
 	if p.tray != nil {
 		p.tray.SetMenu(p.trayMenu())
 		p.tray.SetToolTip("Spool · " + p.tr("Web service"))

@@ -36,10 +36,12 @@ try {
       hasTouch: width < 600,
     });
     try {
-      const page = await context.newPage();
-      page.setDefaultTimeout(8000);
+      context.setDefaultTimeout(8000);
       const errors = [], writes = [];
-      page.on("pageerror", (error) => errors.push(String(error)));
+      context.on("page", (page) => {
+        page.on("pageerror", (error) => errors.push(String(error)));
+      });
+      const page = await context.newPage();
       await page.addInitScript(({ supportsUSB, desktopPlatform }) => {
         localStorage.setItem("spool.ui-preferences.v1", JSON.stringify({ language: "en", theme: "light" }));
         if (desktopPlatform) {
@@ -97,7 +99,8 @@ try {
       // The native shell consumes this navigation without leaving the chat.
       await page.route("**/__desktop/session-changed", (route) => route.fulfill({ status: 204 }));
       await page.route("**/__desktop/view?*", (route) => route.fulfill({ status: 204 }));
-      await page.route("**/api/**", async (route) => {
+      await page.route("**/__desktop/remote-desktop", (route) => route.fulfill({ status: 204 }));
+      await context.route("**/api/**", async (route) => {
         const request = route.request(), endpoint = new URL(request.url()).pathname;
         const json = (value) => route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
         if (request.method() === "POST") writes.push(endpoint);
@@ -191,12 +194,43 @@ try {
       assert.ok(await remote.evaluate((element) => element === document.activeElement), "Escape restores focus to the icon");
       assert.ok(await remote.isVisible(), "Escape leaves the mobile sidebar open");
       await remote.click();
+      const opened = desktopPlatform
+        ? page.waitForResponse(response => new URL(response.url()).pathname === "/__desktop/remote-desktop")
+        : page.waitForEvent("popup");
       await page.getByRole("button", { name: "Connect to desktop", exact: true }).click();
-      await page.locator(".remote-desktop-frame").waitFor();
-      assert.equal(await remote.locator(".connection-status-dot[data-state=connected]").count(), 1);
-      await page.getByRole("button", { name: "Disconnect desktop", exact: true }).click();
-      assert.equal(await remote.locator(".connection-status-dot").count(), 0);
-      assert.ok(writes.includes("/api/desktop/connect"));
+      let viewer;
+      if (desktopPlatform) {
+        await opened;
+        assert.equal(page.url(), origin + "/", "Native presentation keeps the chat document loaded");
+        assert.equal(context.pages().length, 1, "Native presentation does not open a browser popup");
+        // Go owns the native window; simulate only its connection/close events.
+        // The actual window lifecycle is covered by the native servers probe.
+        await page.evaluate(() => window.dispatchEvent(new CustomEvent("spool:remote-desktop", {
+          detail: { connected: true, token: "fixture-view" },
+        })));
+      } else {
+        viewer = await opened;
+        await viewer.locator(".remote-desktop-frame").waitFor();
+        assert.equal(new URL(viewer.url()).pathname, "/remote-desktop.html");
+        assert.equal(context.pages().length, 2, "Browser presentation opens an independent viewer");
+        assert.ok(writes.includes("/api/desktop/connect"));
+      }
+      assert.equal(await page.locator(".remote-desktop-frame").count(), 0);
+      await remote.locator(".connection-status-dot[data-state=connected]").waitFor();
+      const disconnected = context.waitForEvent("request", {
+        predicate: request => new URL(request.url()).pathname === "/api/desktop/disconnect",
+      });
+      if (desktopPlatform) {
+        await page.evaluate(() => window.dispatchEvent(new CustomEvent("spool:remote-desktop", {
+          detail: { connected: false },
+        })));
+      } else {
+        const closed = viewer.waitForEvent("close");
+        await viewer.getByRole("button", { name: "Disconnect desktop", exact: true }).click();
+        await closed;
+      }
+      assert.equal(new URL((await disconnected).url()).searchParams.get("token"), "fixture-view");
+      await remote.locator(".connection-status-dot").waitFor({ state: "detached" });
 
       await adb.click();
       const panel = page.getByRole("dialog", { name: "ADB bridge", exact: true });

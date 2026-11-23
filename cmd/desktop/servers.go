@@ -25,6 +25,7 @@ const desktopSidebarWidthPath = "/__desktop/sidebar-width"
 
 type desktopServerChat struct {
 	view            *mygo.WebView
+	remoteDesktop   *mygo.Window
 	address         string
 	loaded          bool
 	failed          bool
@@ -243,6 +244,7 @@ func (p *panel) recordDesktopFederationTargets(chat *desktopServerChat, targets 
 
 func (p *panel) sendDesktopServers() {
 	for id, chat := range p.serverChats {
+		p.syncRemoteDesktopTitle(id, chat)
 		if chat.view != nil {
 			_ = desktopServersChanged.EmitPage(chat.view.Page(), p.desktopServerTabsFor(id))
 		}
@@ -262,6 +264,7 @@ func (p *panel) setDesktopServers(next desktopServers) error {
 		old, _ := previous.find(id)
 		server, exists := next.find(id)
 		if !exists || old.Enabled != server.Enabled || desktopServerMount(old) != desktopServerMount(server) || old.ConnectionID != server.ConnectionID {
+			closeDesktopRemoteDesktop(chat)
 			if p.chatPresentedView == chat.view {
 				p.chatPresentedView = nil
 			}
@@ -525,6 +528,7 @@ func (p *panel) recordDesktopServerConnection(id string, connection desktopServe
 		if connection.Authenticated {
 			p.refreshDesktopFederationTargets(id, state)
 		} else {
+			closeDesktopRemoteDesktop(state)
 			state.federationRevision++
 			state.federationFingerprint = ""
 			state.federationTargets = nil
@@ -553,6 +557,7 @@ func (p *panel) recordDesktopServerState(id, status string) {
 	if status == "connected" {
 		state.authenticated = true
 	} else if status == "login" || status == "disconnected" {
+		closeDesktopRemoteDesktop(state)
 		state.authenticated = false
 		if state.federated {
 			state.federated = false

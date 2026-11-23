@@ -99,7 +99,7 @@ import {
 } from "./web-push";
 import { AvatarDialog } from "./avatar-dialog";
 import { AvatarStack } from "./user-avatar";
-import { RemoteDesktopDialog } from "./remote-desktop-settings";
+import { useRemoteDesktopWindow } from "./remote-desktop-window";
 import { DirectMessagePanel } from "./direct-message-panel";
 import type { FloatingWindowBounds } from "./floating-window";
 import { PeopleGroupPicker } from "./people-group-picker";
@@ -184,8 +184,6 @@ function App() {
     catch { /* Storage can be disabled. */ }
   }, [preferences]);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
-  const [remoteDesktopOpen, setRemoteDesktopOpen] = useState(false);
-  const [remoteDesktopConnected, setRemoteDesktopConnected] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [version, setVersion] = useState("");
   const [serverName, setServerName] = useState("Home");
@@ -215,6 +213,7 @@ function App() {
     (server) => server.id === servers.selected,
   );
   const desktopServerName = desktopServer?.name || serverName;
+  const remoteDesktop = useRemoteDesktopWindow(user?.id, t, fail, desktopServerName);
   const desktopSelection = servers.selection || `${servers.selected}:${servers.transition?.started_at || 0}`;
   const [projects, setProjects] = useState<Project[]>([]),
     [agents, setAgents] = useState<Agent[]>([]),
@@ -699,8 +698,6 @@ function App() {
       setProject("");
       setChatID("");
       setAppearanceOpen(false);
-      setRemoteDesktopOpen(false);
-      setRemoteDesktopConnected(false);
       setAvatarOpen(false);
       setDraft("");
       setFiles((old) => {
@@ -2334,8 +2331,8 @@ function App() {
         }}
         onNew={newChat}
         onSettings={() => setAppearanceOpen(true)}
-        onRemoteConnect={() => setRemoteDesktopOpen(true)}
-        remoteConnected={remoteDesktopConnected}
+        onRemoteConnect={remoteDesktop.open}
+        remoteConnected={remoteDesktop.connected}
         onAvatar={() => setAvatarOpen(true)}
         onLogout={logout}
       />
@@ -3097,16 +3094,6 @@ function App() {
           t={t}
           onSave={updateAvatar}
           onClose={() => setAvatarOpen(false)}
-        />
-      )}
-      {remoteDesktopOpen && (
-        <RemoteDesktopDialog
-          t={t}
-          onConnected={() => setRemoteDesktopConnected(true)}
-          onClose={() => {
-            setRemoteDesktopOpen(false);
-            setRemoteDesktopConnected(false);
-          }}
         />
       )}
       {preview && (

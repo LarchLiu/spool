@@ -24,6 +24,7 @@ export default defineConfig({
         chat: "index.html",
         desktop: "desktop.html",
         servers: "servers.html",
+        remoteDesktop: "remote-desktop.html",
       },
     },
   },

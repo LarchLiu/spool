@@ -5,6 +5,7 @@ import { api } from "./api";
 import type { Translator } from "./i18n";
 import { configureVoxlFrame } from "./voxl-frame";
 import { ConnectionControl } from "./connection-control";
+import { disconnectRemoteDesktop } from "./remote-desktop-window";
 
 export function RemoteDesktopConnection({
   available,
@@ -40,16 +41,17 @@ export function RemoteDesktopConnection({
   );
 }
 
-export function RemoteDesktopDialog({
+export function RemoteDesktopViewer({
   t,
   onClose,
   onConnected,
+  serverName,
 }: {
   t: Translator;
   onClose: () => void;
-  onConnected?: () => void;
+  onConnected?: (token: string) => void;
+  serverName?: string;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
   const disposeViewer = useRef<(() => void) | undefined>(undefined);
   useEffect(() => () => disposeViewer.current?.(), []);
   const [token, setToken] = useState<string>();
@@ -58,48 +60,46 @@ export function RemoteDesktopDialog({
     let disposed = false;
     let connection: string | undefined;
     const disconnect = (value: string) => {
-      void api(
-        `/desktop/disconnect?token=${encodeURIComponent(value)}`,
-        {},
-      ).catch(() => {});
+      void disconnectRemoteDesktop(value);
     };
+    const dispose = () => {
+      disposed = true;
+      if (connection) {
+        disconnect(connection);
+        connection = undefined;
+      }
+    };
+    window.addEventListener("pagehide", dispose);
     void api<{ token: string }>("/desktop/connect", {})
       .then((value) => {
         connection = value.token;
         if (disposed) disconnect(value.token);
         else {
           setToken(value.token);
-          onConnected?.();
+          onConnected?.(value.token);
         }
       })
       .catch(() => {
         if (!disposed) onClose();
       });
     return () => {
-      disposed = true;
-      if (connection) disconnect(connection);
+      window.removeEventListener("pagehide", dispose);
+      dispose();
     };
-  }, []);
-  useEffect(() => {
-    dialog.current?.showModal();
   }, []);
   useEffect(() => {
     if (available === false) onClose();
   }, [available, onClose]);
   return (
-    <dialog
-      className="remote-desktop-dialog"
-      ref={dialog}
-      aria-labelledby="remote-desktop-dialog-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        onClose();
-      }}
+    <main
+      className="remote-desktop-window"
+      aria-labelledby="remote-desktop-window-title"
     >
       <div className="dialog-heading">
-        <h2 id="remote-desktop-dialog-title">
+        <h2 id="remote-desktop-window-title">
           <MonitorUp size={18} aria-hidden="true" />
           {t("Remote desktop")}
+          {serverName && ` · ${serverName}`}
         </h2>
         <button type="button" autoFocus onClick={onClose}>
           {t("Disconnect desktop")}
@@ -122,7 +122,7 @@ export function RemoteDesktopDialog({
       ) : (
         <p role="status">{t("Connecting…")}</p>
       )}
-    </dialog>
+    </main>
   );
 }
 
