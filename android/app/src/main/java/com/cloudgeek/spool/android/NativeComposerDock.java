@@ -3,18 +3,17 @@ package com.cloudgeek.spool.android;
 import android.view.Gravity;
 import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
-import android.widget.FrameLayout;
 import android.widget.ImageView;
 
 /** Absolute composer-relative action: it consumes neither history nor footer layout space. */
-final class NativeComposerDock extends FrameLayout {
+final class NativeComposerDock extends NativeSwipeLayout {
     final NativeSurface latest;
     final ImageView arrow;
     private final View footer;
     private final float density;
 
     NativeComposerDock(NativeUi ui, View page, View footer, Runnable click) {
-        super(ui.context);
+        super(ui);
         this.footer = footer;
         density = getResources().getDisplayMetrics().density;
         setClipChildren(false); setClipToPadding(false);

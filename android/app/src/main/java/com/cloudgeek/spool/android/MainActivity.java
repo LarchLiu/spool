@@ -2745,6 +2745,9 @@ public final class MainActivity extends Activity {
                 else if (behavior != null && historyScroll == behavior) behavior.latest();
             }
         });
+        composerDock.swipes(direction -> drawer == null && peoplePanel == null && !settingsOpen
+                        && user != null && !routeLoginRequired && ui.activePopover == null,
+                direction -> { if (direction > 0) openSidebar(); else openFiles("."); });
         if (recycler != null) recycler.onFollowing(composerDock::following); else behavior.onFollowing(composerDock::following);
         root.addView(composerDock, new FrameLayout.LayoutParams(-1, -1));
         renderFiles();
@@ -2829,7 +2832,7 @@ public final class MainActivity extends Activity {
     private void openSidebar(boolean animate) {
         closeDrawer(false);
         panel = "sidebar";
-        NativeDrawer overlay = new NativeDrawer(ui, false);
+        NativeDrawer overlay = new NativeDrawer(ui, false, this::closeDrawer);
         drawer = overlay;
         sidebar = new NativeSidebar(ui, sidebarState, this::person, this::closeDrawer, this::openChat, this::newChat,
                 () -> { closeDrawer(); openAvatarPicker(); }, this::openSettings, this::logout, this::loginFromSidebar, this::openAppearance);
@@ -5091,7 +5094,7 @@ public final class MainActivity extends Activity {
     private void openFiles(String path) {
         closeDrawer();
         panel = "files";
-        NativeDrawer overlay = new NativeDrawer(ui, true);
+        NativeDrawer overlay = new NativeDrawer(ui, true, this::closeDrawer);
         drawer = overlay;
         if (fileState == null || !fileState.project.equals(projectID) || !fileState.chat.equals(chatID)) {
             fileState = new NativeFileModel(projectID, chatID);

@@ -10,7 +10,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 
 /** Full-screen mobile sidebars slide over the workspace without a dimming layer. */
-final class NativeDrawer extends FrameLayout {
+final class NativeDrawer extends NativeSwipeLayout {
     final LinearLayout sheet;
     private final boolean right;
     private ValueAnimator animation;
@@ -18,8 +18,14 @@ final class NativeDrawer extends FrameLayout {
     private boolean dismissing;
 
     NativeDrawer(NativeUi ui, boolean right) {
-        super(ui.context);
+        this(ui, right, null);
+    }
+
+    NativeDrawer(NativeUi ui, boolean right, Runnable close) {
+        super(ui);
         this.right = right;
+        swipes(direction -> !dismissing && direction == (right ? 1 : -1),
+                direction -> { if (close != null) close.run(); else dismiss(); });
         sheet = new LinearLayout(ui.context) {
             // The blank sheet consumes taps, but its pressed state belongs only
             // to that background; navigation rows handle their own feedback.
