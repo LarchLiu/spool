@@ -145,14 +145,17 @@ public class NativeFederationTest {
         return order;
     }
 
-    @Test public void aServerSignedInThroughTrustKeepsItsMarkWithoutTheSourceList() throws Exception {
+    @Test public void cachedAccountOriginDoesNotMarkAnOrdinaryProfileAsATrustedDestination() throws Exception {
         try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
             ServerProfiles profiles = profiles();
             ServerProfiles.Server office = profiles.entries.get(1);
             office.account = ServerProfiles.displayAccount(new org.json.JSONObject("{id:'remote',nickname:'Alice',source_server_id:'" + B + "'}"));
             ServerProfiles restored = ServerProfiles.restore(profiles.encode(), office.id, profiles.entries.get(0).plan);
             NativeServerTabs tabs = new NativeServerTabs(new NativeUi(controller.get(), false), restored, Map.of(), id -> {}, true, () -> {});
-            assertEquals(1, links(tabs.button(office.id))); assertEquals(0, links(tabs.button("legacy")));
+            Button ordinary = tabs.button(office.id);
+            assertEquals(0, links(ordinary)); assertEquals(0, links(tabs.button("legacy")));
+            assertEquals(1, ((Spanned) ordinary.getText()).getSpans(0, 1, NativeServerTabs.Dot.class).length);
+            assertFalse(ordinary.getContentDescription().toString().contains("Trusted server"));
         }
     }
 

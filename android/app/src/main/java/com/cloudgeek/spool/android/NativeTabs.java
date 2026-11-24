@@ -7,6 +7,7 @@ import android.animation.ValueAnimator;
 import android.graphics.Canvas;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -29,7 +30,7 @@ class NativeTabs extends FrameLayout {
     private final NativeUi ui;
     private final Size size;
     private final Map<String, Button> buttons = new LinkedHashMap<>();
-    private final Drawable indicator;
+    private final GradientDrawable indicator;
     private final RectF indicatorBounds = new RectF(), indicatorTarget = new RectF();
     private ValueAnimator animation;
     private String selection;
@@ -44,7 +45,7 @@ class NativeTabs extends FrameLayout {
 
     NativeTabs(NativeUi ui, String label, Size size) {
         super(ui.context); this.ui = ui; this.size = size;
-        indicator = ui.shape(ui.dark ? ui.sidebar : ui.elevated, tabRadius(), ui.dark ? ui.borderStrong : 0);
+        indicator = ui.shape(ui.dark ? ui.sidebar : ui.elevated, 4, ui.dark ? ui.borderStrong : 0);
         track = new NativeSurface(ui, ui.soft, ui.line, 8, 0, 0, 0);
         addView(track, new FrameLayout.LayoutParams(-1, -2));
         scroll = new HorizontalScrollView(ui.context);
@@ -85,7 +86,7 @@ class NativeTabs extends FrameLayout {
             return true;
         });
         buttons.put(key, tab);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, ui.dp(size == Size.COMPACT ? 32 : 40), 1);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, ui.dp(tabHeight()), 1);
         params.setMarginEnd(ui.dp(4));
         tabs.addView(tab, params);
         return tab;
@@ -93,8 +94,8 @@ class NativeTabs extends FrameLayout {
 
     NativeUi.IconButton addAction(String icon, String label, Runnable click) {
         NativeUi.IconButton button = ui.icon(icon, 18, label, click);
-        button.setBackground(buttonBackground(false));
-        int height = ui.dp(size == Size.COMPACT ? 32 : 40);
+        button.setBackground(buttonBackground(null, false));
+        int height = ui.dp(tabHeight());
         tabs.addView(button, new LinearLayout.LayoutParams(height, height));
         return button;
     }
@@ -115,16 +116,17 @@ class NativeTabs extends FrameLayout {
     }
 
     private void style(Button tab, boolean selected) {
-        tab.setSelected(selected); tab.setBackground(buttonBackground(selected));
+        tab.setSelected(selected); tab.setBackground(buttonBackground((String) tab.getTag(), selected));
         ui.typography(tab, size == Size.COMPACT ? 11 : 12, textColor(selected), selected ? 600 : 400);
     }
 
-    private Drawable buttonBackground(boolean selected) {
+    Drawable buttonBackground(String key, boolean selected) {
+        int radius = tabRadius(key);
         StateListDrawable background = new StateListDrawable();
-        background.addState(new int[] {-android.R.attr.state_enabled}, ui.shape(ui.controlActive, tabRadius(), 0));
-        background.addState(new int[] {android.R.attr.state_pressed}, ui.shape(selected ? 0 : ui.hover, tabRadius(), 0));
-        background.addState(new int[] {android.R.attr.state_hovered}, ui.shape(selected ? 0 : ui.controlHover, tabRadius(), 0));
-        background.addState(new int[0], ui.shape(0, tabRadius(), 0));
+        background.addState(new int[] {-android.R.attr.state_enabled}, ui.shape(ui.controlActive, radius, 0));
+        background.addState(new int[] {android.R.attr.state_pressed}, ui.shape(selected ? 0 : ui.hover, radius, 0));
+        background.addState(new int[] {android.R.attr.state_hovered}, ui.shape(selected ? 0 : ui.controlHover, radius, 0));
+        background.addState(new int[0], ui.shape(0, radius, 0));
         return background;
     }
 
@@ -136,6 +138,7 @@ class NativeTabs extends FrameLayout {
             stopAnimation(); animateSelection = false; indicatorBounds.setEmpty(); indicatorTarget.setEmpty();
             finishTextColors(); tabs.invalidate(); return;
         }
+        indicator.setCornerRadius(ui.dp(tabRadius(selection)));
         RectF target = new RectF(selected.getLeft(), selected.getTop(), selected.getRight(), selected.getBottom());
         if (animateSelection) {
             animateSelection = false; animateIndicator(target);
@@ -180,7 +183,9 @@ class NativeTabs extends FrameLayout {
         previous.removeAllUpdateListeners(); previous.removeAllListeners(); previous.cancel();
     }
 
-    int tabRadius() { return 4; }
+    int tabHeight() { return size == Size.COMPACT ? 32 : 40; }
+
+    int tabRadius(String key) { return 4; }
 
     @Override protected void onSizeChanged(int width, int height, int previousWidth, int previousHeight) {
         super.onSizeChanged(width, height, previousWidth, previousHeight);

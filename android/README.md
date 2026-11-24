@@ -127,8 +127,9 @@ session client before opening the replacement; a shared device connection closes
 last session client is released. If the replacement fails, recovery
 tries the next configured entry without keeping two routes alive.
 Tabs below the sidebar logo row share a rounded background track with small
-capsule active segments. They select the workspace to display without closing
-other servers. Each connected, signed-in server keeps a workspace WebSocket while
+rounded active segments. Trusted destinations use shorter outlined capsules in
+every selection state, matching desktop. They select the workspace to display
+without closing other servers. Each connected, signed-in server keeps a workspace WebSocket while
 the app is in the foreground, including inactive tabs. Navigation, agent and profile
 pushes update only that server's memory cache; inactive tabs also use a batched
 REST fallback while their stream is unavailable. Their subscriptions pause when

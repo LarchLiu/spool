@@ -7,6 +7,7 @@ import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.ReplacementSpan;
 import android.widget.Button;
+import android.widget.LinearLayout;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -27,7 +28,10 @@ final class NativeServerTabs extends NativeTabs {
     /** Each source keeps its own trusted entries; ordinary profiles always remain visible. */
     NativeServerTabs(NativeUi ui, ServerProfiles profiles, Map<String, String> states, Consumer<String> choose, boolean includeDisabled, Runnable create, List<NativeFederation.Tab> trusted) {
         super(ui, ui.t("Servers")); this.ui = ui; this.profiles = profiles; this.trusted = trusted;
-        setPadding(ui.dp(18), ui.dp(8), ui.dp(18), ui.dp(8));
+        setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6));
+        // Desktop's 3px track padding plus its 1px border stay outside the scroll viewport.
+        track.setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(4));
+        tabs.setPadding(0, 0, 0, 0);
         setBackgroundColor(ui.sidebar);
         for (ServerProfiles.Server server : profiles.entries) {
             if (server.trusted()) continue;
@@ -43,27 +47,30 @@ final class NativeServerTabs extends NativeTabs {
         status(states);
     }
 
+    @Override Button addTab(String key, String label, Runnable choose) {
+        Button tab = super.addTab(key, label, choose);
+        tab.setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6));
+        return tab;
+    }
+
     private void addServer(ServerProfiles.Server server, Consumer<String> choose) {
         Button tab = addTab(server.id, server.name, () -> choose.accept(server.id));
-        boolean linked = trusted(server);
-        SpannableString label = new SpannableString("\ufffc" + server.name + (linked ? "\ufffc" : ""));
+        SpannableString label = new SpannableString("\ufffc" + server.name);
         Dot dot = new Dot(ui.dp(8), ui.dp(8));
         label.setSpan(dot, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        if (linked) label.setSpan(new Link(ui, ui.dp(14), ui.dp(6), false), label.length() - 1, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         tab.setText(label);
-        // \u6709\u672b\u5c3e\u4e92\u4fe1\u6807\u8bb0\u65f6\uff0c\u4e0d\u518d\u989d\u5916\u8865\u9f50\u524d\u7f6e\u72b6\u6001\u70b9\u7684\u5bbd\u5ea6\u3002
-        if (!linked) tab.setPaddingRelative(tab.getPaddingStart(), tab.getPaddingTop(),
-                tab.getPaddingEnd() + dot.size + dot.gap, tab.getPaddingBottom());
     }
 
     private void addTrusted(NativeFederation.Tab entry, Consumer<String> choose) {
         String name = entry.server == null ? entry.target.name : entry.server.name;
         Button tab = addTab(entry.key(), name, () -> choose.accept(entry.key()));
         SpannableString label = new SpannableString("\ufffc" + name);
-        Link link = new Link(ui, ui.dp(14), ui.dp(6), true);
+        Link link = new Link(ui, ui.dp(14), ui.dp(6));
         label.setSpan(link, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         tab.setText(label);
-        tab.setPaddingRelative(tab.getPaddingStart(), tab.getPaddingTop(), tab.getPaddingEnd() + link.size + link.gap, tab.getPaddingBottom());
+        tab.setMinimumWidth(0); tab.setMaxWidth(ui.dp(160));
+        LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) tab.getLayoutParams();
+        params.height -= ui.dp(6); params.weight = 0; tab.setLayoutParams(params);
     }
 
     void status(Map<String, String> states) { status(states, ""); }
@@ -73,7 +80,7 @@ final class NativeServerTabs extends NativeTabs {
         for (ServerProfiles.Server server : profiles.entries) {
             Button tab = button(server.id); if (tab == null) continue;
             String description = server.name + ", " + connectionStatus(tab, server, states);
-            describe(tab, description + (trusted(server) ? ", " + ui.t("Trusted server") : ""));
+            describe(tab, description);
         }
         for (NativeFederation.Tab entry : trusted) {
             Button tab = button(entry.key()); if (tab == null) continue;
@@ -103,11 +110,16 @@ final class NativeServerTabs extends NativeTabs {
         tab.setContentDescription(description); tab.setTooltipText(description);
     }
 
-    private boolean trusted(ServerProfiles.Server server) {
-        return server.trusted() || !server.account.optString("source_server_id").isEmpty();
+    @Override int tabHeight() { return 32; }
+
+    @Override int tabRadius(String key) { return isTrustedTab(key) ? 999 : super.tabRadius(key); }
+
+    @Override Drawable buttonBackground(String key, boolean selected) {
+        return isTrustedTab(key) ? ui.states(0, 999, ui.borderStrong, ui.elevated, ui.controlActive, ui.elevated)
+                : super.buttonBackground(key, selected);
     }
 
-    @Override int tabRadius() { return 999; }
+    private static boolean isTrustedTab(String key) { return key != null && key.startsWith(NativeFederation.PREFIX); }
 
     static String statusLabel(String state) {
         return state.equals("connected") ? "Connected · Signed in" : state.equals("connecting") ? "Connecting…"
@@ -132,20 +144,18 @@ final class NativeServerTabs extends NativeTabs {
     static final class Link extends ReplacementSpan {
         static final int COLOR = 0xff3987e0;
         final int size, gap;
-        final boolean leading;
         final Drawable icon;
         int color = COLOR;
-        Link(NativeUi ui, int size, int gap, boolean leading) {
-            this.size = size; this.gap = gap; this.leading = leading;
+        Link(NativeUi ui, int size, int gap) {
+            this.size = size; this.gap = gap;
             icon = NativeIcons.drawable(ui.context, "repeat", color, size);
         }
         @Override public int getSize(Paint paint, CharSequence text, int start, int end, Paint.FontMetricsInt metrics) { return size + gap; }
         @Override public void draw(Canvas canvas, CharSequence text, int start, int end, float x, int top, int baseline, int bottom, Paint paint) {
             Paint.FontMetrics metrics = paint.getFontMetrics();
-            float left = leading ? x : x + gap;
             float center = baseline + (metrics.ascent + metrics.descent) / 2f;
             int saved = canvas.save();
-            canvas.translate(left, center - size / 2f);
+            canvas.translate(x, center - size / 2f);
             icon.setTint(color); icon.draw(canvas);
             canvas.restoreToCount(saved);
         }

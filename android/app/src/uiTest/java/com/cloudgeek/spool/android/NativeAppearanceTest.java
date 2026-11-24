@@ -152,8 +152,11 @@ public class NativeAppearanceTest {
             controller.get().setContentView(tabs); layout(tabs, 360);
             assertSame(tabs.track, tabs.scroll.getParent());
             assertTrue(tabs.tabs.getChildAt(0).isSelected()); assertFalse(tabs.tabs.getChildAt(1).isSelected());
-            assertTrue(tabs.tabs.getChildAt(0).getLeft() > 0);
-            assertTrue(tabs.tabs.getChildAt(0).getHeight() < tabs.tabs.getHeight());
+            android.graphics.Rect first = new android.graphics.Rect(0, 0,
+                    tabs.tabs.getChildAt(0).getWidth(), tabs.tabs.getChildAt(0).getHeight());
+            tabs.track.offsetDescendantRectToMyCoords(tabs.tabs.getChildAt(0), first);
+            assertEquals(ui.dp(4), first.left); assertEquals(ui.dp(4), first.top);
+            assertTrue(first.height() < tabs.track.getHeight());
             android.widget.Button name = (android.widget.Button) tabs.tabs.getChildAt(0);
             assertNotNull(name.getLayout());
             assertTrue("A visible tab must have room to draw its name: width=" + name.getWidth()
