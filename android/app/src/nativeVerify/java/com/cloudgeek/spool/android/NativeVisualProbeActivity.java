@@ -254,7 +254,7 @@ public final class NativeVisualProbeActivity extends Activity {
         panelDrawer = new NativeDrawer(ui, true); panelDrawer.sheet.addView(panelBrowser, new LinearLayout.LayoutParams(-1, -1));
         root.addView(panelDrawer, new FrameLayout.LayoutParams(-1, -1)); panelDrawer.show(false); panelBrowser.start();
         measured.put("projectTab", panelBrowser.panelTabs.action("project")); measured.put("gitTab", panelBrowser.panelTabs.action("git"));
-        measured.put("historyTab", panelBrowser.gitPanel.tabs.action("history")); measured.put("gitScroll", panelBrowser.gitPanel.scroll);
+        measured.put("historyTab", panelBrowser.gitPanel.tabs.button("history")); measured.put("gitScroll", panelBrowser.gitPanel.scroll);
         measured.put("closeFiles", panelBrowser.header.getChildAt(panelBrowser.header.getChildCount() - 1));
     }
 

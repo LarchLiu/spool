@@ -36,12 +36,15 @@ final class NativeDesktopDialog extends Dialog {
     final NativeDesktopView desktop;
     private final LinearLayout shell, heading, dock, toolbarControls;
     private final TextView status;
-    private final NativeUi.IconButton keyboard, copy, paste, pan, minus, fit, plus, shortcut, alt, shift, fullscreenButton, toolbarToggle;
+    private final NativeUi.IconButton keyboard, copy, paste, folder, pan, shortcut, alt, shift, fullscreenButton, toolbarToggle;
+    final NativeDesktopDocuments documents;
+    final NativeDesktopFiles sharedFiles;
     final NativeDesktopClipboard clipboard;
     private final java.util.List<NativeUi.IconButton> keys = new java.util.ArrayList<>();
     final NativeDesktopConnection connection;
     private volatile boolean closed, ended, acceptingVideo;
     private boolean readOnly, fullscreen, toolbarCollapsed;
+    private android.window.OnBackInvokedCallback backCallback;
     private final Runnable firstFrameTimeout = () -> failed("Could not decode desktop video");
 
     NativeDesktopDialog(NativeUi ui, NativeDesktopConnection.Transport transport, Executor io, Runnable dismissed) {
@@ -54,6 +57,7 @@ final class NativeDesktopDialog extends Dialog {
         Configuration config = new Configuration(ui.context.getResources().getConfiguration());
         config.setLocale(Locale.forLanguageTag(ui.locale));
         labels = ui.context.createConfigurationContext(config);
+        documents = new NativeDesktopDocuments((android.app.Activity) ui.context, this::pickingDocument);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         shell = ui.column();
         shell.setBackgroundColor(ui.surface);
@@ -101,10 +105,9 @@ final class NativeDesktopDialog extends Dialog {
         keyboard = button(buttons, "keyboard", label(R.string.desktop_keyboard), desktop::keyboard);
         copy = button(buttons, "copy", label(R.string.desktop_copy), desktop::copy);
         paste = button(buttons, "clipboard_paste", label(R.string.desktop_paste), this::clipboardPaste);
+        folder = button(buttons, "folder", label(R.string.desktop_files), this::openSharedFiles);
+        folder.setVisibility(View.GONE);
         pan = button(buttons, "pan", label(R.string.desktop_pan), () -> desktop.panMode(!desktop.panMode()));
-        minus = button(buttons, "minus", label(R.string.desktop_zoom_out), () -> desktop.zoom(1 / 1.25));
-        fit = button(buttons, "fit", label(R.string.desktop_fit), desktop::fit);
-        plus = button(buttons, "plus", label(R.string.desktop_zoom_in), () -> desktop.zoom(1.25));
         addKey(buttons, "escape", "Esc", 0xff1b); addKey(buttons, "tab", "Tab", 0xff09);
         shortcut = button(buttons, "chevron_up", label(R.string.desktop_control), () -> desktop.modifier(desktop.shortcut()));
         alt = button(buttons, "alt", "Alt", () -> desktop.modifier(0xffe9));
@@ -158,9 +161,13 @@ final class NativeDesktopDialog extends Dialog {
                             main.post(() -> {
                                 if (closed || ended) return;
                                 readOnly = layout.readOnly;
+                                sharedFiles.configure(message.optJSONObject("files"), readOnly);
+                                if (!sharedFiles.available()) hideSharedFiles();
+                                folder.setVisibility(sharedFiles.available() ? View.VISIBLE : View.GONE);
                                 status.setVisibility(View.VISIBLE); status.setText(label(R.string.desktop_connecting));
-                                desktop.configure(layout); acceptingVideo = true;
-                                main.removeCallbacks(firstFrameTimeout); main.postDelayed(firstFrameTimeout, 20000);
+                                desktop.configure(layout); acceptingVideo = !documents.waiting();
+                                main.removeCallbacks(firstFrameTimeout);
+                                if (!documents.waiting()) main.postDelayed(firstFrameTimeout, 20000);
                             });
                             break;
                         case "close": main.post(() -> failed("Desktop connection ended")); break;
@@ -175,9 +182,12 @@ final class NativeDesktopDialog extends Dialog {
                 () -> android.widget.Toast.makeText(ui.context, label(R.string.desktop_clipboard_error), android.widget.Toast.LENGTH_SHORT).show(),
                 label(R.string.desktop_title));
         desktop.clipboard(clipboard);
+        sharedFiles = new NativeDesktopFiles(ui, labels, io, connection::files, documents, this::hideSharedFiles);
+        FrameLayout.LayoutParams filesPlacement = new FrameLayout.LayoutParams(-1, -1);
+        filesPlacement.setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8));
+        viewer.addView(sharedFiles, filesPlacement);
         setOnDismissListener(dialog -> {
-            closed = true; acceptingVideo = false;
-            clipboard.close(); desktop.close(); connection.close(); main.removeCallbacksAndMessages(null); dismissed.run();
+            dispose(); dismissed.run();
         });
         updateControls();
     }
@@ -246,11 +256,15 @@ final class NativeDesktopDialog extends Dialog {
     }
     private void describe(View view, String text) { view.setContentDescription(text); view.setTooltipText(text); }
     private void addKey(LinearLayout parent, String kind, String text, int symbol) { keys.add(button(parent, kind, text, () -> desktop.tap(symbol))); }
-    private void send(String command) { if (!closed && !ended && connection != null) connection.send(command); }
+    private void send(String command) {
+        if (!closed && !ended && connection != null)
+            connection.send(command.equals("v,1") && documents.waiting() ? "v,0" : command);
+    }
     private void updateControls() {
         if (keyboard == null) return;
         boolean control = desktop.controllable();
         pan.setEnabled(desktop.ready());
+        folder.setEnabled(desktop.ready() && sharedFiles != null && sharedFiles.available());
         keyboard.setEnabled(control);
         copy.setEnabled(control); paste.setEnabled(control);
         for (NativeUi.IconButton key : keys) key.setEnabled(control);
@@ -260,9 +274,6 @@ final class NativeDesktopDialog extends Dialog {
         iconKind(shortcut, desktop.shortcut() == 0xffeb ? "command" : "chevron_up");
         describe(shortcut, label(desktop.shortcut() == 0xffeb ? R.string.desktop_command : R.string.desktop_control));
         pan.setSelected(desktop.panMode());
-        minus.setEnabled(desktop.panMode() && desktop.viewport.zoom > 1);
-        plus.setEnabled(desktop.panMode() && desktop.viewport.zoom < 5);
-        fit.setEnabled(desktop.panMode()); describe(fit, label(R.string.desktop_fit) + " (" + Math.round(desktop.viewport.zoom * 100) + "%)");
     }
     boolean fullscreen() { return fullscreen; }
     boolean toolbarCollapsed() { return toolbarCollapsed; }
@@ -314,7 +325,7 @@ final class NativeDesktopDialog extends Dialog {
     }
     private void failed(String reason) {
         if (closed || ended) return;
-        acceptingVideo = false; clipboard.close(); desktop.close(); connection.close();
+        acceptingVideo = false; documents.close(); sharedFiles.close(); clipboard.close(); desktop.close(); connection.close();
         main.removeCallbacks(firstFrameTimeout);
         ended = true;
         status.setVisibility(View.VISIBLE); status.setTextColor(ui.error);
@@ -324,6 +335,10 @@ final class NativeDesktopDialog extends Dialog {
     }
     @Override public void show() {
         ui.dismissMenus(); super.show();
+        if (Build.VERSION.SDK_INT >= 33 && backCallback == null) {
+            backCallback = this::back;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback);
+        }
         Window window = getWindow();
         if (window != null) {
             window.getDecorView().setPadding(0, 0, 0, 0);
@@ -333,6 +348,41 @@ final class NativeDesktopDialog extends Dialog {
         desktop.requestFocus(); connection.start();
     }
     private void clipboardPaste() { clipboard.paste(); }
+    private void openSharedFiles() {
+        if (!sharedFiles.available()) return;
+        desktop.blockInput(true); sharedFiles.open();
+    }
+    private void hideSharedFiles() { sharedFiles.hide(); desktop.blockInput(false); desktop.requestFocus(); }
+    // API 33+ uses the dispatcher registered when the dialog is shown.
+    @android.annotation.SuppressLint("GestureBackNavigation")
+    @Override public void onBackPressed() { back(); }
+    private void back() {
+        if (sharedFiles.getVisibility() == View.VISIBLE) hideSharedFiles();
+        else cancel();
+    }
+    private void pickingDocument(boolean waiting) {
+        if (closed || ended) return;
+        desktop.releaseAll(); main.removeCallbacks(firstFrameTimeout);
+        if (waiting) {
+            acceptingVideo = false; send("v,0"); desktop.suspendVideo();
+        } else {
+            acceptingVideo = true;
+            if (desktop.resumeVideo()) {
+                status.setVisibility(View.VISIBLE); status.setText(label(R.string.desktop_connecting));
+                main.postDelayed(firstFrameTimeout, 20000);
+            }
+        }
+    }
+    private void dispose() {
+        if (closed) return;
+        closed = true; acceptingVideo = false;
+        if (Build.VERSION.SDK_INT >= 33 && backCallback != null) {
+            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback); backCallback = null;
+        }
+        documents.close(); sharedFiles.close(); clipboard.close(); desktop.close(); connection.close();
+        main.removeCallbacksAndMessages(null);
+    }
+    @Override public void dismiss() { dispose(); super.dismiss(); }
     @Override public void onWindowFocusChanged(boolean focus) {
         super.onWindowFocusChanged(focus);
         if (clipboard != null) clipboard.focus(focus);

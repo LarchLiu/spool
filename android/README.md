@@ -2241,7 +2241,7 @@ transport. No new host management endpoint or browser runtime is introduced.
 The viewer decodes voxl 0.3.3's independent H.264 Annex-B stripes with Android
 `MediaCodec`, groups their outputs by frame ID, then acknowledges complete frames.
 Tap clicks, drag holds the left button, long press right-clicks, and two fingers
-scroll. **Pan and zoom** switches to local panning and pinch/toolbar zoom from
+scroll. **Pan and zoom** switches to local panning and pinch zoom from
 100% to 500%; it never changes the host's desktop resolution. The keyboard button
 opens Android's IME, including committed Chinese/Japanese text; external keyboards
 and Esc/Tab/modifier/arrow controls send voxl keysyms. Read-only views suppress
@@ -2254,7 +2254,8 @@ and input. Expanding restores the controls and preserves fullscreen and zoom.
 The fullscreen button toggles entering and exiting
 fullscreen, which hides the heading and system bars; swiping from a screen edge
 temporarily reveals the system bars. The toolbar stays above the Android keyboard and clear of
-display cutouts. Closing the viewer, backgrounding, signing out or revocation closes
+display cutouts. Closing the viewer, backgrounding outside the explicit document-picker
+round trip, signing out or revocation closes
 the view and its media resources. Reconnection requires another explicit action.
 
 The toolbar's **Copy from desktop** sends the host's copy shortcut and republishes
@@ -2270,16 +2271,27 @@ one cache file so they remain available for local paste after disconnecting.
 Only explicit paste actions read Android's clipboard; read-only views suppress
 paste and remote keyboard input.
 
-Desktop audio, microphone and voxl's shared-folder
-panel are not implemented in this native viewer. Project-file browsing remains
-available through the existing workspace UI. Unsupported video dimensions or
+The **Shared folder** toolbar button opens a native browser of the host's voxl
+shared root. It supports subdirectories, parent navigation, refresh, file uploads,
+file downloads and folder downloads as ZIP archives. The server's advertised
+upload/download permissions control the available actions; read-only views cannot
+upload. Android's system document picker selects the upload source or download
+destination. During that round trip capture and decoders are suspended, then
+recreated on return while preserving the live view and local zoom. Transfers use
+independent authenticated HTTP connections and stream document-provider chunks
+without JSON/base64 copies or the chat attachment size limit. Cancelling a transfer,
+closing the viewer or revocation stops its HTTP request; failed downloads attempt
+to remove their newly created partial document. Project-file browsing remains available
+through the existing workspace UI.
+
+Desktop audio and microphone are not implemented in this native viewer. Unsupported video dimensions or
 decoder failures end the view with an error rather than accumulating frames.
 
 Focused verification:
 
 ```sh
 sh android/tools/run.sh go -C android/transport test -race ./...
-sh android/gradlew :app:testDebugUnitTest --tests '*NativeDesktop*' --tests '*NativeArchitectureTest'
+sh android/gradlew :app:testDebugUnitTest --tests '*NativeDesktop*' --tests '*MainActivityDesktopFilesTest' --tests '*NativeArchitectureTest'
 sh android/gradlew :app:assembleDebug :app:lintDebug
 
 # ffmpeg/libx264 creates only synthetic images. The separate test package has no
@@ -2291,10 +2303,19 @@ sh android/tools/run.sh bun android/tools/device-desktop-smoke.mjs --serial DEVI
 
 The device probe checks two real H.264 decoders, decoded red/blue fixture pixels,
 eight ordered frame acknowledgements, touch/IME commands, local zoom, read-only
-mode, toolbar collapse/expand and its reduced footprint, fullscreen system-bar hiding, the fullscreen button restoring the window without
+mode, shared-folder navigation/refresh and upload permissions, cancelling the
+system document picker and resuming video, toolbar collapse/expand and its reduced
+footprint, fullscreen system-bar hiding, the fullscreen button restoring the window without
 disconnecting, labelled icon controls, background cleanup and simulated revocation. It does not establish live
-host/Tailscale performance, hardware keyboard behavior or physical IME coverage.
+host/Tailscale performance, real-server file transfer, hardware keyboard behavior
+or physical IME coverage. Streaming transfer contracts are covered by the Go
+transport tests; document-provider bytes and ZIP destinations by native UI tests.
 The phone must allow installation of the separate verification package.
+If an interrupted run left its own verification package installed, use
+`--resume-owned --cases readonly,revoke` to run only the remaining scenes. This
+explicit recovery option verifies that the installed APK hash matches the APK in
+this checkout before using it, retains completed reports and still uninstalls the
+owned package on exit. Normal runs refuse a preexisting verification package.
 
 For synthetic visual checks on a phone with an existing developer installation,
 build `sh android/gradlew :app:assembleNativeVerify` and run:

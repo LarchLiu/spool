@@ -41,7 +41,17 @@ public class NativeDesktopTest {
         NativeDesktopConnection.Listener listener;
         Runnable duringConnect = () -> {}, duringOpen = () -> {};
         boolean available = true;
-        int opened, closed;
+        int opened, closed, filesOpened, filesClosed;
+        public NativeDesktopFiles.Transport files(String token) {
+            assertEquals(TOKEN, token); filesOpened++;
+            return new NativeDesktopFiles.Transport() {
+                public JSONObject list(String path) { return json("{path:'',entries:[]}"); }
+                public void upload(String path, String name, java.io.InputStream input) {}
+                public void download(String path, java.io.OutputStream output) {}
+                public void cancel() {}
+                public void close() { filesClosed++; }
+            };
+        }
         final NativeDesktopConnection connection = new NativeDesktopConnection(this, io, new Handler(Looper.getMainLooper()), new NativeDesktopConnection.Events() {
             public void message(byte[] data, boolean binary) {}
             public void failed(String reason) { errors.add(reason); }
@@ -86,6 +96,16 @@ public class NativeDesktopTest {
         f.connection.start(); f.io.next(); idle();
         f.listener.ended(); idle(); f.io.drain(); idle();
         assertEquals(1, f.opened); assertEquals(1, f.closed); assertEquals(1, f.errors.size());
+    }
+    @Test public void sharedFolderUsesTheLiveTokenAndClosesWithTheRevokedView() throws Exception {
+        Fixture f = new Fixture();
+        assertThrows(IllegalStateException.class, f.connection::files);
+        f.connection.start(); f.io.next(); idle();
+        assertSame(f.connection.files(), f.connection.files()); assertEquals(1, f.filesOpened);
+        f.available = false; f.io.drain(); idle(); f.io.drain();
+        assertEquals(1, f.filesClosed); assertEquals(1, f.closed);
+        assertThrows(IllegalStateException.class, f.connection::files);
+        assertEquals(1, f.filesOpened);
     }
     @Test public void surfaceCommandsBeforeSocketAssignmentAreNotLost() {
         Fixture f = new Fixture();
@@ -206,6 +226,104 @@ public class NativeDesktopTest {
             } finally { view.close(); }
         }
     }
+    @Test public void documentPickerSuspendsVideoAndRemoteInputThenRestoresLocalZoom() throws Exception {
+        try (var controller = Robolectric.buildActivity(Activity.class).setup()) {
+            List<String> commands = new ArrayList<>();
+            NativeDesktopView view = new NativeDesktopView(new NativeUi(controller.get(), false), commands::add, reason -> fail(reason), () -> {}, () -> {});
+            try {
+                ready(view, false); view.panMode(true); view.zoom(2); commands.clear();
+                view.suspendVideo(); assertFalse(view.ready()); assertEquals(List.of("r"), commands); commands.clear();
+                view.tap(0xff0d); assertTrue(commands.isEmpty()); assertEquals(0, view.getChildCount());
+                assertTrue(view.resumeVideo()); assertEquals(1, view.getChildCount());
+                assertEquals(2, view.viewport.zoom, .001); assertTrue(view.panMode());
+                var decoderField = NativeDesktopView.class.getDeclaredField("video"); decoderField.setAccessible(true);
+                var frameField = NativeDesktopVideo.class.getDeclaredField("firstFrame"); frameField.setAccessible(true);
+                Runnable lateFrame = (Runnable) frameField.get(decoderField.get(view));
+                view.suspendVideo(); view.resumeVideo(); lateFrame.run(); idle();
+                assertFalse("The previous decoder must not activate a resumed view", view.ready());
+                view.close(); assertFalse(view.resumeVideo());
+            } finally { view.close(); }
+        }
+    }
+    @Test public void advertisedFolderButtonOpensTheNativePanelAndBackReturnsToTheDesktop() throws Exception {
+        try (var controller = Robolectric.buildActivity(Activity.class).setup()) {
+            Fixture f = new Fixture();
+            NativeDesktopDialog dialog = new NativeDesktopDialog(new NativeUi(controller.get(), false, "zh-CN"), f, f.io, () -> {});
+            try {
+                dialog.show(); f.io.next(); idle();
+                View root = dialog.getWindow().getDecorView(), folder = labelled(root, "共享文件夹");
+                assertEquals(View.GONE, folder.getVisibility());
+                f.listener.message("{t:'hello',w:1920,h:1080,files:{upload:true,download:true}}".getBytes(java.nio.charset.StandardCharsets.UTF_8), false);
+                idle(); assertEquals(View.VISIBLE, folder.getVisibility());
+                ready(dialog.desktop, false); dialog.desktop.panMode(false);
+                assertTrue(folder.isEnabled()); folder.performClick(); f.io.drain(); idle();
+                assertEquals(View.VISIBLE, dialog.sharedFiles.getVisibility()); assertEquals(1, f.filesOpened);
+                dialog.onBackPressed(); assertEquals(View.GONE, dialog.sharedFiles.getVisibility());
+                assertTrue(dialog.isShowing()); assertEquals(0, f.closed);
+            } finally { dialog.dismiss(); idle(); f.io.drain(); }
+        }
+    }
+    @Test public void sharedFolderOwnsKeyboardFocusAndBlocksRemoteInputUntilClosed() throws Exception {
+        try (var controller = Robolectric.buildActivity(Activity.class).setup()) {
+            Fixture f = new Fixture();
+            NativeDesktopDialog dialog = new NativeDesktopDialog(new NativeUi(controller.get(), false, "zh-CN"), f, f.io, () -> {});
+            try {
+                dialog.show(); f.io.next(); idle();
+                View root = dialog.getWindow().getDecorView();
+                f.listener.message("{t:'hello',w:1920,h:1080,files:{upload:true,download:true}}".getBytes(java.nio.charset.StandardCharsets.UTF_8), false);
+                idle();
+                ready(dialog.desktop, false); dialog.desktop.panMode(false);
+                dialog.desktop.keyboard();
+                var keyboard = (android.view.inputmethod.InputMethodManager) controller.get().getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+                assertTrue(Shadows.shadowOf(keyboard).isSoftInputVisible());
+                InputConnection input = dialog.desktop.onCreateInputConnection(new EditorInfo());
+                input.setComposingText("中", 1);
+                dialog.desktop.modifier(0xffe3); f.commands.clear();
+                assertTrue(labelled(root, "共享文件夹").performClick());
+                assertTrue(f.commands.contains("r")); assertFalse(dialog.desktop.held(0xffe3));
+                assertTrue("The file panel must own keyboard focus", dialog.sharedFiles.hasFocus());
+                assertFalse(Shadows.shadowOf(keyboard).isSoftInputVisible());
+                assertTrue("Browsing files must preserve the video", dialog.desktop.ready());
+                assertFalse(dialog.desktop.controllable()); f.commands.clear();
+                for (int code : new int[]{KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_DPAD_DOWN}) {
+                    dialog.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
+                    dialog.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
+                }
+                input.finishComposingText(); input.commitText("blocked", 1); input.deleteSurroundingText(1, 0);
+                dialog.desktop.tap(0xff0d); idle();
+                assertTrue("File-panel keys and stale IME callbacks must stay local: " + f.commands, f.commands.isEmpty());
+                assertEquals(View.VISIBLE, dialog.sharedFiles.getVisibility());
+                dialog.onBackPressed();
+                assertTrue(dialog.desktop.hasFocus()); assertTrue(dialog.desktop.controllable());
+                dialog.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER));
+                dialog.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER));
+                dialog.desktop.onCreateInputConnection(new EditorInfo()).commitText("中", 1); idle();
+                assertEquals(List.of("k,65293,1", "k,65293,0", "k,16797229,1", "k,16797229,0"), f.commands);
+                assertEquals(0, f.closed);
+            } finally { dialog.dismiss(); idle(); f.io.drain(); }
+        }
+    }
+    @Test public void withdrawingSharedFolderCapabilitiesRestoresDesktopInput() throws Exception {
+        try (var controller = Robolectric.buildActivity(Activity.class).setup()) {
+            Fixture f = new Fixture();
+            NativeDesktopDialog dialog = new NativeDesktopDialog(new NativeUi(controller.get(), false, "zh-CN"), f, f.io, () -> {});
+            try {
+                dialog.show(); f.io.next(); idle();
+                View root = dialog.getWindow().getDecorView();
+                f.listener.message("{t:'hello',w:1920,h:1080,files:{upload:true,download:true}}".getBytes(java.nio.charset.StandardCharsets.UTF_8), false);
+                idle();
+                ready(dialog.desktop, false); dialog.desktop.panMode(false);
+                labelled(root, "共享文件夹").performClick();
+                assertFalse(dialog.desktop.controllable());
+                f.listener.message("{t:'hello',w:1920,h:1080,files:{upload:false,download:false}}".getBytes(java.nio.charset.StandardCharsets.UTF_8), false);
+                idle(); ready(dialog.desktop, false);
+                assertEquals(View.GONE, dialog.sharedFiles.getVisibility());
+                assertTrue(dialog.desktop.hasFocus()); assertTrue(dialog.desktop.controllable());
+                f.commands.clear(); dialog.desktop.tap(0xff0d);
+                assertEquals(List.of("k,65293,1", "k,65293,0"), f.commands);
+            } finally { dialog.dismiss(); idle(); f.io.drain(); }
+        }
+    }
     @Test public void externalKeysAndHeldModifiersReleaseWithoutSticking() throws Exception {
         try (var controller = Robolectric.buildActivity(Activity.class).setup()) {
             List<String> commands = new ArrayList<>();
@@ -293,6 +411,8 @@ public class NativeDesktopTest {
                 dialog.show(); f.io.next(); idle();
                 View root = dialog.getWindow().getDecorView();
                 View enter = labelled(root, "进入全屏"), disconnect = labelled(root, "断开桌面");
+                assertNull(labelled(root, "放大")); assertNull(labelled(root, "缩小"));
+                assertNull(labelled(root, "适应窗口 (100%)"));
                 assertTrue(enter instanceof NativeUi.IconButton); assertTrue(disconnect instanceof NativeUi.IconButton);
                 assertEquals("进入全屏", enter.getTooltipText().toString());
                 assertTrue(enter.performClick());

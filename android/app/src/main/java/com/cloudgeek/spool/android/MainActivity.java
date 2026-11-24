@@ -2583,6 +2583,9 @@ public final class MainActivity extends Activity {
             public JSONObject request(String path, boolean post) throws Exception {
                 return (JSONObject) MainActivity.this.request(captured, path, post ? object() : null, auth, loc);
             }
+            public NativeDesktopFiles.Transport files(String token) throws Exception {
+                return new NativeDesktopFileTransport(captured, token, auth, loc);
+            }
             public NativeDesktopConnection.Wire open(String token, NativeDesktopConnection.Listener listener) throws Exception {
                 spoolnet.DesktopStream stream = captured.openDesktop(token, new spoolnet.DesktopListener() {
                     public void onOpen() { listener.opened(); }
@@ -4384,6 +4387,10 @@ public final class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (NativeDesktopDocuments.handles(requestCode)) {
+            if (desktopDialog != null) desktopDialog.documents.result(requestCode, resultCode, data);
+            return;
+        }
         if (requestCode == SCAN_PAIRING) {
             String owner = pairingOwner; pairingOwner = "";
             com.google.zxing.integration.android.IntentResult result = com.google.zxing.integration.android.IntentIntegrator.parseActivityResult(resultCode, data);
@@ -5509,7 +5516,9 @@ public final class MainActivity extends Activity {
             runtime.router.cancel(); runtime.selecting = false;
         }
         main.removeCallbacks(serverRefresh);
-        closeDesktop();
+        // The explicit SAF round trip pauses capture and retains this view's token.
+        // Other background transitions still close the desktop immediately.
+        if (desktopDialog == null || !desktopDialog.documents.waiting()) closeDesktop();
         if (fileBrowser != null) fileBrowser.deactivate();
         if (historyScroll != null) historyScroll.suspend();
         if (markwonHistory != null) markwonHistory.stopScroll();

@@ -41,7 +41,8 @@ final class NativeDesktopView extends FrameLayout implements AutoCloseable {
     private ViewGroup surface;
     private Bitmap cursor;
     private int hotX, hotY, pointerX, pointerY;
-    private boolean pointerVisible, active, panMode;
+    private boolean pointerVisible, active, panMode, suspended, inputBlocked;
+    private int videoEpoch;
     private volatile boolean closed;
     private NativeDesktopClipboard clipboard;
     private int gesture;
@@ -59,6 +60,7 @@ final class NativeDesktopView extends FrameLayout implements AutoCloseable {
         stopVideo();
         layout = value; active = false; pointerVisible = false;
         viewport.reset(); keys.clear(); sticky.clear(); changed.run();
+        if (suspended) return;
         surface = new ViewGroup(getContext()) {
             @Override protected void onMeasure(int ws, int hs) {
                 int w = MeasureSpec.getSize(ws), h = MeasureSpec.getSize(hs);
@@ -77,8 +79,9 @@ final class NativeDesktopView extends FrameLayout implements AutoCloseable {
                 }
             }
         };
+        int epoch = videoEpoch;
         NativeDesktopVideo decoder = new NativeDesktopVideo(value, send, failed, () -> main.post(() -> {
-            if (closed || video == null || layout != value) return;
+            if (closed || video == null || videoEpoch != epoch || layout != value) return;
             active = true; firstFrame.run(); changed.run();
         }));
         video = decoder;
@@ -102,6 +105,20 @@ final class NativeDesktopView extends FrameLayout implements AutoCloseable {
         }
         addView(surface);
         requestLayout();
+    }
+
+    void suspendVideo() {
+        if (closed || suspended) return;
+        suspended = true; stopVideo(); changed.run();
+    }
+    boolean resumeVideo() {
+        if (closed || !suspended) return false;
+        suspended = false;
+        if (layout == null) return false;
+        double zoom = viewport.zoom, x = viewport.x, y = viewport.y;
+        configure(layout);
+        viewport.zoom = zoom; viewport.x = x; viewport.y = y; transform();
+        return true;
     }
 
     void binary(byte[] bytes) {
@@ -161,7 +178,17 @@ final class NativeDesktopView extends FrameLayout implements AutoCloseable {
         float y = (float)(viewport.height / 2 + viewport.y + (pointerY - layout.height / 2.0) * scale) - hotY * cursorScale;
         canvas.drawBitmap(cursor, null, new RectF(x, y, x + cursor.getWidth() * cursorScale, y + cursor.getHeight() * cursorScale), paint);
     }
-    boolean controllable() { return active && !closed && layout != null && !layout.readOnly; }
+    boolean controllable() { return active && !closed && !inputBlocked && layout != null && !layout.readOnly; }
+    void blockInput(boolean blocked) {
+        if (inputBlocked == blocked) return;
+        releaseAll(); inputBlocked = blocked;
+        setFocusableInTouchMode(!blocked); setFocusable(!blocked);
+        if (blocked) {
+            InputMethodManager manager = (InputMethodManager)getContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+            manager.hideSoftInputFromWindow(getWindowToken(), 0);
+        }
+        changed.run();
+    }
     boolean ready() { return active && !closed; }
     boolean panMode() { return panMode; }
     void panMode(boolean enabled) { releaseAll(); panMode = enabled; gesture = 0; transform(); }
@@ -247,7 +274,7 @@ final class NativeDesktopView extends FrameLayout implements AutoCloseable {
     private void click(int button) { send.accept("b," + button + ",1"); send.accept("b," + button + ",0"); }
     @Override public boolean onInterceptTouchEvent(MotionEvent event) { return true; }
     @Override public boolean onTouchEvent(MotionEvent e) {
-        if (closed || layout == null || !active) return true;
+        if (closed || inputBlocked || layout == null || !active) return true;
         if (e.isFromSource(InputDevice.SOURCE_MOUSE)) {
             if (!controllable() || panMode) return true;
             move(e.getX(), e.getY());
@@ -415,6 +442,7 @@ final class NativeDesktopView extends FrameLayout implements AutoCloseable {
     @Override public void onWindowFocusChanged(boolean focus) { super.onWindowFocusChanged(focus); if (!focus) releaseAll(); }
     private void stopVideo() {
         releaseAll(); active = false;
+        videoEpoch++;
         NativeDesktopVideo old = video; video = null;
         if (old != null) old.close();
         removeAllViews(); surface = null; cursor = null;

@@ -19,6 +19,7 @@ final class NativeDesktopConnection implements AutoCloseable {
     interface Transport {
         JSONObject request(String path, boolean post) throws Exception;
         Wire open(String token, Listener listener) throws Exception;
+        default NativeDesktopFiles.Transport files(String token) throws Exception { throw new UnsupportedOperationException("Shared folder unavailable"); }
     }
     interface Events {
         void message(byte[] data, boolean binary);
@@ -32,6 +33,7 @@ final class NativeDesktopConnection implements AutoCloseable {
     private boolean started;
     private String token;
     private Wire wire;
+    private NativeDesktopFiles.Transport files;
     private final java.util.ArrayDeque<String> initialCommands = new java.util.ArrayDeque<>();
 
     NativeDesktopConnection(Transport transport, Executor io, Handler main, Events events) {
@@ -80,6 +82,11 @@ final class NativeDesktopConnection implements AutoCloseable {
         try { wire.image(png); return true; }
         catch (Exception error) { fail("Desktop connection ended"); return false; }
     }
+    synchronized NativeDesktopFiles.Transport files() throws Exception {
+        if (closed || token == null || wire == null) throw new IllegalStateException("Desktop is not connected");
+        if (files == null || files.closed()) files = transport.files(token);
+        return files;
+    }
     private void fail(String reason) {
         main.post(() -> {
             if (closed) return;
@@ -109,14 +116,17 @@ final class NativeDesktopConnection implements AutoCloseable {
     @Override public void close() {
         final String created;
         final Wire opened;
+        final NativeDesktopFiles.Transport transfers;
         synchronized (this) {
             if (closed) return;
             closed = true;
             created = token; token = null;
             opened = wire; wire = null;
+            transfers = files; files = null;
             initialCommands.clear();
         }
         main.removeCallbacks(poll);
+        if (transfers != null) transfers.close();
         if (opened != null) opened.close();
         if (created != null) io.execute(() -> disconnect(created));
     }

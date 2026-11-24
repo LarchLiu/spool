@@ -27,6 +27,7 @@ public final class NativeDesktopProbeActivity extends Activity {
     private NativeDesktopDialog dialog;
     private volatile int sent, acknowledged;
     private volatile boolean wireClosed, disconnected;
+    private volatile int listedFolders;
     private boolean exercised;
     private int windowedHeight, fullscreenHeight;
 
@@ -44,14 +45,30 @@ public final class NativeDesktopProbeActivity extends Activity {
                     if (path.startsWith("/desktop/disconnect")) disconnected = true;
                     return new JSONObject().put("available", !getIntent().getBooleanExtra("revoke", false) || acknowledged < 8);
                 }
+                public NativeDesktopFiles.Transport files(String token) {
+                    return new NativeDesktopFiles.Transport() {
+                        public JSONObject list(String path) throws Exception {
+                            listedFolders++;
+                            return new JSONObject().put("path", path).put("entries", new JSONArray(path.isEmpty()
+                                    ? "[{name:'Documents',dir:true},{name:'fixture.txt',dir:false,size:12}]"
+                                    : "[{name:'note.txt',dir:false,size:24}]"));
+                        }
+                        public void upload(String path, String name, java.io.InputStream input) throws Exception {
+                            byte[] buffer = new byte[8192]; while (input.read(buffer) != -1) {}
+                        }
+                        public void download(String path, java.io.OutputStream output) throws Exception { output.write("synthetic shared file".getBytes(StandardCharsets.UTF_8)); }
+                        public void cancel() {}
+                        public void close() {}
+                    };
+                }
                 public NativeDesktopConnection.Wire open(String token, NativeDesktopConnection.Listener callback) throws Exception {
                     listener = callback; listener.opened();
                     listener.message(("{\"t\":\"hello\",\"w\":640,\"h\":360,\"stripes\":[[0,180],[180,180]],\"readOnly\":"
-                            + getIntent().getBooleanExtra("readOnly", false) + "}").getBytes(StandardCharsets.UTF_8), false);
+                            + getIntent().getBooleanExtra("readOnly", false) + ",\"files\":{\"upload\":true,\"download\":true}}").getBytes(StandardCharsets.UTF_8), false);
                     return new NativeDesktopConnection.Wire() {
                         public void send(String command) {
                             commands.add(command);
-                            if (command.equals("v,1")) io.execute(() -> sendFrame(0));
+                            if (command.equals("v,1")) io.execute(() -> { sent = 0; sendFrame(0); });
                             if (command.startsWith("a,")) {
                                 acknowledged = Integer.parseInt(command.substring(2));
                                 if (acknowledged < 8) io.execute(() -> sendFrame(acknowledged));
@@ -102,6 +119,8 @@ public final class NativeDesktopProbeActivity extends Activity {
                     .put("case", getIntent().getStringExtra("case"))
                     .put("controllable", dialog.desktop.controllable()).put("exercised", exercised)
                     .put("wireClosed", wireClosed).put("disconnected", disconnected).put("showing", dialog.isShowing())
+                    .put("documentPickerWaiting", dialog.documents.waiting()).put("videoReady", dialog.desktop.ready())
+                    .put("windowFocused", decor.hasWindowFocus())
                     .put("zoom", dialog.desktop.viewport.zoom).put("fullscreen", dialog.fullscreen())
                     .put("windowedHeight", windowedHeight).put("fullscreenHeight", fullscreenHeight).put("height", dialog.desktop.getHeight())
                     .put("iconButtons", buttons[0]).put("textButtons", buttons[1])
@@ -111,6 +130,14 @@ public final class NativeDesktopProbeActivity extends Activity {
                     .put("width", dialog.desktop.getWidth())
                     .put("toolbarToggleX", togglePosition[0] + toolbarToggle.getWidth() / 2)
                     .put("toolbarToggleY", togglePosition[1] + toolbarToggle.getHeight() / 2);
+            report.put("sharedFolderOpen", dialog.sharedFiles.getVisibility() == android.view.View.VISIBLE)
+                    .put("sharedFolderEntries", dialog.sharedFiles.list.getCount()).put("sharedFolderPath", dialog.sharedFiles.directory())
+                    .put("listedFolders", listedFolders).put("fileUploadVisible", dialog.sharedFiles.upload.getVisibility() == android.view.View.VISIBLE);
+            position(report, "folderButton", labelled(decor, dialog.label(R.string.desktop_files)));
+            position(report, "fileUp", dialog.sharedFiles.up); position(report, "fileRefresh", dialog.sharedFiles.refresh);
+            position(report, "fileUpload", dialog.sharedFiles.upload);
+            position(report, "fileClose", labelled(decor, dialog.label(R.string.desktop_files_close)));
+            if (dialog.sharedFiles.list.getChildCount() > 0) position(report, "fileRow", dialog.sharedFiles.list.getChildAt(0));
             android.view.WindowInsets insets = decor.getRootWindowInsets();
             if (android.os.Build.VERSION.SDK_INT >= 30 && insets != null)
                 report.put("systemBarsHidden", !insets.isVisible(android.view.WindowInsets.Type.statusBars())
@@ -143,12 +170,18 @@ public final class NativeDesktopProbeActivity extends Activity {
         return null;
     }
     private static int[] buttons(android.view.View view) {
+        if (view.getVisibility() != android.view.View.VISIBLE) return new int[]{0, 0};
         int[] result = {view instanceof NativeUi.IconButton && view.getContentDescription() != null && view.getTooltipText() != null ? 1 : 0,
                 view instanceof android.widget.Button ? 1 : 0};
         if (view instanceof android.view.ViewGroup group) for (int i = 0; i < group.getChildCount(); i++) {
             int[] children = buttons(group.getChildAt(i)); result[0] += children[0]; result[1] += children[1];
         }
         return result;
+    }
+    private static void position(JSONObject report, String key, android.view.View view) throws Exception {
+        if (view == null) return;
+        int[] position = new int[2]; view.getLocationOnScreen(position);
+        report.put(key + "X", position[0] + view.getWidth() / 2).put(key + "Y", position[1] + view.getHeight() / 2);
     }
     private void save(JSONObject report, String error) {
         try {
@@ -157,7 +190,14 @@ public final class NativeDesktopProbeActivity extends Activity {
             try (FileOutputStream out = new FileOutputStream(target)) { out.write(report.toString().getBytes(StandardCharsets.UTF_8)); }
         } catch (Exception ignored) {}
     }
-    @Override protected void onStop() { if (dialog != null) dialog.dismiss(); super.onStop(); }
+    @Override protected void onActivityResult(int request, int result, android.content.Intent data) {
+        super.onActivityResult(request, result, data);
+        if (NativeDesktopDocuments.handles(request) && dialog != null) dialog.documents.result(request, result, data);
+    }
+    @Override protected void onStop() {
+        if (dialog != null && !dialog.documents.waiting()) dialog.dismiss();
+        super.onStop();
+    }
     @Override protected void onDestroy() {
         if (dialog != null) dialog.dismiss();
         main.removeCallbacksAndMessages(null); io.shutdown(); super.onDestroy();
