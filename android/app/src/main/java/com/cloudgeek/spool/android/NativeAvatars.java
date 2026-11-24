@@ -43,6 +43,14 @@ final class NativeAvatars {
     }
 
     static String name(JSONObject person) {
+        String value = baseName(person);
+        String source = person.optString("source_server_id");
+        if (source.isEmpty()) return value;
+        String server = TRIM.matcher(person.optString("source_server_name")).replaceAll("");
+        return value + " · " + (server.isEmpty() ? source : server);
+    }
+
+    static String baseName(JSONObject person) {
         String value = TRIM.matcher(person.optString("nickname")).replaceAll("");
         if (value.isEmpty()) value = TRIM.matcher(person.optString("username")).replaceAll("");
         return value.isEmpty() ? person.optString("id") : value;
@@ -51,7 +59,7 @@ final class NativeAvatars {
     static String seed(JSONObject person) {
         JSONObject config = config(person);
         String seed = config.optString("seed");
-        return seed.isEmpty() ? name(person) : seed;
+        return seed.isEmpty() ? baseName(person) : seed;
     }
 
     static JSONObject config(JSONObject person) {

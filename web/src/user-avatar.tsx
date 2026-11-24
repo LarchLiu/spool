@@ -1,3 +1,4 @@
+import { userName } from "./user-name";
 import { appURL } from "./app-path";
 import { useMemo } from "react";
 import { avatarDataURI, type AvatarIdentity } from "./avatar.js";
@@ -49,7 +50,7 @@ export function AvatarStack({
           key={person.id}
           className="avatar-stack-item"
           style={{ zIndex: visible.length - index }}
-          title={showTitles ? person.nickname : undefined}
+          title={showTitles ? userName(person) : undefined}
         >
           <UserAvatar person={person} size={24} />
         </span>

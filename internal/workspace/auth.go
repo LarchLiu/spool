@@ -45,12 +45,12 @@ func (s *Store) authenticate(token string) (authIdentity, error) {
 	var v authIdentity
 	v.TokenHash = tokenHash(token)
 	now := time.Now()
-	err := s.db.QueryRow(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,a.csrf,COALESCE(av.style,?),COALESCE(av.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0),COALESCE(ae.epoch,0),COALESCE(fu.peer_id,'')
+	err := s.db.QueryRow(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,a.csrf,COALESCE(av.style,?),COALESCE(av.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0),COALESCE(ae.epoch,0),COALESCE(fu.peer_id,''),COALESCE(json_extract(fp.config,'$.name'),'')
 		FROM auth_sessions a JOIN users u ON u.id=a.user_id LEFT JOIN user_avatars av ON av.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id LEFT JOIN user_adb_bridge_epochs ae ON ae.user_id=u.id
-		LEFT JOIN federation_users fu ON fu.user_id=u.id LEFT JOIN federation_sessions fs ON fs.session_hash=a.token_hash
+		LEFT JOIN federation_users fu ON fu.user_id=u.id LEFT JOIN federation_peers fp ON fp.id=fu.peer_id LEFT JOIN federation_sessions fs ON fs.session_hash=a.token_hash
 		WHERE a.token_hash=? AND a.expires_at>? AND u.disabled=0 AND (fu.peer_id IS NULL OR (fs.checked_at>?
 			AND EXISTS(SELECT 1 FROM federation_trust_grants g JOIN federation_peers p ON p.id=g.peer_id
-				WHERE g.peer_id=fu.peer_id AND g.incoming=1 AND json_extract(p.config,'$.accept')=1)))`, DefaultAvatar().Style, v.TokenHash, now.UnixMilli(), now.Add(-federationOffline).UnixMilli()).Scan(&v.User.ID, &v.User.Username, &v.User.Nickname, &v.User.Disabled, &v.User.CreatedAt, &v.CSRF, &v.User.Avatar.Style, &v.User.Avatar.Seed, &v.User.RemoteDesktop, &v.User.ADBBridge, &v.adbEpoch, &v.User.SourceServerID)
+				WHERE g.peer_id=fu.peer_id AND g.incoming=1 AND json_extract(p.config,'$.accept')=1)))`, DefaultAvatar().Style, v.TokenHash, now.UnixMilli(), now.Add(-federationOffline).UnixMilli()).Scan(&v.User.ID, &v.User.Username, &v.User.Nickname, &v.User.Disabled, &v.User.CreatedAt, &v.CSRF, &v.User.Avatar.Style, &v.User.Avatar.Seed, &v.User.RemoteDesktop, &v.User.ADBBridge, &v.adbEpoch, &v.User.SourceServerID, &v.User.SourceServerName)
 	return v, err
 }
 func (s *Store) login(username, password string) (string, authIdentity, error) {

@@ -33,6 +33,16 @@ import java.util.function.Consumer;
 @Config(sdk = 35)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 public class NativeAvatarsTest {
+    @Test public void externalNamesIncludeTheSourceWithoutChangingAutomaticAvatarSeeds() throws Exception {
+        JSONObject person = new JSONObject("{id:'visitor',nickname:'Alice',source_server_id:'source-id',source_server_name:'Office'}");
+        assertEquals("Alice · Office", NativeAvatars.name(person));
+        assertEquals("Alice", NativeAvatars.seed(person));
+        person.put("source_server_name", " ");
+        assertEquals("Alice · source-id", NativeAvatars.name(person));
+        person.remove("source_server_id");
+        assertEquals("Alice", NativeAvatars.name(person));
+    }
+
     @Test @Config(sdk = {26,35}) @org.robolectric.annotation.LooperMode(org.robolectric.annotation.LooperMode.Mode.PAUSED)
     public void rebindingKeepsTheSameImageCoalescesAndRejectsLateOldOrBotReplacements() throws Exception {
         try(ActivityController<Activity> controller=Robolectric.buildActivity(Activity.class).setup()) {

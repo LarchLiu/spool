@@ -191,7 +191,7 @@ function host(adb, settings = {}) {
         settings,
         status: { ADB: adb },
         users: [
-          { id: "u1", username: "alice", nickname: "Alice" },
+          { id: "u1", username: "alice", nickname: "Alice", source_server_id: "source-id", source_server_name: "Office" },
           { id: "u2", username: "bob", nickname: "" },
         ],
       },
@@ -235,7 +235,7 @@ test("the host decides whether devices can be shared and sees which ones are", (
   assert.equal(html.match(/data-adb-device/g).length, 3);
   assert.match(html, /adb -s followed by its address/);
   // Each device with how it is attached and whose it is.
-  assert.match(html, /127\.0\.0\.1:41000[\s\S]*?USB · Alice/);
+  assert.match(html, /127\.0\.0\.1:41000[\s\S]*?USB · Alice · Office/);
   assert.match(html, /127\.0\.0\.1:41001[\s\S]*?Wireless debugging · bob/);
   assert.match(html, /127\.0\.0\.1:41002[\s\S]*?USB · gone/);
 

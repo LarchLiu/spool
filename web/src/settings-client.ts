@@ -42,8 +42,6 @@ export type ServerSettings = {
 };
 export type Person = User & {
   disabled: boolean;
-  source_server_id?: string;
-  source_server_name?: string;
   source_user_id?: string;
   remote_desktop?: boolean;
   adb_bridge?: boolean;
@@ -142,7 +140,11 @@ export type SettingsSnapshot = {
     };
     Address: string;
     Error: string;
-    Online: (Online & Pick<User, "nickname" | "avatar">)[];
+    Online: (Online &
+      Pick<
+        User,
+        "nickname" | "avatar" | "source_server_id" | "source_server_name"
+      >)[];
     TSNet?: { State: string; AuthURL: string; URL: string; Error: string };
     TSNetOutboundReady?: boolean;
     TSNetAuthKeySet?: boolean;

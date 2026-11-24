@@ -4973,13 +4973,13 @@ public final class MainActivity extends Activity {
 
     private String personName(String id) {
         if (user != null && user.optString("id").equals(id))
-            return user.optString("nickname", user.optString("username"));
+            return NativeAvatars.name(user);
         if (id.equals("online-room")) return tr("Online group chat", "在线群聊");
         for (int i = 0; i < groups.length(); i++)
             if (at(groups, i).optString("id").equals(id)) return at(groups, i).optString("name");
         for (int i = 0; i < profiles.length(); i++)
             if (at(profiles, i).optString("id").equals(id))
-                return at(profiles, i).optString("nickname");
+                return NativeAvatars.name(at(profiles, i));
         return tr("Workspace member", "工作空间成员");
     }
 
@@ -5016,6 +5016,8 @@ public final class MainActivity extends Activity {
                 if (!profile.optString("id").equals(user.optString("id"))) continue;
                 user.put("nickname", profile.optString("nickname"));
                 user.put("avatar", profile.optJSONObject("avatar"));
+                for (String field : new String[] {"source_server_id", "source_server_name"})
+                    user.put(field, profile.opt(field));
                 rememberAccount();
                 break;
             }

@@ -219,9 +219,9 @@ func (s *Store) saveFederationUser(input UserInput, source string) (User, error)
 	}
 	defer tx.Rollback()
 	v := User{ID: input.ID, SourceServerID: source}
-	if err := tx.QueryRow(`SELECT u.username,u.nickname,u.created_at,u.disabled,COALESCE(v.style,?),COALESCE(v.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0)
-		FROM users u LEFT JOIN user_avatars v ON v.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id WHERE u.id=?`, DefaultAvatar().Style, v.ID).
-		Scan(&v.Username, &v.Nickname, &v.CreatedAt, &v.Disabled, &v.Avatar.Style, &v.Avatar.Seed, &v.RemoteDesktop, &v.ADBBridge); err != nil {
+	if err := tx.QueryRow(`SELECT u.username,u.nickname,u.created_at,u.disabled,COALESCE(v.style,?),COALESCE(v.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0),COALESCE(json_extract(p.config,'$.name'),'')
+		FROM users u JOIN federation_users f ON f.user_id=u.id JOIN federation_peers p ON p.id=f.peer_id LEFT JOIN user_avatars v ON v.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id WHERE u.id=?`, DefaultAvatar().Style, v.ID).
+		Scan(&v.Username, &v.Nickname, &v.CreatedAt, &v.Disabled, &v.Avatar.Style, &v.Avatar.Seed, &v.RemoteDesktop, &v.ADBBridge, &v.SourceServerName); err != nil {
 		return User{}, err
 	}
 	// Older management clients send the current profile, while permissions-only

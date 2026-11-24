@@ -78,11 +78,11 @@ public class NativeTurnActionsTest {
                 assertSame(row, audit.getChildAt(0)); assertSame(document, original.getText());
 
                 // Same JSON instances change; cached metadata must not hide a new decision or operator.
-                person.put("nickname", "Renamed operator"); first.put("kind", "respond").put("summary", "New short answer").put("created_at", 0);
+                person.put("nickname", "Renamed operator").put("source_server_id", "source-id").put("source_server_name", "Office"); first.put("kind", "respond").put("summary", "New short answer").put("created_at", 0);
                 values = new JSONArray().put(first).put(JSONObject.NULL).put(second);
                 audit.bind(values); layout(audit);
                 assertSame(original, text(audit, 0));
-                assertEquals(ui.t("Answered by {name}", "name", "Renamed operator") + " · New short answer", original.getText().toString());
+                assertEquals(ui.t("Answered by {name}", "name", "Renamed operator · Office") + " · New short answer", original.getText().toString());
                 assertEquals(original.getText().toString(), original.getContentDescription());
                 NativeTurnActions fresh = new NativeTurnActions(ui); fresh.bind(values); layout(fresh); sameRows(fresh, audit);
 

@@ -1,3 +1,4 @@
+import { userName } from "./user-name";
 import { useEffect, useRef } from "react";
 import { MessageCircle, Plus, Users } from "lucide-react";
 import type { AvatarIdentity } from "./avatar";
@@ -113,7 +114,7 @@ export function OnlinePeopleMenu({
             }}
           >
             <PeopleGroupAvatar people={group.members.map(resolvePerson)} />
-            {resolvePerson(group.id).nickname}
+            {userName(resolvePerson(group.id))}
             {!!unread[group.id] && (
               <span className="direct-unread">
                 {formatUnreadCount(unread[group.id])}
@@ -127,7 +128,7 @@ export function OnlinePeopleMenu({
           <UserAvatar person={u} size={26} />
           <span className={u.state === "online" ? "online-dot" : "away-dot"} />
           {u.id === self ? (
-            <span>{u.nickname}</span>
+            <span>{userName(u)}</span>
           ) : (
             <button
               className="online-chat-person"
@@ -135,9 +136,9 @@ export function OnlinePeopleMenu({
                 onPeer(u.id);
                 event.currentTarget.closest("details")?.removeAttribute("open");
               }}
-              title={t("Chat with {name}", { name: u.nickname })}
+              title={t("Chat with {name}", { name: userName(u) })}
             >
-              {u.nickname}
+              {userName(u)}
               {!!unread[u.id] && (
                 <span className="direct-unread">
                   {formatUnreadCount(unread[u.id])}

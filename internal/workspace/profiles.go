@@ -7,9 +7,11 @@ import (
 )
 
 type UserProfile struct {
-	ID       string `json:"id"`
-	Nickname string `json:"nickname"`
-	Avatar   Avatar `json:"avatar"`
+	ID               string `json:"id"`
+	Nickname         string `json:"nickname"`
+	Avatar           Avatar `json:"avatar"`
+	SourceServerID   string `json:"source_server_id,omitempty"`
+	SourceServerName string `json:"source_server_name,omitempty"`
 }
 
 type ProfileSnapshot struct {
@@ -57,14 +59,16 @@ func (s *Store) userProfiles(user string, online []PresenceUser) (ProfileSnapsho
 		UNION SELECT a.user_id FROM turn_actors a JOIN selected s ON s.id=a.session_id
 		UNION SELECT a.user_id FROM turn_actions a JOIN selected s ON s.id=a.session_id
 	), allowed AS (`+allowed+`)
-	SELECT u.id,u.nickname,COALESCE(a.style,?),COALESCE(a.seed,'') FROM users u
-	LEFT JOIN user_avatars a ON a.user_id=u.id WHERE u.id IN (SELECT user_id FROM allowed) ORDER BY u.id`, append(args, DefaultAvatar().Style)...)
+	SELECT u.id,u.nickname,COALESCE(a.style,?),COALESCE(a.seed,''),COALESCE(fu.peer_id,''),COALESCE(json_extract(fp.config,'$.name'),'') FROM users u
+	LEFT JOIN user_avatars a ON a.user_id=u.id
+	LEFT JOIN federation_users fu ON fu.user_id=u.id LEFT JOIN federation_peers fp ON fp.id=fu.peer_id
+	WHERE u.id IN (SELECT user_id FROM allowed) ORDER BY u.id`, append(args, DefaultAvatar().Style)...)
 	if err != nil {
 		return v, err
 	}
 	for rows.Next() {
 		var person UserProfile
-		if err = rows.Scan(&person.ID, &person.Nickname, &person.Avatar.Style, &person.Avatar.Seed); err != nil {
+		if err = rows.Scan(&person.ID, &person.Nickname, &person.Avatar.Style, &person.Avatar.Seed, &person.SourceServerID, &person.SourceServerName); err != nil {
 			break
 		}
 		v.People = append(v.People, person)

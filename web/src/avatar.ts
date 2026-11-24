@@ -8,6 +8,7 @@ import toonHead from "@dicebear/styles/toon-head.json" with { type: "json" };
 import voxelArt from "@dicebear/styles/voxel-art.json" with { type: "json" };
 import thumbs from "@dicebear/styles/thumbs.json" with { type: "json" };
 import { avatarMetadata } from "./avatar-meta.js";
+import type { NamedPerson } from "./user-name";
 
 export const avatarStyles = [
   ["clay", "Clay"],
@@ -21,11 +22,8 @@ export const avatarStyles = [
 ] as const;
 export type AvatarStyle = (typeof avatarStyles)[number][0];
 export type AvatarConfig = { style: AvatarStyle; seed: string };
-export type AvatarIdentity = {
-  id: string;
-  nickname: string;
+export type AvatarIdentity = NamedPerson & {
   bot?: boolean;
-  username?: string;
   avatar?: AvatarConfig;
 };
 export const defaultAvatar: AvatarConfig = {

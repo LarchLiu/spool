@@ -37,10 +37,24 @@ const {
 const { VoxlSettings } = await server.ssrLoadModule("/src/voxl-settings.tsx");
 const { configureVoxlFrame } = await server.ssrLoadModule("/src/voxl-frame.ts");
 const { setCSRF } = await server.ssrLoadModule("/src/api.ts");
-const { PeoplePage } = await server.ssrLoadModule("/src/settings-pages.tsx");
+const { PeoplePage, OnlinePage } = await server.ssrLoadModule("/src/settings-pages.tsx");
 
 const t = (key, values = {}) =>
   key.replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? `{${name}}`));
+
+test("people and online settings distinguish external people by their source server", () => {
+  const visitor = {
+    id: "visitor", username: "external:visitor", nickname: "Alice",
+    source_server_id: "source-id", source_server_name: "Office",
+    state: "online", devices: 1,
+  };
+  const data = { users: [visitor, { id: "local", username: "alice", nickname: "Alice" }], status: { Online: [visitor] } };
+  const people = renderToStaticMarkup(createElement(PeoplePage, { data, run() {}, t }));
+  assert.match(people, /<strong>Alice · Office<\/strong>/);
+  assert.match(people, /<strong>Alice<\/strong>/);
+  const online = renderToStaticMarkup(createElement(OnlinePage, { data, t }));
+  assert.match(online, /Alice · Office/);
+});
 
 test("client settings hide remote connection until the host authorizes availability", () => {
   for (const secure of [false, true]) {

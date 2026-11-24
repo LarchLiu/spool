@@ -87,6 +87,62 @@ func TestProfilesAreAuthenticatedScopedAndSeparateFromChats(t *testing.T) {
 	}
 }
 
+func TestFederationDisplayProfilesIncludeSourceServer(t *testing.T) {
+	s, source := testStore(t), testStore(t)
+	local := testUser(t, s, "local")
+	peer := federationPairForTest(t, s, source, "https://source.spool.test", true, nil, nil)
+	peer, err := federationPeer(s.db, peer.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	person := federationSubject{ID: "source-user", Nickname: "Alice", Avatar: DefaultAvatar(), SourceRef: randomToken(), Remaining: loginSessionTTL.Milliseconds()}
+	token, _, err := s.federationLogin(peer, person, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := s.authenticate(token)
+	if err != nil || identity.User.Nickname != person.Nickname || identity.User.SourceServerID != peer.ID || identity.User.SourceServerName != peer.Name {
+		t.Fatalf("login identity omitted source: %+v, %v", identity.User, err)
+	}
+	var presence Presence
+	presence.Touch(identity, "device", true)
+	check := func(name string) ProfileSnapshot {
+		t.Helper()
+		online := presence.List(s)
+		if len(online) != 1 || online[0].Nickname != person.Nickname || online[0].SourceServerID != peer.ID || online[0].SourceServerName != name {
+			t.Fatalf("presence omitted source: %+v", online)
+		}
+		snapshot, err := s.userProfiles(local.ID, online)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var found bool
+		for _, profile := range snapshot.People {
+			if profile.ID == identity.User.ID {
+				found = true
+				if profile.Nickname != person.Nickname || profile.SourceServerID != peer.ID || profile.SourceServerName != name {
+					t.Fatalf("profile omitted source: %+v", profile)
+				}
+			} else if profile.SourceServerID != "" || profile.SourceServerName != "" {
+				t.Fatalf("local account acquired a source: %+v", profile)
+			}
+		}
+		if !found {
+			t.Fatal("external profile missing")
+		}
+		return snapshot
+	}
+	before := check(peer.Name)
+	peer.Name = "Renamed Office"
+	if err := s.UpdateFederationPeer(peer); err != nil {
+		t.Fatal(err)
+	}
+	after := check(peer.Name)
+	if after.Revision <= before.Revision {
+		t.Fatal("server rename did not advance profile revision")
+	}
+}
+
 func TestProfileRevisionPersistsAndRenamesAreIndependentOfChatActivity(t *testing.T) {
 	s := testStore(t)
 	alice, bob := testUser(t, s, "alice"), testUser(t, s, "bob")

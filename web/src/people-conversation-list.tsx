@@ -1,3 +1,4 @@
+import { userName } from "./user-name";
 import { useEffect, useRef } from "react";
 import { Plus } from "lucide-react";
 import type { AvatarIdentity } from "./avatar";
@@ -120,12 +121,12 @@ export function PeopleConversationList({
                 type="button"
                 role="option"
                 aria-label={
-                  isGroup ? person.nickname : `${person.nickname} (${status})`
+                  isGroup ? userName(person) : `${userName(person)} (${status})`
                 }
                 aria-selected={person.id === value}
                 tabIndex={person.id === value ? 0 : -1}
                 data-conversation={person.id}
-                title={person.nickname}
+                title={userName(person)}
                 onClick={() => onSelect(person.id)}
               >
                 {isGroup ? (
@@ -146,7 +147,7 @@ export function PeopleConversationList({
                   </span>
                 )}
                 <span className="direct-message-conversation-name">
-                  {person.nickname}
+                  {userName(person)}
                 </span>
                 {!!unread[person.id] && (
                   <small className="direct-unread">

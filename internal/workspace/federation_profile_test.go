@@ -170,7 +170,7 @@ func TestFederationCheckUpdatesProfileWithoutChangingLocalAccess(t *testing.T) {
 		t.Fatal("profile refresh restored a removed project membership")
 	}
 	profileAfter, err := sb.userProfiles(want.ID, nil)
-	if err != nil || profileAfter.Revision != profileBefore.Revision+1 || len(profileAfter.People) != 1 || profileAfter.People[0] != (UserProfile{ID: want.ID, Nickname: want.Nickname, Avatar: avatar}) {
+	if err != nil || profileAfter.Revision != profileBefore.Revision+1 || len(profileAfter.People) != 1 || profileAfter.People[0] != (UserProfile{ID: want.ID, Nickname: want.Nickname, Avatar: avatar, SourceServerID: want.SourceServerID, SourceServerName: want.SourceServerName}) {
 		t.Fatal("profile snapshot was not updated transactionally", err)
 	}
 	if changes := sub.take(); changes != changeProfiles|changePresence {

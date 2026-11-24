@@ -1,3 +1,4 @@
+import { userName } from "./user-name";
 import { appURL, appBasePath } from "./app-path";
 import React, {
   useCallback,
@@ -2621,7 +2622,7 @@ function App() {
                             input.find((part) => part.timestamp)?.timestamp ||
                             turn.started_at
                           }
-                          author={operator?.nickname}
+                          author={operator ? userName(operator) : undefined}
                           locale={locale}
                           t={t}
                         />
@@ -2689,7 +2690,7 @@ function App() {
                       <div className="user-message">
                         {!!value.files.length && <AttachmentCards files={value.files} chatID={chat.id} t={t} onPreview={(file, url) => setPreview({ file, url })} />}
                         {!!value.message.trim() && <UserMessage text={value.message} t={t} />}
-                        <MessageFooter role="user" text={value.message} author={displayUser?.nickname} timestamp={value.createdAt} locale={locale} t={t}
+                        <MessageFooter role="user" text={value.message} author={displayUser ? userName(displayUser) : undefined} timestamp={value.createdAt} locale={locale} t={t}
                           leading={<DeliveryStatus status={value.status} t={t} onEdit={() => editLocalDelivery(value)} />} />
                       </div>
                       <TurnOperatorAvatar person={displayUser || undefined} />

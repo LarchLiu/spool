@@ -286,3 +286,22 @@ func TestMessagePushNamesAndLocales(t *testing.T) {
 		t.Fatalf("default group name was not translated: %q", title)
 	}
 }
+
+func TestMessagePushExternalSenderIncludesSourceServer(t *testing.T) {
+	f := newMessagePushFixture(t)
+	source := testStore(t)
+	peer := federationPairForTest(t, f.app.store, source, "https://source.spool.test", true, nil, nil)
+	if _, err := f.app.store.db.Exec(`INSERT INTO federation_users VALUES(?,?,?)`, peer.ID, "source-user", f.users["alice"].ID); err != nil {
+		t.Fatal(err)
+	}
+	job := pushJob{kind: "direct_message", messageFrom: f.users["alice"].ID, messageTo: f.users["bob"].ID}
+	title, _ := f.app.pushNotificationText("en", job)
+	if want := "Spool - Message from alice · " + peer.Name; title != want {
+		t.Fatalf("external sender title = %q, want %q", title, want)
+	}
+	job.kind = "group_message"
+	_, body := f.app.pushNotificationText("en", job)
+	if want := "alice · " + peer.Name + " sent a message in this group. Open Spool to view it."; body != want {
+		t.Fatalf("external sender body = %q, want %q", body, want)
+	}
+}

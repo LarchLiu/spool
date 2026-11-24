@@ -72,7 +72,7 @@ final class NativeTurnActions extends LinearLayout {
 
         void bind(JSONObject action, JSONObject person) {
             String id = action.optString("user_id"), kind = action.optString("kind");
-            String name = person == null ? id : person.optString("nickname", id);
+            String name = person == null ? id : NativeAvatars.name(person);
             String key = kind.equals("stop") ? "Stopped by {name}" : kind.equals("approve") ? "Approved by {name}" : kind.equals("respond") ? "Answered by {name}" : kind.equals("cancel") ? "Cancelled by {name}" : "Denied by {name}";
             String label = ui.t(key, "name", name), summary = action.optString("summary");
             if (person != null && ui.avatars != null) ui.avatars.bind(avatar, ui, person, 18);

@@ -63,6 +63,20 @@ const t = (key, values = {}) =>
 const render = (Component, props) =>
   renderToStaticMarkup(createElement(Component, { resolve, ...props }));
 
+test("external operators show their source in participants, turn authors and actions", () => {
+  const visitor = { ...bob, source_server_id: "source-id", source_server_name: "Office" };
+  const lookup = profileLookup({ revision: 1, people: [alice, visitor] });
+  assert.match(render(ChatOperatorAvatars, { chat, resolve: lookup }), /aria-label="Alice, Bob · Office, Spool Bot"/);
+  assert.match(render(ChatOperatorList, { people: [visitor] }), /<span>Bob · Office<\/span>/);
+  assert.match(render(TurnOperatorAvatar, { person: visitor }), /title="Bob · Office"/);
+  const html = render(TurnActions, {
+    chat,
+    turn: { ...turn, actions: [{ id: "approve", user_id: bob.id, kind: "approve", created_at: 1000 }] },
+    locale: "en", t, resolve: lookup,
+  });
+  assert.match(html, /Approved by Bob · Office/);
+});
+
 test("turn identity uses actual sender and falls back to the creator for legacy turns", () => {
   assert.deepEqual(turnOperator(chat, turn, null, resolve), bob);
   assert.deepEqual(

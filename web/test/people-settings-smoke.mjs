@@ -18,7 +18,7 @@ const server = await createServer({
   cacheDir: join(scratch, "vite-people"),
   logLevel: "silent",
   optimizeDeps: { entries: ["desktop.html"] },
-  server: { host: "127.0.0.1", port: 0, hmr: false, watch: null },
+  server: { host: "127.0.0.1", port: 0, strictPort: false, hmr: false, watch: null },
 });
 let context;
 try {
@@ -89,7 +89,7 @@ try {
     `http://127.0.0.1:${server.httpServer.address().port}/desktop.html`,
   );
   const visitor = page.getByRole("button", {
-    name: /External visitor.*Federated sign-in/,
+    name: /External visitor · Source Office.*Federated sign-in/,
   });
   await page.getByText(/External people appear after their first trusted sign-in/).waitFor();
   await page.getByText("Federation source: Source Office", { exact: true }).waitFor();
@@ -110,7 +110,7 @@ try {
   await editor.getByText(/managed by its source server/).waitFor();
   await editor.getByText("source-server-id", { exact: false }).waitFor();
   await editor.getByText("source-person-id", { exact: true }).waitFor();
-  await editor.getByText("External visitor", { exact: true }).waitFor();
+  await editor.getByText("External visitor · Source Office", { exact: true }).waitFor();
   assert.equal(await editor.getByRole("textbox").count(), 0);
   assert.equal(await editor.getByLabel("Password", { exact: true }).count(), 0);
   assert.equal(await editor.locator('input[type="password"]').count(), 0);
@@ -126,7 +126,7 @@ try {
     assert.equal(await control.getAttribute("aria-checked"), "true");
   }
   await save.click();
-  await editor.getByText("Updated by source", { exact: true }).waitFor();
+  await editor.getByText("Updated by source · Source Office", { exact: true }).waitFor();
   assert.deepEqual(await page.evaluate(() => window.savedPeople), [
     { id: "visitor", disabled: true, remote_desktop: true, adb_bridge: true },
   ]);

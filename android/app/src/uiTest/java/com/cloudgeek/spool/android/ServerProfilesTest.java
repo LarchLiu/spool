@@ -84,11 +84,12 @@ public class ServerProfilesTest {
 
     @Test public void displayAccountsSurviveRestartWithoutSavingCredentialsOrPermissions() throws Exception {
         ServerProfiles profiles = new ServerProfiles(new ConnectionPlan("", "", ConnectionMode.DIRECT));
-        profiles.active().account = new org.json.JSONObject("{id:'alice',nickname:'Alice',username:'alice',csrf:'secret',password:'secret',remote_desktop:true,avatar:{style:'clay',seed:'Alice',token:'secret'}}");
+        profiles.active().account = new org.json.JSONObject("{id:'alice',nickname:'Alice',username:'alice',source_server_id:'source-id',source_server_name:'Office',csrf:'secret',password:'secret',remote_desktop:true,avatar:{style:'clay',seed:'Alice',token:'secret'}}");
         String encoded = profiles.encode();
         assertFalse(encoded.contains("secret")); assertFalse(encoded.contains("remote_desktop"));
         ServerProfiles restored = ServerProfiles.restore(encoded, "legacy", new ConnectionPlan("", "", ConnectionMode.DIRECT));
         assertEquals("Alice", restored.active().account.getString("nickname"));
+        assertEquals("Alice · Office", NativeAvatars.name(restored.active().account));
         assertEquals("clay", restored.active().account.getJSONObject("avatar").getString("style"));
         assertFalse(restored.active().account.has("csrf")); assertFalse(restored.active().account.getJSONObject("avatar").has("token"));
     }

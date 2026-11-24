@@ -1,3 +1,4 @@
+import { userName } from "./user-name";
 import { useEffect, useRef, useState } from "react";
 import { Users, X } from "lucide-react";
 import type { AvatarIdentity } from "./avatar";
@@ -144,7 +145,7 @@ export function PeopleGroupPicker({
                   }
                 />
                 <UserAvatar person={person} size={26} />
-                <span>{person.nickname}</span>
+                <span>{userName(person)}</span>
               </label>
             ))}
           </fieldset>

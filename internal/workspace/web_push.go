@@ -408,7 +408,16 @@ func (a *App) pushNotificationText(language string, job pushJob) (string, string
 	title, message := "Spool - Task succeeded", "A task has finished. Open Spool to view it."
 	var sender, titleName, bodyName string
 	if job.isMessage() {
-		_ = a.store.db.QueryRow(`SELECT nickname FROM users WHERE id=? AND disabled=0`, job.messageFrom).Scan(&sender)
+		var sourceID, sourceName string
+		_ = a.store.db.QueryRow(`SELECT u.nickname,COALESCE(fu.peer_id,''),COALESCE(json_extract(fp.config,'$.name'),'')
+			FROM users u LEFT JOIN federation_users fu ON fu.user_id=u.id LEFT JOIN federation_peers fp ON fp.id=fu.peer_id
+			WHERE u.id=? AND u.disabled=0`, job.messageFrom).Scan(&sender, &sourceID, &sourceName)
+		if sourceID != "" {
+			if strings.TrimSpace(sourceName) == "" {
+				sourceName = sourceID
+			}
+			sender += " · " + sourceName
+		}
 		sender = pushDisplayName(sender)
 	}
 	switch job.kind {

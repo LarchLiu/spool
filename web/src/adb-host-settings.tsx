@@ -1,3 +1,4 @@
+import { userName } from "./user-name";
 import { useState } from "react";
 import type { PageProps } from "./settings-ui";
 import { Card, Row, Toggle } from "./settings-ui";
@@ -11,7 +12,7 @@ export function ADBHostSettings({ data, run, t }: PageProps) {
   const enabled = !!data.settings.adb_bridge_enabled;
   const owner = (id: string) => {
     const person = data.users.find((person) => person.id === id);
-    return person ? person.nickname || person.username : id;
+    return person ? userName(person) : id;
   };
   return (
     <Card title={t("ADB bridge")}>

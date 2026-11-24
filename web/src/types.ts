@@ -1,10 +1,9 @@
 import type { AvatarConfig } from "./avatar";
+import type { NamedPerson } from "./user-name";
 
 export type Backend = "codex" | "claude";
-export type User = {
-  id: string;
+export type User = NamedPerson & {
   username: string;
-  nickname: string;
   avatar?: AvatarConfig;
 };
 export type Project = {

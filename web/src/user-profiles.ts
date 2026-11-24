@@ -1,6 +1,9 @@
 import type { AvatarIdentity } from "./avatar";
 
-export type UserProfile = Pick<AvatarIdentity, "id" | "nickname" | "avatar">;
+export type UserProfile = Pick<
+  AvatarIdentity,
+  "id" | "nickname" | "avatar" | "source_server_id" | "source_server_name"
+>;
 export type ProfileSnapshot = { revision: number; people: UserProfile[] };
 
 export const emptyProfiles: ProfileSnapshot = { revision: -1, people: [] };

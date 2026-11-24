@@ -1,3 +1,4 @@
+import { userName } from "./user-name";
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, LoaderCircle, UserPlus, X } from "lucide-react";
 import type { AvatarIdentity } from "./avatar";
@@ -81,7 +82,7 @@ export function DirectMessagePanel(props: DirectMessagePanelProps) {
     <dialog
       ref={dialog}
       className="direct-message-panel"
-      aria-label={peer.nickname}
+      aria-label={userName(peer)}
       aria-modal="false"
       style={{
         left: floating.bounds.x,
@@ -274,7 +275,7 @@ function DirectMessageContent({
         className="direct-message-log"
         ref={log}
         role="log"
-        aria-label={isGroup ? peer.nickname : t("Private messages")}
+        aria-label={isGroup ? userName(peer) : t("Private messages")}
         aria-live="polite"
         aria-relevant="additions"
         tabIndex={0}
@@ -307,8 +308,8 @@ function DirectMessageContent({
               <span
                 className="direct-message-avatar"
                 role="img"
-                aria-label={author.nickname}
-                title={author.nickname}
+                aria-label={userName(author)}
+                title={userName(author)}
               >
                 <UserAvatar person={author} size={28} />
               </span>

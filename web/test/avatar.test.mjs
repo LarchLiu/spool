@@ -15,6 +15,7 @@ import {
   defaultAvatar,
 } from "../.test-build/avatar.js";
 import { AvatarStack, UserAvatar } from "../.test-build/user-avatar.js";
+import { userName } from "../.test-build/user-name.js";
 
 const user = { id: "user-alice", nickname: "Alice", username: "alice" };
 const imageSVG = (person) => {
@@ -22,6 +23,21 @@ const imageSVG = (person) => {
   assert.ok(uri.startsWith("data:image/svg+xml;charset=utf-8,"));
   return decodeURIComponent(uri.slice(uri.indexOf(",") + 1));
 };
+
+test("external display names identify their source without changing automatic avatars", () => {
+  const visitor = {
+    ...user,
+    source_server_id: "source-id",
+    source_server_name: "Source Office",
+  };
+  assert.equal(userName(visitor), "Alice · Source Office");
+  assert.equal(userName({ ...visitor, source_server_name: " " }), "Alice · source-id");
+  assert.equal(userName(user), "Alice");
+  assert.equal(userName({ ...user, source_server_name: "Other" }), "Alice");
+  assert.equal(avatarDataURI(visitor), avatarDataURI(user));
+  const html = renderToStaticMarkup(createElement(AvatarStack, { people: [visitor] }));
+  assert.match(html, /title="Alice · Source Office"/);
+});
 
 test("the style picker contains exactly the requested eight styles in order", () => {
   assert.deepEqual(avatarStyles, [

@@ -1,3 +1,4 @@
+import { userName } from "./user-name";
 import {
   useEffect,
   useId,
@@ -118,7 +119,7 @@ export function ChatOperatorAvatars({
   }, [open]);
 
   if (!people.length) return null;
-  const names = people.map((person) => person.nickname).join(", ");
+  const names = people.map((person) => userName(person)).join(", ");
   return (
     <>
       <button
@@ -162,7 +163,7 @@ export function ChatOperatorList({ people }: { people: AvatarIdentity[] }) {
       {people.map((person) => (
         <li key={person.id}>
           <UserAvatar person={person} size={28} />
-          <span>{person.nickname}</span>
+          <span>{userName(person)}</span>
         </li>
       ))}
     </ul>
@@ -175,8 +176,8 @@ export function TurnOperatorAvatar({ person }: { person?: AvatarIdentity }) {
     <span
       className="turn-operator-avatar"
       role="img"
-      aria-label={person.nickname}
-      title={person.nickname}
+      aria-label={userName(person)}
+      title={userName(person)}
     >
       <UserAvatar person={person} size={28} />
     </span>
@@ -210,22 +211,22 @@ export function TurnActions({
         const label =
           action.kind === "stop"
             ? t("Stopped by {name}", {
-                name: person?.nickname || action.user_id,
+                name: person ? userName(person) : action.user_id,
               })
             : action.kind === "respond"
               ? t("Answered by {name}", {
-                  name: person?.nickname || action.user_id,
+                  name: person ? userName(person) : action.user_id,
                 })
               : action.kind === "cancel"
                 ? t("Cancelled by {name}", {
-                    name: person?.nickname || action.user_id,
+                    name: person ? userName(person) : action.user_id,
                   })
                 : action.kind === "approve"
                   ? t("Approved by {name}", {
-                      name: person?.nickname || action.user_id,
+                      name: person ? userName(person) : action.user_id,
                     })
                   : t("Denied by {name}", {
-                      name: person?.nickname || action.user_id,
+                      name: person ? userName(person) : action.user_id,
                     });
         return (
           <li key={action.id}>

@@ -1,3 +1,4 @@
+import { userName } from "./user-name";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, RefreshCw, X } from "lucide-react";
 import {
@@ -90,7 +91,7 @@ export function AvatarDialog({
         <div className="avatar-preview">
           <UserAvatar person={{ ...user, avatar: draft }} size={80} />
           <div>
-            <strong>{name}</strong>
+            <strong>{userName(user)}</strong>
             <p>
               {draft.seed ? t("Picked by you") : t("Generated from your name")}
             </p>

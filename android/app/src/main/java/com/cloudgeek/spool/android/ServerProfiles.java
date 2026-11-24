@@ -91,7 +91,7 @@ final class ServerProfiles {
         JSONObject result = new JSONObject();
         if (user == null || user.optString("id").isEmpty()) return result;
         try {
-            for (String field : new String[] {"id", "username", "nickname", "source_server_id"}) if (user.has(field)) result.put(field, user.optString(field));
+            for (String field : new String[] {"id", "username", "nickname", "source_server_id", "source_server_name"}) if (user.has(field)) result.put(field, user.optString(field));
             JSONObject avatar = user.optJSONObject("avatar");
             if (avatar != null) result.put("avatar", new JSONObject().put("style", avatar.optString("style")).put("seed", avatar.optString("seed")));
         } catch (Exception error) { throw new IllegalArgumentException(error); }

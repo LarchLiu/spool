@@ -29,6 +29,32 @@ const message = (id, from = "bob", to = "alice") => ({
   sent_at: 123,
 });
 
+test("external people retain their source in online menus, conversation lists and group selection", () => {
+  const visitor = { ...people[0], source_server_id: "source-id", source_server_name: "Office", state: "online" };
+  const common = { people: [visitor], t: key => key };
+  const menu = renderToStaticMarkup(createElement(OnlinePeopleMenu, {
+    ...common, self: "alice", groups: [], unread: {}, unreadMessages: 0,
+    resolvePerson: () => visitor, onInbox() {}, onPeer() {}, onNewGroup() {},
+  }));
+  assert.match(menu, />Bob · Office/);
+  const list = renderToStaticMarkup(createElement(PeopleConversationList, {
+    ...common, value: visitor.id, unread: {}, onSelect() {},
+  }));
+  assert.match(list, /aria-label="Bob · Office \(Offline\)"/);
+  assert.match(list, /class="direct-message-conversation-name">Bob · Office/);
+  const picker = renderToStaticMarkup(createElement(PeopleGroupPicker, {
+    ...common, onSubmit() {}, onClose() {}, onDone() {},
+  }));
+  assert.match(picker, /<span>Bob · Office<\/span>/);
+  const panel = renderToStaticMarkup(createElement(DirectMessagePanel, {
+    ...common, user: "alice", peer: visitor, unread: {}, messages: [message("external")],
+    connected: true, draft: "", sending: false, locale: "en",
+    onSend() {}, onDraftChange() {}, onPeer() {}, onClose() {},
+  }));
+  assert.match(panel, /class="direct-message-panel" aria-label="Bob · Office"/);
+  assert.match(panel, /class="direct-message-avatar" role="img" aria-label="Bob · Office" title="Bob · Office"/);
+});
+
 test("shared online menu preserves mobile inbox, group actions and presence avatars", () => {
   const identities = [{ id: "alice", nickname: "Alice", state: "online" }, { ...people[0], state: "away" }];
   const html = renderToStaticMarkup(createElement(OnlinePeopleMenu, {

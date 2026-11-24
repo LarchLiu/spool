@@ -296,6 +296,10 @@ func (s *Store) UpdateFederationPeer(p FederationPeer) error {
 }
 
 func updateFederationPeerConfig(tx *sql.Tx, p FederationPeer) error {
+	var previousName string
+	if err := tx.QueryRow(`SELECT COALESCE(json_extract(config,'$.name'),'') FROM federation_peers WHERE id=?`, p.ID).Scan(&previousName); err != nil {
+		return err
+	}
 	data, err := json.Marshal(p)
 	if err != nil {
 		return err
@@ -308,6 +312,9 @@ func updateFederationPeerConfig(tx *sql.Tx, p FederationPeer) error {
 		return err
 	} else if n == 0 {
 		return errors.New("Complete server trust approval before configuring this peer")
+	}
+	if previousName != p.Name {
+		return bumpProfileRevision(tx)
 	}
 	return nil
 }
@@ -353,7 +360,7 @@ func (s *Store) commitFederationUsers(tx *sql.Tx, p FederationPeer) error {
 			return err
 		}
 	}
-	return s.notify(tx.Commit(), changeAuth|changeFederationTargets)
+	return s.notify(tx.Commit(), changeAuth|changeFederationTargets|changeProfiles|changePresence)
 }
 
 func validateFederationProjects(tx *sql.Tx, defaults []FederationProject) error {

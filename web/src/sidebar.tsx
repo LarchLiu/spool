@@ -1,3 +1,4 @@
+import { userName } from "./user-name";
 import { appURL } from "./app-path";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -404,7 +405,7 @@ export function Sidebar(props: Props) {
               <UserAvatar person={identity} />
             </button>
             <div>
-              {identity.nickname}
+              {userName(identity)}
               <small title={props.serverName}>{props.serverName}</small>
             </div>
           </>

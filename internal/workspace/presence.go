@@ -7,11 +7,13 @@ import (
 )
 
 type PresenceUser struct {
-	ID       string `json:"id"`
-	Nickname string `json:"nickname"`
-	State    string `json:"state"`
-	Devices  int    `json:"devices"`
-	Avatar   Avatar `json:"avatar"`
+	ID               string `json:"id"`
+	Nickname         string `json:"nickname"`
+	State            string `json:"state"`
+	Devices          int    `json:"devices"`
+	Avatar           Avatar `json:"avatar"`
+	SourceServerID   string `json:"source_server_id,omitempty"`
+	SourceServerName string `json:"source_server_name,omitempty"`
 }
 type presenceClient struct {
 	User      User
@@ -111,7 +113,7 @@ func (p *Presence) List(store *Store) []PresenceUser {
 		}
 		v := byUser[value.User.ID]
 		if v == nil {
-			v = &PresenceUser{ID: user.ID, Nickname: user.Nickname, Avatar: user.Avatar, State: "away"}
+			v = &PresenceUser{ID: user.ID, Nickname: user.Nickname, Avatar: user.Avatar, State: "away", SourceServerID: user.SourceServerID, SourceServerName: user.SourceServerName}
 			byUser[value.User.ID] = v
 		}
 		v.Devices++

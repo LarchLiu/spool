@@ -150,7 +150,7 @@ final class NativeAvatarPicker extends NativeDialog {
         body.addView(gallery);
         space(10);
         int columns = ui.context.getResources().getDisplayMetrics().widthPixels <= ui.dp(400) ? 4 : 6;
-        List<String> choices = NativeAvatars.choices(NativeAvatars.name(person), page);
+        List<String> choices = NativeAvatars.choices(NativeAvatars.baseName(person), page);
         for (int r = 0; r < 12 / columns; r++) {
             LinearLayout row = ui.row();
             for (int c = 0; c < columns; c++) {

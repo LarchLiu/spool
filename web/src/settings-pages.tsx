@@ -1,3 +1,4 @@
+import { userName } from "./user-name";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   ArrowUpRight,
@@ -900,7 +901,7 @@ export function PeoplePage({ data, run, t }: PageProps) {
   usePendingSettingsSave({
     id: "person",
     section: "People",
-    title: `${t("People")} · ${draft.nickname || draft.username || t("New person")}`,
+    title: `${t("People")} · ${userName(draft) || t("New person")}`,
     label: t("Save person"),
     dirty:
       editing &&
@@ -929,7 +930,7 @@ export function PeoplePage({ data, run, t }: PageProps) {
           empty={t("No people yet. Create an account to get started.")}
           items={data.users.map((person) => ({
             id: person.id,
-            title: person.nickname || person.username,
+            title: userName(person),
             description: person.source_server_id
               ? t("Federation source: {server}", {
                   server: person.source_server_name || person.source_server_id,
@@ -983,7 +984,7 @@ export function PeoplePage({ data, run, t }: PageProps) {
                       0 && (
                       <button
                         type="button"
-                        aria-label={`${t("Disconnect desktop")} · ${person.nickname || person.username}`}
+                        aria-label={`${t("Disconnect desktop")} · ${userName(person)}`}
                         onClick={() =>
                           void run({
                             kind: "disconnect-remote-desktop",
@@ -1047,7 +1048,7 @@ export function PeoplePage({ data, run, t }: PageProps) {
           {source ? (
             <>
               <Row title={t("Source user ID")} help={draft.source_user_id} />
-              <Row title={t("Display name")} help={draft.nickname} />
+              <Row title={t("Display name")} help={userName(draft)} />
             </>
           ) : (
             <>
@@ -1265,7 +1266,7 @@ export function OnlinePage({ data, t }: PageProps) {
             <Row
               key={person.id}
               icon={<UserAvatar person={person} size={34} />}
-              title={person.nickname}
+              title={userName(person)}
               help={t("{count} connections", { count: person.devices })}
             >
               <span

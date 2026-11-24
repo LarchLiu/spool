@@ -1,3 +1,4 @@
+import { userName } from "./user-name";
 import { useRef, useState } from "react";
 import {
   FolderCog,
@@ -226,7 +227,7 @@ export function ProjectsPage({ data, run, t }: PageProps) {
             people.map((person) => (
               <Row
                 key={person.id}
-                title={person.nickname}
+                title={userName(person)}
                 help={person.username}
               >
                 {draft.members.includes(person.id) && (
@@ -236,7 +237,7 @@ export function ProjectsPage({ data, run, t }: PageProps) {
                       <div
                         className="settings-member-access"
                         role="group"
-                        aria-label={`${person.nickname} · ${t("In-app permissions")}`}
+                        aria-label={`${userName(person)} · ${t("In-app permissions")}`}
                       >
                         {(["read-only", "create"] as const).map((access) => (
                           <button
@@ -270,7 +271,7 @@ export function ProjectsPage({ data, run, t }: PageProps) {
                       <div
                         className="settings-member-access"
                         role="group"
-                        aria-label={`${person.nickname} · ${t("Shared session permissions")}`}
+                        aria-label={`${userName(person)} · ${t("Shared session permissions")}`}
                       >
                         {(["read-only", "control"] as const).map((access) => (
                           <button
@@ -302,7 +303,7 @@ export function ProjectsPage({ data, run, t }: PageProps) {
                   </div>
                 )}
                 <Toggle
-                  label={`${t("People allowed to use this project")} · ${person.nickname}`}
+                  label={`${t("People allowed to use this project")} · ${userName(person)}`}
                   value={draft.members.includes(person.id)}
                   onChange={(checked) => toggleMember(person.id, checked)}
                 />
@@ -526,7 +527,7 @@ export function ProjectsPage({ data, run, t }: PageProps) {
                             });
                           }}
                         />
-                        {person.nickname}
+                        {userName(person)}
                         <small>{person.username}</small>
                       </label>
                     ))}
