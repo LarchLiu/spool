@@ -71,13 +71,20 @@ func TestClaudeForkedReviewProgressPrecedesAndDoesNotReplaceReport(t *testing.T)
 			}
 			tasks = append(tasks, *event.Part)
 		}
-		if result.Text != "Hello world" || !seenReport || len(tasks) != 3 {
+		if result.Text != "Hello world" || !seenReport || len(tasks) != 6 {
 			t.Fatalf("missing progress or duplicated report: result=%#v tasks=%#v", result, tasks)
 		}
 		if tasks[0].Name != "/code-review" || tasks[0].Native.Status != chatmodel.ToolRunning || tasks[0].Text != "/code-review" ||
 			!strings.Contains(tasks[1].Text, "Checking changed files\nTool: Read\nTool uses: 3") || tasks[1].Native.DurationMs != 1500 ||
-			tasks[2].Native.Status != chatmodel.ToolCompleted || tasks[2].Native.DurationMs != 2000 || tasks[0].ID != tasks[2].ID {
+			tasks[5].Native.Status != chatmodel.ToolCompleted || tasks[5].Native.DurationMs != 2000 || tasks[0].ID != tasks[5].ID {
 			t.Fatalf("incorrect task timeline: %#v", tasks)
+		}
+		if tasks[2].Native.Task.Summary != "Inspecting parser changes" || len(tasks[3].Native.Task.Steps) != 4 {
+			t.Fatalf("fork messages were not linked to task progress: %+v", tasks[3].Native.Task)
+		}
+		read := tasks[3].Native.Task.Steps[3]
+		if read.ID != "review-read" || read.Input != `{"file_path":"/repo/internal/parser/grammar.go"}` || read.Status != chatmodel.ToolRunning || tasks[4].Native.Task.Steps[3].Status != chatmodel.ToolCompleted {
+			t.Fatalf("fork tool step lost its input or outcome: %+v", read)
 		}
 		for _, part := range tasks {
 			if strings.Contains(part.Text, "PRIVATE") {
@@ -90,6 +97,44 @@ func TestClaudeForkedReviewProgressPrecedesAndDoesNotReplaceReport(t *testing.T)
 	}
 	if fixtureCount(t, request, "spawn") != 1 {
 		t.Fatal("review did not reuse the native session")
+	}
+}
+
+func TestClaudeForkedTaskAliasesMessagesByAgentID(t *testing.T) {
+	var tasks claudeTasks
+	var events []AgentEvent
+	emit := func(event AgentEvent) error { events = append(events, event); return nil }
+	for _, id := range []string{"review", "research"} {
+		if _, err := tasks.system(map[string]any{"subtype": "task_started", "task_id": id, "description": "/" + id, "task_type": "local_agent"}, emit); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nested := func(id, parent, kind string, block map[string]any) {
+		t.Helper()
+		if err := tasks.nested(map[string]any{"type": kind, "agent_id": id, "message": map[string]any{"content": []any{block}}}, parent, emit); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nested("review", "fork-review", "assistant", map[string]any{"type": "text", "text": "Reading changes"})
+	nested("research", "fork-research", "assistant", map[string]any{"type": "text", "text": "Reading documentation"})
+	if tasks.tasks["review"].progress.Summary != "Reading changes" || tasks.tasks["research"].progress.Summary != "Reading documentation" {
+		t.Fatal("fork messages lost their task identity")
+	}
+	// Once identified, older wire messages without agent_id use the alias.
+	nested("", "fork-review", "assistant", map[string]any{"type": "tool_use", "id": "review-read", "name": "Read", "input": map[string]any{"file_path": "parser.go"}})
+	nested("review", "fork-review", "assistant", map[string]any{"type": "tool_use", "id": "child", "name": "Agent", "input": map[string]any{"description": "Check edge cases"}})
+	if len(tasks.order) != 3 || tasks.tools["child"].progress.ParentID != "review" {
+		t.Fatal("fork's child lost its parent")
+	}
+	nested("", "fork-review", "user", map[string]any{"type": "tool_result", "tool_use_id": "review-read", "content": "source code"})
+	steps := tasks.tasks["review"].steps
+	if len(steps) != 2 || steps[1].Name != "Read" || steps[1].Status != chatmodel.ToolCompleted || tasks.tasks["research"].progress.ToolUses != 0 {
+		t.Fatalf("fork steps mixed with another task: %+v", steps)
+	}
+	before := len(events)
+	nested("unknown", "unknown-parent", "assistant", map[string]any{"type": "text", "text": "Unrelated output"})
+	if len(events) != before {
+		t.Fatal("unidentified nested output was displayed")
 	}
 }
 

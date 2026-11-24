@@ -119,6 +119,7 @@ func Run(t *testing.T) {
 	claudeModel := "test-model"
 	claudeEffort := "high"
 	claudeMode := "acceptEdits"
+	forwardSubagentText := false
 	turn := 0
 	var goal any
 	var chatter sync.Once
@@ -377,6 +378,8 @@ func Run(t *testing.T) {
 			}
 			body := map[string]any{"models": []any{map[string]any{"value": "test-claude", "displayName": "Test Claude", "description": "Fixture Claude model", "supportedEffortLevels": []string{"low", "high"}}}}
 			if NestedString(value, "request", "subtype") == "initialize" {
+				initialization, _ := value["request"].(map[string]any)
+				forwardSubagentText = initialization["forwardSubagentText"] == true
 				body["commands"] = []any{
 					map[string]any{"name": "code-review", "description": "Review code changes", "argumentHint": "[target]", "aliases": []any{"review"}, "builtin": true},
 					map[string]any{"name": "loop", "description": "Run a prompt on a recurring interval", "argumentHint": "[interval] [prompt]", "builtin": true},
@@ -440,6 +443,17 @@ func Run(t *testing.T) {
 				send(map[string]any{"type": "system", "subtype": "task_started", "task_id": turnID, "description": "/code-review", "task_type": "local_agent", "spawn_depth": 1, "is_backgrounded": false, "ambient": true, "skip_transcript": true, "prompt": "PRIVATE REVIEW PROMPT"})
 				send(map[string]any{"type": "system", "subtype": "task_progress", "task_id": turnID, "description": "/code-review", "summary": "Checking changed files", "last_tool_name": "Read", "usage": map[string]any{"tool_uses": 3, "total_tokens": 1200, "duration_ms": 1500}})
 				send(map[string]any{"type": "assistant", "parent_tool_use_id": "nested-agent", "message": map[string]any{"content": []any{map[string]any{"type": "text", "text": "PRIVATE NESTED OUTPUT"}}}})
+				if forwardSubagentText {
+					// A foreground fork's lifecycle has no tool_use_id. Its wire
+					// messages identify the task through agent_id instead.
+					nested := func(kind string, block map[string]any) {
+						send(map[string]any{"type": kind, "agent_id": turnID, "parent_tool_use_id": "forked-command-code-review", "message": map[string]any{"content": []any{block}}})
+					}
+					nested("user", map[string]any{"type": "text", "text": "PRIVATE REVIEW PROMPT"})
+					nested("assistant", map[string]any{"type": "text", "text": "Inspecting parser changes"})
+					nested("assistant", map[string]any{"type": "tool_use", "id": "review-read", "name": "Read", "input": map[string]any{"file_path": "/repo/internal/parser/grammar.go"}})
+					nested("user", map[string]any{"type": "tool_result", "tool_use_id": "review-read", "content": "PRIVATE FILE CONTENT"})
+				}
 				if strings.Contains(prompt, "wait-progress") {
 					time.Sleep(1500 * time.Millisecond)
 				}

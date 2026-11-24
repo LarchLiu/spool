@@ -138,7 +138,10 @@
     key("Enter");
     await wait(() => [...document.querySelectorAll(".tool-activity-item-summary")].some(row => row.textContent.includes("/code-review") && row.textContent.includes("Running")), "foreground review running progress");
     [...document.querySelectorAll(".tool-activity-item-summary")].find(row => row.textContent.includes("/code-review") && row.textContent.includes("Running")).click();
-    await wait(() => [...document.querySelectorAll(".tool-detail")].some(detail => detail.textContent.includes("Tool uses: 3") && detail.textContent.includes("Duration: 1.5s")), "native review progress details");
+    await wait(() => [...document.querySelectorAll(".tool-task-detail")].some(detail => {
+      const steps = detail.querySelector(".tool-task-steps")?.textContent || "";
+      return steps.includes("Inspecting parser changes") && steps.includes("grammar.go") && detail.textContent.includes("4 tool uses");
+    }), "native review messages and tool steps");
     report.claudeReviewProgress = true;
     if (!(await fetch("/smoke/capture?agent=claude-review-progress")).ok) throw Error("review progress screenshot failed");
     await wait(() => document.querySelector(".picker-summary:not(:disabled)"), "Claude review finished");

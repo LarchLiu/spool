@@ -45,6 +45,7 @@ func TestClaudeForkedReviewUpdatesLiveTaskBeforeFinalReply(t *testing.T) {
 	a := NewApp(s, runner, "", "")
 	t.Cleanup(func() { _ = a.Close() })
 	var statuses []string
+	seenSteps := false
 	result, err := a.runTurn(context.Background(), chat.ID, "/code-review", func(event agent.AgentEvent) error {
 		if event.Part == nil || event.Part.Kind != "tool_use" {
 			return nil
@@ -66,6 +67,11 @@ func TestClaudeForkedReviewUpdatesLiveTaskBeforeFinalReply(t *testing.T) {
 		}
 		task := tasks[0]
 		statuses = append(statuses, task.Tool.Status)
+		for _, step := range task.Tool.Task.Steps {
+			if step.Kind == "read" && step.Path == "…/internal/parser/grammar.go" && step.Status == "completed" {
+				seenSteps = true
+			}
+		}
 		if event.Type == "tool" && !strings.Contains(task.Text, "Tool uses:") {
 			t.Error("live row did not receive native progress", task)
 		}
@@ -77,7 +83,7 @@ func TestClaudeForkedReviewUpdatesLiveTaskBeforeFinalReply(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil || result.Text != "Hello world" || strings.Join(statuses, ",") != "running,running,completed" {
+	if err != nil || result.Text != "Hello world" || !seenSteps || strings.Join(statuses, ",") != "running,running,running,running,running,completed" {
 		t.Fatalf("review lost its progress/report: result=%#v statuses=%v error=%v", result, statuses, err)
 	}
 }

@@ -196,6 +196,12 @@ func (tasks *claudeTasks) result(item, record map[string]any, emit func(AgentEve
 }
 
 func (tasks *claudeTasks) nested(value map[string]any, parent string, emit func(AgentEvent) error) error {
+	// Foreground slash-command forks have no spawning tool call. Their
+	// lifecycle uses task_id, while forwarded messages carry that ID as
+	// agent_id beside a synthetic parent_tool_use_id.
+	if task := tasks.tasks[stringValue(value["agent_id"])]; task != nil {
+		tasks.tools[parent] = task
+	}
 	if tasks.tools[parent] != nil {
 		tasks.heard = time.Now()
 	}

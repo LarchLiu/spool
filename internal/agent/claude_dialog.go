@@ -42,7 +42,9 @@ func claudeInitializeRequest() map[string]any {
 		kinds = append(kinds, kind)
 	}
 	sort.Strings(kinds)
-	return map[string]any{"subtype": "initialize", "hooks": nil, "supportedDialogKinds": kinds}
+	// Forward child messages so their task cards can show what they are doing.
+	// Claude otherwise omits this content from the stream-json transport.
+	return map[string]any{"subtype": "initialize", "hooks": nil, "supportedDialogKinds": kinds, "forwardSubagentText": true}
 }
 
 func claudeDialog(body map[string]any) (approvalProtocol, bool) {
