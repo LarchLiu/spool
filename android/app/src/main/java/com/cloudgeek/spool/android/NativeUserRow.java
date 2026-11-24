@@ -48,7 +48,12 @@ final class NativeUserRow extends ViewGroup {
             if (attachments != null) attachments.retire();
             attachments = null;
         } else {
-            if (attachments == null) attachments = new NativeAttachmentCards(ui, true);
+            if (attachments == null) {
+                attachments = new NativeAttachmentCards(ui, true);
+                // Include the cards' width when sizing the content column. MATCH_PARENT
+                // remeasures them at the narrower message width with the old row height.
+                attachments.setLayoutParams(new LinearLayout.LayoutParams(-2, -2));
+            }
             attachments.bind(files); children.add(attachments); children.add(attachmentGap);
         }
         children.add(message); NativeKeyedViews.sync(content, children);
