@@ -1,6 +1,7 @@
 package adbbridge
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/ecdsa"
@@ -154,7 +155,7 @@ const (
 // command.
 type fakeDevice struct {
 	t        *testing.T
-	socket   deviceSocket
+	socket   net.Conn
 	link     io.ReadWriter
 	security deviceSecurity
 	allow    chan struct{} // closed when the phone's user allows the host's key
@@ -218,17 +219,60 @@ func (d *fakeDevice) online() {
 	d.send(packetCNXN, 0x01000001, 256<<10, []byte("device::ro.product.name=spool;ro.product.model=SpoolFake;ro.product.device=fake;features="))
 }
 
+// bufferedDeviceSocket keeps any bytes read ahead while recognizing the TLS
+// upgrade available to the handshake.
+type bufferedDeviceSocket struct {
+	net.Conn
+	reader *bufio.Reader
+}
+
+func (s bufferedDeviceSocket) Read(p []byte) (int, error) { return s.reader.Read(p) }
+
 func (d *fakeDevice) run() {
+	reader := bufio.NewReader(d.socket)
+	secured := false
+	upgrade := func() bool {
+		conn := tls.Server(bufferedDeviceSocket{d.socket, reader}, d.wirelessDebugging())
+		if err := conn.Handshake(); err != nil {
+			// adbd drops a host whose key it was not paired with.
+			if d.security == wirelessPaired {
+				d.t.Logf("fake device TLS handshake: %v", err)
+			}
+			return false
+		}
+		d.link, reader, secured = conn, bufio.NewReader(conn), true
+		d.online()
+		return true
+	}
 	header := make([]byte, 24)
 	for {
-		if _, err := io.ReadFull(d.link, header); err != nil {
+		// adb queues its STLS reply and starts TLS on separate threads. TLS
+		// can win that race, leaving the reply to arrive inside TLS later.
+		if !secured && (d.security == wirelessPaired || d.security == wirelessUnpaired) {
+			head, err := reader.Peek(4)
+			if err != nil {
+				return
+			}
+			if isTLSClientHello(head) {
+				if !upgrade() {
+					return
+				}
+				continue
+			}
+		}
+		if _, err := io.ReadFull(reader, header); err != nil {
 			return
 		}
 		command := binary.LittleEndian.Uint32(header[0:])
 		arg0 := binary.LittleEndian.Uint32(header[4:])
 		arg1 := binary.LittleEndian.Uint32(header[8:])
-		payload := make([]byte, binary.LittleEndian.Uint32(header[12:]))
-		if _, err := io.ReadFull(d.link, payload); err != nil {
+		length := binary.LittleEndian.Uint32(header[12:])
+		if length > 1<<20 || binary.LittleEndian.Uint32(header[20:]) != command^0xffffffff {
+			d.t.Errorf("invalid ADB header: %x", header)
+			return
+		}
+		payload := make([]byte, length)
+		if _, err := io.ReadFull(reader, payload); err != nil {
 			return
 		}
 		switch command {
@@ -242,13 +286,9 @@ func (d *fakeDevice) run() {
 				d.send(packetSTLS, 0x01000000, 0, nil)
 			}
 		case packetSTLS:
-			secured := tls.Server(d.socket, d.wirelessDebugging())
-			if err := secured.Handshake(); err != nil {
-				// adbd drops a host whose key it was not paired with.
+			if !secured && !upgrade() {
 				return
 			}
-			d.link = secured
-			d.online()
 		case packetAUTH:
 			switch arg0 {
 			case authSignature:
@@ -306,6 +346,81 @@ func (d *fakeDevice) wirelessDebugging() *tls.Config {
 			}
 			return nil
 		},
+	}
+}
+
+func expectDevicePacket(t *testing.T, link io.Reader, command uint32) []byte {
+	t.Helper()
+	header := make([]byte, 24)
+	if _, err := io.ReadFull(link, header); err != nil {
+		t.Fatal(err)
+	}
+	if got := binary.LittleEndian.Uint32(header); got != command {
+		t.Fatalf("device sent command %#x, want %#x", got, command)
+	}
+	length := binary.LittleEndian.Uint32(header[12:])
+	if length > 1<<20 {
+		t.Fatalf("device sent oversized payload: %d", length)
+	}
+	payload := make([]byte, length)
+	if _, err := io.ReadFull(link, payload); err != nil {
+		t.Fatal(err)
+	}
+	return payload
+}
+
+// Exercise both adb thread orderings without depending on the installed adb
+// or the scheduler to put ClientHello ahead of the STLS reply.
+func TestFakeWirelessDeviceTLSUpgrade(t *testing.T) {
+	for _, tlsFirst := range []bool{false, true} {
+		name := "STLS before ClientHello"
+		if tlsFirst {
+			name = "ClientHello before STLS"
+		}
+		t.Run(name, func(t *testing.T) {
+			phone, host := net.Pipe()
+			d := &fakeDevice{t: t, socket: phone, link: phone, security: wirelessPaired, closing: map[uint32]uint32{}}
+			finished := make(chan struct{})
+			go func() {
+				defer close(finished)
+				defer phone.Close()
+				d.run()
+			}()
+			t.Cleanup(func() {
+				host.Close()
+				phone.Close()
+				<-finished
+			})
+			if err := host.SetDeadline(time.Now().Add(patience)); err != nil {
+				t.Fatal(err)
+			}
+			peer := &fakeDevice{link: host}
+			peer.send(packetCNXN, 0x01000001, 1<<20, nil)
+			expectDevicePacket(t, host, packetSTLS)
+			if !tlsFirst {
+				peer.send(packetSTLS, 0x01000000, 0, nil)
+			}
+			conn := tls.Client(host, &tls.Config{
+				Certificates:       d.wirelessDebugging().Certificates,
+				MinVersion:         tls.VersionTLS13,
+				InsecureSkipVerify: true, // adb accepts any phone certificate.
+				// Avoid session-ticket writes blocking on the unbuffered pipe.
+				SessionTicketsDisabled: true,
+			})
+			if err := conn.Handshake(); err != nil {
+				t.Fatal(err)
+			}
+			peer.link = conn
+			expectDevicePacket(t, conn, packetCNXN)
+			if tlsFirst {
+				peer.send(packetSTLS, 0x01000000, 0, nil)
+			}
+			peer.send(packetOPEN, 1, 0, []byte("shell:echo spool\x00"))
+			expectDevicePacket(t, conn, packetOKAY)
+			if got := string(expectDevicePacket(t, conn, packetWRTE)); got != "spool\n" {
+				t.Fatalf("shell output = %q, want %q", got, "spool\n")
+			}
+		})
 	}
 }
 
