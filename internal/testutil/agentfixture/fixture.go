@@ -72,7 +72,7 @@ func Catalog() chatmodel.CodexCatalog {
 	return chatmodel.CodexCatalog{
 		DefaultModel: "test-model", DefaultEffort: "high",
 		Models: []chatmodel.CodexModel{
-			{Model: "test-model", DisplayName: "Test Model", DefaultEffort: "medium", Efforts: []chatmodel.ReasoningOption{{Effort: "low"}, {Effort: "medium"}, {Effort: "high"}, {Effort: "xhigh"}}},
+			{Model: "test-model", DisplayName: "Test Model", Description: "Fixture coding model", DefaultEffort: "medium", Efforts: []chatmodel.ReasoningOption{{Effort: "low"}, {Effort: "medium"}, {Effort: "high"}, {Effort: "xhigh"}}},
 			{Model: "other-model", DisplayName: "Other Model", DefaultEffort: "low", Efforts: []chatmodel.ReasoningOption{{Effort: "low"}, {Effort: "high"}}},
 			{Model: "fixed-model", DisplayName: "Fixed Model", DefaultEffort: "none", Efforts: []chatmodel.ReasoningOption{}},
 		},
@@ -375,7 +375,7 @@ func Run(t *testing.T) {
 					claudeEffort = "high"
 				}
 			}
-			body := map[string]any{"models": []any{map[string]any{"value": "test-claude", "displayName": "Test Claude", "supportedEffortLevels": []string{"low", "high"}}}}
+			body := map[string]any{"models": []any{map[string]any{"value": "test-claude", "displayName": "Test Claude", "description": "Fixture Claude model", "supportedEffortLevels": []string{"low", "high"}}}}
 			if NestedString(value, "request", "subtype") == "initialize" {
 				body["commands"] = []any{
 					map[string]any{"name": "code-review", "description": "Review code changes", "argumentHint": "[target]", "aliases": []any{"review"}, "builtin": true},

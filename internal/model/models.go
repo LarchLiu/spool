@@ -12,9 +12,20 @@ type ReasoningOption struct {
 	Description string `json:"description"`
 }
 
+// EntitySummary is maintained separately from provider-discovered capabilities.
+type EntitySummary struct {
+	Text      string  `json:"text"`
+	Version   string  `json:"version"`
+	UpdatedAt int64   `json:"updated_at"`
+	Backend   Backend `json:"backend,omitempty"`
+	Model     string  `json:"model,omitempty"`
+}
+
 type CodexModel struct {
 	Model         string            `json:"model"`
 	DisplayName   string            `json:"displayName"`
+	Description   string            `json:"description,omitempty"`
+	Summary       *EntitySummary    `json:"summary,omitempty"`
 	DefaultEffort string            `json:"defaultReasoningEffort"`
 	Efforts       []ReasoningOption `json:"supportedReasoningEfforts"`
 	Hidden        bool              `json:"hidden,omitempty"`
@@ -62,6 +73,10 @@ func (c CodexCatalog) Clone() CodexCatalog {
 	c.Models = append([]CodexModel(nil), c.Models...)
 	for i := range c.Models {
 		c.Models[i].Efforts = append([]ReasoningOption(nil), c.Models[i].Efforts...)
+		if summary := c.Models[i].Summary; summary != nil {
+			value := *summary
+			c.Models[i].Summary = &value
+		}
 	}
 	c.Commands = append([]SlashCommand(nil), c.Commands...)
 	for i := range c.Commands {

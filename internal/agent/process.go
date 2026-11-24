@@ -47,6 +47,7 @@ type chatProcess struct {
 	directory           string
 	writableDirectories []string
 	proxyEnvironment    []string
+	summaryOnly         bool
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	process             *agentProcess
@@ -137,7 +138,7 @@ func (r *CLIRunner) reserve(request AgentRequest) (*chatProcess, error) {
 			default:
 			}
 		}
-		if chat != nil && (dead || chat.ctx.Err() != nil || chat.backend != request.Backend || chat.binary != request.Binary || chat.directory != request.WorkingDirectory || !slices.Equal(chat.writableDirectories, request.WritableDirectories) || !slices.Equal(chat.proxyEnvironment, proxyEnvironment)) {
+		if chat != nil && (dead || chat.ctx.Err() != nil || chat.backend != request.Backend || chat.binary != request.Binary || chat.directory != request.WorkingDirectory || chat.summaryOnly != request.SummaryOnly || !slices.Equal(chat.writableDirectories, request.WritableDirectories) || !slices.Equal(chat.proxyEnvironment, proxyEnvironment)) {
 			chat.cancel()
 			chat = nil
 		}
@@ -145,6 +146,7 @@ func (r *CLIRunner) reserve(request AgentRequest) (*chatProcess, error) {
 	if chat == nil {
 		ctx, cancel := context.WithCancel(context.Background())
 		chat = &chatProcess{backend: request.Backend, binary: request.Binary, directory: request.WorkingDirectory, writableDirectories: slices.Clone(request.WritableDirectories), proxyEnvironment: proxyEnvironment, ctx: ctx, cancel: cancel}
+		chat.summaryOnly = request.SummaryOnly
 		r.chats[request.ChatID] = chat
 	}
 	chat.busy = true
@@ -381,6 +383,10 @@ func startAgentProcess(ctx context.Context, request AgentRequest) (*agentProcess
 		}
 		if request.NativeSessionID != "" {
 			args = append(args, "--resume", request.NativeSessionID)
+		}
+		if request.SummaryOnly {
+			args = append(args, "--tools", "", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--disable-slash-commands", "--no-session-persistence")
+			args = append(args, "--system-prompt", request.SystemPrompt)
 		}
 	}
 	cmd := exec.CommandContext(ctx, request.Binary, args...)

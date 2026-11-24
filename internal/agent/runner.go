@@ -33,6 +33,9 @@ type AgentRequest struct {
 	Attachments         []chatmodel.AgentAttachment
 	Files               []chatmodel.AgentAttachment
 	Approve             chatmodel.ApprovalHandler
+	// SummaryOnly uses a fresh, non-persistent session with no write grants.
+	SummaryOnly  bool
+	SystemPrompt string
 }
 
 // AgentEvent types: session, turn, model, delta, message, retract, part,

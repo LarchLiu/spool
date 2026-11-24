@@ -20,6 +20,10 @@ function snapshot() {
     users: [{ id: "person", nickname: "Person" }],
     projects: [{ id: "project", members: ["person"] }],
     agents: [{ backend: "codex", catalog: { models: [{ model: "test" }] } }],
+    description_prompts: {
+      project: { value: "Project prompt" },
+      agent: { value: "Agent prompt" },
+    },
     preferences: { theme: "system", language: "en" },
     updates: { Downloaded: 0 },
     update_preferences: { automatic_checks: true },
@@ -65,6 +69,26 @@ test("changed status shares unrelated nested references without mutating either 
 
 test("page dependencies distinguish presence, membership, settings and appearance changes", () => {
   const cases = [
+    [
+      (next) => (next.description_prompts.agent.value = "Custom prompt"),
+      ["Projects", "Agents"],
+    ],
+    [
+      (next) =>
+        (next.projects[0].summary = {
+          text: "Project description",
+          version: "v1",
+        }),
+      ["Projects"],
+    ],
+    [
+      (next) =>
+        (next.agents[0].catalog.models[0].summary = {
+          text: "Model description",
+          version: "v1",
+        }),
+      ["Projects", "Agents"],
+    ],
     [(next) => next.status.Online.push({ id: "person" }), ["Online"]],
     [
       (next) => (next.status.RemoteDesktopConnections = { person: 2 }),
@@ -105,7 +129,16 @@ test("page dependencies distinguish presence, membership, settings and appearanc
     [(next) => (next.crash_log = "/fixture/crash.log"), ["About"]],
     [(next) => (next.status.RestartRequired = true), ["Service", "Network"]],
     [(next) => (next.status.WebDetecting = true), ["Service"]],
-    [(next) => (next.status.WebProxyCheck = { PublicURL: "https://spool.test", Port: 8788, Preflight: true, Succeeded: true }), ["Service"]],
+    [
+      (next) =>
+        (next.status.WebProxyCheck = {
+          PublicURL: "https://spool.test",
+          Port: 8788,
+          Preflight: true,
+          Succeeded: true,
+        }),
+      ["Service"],
+    ],
     [
       (next) => next.agents[0].catalog.models.push({ model: "new" }),
       ["Agents", "Projects"],
@@ -122,6 +155,20 @@ test("page dependencies distinguish presence, membership, settings and appearanc
         !changed.includes(section),
         section,
       );
+  }
+  for (const kind of ["project", "agent"]) {
+    const scope = kind === "project" ? "Projects" : "Agents";
+    assert.equal(
+      settingsCommandScope({
+        kind: "save-descriptions",
+        descriptions: { kind },
+      }),
+      scope,
+    );
+    assert.equal(
+      settingsCommandScope({ kind: "save-description-prompt", target: kind }),
+      scope,
+    );
   }
 });
 

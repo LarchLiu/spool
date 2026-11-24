@@ -134,6 +134,7 @@ func (r *CLIRunner) CodexModels(ctx context.Context) (chatmodel.CodexCatalog, er
 			}
 			model.Efforts = validEfforts
 			model.DisplayName = chatmodel.Clip(model.DisplayName, 180)
+			model.Description = chatmodel.Clip(model.Description, 8192)
 			if model.DisplayName == "" {
 				model.DisplayName = model.Model
 			}

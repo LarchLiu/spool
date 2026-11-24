@@ -51,13 +51,19 @@ func TestSettingsBridgeRejectsCallsWithoutDesktopPage(t *testing.T) {
 		if _, err := bridge.Snapshot(context.Background()); err == nil {
 			t.Fatal("snapshot allowed without calling page")
 		}
-		for _, kind := range []string{"stop-service", "save-tsnet-auth-key", "tsnet-login", "copy-tsnet-url", "install-voxl", "set-remote-desktop", "disconnect-remote-desktop", "set-adb-bridge", "unregister-relay", "detect-web-proxy", "delete-person"} {
+		for _, kind := range []string{"stop-service", "save-tsnet-auth-key", "tsnet-login", "copy-tsnet-url", "install-voxl", "set-remote-desktop", "disconnect-remote-desktop", "set-adb-bridge", "unregister-relay", "detect-web-proxy", "delete-person", "save-descriptions", "save-description-prompt"} {
 			if _, err := bridge.Execute(context.Background(), settingsCommand{Kind: kind}); err == nil {
 				t.Fatal("mutation allowed without calling page", kind)
 			}
 		}
 		if _, err := bridge.ChoosePath(context.Background(), "directory", ""); err == nil {
 			t.Fatal("dialog allowed without calling page")
+		}
+		if _, err := bridge.SummarizeDescriptions(context.Background(), workspace.DescriptionRequest{}); err == nil {
+			t.Fatal("summary generation allowed without calling page")
+		}
+		if _, err := bridge.CancelDescriptionSummary(context.Background(), "request"); err == nil {
+			t.Fatal("summary cancellation allowed without calling page")
 		}
 		if _, err := bridge.ReleaseNotes(context.Background()); err == nil {
 			t.Fatal("release history allowed without calling page")

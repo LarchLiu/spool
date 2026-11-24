@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { SettingsBack, SettingsList } from "./settings-list";
+import { DescriptionEditor } from "./settings-descriptions";
 import { CustomSelect } from "./custom-select";
 import {
   automationModelChoices,
@@ -222,6 +223,21 @@ export function ProjectsPage({ data, run, t }: PageProps) {
             />
           </Row>
         </Card>
+        <DescriptionEditor
+          key={draft.id || "new"}
+          data={data}
+          run={run}
+          t={t}
+          target={{ kind: "project", target: draft.id }}
+          disabled={!draft.id}
+          fields={[
+            {
+              id: "project",
+              label: t("Project description"),
+              summary: live?.summary,
+            },
+          ]}
+        />
         <Card title={t("People allowed to use this project")}>
           {people.length ? (
             people.map((person) => (

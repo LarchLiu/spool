@@ -1,5 +1,5 @@
 import type { UIPreferences } from "./preferences";
-import type { Online, User } from "./types";
+import type { Online, User, Agent, EntitySummary } from "./types";
 
 export const settingsSections = [
   "Service",
@@ -62,6 +62,7 @@ export type Automation = {
 export type ManagedProject = {
   id: string;
   name: string;
+  summary?: EntitySummary;
   path: string;
   members: string[];
   member_access: Record<string, "read-only" | "control">;
@@ -75,24 +76,33 @@ export type ManagedProject = {
   last_error?: string;
   last_chat?: string;
 };
-export type ManagedAgent = {
-  backend: Backend;
-  enabled: boolean;
-  installed: boolean;
+export type ManagedAgent = Agent & {
   executable: string;
   resolved_path: string;
   version: string;
   error?: string;
   checked_at: number;
-  catalog: {
-    defaultModel?: string;
-    defaultEffort?: string;
-    models: {
-      model: string;
-      displayName: string;
-      supportedReasoningEfforts: { reasoningEffort: string }[];
-    }[];
-  };
+};
+export type DescriptionTarget = { kind: "project" | "agent"; target: string };
+export type DescriptionEdit = {
+  id: string;
+  text: string;
+  expected_version: string;
+  backend?: Backend;
+  model?: string;
+};
+export type DescriptionRequest = DescriptionTarget & {
+  id: string;
+  backend: Backend;
+  model: string;
+  reasoning_effort: string;
+  prompt: string;
+  language: string;
+};
+export type DescriptionResult = {
+  items: DescriptionEdit[];
+  backend: Backend;
+  model: string;
 };
 export type UpdatePreferences = {
   automatic_checks: boolean;
@@ -114,6 +124,7 @@ export type ReleaseHistory = {
 };
 export type ServiceChangeTarget = "web" | "relay" | "tsnet";
 export type SettingsSnapshot = {
+  description_prompts?: Record<string, { default: string; value: string }>;
   section: string;
   message: string;
   settings: ServerSettings;
@@ -229,6 +240,15 @@ export type SettingsCommand =
         | Pick<Person, "id" | "disabled" | "remote_desktop" | "adb_bridge">;
     }
   | { kind: "save-project"; project: ManagedProject }
+  | {
+      kind: "save-descriptions";
+      descriptions: DescriptionTarget & { items: DescriptionEdit[] };
+    }
+  | {
+      kind: "save-description-prompt";
+      target: "project" | "agent";
+      text: string;
+    }
   | { kind: "delete-person"; target: string }
   | { kind: "save-agent"; backend: Backend; enabled: boolean; path: string }
   | { kind: "save-github" | "check-repository"; path: string }
@@ -296,6 +316,8 @@ export function settingsCall<T>(
     | "CancelRelayPairing"
     | "AddressQRCode"
     | "CancelWebProxyDetection"
+    | "SummarizeDescriptions"
+    | "CancelDescriptionSummary"
     | "RegisterRelay",
   ...args: unknown[]
 ): Promise<T> {

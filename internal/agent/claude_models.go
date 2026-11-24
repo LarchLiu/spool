@@ -57,7 +57,7 @@ func DiscoverClaudeModels(ctx context.Context, binary string) (chatmodel.CodexCa
 			if name == "" {
 				name = id
 			}
-			entry := chatmodel.CodexModel{Model: id, DisplayName: name, Efforts: []chatmodel.ReasoningOption{}}
+			entry := chatmodel.CodexModel{Model: id, DisplayName: name, Description: chatmodel.Clip(stringValue(model["description"]), 8192), Efforts: []chatmodel.ReasoningOption{}}
 			if levels, ok := model["supportedEffortLevels"].([]any); ok && model["supportsEffort"] != false {
 				seen := make(map[string]bool)
 				for _, level := range levels {

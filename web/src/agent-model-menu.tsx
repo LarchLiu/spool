@@ -73,7 +73,14 @@ export function AgentModelMenu({
               </h3>
               {(models.length
                 ? models
-                : [{ model: "", displayName: t("CLI default") }]
+                : [
+                    {
+                      model: "",
+                      displayName: t("CLI default"),
+                      description: "",
+                      summary: undefined,
+                    },
+                  ]
               ).map((model) => {
                 const active =
                   item.backend === selection.backend &&
@@ -89,7 +96,13 @@ export function AgentModelMenu({
                     disabled={!available}
                     onClick={() => onChange(chooseModel(item, model.model))}
                   >
-                    <span>{model.displayName}</span>
+                    <span
+                      title={
+                        model.summary?.text || model.description || undefined
+                      }
+                    >
+                      {model.displayName}
+                    </span>
                     {active && <Check size={14} />}
                   </button>
                 );

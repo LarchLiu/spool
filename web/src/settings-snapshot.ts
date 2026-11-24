@@ -75,11 +75,14 @@ export function settingsPageDataEqual(
         a.projects === b.projects &&
         a.users === b.users &&
         a.agents === b.agents &&
+        a.description_prompts === b.description_prompts &&
         a.github_path === b.github_path &&
         a.github_message === b.github_message
       );
     case "Agents":
-      return a.agents === b.agents;
+      return (
+        a.agents === b.agents && a.description_prompts === b.description_prompts
+      );
     case "Online":
       return a.status.Online === b.status.Online;
     case "Appearance":
@@ -121,6 +124,10 @@ export function settingsCommandScope(
   command: SettingsCommand,
 ): SettingsSection | undefined {
   switch (command.kind) {
+    case "save-descriptions":
+      return command.descriptions.kind === "project" ? "Projects" : "Agents";
+    case "save-description-prompt":
+      return command.target === "project" ? "Projects" : "Agents";
     case "start-service":
     case "stop-service":
     case "restart-service":

@@ -177,6 +177,21 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 			"cwd": request.WorkingDirectory, "approvalPolicy": "on-request", "approvalsReviewer": reviewer,
 			"sandbox": "workspace-write",
 		}
+		if request.SummaryOnly {
+			config, err := p.codexRPC(ctx, "config/read", map[string]any{"includeLayers": false, "cwd": request.WorkingDirectory})
+			if err != nil {
+				return result, err, false
+			}
+			settings, _ := config["config"].(map[string]any)
+			servers, _ := settings["mcp_servers"].(map[string]any)
+			overrides := map[string]any{"web_search": "disabled", "features.multi_agent": false}
+			for name := range servers {
+				overrides["mcp_servers."+name+".enabled"] = false
+			}
+			params["config"] = overrides
+			params["sandbox"], params["approvalPolicy"], params["ephemeral"] = "read-only", "never", true
+			params["baseInstructions"] = request.SystemPrompt
+		}
 		if request.Model != "" {
 			params["model"] = request.Model
 		}
@@ -315,6 +330,10 @@ func (p *agentProcess) runCodex(ctx context.Context, request AgentRequest, emit 
 		"approvalPolicy": "on-request", "approvalsReviewer": reviewer,
 		"sandboxPolicy": map[string]any{"type": "workspaceWrite", "writableRoots": append([]string{request.WorkingDirectory}, request.WritableDirectories...), "networkAccess": false},
 		"input":         input,
+	}
+	if request.SummaryOnly {
+		params["approvalPolicy"] = "never"
+		params["sandboxPolicy"] = map[string]any{"type": "readOnly"}
 	}
 	if request.Model != "" {
 		params["model"] = request.Model

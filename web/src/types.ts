@@ -9,6 +9,7 @@ export type User = NamedPerson & {
 export type Project = {
   id: string;
   name: string;
+  summary?: EntitySummary;
   archived: boolean;
   shared_chats: boolean;
   shared_local_chats?: boolean;
@@ -50,9 +51,18 @@ export type ProjectFile = {
   truncated: boolean;
 };
 export type Effort = { reasoningEffort: string; description: string };
+export type EntitySummary = {
+  text: string;
+  version: string;
+  updated_at: number;
+  backend?: Backend;
+  model?: string;
+};
 export type Model = {
   model: string;
   displayName: string;
+  description?: string;
+  summary?: EntitySummary;
   defaultReasoningEffort: string;
   supportedReasoningEfforts: Effort[];
 };
@@ -76,6 +86,7 @@ export type AgentCommand = {
 };
 export type Agent = {
   backend: Backend;
+  summary?: EntitySummary;
   enabled: boolean;
   installed: boolean;
   version: string;

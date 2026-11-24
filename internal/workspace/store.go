@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS spool_native_sessions(backend TEXT NOT NULL,native_se
 CREATE TABLE IF NOT EXISTS session_workspaces(session_id TEXT PRIMARY KEY REFERENCES sessions(id),directory TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS agents(backend TEXT PRIMARY KEY,body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS entity_summaries(kind TEXT NOT NULL,target TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(kind,target));
 CREATE TABLE IF NOT EXISTS project_automations(project_id TEXT PRIMARY KEY REFERENCES projects(id),body TEXT NOT NULL,next_run_at INTEGER NOT NULL,last_run_at INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '',last_chat_id TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS automation_runs(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),instance TEXT NOT NULL,chat_id TEXT NOT NULL DEFAULT '',status TEXT NOT NULL,started_at INTEGER NOT NULL,finished_at INTEGER NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS automation_runs_chat ON automation_runs(chat_id,project_id);

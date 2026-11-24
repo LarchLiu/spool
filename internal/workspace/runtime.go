@@ -57,6 +57,7 @@ type Service struct {
 	relay               *relayRuntime
 	relayRegistering    bool
 	relayDevices        *relay.Devices
+	descriptionCalls    map[string]context.CancelFunc
 }
 type ServiceStatus struct {
 	Running                  bool
@@ -316,6 +317,9 @@ func (s *Service) Restart() error {
 }
 
 func (s *Service) stopLocked() error {
+	for _, cancel := range s.descriptionCalls {
+		cancel()
+	}
 	s.stopWebProxyDetectionLocked()
 	s.webProxyCheck = nil
 	if s.relay != nil {

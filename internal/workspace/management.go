@@ -48,19 +48,20 @@ type UserInput struct {
 const productionBcryptCost = 12
 
 type Project struct {
-	ID                 string            `json:"id"`
-	Name               string            `json:"name"`
-	Path               string            `json:"-"`
-	Archived           bool              `json:"archived"`
-	SharedChats        bool              `json:"shared_chats"`
-	SharedLocalChats   bool              `json:"shared_local_chats"`
-	AllowExternalFiles bool              `json:"allow_external_files"`
-	CreatedAt          int64             `json:"created_at"`
-	Members            []string          `json:"-"`
-	MemberAccess       map[string]string `json:"-"`
-	MemberOwnAccess    map[string]string `json:"-"`
-	CanCreate          *bool             `json:"can_create,omitempty"`
-	Issues             IssuesAutomation  `json:"-"`
+	ID                 string                   `json:"id"`
+	Name               string                   `json:"name"`
+	Summary            *chatmodel.EntitySummary `json:"summary,omitempty"`
+	Path               string                   `json:"-"`
+	Archived           bool                     `json:"archived"`
+	SharedChats        bool                     `json:"shared_chats"`
+	SharedLocalChats   bool                     `json:"shared_local_chats"`
+	AllowExternalFiles bool                     `json:"allow_external_files"`
+	CreatedAt          int64                    `json:"created_at"`
+	Members            []string                 `json:"-"`
+	MemberAccess       map[string]string        `json:"-"`
+	MemberOwnAccess    map[string]string        `json:"-"`
+	CanCreate          *bool                    `json:"can_create,omitempty"`
+	Issues             IssuesAutomation         `json:"-"`
 }
 type Settings struct {
 	ServerName           string `json:"server_name"`
@@ -365,7 +366,12 @@ func (s *Store) Projects() ([]Project, error) {
 	if err != nil {
 		return nil, err
 	}
+	summaries, err := s.entitySummaries("project")
+	if err != nil {
+		return nil, err
+	}
 	for i := range out {
+		out[i].Summary = summaries[out[i].ID]
 		if out[i].Issues, err = s.IssuesAutomation(out[i].ID); err != nil {
 			return nil, err
 		}
@@ -396,6 +402,9 @@ func (s *Store) Projects() ([]Project, error) {
 func (s *Store) Project(id string) (Project, error) {
 	var v Project
 	err := s.db.QueryRow(`SELECT id,name,path,archived,shared_chats,created_at,COALESCE((SELECT enabled FROM project_local_sharing WHERE project_id=projects.id),0),COALESCE((SELECT allow_external_files FROM project_file_access WHERE project_id=projects.id),1) FROM projects WHERE id=?`, id).Scan(&v.ID, &v.Name, &v.Path, &v.Archived, &v.SharedChats, &v.CreatedAt, &v.SharedLocalChats, &v.AllowExternalFiles)
+	if err == nil {
+		v.Summary, err = s.entitySummary("project", id)
+	}
 	return v, err
 }
 func (s *Store) SaveProject(v Project) (Project, error) {

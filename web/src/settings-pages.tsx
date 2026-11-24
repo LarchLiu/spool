@@ -26,6 +26,7 @@ import {
   type UpdatePreferences,
 } from "./settings-client";
 import { SettingsBack, SettingsList } from "./settings-list";
+import { DescriptionEditor } from "./settings-descriptions";
 import { usePendingSettings, usePendingSettingsSave } from "./settings-pending";
 import { ThemePicker } from "./theme-picker";
 import { VoxlSettings } from "./voxl-settings";
@@ -906,10 +907,7 @@ export function PeoplePage({ data, run, t }: PageProps) {
           server: person.source_server_name || person.source_server_id,
         })
       : person.username,
-    status: [
-      person.source_server_id && t("Federated sign-in"),
-      t("Disabled"),
-    ]
+    status: [person.source_server_id && t("Federated sign-in"), t("Disabled")]
       .filter(Boolean)
       .join(" · "),
     icon: <UserAvatar person={person} size={34} />,
@@ -1267,7 +1265,12 @@ export function AgentsPage(props: PageProps) {
     </>
   );
 }
-function AgentCard({ agent, run, t }: PageProps & { agent: ManagedAgent }) {
+function AgentCard({
+  agent,
+  data,
+  run,
+  t,
+}: PageProps & { agent: ManagedAgent }) {
   const [path, setPath] = useState(agent.executable);
   const [enabled, setEnabled] = useState(agent.enabled);
   const [original, setOriginal] = useState({
@@ -1347,6 +1350,22 @@ function AgentCard({ agent, run, t }: PageProps & { agent: ManagedAgent }) {
           ))}
         </details>
       </Card>
+      <DescriptionEditor
+        key={agent.backend}
+        data={data}
+        run={run}
+        t={t}
+        target={{ kind: "agent", target: agent.backend }}
+        fields={[
+          { id: "agent", label: name, summary: agent.summary },
+          ...(agent.catalog.models ?? []).map((model) => ({
+            id: "model:" + model.model,
+            label: model.displayName || model.model,
+            summary: model.summary,
+            providerDescription: model.description,
+          })),
+        ]}
+      />
       <button type="submit" hidden />
     </form>
   );

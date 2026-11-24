@@ -15,16 +15,17 @@ import (
 )
 
 type AgentInfo struct {
-	Backend       chatmodel.Backend      `json:"backend"`
-	Enabled       bool                   `json:"enabled"`
-	Executable    string                 `json:"-"`
-	ResolvedPath  string                 `json:"-"`
-	Installed     bool                   `json:"installed"`
-	Version       string                 `json:"version"`
-	Catalog       chatmodel.CodexCatalog `json:"catalog"`
-	CheckedAt     int64                  `json:"checked_at"`
-	LastSuccessAt int64                  `json:"last_success_at"`
-	Error         string                 `json:"error,omitempty"`
+	Backend       chatmodel.Backend        `json:"backend"`
+	Summary       *chatmodel.EntitySummary `json:"summary,omitempty"`
+	Enabled       bool                     `json:"enabled"`
+	Executable    string                   `json:"-"`
+	ResolvedPath  string                   `json:"-"`
+	Installed     bool                     `json:"installed"`
+	Version       string                   `json:"version"`
+	Catalog       chatmodel.CodexCatalog   `json:"catalog"`
+	CheckedAt     int64                    `json:"checked_at"`
+	LastSuccessAt int64                    `json:"last_success_at"`
+	Error         string                   `json:"error,omitempty"`
 }
 
 // agentRecord keeps private executable paths in SQLite without exposing them over the chat API.
@@ -36,27 +37,45 @@ type agentRecord struct {
 
 func (s *Store) Agents() ([]AgentInfo, error) {
 	out := []AgentInfo{}
+	summaries, err := s.entitySummaries("agent")
+	if err != nil {
+		return nil, err
+	}
+	models, err := s.entitySummaries("model")
+	if err != nil {
+		return nil, err
+	}
 	for _, backend := range []chatmodel.Backend{chatmodel.BackendCodex, chatmodel.BackendClaude} {
 		var body string
 		err := s.db.QueryRow(`SELECT body FROM agents WHERE backend=?`, backend).Scan(&body)
-		if err == sql.ErrNoRows {
-			out = append(out, AgentInfo{Backend: backend, Enabled: true, Catalog: chatmodel.CodexCatalog{Models: []chatmodel.CodexModel{}}})
-			continue
-		}
-		if err != nil {
+		if err != nil && err != sql.ErrNoRows {
 			return nil, err
 		}
 		var v agentRecord
-		if err = json.Unmarshal([]byte(body), &v); err != nil {
-			return nil, err
+		if err == sql.ErrNoRows {
+			v.AgentInfo = AgentInfo{Backend: backend, Enabled: true, Catalog: chatmodel.CodexCatalog{Models: []chatmodel.CodexModel{}}}
+		} else {
+			if err = json.Unmarshal([]byte(body), &v); err != nil {
+				return nil, err
+			}
 		}
 		v.AgentInfo.Executable = v.Executable
 		v.AgentInfo.ResolvedPath = v.ResolvedPath
+		v.Summary = summaries[string(backend)]
+		for i := range v.Catalog.Models {
+			v.Catalog.Models[i].Summary = models[string(backend)+":"+v.Catalog.Models[i].Model]
+		}
 		out = append(out, v.AgentInfo)
 	}
 	return out, nil
 }
 func (s *Store) saveAgent(v AgentInfo) error {
+	// A discovery refresh owns capabilities, never the maintained descriptions.
+	v.Summary = nil
+	v.Catalog = v.Catalog.Clone()
+	for i := range v.Catalog.Models {
+		v.Catalog.Models[i].Summary = nil
+	}
 	b, err := json.Marshal(agentRecord{v, v.Executable, v.ResolvedPath})
 	if err != nil {
 		return err

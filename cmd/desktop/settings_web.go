@@ -68,29 +68,30 @@ type settingsPerson struct {
 }
 
 type settingsSnapshot struct {
-	Section                string                      `json:"section"`
-	Message                string                      `json:"message"`
-	Settings               workspace.Settings          `json:"settings"`
-	Preferences            workspace.UIPreferences     `json:"preferences"`
-	NotificationsEnabled   bool                        `json:"notifications_enabled"`
-	NotificationsSupported bool                        `json:"notifications_supported"`
-	UpdatePreferences      workspace.UpdatePreferences `json:"update_preferences"`
-	Status                 workspace.ServiceStatus     `json:"status"`
-	Users                  []workspace.User            `json:"users"`
-	Projects               []settingsProject           `json:"projects"`
-	Agents                 []settingsAgent             `json:"agents"`
-	Updates                appupdate.State             `json:"updates"`
-	Version                string                      `json:"version"`
-	Database               string                      `json:"database"`
-	ApplicationLog         string                      `json:"application_log"`
-	CrashLog               string                      `json:"crash_log"`
-	UpdateLog              string                      `json:"update_log"`
-	GitHubPath             string                      `json:"github_path"`
-	GitHubState            string                      `json:"github_state"`
-	GitHubMessage          string                      `json:"github_message"`
-	GitHubLogin            string                      `json:"github_login"`
-	SavedID                string                      `json:"saved_id,omitempty"`
-	Repository             string                      `json:"repository,omitempty"`
+	Section                string                                 `json:"section"`
+	Message                string                                 `json:"message"`
+	Settings               workspace.Settings                     `json:"settings"`
+	Preferences            workspace.UIPreferences                `json:"preferences"`
+	NotificationsEnabled   bool                                   `json:"notifications_enabled"`
+	NotificationsSupported bool                                   `json:"notifications_supported"`
+	UpdatePreferences      workspace.UpdatePreferences            `json:"update_preferences"`
+	Status                 workspace.ServiceStatus                `json:"status"`
+	Users                  []workspace.User                       `json:"users"`
+	Projects               []settingsProject                      `json:"projects"`
+	Agents                 []settingsAgent                        `json:"agents"`
+	Updates                appupdate.State                        `json:"updates"`
+	Version                string                                 `json:"version"`
+	Database               string                                 `json:"database"`
+	ApplicationLog         string                                 `json:"application_log"`
+	CrashLog               string                                 `json:"crash_log"`
+	UpdateLog              string                                 `json:"update_log"`
+	GitHubPath             string                                 `json:"github_path"`
+	GitHubState            string                                 `json:"github_state"`
+	GitHubMessage          string                                 `json:"github_message"`
+	GitHubLogin            string                                 `json:"github_login"`
+	SavedID                string                                 `json:"saved_id,omitempty"`
+	Repository             string                                 `json:"repository,omitempty"`
+	DescriptionPrompts     map[string]workspace.DescriptionPrompt `json:"description_prompts"`
 }
 
 type settingsCommand struct {
@@ -108,6 +109,7 @@ type settingsCommand struct {
 	AuthKey           string                      `json:"auth_key,omitempty"`
 	Text              string                      `json:"text,omitempty"`
 	Address           string                      `json:"address,omitempty"`
+	Descriptions      workspace.DescriptionUpdate `json:"descriptions"`
 }
 
 func settingsDocumentAllowed(address string) bool {
@@ -251,6 +253,9 @@ func (s *desktopSettings) Snapshot(ctx context.Context) (settingsSnapshot, error
 	for _, agent := range agents {
 		v.Agents = append(v.Agents, settingsAgent{agent, agent.Executable, agent.ResolvedPath})
 	}
+	if v.DescriptionPrompts, err = store.DescriptionPrompts(); err != nil {
+		return v, err
+	}
 	v.GitHubPath, err = store.GitHubCLIPath()
 	v.Status, v.Database = p.service.Status(), store.DatabasePath()
 	return v, err
@@ -347,6 +352,23 @@ func settingsTabAllowed(tab string) bool {
 		return true
 	}
 	return false
+}
+
+// Generation bypasses the settings mutation queue; the result is an editable
+// draft. Saving descriptions is a separate, version-checked settings command.
+func (s *desktopSettings) SummarizeDescriptions(ctx context.Context, request workspace.DescriptionRequest) (workspace.DescriptionResult, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return workspace.DescriptionResult{}, err
+	}
+	return s.panel.service.SummarizeDescriptions(ctx, request)
+}
+
+func (s *desktopSettings) CancelDescriptionSummary(ctx context.Context, id string) (bool, error) {
+	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
+		return false, err
+	}
+	s.panel.service.CancelDescriptionSummary(id)
+	return true, nil
 }
 
 func (s *desktopSettings) ReleaseNotes(ctx context.Context) (appupdate.ReleaseHistory, error) {
@@ -668,6 +690,10 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 		savedID = saved.ID
 	case "save-agent":
 		err = p.service.SaveAgent(command.Backend, command.Enabled, command.Path)
+	case "save-descriptions":
+		err = store.SaveDescriptions(command.Descriptions)
+	case "save-description-prompt":
+		err = store.SaveDescriptionPrompt(command.Target, command.Text)
 	case "refresh-agents":
 		err = p.service.Registry.Refresh(ctx)
 	case "save-github", "check-github":
