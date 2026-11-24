@@ -46,7 +46,19 @@ func TestClaudeForkedReviewUpdatesLiveTaskBeforeFinalReply(t *testing.T) {
 	t.Cleanup(func() { _ = a.Close() })
 	var statuses []string
 	seenSteps := false
+	seenReport := false
 	result, err := a.runTurn(context.Background(), chat.ID, "/code-review", func(event agent.AgentEvent) error {
+		if event.Type == "delta" {
+			current, ok := s.Get(chat.ID)
+			if !ok {
+				t.Fatal("chat missing")
+			}
+			snapshot := a.snapshot(current)
+			if event.Part == nil || event.Part.Phase != "final_answer" || len(snapshot.Turns) != 1 || snapshot.Turns[0].Status != chatmodel.StatusRunning || snapshot.Turns[0].Reply != "Hello world" {
+				t.Fatalf("command report unavailable before terminal event: event=%+v turns=%+v", event, snapshot.Turns)
+			}
+			seenReport = true
+		}
 		if event.Part == nil || event.Part.Kind != "tool_use" {
 			return nil
 		}
@@ -83,7 +95,7 @@ func TestClaudeForkedReviewUpdatesLiveTaskBeforeFinalReply(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil || result.Text != "Hello world" || !seenSteps || strings.Join(statuses, ",") != "running,running,running,running,running,completed" {
+	if err != nil || result.Text != "Hello world" || !seenSteps || !seenReport || strings.Join(statuses, ",") != "running,running,running,running,running,completed" {
 		t.Fatalf("review lost its progress/report: result=%#v statuses=%v error=%v", result, statuses, err)
 	}
 }

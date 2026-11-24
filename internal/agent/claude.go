@@ -381,6 +381,31 @@ func (p *agentProcess) runClaude(ctx context.Context, request AgentRequest, emit
 			}
 			continue
 		}
+		if part, command := claudeCommandOutput(value); command {
+			if part.Text == "" || retiredWireMessages[stringValue(value["uuid"])] {
+				continue
+			}
+			id := part.ID
+			if id == "" {
+				id = newMessage()
+			}
+			if uuid := stringValue(value["uuid"]); uuid != "" {
+				wireMessages[uuid] = id
+			}
+			if err := setPhase(id, part.Phase); err != nil {
+				return result, err, false
+			}
+			text := part.Text
+			if previous := messageTexts[id]; strings.HasPrefix(text, previous) {
+				text = text[len(previous):]
+			} else if strings.HasPrefix(previous, text) {
+				text = ""
+			}
+			if err := emitText(id, text); err != nil {
+				return result, err, false
+			}
+			continue
+		}
 		if completed {
 			switch kind := stringValue(value["type"]); {
 			case kind == "assistant" || kind == "stream_event" && nestedString(value, "event", "type") == "message_start":

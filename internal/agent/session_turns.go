@@ -343,7 +343,9 @@ func indexClaudeTurns(path string, offset, end int64, metadata *nativeSessionMet
 					} else if effort := stringValue(record["perTurnEffort"]); effort != "" {
 						turn.ReasoningEffort = effort
 					}
-					meaningful := record["type"] == "user" || record["type"] == "assistant" || record["subtype"] == "turn_duration"
+					output, command := claudeCommandOutput(record)
+					commandReply := command && output.Text != ""
+					meaningful := record["type"] == "user" || record["type"] == "assistant" || record["subtype"] == "turn_duration" || commandReply
 					if stamp := nativeTimestamp(record["timestamp"]); stamp > 0 && meaningful {
 						turn.FinishedAt = stamp
 					}
@@ -358,7 +360,7 @@ func indexClaudeTurns(path string, offset, end int64, metadata *nativeSessionMet
 								turn.Status = chatmodel.StatusCompleted
 							}
 						}
-						if record["subtype"] == "turn_duration" {
+						if record["subtype"] == "turn_duration" || commandReply {
 							turn.Status = chatmodel.StatusCompleted
 						}
 					}

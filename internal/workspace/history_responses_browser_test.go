@@ -13,10 +13,21 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	chatmodel "spool/internal/model"
 )
 
 // Uses a synthetic native review and production history/rendering paths.
 func TestCodexReviewHistoryBrowser(t *testing.T) {
+	testReviewHistoryBrowser(t, chatmodel.BackendCodex, codexReviewHistoryProbe)
+}
+
+func TestClaudeReviewHistoryBrowser(t *testing.T) {
+	testReviewHistoryBrowser(t, chatmodel.BackendClaude, claudeReviewHistoryProbe)
+}
+
+func testReviewHistoryBrowser(t *testing.T, backend chatmodel.Backend, probe string) {
+	t.Helper()
 	chrome := os.Getenv("CHROME_BIN")
 	if chrome == "" {
 		t.Skip("set CHROME_BIN to run the review history browser check")
@@ -27,12 +38,12 @@ func TestCodexReviewHistoryBrowser(t *testing.T) {
 			store := testStore(t)
 			owner := testUser(t, store, "review-owner")
 			project := testProject(t, store, owner)
-			chat, err := store.CreateChat(owner.ID, project.ID, "codex")
+			chat, err := store.CreateChat(owner.ID, project.ID, backend)
 			if err != nil {
 				t.Fatal(err)
 			}
 			path := filepath.Join(t.TempDir(), "rollout.jsonl")
-			data, err := os.ReadFile("../agent/testdata/codex-review.jsonl")
+			data, err := os.ReadFile("../agent/testdata/" + string(backend) + "-review.jsonl")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -42,10 +53,15 @@ func TestCodexReviewHistoryBrowser(t *testing.T) {
 			if err := store.SetNativeSessionPath(chat.ID, "review-thread", path); err != nil {
 				t.Fatal(err)
 			}
-			store.codexHistory.reader = &responseHistory{turns: codexReviewTurns()}
+			if backend == chatmodel.BackendCodex {
+				store.codexHistory.reader = &responseHistory{turns: codexReviewTurns()}
+			}
 			app := NewApp(store, &fakeRunner{}, "", "")
 			cookie, _ := loginRequest(t, app, owner.Username)
 			output := filepath.Join("..", "..", "build", "artifacts", "review-history")
+			if backend == chatmodel.BackendClaude {
+				output = filepath.Join(output, string(backend))
+			}
 			if err := os.MkdirAll(output, 0755); err != nil {
 				t.Fatal(err)
 			}
@@ -60,7 +76,7 @@ func TestCodexReviewHistoryBrowser(t *testing.T) {
 				case "/smoke/probe.js":
 					w.Header().Set("Content-Type", "text/javascript")
 					fmt.Fprintf(w, "window.smokeWidth=%d;\n", width)
-					fmt.Fprint(w, codexReviewHistoryProbe)
+					fmt.Fprint(w, probe)
 				case "/smoke/report":
 					var report map[string]any
 					if json.NewDecoder(r.Body).Decode(&report) == nil {
@@ -150,6 +166,31 @@ document.querySelector(".work-label-toggle").click();
 if(!(await fetch("/smoke/capture")).ok) throw Error("capture failed");
 if(errors.length) throw Error(errors.join("; "));
 Object.assign(report,{complete:true,oneResponse:true,oneWorkLabel:true,modelAndEffort:true,internalToolDetail:true,noOverflow:true,noBrowserErrors:true});
+} catch(error) {report.error=String(error);report.body=document.body.innerText.slice(-2000);}
+await fetch("/smoke/report",{method:"POST",body:JSON.stringify(report)});
+})();`
+
+const claudeReviewHistoryProbe = `(async () => {
+const report = {}, errors = [];
+window.addEventListener("error", event => errors.push(String(event.error || event.message)));
+const wait = async (check, label) => { for (let i=0;i<300;i++) { if(check()) return; await new Promise(resolve=>setTimeout(resolve,25)); } throw Error(label); };
+try {
+await wait(()=>document.querySelector(".assistant-text")?.textContent.includes("Review complete."), "review not loaded");
+const answers=[...document.querySelectorAll(".assistant-text")];
+if(document.querySelectorAll(".turn").length!==1 || answers.length!==1) throw Error("duplicate review");
+const answer=answers[0].textContent;
+if(!answer.includes("Keep command results visible") || !answer.includes("render <config> & flags.") || !answer.includes("reopening history must preserve both findings.")) throw Error("incomplete or escaped report: "+answer);
+if(!answers[0].querySelector("strong") || answers[0].querySelectorAll("li").length!==2) throw Error("review Markdown not rendered");
+const body=document.body.innerText;
+if(body.includes("local-command-") || body.includes("Caveat:") || body.includes("Interrupted")) throw Error("provider metadata leaked or completed review interrupted");
+const label=document.querySelector(".work-label")?.textContent || "";
+if(!label.includes("Claude") || !label.includes("Worked for 20m 34s")) throw Error("missing completed review metadata: "+label);
+if(!sessionStorage.getItem("review-reloaded")) {sessionStorage.setItem("review-reloaded","1");location.reload();return;}
+if (!(await fetch("/smoke/capture")).ok) throw Error("capture failed");
+await wait(()=>innerWidth===window.smokeWidth,"viewport");
+if(document.documentElement.scrollWidth>innerWidth+1) throw Error("review overflow");
+if(errors.length) throw Error(errors.join("; "));
+Object.assign(report,{complete:true,fullReport:true,oneResponse:true,markdown:true,completed:true,reloaded:true,noOverflow:true,noBrowserErrors:true});
 } catch(error) {report.error=String(error);report.body=document.body.innerText.slice(-2000);}
 await fetch("/smoke/report",{method:"POST",body:JSON.stringify(report)});
 })();`

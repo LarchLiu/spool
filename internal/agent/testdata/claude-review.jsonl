@@ -1,0 +1,5 @@
+{"type":"queue-operation","operation":"enqueue","timestamp":"2026-11-25T00:00:00.000Z","content":"/code-review"}
+{"type":"queue-operation","operation":"dequeue","timestamp":"2026-11-25T00:00:00.001Z"}
+{"type":"user","uuid":"review-caveat","parentUuid":null,"promptId":"review-prompt","isMeta":true,"timestamp":"2026-11-25T00:20:34.000Z","message":{"role":"user","content":"<local-command-caveat>The following command output is shown to the user.</local-command-caveat>"}}
+{"type":"user","uuid":"review-input","parentUuid":"review-caveat","promptId":"review-prompt","timestamp":"2026-11-25T00:00:00.100Z","message":{"role":"user","content":"/code-review"}}
+{"type":"system","subtype":"local_command","uuid":"review-report","parentUuid":"review-input","isMeta":true,"level":"info","timestamp":"2026-11-25T00:20:34.000Z","content":"<local-command-stdout>Review complete.\n\n1. **Keep command results visible** — render `&lt;config&gt;` &amp; flags.\n2. **Keep the complete report** — reopening history must preserve both findings.</local-command-stdout>"}

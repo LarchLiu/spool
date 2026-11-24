@@ -48,6 +48,7 @@ func ParseSessionTranscriptFrom(backend chatmodel.Backend, path string, offset i
 func parseTranscriptReader(backend chatmodel.Backend, reader io.Reader, model string, carryNotes bool) (chatmodel.Transcript, error) {
 	transcript := chatmodel.Transcript{Parts: []chatmodel.Part{}}
 	codex := newCodexHistory()
+	claudeCommands := make(map[string]bool)
 	err := readJSONLines(reader, func(line []byte) error {
 		var record map[string]any
 		if json.Unmarshal(line, &record) != nil {
@@ -56,7 +57,14 @@ func parseTranscriptReader(backend chatmodel.Backend, reader io.Reader, model st
 		var parts []chatmodel.Part
 		switch backend {
 		case chatmodel.BackendClaude:
-			parts = claudeSessionParts(record)
+			if part, command := claudeCommandOutput(record); command {
+				if part.Text != "" && (part.ID == "" || !claudeCommands[part.ID]) {
+					parts = []chatmodel.Part{part}
+					claudeCommands[part.ID] = true
+				}
+			} else {
+				parts = claudeSessionParts(record)
+			}
 			message, _ := record["message"].(map[string]any)
 			if id, phase := stringValue(message["id"]), claudeMessagePhase(message); record["type"] == "assistant" && !claudeCompactionRecord(record) && record["isSidechain"] != true && id != "" && phase != "" && message["model"] != "<synthetic>" {
 				// Native Claude files can store blocks of one message on separate
@@ -505,6 +513,12 @@ func codexReasoningSummary(item map[string]any) string {
 func claudeSessionParts(record map[string]any) []chatmodel.Part {
 	if claudeCompactionRecord(record) {
 		return nil
+	}
+	if part, command := claudeCommandOutput(record); command {
+		if part.Text == "" {
+			return nil
+		}
+		return []chatmodel.Part{part}
 	}
 	typ := stringValue(record["type"])
 	if typ == "attachment" {
