@@ -7,7 +7,7 @@ import {
   FilePenLine,
   FilePlus2,
   FileX2,
-  Globe2,
+  Globe,
   List,
   Search,
   Terminal,
@@ -446,7 +446,7 @@ function iconFor(kind: ActivityKind) {
     case "list":
       return List;
     case "web":
-      return Globe2;
+      return Globe;
     case "shell":
       return Terminal;
     case "thinking":

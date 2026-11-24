@@ -3,7 +3,7 @@ import {
   ArrowUpRight,
   FolderOpen,
   Github,
-  Globe2,
+  Globe,
   MonitorUp,
   Plus,
   Radio,
@@ -123,7 +123,7 @@ export function NetworkPage({ data, run, t }: PageProps) {
           />
         </Row>
         <TextField
-          icon={<Globe2 size={15} />}
+          icon={<Globe size={15} />}
           title={t("Proxy URL")}
           value={draft.proxy_url}
           placeholder="http://127.0.0.1:8889"
@@ -135,7 +135,7 @@ export function NetworkPage({ data, run, t }: PageProps) {
           onCommit={() => void autosave.commit("proxy_url")}
         />
         <TextField
-          icon={<Globe2 size={15} />}
+          icon={<Globe size={15} />}
           title={t("No proxy")}
           value={draft.no_proxy}
           placeholder="localhost,127.0.0.1"
@@ -152,7 +152,7 @@ export function NetworkPage({ data, run, t }: PageProps) {
 }
 
 const serviceTabs = [
-  { key: "web", label: "Web", icon: Globe2 },
+  { key: "web", label: "Web", icon: Globe },
   { key: "relay", label: "Relay", icon: Radio },
   { key: "tsnet", label: "Tailscale", icon: ShieldCheck },
   { key: "desktop", label: "Remote desktop", icon: MonitorUp },
