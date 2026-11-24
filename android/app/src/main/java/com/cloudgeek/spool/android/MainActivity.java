@@ -141,6 +141,9 @@ public final class MainActivity extends Activity {
     private NativeMarkwonHistory activityRenderOwner;
     private NativeComposerDock composerDock;
     private NativeSidebar sidebar;
+    private NativeSidebar preparedSidebar;
+    private boolean sidebarPreparationPending;
+    private final Runnable sidebarPreparation = this::prepareSidebar;
     private NativeConnecting connectingView;
     private boolean sidebarPageDeferred;
     private NativeAttachmentCards fileBar;
@@ -715,6 +718,7 @@ public final class MainActivity extends Activity {
             return;
         }
         closeChatMenu();
+        clearSidebarPreparation();
         if (ui != null) ui.dismissMenus();
         closeAvatarPicker();
         closeImagePreview();
@@ -2872,7 +2876,22 @@ public final class MainActivity extends Activity {
         });
         composerDock.swipes(direction -> drawer == null && peoplePanel == null && !settingsOpen
                         && user != null && !routeLoginRequired && ui.activePopover == null,
-                direction -> { if (direction > 0) openSidebar(); else openFiles("."); });
+                new NativeSwipeLayout.SwipeListener() {
+                    private NativeDrawer opening;
+                    @Override public void drag(int direction, float distance) {
+                        if (opening == null) {
+                            if (direction > 0) openSidebar(false); else openFiles(".", false);
+                            opening = (NativeDrawer) drawer;
+                        }
+                        if (drawer == opening) opening.drag(distance, true);
+                    }
+                    @Override public void release(int direction, boolean commit) {
+                        NativeDrawer previous = opening;
+                        opening = null;
+                        if (previous == null || drawer != previous) return;
+                        if (commit) previous.show(); else closeDrawer();
+                    }
+                });
         if (recycler != null) recycler.onFollowing(composerDock::following); else behavior.onFollowing(composerDock::following);
         root.addView(composerDock, new FrameLayout.LayoutParams(-1, -1));
         renderFiles();
@@ -2956,17 +2975,53 @@ public final class MainActivity extends Activity {
 
     private void openSidebar(boolean animate) {
         closeDrawer(false);
+        main.removeCallbacks(sidebarPreparation); sidebarPreparationPending = false;
         panel = "sidebar";
         NativeDrawer overlay = new NativeDrawer(ui, false, this::closeDrawer);
         drawer = overlay;
-        sidebar = new NativeSidebar(ui, sidebarState, this::person, this::closeDrawer, this::openChat, this::newChat,
-                () -> { closeDrawer(); openAvatarPicker(); }, this::openSettings, this::logout, this::loginFromSidebar, this::openAppearance);
-        sidebar.chatOptions((value, anchor) -> openChatOptions(value, anchor, false));
+        sidebar = preparedSidebar == null ? createSidebar() : preparedSidebar;
+        preparedSidebar = null;
         overlay.sheet.addView(sidebar, new LinearLayout.LayoutParams(-1, -1));
         root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
         renderNavigation();
         overlay.show(animate);
         refreshAdbAvailability();
+    }
+
+    private NativeSidebar createSidebar() {
+        NativeSidebar next = new NativeSidebar(ui, sidebarState, this::person, this::closeDrawer, this::openChat, this::newChat,
+                () -> { closeDrawer(); openAvatarPicker(); }, this::openSettings, this::logout, this::loginFromSidebar, this::openAppearance);
+        next.chatOptions((value, anchor) -> openChatOptions(value, anchor, false));
+        return next;
+    }
+
+    private void scheduleSidebarPreparation() {
+        if (sidebarPreparationPending || destroyed || root == null || drawer != null || composerDock == null
+                || user == null || routeLoginRequired || settingsOpen) return;
+        sidebarPreparationPending = true;
+        // Let the current page/closing animation finish before preparing the next entrance.
+        main.postDelayed(sidebarPreparation, 220);
+    }
+
+    private void prepareSidebar() {
+        sidebarPreparationPending = false;
+        if (destroyed || root == null || drawer != null || composerDock == null || user == null
+                || routeLoginRequired || settingsOpen) return;
+        if (preparedSidebar == null) preparedSidebar = createSidebar();
+        bindSidebar(preparedSidebar);
+        int width = root.getWidth() - root.getPaddingLeft() - root.getPaddingRight();
+        int height = root.getHeight() - root.getPaddingTop() - root.getPaddingBottom();
+        if (width > 0 && height > 0) {
+            preparedSidebar.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));
+            preparedSidebar.layout(0, 0, width, height);
+        }
+    }
+
+    private void clearSidebarPreparation() {
+        main.removeCallbacks(sidebarPreparation); sidebarPreparationPending = false;
+        if (preparedSidebar != null) preparedSidebar.deactivate();
+        preparedSidebar = null;
     }
 
     private void closeDrawer() {
@@ -2983,6 +3038,7 @@ public final class MainActivity extends Activity {
         panel = "";
         if (previous instanceof NativeDrawer) ((NativeDrawer) previous).dismiss();
         else if (previous != null) root.removeView(previous);
+        scheduleSidebarPreparation();
         if (sidebarPageDeferred && showPage) {
             sidebarPageDeferred = false;
             readSessionNotification();
@@ -3038,8 +3094,12 @@ public final class MainActivity extends Activity {
         rememberAccount();
         restoreSidebarPreferences();
         sidebarState.select(projectID, chatID, projects, chats);
-        if (!panel.equals("sidebar") || sidebar == null) return;
-        sidebar.servers(serverProfiles, serverConnectionStates(), this::chooseServer, this::addServer, federationTabs(), selectedFederationTab);
+        if (!panel.equals("sidebar") || sidebar == null) { scheduleSidebarPreparation(); return; }
+        bindSidebar(sidebar);
+    }
+
+    private void bindSidebar(NativeSidebar target) {
+        target.servers(serverProfiles, serverConnectionStates(), this::chooseServer, this::addServer, federationTabs(), selectedFederationTab);
         boolean signedIn = user != null && !routeLoginRequired;
         boolean showWorkspace = signedIn || hasWorkspaceCache();
         boolean networkPending = routeSelecting || connecting && !httpsState.equals("Failed");
@@ -3049,13 +3109,14 @@ public final class MainActivity extends Activity {
                 : signedIn ? "" : "Sign in";
         JSONObject account = signedIn ? ServerProfiles.displayAccount(person(user.optString("id")))
                 : serverProfiles.active() == null ? new JSONObject() : serverProfiles.active().account;
-        sidebar.connection(account, action, pending);
-        sidebar.notifications(showWorkspace ? sessionNotifications : new NativeSessionNotifications());
-        sidebar.bind(signedIn ? person(user.optString("id")) : new JSONObject(), showWorkspace ? projects : new JSONArray(),
+        target.connection(account, action, pending);
+        target.notifications(showWorkspace ? sessionNotifications : new NativeSessionNotifications());
+        target.bind(signedIn ? person(user.optString("id")) : new JSONObject(), showWorkspace ? projects : new JSONArray(),
                 showWorkspace ? chats : new JSONArray(), showWorkspace ? projectID : "", showWorkspace ? chatID : "",
                 showWorkspace && chat != null && array(chat, "turns").length() == 0 ? backend : "", busy, !signedIn && showWorkspace);
-        sidebar.desktop(desktopAvailable, this::openDesktop);
+        target.desktop(desktopAvailable, this::openDesktop);
         bindAdbSettings();
+        if (target != sidebar) bindSidebarAdb(target);
     }
 
     private void loginFromSidebar() {
@@ -5228,6 +5289,10 @@ public final class MainActivity extends Activity {
     }
 
     private void openFiles(String path) {
+        openFiles(path, true);
+    }
+
+    private void openFiles(String path, boolean animate) {
         closeDrawer();
         panel = "files";
         NativeDrawer overlay = new NativeDrawer(ui, true, this::closeDrawer);
@@ -5246,7 +5311,7 @@ public final class MainActivity extends Activity {
         fileBrowser.gitPanel.write = this::requestProjectFile;
         overlay.sheet.addView(fileBrowser, new LinearLayout.LayoutParams(-1, -1));
         root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
-        overlay.show();
+        overlay.show(animate);
         fileBrowser.start();
     }
 
@@ -5606,13 +5671,15 @@ public final class MainActivity extends Activity {
 
     private void bindAdbSettings() {
         if (adbSettings != null) adbSettings.bind(adbShare(), adbAvailability, Build.VERSION.SDK_INT >= 30);
-        if (sidebar != null) {
-            boolean active = adbShare != null && adbShare.phase != AdbShare.Phase.IDLE;
-            boolean available = Build.VERSION.SDK_INT >= 30 && !"disabled".equals(adbAvailability)
-                    && (active || adbAvailability != null && !adbAvailability.equals("not_authorized"));
-            sidebar.adb(available, adbShare == null ? "IDLE" : adbShare.phase.name(),
-                    adbShare == null ? "" : NativeAdbSettings.status(adbShare, locale()), this::openAdbDialog);
-        }
+        if (sidebar != null) bindSidebarAdb(sidebar);
+    }
+
+    private void bindSidebarAdb(NativeSidebar target) {
+        boolean active = adbShare != null && adbShare.phase != AdbShare.Phase.IDLE;
+        boolean available = Build.VERSION.SDK_INT >= 30 && !"disabled".equals(adbAvailability)
+                && (active || adbAvailability != null && !adbAvailability.equals("not_authorized"));
+        target.adb(available, adbShare == null ? "IDLE" : adbShare.phase.name(),
+                adbShare == null ? "" : NativeAdbSettings.status(adbShare, locale()), this::openAdbDialog);
     }
 
     private boolean canStartAdbShare() {
@@ -5773,6 +5840,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         closeChatMenu();
+        clearSidebarPreparation();
         if (devicePairingDialog != null) devicePairingDialog.dismiss();
         if (appUpdates != null) appUpdates.close();
         closeDesktop();

@@ -15,7 +15,8 @@ final class NativeDrawer extends NativeSwipeLayout {
     private final boolean right;
     private ValueAnimator animation;
     private float hidden = 1;
-    private boolean dismissing;
+    private float dragOrigin, dragDistance;
+    private boolean dismissing, dragging, opening;
 
     NativeDrawer(NativeUi ui, boolean right) {
         this(ui, right, null);
@@ -25,7 +26,14 @@ final class NativeDrawer extends NativeSwipeLayout {
         super(ui);
         this.right = right;
         swipes(direction -> !dismissing && direction == (right ? 1 : -1),
-                direction -> { if (close != null) close.run(); else dismiss(); });
+                new SwipeListener() {
+                    @Override public void drag(int direction, float distance) { NativeDrawer.this.drag(distance, false); }
+                    @Override public void release(int direction, boolean commit) {
+                        if (!commit) show();
+                        else if (close != null) close.run();
+                        else dismiss();
+                    }
+                });
         sheet = new LinearLayout(ui.context) {
             // The blank sheet consumes taps, but its pressed state belongs only
             // to that background; navigation rows handle their own feedback.
@@ -44,12 +52,28 @@ final class NativeDrawer extends NativeSwipeLayout {
 
     void show(boolean animate) {
         if (dismissing) return;
+        dragging = false;
         if (animate) animateTo(0, null);
         else { stopAnimation(); hidden = 0; positionSheet(); }
     }
 
+    /** Drag distances stay in pixels, including before the new drawer's first layout. */
+    void drag(float distance, boolean opening) {
+        if (dismissing) return;
+        if (!dragging) {
+            stopAnimation();
+            dragging = true;
+            this.opening = opening;
+            dragOrigin = opening ? 1 : hidden;
+            hidden = dragOrigin;
+        }
+        dragDistance = distance;
+        positionSheet();
+    }
+
     void dismiss() {
         if (dismissing) return;
+        dragging = false;
         dismissing = true;
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         Runnable remove = () -> {
@@ -81,7 +105,14 @@ final class NativeDrawer extends NativeSwipeLayout {
     }
 
     private void positionSheet() {
-        sheet.setTranslationX((right ? 1 : -1) * sheet.getMeasuredWidth() * 1.05f * hidden);
+        int width = sheet.getMeasuredWidth();
+        if (width == 0 && getParent() instanceof ViewGroup) {
+            ViewGroup parent = (ViewGroup) getParent();
+            width = Math.max(0, parent.getWidth() - parent.getPaddingLeft() - parent.getPaddingRight()
+                    - getPaddingLeft() - getPaddingRight());
+        }
+        if (dragging && width > 0) hidden = Math.max(0, Math.min(1, dragOrigin + (opening ? -1 : 1) * dragDistance / width));
+        sheet.setTranslationX((right ? 1 : -1) * width * hidden);
     }
 
     @Override protected void onMeasure(int widthSpec, int heightSpec) {

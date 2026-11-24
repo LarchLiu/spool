@@ -50,6 +50,7 @@ final class NativeSidebar extends LinearLayout {
     private NativeServerTabs serverTabs;
     private String serverSignature = "";
     private int epoch;
+    private Runnable restoreScroll;
     private BiConsumer<JSONObject, View> chatOptions = (value, anchor) -> {};
     private NativeSessionNotifications notifications = new NativeSessionNotifications();
 
@@ -192,6 +193,7 @@ final class NativeSidebar extends LinearLayout {
         }
         if (signature.contentEquals(next)) return;
         signature = next.toString();
+        cancelScrollRestore();
         String focus = ""; View focused = findFocus(); if (focused != null && focused.getTag() != null) focus = focused.getTag().toString();
         int y = state.scrollY, renderEpoch = ++epoch;
         navigation.removeAllViews(); projectRows.clear(); chatRows.clear(); moreButtons.clear(); headings.clear();
@@ -218,7 +220,8 @@ final class NativeSidebar extends LinearLayout {
         if (heading("Recents", "recents")) { list(null, false); if (chats.length() == 0) navigation.addView(ui.space(11)); }
         footer();
         View restore = focus.isEmpty() ? null : findViewWithTag(focus);
-        scroll.post(() -> { if (!active || renderEpoch != epoch) return; if (restore != null) restore.requestFocus(); scroll.scrollTo(0, y); });
+        restoreScroll = () -> { restoreScroll = null; if (!active || renderEpoch != epoch) return; if (restore != null) restore.requestFocus(); scroll.scrollTo(0, y); };
+        scroll.post(restoreScroll);
     }
     private void footer() {
         footer.removeAllViews();
@@ -282,7 +285,8 @@ final class NativeSidebar extends LinearLayout {
         adbAvailable = available; adbPhase = phase; adbStatus = status;
         if (active) footer();
     }
-    void deactivate() { active = false; epoch++; for (NativeChatLink row : chatRows) if (row.operators != null) row.operators.deactivate(); }
+    private void cancelScrollRestore() { if (restoreScroll != null) scroll.removeCallbacks(restoreScroll); restoreScroll = null; }
+    void deactivate() { active = false; epoch++; cancelScrollRestore(); for (NativeChatLink row : chatRows) if (row.operators != null) row.operators.deactivate(); }
     @Override protected void onDetachedFromWindow() { deactivate(); super.onDetachedFromWindow(); }
     @Override protected void onDraw(Canvas canvas) { super.onDraw(canvas); border.setColor(ui.line); canvas.drawRect(getWidth() - ui.dp(1), 0, getWidth(), getHeight(), border); }
 }

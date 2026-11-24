@@ -41,7 +41,7 @@ public class NativeSwipeLayoutTest {
             RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
             controller = Robolectric.buildActivity(Activity.class).setup();
             page = new NativeSwipeLayout(new NativeUi(controller.get(), false));
-            page.swipes(direction -> true, swipes::add);
+            page.swipes(direction -> true, (direction, commit) -> { if (commit) swipes.add(direction); });
             content = new View(controller.get()) {
                 @Override public boolean onTouchEvent(MotionEvent event) {
                     if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) cancels.incrementAndGet();
@@ -143,6 +143,41 @@ public class NativeSwipeLayoutTest {
             touch(f.page, down, 60, MotionEvent.ACTION_UP, 110, 300);
             assertTrue(f.swipes.isEmpty());
             swipe(f.page, 100, 300, 140, 0); assertEquals(List.of(1), f.swipes);
+        }
+    }
+
+    @Test public void dragUpdatesStayInTheirInitialDirectionAndMultitouchReleasesOnlyOnce() {
+        try (Fixture f = new Fixture()) {
+            List<Float> positions = new ArrayList<>();
+            List<Boolean> releases = new ArrayList<>();
+            f.page.swipes(direction -> true, new NativeSwipeLayout.SwipeListener() {
+                @Override public void drag(int direction, float distance) { positions.add(direction * distance); }
+                @Override public void release(int direction, boolean commit) { releases.add(commit); }
+            });
+            long down = SystemClock.uptimeMillis();
+            touch(f.page, down, 0, MotionEvent.ACTION_DOWN, 180, 300);
+            touch(f.page, down, 100, MotionEvent.ACTION_MOVE, 260, 300);
+            touch(f.page, down, 200, MotionEvent.ACTION_MOVE, 230, 300);
+            touch(f.page, down, 300, MotionEvent.ACTION_MOVE, 160, 300);
+            assertEquals(List.of(80f, 50f, 0f), positions); assertTrue(releases.isEmpty());
+            pointers(f.page, down, 400, MotionEvent.ACTION_POINTER_DOWN);
+            pointers(f.page, down, 500, MotionEvent.ACTION_POINTER_UP);
+            touch(f.page, down, 600, MotionEvent.ACTION_UP, 300, 300);
+            assertEquals(List.of(false), releases);
+            assertEquals(List.of(80f, 50f, 0f), positions);
+        }
+    }
+
+    @Test public void aFastFlingCanCommitBelowTheDistanceThresholdButASlowDragCannot() {
+        try (Fixture f = new Fixture()) {
+            long down = SystemClock.uptimeMillis();
+            touch(f.page, down, 0, MotionEvent.ACTION_DOWN, 180, 300);
+            touch(f.page, down, 10, MotionEvent.ACTION_MOVE, 200, 300);
+            touch(f.page, down, 20, MotionEvent.ACTION_MOVE, 220, 300);
+            touch(f.page, down, 30, MotionEvent.ACTION_UP, 230, 300);
+            assertEquals(List.of(1), f.swipes);
+            swipe(f.page, 180, 300, 50, 0);
+            assertEquals(List.of(1), f.swipes);
         }
     }
 
