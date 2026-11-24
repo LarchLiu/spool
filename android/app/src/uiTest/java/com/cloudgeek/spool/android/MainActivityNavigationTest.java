@@ -45,7 +45,11 @@ public class MainActivityNavigationTest {
         };
     }
     private void select(MainActivityGoalTest.Harness h, String id) {
+        int pending = h.io.jobs.size();
         h.call("openSidebar"); NativeSidebar sidebar = h.get("sidebar");
+        // Android 11+ refreshes the ADB availability indicator when the sidebar opens.
+        // Complete that unrelated read before exercising the chat-navigation queue below.
+        if (android.os.Build.VERSION.SDK_INT >= 30 && h.io.jobs.size() > pending) run(h, pending);
         if (h.<Boolean>get("busy")) for (NativeProjectRow project : sidebar.projectRows) assertFalse(project.create.isEnabled());
         for (NativeChatLink link : sidebar.chatRows) if (link.open.getTag().toString().endsWith(":" + id)) {
             assertTrue(link.open.performClick());
@@ -58,6 +62,11 @@ public class MainActivityNavigationTest {
             return;
         }
         fail("Missing production sidebar row " + id);
+    }
+    private java.util.List<java.util.List<String>> chatCalls() {
+        return MainActivityGoalTest.ShadowClient.calls.stream()
+                .filter(call -> call.get(1).startsWith("/api/chats"))
+                .collect(java.util.stream.Collectors.toList());
     }
     private void run(MainActivityGoalTest.Harness h, int index) {
         h.io.jobs.remove(index).run(); Shadows.shadowOf(Looper.getMainLooper()).idle();
@@ -211,8 +220,8 @@ public class MainActivityNavigationTest {
             assertEquals("chat-two", h.<JSONObject>get("chat").getString("id"));
             assertEquals("Other draft", h.composer().input.getText().toString()); assertEquals("", h.<String>get("goalError"));
             assertFalse(h.<Boolean>get("busy")); assertNull(h.get("pendingSend")); assertNull(h.get("optimisticSend"));
-            assertEquals("/api/chats/chat-two", MainActivityGoalTest.ShadowClient.calls.get(0).get(1));
-            assertEquals("/api/chats/chat-one/messages", MainActivityGoalTest.ShadowClient.calls.get(1).get(1));
+            assertEquals("/api/chats/chat-two", chatCalls().get(0).get(1));
+            assertEquals("/api/chats/chat-one/messages", chatCalls().get(1).get(1));
         }
     }
 
@@ -239,8 +248,8 @@ public class MainActivityNavigationTest {
             assertEquals("chat-two", h.<String>get("chatID")); assertEquals("chat-two", h.<JSONObject>get("chat").getString("id"));
             assertEquals("Other draft", h.composer().input.getText().toString()); assertEquals("", h.<String>get("goalError"));
             assertFalse(h.<Boolean>get("busy")); assertNull(h.get("pendingSend"));
-            assertEquals("/api/chats", MainActivityGoalTest.ShadowClient.calls.get(1).get(1));
-            assertEquals("/api/chats/created-one/messages", MainActivityGoalTest.ShadowClient.calls.get(2).get(1));
+            assertEquals("/api/chats", chatCalls().get(1).get(1));
+            assertEquals("/api/chats/created-one/messages", chatCalls().get(2).get(1));
         }
     }
 
