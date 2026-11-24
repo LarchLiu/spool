@@ -5020,19 +5020,19 @@ option {
 .desktop-server-tabs .desktop-federation-target[data-state="failed"] {
   border-color: #e05252;
 }
-:is(.server-status-dot, .server-status-key) {
+:is(.server-status-dot, .server-status-trusted) {
   --server-status-color: var(--muted);
 }
-:is(.server-status-dot, .server-status-key)[data-state="connected"] {
+:is(.server-status-dot, .server-status-trusted)[data-state="connected"] {
   --server-status-color: #22a06b;
 }
-:is(.server-status-dot, .server-status-key)[data-state="login"] {
+:is(.server-status-dot, .server-status-trusted)[data-state="login"] {
   --server-status-color: #3987e0;
 }
-:is(.server-status-dot, .server-status-key)[data-state="connecting"] {
+:is(.server-status-dot, .server-status-trusted)[data-state="connecting"] {
   --server-status-color: #d99b20;
 }
-:is(.server-status-dot, .server-status-key)[data-state="error"] {
+:is(.server-status-dot, .server-status-trusted)[data-state="error"] {
   --server-status-color: #e05252;
 }
 .server-status-dot {
@@ -5042,7 +5042,7 @@ option {
   border-radius: 50%;
   background: var(--server-status-color);
 }
-.server-status-key {
+.server-status-trusted {
   flex: 0 0 auto;
   color: var(--server-status-color);
 }

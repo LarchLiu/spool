@@ -2,6 +2,7 @@ package com.cloudgeek.spool.android;
 
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.drawable.Drawable;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.ReplacementSpan;
@@ -48,7 +49,7 @@ final class NativeServerTabs extends NativeTabs {
         SpannableString label = new SpannableString("\ufffc" + server.name + (linked ? "\ufffc" : ""));
         Dot dot = new Dot(ui.dp(8), ui.dp(8));
         label.setSpan(dot, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        if (linked) label.setSpan(new Link(ui.dp(14), ui.dp(6), false), label.length() - 1, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (linked) label.setSpan(new Link(ui, ui.dp(14), ui.dp(6), false), label.length() - 1, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         tab.setText(label);
         // \u6709\u672b\u5c3e\u4e92\u4fe1\u6807\u8bb0\u65f6\uff0c\u4e0d\u518d\u989d\u5916\u8865\u9f50\u524d\u7f6e\u72b6\u6001\u70b9\u7684\u5bbd\u5ea6\u3002
         if (!linked) tab.setPaddingRelative(tab.getPaddingStart(), tab.getPaddingTop(),
@@ -59,7 +60,7 @@ final class NativeServerTabs extends NativeTabs {
         String name = entry.server == null ? entry.target.name : entry.server.name;
         Button tab = addTab(entry.key(), name, () -> choose.accept(entry.key()));
         SpannableString label = new SpannableString("\ufffc" + name);
-        Link link = new Link(ui.dp(14), ui.dp(6), true);
+        Link link = new Link(ui, ui.dp(14), ui.dp(6), true);
         label.setSpan(link, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         tab.setText(label);
         tab.setPaddingRelative(tab.getPaddingStart(), tab.getPaddingTop(), tab.getPaddingEnd() + link.size + link.gap, tab.getPaddingBottom());
@@ -127,26 +128,26 @@ final class NativeServerTabs extends NativeTabs {
                 : state.equals("error") ? ui.error : ui.muted;
     }
 
-    /** A key marks a login owned by a particular source server. */
+    /** A repeat icon marks a login owned by a particular source server. */
     static final class Link extends ReplacementSpan {
         static final int COLOR = 0xff3987e0;
         final int size, gap;
         final boolean leading;
+        final Drawable icon;
         int color = COLOR;
-        Link(int size, int gap, boolean leading) { this.size = size; this.gap = gap; this.leading = leading; }
+        Link(NativeUi ui, int size, int gap, boolean leading) {
+            this.size = size; this.gap = gap; this.leading = leading;
+            icon = NativeIcons.drawable(ui.context, "repeat", color, size);
+        }
         @Override public int getSize(Paint paint, CharSequence text, int start, int end, Paint.FontMetricsInt metrics) { return size + gap; }
         @Override public void draw(Canvas canvas, CharSequence text, int start, int end, float x, int top, int baseline, int bottom, Paint paint) {
-            int previous = paint.getColor(); Paint.Style style = paint.getStyle(); float width = paint.getStrokeWidth();
             Paint.FontMetrics metrics = paint.getFontMetrics();
-            float stroke = Math.max(1f, size / 9f), radius = size * .23f, left = leading ? x : x + gap;
+            float left = leading ? x : x + gap;
             float center = baseline + (metrics.ascent + metrics.descent) / 2f;
-            paint.setColor(color); paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(stroke);
-            canvas.drawCircle(left + size * .29f, center - size * .15f, radius, paint);
-            float from = left + size * .46f, tip = left + size * .88f;
-            canvas.drawLine(from, center, tip, center + size * .42f, paint);
-            canvas.drawLine(tip, center + size * .42f, tip, center + size * .18f, paint);
-            canvas.drawLine(left + size * .72f, center + size * .26f, left + size * .72f, center + size * .08f, paint);
-            paint.setColor(previous); paint.setStyle(style); paint.setStrokeWidth(width);
+            int saved = canvas.save();
+            canvas.translate(left, center - size / 2f);
+            icon.setTint(color); icon.draw(canvas);
+            canvas.restoreToCount(saved);
         }
     }
 

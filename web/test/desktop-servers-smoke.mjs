@@ -602,11 +602,11 @@ try {
         error: await readDotColor("error"),
         disconnected: await readDotColor("disconnected"),
       };
-      const verifyKey = async (button, color) => {
-        const icon = button.locator("svg.lucide-key-round");
+      const verifyTrustedIcon = async (button, color) => {
+        const icon = button.locator("svg.lucide-repeat");
         await icon.waitFor();
         assert.equal(await button.locator("svg, .server-status-dot").count(), 1);
-        const stroke = await icon.evaluate((key) => getComputedStyle(key).stroke);
+        const stroke = await icon.evaluate((element) => getComputedStyle(element).stroke);
         if (color) assert.equal(stroke, color);
         return stroke;
       };
@@ -628,30 +628,30 @@ try {
       });
       // An API response grants the link, but can't provide its status.
       await publishTargets([{ ...labTarget, status: "connected" }, homeTarget]);
-      await verifyKey(labWithStatus("Disconnected"), dotColors.disconnected);
+      await verifyTrustedIcon(labWithStatus("Disconnected"), dotColors.disconnected);
       const homeAlias = tabs.getByRole("button", {
         name: /^本机开发 → Sign in to Home with this account, /,
       });
-      await verifyKey(homeAlias, dotColors.disconnected);
+      await verifyTrustedIcon(homeAlias, dotColors.disconnected);
       await savedHome.waitFor();
       assert.equal(await homeAlias.evaluate((button) => getComputedStyle(button).borderTopStyle), "solid");
 
-      // Native snapshots repaint the keys on the existing page, without a new live list.
+      // Native snapshots repaint the icons on the existing page, without a new live list.
       const nativeLab = { ...labTarget, client_url: "https://LAB.example:443/chat" };
       await publishNativeTargets([{ ...nativeLab, status: "connecting" }]);
-      const connectingColor = await verifyKey(labWithStatus("Connecting…"));
+      const connectingColor = await verifyTrustedIcon(labWithStatus("Connecting…"));
       assert.ok(!Object.values(dotColors).includes(connectingColor));
       await publishNativeTargets([{ ...nativeLab, status: "login" }, { ...homeTarget, status: "error" }], true);
-      await verifyKey(labWithStatus("Connected · Sign-in required"), dotColors.login);
-      await verifyKey(homeAlias, dotColors.error);
-      await verifyKey(tabs.getByRole("button", {
+      await verifyTrustedIcon(labWithStatus("Connected · Sign-in required"), dotColors.login);
+      await verifyTrustedIcon(homeAlias, dotColors.error);
+      await verifyTrustedIcon(tabs.getByRole("button", {
         name: "本机开发, Connected · Signed in · Federated sign-in", exact: true,
       }), dotColors.connected);
       await publishNativeTargets([{ ...nativeLab, status: "error" }]);
-      await verifyKey(labWithStatus("Connection failed"), dotColors.error);
+      await verifyTrustedIcon(labWithStatus("Connection failed"), dotColors.error);
       const unknownTarget = { id: "d".repeat(52), name: "Studio" };
       await publishTargets([labTarget, homeTarget, unknownTarget]);
-      await verifyKey(tabs.getByRole("button", { name: /Sign in to Studio with this account, Disconnected/ }),
+      await verifyTrustedIcon(tabs.getByRole("button", { name: /Sign in to Studio with this account, Disconnected/ }),
         dotColors.disconnected);
       const setFixtureSidebarWidth = (sidebar_width) => page.evaluate((width) => {
         window.spoolServers = { ...window.spoolServers, sidebar_width: width };
@@ -664,7 +664,7 @@ try {
       await setFixtureSidebarWidth(undefined);
       await page.setViewportSize({ width: 1280, height: 860 });
       await publishTargets([{ ...labTarget, client_mode: "" }, homeTarget]);
-      await verifyKey(labWithStatus("Disconnected"), dotColors.disconnected);
+      await verifyTrustedIcon(labWithStatus("Disconnected"), dotColors.disconnected);
 
       await publishProgress("pending");
       const signingIn = tabs.getByRole("button", { name: /Signing in to Shared Lab…/ });
@@ -673,7 +673,7 @@ try {
       assert.ok(await signingIn.isDisabled());
       await publishProgress("failed");
       const retry = tabs.getByRole("button", { name: /Could not sign in to Shared Lab\. Try again\./ });
-      await verifyKey(retry, dotColors.disconnected);
+      await verifyTrustedIcon(retry, dotColors.disconnected);
       assert.deepEqual(await retry.evaluate((button) => {
         const style = getComputedStyle(button);
         return [style.borderTopStyle, style.borderTopColor];

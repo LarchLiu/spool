@@ -37,7 +37,7 @@ const icons = {
   chevron_left:'ChevronLeft', chevron_right:'ChevronRight', download:'Download', log_out:'LogOut', key_round:'KeyRound', scan_qr_code:'ScanQrCode',
   monitor:'Monitor', monitor_up:'MonitorUp', smartphone:'Smartphone', palette:'Palette', sun:'Sun', moon:'Moon', check:'Check', command:'Command',
   copy:'Copy', clipboard_paste:'ClipboardPaste', code_xml:'CodeXml', circle_alert:'CircleAlert', circle_check:'CircleCheck', circle_x:'CircleX', shield_check:'ShieldCheck', shield_question:'ShieldQuestion',
-  message:'MessageCircle', search:'Search', refresh:'RefreshCw', spinner:'LoaderCircle', plug:'Plug',
+  message:'MessageCircle', search:'Search', refresh:'RefreshCw', repeat:'Repeat', spinner:'LoaderCircle', plug:'Plug',
   brain:'Brain', wrench:'Wrench', workflow:'Workflow', bot:'Bot', terminal:'Terminal', globe:'Globe2', list:'List', image:'Image',
   book_open:'BookOpen', file_pen:'FilePenLine', file_plus:'FilePlus2', file_x:'FileX2', crosshair:'Crosshair',
   goal:'Goal', lightbulb:'Lightbulb', bug:'Bug', repeat_2:'Repeat2', scan_search:'ScanSearch', package:'Package', command_terminal:'Terminal',

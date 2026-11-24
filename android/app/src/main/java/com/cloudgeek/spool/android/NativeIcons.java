@@ -71,6 +71,7 @@ final class NativeIcons {
             case "message": resource = R.drawable.web_icon_message; break;
             case "search": resource = R.drawable.web_icon_search; break;
             case "refresh": resource = R.drawable.web_icon_refresh; break;
+            case "repeat": resource = R.drawable.web_icon_repeat; break;
             case "spinner": resource = R.drawable.web_icon_spinner; break;
             case "plug": resource = R.drawable.web_icon_plug; break;
             case "brain": resource = R.drawable.web_icon_brain; break;

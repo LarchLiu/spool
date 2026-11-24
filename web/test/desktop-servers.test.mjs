@@ -196,7 +196,7 @@ test("live trusted aliases only use native status for the same source and route"
   };
   const assertStatus = (tab, state, label) => {
     assert.ok(tab.includes(`, ${label}"`));
-    assert.match(tab, new RegExp(`lucide-key-round[^>]+data-state="${state}"`));
+    assert.match(tab, new RegExp(`lucide-repeat[^>]+data-state="${state}"`));
     assert.doesNotMatch(tab, /server-status-dot/);
   };
   assertStatus(render([native], live), "login", "Connected · Sign-in required");

@@ -170,7 +170,7 @@ red for a failed health check or interrupted WebSocket, and gray for disconnecte
 or disabled servers. Accessible labels explain connection and sign-in state.
 The first failed check or socket interruption updates the dot immediately;
 successful health alone cannot turn an interrupted authenticated socket green.
-Trusted entries appear immediately after their signed-in source and use a key
+Trusted entries appear immediately after their signed-in source and use a repeat icon
 with the same status colors. Ordinary B, A → B and D → B remain separate tabs
 with private sessions. Selecting ordinary B uses only its own login; selecting an
 already signed-in trusted entry restores its cached workspace without exchanging

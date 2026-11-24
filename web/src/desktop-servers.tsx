@@ -1,10 +1,10 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
-  KeyRound,
   LoaderCircle,
   Plug,
   Plus,
   RefreshCw,
+  Repeat,
   Server,
 } from "lucide-react";
 import type { MessageKey, Translator } from "./i18n";
@@ -95,9 +95,9 @@ function ServerStatusIcon({
   trusted?: boolean;
 }) {
   return trusted ? (
-    <KeyRound
+    <Repeat
       size={13}
-      className="server-status-key"
+      className="server-status-trusted"
       data-state={status}
       aria-hidden="true"
     />
