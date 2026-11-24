@@ -66,6 +66,26 @@ test("a queued message is sent rather than steered once nothing is running", () 
   assert.doesNotMatch(html, /aria-label="Drag to reorder"/);
 });
 
+test("attachment type icons precede message text for accepted and local queue entries", () => {
+  for (const delivery_status of [undefined, "sending", "failed"]) {
+    for (const [attachments, image, file] of [
+      [[], false, false],
+      [["photo.JPG", "plan.webp"], true, false],
+      [["说明.md"], false, true],
+      [["photo.jpg", "说明.md"], true, true],
+    ]) {
+      const html = render({ messages: [{ id: "files", message: "Follow-up", attachments, created_at: 1, delivery_status }] });
+      assert.equal(html.includes('class="lucide lucide-image"'), image);
+      assert.equal(html.includes('class="lucide lucide-file-text"'), file);
+      assert.equal(html.includes('role="img"'), !!attachments.length);
+      if (attachments.length) {
+        assert.ok(html.includes(`aria-label="Attachments: ${attachments.join(", ")}"`));
+        assert.ok(html.indexOf('role="img"') < html.indexOf("Follow-up"));
+      }
+    }
+  }
+});
+
 test("local queue entries expose sending or recovery actions before they get a server ID", () => {
   const sending = render({ messages: [{ id: "local", message: "Immediate", created_at: 1, delivery_status: "sending" }] });
   assert.match(sending, /role="status"/);

@@ -35,9 +35,9 @@ const plugin = { name: "queued-messages-smoke", resolveId: id => id === "/__queu
   } };
 const long = "Check whether only the TypeScript SDK is published, and if so list what the other languages would need before they can ship ".repeat(3).trim();
 const messages = [
-  { id: "first", message: "Is there only a TypeScript SDK?", created_at: 1 },
-  { id: "second", message: long, created_at: 2 },
-  { id: "third", message: "", attachments: ["notes.txt"], created_at: 3 },
+  { id: "first", message: "Is there only a TypeScript SDK?", attachments: ["photo.JPG"], created_at: 1 },
+  { id: "second", message: long, attachments: ["plan.png", "说明.md"], created_at: 2 },
+  { id: "third", message: "", attachments: ["notes.md"], created_at: 3 },
 ];
 let server, browser;
 const errors = [];
@@ -61,8 +61,9 @@ try {
           const rect = selector => { const r = document.querySelector(selector).getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
           const rows = [...document.querySelectorAll(".queued-message")].map(row => {
             const r = row.getBoundingClientRect(), text = row.querySelector(".queued-message-text").getBoundingClientRect();
+            const attachments = row.querySelector(".queued-message-attachments").getBoundingClientRect();
             const steer = row.querySelector(".queued-message-steer").getBoundingClientRect(), remove = row.querySelector("[aria-label='Delete queued message']").getBoundingClientRect();
-            return { left: r.left, right: r.right, height: r.height, textRight: text.right, steerLeft: steer.left, steerRight: steer.right, removeLeft: remove.left, removeRight: remove.right };
+            return { left: r.left, right: r.right, height: r.height, attachmentLeft: attachments.left, attachmentRight: attachments.right, textLeft: text.left, textRight: text.right, steerLeft: steer.left, steerRight: steer.right, removeLeft: remove.left, removeRight: remove.right };
           });
           return { queue: rect(".queued-messages"), composer: rect(".composer"), rows, overflow: document.documentElement.scrollWidth - innerWidth };
         });
@@ -75,8 +76,11 @@ try {
         for (const row of box.rows) {
           // Long text gives way to the actions instead of pushing them out.
           assert.ok(row.textRight <= row.steerLeft && row.steerRight <= row.removeLeft && row.removeRight <= row.right, JSON.stringify(row));
+          assert.ok(row.attachmentLeft >= row.left && row.attachmentRight <= row.textLeft && row.textLeft < row.textRight, JSON.stringify(row));
           assert.ok(row.height < 44, JSON.stringify(row));
         }
+        assert.equal(await page.getByRole("img", { name: "Attachments: photo.JPG", exact: true }).count(), 1);
+        if (count === 3) assert.equal(await page.getByRole("img", { name: "Attachments: plan.png, 说明.md", exact: true }).locator("svg").count(), 2);
         const borders = await page.evaluate(() => [".queued-messages", ".composer"].map(selector => getComputedStyle(document.querySelector(selector)).borderTopColor));
         assert.equal(borders[0], borders[1], "queue and input share the same visible frame");
         await page.screenshot({ path: path.join(output, `${theme === "dark" ? "dark-" : ""}${name}-${label}.png`) });
@@ -90,7 +94,7 @@ try {
       }
     }
   }
-  assert.deepEqual(await page.locator(".queued-message-text").allTextContents(), [messages[0].message, long, "notes.txt"]);
+  assert.deepEqual(await page.locator(".queued-message-text").allTextContents(), [messages[0].message, long, "notes.md"]);
   assert.equal(await page.locator(".composer button[aria-label='Stop response']").count(), 1);
   await page.locator(".queued-message").nth(1).getByRole("button", { name: "Steer" }).click();
   await page.locator(".queued-message").nth(2).getByRole("button", { name: "Delete queued message" }).click();

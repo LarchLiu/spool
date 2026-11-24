@@ -273,11 +273,17 @@ final class NativeQueuedMessages extends ScrollView {
             String deliveryStatus = message.optString("delivery_status");
             String body = message.optString("message").trim();
             JSONArray files = message.optJSONArray("attachments");
-            if (body.isEmpty() && files != null) {
-                List<String> names = new ArrayList<>();
-                for (int file = 0; file < files.length(); file++) names.add(files.optString(file));
-                body = String.join(", ", names);
+            List<String> names = new ArrayList<>();
+            boolean images = false, documents = false;
+            if (files != null) {
+                for (int file = 0; file < files.length(); file++) {
+                    String name = files.optString(file);
+                    names.add(name);
+                    if (!NativeFileData.imageType(name).isEmpty()) images = true;
+                    else documents = true;
+                }
             }
+            if (body.isEmpty()) body = String.join(", ", names);
             LinearLayout row = ui.row();
             row.setTag(id);
             row.setPadding(ui.dp(12), ui.dp(2), ui.dp(8), ui.dp(2));
@@ -314,6 +320,20 @@ final class NativeQueuedMessages extends ScrollView {
                 LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(ui.dp(15), ui.dp(15));
                 iconParams.rightMargin = ui.dp(8);
                 row.addView(ui.decorativeIcon("list_end", 15), iconParams);
+            }
+            if (!names.isEmpty()) {
+                LinearLayout attachments = ui.row();
+                attachments.setContentDescription(ui.t("Attachments") + ": " + String.join(", ", names));
+                attachments.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+                if (images) attachments.addView(ui.decorativeIcon("image", 15), new LinearLayout.LayoutParams(ui.dp(15), ui.dp(15)));
+                if (documents) {
+                    LinearLayout.LayoutParams fileParams = new LinearLayout.LayoutParams(ui.dp(15), ui.dp(15));
+                    if (images) fileParams.leftMargin = ui.dp(4);
+                    attachments.addView(ui.decorativeIcon("file_text", 15), fileParams);
+                }
+                LinearLayout.LayoutParams attachmentParams = new LinearLayout.LayoutParams(-2, -2);
+                attachmentParams.rightMargin = ui.dp(8);
+                row.addView(attachments, attachmentParams);
             }
             TextView text = ui.text(body, 13, ui.text);
             text.setSingleLine(true); text.setEllipsize(TextUtils.TruncateAt.END);

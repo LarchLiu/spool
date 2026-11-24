@@ -30,7 +30,7 @@ func (c *Client) Upload(chatID, payload, csrf, language string) (string, error) 
 	writer := multipart.NewWriter(&body)
 	for key, value := range input.Fields {
 		switch key {
-		case "message", "backend", "model", "reasoning_effort", "permission_mode", "delivery":
+		case "message", "backend", "model", "reasoning_effort", "permission_mode", "delivery", "client_message_id":
 		default:
 			return "", errors.New("invalid message field")
 		}

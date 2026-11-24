@@ -359,6 +359,10 @@ public class NativeQueuedMessagesTest {
             ViewGroup row = (ViewGroup) ((ViewGroup) queue.getChildAt(0)).getChildAt(0);
             assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO, row.getChildAt(0).getImportantForAccessibility());
             assertEquals("notes.txt, design.png", body(row).getText().toString());
+            ViewGroup attachments = (ViewGroup) described(row, ui.t("Attachments") + ": notes.txt, design.png");
+            assertEquals(2, attachments.getChildCount());
+            assertTrue(attachments.getRight() <= body(row).getLeft());
+            screenshot(queue, "mixed-attachments");
             TextView action = (TextView) after(row, body(row));
             assertEquals(ui.t("Send now"), action.getText().toString());
             assertNotNull(action.getCompoundDrawablesRelative()[0]);
@@ -371,6 +375,36 @@ public class NativeQueuedMessagesTest {
             assertTrue(option.getChildAt(0) instanceof android.widget.ImageView);
             assertEquals(ui.dp(180), ui.activePopover.panel().getLayoutParams().width);
             ui.dismissMenus();
+        }
+    }
+
+    @Test public void attachmentIndicatorsStayVisibleBeforeLongTextInEveryDeliveryState() throws Exception {
+        RuntimeEnvironment.setQualifiers("w390dp-h420dp-mdpi");
+        for (boolean dark : new boolean[] {false, true}) try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), dark);
+            NativeQueuedMessages queue = new NativeQueuedMessages(ui, id -> {}, id -> {}, id -> {}, (id, before) -> {});
+            controller.get().setContentView(queue);
+            for (String status : new String[] {"", "sending", "failed"}) {
+                for (String[] names : new String[][] {{}, {"photo.JPG", "plan.webp"}, {"说明.md"}, {"photo.jpg", "说明.md"}}) {
+                    JSONObject message = new JSONObject().put("id", "files").put("message", "Long follow-up message ".repeat(10))
+                            .put("delivery_status", status).put("attachments", new JSONArray(java.util.List.of(names)));
+                    queue.bind(new JSONArray().put(message), true, false);
+                    layout(queue, 264, ui.dp(NativeQueuedMessages.MAX_HEIGHT_DP));
+                    ViewGroup row = (ViewGroup) ((ViewGroup) queue.getChildAt(0)).getChildAt(0);
+                    TextView text = body(row);
+                    assertTrue(text.getWidth() > 0);
+                    if (names.length > 0) {
+                        ViewGroup attachments = (ViewGroup) described(row, ui.t("Attachments") + ": " + String.join(", ", names));
+                        int icons = names.length == 2 && names[1].endsWith(".md") ? 2 : 1;
+                        assertEquals(icons, attachments.getChildCount());
+                        assertTrue(attachments.getRight() <= text.getLeft());
+                        for (int i = 0; i < icons; i++) assertEquals(ui.dp(15), attachments.getChildAt(i).getWidth());
+                    } else assertEquals(1, row.indexOfChild(text));
+                    assertTrue(text.getRight() <= after(row, text).getLeft());
+                    assertTrue(row.getChildAt(row.getChildCount() - 1).getRight() <= row.getWidth() - ui.dp(8));
+                    if (names.length == 2 && names[1].endsWith(".md")) screenshot(queue, "mixed-" + (dark ? "dark-" : "light-") + (status.isEmpty() ? "accepted" : status));
+                }
+            }
         }
     }
 }

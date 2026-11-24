@@ -3,7 +3,9 @@ import { createPortal } from "react-dom";
 import {
   CornerDownRight,
   Ellipsis,
+  FileText,
   GripVertical,
+  Image,
   ListEnd,
   Pencil,
   Trash2,
@@ -333,6 +335,21 @@ export function QueuedMessages({
               </button>
             ) : (
               <ListEnd size={15} aria-hidden="true" />
+            )}
+            {!!message.attachments?.length && (
+              <span
+                className="queued-message-attachments"
+                role="img"
+                aria-label={t("Attachments") + ": " + message.attachments.join(", ")}
+                title={message.attachments.join(", ")}
+              >
+                {message.attachments.some((name) => /\.(?:png|jpe?g|gif|webp)$/i.test(name)) && (
+                  <Image size={15} aria-hidden="true" />
+                )}
+                {message.attachments.some((name) => !/\.(?:png|jpe?g|gif|webp)$/i.test(name)) && (
+                  <FileText size={15} aria-hidden="true" />
+                )}
+              </span>
             )}
             <span className="queued-message-text">
               {message.message.trim() || message.attachments?.join(", ")}

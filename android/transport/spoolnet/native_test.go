@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"io"
 	"net"
 	"net/http"
@@ -692,6 +694,81 @@ func TestNativeMultipartUpload(t *testing.T) {
 		if _, err := client.Upload("chat", payload, "csrf", "en"); err == nil {
 			t.Fatal("invalid upload accepted")
 		}
+	}
+}
+
+func TestNativeMultipartFollowUpAttachments(t *testing.T) {
+	var photo strings.Builder
+	if err := jpeg.Encode(&photo, image.NewRGBA(image.Rect(0, 0, 1, 1)), nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, delivery := range []string{"queue", "steer"} {
+		t.Run(delivery, func(t *testing.T) {
+			fields := map[string]string{
+				"message": "看看图片和 Markdown", "backend": "codex", "model": "gpt-5",
+				"reasoning_effort": "high", "permission_mode": "default", "delivery": delivery,
+				"client_message_id": "client-" + delivery,
+			}
+			files := []struct {
+				name, data string
+			}{
+				{"photo.jpg", photo.String()},
+				{"说明.md", "# 附件\n\n追加消息中的 Markdown。\n"},
+			}
+			requests := 0
+			client := nativeFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if r.Method != http.MethodPost || r.URL.Path != "/api/chats/chat/messages" || r.Header.Get("X-CSRF-Token") != "csrf" || r.Header.Get("X-UI-Language") != "zh-CN" {
+					t.Error("follow-up upload lost its target or headers")
+				}
+				if err := r.ParseMultipartForm(1 << 20); err != nil {
+					t.Error(err)
+					return
+				}
+				defer r.MultipartForm.RemoveAll()
+				for key, want := range fields {
+					if got := r.FormValue(key); got != want {
+						t.Errorf("follow-up field %s = %q, want %q", key, got, want)
+					}
+				}
+				headers := r.MultipartForm.File["files"]
+				if len(headers) != len(files) {
+					t.Errorf("got %d attachments, want %d", len(headers), len(files))
+					return
+				}
+				for i, header := range headers {
+					file, err := header.Open()
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					data, err := io.ReadAll(file)
+					file.Close()
+					if err != nil || header.Filename != files[i].name || string(data) != files[i].data {
+						t.Errorf("follow-up attachment %d corrupted: name=%q, data=%q, error=%v", i, header.Filename, data, err)
+					}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusAccepted)
+				io.WriteString(w, `{"id":"chat"}`)
+			})
+			var uploads []map[string]string
+			for _, file := range files {
+				uploads = append(uploads, map[string]string{"name": file.name, "data": base64.StdEncoding.EncodeToString([]byte(file.data))})
+			}
+			payload, err := json.Marshal(map[string]any{"fields": fields, "files": uploads})
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := client.Upload("chat", string(payload), "csrf", "zh-CN")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var response apiResponse
+			if json.Unmarshal([]byte(raw), &response) != nil || response.Status != http.StatusAccepted || response.Body != `{"id":"chat"}` || requests != 1 {
+				t.Fatalf("follow-up upload was not accepted once: requests=%d, response=%s", requests, raw)
+			}
+		})
 	}
 }
 
