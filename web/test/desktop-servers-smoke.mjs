@@ -1428,7 +1428,7 @@ try {
       const footerGap = await page.locator("form").evaluate(
         (form) => innerHeight - form.getBoundingClientRect().bottom,
       );
-      assert.ok(footerGap >= 18 && footerGap < 19, "only bottom padding follows the form");
+      assert.ok(footerGap >= 25 && footerGap < 26, "only bottom padding follows the form");
       const pendingChanges = page.getByRole("region", { name: "Pending changes", exact: true });
       assert.equal(await pendingChanges.count(), 0);
       assert.equal(await page.getByRole("button", { name: "Save settings", exact: true }).count(), 0);

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createRoot } from "react-dom/client";
-import { Info, KeyRound, Network, ScanQrCode, Server, X } from "lucide-react";
+import { Info, KeyRound, ScanQrCode, X } from "lucide-react";
 import { defaultPreferences } from "./preferences";
 import { usePresentation } from "./use-presentation";
-import { Card, Hint, Row, SettingsError, Toggle } from "./settings-ui";
+import { Hint, Row, SettingsError, Toggle } from "./settings-ui";
 import { ServerDialogAutosave } from "./server-dialog-autosave";
 import { SegmentedTabs } from "./segmented-tabs";
 import { ConnectionControl } from "./connection-control";
@@ -388,32 +388,27 @@ export function ServerDialog() {
     <main className="desktop-settings-shell server-dialog-shell">
       <div ref={content} className="server-dialog-content">
         <header className="server-dialog-header">
-          <span className="server-dialog-symbol">
-            <Server size={20} />
+          <h1>
+            {draft?.id
+              ? `${displayName} · ${t("Settings")}`
+              : t("Add server")}
+          </h1>
+          <span className="settings-sr-only" role="status">
+            {t(
+              saving || busy
+                ? "Working…"
+                : saved
+                  ? "Saved"
+                  : "Server connection",
+            )}
           </span>
-          <div>
-            <h1>
-              {draft?.id
-                ? `${displayName} · ${t("Settings")}`
-                : t("Add server")}
-            </h1>
-            <p role="status">
-              {t(
-                saving || busy
-                  ? "Working…"
-                  : saved
-                    ? "Saved"
-                    : "Server connection",
-              )}
-            </p>
-          </div>
           <button
             type="button"
             className="icon"
             aria-label={t("Close")}
             onClick={() => close.current()}
           >
-            <X size={18} />
+            <X size={19} />
           </button>
         </header>
         <SettingsError message={error} t={t} />
@@ -428,7 +423,7 @@ export function ServerDialog() {
             }}
           >
             <fieldset className="server-editor">
-              <Card>
+              <section className="server-dialog-identity">
                 <div className="server-name-field">
                   <Row title={t("Display name (optional)")}>
                     <input
@@ -468,12 +463,9 @@ export function ServerDialog() {
                     }}
                   />
                 </Row>
-              </Card>
+              </section>
               <section className="server-dialog-connections">
-                <h2>
-                  <Network size={16} />
-                  {t("Server connection")}
-                </h2>
+                <h2>{t("Server connection")}</h2>
                 <Row title={t("Allow automatic connection switching")}>
                   <Toggle
                     label={t("Allow automatic connection switching")}

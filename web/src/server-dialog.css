@@ -1,11 +1,12 @@
 .server-dialog-shell {
   display: block;
   height: 100dvh;
+  background: var(--elevated);
   overflow: auto;
 }
 .server-dialog-content {
   display: flow-root;
-  padding: 18px;
+  padding: 25px;
 }
 .server-editor {
   margin: 0;
@@ -17,8 +18,9 @@
   flex-direction: row;
   align-items: center;
   gap: 16px;
-  min-height: 46px;
-  padding: 10px 12px;
+  min-height: 36px;
+  padding: 0;
+  border-bottom: 0;
 }
 .server-dialog-shell .settings-row-control {
   flex-shrink: 0;
@@ -29,16 +31,12 @@
   width: 208px;
   max-width: 100%;
 }
-.server-name-field {
-  border-bottom: 1px solid var(--settings-divider);
-}
 .server-name-field > .settings-row {
-  border-bottom: 0;
   padding-bottom: 8px;
 }
 .server-name-field > p {
   margin: 0;
-  padding: 0 12px 10px;
+  padding: 0 0 10px;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.5;
@@ -58,45 +56,37 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 .server-dialog-header h1 {
+  flex: 1;
+  min-width: 0;
   margin: 0;
   font-size: 18px;
+  line-height: calc(7 / 6);
   overflow-wrap: anywhere;
 }
-.server-dialog-header p {
-  margin: 3px 0 0;
-  color: var(--muted);
-}
 .server-dialog-header > .icon {
-  margin-left: auto;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
   align-self: flex-start;
 }
-.server-dialog-symbol {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--soft);
-}
 .server-dialog-connections {
-  margin-top: 18px;
+  margin-top: 16px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
 }
 .server-dialog-connections h2 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 8px;
-  font-size: 14px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 500;
 }
 .server-dialog-connections > .settings-row {
-  min-height: 40px;
-  padding: 6px 0 10px;
-  border-bottom: 0;
+  margin-bottom: 12px;
+}
+.server-dialog-connections .segmented-tab {
+  flex-basis: auto;
 }
 .server-connection-field {
   display: grid;
@@ -117,6 +107,7 @@
   grid-column: 2;
   min-width: 112px;
   max-width: 100%;
+  border-color: transparent;
   background: var(--soft);
   white-space: nowrap;
 }
@@ -147,16 +138,15 @@
   margin-top: 8px;
 }
 .server-dialog-footer {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: space-between;
-  border-top: 1px solid var(--line);
-  margin-top: 18px;
-  padding-top: 12px;
+  margin-top: 24px;
+}
+.server-dialog-shell .danger {
+  color: var(--error-text);
 }
 .server-dialog-footer .danger {
-  margin-left: auto;
+  width: 100%;
+  border-color: transparent;
+  background: var(--soft);
 }
 .server-pairing-status {
   padding: 12px;

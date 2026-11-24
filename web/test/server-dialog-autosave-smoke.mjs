@@ -36,8 +36,9 @@ try {
     const errors = [];
     page.on("pageerror", (error) => errors.push(String(error)));
     let availableHeight = 860;
+    let dialogWidth = 560;
     await page.exposeFunction("fixtureResizeDialog", async (height) => {
-      await page.setViewportSize({ width: 560, height: Math.min(height, 660, availableHeight - 40) });
+      await page.setViewportSize({ width: dialogWidth, height: Math.min(height, 660, availableHeight - 40) });
     });
     try {
       await page.addInitScript(() => {
@@ -121,7 +122,7 @@ try {
 
       await page.waitForFunction(() => innerHeight === Math.ceil(document.querySelector(".server-dialog-content").getBoundingClientRect().height));
       const footerGap = await page.locator(".server-dialog-footer").evaluate((footer) => innerHeight - footer.getBoundingClientRect().bottom);
-      assert.ok(footerGap >= 18 && footerGap < 19, "only bottom padding follows the form");
+      assert.ok(footerGap >= 25 && footerGap < 26, "only bottom padding follows the form");
       await page.screenshot({ path: path.join(output, `${engine}-server.png`) });
       const compact = page.viewportSize().height;
       await page.getByRole("button", { name: "Delete server", exact: true }).click();
@@ -150,8 +151,32 @@ try {
       });
       await page.getByRole("heading", { name: "Reopened server · Settings", exact: true }).waitFor();
       assert.equal(await name.inputValue(), "Reopened server");
+      for (const width of [560, 360]) {
+        dialogWidth = width;
+        await page.setViewportSize({ width, height: 660 });
+        await page.waitForFunction(() => innerHeight === Math.ceil(document.querySelector(".server-dialog-content").getBoundingClientRect().height));
+        const title = await page.getByRole("heading", { level: 1 }).boundingBox();
+        const close = await page.getByRole("button", { name: "Close", exact: true }).boundingBox();
+        const connection = await page.getByRole("textbox", { name: "Public HTTPS address", exact: true }).boundingBox();
+        const remove = await page.getByRole("button", { name: "Delete server", exact: true }).boundingBox();
+        const enabled = page.getByRole("switch", { name: "Connect to this server", exact: true });
+        const enabledRow = await enabled.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' settings-row ')][1]").boundingBox();
+        assert.ok(title.x + title.width <= close.x, "the title and close action never overlap");
+        assert.ok(title.y + title.height < enabledRow.y, "server settings follow the heading");
+        assert.equal(Math.round(enabledRow.x), Math.round(connection.x), "identity and connection settings share one left edge");
+        assert.equal(Math.round(remove.x), Math.round(connection.x), "Delete server aligns with the connection fields");
+        assert.equal(Math.round(remove.width), Math.round(connection.width), "Delete server spans the settings width, as on Android");
+        assert.ok(remove.y > connection.y + connection.height, "Delete server follows the connection controls");
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "the settings fit narrow dialogs");
+        assert.ok(await page.getByRole("tablist", { name: "Connection mode", exact: true }).locator(".segmented-tab-label").evaluateAll((labels) => labels.every((label) => label.scrollWidth <= label.clientWidth)), "connection names remain readable in narrow dialogs");
+        for (const theme of ["light", "dark"]) {
+          await page.emulateMedia({ colorScheme: theme });
+          await page.waitForFunction((theme) => document.documentElement.dataset.theme === theme, theme);
+          await page.screenshot({ path: path.join(output, `${engine}-server-${width}-${theme}.png`), animations: "disabled" });
+        }
+      }
       assert.deepEqual(errors, []);
-      console.log(`${engine}: remote server autosave, retry, isolation and sizing checks passed`);
+      console.log(`${engine}: remote server autosave, retry, isolation, Android layout and sizing checks passed`);
     } catch (error) {
       console.error(engine, await page.evaluate(() => ({ server: window.fixtureServer, calls: window.fixtureCalls.slice(-5) })));
       await page.screenshot({ path: path.join(output, `${engine}-failure.png`) });
