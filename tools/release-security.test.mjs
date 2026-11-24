@@ -296,7 +296,7 @@ esac
 
 test("workflow pins actions, keeps private keys out of builds and uploads assets once", async () => {
   const workflow = await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
-  for (const use of workflow.matchAll(/uses: (\S+)/g)) assert.match(use[1], /^(?:actions\/[\w-]+|oven-sh\/setup-bun|docker\/(?:setup-buildx|login|build-push)-action)@[a-f0-9]{40}$/);
+  for (const use of workflow.matchAll(/uses: (\S+)/g)) assert.match(use[1], /^(?:actions\/(?:[\w-]+|cache\/(?:restore|save))|oven-sh\/setup-bun|docker\/(?:setup-buildx|login|build-push)-action)@[a-f0-9]{40}$/);
   const [beforePublish, publish] = workflow.split("\n  publish:\n");
   assert.doesNotMatch(beforePublish, /secrets\.MYGO_UPDATER_PRIVATE_KEY/);
   assert.equal((publish.match(/secrets\.MYGO_UPDATER_PRIVATE_KEY/g) ?? []).length, 1);

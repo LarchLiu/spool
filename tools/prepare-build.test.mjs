@@ -67,7 +67,7 @@ test("check mode exports the source version for packaging and smoke without chan
 
 test("manual build workflow resolves a branch or commit once and cannot publish or use signing keys", async () => {
   const workflow = await readFile(new URL("../.github/workflows/build.yml", import.meta.url), "utf8");
-  for (const use of workflow.matchAll(/uses: (\S+)/g)) assert.match(use[1], /^(?:actions\/[\w-]+|oven-sh\/setup-bun)@[a-f0-9]{40}$/);
+  for (const use of workflow.matchAll(/uses: (\S+)/g)) assert.match(use[1], /^(?:actions\/(?:[\w-]+|cache\/(?:restore|save))|oven-sh\/setup-bun)@[a-f0-9]{40}$/);
   assert.match(workflow, /on:\n  workflow_dispatch:/);
   assert.doesNotMatch(workflow, /^  (push|pull_request|release|schedule):/m);
   assert.match(workflow, /permissions:\n  contents: read/);
