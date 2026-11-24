@@ -473,7 +473,6 @@ final class NativeMarkdown {
                 text.setPadding(ui.dp(12), ui.dp(7), ui.dp(12), ui.dp(8));
                 text.setBackgroundColor(cell.isHeader() ? ui.soft : 0x00000000);
             }
-            ui.cssLineHeight(text, parent instanceof Heading ? 1.4f : lineHeight);
             text.setBreakStrategy(android.graphics.text.LineBreaker.BREAK_STRATEGY_SIMPLE);
             text.setHyphenationFrequency(android.text.Layout.HYPHENATION_FREQUENCY_NONE);
             // These platform setters call setText themselves. Configure the empty view first,
@@ -488,8 +487,46 @@ final class NativeMarkdown {
                 && parent.getParent().getParent() instanceof ListBlock && ((ListBlock) parent.getParent().getParent()).isTight();
         appendChildren(parent, out, true);
         normalWhitespace = oldWhitespace;
+        float multiplier = inlineLineHeight(text, out, parent instanceof Heading ? 1.4f : lineHeight);
+        float density = ui.context.getResources().getDisplayMetrics().density;
+        float usedSize = (float) Math.floor(text.getTextSize() / density * 64) / 64;
+        float box = (float) Math.floor(usedSize * multiplier * 64) / 64 * density;
+        if (fresh || ((NativeTextView) text).lineBox != box) ui.cssLineHeight(text, multiplier);
         if (fresh) text.setText(out); else ((NativeTextView) text).bindMarkdownText(out);
         return text;
+    }
+
+    private float inlineLineHeight(TextView view, Spanned text, float requested) {
+        float density = ui.context.getResources().getDisplayMetrics().density;
+        android.text.TextPaint base = new android.text.TextPaint(view.getPaint());
+        base.setTextSize(base.getTextSize() / density);
+        Paint.FontMetrics strut = base.getFontMetrics();
+        float ascent = Math.round(-strut.ascent), descent = Math.round(strut.descent), leading = 0;
+        for (Object span : text.getSpans(0, text.length(), Object.class)) {
+            if (!(span instanceof InlineCode) && !(span instanceof NativeInlineCodeBackground)) continue;
+            int start = text.getSpanStart(span), end = text.getSpanEnd(span);
+            android.text.TextPaint run = new android.text.TextPaint(base);
+            for (android.text.style.MetricAffectingSpan style : text.getSpans(start, start + 1, android.text.style.MetricAffectingSpan.class))
+                style.updateMeasureState(run);
+            float padding;
+            if (span instanceof InlineCode) {
+                run.set(((InlineCode) span).paint(run));
+                padding = base.getTextSize() * .15f + .5f; // Include the chip's 1dp border.
+            } else padding = run.getTextSize() * .15f;
+            Paint.FontMetrics font = run.getFontMetrics();
+            android.graphics.Rect ink = new android.graphics.Rect();
+            String literal = text.subSequence(start, end).toString();
+            run.getTextBounds(literal, 0, literal.length(), ink);
+            // Compact progress/detail paragraphs use a 1.2em strut. Reserve enough
+            // leading on both sides of its baseline for code, including fallback ink,
+            // padding and border; TextView clips drawing to the first/last line box.
+            leading = Math.max(leading, Math.max(-Math.min(font.ascent, ink.top) + padding - ascent,
+                    Math.max(font.descent, ink.bottom) + padding - descent));
+        }
+        if (leading <= 0) return requested;
+        float usedSize = (float) Math.floor(base.getTextSize() * 64) / 64;
+        // Keep the minimum after CSS line-height quantization to 1/64px.
+        return Math.max(requested, (ascent + descent + 2 * (float) Math.ceil(leading) + 1f / 64) / usedSize);
     }
 
     private void appendChildren(Node parent, SpannableStringBuilder out, boolean autolinks) {

@@ -21,6 +21,96 @@ import org.robolectric.annotation.GraphicsMode;
 @Config(sdk = {26, 35})
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 public class NativeMarkdownInlineCodeTest {
+    @Test public void compactProgressKeepsInlineCodeInsideTheVisibleTextArea() throws Exception {
+        for (String density : new String[] {"mdpi", "420dpi"}) {
+            RuntimeEnvironment.setQualifiers("w360dp-h800dp-" + density);
+            try (var controller = Robolectric.buildActivity(Activity.class).setup()) {
+                for (boolean dark : new boolean[] {false, true}) {
+                    NativeUi ui = new NativeUi(controller.get(), dark, "zh-CN");
+                    for (String source : new String[] {
+                            "`repeat`", "`gyp_中文`",
+                            "我先定位 server tabs 的图标实现，把名称前的图标统一换成 `repeat`，并同步修改 Android 端。",
+                            "`notifyDesktopServerReady recordDesktopServerState notifyDesktopServerState`"}) {
+                        View root = NativeMarkdown.progress(ui, source, ignored -> fail());
+                        layout(root, ui.dp(360));
+                        TextView text = NativeMarkwonHistoryTest.texts(root).get(0);
+                        java.util.List<String> clipped = new java.util.ArrayList<>();
+                        int[] backgrounds = {0};
+                        Bitmap image = Bitmap.createBitmap(text.getWidth(), text.getHeight(), Bitmap.Config.ARGB_8888);
+                        try {
+                            Canvas canvas = new Canvas(image) {
+                                @Override public void drawRoundRect(float left, float top, float right, float bottom, float rx, float ry, android.graphics.Paint paint) {
+                                    if (paint.getColor() == ui.soft || paint.getColor() == ui.line) {
+                                        backgrounds[0]++;
+                                        android.graphics.Rect clip = getClipBounds();
+                                        float stroke = paint.getStyle() == android.graphics.Paint.Style.STROKE ? paint.getStrokeWidth() / 2 : 0;
+                                        if (top - stroke < clip.top || bottom + stroke > clip.bottom)
+                                            clipped.add("code=" + top + ".." + bottom + ", stroke=" + stroke + ", clip=" + clip);
+                                    }
+                                    super.drawRoundRect(left, top, right, bottom, rx, ry, paint);
+                                }
+                            };
+                            canvas.drawColor(ui.elevated); text.draw(canvas);
+                            assertTrue("Inline code must paint a background", backgrounds[0] > 0);
+                            assertTrue(density + "/" + dark + "/" + source + ": " + clipped, clipped.isEmpty());
+                        } finally { image.recycle(); }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test public void unbrokenInlineCodeWrapsInsteadOfRunningPastTheViewport() {
+        RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
+        try (var controller = Robolectric.buildActivity(Activity.class).setup()) {
+            NativeUi ui = new NativeUi(controller.get(), false, "zh-CN");
+            String literal = "notifyDesktopServerReady".repeat(4);
+            View root = NativeMarkdown.progress(ui, "`" + literal + "`", ignored -> fail());
+            layout(root, ui.dp(220));
+            TextView text = NativeMarkwonHistoryTest.texts(root).stream()
+                    .filter(view -> view.getText().toString().equals(literal)).findFirst().orElseThrow();
+            int start = 0, end = literal.length();
+            assertTrue("Long inline code must wrap inside its text view",
+                    text.getLayout().getLineForOffset(end - 1) > text.getLayout().getLineForOffset(start));
+            assertEquals("Source text stays intact", literal, text.getText().toString());
+        }
+    }
+
+    @Test public void transcriptCodeBackgroundsStayInsideTheVisibleParagraph() throws Exception {
+        for (String density : new String[] {"mdpi", "420dpi"}) {
+            RuntimeEnvironment.setQualifiers("w360dp-h800dp-" + density);
+            try (var controller = Robolectric.buildActivity(Activity.class).setup()) {
+                NativeUi ui = new NativeUi(controller.get(), false, "zh-CN");
+                NativeMarkwonHistory history = new NativeMarkwonHistory(ui, new NativeHistoryScroll.State(), ignored -> fail());
+                try {
+                    controller.get().setContentView(history);
+                    history.begin(); history.markdown("answer", "我先定位 server tabs 的图标实现，把名称前的图标统一换成 `repeat`，并同步修改 Android 端。"); history.end();
+                    NativeMarkwonHistoryTest.await(history);
+                    TextView text = NativeMarkwonHistoryTest.texts(history).stream()
+                            .filter(view -> view.getText().toString().contains("repeat")).findFirst().orElseThrow();
+                    java.util.List<String> clipped = new java.util.ArrayList<>();
+                    int[] backgrounds = {0};
+                    Bitmap image = Bitmap.createBitmap(text.getWidth(), text.getHeight(), Bitmap.Config.ARGB_8888);
+                    try {
+                        Canvas canvas = new Canvas(image) {
+                            @Override public void drawRoundRect(float left, float top, float right, float bottom, float rx, float ry, android.graphics.Paint paint) {
+                                if (paint.getColor() == ui.soft) {
+                                    backgrounds[0]++;
+                                    android.graphics.Rect clip = getClipBounds();
+                                    if (top < clip.top || bottom > clip.bottom) clipped.add(top + ".." + bottom + " outside " + clip);
+                                }
+                                super.drawRoundRect(left, top, right, bottom, rx, ry, paint);
+                            }
+                        };
+                        canvas.drawColor(ui.elevated); text.draw(canvas);
+                        assertEquals("The inline code background should be painted once", 1, backgrounds[0]);
+                        assertTrue(density + "/" + android.os.Build.VERSION.SDK_INT + ": " + clipped, clipped.isEmpty());
+                    } finally { image.recycle(); }
+                } finally { history.dispose(); }
+            }
+        }
+    }
+
     @Test public void wrappedCodeBackgroundsStayCompactAndRoundedWhenLineSpacingGrows() throws Exception {
         RuntimeEnvironment.setQualifiers("w360dp-h800dp-mdpi");
         String literal = "notifyDesktopServerReady recordDesktopServerState notifyDesktopServerState";
