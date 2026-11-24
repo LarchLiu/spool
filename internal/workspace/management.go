@@ -199,7 +199,7 @@ func (s *Store) saveSettingsLocked(v Settings) error {
 	return s.notify(err, changeServer)
 }
 func (s *Store) Users() ([]User, error) {
-	rows, err := s.db.Query(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,COALESCE(a.style,?),COALESCE(a.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0),COALESCE(fu.peer_id,''),COALESCE(json_extract(fp.config,'$.name'),''),COALESCE(fu.subject,'') FROM users u LEFT JOIN user_avatars a ON a.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id LEFT JOIN federation_users fu ON fu.user_id=u.id LEFT JOIN federation_peers fp ON fp.id=fu.peer_id ORDER BY u.username`, DefaultAvatar().Style)
+	rows, err := s.db.Query(`SELECT u.id,u.username,u.nickname,u.disabled,u.created_at,COALESCE(a.style,?),COALESCE(a.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0),COALESCE(fu.peer_id,''),COALESCE(json_extract(fp.config,'$.name'),''),COALESCE(fu.subject,'') FROM users u LEFT JOIN user_avatars a ON a.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id LEFT JOIN federation_users fu ON fu.user_id=u.id LEFT JOIN federation_peers fp ON fp.id=fu.peer_id WHERE NOT EXISTS(SELECT 1 FROM deleted_users WHERE user_id=u.id) ORDER BY u.username`, DefaultAvatar().Style)
 	if err != nil {
 		return nil, err
 	}
@@ -220,6 +220,12 @@ func (s *Store) SaveUser(v UserInput) (User, error) {
 
 func (s *Store) saveUserWithPasswordCost(v UserInput, passwordCost int) (User, error) {
 	if v.ID != "" {
+		var deleted bool
+		if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM deleted_users WHERE user_id=?)`, v.ID).Scan(&deleted); err != nil {
+			return User{}, err
+		} else if deleted {
+			return User{}, errors.New("Deleted accounts cannot be restored")
+		}
 		source, err := s.federationSource(v.ID)
 		if err != nil {
 			return User{}, err
@@ -266,7 +272,7 @@ func (s *Store) saveUserWithPasswordCost(v UserInput, passwordCost int) (User, e
 			return User{}, fmt.Errorf("invalid user ID")
 		}
 		var existing string
-		if err = tx.QueryRow(`SELECT password_hash,created_at FROM users WHERE id=?`, v.ID).Scan(&existing, &now); err != nil {
+		if err = tx.QueryRow(`SELECT password_hash,created_at FROM users WHERE id=? AND NOT EXISTS(SELECT 1 FROM deleted_users WHERE user_id=users.id)`, v.ID).Scan(&existing, &now); err != nil {
 			return User{}, err
 		}
 		if hash == "" {
@@ -289,6 +295,11 @@ func (s *Store) saveUserWithPasswordCost(v UserInput, passwordCost int) (User, e
 	if _, err = tx.Exec(`INSERT INTO user_adb_bridge(user_id,enabled) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET enabled=excluded.enabled`, v.ID, v.ADBBridge); err != nil {
 		return User{}, err
 	}
+	if v.Disabled {
+		if err := disableManagedUsers(tx, `SELECT id FROM users WHERE id=?`, v.ID); err != nil {
+			return User{}, err
+		}
+	}
 	avatar := DefaultAvatar()
 	if err = tx.QueryRow(`SELECT style,seed FROM user_avatars WHERE user_id=?`, v.ID).Scan(&avatar.Style, &avatar.Seed); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return User{}, err
@@ -306,16 +317,34 @@ func (s *Store) DeleteUser(id string) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec(`UPDATE users SET disabled=1 WHERE id=?`, id); err != nil {
+	if err = disableManagedUsers(tx, `SELECT id FROM users WHERE id=?`, id); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(`DELETE FROM web_push_subscriptions WHERE user_id=?`, id); err != nil {
+	return s.notify(tx.Commit(), managedUsersChanged)
+}
+
+// RemoveDisabledUser hides a disabled account from management while retaining
+// its immutable ID for historical chats and source identity bindings.
+func (s *Store) RemoveDisabledUser(id string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(`DELETE FROM auth_sessions WHERE user_id=?`, id); err != nil {
+	defer tx.Rollback()
+	var disabled bool
+	if err := tx.QueryRow(`SELECT disabled FROM users WHERE id=?`, id).Scan(&disabled); err != nil {
 		return err
 	}
-	return s.notify(tx.Commit(), changeNavigation|changePresence|changeAuth)
+	if !disabled {
+		return errors.New("Disable this account before deleting it")
+	}
+	if err := disableManagedUsers(tx, `SELECT id FROM users WHERE id=?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO deleted_users VALUES(?)`, id); err != nil {
+		return err
+	}
+	return s.notify(tx.Commit(), managedUsersChanged)
 }
 func (s *Store) Projects() ([]Project, error) {
 	rows, err := s.db.Query(`SELECT id,name,path,archived,shared_chats,created_at,COALESCE((SELECT enabled FROM project_local_sharing WHERE project_id=projects.id),0),COALESCE((SELECT allow_external_files FROM project_file_access WHERE project_id=projects.id),1) FROM projects ORDER BY name`)
@@ -340,7 +369,7 @@ func (s *Store) Projects() ([]Project, error) {
 		if out[i].Issues, err = s.IssuesAutomation(out[i].ID); err != nil {
 			return nil, err
 		}
-		members, e := s.db.Query(`SELECT m.user_id,COALESCE(a.access,'control'),COALESCE(own.access,'create') FROM project_members m LEFT JOIN project_member_access a ON a.project_id=m.project_id AND a.user_id=m.user_id LEFT JOIN project_member_own_access own ON own.project_id=m.project_id AND own.user_id=m.user_id WHERE m.project_id=?`, out[i].ID)
+		members, e := s.db.Query(`SELECT m.user_id,COALESCE(a.access,'control'),COALESCE(own.access,'create') FROM project_members m JOIN users u ON u.id=m.user_id LEFT JOIN project_member_access a ON a.project_id=m.project_id AND a.user_id=m.user_id LEFT JOIN project_member_own_access own ON own.project_id=m.project_id AND own.user_id=m.user_id WHERE m.project_id=? AND u.disabled=0`, out[i].ID)
 		if e != nil {
 			return nil, e
 		}
@@ -458,7 +487,18 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 	if _, err = tx.Exec(`DELETE FROM project_members WHERE project_id=?`, v.ID); err != nil {
 		return v, err
 	}
+	var enabledMembers []string
 	for _, id := range v.Members {
+		var disabled bool
+		if err := tx.QueryRow(`SELECT disabled FROM users WHERE id=?`, id).Scan(&disabled); err != nil {
+			return v, err
+		}
+		if disabled {
+			delete(v.MemberAccess, id)
+			delete(v.MemberOwnAccess, id)
+			continue
+		}
+		enabledMembers = append(enabledMembers, id)
 		if _, err = tx.Exec(`INSERT OR IGNORE INTO project_members VALUES(?,?)`, v.ID, id); err != nil {
 			return v, err
 		}
@@ -468,6 +508,10 @@ func (s *Store) SaveProject(v Project) (Project, error) {
 		if _, err = tx.Exec(`INSERT OR REPLACE INTO project_member_own_access(project_id,user_id,access) VALUES(?,?,?)`, v.ID, id, v.MemberOwnAccess[id]); err != nil {
 			return v, err
 		}
+	}
+	v.Members = enabledMembers
+	if err := v.Issues.Validate(v.Members); err != nil {
+		return v, err
 	}
 	if err = saveIssuesAutomation(tx, v.ID, v.Issues); err != nil {
 		return v, err

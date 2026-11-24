@@ -22,7 +22,7 @@ func federationPairForTest(t *testing.T, store, remote *Store, address string, a
 	if err = seedApprovedFederationPeer(store, p); err != nil {
 		t.Fatal(err)
 	}
-	return p
+	return mustFederationPeer(t, store, p.ID)
 }
 
 func TestFederationExchangeUsesTargetMembershipAndRevokes(t *testing.T) {
@@ -223,11 +223,19 @@ func TestFederationExchangeUsesTargetMembershipAndRevokes(t *testing.T) {
 	if _, err := sb.authenticate(bc.Value); err == nil {
 		t.Fatal("B session remained valid after removing the user from the allowlist")
 	}
+	users, err := sb.Users()
+	if err != nil || len(users) != 1 || !users[0].Disabled || sb.CanAccessProject(id.User.ID, project2.ID) {
+		t.Fatal("withdrawing access did not disable the visitor and remove project access", err)
+	}
 	if err := sa.SetFederationTrustUsers(pb.ID, true, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := request(a, "/api/federation/targets", nil, bobCookie, ""); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), pb.ID) {
 		t.Fatal("all-local mode did not allow another local user to discover the target")
+	}
+	exchange(issue(), http.StatusUnauthorized)
+	if _, err := sb.SaveUser(UserInput{ID: id.User.ID}); err != nil {
+		t.Fatal(err)
 	}
 	bc = exchange(issue(), http.StatusOK)
 	pending = issue()

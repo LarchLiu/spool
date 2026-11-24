@@ -132,6 +132,7 @@ export function settingsCommandScope(
     case "set-adb-bridge":
       return "Service";
     case "save-person":
+    case "delete-person":
     case "disconnect-remote-desktop":
       return "People";
     case "save-project":

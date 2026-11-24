@@ -820,7 +820,8 @@
   margin: 12px 2px 20px;
   overflow-wrap: anywhere;
 }
-.settings-trust-revoked > summary {
+.settings-trust-revoked > summary,
+.settings-people-disabled > summary {
   width: fit-content;
   max-width: 100%;
   margin: 0 0 9px 1px;
@@ -970,6 +971,13 @@
   display: flex;
   align-items: center;
 }
+.settings-items > li:has(> .settings-list-details) {
+  flex-wrap: wrap;
+}
+.settings-list-details {
+  flex: 0 0 100%;
+  min-width: 0;
+}
 .desktop-settings-shell .settings-list-item {
   display: flex;
   flex: 1;
@@ -1034,6 +1042,17 @@
   display: flex;
   align-items: center;
   gap: 9px;
+}
+.settings-person-delete-confirm {
+  border-top: 1px solid var(--settings-divider);
+  padding: 14px var(--settings-list-inset);
+  overflow-wrap: anywhere;
+}
+.settings-person-delete-confirm p {
+  margin: 0 0 10px;
+}
+.settings-person-delete-confirm button + button {
+  margin-left: 8px;
 }
 .settings-person-remote-icon {
   display: inline-flex;

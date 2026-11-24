@@ -224,9 +224,12 @@ export type SettingsCommand =
   | { kind: "save-updates"; update_preferences: UpdatePreferences }
   | {
       kind: "save-person";
-      person: PersonDraft | Pick<Person, "id" | "disabled" | "remote_desktop" | "adb_bridge">;
+      person:
+        | PersonDraft
+        | Pick<Person, "id" | "disabled" | "remote_desktop" | "adb_bridge">;
     }
   | { kind: "save-project"; project: ManagedProject }
+  | { kind: "delete-person"; target: string }
   | { kind: "save-agent"; backend: Backend; enabled: boolean; path: string }
   | { kind: "save-github" | "check-repository"; path: string }
   | {

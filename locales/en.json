@@ -1,5 +1,12 @@
 {
   "Source user ID": "Source user ID",
+  "Disabled people": "Disabled people",
+  "No enabled people. Create an account or enable a disabled person.": "No enabled users. Create an account or enable a disabled user.",
+  "Disable this account before deleting it": "Disable this account before deleting it",
+  "Deleted accounts cannot be restored": "Deleted accounts cannot be restored",
+  "This removes the person from management and keeps their chat history. The account cannot be restored.": "This removes the user from management and keeps their chat history. The account cannot be restored.",
+  "Delete person {name}": "Delete user {name}",
+  "Delete person {name}?": "Delete user {name}?",
   "External people appear after their first trusted sign-in. Manage account access here and project permissions in Projects.": "External people appear after their first trusted sign-in. Manage account access here and project permissions in Projects.",
   "The operating system denied Spool access to this file.": "The operating system denied Spool access to this file.",
   "Allow access to attached file": "Allow access to attached file",

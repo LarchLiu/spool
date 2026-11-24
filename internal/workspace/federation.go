@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	chatmodel "spool/internal/model"
 	"spool/relay"
 )
 
@@ -41,6 +42,7 @@ type federationMessage struct {
 	Active    bool                       `json:"active,omitempty"`
 	Subject   *federationSubject         `json:"subject,omitempty"`
 	Trust     *federationTrustRevocation `json:"trust,omitempty"`
+	Access    *federationUserAccess      `json:"access,omitempty"`
 	Signature string                     `json:"signature"`
 }
 
@@ -91,6 +93,10 @@ func (a *App) federationControl(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusForbidden, "Federation request refused")
 		return
 	}
+	if (m.Action == federationUserCheck || m.Action == federationUserRevoke) != (m.Access != nil) || m.Access != nil && (!chatmodel.ValidID(m.Access.Subject) || !federationSecret(m.Access.Grant)) {
+		apiError(w, http.StatusForbidden, "Federation request refused")
+		return
+	}
 	peer, err := federationPeer(a.store.db, m.From)
 	if err != nil && m.Action == federationTrustRevoke {
 		peer, err = a.store.pendingFederationTrustPeer(m.From)
@@ -110,6 +116,19 @@ func (a *App) federationControl(w http.ResponseWriter, r *http.Request) {
 	}
 	answer := federationMessage{Version: federationVersion, From: local.ID(), To: peer.ID, Action: m.Action, Nonce: m.Nonce, SentAt: time.Now().UnixMilli(), Response: true}
 	switch m.Action {
+	case federationUserCheck:
+		allowed, err := a.store.federationUserAllowed(peer, *m.Access)
+		if err != nil {
+			apiError(w, http.StatusServiceUnavailable, "Federation source unavailable")
+			return
+		}
+		answer.Active = allowed
+	case federationUserRevoke:
+		if err := a.store.revokeFederationUser(peer, *m.Access, m.Value); err != nil {
+			apiError(w, http.StatusServiceUnavailable, "Federation source unavailable")
+			return
+		}
+		answer.Active = true
 	case federationTrustRevoke:
 		if err := a.store.receiveFederationTrustRevocation(peer, *m.Trust); err != nil {
 			apiError(w, http.StatusServiceUnavailable, "Federation source unavailable")
@@ -171,7 +190,7 @@ func (a *App) federationSend(ctx context.Context, peer FederationPeer, m federat
 	if err != nil {
 		return answer, err
 	}
-	if len(data) > federationMaxBody || json.Unmarshal(data, &answer) != nil || !answer.Response || !answer.fresh() || answer.To != local.ID() || answer.Nonce != m.Nonce || answer.Action != m.Action || answer.Value != "" || answer.Trust != nil || !answer.signedBy(peer) {
+	if len(data) > federationMaxBody || json.Unmarshal(data, &answer) != nil || !answer.Response || !answer.fresh() || answer.To != local.ID() || answer.Nonce != m.Nonce || answer.Action != m.Action || answer.Value != "" || answer.Trust != nil || answer.Access != nil || !answer.signedBy(peer) {
 		return federationMessage{}, errors.New("invalid federation control response")
 	}
 	if !answer.Active {

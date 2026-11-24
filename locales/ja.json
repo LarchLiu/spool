@@ -1,5 +1,12 @@
 {
   "Source user ID": "接続元のユーザー ID",
+  "Disabled people": "無効なユーザー",
+  "No enabled people. Create an account or enable a disabled person.": "有効なユーザーがいません。アカウントを作成するか、無効なユーザーを有効にしてください。",
+  "Disable this account before deleting it": "削除する前にアカウントを無効にしてください",
+  "Deleted accounts cannot be restored": "削除済みのアカウントは復元できません",
+  "This removes the person from management and keeps their chat history. The account cannot be restored.": "管理一覧からユーザーを削除し、チャット履歴は保持します。アカウントは復元できません。",
+  "Delete person {name}": "ユーザー {name} を削除",
+  "Delete person {name}?": "ユーザー {name} を削除しますか？",
   "External people appear after their first trusted sign-in. Manage account access here and project permissions in Projects.": "外部ユーザーは初回の信頼済みログイン後に表示されます。ここでアカウントのアクセスを管理し、「プロジェクト」でプロジェクト権限を設定できます。",
   "The operating system denied Spool access to this file.": "OS により Spool のファイルへのアクセスが拒否されました。",
   "Allow access to attached file": "添付ファイルへのアクセスを許可",

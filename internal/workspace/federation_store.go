@@ -53,6 +53,10 @@ CREATE TABLE IF NOT EXISTS federation_tickets(hash TEXT PRIMARY KEY, source_ref 
 CREATE TABLE IF NOT EXISTS federation_sessions(session_hash TEXT PRIMARY KEY REFERENCES auth_sessions(token_hash) ON DELETE CASCADE, peer_id TEXT NOT NULL, source_ref TEXT NOT NULL, checked_at INTEGER NOT NULL, retry_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS federation_sessions_source ON federation_sessions(peer_id,source_ref);
 CREATE TABLE IF NOT EXISTS federation_revocations(peer_id TEXT NOT NULL, source_ref TEXT NOT NULL, expires_at INTEGER NOT NULL, PRIMARY KEY(peer_id,source_ref));
+CREATE TABLE IF NOT EXISTS federation_user_checks(user_id TEXT PRIMARY KEY REFERENCES users(id),retry_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS federation_user_revocations(peer_id TEXT NOT NULL REFERENCES federation_peers(id),subject TEXT NOT NULL,grant_id TEXT NOT NULL,nonce TEXT NOT NULL,retry_at INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(peer_id,subject));
+CREATE TABLE IF NOT EXISTS federation_user_revocation_receipts(peer_id TEXT NOT NULL,nonce TEXT NOT NULL,PRIMARY KEY(peer_id,nonce));
+CREATE TABLE IF NOT EXISTS federation_user_access_revocations(peer_id TEXT NOT NULL,subject TEXT NOT NULL,revoked_at INTEGER NOT NULL,PRIMARY KEY(peer_id,subject));
 `
 
 const (
@@ -274,6 +278,10 @@ func (s *Store) UpdateFederationPeer(p FederationPeer) error {
 		return err
 	}
 	defer tx.Rollback()
+	previous, err := federationPeer(tx, p.ID)
+	if err != nil {
+		return err
+	}
 	if err := validateFederationTrustPolicy(tx, p); err != nil {
 		return err
 	}
@@ -288,11 +296,11 @@ func (s *Store) UpdateFederationPeer(p FederationPeer) error {
 		return err
 	}
 	if !p.Accept {
-		if _, err = tx.Exec(`DELETE FROM auth_sessions WHERE token_hash IN (SELECT session_hash FROM federation_sessions WHERE peer_id=?)`, p.ID); err != nil {
+		if err = disableManagedUsers(tx, `SELECT user_id FROM federation_users WHERE peer_id=?`, p.ID); err != nil {
 			return err
 		}
 	}
-	return s.commitFederationUsers(tx, p)
+	return s.commitFederationUsers(tx, p, previous)
 }
 
 func updateFederationPeerConfig(tx *sql.Tx, p FederationPeer) error {
@@ -333,7 +341,10 @@ func validateFederationUsers(tx *sql.Tx, users []string) error {
 	return nil
 }
 
-func (s *Store) commitFederationUsers(tx *sql.Tx, p FederationPeer) error {
+func (s *Store) commitFederationUsers(tx *sql.Tx, p, previous FederationPeer) error {
+	if err := queueFederationUserRevocations(tx, p, previous); err != nil {
+		return err
+	}
 	// 放行资格一旦撤销，之后重新放行也不能恢复旧会话。
 	rows, err := tx.Query(`SELECT ref,subject FROM federation_sources WHERE peer_id=? AND revoked=0`, p.ID)
 	if err != nil {
@@ -360,7 +371,7 @@ func (s *Store) commitFederationUsers(tx *sql.Tx, p FederationPeer) error {
 			return err
 		}
 	}
-	return s.notify(tx.Commit(), changeAuth|changeFederationTargets|changeProfiles|changePresence)
+	return s.notify(tx.Commit(), managedUsersChanged|changeFederationTargets)
 }
 
 func validateFederationProjects(tx *sql.Tx, defaults []FederationProject) error {
@@ -487,6 +498,9 @@ func (s *Store) federationLogin(peer FederationPeer, person federationSubject, c
 	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM federation_revocations WHERE peer_id=? AND source_ref=?)`, peer.ID, person.SourceRef).Scan(&revoked); err != nil || revoked {
 		return "", time.Time{}, errFederationDenied
 	}
+	if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM federation_user_access_revocations WHERE peer_id=? AND subject=? AND revoked_at>=?)`, peer.ID, person.ID, checked.UnixMilli()).Scan(&revoked); err != nil || revoked {
+		return "", time.Time{}, errFederationDenied
+	}
 	var user string
 	var disabled bool
 	err = tx.QueryRow(`SELECT u.id,u.disabled FROM federation_users f JOIN users u ON u.id=f.user_id WHERE f.peer_id=? AND f.subject=?`, peer.ID, person.ID).Scan(&user, &disabled)
@@ -541,6 +555,9 @@ func (s *Store) federationLogin(peer FederationPeer, person federationSubject, c
 		return "", time.Time{}, err
 	}
 	if _, err = tx.Exec(`INSERT INTO federation_sessions VALUES(?,?,?,?,?)`, hash, peer.ID, person.SourceRef, checked.UnixMilli(), checked.Add(federationRecheck).UnixMilli()); err != nil {
+		return "", time.Time{}, err
+	}
+	if _, err = tx.Exec(`INSERT INTO federation_user_checks VALUES(?,?) ON CONFLICT(user_id) DO NOTHING`, user, checked.Add(federationRecheck).UnixMilli()); err != nil {
 		return "", time.Time{}, err
 	}
 	return token, expires, s.notify(tx.Commit(), changeNavigation|changeProfiles)

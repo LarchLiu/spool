@@ -320,10 +320,16 @@ func TestIssueAutomationEnrollmentAndMembershipValidation(t *testing.T) {
 		t.Fatalf("automation: %+v", i)
 	}
 	cliOK(t, root, "user", "disable", "--user", "alice")
-	if _, err := invoke(t, root, "issues", "set", "--project", "Example", "--interval", "15"); err == nil {
-		t.Fatal("disabled automation controller accepted")
+	i = decode[workspace.IssuesAutomation](t, cliOK(t, root, "issues", "show", "--project", "Example"))
+	if i.Enabled || i.UserID != "" || len(i.AssigneeIDs) != 0 {
+		t.Fatal("disabled automation controller retained project responsibility")
 	}
 	cliOK(t, root, "user", "enable", "--user", "alice")
+	if _, err := invoke(t, root, "issues", "set", "--project", "Example", "--owner", "alice", "--enabled=true"); err == nil {
+		t.Fatal("re-enabling a user restored revoked project permissions")
+	}
+	cliOK(t, root, "project", "member", "set", "--project", "Example", "--user", "alice")
+	cliOK(t, root, "issues", "set", "--project", "Example", "--owner", "alice", "--enabled=true")
 	if _, err := invoke(t, root, "project", "member", "remove", "--project", "Example", "--user", "alice"); err == nil {
 		t.Fatal("automation owner removed")
 	}

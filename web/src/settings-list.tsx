@@ -8,6 +8,7 @@ export type SettingsListItem = {
   status: string;
   icon: ReactNode;
   action?: ReactNode;
+  details?: ReactNode;
 };
 
 export function SettingsList({
@@ -78,6 +79,9 @@ export function SettingsList({
                     />
                   </button>
                 </>
+              )}
+              {item.details && (
+                <div className="settings-list-details">{item.details}</div>
               )}
             </li>
           ))}

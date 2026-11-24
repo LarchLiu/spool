@@ -638,6 +638,8 @@ func (s *desktopSettings) Execute(ctx context.Context, command settingsCommand) 
 		var saved workspace.User
 		saved, err = store.SaveUser(workspace.UserInput{ID: person.ID, Username: person.Username, Nickname: person.Nickname, Password: person.Password, Disabled: person.Disabled, RemoteDesktop: person.RemoteDesktop, ADBBridge: person.ADBBridge})
 		savedID = saved.ID
+	case "delete-person":
+		err = store.RemoveDisabledUser(command.Target)
 	case "save-project":
 		project := command.Project.Project
 		project.Path, project.Members, project.MemberAccess, project.MemberOwnAccess, project.Issues = command.Project.Path, command.Project.Members, command.Project.MemberAccess, command.Project.MemberOwnAccess, command.Project.Issues

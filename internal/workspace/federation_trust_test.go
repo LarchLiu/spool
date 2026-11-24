@@ -474,12 +474,12 @@ func TestRevokeFederationTrustRequiresNewApproval(t *testing.T) {
 				}
 				found := false
 				for _, user := range users {
-					if user.ID == externalID && user.SourceServerID == before.ID && user.SourceServerName == before.Name {
+					if user.ID == externalID && user.SourceServerID == before.ID && user.SourceServerName == before.Name && user.Disabled {
 						found = true
 					}
 				}
-				if !found || !b.CanCreateChat(externalID, project.ID) {
-					t.Fatal("revocation removed the external person or their project permissions")
+				if !found || b.CanCreateChat(externalID, project.ID) {
+					t.Fatal("revocation did not retain a disabled person without project permissions")
 				}
 			}
 			for _, unaffected := range []string{localToken, otherToken} {
@@ -534,6 +534,17 @@ func TestRevokeFederationTrustRequiresNewApproval(t *testing.T) {
 			}
 			if _, _, err := b.federationLogin(before, person, time.Now()); !errors.Is(err, errFederationDenied) {
 				t.Fatal("re-approval allowed a stale in-flight login", err)
+			}
+			if externalID != "" {
+				if _, _, err := b.federationLogin(restored, person, time.Now()); !errors.Is(err, errFederationDenied) {
+					t.Fatal("new approval re-enabled the disabled visitor", err)
+				}
+				if _, err := b.SaveUser(UserInput{ID: externalID}); err != nil {
+					t.Fatal(err)
+				}
+				if b.CanCreateChat(externalID, project.ID) {
+					t.Fatal("re-enabling the visitor restored old project permissions")
+				}
 			}
 			if _, _, err := b.federationLogin(restored, person, time.Now()); err != nil {
 				t.Fatal("new approval did not allow a fresh login", err)

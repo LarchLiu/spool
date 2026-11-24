@@ -11,6 +11,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Smartphone,
+  Trash2,
 } from "lucide-react";
 import { AgentIcon } from "./agent-icon";
 import { UserAvatar } from "./user-avatar";
@@ -19,6 +20,7 @@ import {
   newPerson,
   settingsCall,
   type PersonDraft,
+  type Person,
   type ManagedAgent,
   type Backend,
   type UpdatePreferences,
@@ -882,8 +884,97 @@ export function PeoplePage({ data, run, t }: PageProps) {
   const [draft, setDraft] = useState<PersonDraft>(newPerson);
   const [editing, setEditing] = useState(false);
   const [original, setOriginal] = useState<PersonDraft>(newPerson);
+  const [deleting, setDeleting] = useState<string>();
+  const [deletePending, setDeletePending] = useState(false);
   const form = useRef<HTMLFormElement>(null);
+  const deleteConfirmation = useRef<HTMLDivElement>(null);
   const source = draft.source_server_id;
+  const active = data.users.filter((person) => !person.disabled);
+  const disabled = data.users.filter((person) => person.disabled);
+  useEffect(() => {
+    deleteConfirmation.current?.scrollIntoView({ block: "nearest" });
+  }, [deleting]);
+  const select = (id: string) => {
+    const person = data.users.find((person) => person.id === id);
+    if (person) edit({ ...person, password: "" });
+  };
+  const disabledItem = (person: Person) => ({
+    id: person.id,
+    title: userName(person),
+    description: person.source_server_id
+      ? t("Federation source: {server}", {
+          server: person.source_server_name || person.source_server_id,
+        })
+      : person.username,
+    status: [
+      person.source_server_id && t("Federated sign-in"),
+      t("Disabled"),
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    icon: <UserAvatar person={person} size={34} />,
+    action: (
+      <button
+        type="button"
+        className="settings-destructive"
+        disabled={deletePending}
+        aria-label={t("Delete person {name}", {
+          name: userName(person),
+        })}
+        onClick={() => setDeleting(person.id)}
+      >
+        <Trash2 size={15} aria-hidden="true" />
+        {t("Delete")}
+      </button>
+    ),
+    details: deleting === person.id && (
+      <div
+        ref={deleteConfirmation}
+        className="settings-person-delete-confirm"
+        role="group"
+        aria-label={t("Delete person {name}?", {
+          name: userName(person),
+        })}
+      >
+        <p>
+          {t("Delete person {name}?", {
+            name: userName(person),
+          })}
+        </p>
+        <p>
+          {t(
+            "This removes the person from management and keeps their chat history. The account cannot be restored.",
+          )}
+        </p>
+        <button
+          type="button"
+          className="settings-destructive"
+          disabled={deletePending}
+          onClick={async () => {
+            setDeletePending(true);
+            try {
+              const next = await run({
+                kind: "delete-person",
+                target: person.id,
+              });
+              if (next) setDeleting(undefined);
+            } finally {
+              setDeletePending(false);
+            }
+          }}
+        >
+          {t("Delete")}
+        </button>
+        <button
+          type="button"
+          disabled={deletePending}
+          onClick={() => setDeleting(undefined)}
+        >
+          {t("Cancel")}
+        </button>
+      </div>
+    ),
+  });
   const edit = (person: PersonDraft) => {
     setDraft(person);
     setOriginal(person);
@@ -926,9 +1017,11 @@ export function PeoplePage({ data, run, t }: PageProps) {
         </Hint>
         <SettingsList
           label={t("People")}
-          summary={t("{count} people", { count: data.users.length })}
-          empty={t("No people yet. Create an account to get started.")}
-          items={data.users.map((person) => ({
+          summary={t("{count} people", { count: active.length })}
+          empty={t(
+            "No enabled people. Create an account or enable a disabled person.",
+          )}
+          items={active.map((person) => ({
             id: person.id,
             title: userName(person),
             description: person.source_server_id
@@ -936,12 +1029,7 @@ export function PeoplePage({ data, run, t }: PageProps) {
                   server: person.source_server_name || person.source_server_id,
                 })
               : person.username,
-            status: [
-              person.source_server_id && t("Federated sign-in"),
-              person.disabled && t("Disabled"),
-            ]
-              .filter(Boolean)
-              .join(" · "),
+            status: person.source_server_id ? t("Federated sign-in") : "",
             action: (person.remote_desktop || person.adb_bridge) && (
               <div className="settings-person-remote">
                 {person.adb_bridge && (
@@ -1001,12 +1089,7 @@ export function PeoplePage({ data, run, t }: PageProps) {
             ),
             icon: <UserAvatar person={person} size={34} />,
           }))}
-          onSelect={(id) => {
-            const person = data.users.find((person) => person.id === id);
-            if (person) {
-              edit({ ...person, password: "" });
-            }
-          }}
+          onSelect={select}
           action={
             <button
               type="button"
@@ -1019,6 +1102,18 @@ export function PeoplePage({ data, run, t }: PageProps) {
             </button>
           }
         />
+        {disabled.length > 0 && (
+          <details className="settings-group settings-people-disabled">
+            <summary>{t("Disabled people")}</summary>
+            <SettingsList
+              label={t("Disabled people")}
+              summary={t("{count} people", { count: disabled.length })}
+              empty={t("No people yet. Create an account to get started.")}
+              items={disabled.map(disabledItem)}
+              onSelect={select}
+            />
+          </details>
+        )}
       </>
     );
   return (

@@ -165,6 +165,7 @@ func (s *Store) SetFederationTrustUsers(target string, allUsers bool, users []st
 	if err != nil {
 		return err
 	}
+	previous := p
 	p.AllUsers, p.Users = allUsers, users
 	// 只更新人员字段；核验在事务中重新读取当前名单，不需要废弃其他用户的会话。
 	data, err := json.Marshal(p)
@@ -174,7 +175,7 @@ func (s *Store) SetFederationTrustUsers(target string, allUsers bool, users []st
 	if _, err = tx.Exec(`UPDATE federation_peers SET config=? WHERE id=?`, data, target); err != nil {
 		return err
 	}
-	return s.commitFederationUsers(tx, p)
+	return s.commitFederationUsers(tx, p, previous)
 }
 
 // UpdateFederationTrustReturnRoute 配置已批准来源的回连线路，不修改其他登录策略。

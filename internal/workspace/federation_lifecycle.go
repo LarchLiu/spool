@@ -70,6 +70,8 @@ type federationSessionRef struct {
 }
 
 func (a *App) federationMaintain(ctx context.Context) {
+	a.syncFederationUserRevocations(ctx)
+	a.checkFederationUsers(ctx)
 	now := time.Now().UnixMilli()
 	offline := now - federationOffline.Milliseconds()
 	if result, err := a.store.db.ExecContext(ctx, `DELETE FROM auth_sessions WHERE token_hash IN (SELECT session_hash FROM federation_sessions WHERE checked_at<=?)`, offline); err == nil {
@@ -219,9 +221,9 @@ func (s *Store) saveFederationUser(input UserInput, source string) (User, error)
 	}
 	defer tx.Rollback()
 	v := User{ID: input.ID, SourceServerID: source}
-	if err := tx.QueryRow(`SELECT u.username,u.nickname,u.created_at,u.disabled,COALESCE(v.style,?),COALESCE(v.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0),COALESCE(json_extract(p.config,'$.name'),'')
-		FROM users u JOIN federation_users f ON f.user_id=u.id JOIN federation_peers p ON p.id=f.peer_id LEFT JOIN user_avatars v ON v.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id WHERE u.id=?`, DefaultAvatar().Style, v.ID).
-		Scan(&v.Username, &v.Nickname, &v.CreatedAt, &v.Disabled, &v.Avatar.Style, &v.Avatar.Seed, &v.RemoteDesktop, &v.ADBBridge, &v.SourceServerName); err != nil {
+	if err := tx.QueryRow(`SELECT u.username,u.nickname,u.created_at,u.disabled,COALESCE(v.style,?),COALESCE(v.seed,''),COALESCE(rd.enabled,0),COALESCE(ab.enabled,0),COALESCE(json_extract(p.config,'$.name'),''),f.subject
+		FROM users u JOIN federation_users f ON f.user_id=u.id JOIN federation_peers p ON p.id=f.peer_id LEFT JOIN user_avatars v ON v.user_id=u.id LEFT JOIN user_remote_desktop rd ON rd.user_id=u.id LEFT JOIN user_adb_bridge ab ON ab.user_id=u.id WHERE u.id=? AND NOT EXISTS(SELECT 1 FROM deleted_users WHERE user_id=u.id)`, DefaultAvatar().Style, v.ID).
+		Scan(&v.Username, &v.Nickname, &v.CreatedAt, &v.Disabled, &v.Avatar.Style, &v.Avatar.Seed, &v.RemoteDesktop, &v.ADBBridge, &v.SourceServerName, &v.SourceUserID); err != nil {
 		return User{}, err
 	}
 	// Older management clients send the current profile, while permissions-only
@@ -247,6 +249,11 @@ func (s *Store) saveFederationUser(input UserInput, source string) (User, error)
 	}
 	if _, err = tx.Exec(`DELETE FROM auth_sessions WHERE user_id=?`, v.ID); err != nil {
 		return User{}, err
+	}
+	if v.Disabled {
+		if err := disableManagedUsers(tx, `SELECT id FROM users WHERE id=?`, v.ID); err != nil {
+			return User{}, err
+		}
 	}
 	if err = bumpProfileRevision(tx); err != nil {
 		return User{}, err

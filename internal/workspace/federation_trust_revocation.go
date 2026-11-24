@@ -62,6 +62,13 @@ func recordFederationTrustGrant(tx *sql.Tx, peer string, outgoing bool, request 
 	if revoked && previous == request {
 		return errFederationDenied
 	}
+	if outgoing {
+		// Unbound notices belong to an unresolved earlier approval. An explicit
+		// approval must retire them before they can bind to the new relationship.
+		if _, err := tx.Exec(`DELETE FROM federation_user_revocations WHERE peer_id=? AND grant_id=''`, peer); err != nil {
+			return err
+		}
+	}
 	_, err = tx.Exec(`INSERT INTO federation_trust_epochs VALUES(?,?,?,0)
 		ON CONFLICT(peer_id,outgoing) DO UPDATE SET request_id=excluded.request_id,revoked=0`, peer, outgoing, request)
 	return err
@@ -114,7 +121,7 @@ func (s *Store) revokeFederationTrust(target string, outgoing bool) error {
 	if err := recordFederationTrustRevocation(tx, target, outgoing, grant, local.ID()); err != nil {
 		return err
 	}
-	return s.notify(tx.Commit(), changeAuth|changePresence|changeFederationTargets)
+	return s.notify(tx.Commit(), managedUsersChanged|changeFederationTargets)
 }
 
 // The initiator is the local identity for a management action, or the verified
@@ -140,10 +147,7 @@ func applyFederationTrustRevocation(tx *sql.Tx, p FederationPeer, outgoing bool)
 		}
 	} else {
 		in, p.Accept, p.Projects = false, false, nil
-		if _, err := tx.Exec(`DELETE FROM web_push_subscriptions WHERE user_id IN (SELECT user_id FROM federation_users WHERE peer_id=?)`, p.ID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`DELETE FROM auth_sessions WHERE user_id IN (SELECT user_id FROM federation_users WHERE peer_id=?)`, p.ID); err != nil {
+		if err := disableManagedUsers(tx, `SELECT user_id FROM federation_users WHERE peer_id=?`, p.ID); err != nil {
 			return err
 		}
 	}
@@ -229,7 +233,7 @@ func (s *Store) receiveFederationTrustRevocation(peer FederationPeer, notice fed
 	if err := recordFederationTrustRevocation(tx, peer.ID, outgoing, notice.Grant, peer.ID); err != nil {
 		return err
 	}
-	return s.notify(tx.Commit(), changeAuth|changePresence|changeFederationTargets)
+	return s.notify(tx.Commit(), managedUsersChanged|changeFederationTargets)
 }
 
 // Pending outbound applications already pin the target's public identity.

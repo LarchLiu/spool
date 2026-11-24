@@ -163,6 +163,7 @@ test("clipboard, navigation and reveal actions bypass mutation scope while saves
     ["detect-web-proxy", "Service"],
     ["set-adb-bridge", "Service"],
     ["save-person", "People"],
+    ["delete-person", "People"],
     ["disconnect-remote-desktop", "People"],
     ["save-project", "Projects"],
     ["refresh-agents", "Agents"],

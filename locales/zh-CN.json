@@ -1,5 +1,12 @@
 {
   "Source user ID": "来源用户 ID",
+  "Disabled people": "停用人员",
+  "No enabled people. Create an account or enable a disabled person.": "暂无启用人员。可新建账号，或在停用人员中启用账号。",
+  "Disable this account before deleting it": "请先停用该账号再删除",
+  "Deleted accounts cannot be restored": "已删除的账号无法恢复",
+  "This removes the person from management and keeps their chat history. The account cannot be restored.": "删除后将从管理列表移除，保留历史对话。该账号无法恢复。",
+  "Delete person {name}": "删除人员 {name}",
+  "Delete person {name}?": "删除人员 {name}？",
   "External people appear after their first trusted sign-in. Manage account access here and project permissions in Projects.": "外部人员在首次互信登录成功后出现在这里。可在此管理账号访问，在「项目」中设置项目权限。",
   "The operating system denied Spool access to this file.": "操作系统阻止了 Spool 读取此文件。",
   "Allow access to attached file": "选择文件允许访问",

@@ -52,6 +52,7 @@ test("people and online settings distinguish external people by their source ser
   const people = renderToStaticMarkup(createElement(PeoplePage, { data, run() {}, t }));
   assert.match(people, /<strong>Alice · Office<\/strong>/);
   assert.match(people, /<strong>Alice<\/strong>/);
+  assert.match(people, />Federated sign-in<\/span>/);
   const online = renderToStaticMarkup(createElement(OnlinePage, { data, t }));
   assert.match(online, /Alice · Office/);
 });
@@ -294,7 +295,7 @@ test("people management shows live per-user remote connection counts and a separ
   assert.match(bobRow, /class="settings-remote-count"[^>]*>0<\/span>/);
   assert.match(bobRow, /role="img" aria-label="Remote desktop allowed"/);
   assert.doesNotMatch(bobRow, /Disconnect desktop/);
-  assert.match(charlieRow, /Federated sign-in · Disabled/);
+  assert.match(charlieRow, />Federated sign-in · Disabled<\/span>/);
   assert.doesNotMatch(
     charlieRow,
     /settings-remote-count|Remote desktop allowed|Disconnect desktop/,
