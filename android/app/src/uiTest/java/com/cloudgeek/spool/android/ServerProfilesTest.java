@@ -149,13 +149,36 @@ public class ServerProfilesTest {
         }
     }
 
-    @Test public void addServerDialogRequiresANameAndDoesNotAcceptAnEmptyServer() {
+    @Test public void optionalNamesPersistAndFollowTheServerUntilOverridden() {
+        ServerProfiles profiles = new ServerProfiles(new ConnectionPlan("", "", ConnectionMode.DIRECT));
+        ServerProfiles.Server server = profiles.add("");
+        assertEquals("Home", server.displayName());
+        server.serverName = "Office server";
+        profiles = ServerProfiles.restore(profiles.encode(), server.id, server.plan);
+        assertEquals("", profiles.active().name);
+        assertEquals("Office server", profiles.active().displayName());
+        profiles.active().name = "My office";
+        profiles.active().serverName = "Renamed by administrator";
+        assertEquals("My office", profiles.active().displayName());
+        profiles.active().name = "";
+        assertEquals("Renamed by administrator", profiles.active().displayName());
+    }
+
+    @Test public void namesCommitInlineOnFocusLossAndEnterAndCanBeCleared() {
         try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
             AtomicReference<String> name = new AtomicReference<>();
-            NativeServerDialog dialog = new NativeServerDialog(new NativeUi(controller.get(), false), "", true, name::set);
-            dialog.show(); dialog.save.performClick(); assertNull(name.get()); assertNotNull(dialog.name.getError());
-            dialog.name.setText("  Home server  "); dialog.save.performClick();
-            assertEquals("Home server", name.get()); assertFalse(dialog.isShowing());
+            ServerProfiles.Server server = new ServerProfiles(new ConnectionPlan("", "", ConnectionMode.DIRECT)).active();
+            NativeServerSettings settings = new NativeServerSettings(new NativeUi(controller.get(), false), server, enabled -> {}, name::set);
+            controller.get().setContentView(settings);
+            settings.name.requestFocus(); settings.name.setText("  Home server  ");
+            assertNull(name.get());
+            settings.name.clearFocus();
+            assertEquals("Home server", name.get());
+            settings.name.setText("");
+            settings.name.onEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+            assertEquals("", name.get());
+            assertNull(settings.name.getError());
+            assertEquals("Home", settings.name.getHint().toString());
         }
     }
 
@@ -165,10 +188,11 @@ public class ServerProfilesTest {
             ServerProfiles.Server second = profiles.add("Office"); second.enabled = false;
             AtomicReference<Boolean> checked = new AtomicReference<>(); int[] renamed = {0}, added = {0}, appearance = {0}, login = {0}, settingsOpened = {0};
             NativeUi ui = new NativeUi(controller.get(), false);
-            NativeServerSettings settings = new NativeServerSettings(ui, profiles.active(), checked::set, () -> renamed[0]++);
+            NativeServerSettings settings = new NativeServerSettings(ui, profiles.active(), checked::set, name -> renamed[0]++);
             assertEquals("Spool", settings.name.getText().toString());
             settings.enabled.performClick(); assertEquals(Boolean.FALSE, checked.get());
-            settings.rename.performClick(); assertEquals(1, renamed[0]);
+            settings.name.setText("Updated"); settings.name.onEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+            assertEquals(1, renamed[0]);
             NativeSidebar sidebar = new NativeSidebar(ui, new NativeSidebarState(), id -> new org.json.JSONObject(), () -> {}, id -> {}, id -> {},
                     () -> {}, () -> settingsOpened[0]++, () -> {}, () -> login[0]++, () -> appearance[0]++);
             sidebar.servers(profiles, Map.of(), id -> {}, () -> added[0]++);

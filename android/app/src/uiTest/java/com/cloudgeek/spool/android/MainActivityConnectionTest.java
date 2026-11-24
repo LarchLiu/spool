@@ -719,7 +719,8 @@ public class MainActivityConnectionTest {
                 java.nio.file.Files.writeString(new java.io.File(secondState, "owned-session").toPath(), "fixture");
                 h.call("openSidebar"); h.call("openSettings");
                 NativeSettings dialog = h.get("settingsDialog");
-                View last = dialog.content.additions.getChildAt(dialog.content.additions.getChildCount() - 1);
+                android.view.ViewGroup footer = (android.view.ViewGroup) dialog.content.additions.getChildAt(dialog.content.additions.getChildCount() - 1);
+                View last = footer.getChildAt(footer.getChildCount() - 1);
                 assertTrue(last instanceof Button); assertEquals("Delete server", ((Button) last).getText().toString());
                 last.performClick(); drain(connections); h.io.jobs.clear();
                 assertEquals(second.id, profiles.selected); assertEquals(1, profiles.entries.size());
@@ -734,8 +735,9 @@ public class MainActivityConnectionTest {
                 NativeServerTabs tabs = (NativeServerTabs) sidebar.getChildAt(1);
                 assertEquals(1, tabs.tabs.getChildCount()); assertSame(tabs.add, tabs.tabs.getChildAt(0));
                 tabs.add.performClick();
-                NativeServerDialog add = h.get("serverDialog");
-                add.name.setText("New server"); add.save.performClick();
+                assertTrue(h.<NativeSettings>get("settingsDialog").isShowing());
+                NativeServerSettings add = h.get("serverSettings");
+                add.name.setText("New server"); add.name.onEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
                 assertEquals(1, profiles.entries.size()); assertEquals("New server", profiles.active().name);
                 assertTrue(profiles.active().plan.direct.isEmpty()); assertTrue(h.<NativeSettings>get("settingsDialog").isShowing());
             } finally { h.activity.getPreferences(Activity.MODE_PRIVATE).edit().clear().commit(); }

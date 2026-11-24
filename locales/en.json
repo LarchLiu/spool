@@ -1099,6 +1099,7 @@
   "Destination server ID": "Destination server ID",
   "Review incoming requests": "Review incoming requests",
   "Trusted servers": "Trusted servers",
+  "Trusted server": "Trusted server",
   "No trusted servers yet": "No trusted servers yet",
   "No active server trust": "No active server trust",
   "Revoked trust ({count})": "Revoked trust ({count})",

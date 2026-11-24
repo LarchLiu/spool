@@ -54,15 +54,15 @@ final class NativeServerTabs extends NativeTabs {
     }
 
     private void addServer(ServerProfiles.Server server, Consumer<String> choose) {
-        Button tab = addTab(server.id, server.name, () -> choose.accept(server.id));
-        SpannableString label = new SpannableString("\ufffc" + server.name);
+        Button tab = addTab(server.id, server.displayName(), () -> choose.accept(server.id));
+        SpannableString label = new SpannableString("\ufffc" + server.displayName());
         Dot dot = new Dot(ui.dp(8), ui.dp(8));
         label.setSpan(dot, 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         tab.setText(label);
     }
 
     private void addTrusted(NativeFederation.Tab entry, Consumer<String> choose) {
-        String name = entry.server == null ? entry.target.name : entry.server.name;
+        String name = entry.server == null ? entry.target.name : entry.server.displayName();
         Button tab = addTab(entry.key(), name, () -> choose.accept(entry.key()));
         SpannableString label = new SpannableString("\ufffc" + name);
         Link link = new Link(ui, ui.dp(14), ui.dp(6));
@@ -79,14 +79,14 @@ final class NativeServerTabs extends NativeTabs {
         String selected = button(profiles.selected) == null ? "" : profiles.selected;
         for (ServerProfiles.Server server : profiles.entries) {
             Button tab = button(server.id); if (tab == null) continue;
-            String description = server.name + ", " + connectionStatus(tab, server, states);
+            String description = server.displayName() + ", " + connectionStatus(tab, server, states);
             describe(tab, description);
         }
         for (NativeFederation.Tab entry : trusted) {
             Button tab = button(entry.key()); if (tab == null) continue;
             ServerProfiles.Server server = entry.server;
-            String description = entry.source.name + " → " + (server == null ? entry.target.name
-                    : server.name + ", " + connectionStatus(tab, server, states));
+            String description = entry.source.displayName() + " → " + (server == null ? entry.target.name
+                    : server.displayName() + ", " + connectionStatus(tab, server, states));
             describe(tab, description + ", " + ui.t("Trusted server"));
             if ((selected.isEmpty() || entry.key().equals(selectedFederationTab)) && server != null && server.id.equals(profiles.selected))
                 selected = entry.key();

@@ -20,6 +20,7 @@ final class ServerProfiles {
         boolean trusted() { return !federationTarget.isEmpty(); }
         String connectionID() { return connectionID.isEmpty() ? id : connectionID; }
         Server(String id, String name, ConnectionPlan plan) { this.id = id; this.name = name; this.plan = plan; }
+        String displayName() { return name.trim().isEmpty() ? serverName(serverName) : name.trim(); }
         String sessionDirectory(File root) {
             File directory = new File(id.equals("legacy") ? root : new File(new File(root, "servers"), id), "session");
             return (trusted() ? new File(directory, federationAccount) : directory).getAbsolutePath();
@@ -42,7 +43,7 @@ final class ServerProfiles {
             for (int i = 0; i < array.length(); i++) {
                 JSONObject value = array.getJSONObject(i);
                 String id = value.getString("id"), name = value.getString("name").trim();
-                if (!id.matches("[A-Za-z0-9_-]{1,64}") || name.isEmpty() || name.length() > 80 || restored.stream().anyMatch(server -> server.id.equals(id))) continue;
+                if (!id.matches("[A-Za-z0-9_-]{1,64}") || name.length() > 80 || restored.stream().anyMatch(server -> server.id.equals(id))) continue;
                 String network = value.optString("selectedNetwork", value.optString("priority"));
                 if (!value.has("selectedNetwork") && id.equals(selected)
                         && !value.optString(legacy.selected == ConnectionMode.DIRECT ? "direct" : "tailscale").isEmpty()) network = legacy.selected.value;

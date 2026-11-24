@@ -176,6 +176,7 @@ final class NativeText {
             case "Disconnect": value = "断开连接"; break;
             case "Disconnected": value = "未连接"; break;
             case "Dismiss": value = "关闭"; break;
+            case "Display name (optional)": value = "显示名称（可选）"; break;
             case "Do not show again": value = "不再显示"; break;
             case "Don't ask": value = "不询问"; break;
             case "Download file": value = "下载文件"; break;
@@ -195,7 +196,6 @@ final class NativeText {
             case "Enter a chat title of 1–200 characters": value = "请输入 1–200 个字符的对话标题"; break;
             case "Enter a conversation name": value = "请输入会话名称"; break;
             case "Enter a message of up to 2000 characters.": value = "请输入不超过 2000 字的消息。"; break;
-            case "Enter a server name (1–80 characters).": value = "请输入 1–80 个字符的服务器名称。"; break;
             case "Enter commit message": value = "输入提交信息"; break;
             case "Enter pairing code": value = "输入配对码"; break;
             case "Enter workspace": value = "进入工作空间"; break;
@@ -249,6 +249,7 @@ final class NativeText {
             case "Language server recommendation": value = "语言服务器推荐"; break;
             case "Large directories show up to 2,000 entries.": value = "大型目录最多显示 2,000 项。"; break;
             case "Latest update": value = "最新进展"; break;
+            case "Leave blank to use the name from the server's settings.": value = "留空时使用服务器设置中的名称。"; break;
             case "Less": value = "较少"; break;
             case "Light": value = "浅色"; break;
             case "Listed files": value = "列出文件"; break;
@@ -385,7 +386,6 @@ final class NativeText {
             case "Remove {name}": value = "移除 {name}"; break;
             case "Rename": value = "重命名"; break;
             case "Rename chat": value = "重命名对话"; break;
-            case "Rename server": value = "重命名服务器"; break;
             case "Rendering diagram…": value = "正在渲染图表…"; break;
             case "Request failed": value = "请求失败"; break;
             case "Requested form schema": value = "表单格式要求"; break;
@@ -436,7 +436,6 @@ final class NativeText {
             case "Sending…": value = "发送中…"; break;
             case "Server connection": value = "服务器连接"; break;
             case "Server identity (SHA-256)": value = "服务器身份（SHA-256）"; break;
-            case "Server name": value = "服务器名称"; break;
             case "Servers": value = "服务器"; break;
             case "Session directory": value = "会话目录"; break;
             case "Session directory is unavailable": value = "会话目录已不可用"; break;
@@ -524,8 +523,8 @@ final class NativeText {
             case "Tool result": value = "工具结果"; break;
             case "Toon Head": value = "Toon Head"; break;
             case "Tracked": value = "已跟踪"; break;
-            case "Trusted server": value = "互信服务器"; break;
             case "Tracked files will be restored to their staged version. Untracked files will be deleted. Staged changes are kept. This cannot be undone.": value = "已跟踪文件将恢复到暂存区的版本，未跟踪文件将被删除。已暂存的修改会保留。此操作无法撤销。"; break;
+            case "Trusted server": value = "互信服务器"; break;
             case "Turn on Wireless debugging in Developer options, then try again.": value = "请在开发者选项中打开“无线调试”，然后重试。"; break;
             case "Turn plan mode on": value = "开启计划模式"; break;
             case "Unpin chat": value = "取消置顶聊天"; break;
@@ -761,6 +760,7 @@ final class NativeText {
             case "Disconnect": value = "切断"; break;
             case "Disconnected": value = "未接続"; break;
             case "Dismiss": value = "閉じる"; break;
+            case "Display name (optional)": value = "表示名（任意）"; break;
             case "Do not show again": value = "今後表示しない"; break;
             case "Don't ask": value = "確認しない"; break;
             case "Download file": value = "ファイルをダウンロード"; break;
@@ -780,7 +780,6 @@ final class NativeText {
             case "Enter a chat title of 1–200 characters": value = "チャットのタイトルを1～200文字で入力してください"; break;
             case "Enter a conversation name": value = "会話名を入力してください"; break;
             case "Enter a message of up to 2000 characters.": value = "2000 文字以内のメッセージを入力してください。"; break;
-            case "Enter a server name (1–80 characters).": value = "サーバー名を1～80文字で入力してください。"; break;
             case "Enter commit message": value = "コミットメッセージを入力"; break;
             case "Enter pairing code": value = "ペア設定コードを入力"; break;
             case "Enter workspace": value = "ワークスペースを開く"; break;
@@ -834,6 +833,7 @@ final class NativeText {
             case "Language server recommendation": value = "言語サーバーの提案"; break;
             case "Large directories show up to 2,000 entries.": value = "大きなフォルダーは最大 2,000 件まで表示します。"; break;
             case "Latest update": value = "最新の進捗"; break;
+            case "Leave blank to use the name from the server's settings.": value = "空欄の場合、サーバー設定の名前を使用します。"; break;
             case "Less": value = "少なめ"; break;
             case "Light": value = "ライト"; break;
             case "Listed files": value = "ファイル一覧を取得"; break;
@@ -970,7 +970,6 @@ final class NativeText {
             case "Remove {name}": value = "{name}を削除"; break;
             case "Rename": value = "名前を変更"; break;
             case "Rename chat": value = "チャット名を変更"; break;
-            case "Rename server": value = "サーバー名を変更"; break;
             case "Rendering diagram…": value = "図を描画しています…"; break;
             case "Request failed": value = "リクエストに失敗しました"; break;
             case "Requested form schema": value = "フォームのスキーマ"; break;
@@ -1021,7 +1020,6 @@ final class NativeText {
             case "Sending…": value = "送信中…"; break;
             case "Server connection": value = "サーバー接続"; break;
             case "Server identity (SHA-256)": value = "Server identity (SHA-256)"; break;
-            case "Server name": value = "サーバー名"; break;
             case "Servers": value = "サーバー"; break;
             case "Session directory": value = "セッションディレクトリ"; break;
             case "Session directory is unavailable": value = "セッションディレクトリを利用できません"; break;
@@ -1109,8 +1107,8 @@ final class NativeText {
             case "Tool result": value = "ツール結果"; break;
             case "Toon Head": value = "Toon Head"; break;
             case "Tracked": value = "追跡済み"; break;
-            case "Trusted server": value = "信頼済みサーバー"; break;
             case "Tracked files will be restored to their staged version. Untracked files will be deleted. Staged changes are kept. This cannot be undone.": value = "追跡済みファイルをステージ済みの内容に戻し、未追跡ファイルを削除します。ステージ済みの変更は保持されます。この操作は元に戻せません。"; break;
+            case "Trusted server": value = "信頼済みサーバー"; break;
             case "Turn on Wireless debugging in Developer options, then try again.": value = "開発者向けオプションで「ワイヤレスデバッグ」をオンにしてから、もう一度お試しください。"; break;
             case "Turn plan mode on": value = "プランモードを有効にする"; break;
             case "Unpin chat": value = "チャットのピン留めを解除"; break;

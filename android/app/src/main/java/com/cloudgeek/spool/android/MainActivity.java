@@ -181,6 +181,8 @@ public final class MainActivity extends Activity {
     private boolean desktopAvailable;
     private NativeConnectionSettings connectionSettings;
     private NativeServerSettings serverSettings;
+    private ServerProfiles.Server newServer;
+    private LinearLayout serverDelete;
     private NativeAdbSettings adbSettings;
     private NativeDialog adbDialog;
     private AdbShare adbShare;
@@ -197,7 +199,6 @@ public final class MainActivity extends Activity {
         public void foregroundUnavailable() { if (adbShare != null) adbShare.foregroundUnavailable(); }
         public void notificationUnavailable() { if (adbShare != null) adbShare.notificationUnavailable(); }
     };
-    private NativeServerDialog serverDialog;
     private NativeFileBrowser fileBrowser;
     private NativeFileModel fileState;
     private Button loginSubmit;
@@ -802,7 +803,7 @@ public final class MainActivity extends Activity {
     }
 
     private void openSettings() {
-        if (serverProfiles.active() == null) { editServer(true); return; }
+        if (settingsServer() == null) { addServer(); return; }
         if (settingsOpen) return;
         closeAppearance();
         captureDraft();
@@ -846,8 +847,18 @@ public final class MainActivity extends Activity {
     }
 
     private void closeSettings() {
+        if (newServer != null && connectionSettings != null) {
+            ConnectionPlan plan = connectionSettings.plan();
+            if ((!serverSettings.name.getText().toString().trim().isEmpty() || !plan.ordered(null).isEmpty() || !plan.autoSwitch || newServer.enabled)
+                    && !persistNewServer(plan)) return;
+        }
+        if (settingsOpen && serverSettings != null) serverSettings.commitName();
         settingsOpen = false;
+        newServer = null;
+        pairingOwner = "";
         dismissSettingsDialog();
+        serverSettings = null;
+        serverDelete = null;
         connectionSettings = null;
         serverInput = null;
         connectionText = null;
@@ -867,7 +878,7 @@ public final class MainActivity extends Activity {
             page.addView(ui.sidebarButton(this::openSidebar));
             page.addView(ui.logo(48)); gap(page, 20);
             page.addView(ui.bold(ui.t("No servers yet."), 20)); gap(page, 16);
-            page.addView(ui.button(ui.t("Add server"), true, () -> editServer(true)));
+            page.addView(ui.button(ui.t("Add server"), true, this::addServer));
             root.addView(page, new FrameLayout.LayoutParams(-1, -1));
             return;
         }
@@ -1754,57 +1765,114 @@ public final class MainActivity extends Activity {
         boolean dark = theme.equals("dark") || theme.equals("system")
                 && (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
         NativeUi settingsUi = new NativeUi(this, dark, locale());
+        ServerProfiles.Server server = settingsServer();
+        if (server == null) return;
         if (settingsDialog != null && connectionSettings != null && settingsDialog.matchesAppearance(settingsUi)
-                && serverProfiles.selected.equals(settingsDialog.content.getTag())) {
-            settingsDialog.content.title.setText(serverProfiles.active().name + " · " + settingsUi.t("Settings"));
-            serverSettings.bind(serverProfiles.active());
+                && server.id.equals(settingsDialog.content.getTag())) {
+            bindServerSettings(settingsUi, server);
             updateConnectionSettings();
             return;
         }
+        boolean sameServer = settingsDialog != null && connectionSettings != null && server.id.equals(settingsDialog.content.getTag());
+        ConnectionPlan plan = sameServer ? connectionSettings.plan() : newServer == server ? server.plan : connectionDraft;
+        String name = sameServer ? serverSettings.name.getText().toString() : server.name;
+        ConnectionMode visible = plan.selected;
+        if (sameServer) for (ConnectionMode mode : ConnectionMode.values())
+            if (connectionSettings.tabs.button(mode.value).isSelected()) visible = mode;
+        if (serverSettings != null) serverSettings.name.setOnFocusChangeListener(null);
+        if (connectionSettings != null) for (ConnectionMode mode : ConnectionMode.values())
+            connectionSettings.input(mode).setOnFocusChangeListener(null);
         boolean show = settingsDialog == null;
         if (show) settingsDialog = new NativeSettings(settingsUi, theme, language, appVersion(),
                 this::updatePreferences, this::closeSettings, false);
-        else settingsDialog.bind(settingsUi, theme, language, body -> settingsAdditions(settingsUi, body));
+        else settingsDialog.bind(settingsUi, theme, language, body -> settingsAdditions(settingsUi, body, plan));
         if (show) {
-            settingsAdditions(settingsUi, settingsDialog.content.additions);
+            settingsAdditions(settingsUi, settingsDialog.content.additions, plan);
             settingsDialog.show();
         }
-        settingsDialog.content.title.setText(serverProfiles.active().name + " · " + settingsUi.t("Settings"));
-        settingsDialog.content.setTag(serverProfiles.selected);
+        settingsDialog.content.setTag(server.id);
+        bindServerSettings(settingsUi, server);
+        serverSettings.name.setText(name);
+        connectionSettings.show(visible);
         updateConnectionSettings();
     }
 
-    private void settingsAdditions(NativeUi settingsUi, LinearLayout body) {
-        serverSettings = new NativeServerSettings(settingsUi, serverProfiles.active(),
-                enabled -> enableServer(serverProfiles.selected, enabled), () -> editServer(false));
+    private ServerProfiles.Server settingsServer() { return newServer == null ? serverProfiles.active() : newServer; }
+
+    private void bindServerSettings(NativeUi settingsUi, ServerProfiles.Server server) {
+        boolean saved = serverProfiles.entries.contains(server);
+        settingsDialog.content.title.setText(saved ? server.displayName() + " · " + settingsUi.t("Settings") : settingsUi.t("Add server"));
+        serverSettings.bind(server);
+        serverDelete.setVisibility(saved ? View.VISIBLE : View.GONE);
+    }
+
+    private void settingsAdditions(NativeUi settingsUi, LinearLayout body, ConnectionPlan initialPlan) {
+        final ServerProfiles.Server server = settingsServer();
+        serverSettings = new NativeServerSettings(settingsUi, server, enabled -> {
+            if (server != settingsServer()) return;
+            if (newServer == server) {
+                if (!persistNewServer(connectionSettings.plan())) { serverSettings.bind(server); return; }
+                newServer = null;
+                connectionPlan = connectionDraft = server.plan;
+                enableServer(server.id, enabled); settingsPage();
+            } else enableServer(server.id, enabled);
+        }, name -> {
+            if (destroyed || !settingsOpen || server != settingsServer()) return;
+            server.name = name;
+            if (newServer == server) persistNewServer(server.plan);
+            else { saveServers(); settingsPage(); renderNavigation(); }
+        });
         body.addView(serverSettings);
         gap(body, 16);
-        connectionSettings = new NativeConnectionSettings(settingsUi, connectionDraft,
-                this::editConnectionPlan, this::applyConnectionPlan, this::disconnect, this::enrollTailscale, this::scanPairing);
-        serverInput = connectionSettings.input(connectionDraft.selected);
+        connectionSettings = new NativeConnectionSettings(settingsUi, initialPlan, plan -> {
+            if (server != settingsServer()) return;
+            if (newServer == server) {
+                if (plan.autoSwitch != server.plan.autoSwitch) persistNewServer(server.plan.automatic(plan.autoSwitch));
+                updateConnectionSettings();
+            } else editConnectionPlan(plan);
+        }, (plan, mode) -> {
+            if (server != settingsServer()) return;
+            if (newServer == server && !persistNewServer(plan.select(mode))) return;
+            newServer = null;
+            serverSettings.commitName();
+            applyConnectionPlan(plan, mode);
+        }, this::disconnect, () -> {
+            if (server != settingsServer()) return;
+            if (newServer == server && !persistNewServer(connectionSettings.plan().select(ConnectionMode.TAILSCALE))) return;
+            newServer = null;
+            serverSettings.commitName();
+            enrollTailscale();
+        }, this::scanPairing);
+        for (ConnectionMode mode : ConnectionMode.values()) connectionSettings.input(mode).setOnFocusChangeListener((view, focused) -> {
+            if (!focused && settingsOpen && !destroyed && newServer == server && !connectionSettings.input(mode).getText().toString().trim().isEmpty())
+                persistNewServer(connectionSettings.plan());
+        });
+        serverInput = connectionSettings.input(connectionSettings.plan().selected);
         connectionText = connectionSettings.diagnostics;
         connectionHint = connectionSettings.note;
         body.addView(connectionSettings);
-        gap(body, 24);
+        serverDelete = settingsUi.column();
+        gap(serverDelete, 24);
         Button delete = settingsUi.button(settingsUi.t("Delete server"), false, this::deleteServer);
         delete.setTextColor(settingsUi.error);
-        body.addView(delete, new LinearLayout.LayoutParams(-1, -2));
+        serverDelete.addView(delete, new LinearLayout.LayoutParams(-1, -2));
+        body.addView(serverDelete);
     }
 
     private void scanPairing() {
-        if (serverProfiles.active() == null) return;
-        pairingOwner = serverProfiles.selected;
-        new com.google.zxing.integration.android.IntentIntegrator(this)
-                .setRequestCode(SCAN_PAIRING)
-                .setCaptureActivity(PairingScanActivity.class)
-                .setDesiredBarcodeFormats(com.google.zxing.integration.android.IntentIntegrator.QR_CODE)
-                .setPrompt(tr("Scan the pairing code in Spool Desktop", "扫描 Spool Desktop 显示的配对二维码"))
-                .setOrientationLocked(false).setBeepEnabled(false).initiateScan();
+        if (settingsServer() == null) return;
+        pairingOwner = settingsServer().id;
+        Intent scan = new Intent(this, PairingScanActivity.class).setAction(com.google.zxing.client.android.Intents.Scan.ACTION)
+                .putExtra(com.google.zxing.client.android.Intents.Scan.FORMATS, "QR_CODE")
+                .putExtra(com.google.zxing.client.android.Intents.Scan.PROMPT_MESSAGE, tr("Scan the pairing code in Spool Desktop", "扫描 Spool Desktop 显示的配对二维码"))
+                .putExtra("ORIENTATION_LOCKED", false).putExtra("BEEP_ENABLED", false);
+        startActivityForResult(scan, SCAN_PAIRING);
     }
 
     private void deleteServer() {
         ServerProfiles.Server removed = serverProfiles.active();
         if (removed == null) return;
+        if (newServer == removed) newServer = null;
         closeSettings();
         List<ServerProfiles.Server> dependents = new ArrayList<>();
         for (ServerProfiles.Server server : serverProfiles.entries) {
@@ -1891,6 +1959,8 @@ public final class MainActivity extends Activity {
         String name = ServerProfiles.serverName(value.optString("server_name"));
         if (server.serverName.equals(name)) return;
         server.serverName = name; saveServers();
+        if (settingsOpen && settingsServer() == server) settingsPage();
+        renderNavigation();
     }
 
     private void recordActiveSession(Client captured, JSONObject value) {
@@ -2526,13 +2596,40 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private void editServer(boolean adding) {
-        if (serverDialog != null && serverDialog.isShowing()) return;
-        serverDialog = new NativeServerDialog(ui, adding ? "" : serverProfiles.active().name, adding, name -> {
-            if (adding) { ServerProfiles.Server server = serverProfiles.add(name); selectServer(server.id); openSettings(); }
-            else { serverProfiles.active().name = name; saveServers(); settingsPage(); }
-        });
-        serverDialog.show();
+    private void addServer() {
+        if (newServer != null) return;
+        if (settingsOpen) closeSettings();
+        newServer = new ServerProfiles.Server(UUID.randomUUID().toString(), "", new ConnectionPlan("", "", ConnectionMode.DIRECT, true));
+        newServer.enabled = false;
+        openSettings();
+    }
+
+    private boolean persistNewServer(ConnectionPlan plan) {
+        if (newServer == null) return true;
+        try {
+            plan = plan.validated();
+        } catch (IllegalArgumentException error) {
+            if (connectionSettings != null) for (ConnectionMode mode : ConnectionMode.values()) {
+                try {
+                    String address = plan.origin(mode);
+                    if (!address.isEmpty()) { if (mode == ConnectionMode.RELAY) new RelayPairing(address); else new OriginPolicy(address); }
+                } catch (IllegalArgumentException invalid) { connectionSettings.input(mode).setError(invalid.getMessage()); }
+            }
+            return false;
+        }
+        ServerProfiles.Server server = newServer;
+        server.name = serverSettings.name.getText().toString().trim();
+        server.plan = plan;
+        if (serverProfiles.entries.contains(server)) {
+            connectionDraft = plan; saveServers(); settingsPage(); renderNavigation();
+            return true;
+        }
+        // Keep this creation session's remaining fields until close or Connect.
+        // The first profile has no previous server whose draft selectServer can capture.
+        if (serverProfiles.entries.isEmpty()) connectionDraft = plan;
+        serverProfiles.entries.add(server);
+        selectServer(server.id);
+        return true;
     }
 
     private void editConnectionPlan(ConnectionPlan plan) {
@@ -2598,7 +2695,7 @@ public final class MainActivity extends Activity {
                     public void close() { stream.close(); }
                 };
             }
-        }, io, () -> { if (desktopDialog != null && !desktopDialog.isShowing()) desktopDialog = null; }, serverProfiles.active().name);
+        }, io, () -> { if (desktopDialog != null && !desktopDialog.isShowing()) desktopDialog = null; }, serverProfiles.active().displayName());
         desktopDialog.show();
     }
 
@@ -2618,6 +2715,11 @@ public final class MainActivity extends Activity {
 
     private void updateConnectionSettings() {
         if (!settingsOpen || connectionText == null) return;
+        if (newServer != null) {
+            ConnectionPlan plan = connectionSettings.plan();
+            connectionSettings.bind(plan.selected, false, false, false, !plan.tailscale.isEmpty(), Map.of(), "");
+            return;
+        }
         String message = networkMessage == null || networkMessage.isEmpty() ? "" : "\n\n" + networkMessage;
         if (connectionMode == ConnectionMode.RELAY) {
             String path = connectionInfo == null ? "" : connectionInfo.optString("path");
@@ -2914,7 +3016,7 @@ public final class MainActivity extends Activity {
         restoreSidebarPreferences();
         sidebarState.select(projectID, chatID, projects, chats);
         if (!panel.equals("sidebar") || sidebar == null) return;
-        sidebar.servers(serverProfiles, serverConnectionStates(), this::chooseServer, () -> editServer(true), federationTabs(), selectedFederationTab);
+        sidebar.servers(serverProfiles, serverConnectionStates(), this::chooseServer, this::addServer, federationTabs(), selectedFederationTab);
         boolean signedIn = user != null && !routeLoginRequired;
         boolean showWorkspace = signedIn || hasWorkspaceCache();
         boolean networkPending = routeSelecting || connecting && !httpsState.equals("Failed");
@@ -2934,7 +3036,7 @@ public final class MainActivity extends Activity {
     }
 
     private void loginFromSidebar() {
-        if (serverProfiles.active() == null) { editServer(true); return; }
+        if (serverProfiles.active() == null) { addServer(); return; }
         if (routeSelecting || sessionCheckBusy) return;
         if (connectionPlan.ordered(null).isEmpty()) { openSettings(); return; }
         if (!serverProfiles.active().enabled) enableServer(serverProfiles.selected, true);
@@ -4396,12 +4498,21 @@ public final class MainActivity extends Activity {
         }
         if (requestCode == SCAN_PAIRING) {
             String owner = pairingOwner; pairingOwner = "";
-            com.google.zxing.integration.android.IntentResult result = com.google.zxing.integration.android.IntentIntegrator.parseActivityResult(resultCode, data);
-            if (resultCode != RESULT_OK || result == null || result.getContents() == null || !owner.equals(serverProfiles.selected)) return;
+            String contents = data == null ? null : data.getStringExtra(com.google.zxing.client.android.Intents.Scan.RESULT);
+            if (resultCode != RESULT_OK || contents == null || owner.isEmpty()
+                    || !owner.equals(serverProfiles.selected) && (newServer == null || !owner.equals(newServer.id))) return;
             try {
-                RelayPairing pairing = new RelayPairing(result.getContents());
+                RelayPairing pairing = new RelayPairing(contents);
                 if (!pairing.invitation) throw new IllegalArgumentException(tr("Scan a new code in Spool Desktop.", "请扫描 Spool Desktop 新生成的二维码。"));
-                ConnectionPlan plan = new ConnectionPlan(connectionPlan.direct, connectionPlan.tailscale, pairing.code, ConnectionMode.RELAY, connectionPlan.autoSwitch);
+                ConnectionPlan previous = newServer == null ? connectionPlan : connectionSettings.plan();
+                ConnectionPlan plan = new ConnectionPlan(previous.direct, previous.tailscale, pairing.code, ConnectionMode.RELAY, previous.autoSwitch);
+                if (connectionSettings != null) {
+                    connectionSettings.input(ConnectionMode.RELAY).setText(pairing.code);
+                    connectionSettings.show(ConnectionMode.RELAY);
+                }
+                if (newServer != null && !persistNewServer(plan)) return;
+                newServer = null;
+                if (serverSettings != null) serverSettings.commitName();
                 applyConnectionPlan(plan, ConnectionMode.RELAY);
             } catch (IllegalArgumentException error) { toast(error); }
             return;
@@ -5557,7 +5668,6 @@ public final class MainActivity extends Activity {
         monitor.stop();
         recovery.stop();
         dismissSettingsDialog();
-        if (serverDialog != null) serverDialog.dismiss();
         if (appearanceDialog != null) { appearanceDialog.dismiss(); appearanceDialog = null; }
         closeAvatarPicker();
         closeImagePreview();

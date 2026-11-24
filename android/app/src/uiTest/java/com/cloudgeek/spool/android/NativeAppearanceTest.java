@@ -212,7 +212,7 @@ public class NativeAppearanceTest {
             NativeSettings dialog = new NativeSettings(ui, dark ? "dark" : "light", "zh-CN", "test", (a, b) -> {}, () -> {}, false);
             ServerProfiles profiles = new ServerProfiles(new ConnectionPlan("", "", ConnectionMode.DIRECT));
             profiles.active().name = "Home";
-            dialog.content.additions.addView(new NativeServerSettings(ui, profiles.active(), enabled -> {}, () -> {}));
+            dialog.content.additions.addView(new NativeServerSettings(ui, profiles.active(), enabled -> {}, name -> {}));
             dialog.content.additions.addView(ui.space(16));
             NativeConnectionSettings settings = new NativeConnectionSettings(ui,
                     new ConnectionPlan("https://chat.example.com", "https://spool.example.ts.net", RelayPairingTest.code("https://relay.example.com"), ConnectionMode.DIRECT, true),

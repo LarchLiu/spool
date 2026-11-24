@@ -1099,6 +1099,7 @@
   "Destination server ID": "相手サーバーの ID",
   "Review incoming requests": "受信した申請を確認",
   "Trusted servers": "信頼済みサーバー",
+  "Trusted server": "信頼済みサーバー",
   "No trusted servers yet": "信頼済みサーバーはまだありません",
   "No active server trust": "有効なサーバーの信頼はありません",
   "Revoked trust ({count})": "取り消した信頼（{count}）",

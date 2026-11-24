@@ -1099,6 +1099,7 @@
   "Destination server ID": "目标服务器 ID",
   "Review incoming requests": "审核收到的申请",
   "Trusted servers": "已建立信任的服务器",
+  "Trusted server": "互信服务器",
   "No trusted servers yet": "尚未与其他服务器建立信任",
   "No active server trust": "暂无有效的服务器信任",
   "Revoked trust ({count})": "已撤销的信任（{count}）",

@@ -35,7 +35,6 @@ final class NativeSettings extends Dialog {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         bind(ui, theme, language, body -> {});
         setCanceledOnTouchOutside(true);
-        setOnCancelListener(dialog -> close.run());
         setOnKeyListener((dialog, code, event) -> {
             if (code != android.view.KeyEvent.KEYCODE_ESCAPE) return false;
             if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) cancel();
@@ -85,6 +84,8 @@ final class NativeSettings extends Dialog {
         ui.dismissMenus();
         super.dismiss();
     }
+
+    @Override public void cancel() { close.run(); }
 
     static final class Content extends LinearLayout {
         final LinearLayout heading, additions, versionRow, updates;
