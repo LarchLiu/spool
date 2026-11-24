@@ -5484,7 +5484,8 @@ public final class MainActivity extends Activity {
         if (relayDiscovery != null) relayDiscovery.refresh();
         monitor.setActive(settingsOpen);
         recovery.setActive(true);
-        if (client != null) publishInterfaces();
+        // Network callbacks remain registered in the background. Returning alone
+        // must not retire healthy Relay connections, including the ADB tunnel.
         main.post(connectionRetry);
         refreshServerConnections(true);
         if (user != null && !routeLoginRequired) {
