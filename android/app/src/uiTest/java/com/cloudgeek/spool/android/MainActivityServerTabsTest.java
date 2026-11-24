@@ -40,7 +40,7 @@ public class MainActivityServerTabsTest {
                 + " chat',project_id:'project-one',backend:'codex',updated_at:1,can_control:true,participants:[]}]}";
     }
 
-    private static final class Fixture implements AutoCloseable {
+    static final class Fixture implements AutoCloseable {
         final MainActivityGoalTest.Harness h = new MainActivityGoalTest.Harness(true);
         final MainActivityGoalTest.Queue connections = MainActivityConnectionTest.connectionQueue(h);
         final ServerProfiles servers = h.get("serverProfiles");

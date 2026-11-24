@@ -57,8 +57,17 @@ Requires Android 11 or later and Wi-Fi, which wireless debugging needs.
    If automatic discovery fails, enter the port shown in Android's Wireless
    debugging settings, or the pairing port shown in its pairing dialog.
 
-An ongoing notification lets you stop sharing while another app is in the
-foreground. Sharing also stops if you disable Spool's notifications or the ADB
-bridge notification channel, or dismiss the notification where Android allows it.
-Sharing ends if Android stops Spool or when the selected server or account changes. Stopping the share does not remove the pairing; to forget the host,
-remove it under Wireless debugging → Paired devices.
+You can share with several servers at once. Start sharing and pair separately
+on each server; switching server tabs keeps existing shares connected. Each
+server has its own ongoing notification, labeled with its name, with pairing
+and stop controls for that server. These controls also work while another app
+is in the foreground.
+
+Sharing stops for a server when you stop its share, dismiss its notification
+where Android allows it, disconnect or delete that server, change its configured
+addresses, or sign out or change its account. All shares end if Android stops
+Spool or you disable Spool's notifications or the ADB bridge notification channel.
+If Android kills the app, any leftover sharing notifications are cleared when
+you reopen Spool or use their controls.
+Stopping a share does not remove the pairing; to forget the host, remove it
+under Wireless debugging → Paired devices.

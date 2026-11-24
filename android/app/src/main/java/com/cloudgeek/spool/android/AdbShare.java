@@ -7,7 +7,8 @@ import java.util.function.IntConsumer;
  * Shares this phone's wireless debugging with the adb of one Spool server.
  * Every method and callback runs on the main thread. A share survives lost
  * networks and replaced routes; it ends when the user stops it, the server
- * refuses it. If the phone is not paired, it waits for the user to pair it.
+ * refuses it, or its server/account is removed. Switching the visible server
+ * does not change this share. If unpaired, it waits for the user to pair it.
  */
 final class AdbShare {
     enum Phase { IDLE, CONNECTING, UNAUTHORIZED, ONLINE, WAITING, UNPAIRED, PAIRING, FAILED }

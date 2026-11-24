@@ -67,7 +67,7 @@ public class NativeAdbSharingTest {
         @Override public void foregroundUnavailable() { failures++; AdbShareService.end(app, this); }
         @Override public void notificationUnavailable() { notificationFailures++; AdbShareService.end(app, this); }
         Intent show() {
-            assertTrue(AdbShareService.show(app, this, share, "en"));
+            assertTrue(AdbShareService.show(app, this, share, "Home", "en"));
             Intent intent = Shadows.shadowOf(app).getNextStartedService();
             assertNotNull(intent);
             return intent;
@@ -113,6 +113,128 @@ public class NativeAdbSharingTest {
         values.putCharSequence(action.getRemoteInputs()[0].getResultKey(), reply);
         android.app.RemoteInput.addResultsToIntent(action.getRemoteInputs(), intent, values);
         return intent;
+    }
+
+    private static Notification notice(NotificationManager manager, String server) {
+        return Shadows.shadowOf(manager).getAllNotifications().stream()
+                .filter(n -> ("Sharing this phone · " + server).equals(n.extras.getString(Notification.EXTRA_TITLE)))
+                .findFirst().orElseThrow();
+    }
+
+    private static void loseProcessState(ServiceController<AdbShareService> controller, Owner foreground) {
+        java.util.Map<?, ?> sessions = org.robolectric.util.ReflectionHelpers.getStaticField(AdbShareService.class, "sessions");
+        int foregroundID = org.robolectric.util.ReflectionHelpers.getField(sessions.get(foreground), "id");
+        // Android removes the foreground notice on process death; ordinary notices remain.
+        foreground.app.getSystemService(NotificationManager.class).cancel(foregroundID);
+        sessions.clear();
+        org.robolectric.util.ReflectionHelpers.setStaticField(AdbShareService.class, "running", null);
+        org.robolectric.util.ReflectionHelpers.setStaticField(AdbShareService.class, "nextID", foregroundID);
+        controller.destroy();
+    }
+
+    @Test @Config(sdk = {30, 35})
+    public void staleNotificationsAreRemovedWhenAnActionRestartsTheService() {
+        Owner home = new Owner(), office = new Owner();
+        home.share.phase = office.share.phase = AdbShare.Phase.ONLINE;
+        // Android grants this merged AndroidX signature permission on installation.
+        Shadows.shadowOf(home.app).grantPermissions(home.app.getPackageName() + ".DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION");
+        NotificationManager manager = home.app.getSystemService(NotificationManager.class);
+        ServiceController<AdbShareService> old = Robolectric.buildService(AdbShareService.class).create();
+        old.get().onStartCommand(home.show(), 0, 1);
+        assertTrue(AdbShareService.show(office.app, office, office.share, "Office", "en"));
+        Intent stop = Shadows.shadowOf(notice(manager, "Office").deleteIntent).getSavedIntent();
+        loseProcessState(old, home);
+        assertEquals(1, Shadows.shadowOf(manager).getAllNotifications().size());
+        ServiceController<AdbShareService> restarted = Robolectric.buildService(AdbShareService.class).create();
+        try {
+            restarted.get().onStartCommand(stop, 0, 1);
+            assertTrue(Shadows.shadowOf(manager).getAllNotifications().isEmpty());
+            assertEquals(0, office.stops);
+        } finally { restarted.destroy(); }
+    }
+
+    @Test public void staleActionsCannotCancelNewSharesEvenWhenNotificationIDsAreReused() {
+        Owner oldHome = new Owner(), oldOffice = new Owner();
+        oldHome.share.phase = oldOffice.share.phase = AdbShare.Phase.UNPAIRED;
+        NotificationManager manager = oldHome.app.getSystemService(NotificationManager.class);
+        ServiceController<AdbShareService> old = Robolectric.buildService(AdbShareService.class).create();
+        old.get().onStartCommand(oldHome.show(), 0, 1);
+        assertTrue(AdbShareService.show(oldOffice.app, oldOffice, oldOffice.share, "Old office", "en"));
+        Notification stale = notice(manager, "Old office");
+        Intent oldStop = Shadows.shadowOf(stale.deleteIntent).getSavedIntent();
+        loseProcessState(old, oldHome);
+        Owner home = new Owner(), office = new Owner();
+        home.share.phase = office.share.phase = AdbShare.Phase.UNPAIRED;
+        ServiceController<AdbShareService> current = Robolectric.buildService(AdbShareService.class).create();
+        try {
+            current.get().onStartCommand(home.show(), 0, 1);
+            assertTrue(AdbShareService.show(office.app, office, office.share, "Office", "en"));
+            current.get().onStartCommand(oldStop, 0, 2);
+            current.get().onStartCommand(pairReply(stale.actions[0], "111111"), 0, 3);
+            assertEquals(0, home.stops); assertEquals(0, office.stops);
+            assertTrue(home.codes.isEmpty()); assertTrue(office.codes.isEmpty());
+            assertEquals(2, Shadows.shadowOf(manager).getAllNotifications().size());
+            assertNotNull(notice(manager, "Home")); assertNotNull(notice(manager, "Office"));
+        } finally { AdbShareService.end(home.app, home); AdbShareService.end(office.app, office); current.destroy(); }
+    }
+
+    @Test public void eachServerHasItsOwnNotificationAndStoppingTheForegroundShareKeepsTheOtherRunning() {
+        Owner home = new Owner(), office = new Owner();
+        home.share.phase = office.share.phase = AdbShare.Phase.UNPAIRED;
+        NotificationManager manager = home.app.getSystemService(NotificationManager.class);
+        ServiceController<AdbShareService> controller = Robolectric.buildService(AdbShareService.class).create();
+        AdbShareService service = controller.get();
+        try {
+            service.onStartCommand(home.show(), 0, 1);
+            Notification homeNotice = Shadows.shadowOf(service).getLastForegroundNotification();
+            assertTrue(AdbShareService.show(office.app, office, office.share, "Office", "en"));
+            List<Notification> notices = Shadows.shadowOf(manager).getAllNotifications();
+            assertEquals(2, notices.size());
+            assertEquals("Sharing this phone · Home", homeNotice.extras.getString(Notification.EXTRA_TITLE));
+            Notification officeNotice = notices.stream().filter(n -> "Sharing this phone · Office".equals(n.extras.getString(Notification.EXTRA_TITLE)))
+                    .findFirst().orElseThrow();
+            service.onStartCommand(pairReply(officeNotice.actions[0], "222222"), 0, 2);
+            assertEquals(List.of("222222"), office.codes); assertTrue(home.codes.isEmpty());
+            Intent homeStop = Shadows.shadowOf(homeNotice.deleteIntent).getSavedIntent();
+            service.onStartCommand(homeStop, 0, 3);
+            assertEquals(1, home.stops); assertEquals(0, office.stops);
+            assertEquals(1, Shadows.shadowOf(manager).getAllNotifications().size());
+            assertEquals("Sharing this phone · Office", Shadows.shadowOf(service).getLastForegroundNotification().extras.getString(Notification.EXTRA_TITLE));
+            assertFalse(Shadows.shadowOf(service).isForegroundStopped());
+            service.onStartCommand(homeStop, 0, 4);
+            assertEquals(1, home.stops); assertEquals(0, office.stops);
+            service.onStartCommand(Shadows.shadowOf(officeNotice.deleteIntent).getSavedIntent(), 0, 5);
+            assertEquals(1, office.stops);
+            assertTrue(Shadows.shadowOf(service).isForegroundStopped());
+            assertTrue(Shadows.shadowOf(manager).getAllNotifications().isEmpty());
+        } finally { AdbShareService.end(home.app, home); AdbShareService.end(office.app, office); controller.destroy(); }
+    }
+
+    @Test public void notificationRevocationAndServiceDestructionEndAllServerShares() {
+        for (boolean revoke : new boolean[] {true, false}) {
+            Owner home = new Owner(), office = new Owner();
+            home.share.phase = office.share.phase = AdbShare.Phase.ONLINE;
+            NotificationManager manager = home.app.getSystemService(NotificationManager.class);
+            ServiceController<AdbShareService> controller = Robolectric.buildService(AdbShareService.class).create();
+            AdbShareService service = controller.get();
+            try {
+                service.onStartCommand(home.show(), 0, 1);
+                assertTrue(AdbShareService.show(office.app, office, office.share, "Office", "en"));
+                if (revoke) {
+                    Shadows.shadowOf(manager).setNotificationsEnabled(false);
+                    Shadows.shadowOf(Looper.getMainLooper()).idleFor(5, java.util.concurrent.TimeUnit.SECONDS);
+                    assertEquals(1, home.notificationFailures); assertEquals(1, office.notificationFailures);
+                } else {
+                    controller.destroy();
+                    assertEquals(1, home.failures); assertEquals(1, office.failures);
+                }
+                assertTrue(Shadows.shadowOf(manager).getAllNotifications().isEmpty());
+            } finally {
+                AdbShareService.end(home.app, home); AdbShareService.end(office.app, office);
+                if (revoke) controller.destroy();
+                Shadows.shadowOf(manager).setNotificationsEnabled(true);
+            }
+        }
     }
 
     @Test public void rejectedPromotionAndServiceDestructionNotifyTheCurrentOwner() {

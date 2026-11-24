@@ -137,7 +137,8 @@ the app leaves the foreground and resume with fresh snapshots when it returns.
 Only the displayed server owns chat SSE and the desktop viewer. The optional
 [ADB bridge](../docs/adb-bridge.md#share-the-phone-running-the-spool-app-wireless-debugging)
 uses a foreground service with an ongoing notification only while you explicitly
-share this phone. Switching servers ends the share.
+share this phone. Shares continue across server tabs, with independent pairing
+and stop notifications for each server.
 Selecting a tab transfers ownership of its existing workspace subscription without
 closing either server's WebSocket. Visibility controls change in place, and decoded
 frames in flight still update the cache belonging to that live server/socket.

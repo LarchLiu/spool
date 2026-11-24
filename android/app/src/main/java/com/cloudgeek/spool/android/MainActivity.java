@@ -185,20 +185,15 @@ public final class MainActivity extends Activity {
     private LinearLayout serverDelete;
     private NativeAdbSettings adbSettings;
     private NativeDialog adbDialog;
+    /** The selected server's share; other servers keep their own controller and notification. */
     private AdbShare adbShare;
-    private AdbDiscovery adbDiscovery;
+    private final Map<String, AdbSession> adbSessions = new HashMap<>();
     /** "" when the selected server accepts a share, its reason when not, null while unknown. */
     private String adbAvailability;
     private boolean adbAvailabilityBusy;
     private static final int ADB_NOTIFICATION_PERMISSION = 13;
     private int adbPermissionPort, adbPermissionSession = -1;
     private final Runnable adbPoll = this::refreshAdbAvailability;
-    private final AdbShareService.Controls adbControls = new AdbShareService.Controls() {
-        public void stop() { stopAdbShare(); }
-        public void pair(String code) { if (adbShare != null) adbShare.pair(code, 0); }
-        public void foregroundUnavailable() { if (adbShare != null) adbShare.foregroundUnavailable(); }
-        public void notificationUnavailable() { if (adbShare != null) adbShare.notificationUnavailable(); }
-    };
     private NativeFileBrowser fileBrowser;
     private NativeFileModel fileState;
     private Button loginSubmit;
@@ -358,6 +353,7 @@ public final class MainActivity extends Activity {
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
+        AdbShareService.clearOrphanedNotifications(this);
         useMarkwonHistory = true;
         // Production always uses the recycler; debug builds retain a persisted comparison switch.
         if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
@@ -1103,8 +1099,7 @@ public final class MainActivity extends Activity {
             return;
         }
         // A share may follow existing routes, but a newly configured endpoint has not been trusted for ADB.
-        if (!connectionPlan.direct.equals(validated.direct) || !connectionPlan.tailscale.equals(validated.tailscale)
-                || !connectionPlan.relay.equals(validated.relay)) {
+        if (!sameConnectionAddresses(connectionPlan, validated)) {
             adbAvailability = null;
             stopAdbShare(); bindAdbSettings();
         }
@@ -1629,7 +1624,9 @@ public final class MainActivity extends Activity {
 
     private void clearWorkspace() { clearWorkspace(true); }
 
-    private void clearWorkspace(boolean forget) {
+    private void clearWorkspace(boolean forget) { clearWorkspace(forget, false); }
+
+    private void clearWorkspace(boolean forget, boolean preserveAdb) {
         finishFederation();
         federationEnrollment = null;
         ++authEpoch;
@@ -1639,11 +1636,13 @@ public final class MainActivity extends Activity {
         restoringSession = false;
         sessionCheckBusy = false;
         csrf = "";
-        clearWorkspaceData(forget);
+        clearWorkspaceData(forget, preserveAdb);
     }
 
     /** Detach the visible workspace without altering a freshly validated server login. */
-    private void clearWorkspaceData(boolean forget) {
+    private void clearWorkspaceData(boolean forget) { clearWorkspaceData(forget, false); }
+
+    private void clearWorkspaceData(boolean forget, boolean preserveAdb) {
         closeChatMenu();
         chatActionPending = "";
         if (forget) serverWorkspaces.remove(serverProfiles.selected);
@@ -1652,9 +1651,11 @@ public final class MainActivity extends Activity {
         closeDesktop();
         setDesktopAvailable(false);
         closeAdbDialog();
-        // A share belongs to the session that was allowed to start it.
+        // A tab switch retains the server's share; clearing its login still stops it.
         adbAvailability = null;
-        stopAdbShare(); bindAdbSettings();
+        adbPermissionSession = -1;
+        if (!preserveAdb) stopAdbShare();
+        bindAdbSettings();
         if (workspaceData != null) workspaceData.stop();
         agentsInitialized = false;
         if (chatRefresh != null) chatRefresh.stop();
@@ -1879,6 +1880,7 @@ public final class MainActivity extends Activity {
             if (server == removed || !server.trusted()) continue;
             if (!server.federationSource.equals(removed.id) && !server.connectionID().equals(removed.id)) continue;
             dependents.add(server);
+            removeAdbSession(server);
             ServerRuntime runtime = serverRuntimes.remove(server.id);
             if (runtime != null) { stopServerFeed(runtime); if (runtime.router != null) runtime.router.stop(); }
             serverWorkspaces.remove(server.id);
@@ -1891,6 +1893,7 @@ public final class MainActivity extends Activity {
         if (previousRouter != null) previousRouter.stop();
         Client previousClient = client;
         stopStreams(); clearWorkspace(); serverWorkspaces.remove(removed.id);
+        removeAdbSession(removed);
         ++generation; monitor.stop(); recovery.stop(); main.removeCallbacks(connectionRetry);
         connectionWanted = false; routeSelecting = routeLoginRequired = connected = connecting = false;
         backend = "codex"; model = effort = permission = "";
@@ -1898,6 +1901,7 @@ public final class MainActivity extends Activity {
         connectionInfo = null; httpsState = "Not checked"; tailnetState = "Disconnected";
         routeStates.clear(); nextRouteProbe = 0; routeFailures = 0;
         serverProfiles.remove(removed.id);
+        selectAdbSession();
         ServerProfiles.Server next = serverProfiles.active();
         connectionPlan = connectionDraft = next == null ? new ConnectionPlan("", "", ConnectionMode.DIRECT) : next.plan;
         ServerRuntime runtime = next == null ? null : serverRuntimes.get(next.id);
@@ -1942,6 +1946,8 @@ public final class MainActivity extends Activity {
 
     private void rememberAccount(ServerProfiles.Server server, JSONObject user) {
         if (server == null || user == null || user.optString("id").isEmpty()) return;
+        AdbSession sharing = adbSessions.get(server.id);
+        if (sharing != null && !sharing.account.isEmpty() && !sharing.account.equals(user.optString("id"))) sharing.share.stop();
         JSONObject account = ServerProfiles.displayAccount(user);
         // 资料列表中的简版用户没有登录来源；不要因此清除当前账号的互信标记。
         if (account.optString("id").equals(server.account.optString("id"))
@@ -1991,6 +1997,8 @@ public final class MainActivity extends Activity {
 
     private void forgetAccount(ServerProfiles.Server server) {
         if (server == null) return;
+        AdbSession sharing = adbSessions.get(server.id);
+        if (sharing != null) sharing.share.stop();
         serverWorkspaces.remove(server.id);
         ServerRuntime runtime = serverRuntimes.get(server.id);
         stopServerFeed(runtime);
@@ -2073,18 +2081,22 @@ public final class MainActivity extends Activity {
         if (next == null) return;
         ServerProfiles.Server previous = serverProfiles.active();
         rememberAccount();
-        if (serverProfiles.active() != null) serverProfiles.active().plan = connectionDraft;
+        if (previous != null) {
+            if (sameConnectionAddresses(previous.plan, connectionDraft)) previous.plan = connectionDraft;
+            else shareConnectionPlan(previous, connectionDraft);
+        }
         saveServerWorkspace(); closeDesktop();
         parkWorkspaceStream(previous);
         stopStreams();
         if (sidebar != null && panel.equals("sidebar")) deferWorkspacePage();
-        clearWorkspace(false);
+        clearWorkspace(false, true);
         backend = "codex"; model = effort = permission = "";
         ++generation; monitor.stop(); recovery.stop(); main.removeCallbacks(connectionRetry);
         routeSelecting = false; routeLoginRequired = false; connected = connecting = false;
         client = null; connectionRouter = null; origin = authURL = connectionMessage = networkMessage = "";
         connectionInfo = null; httpsState = "Not checked"; tailnetState = "Disconnected";
         serverProfiles.selected = next.id;
+        selectAdbSession();
         selectedFederationTab = federationTab;
         federationEnrollment = enrollment;
         connectionPlan = connectionDraft = next.plan;
@@ -2265,6 +2277,7 @@ public final class MainActivity extends Activity {
         ServerProfiles.Server selected = serverProfiles.active();
         for (ServerProfiles.Server server : serverProfiles.entries) {
             if (!server.trusted() || trustedProfileCurrent(server)) continue;
+            removeAdbSession(server);
             ServerRuntime runtime = serverRuntimes.remove(server.id);
             if (runtime != null) { stopServerFeed(runtime); if (runtime.router != null) runtime.router.stop(); }
             serverWorkspaces.remove(server.id);
@@ -2321,6 +2334,10 @@ public final class MainActivity extends Activity {
     private void enableServer(String id, boolean enabled) {
         for (ServerProfiles.Server server : serverProfiles.entries) if (server.id.equals(id)) {
             server.enabled = enabled; saveServers();
+            if (!enabled) {
+                AdbSession sharing = adbSessions.get(id);
+                if (sharing != null) sharing.share.stop();
+            }
             if (id.equals(serverProfiles.selected)) {
                 if (enabled) selectConnections(null, true); else disconnect();
             } else {
@@ -2549,7 +2566,7 @@ public final class MainActivity extends Activity {
     }
 
     private void probeServer(ServerProfiles.Server server, boolean force) {
-        if (!foreground || !server.enabled || server.plan.ordered(null).isEmpty()) return;
+        if (destroyed || (!foreground && !sharingAdb(server.id)) || !server.enabled || server.plan.ordered(null).isEmpty()) return;
         if (server.trusted() && !trustedProfileCurrent(server)) return;
         ServerRuntime runtime = serverRuntimes.computeIfAbsent(server.id, key -> new ServerRuntime());
         if (runtime.selecting) return;
@@ -2644,9 +2661,15 @@ public final class MainActivity extends Activity {
         updateConnectionSettings();
     }
 
+    private static boolean sameConnectionAddresses(ConnectionPlan first, ConnectionPlan second) {
+        return first.direct.equals(second.direct) && first.tailscale.equals(second.tailscale) && first.relay.equals(second.relay);
+    }
+
     private void shareConnectionPlan(ServerProfiles.Server owner, ConnectionPlan plan) {
+        boolean changed = !sameConnectionAddresses(owner.plan, plan);
         owner.plan = plan;
         for (ServerProfiles.Server server : serverProfiles.entries) {
+            if (changed && server.connectionID().equals(owner.connectionID())) removeAdbSession(server);
             if (server == owner || !server.connectionID().equals(owner.connectionID())) continue;
             server.plan = plan;
             ServerRuntime runtime = serverRuntimes.get(server.id);
@@ -5388,41 +5411,124 @@ public final class MainActivity extends Activity {
 
     private AdbShare adbShare() {
         if (adbShare != null) return adbShare;
-        adbDiscovery = new AdbDiscovery(this);
-        adbShare = new AdbShare(new AdbShare.Host() {
-            public void port(boolean pairing, java.util.function.IntConsumer found) {
-                adbDiscovery.find(pairing ? AdbDiscovery.PAIRING : AdbDiscovery.CONNECT, found);
-            }
-            public void cancelDiscovery() { adbDiscovery.close(); }
-            private AdbShare.Link open(boolean pairing, String code, int port, AdbShare.Events events) throws Exception {
-                final Client captured = client;
-                if (captured == null || user == null || routeLoginRequired || csrf.isEmpty()) throw new IOException("Not connected");
-                spoolnet.EventListener listener = (kind, data) -> {
-                    String value = "", text = "";
+        AdbSession session = adbSessions.computeIfAbsent(serverProfiles.selected, key -> new AdbSession(serverProfiles.active()));
+        return adbShare = session.share;
+    }
+
+    private void selectAdbSession() {
+        AdbSession session = adbSessions.get(serverProfiles.selected);
+        adbShare = session == null ? null : session.share;
+        adbAvailability = null;
+        adbPermissionSession = -1;
+    }
+
+    private void removeAdbSession(ServerProfiles.Server server) {
+        AdbSession session = adbSessions.get(server.id);
+        if (session == null) return;
+        session.share.stop();
+        session.discovery.close();
+        adbSessions.remove(server.id);
+        if (adbShare == session.share) adbShare = null;
+    }
+
+    /** Owns its server, login and discovery independently of the visible workspace. */
+    private final class AdbSession implements AdbShareService.Controls {
+        final ServerProfiles.Server server;
+        final AdbDiscovery discovery = new AdbDiscovery(MainActivity.this);
+        final AdbShare share;
+        String account = "";
+
+        AdbSession(ServerProfiles.Server server) {
+            this.server = server;
+            share = new AdbShare(new AdbShare.Host() {
+                public void port(boolean pairing, java.util.function.IntConsumer found) {
+                    discovery.find(pairing ? AdbDiscovery.PAIRING : AdbDiscovery.CONNECT, found);
+                }
+                public void cancelDiscovery() { discovery.close(); }
+                private AdbShare.Link open(boolean pairing, String code, int port, AdbShare.Events events) throws Exception {
+                    ConnectionRouter.Session login = login();
+                    Client captured = transport();
+                    if (captured == null || login == null) throw new IOException("Not connected");
+                    String auth = new JSONObject(login.json).getString("csrf");
+                    spoolnet.EventListener listener = (kind, data) -> {
+                        String value = "", text = "";
+                        try {
+                            JSONObject fields = new JSONObject(data);
+                            value = fields.optString(kind.equals("ready") ? "serial" : kind.equals("state") ? "state" : "code");
+                            text = fields.optString("message");
+                        } catch (Exception ignored) {}
+                        final String first = value, second = text;
+                        main.post(() -> { if (!destroyed) events.event(kind, first, second); });
+                    };
+                    spoolnet.ADBStream stream = pairing ? captured.pairADB(auth, code, port, listener)
+                            : captured.shareADB(auth, adbDeviceKey(), port, listener);
+                    return () -> {
+                        try { streamCloser.execute(stream::close); }
+                        catch (java.util.concurrent.RejectedExecutionException ignored) { stream.close(); }
+                    };
+                }
+                public AdbShare.Link share(int port, AdbShare.Events events) throws Exception { return open(false, "", port, events); }
+                public AdbShare.Link pair(String code, int port, AdbShare.Events events) throws Exception { return open(true, code, port, events); }
+                public void availability(java.util.function.Consumer<String> result) {
+                    ConnectionRouter.Session login = login();
+                    Client captured = transport();
+                    if (captured == null || login == null) {
+                        if (available()) probeServer(server, true);
+                        result.accept(null); return;
+                    }
                     try {
-                        JSONObject fields = new JSONObject(data);
-                        value = fields.optString(kind.equals("ready") ? "serial" : kind.equals("state") ? "state" : "code");
-                        text = fields.optString("message");
-                    } catch (Exception ignored) {}
-                    final String first = value, second = text;
-                    main.post(() -> { if (!destroyed) events.event(kind, first, second); });
-                };
-                spoolnet.ADBStream stream = pairing ? captured.pairADB(csrf, code, port, listener)
-                        : captured.shareADB(csrf, adbDeviceKey(), port, listener);
-                return () -> {
-                    try { streamCloser.execute(stream::close); }
-                    catch (java.util.concurrent.RejectedExecutionException ignored) { stream.close(); }
-                };
+                        String auth = new JSONObject(login.json).getString("csrf");
+                        readAdbAvailability(captured, auth, () -> currentLogin(captured, auth), result);
+                    } catch (Exception error) { result.accept(null); }
+                }
+                public void later(Runnable task, long millis) { main.postDelayed(task, millis); }
+                public void cancel(Runnable task) { main.removeCallbacks(task); }
+                public long now() { return android.os.SystemClock.elapsedRealtime(); }
+                public double random() { return Math.random(); }
+            }, this::changed);
+        }
+
+        private boolean available() {
+            return !destroyed && server.enabled && serverProfiles.entries.contains(server);
+        }
+
+        private Client transport() {
+            if (!available()) return null;
+            if (server.id.equals(serverProfiles.selected)) return client;
+            ServerRuntime runtime = serverRuntimes.get(server.id);
+            return runtime == null || runtime.candidate == null ? null : runtime.candidate.client;
+        }
+
+        private ConnectionRouter.Session login() {
+            if (!available()) return null;
+            if (server.id.equals(serverProfiles.selected)) {
+                if (user == null || routeLoginRequired || csrf.isEmpty() || !account.equals(user.optString("id"))) return null;
+                return new ConnectionRouter.Session(account, object("csrf", csrf).toString());
             }
-            public AdbShare.Link share(int port, AdbShare.Events events) throws Exception { return open(false, "", port, events); }
-            public AdbShare.Link pair(String code, int port, AdbShare.Events events) throws Exception { return open(true, code, port, events); }
-            public void availability(java.util.function.Consumer<String> result) { readAdbAvailability(result); }
-            public void later(Runnable task, long millis) { main.postDelayed(task, millis); }
-            public void cancel(Runnable task) { main.removeCallbacks(task); }
-            public long now() { return android.os.SystemClock.elapsedRealtime(); }
-            public double random() { return Math.random(); }
-        }, this::adbShareChanged);
-        return adbShare;
+            ServerRuntime runtime = serverRuntimes.get(server.id);
+            ConnectionRouter.Session login = runtime == null || runtime.candidate == null ? null : runtime.candidate.session;
+            return login != null && account.equals(login.userID) ? login : null;
+        }
+
+        private boolean currentLogin(Client captured, String auth) {
+            ConnectionRouter.Session login = login();
+            if (transport() != captured || login == null) return false;
+            try { return auth.equals(new JSONObject(login.json).optString("csrf")); }
+            catch (Exception error) { return false; }
+        }
+
+        public void stop() { share.stop(); }
+        public void pair(String code) { share.pair(code, 0); }
+        public void foregroundUnavailable() { share.foregroundUnavailable(); }
+        public void notificationUnavailable() { share.notificationUnavailable(); }
+
+        private void changed() {
+            if (share.active()) {
+                if (!AdbShareService.canNotify(MainActivity.this)) share.notificationUnavailable();
+                else if (!AdbShareService.show(MainActivity.this, this, share, server.displayName(), locale())) share.foregroundUnavailable();
+            } else AdbShareService.end(MainActivity.this, this);
+            if (server.id.equals(serverProfiles.selected)) bindAdbSettings();
+        }
     }
 
     private String adbDeviceKey() {
@@ -5437,8 +5543,14 @@ public final class MainActivity extends Activity {
     private void readAdbAvailability(java.util.function.Consumer<String> result) {
         final Client captured = client;
         final int token = generation, session = authEpoch;
-        final String auth = csrf, loc = locale();
+        final String auth = csrf;
         if (captured == null || user == null || routeLoginRequired || destroyed) { result.accept(null); return; }
+        readAdbAvailability(captured, auth, () -> token == generation && session == authEpoch, result);
+    }
+
+    private void readAdbAvailability(Client captured, String auth, java.util.function.BooleanSupplier current,
+                                     java.util.function.Consumer<String> result) {
+        final String loc = locale();
         try {
             io.execute(() -> {
                 String answer = null;
@@ -5449,7 +5561,7 @@ public final class MainActivity extends Activity {
                     if (error.status == 401 || error.status == 403) answer = "not_authorized";
                 } catch (Exception ignored) {}
                 final String reason = answer;
-                main.post(() -> { if (!destroyed) result.accept(token == generation && session == authEpoch ? reason : null); });
+                main.post(() -> { if (!destroyed) result.accept(current.getAsBoolean() ? reason : null); });
             });
         } catch (java.util.concurrent.RejectedExecutionException ignored) {}
     }
@@ -5516,7 +5628,7 @@ public final class MainActivity extends Activity {
             requestPermissions(new String[] {android.Manifest.permission.POST_NOTIFICATIONS}, ADB_NOTIFICATION_PERMISSION);
             return;
         }
-        if (AdbShareService.canNotify(this)) adbShare().start(port);
+        if (AdbShareService.canNotify(this)) beginAdbShare(port);
         else adbShare().notificationUnavailable();
     }
 
@@ -5527,7 +5639,7 @@ public final class MainActivity extends Activity {
         adbPermissionSession = -1;
         if (session != authEpoch || !canStartAdbShare()) return;
         if (grantResults.length != 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
-                && AdbShareService.canNotify(this)) adbShare().start(port);
+                && AdbShareService.canNotify(this)) beginAdbShare(port);
         else adbShare().notificationUnavailable();
     }
 
@@ -5536,12 +5648,16 @@ public final class MainActivity extends Activity {
         if (adbShare != null) adbShare.stop();
     }
 
-    private void adbShareChanged() {
-        if (adbShare.active()) {
-            if (!AdbShareService.canNotify(this)) adbShare.notificationUnavailable();
-            else if (!AdbShareService.show(this, adbControls, adbShare, locale())) adbShare.foregroundUnavailable();
-        } else AdbShareService.end(this, adbControls);
-        bindAdbSettings();
+    private boolean sharingAdb(String serverID) {
+        AdbSession session = adbSessions.get(serverID);
+        return session != null && session.share.active();
+    }
+
+    private void beginAdbShare(int port) {
+        AdbShare share = adbShare();
+        AdbSession session = adbSessions.get(serverProfiles.selected);
+        session.account = user.optString("id");
+        share.start(port);
     }
 
     private void back() {
@@ -5624,11 +5740,16 @@ public final class MainActivity extends Activity {
         closeChatMenu();
         foreground = false;
         if (relayDiscovery != null) relayDiscovery.close();
-        if (connectionRouter != null) connectionRouter.cancel();
-        if (routeSelecting) { client = null; connected = false; connecting = false; busy = false; }
-        routeSelecting = false;
-        for (ServerRuntime runtime : serverRuntimes.values()) {
+        // Active ADB shares still need the result, including a route replacement or login expiry.
+        if (!sharingAdb(serverProfiles.selected)) {
+            if (connectionRouter != null) connectionRouter.cancel();
+            if (routeSelecting) { client = null; connected = false; connecting = false; busy = false; }
+            routeSelecting = false;
+        }
+        for (Map.Entry<String, ServerRuntime> entry : serverRuntimes.entrySet()) {
+            ServerRuntime runtime = entry.getValue();
             stopServerFeed(runtime);
+            if (sharingAdb(entry.getKey())) continue;
             if (runtime.selecting) runtime.candidate = null;
             runtime.router.cancel(); runtime.selecting = false;
         }
@@ -5656,9 +5777,10 @@ public final class MainActivity extends Activity {
         if (appUpdates != null) appUpdates.close();
         closeDesktop();
         setDesktopAvailable(false);
-        stopAdbShare();
+        for (AdbSession session : new ArrayList<>(adbSessions.values())) session.share.stop();
         closeAdbDialog();
-        if (adbDiscovery != null) adbDiscovery.close();
+        for (AdbSession session : adbSessions.values()) session.discovery.close();
+        adbSessions.clear();
         if (fileBrowser != null) fileBrowser.deactivate();
         fileBrowser = null;
         destroyed = true;
