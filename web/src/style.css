@@ -2431,10 +2431,13 @@ a.attachment-open {
   text-overflow: ellipsis;
 }
 .tool-activity-stats {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35em;
   flex-shrink: 0;
   color: var(--subtle);
   font-size: 11px;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: lining-nums tabular-nums;
   white-space: nowrap;
 }
 .tool-activity-additions {
@@ -2655,6 +2658,9 @@ a.attachment-open {
 }
 .tool-diff + .tool-diff {
   margin-top: 8px;
+}
+.tool-diff .tool-activity-stats {
+  font-size: inherit;
 }
 .tool-diff-note {
   margin: 10px 12px;

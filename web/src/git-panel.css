@@ -117,8 +117,10 @@
   overflow-wrap: anywhere;
 }
 .git-summary > span + span {
+  align-items: baseline;
   flex-shrink: 0;
   margin-left: auto;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 .git-summary b,
 .git-file-stats b {
@@ -432,11 +434,12 @@
 }
 .git-file-stats {
   display: flex;
+  align-items: baseline;
   flex-shrink: 0;
   gap: 5px;
   margin-left: auto;
   font-size: 10px;
-  font-variant-numeric: tabular-nums;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 .git-history-list {
   padding: 0 4px;

@@ -14,6 +14,22 @@ const require = createRequire(path.join(process.env.SPOOL_NODE_MODULES || path.j
 const { chromium } = require("playwright");
 const output = path.join(root, "build/artifacts/git-panel");
 const cleanup = [], reports = [], requests = [];
+async function assertCountBaselines(page) {
+  const stats = page.locator(".git-summary > span:has(b), .git-file-stats:has(b)");
+  const layouts = await stats.evaluateAll(nodes => nodes.map(node => {
+    const baseline = element => {
+      const marker = document.createElement("span");
+      marker.style.cssText = "display:inline-block;width:0;height:0;vertical-align:baseline";
+      element.append(marker);
+      const y = marker.getBoundingClientRect().top;
+      marker.remove();
+      return y;
+    };
+    return { text: node.textContent, offset: Math.abs(baseline(node.querySelector("b")) - baseline(node.querySelector("i"))) };
+  }));
+  assert.ok(layouts.length >= 2, "Both summary and file counts are rendered");
+  for (const { text, offset } of layouts) assert.ok(offset <= 0.5, `${text}: positive and negative Git counts share a baseline (${offset}px)`);
+}
 const commit = "a".repeat(40);
 const detailMessage = "Fix Git panel preview\n\nPreserve the full commit message and its paragraphs.\n第二行提交说明\n\nFinal paragraph.";
 const source = `
@@ -144,6 +160,8 @@ try {
       await page.locator(".git-change-list").waitFor();
       await assertSelectedView(changesTab);
       const row = page.locator(".git-file-row").filter({ hasText: "example.ts" }).first();
+      await row.waitFor();
+      await assertCountBaselines(page);
       assert.equal(await page.getByRole("button", { name: "Stage src/example.ts", exact: true }).textContent(), "+");
       assert.equal(await page.getByRole("button", { name: "Unstage src/example.ts", exact: true }).textContent(), "−");
       const stagedGroup = page.locator(".git-file-group").filter({ has: page.locator(".git-group-toggle", { hasText: /^Staged/ }) });
@@ -293,6 +311,7 @@ try {
       assert.equal(await detail.locator("time").getAttribute("datetime"), new Date(1794900000 * 1000).toISOString());
       assert.equal(await detail.locator("time").innerText(), await page.evaluate(time => new Date(time * 1000).toLocaleString(), 1794900000));
       assert.equal(await detail.locator(".git-commit-detail-message").innerText(), detailMessage);
+      await assertCountBaselines(page);
       assert.ok(await detail.locator(".git-commit-detail-message").evaluate(element => element.getBoundingClientRect().height > parseFloat(getComputedStyle(element).lineHeight) * 5), "Commit message paragraphs remain visible");
       assert.ok(await detail.evaluate(element => element.scrollWidth <= element.clientWidth), "Commit detail fits narrow panels");
       assert.equal(await detail.locator(".git-commit-sha code").innerText(), commit);

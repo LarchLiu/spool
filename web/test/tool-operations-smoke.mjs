@@ -18,8 +18,8 @@ const fixtures = JSON.parse(await fs.readFile(path.join(root, "android/app/src/t
 const output = path.join(root, "build/artifacts/native-tool-items");
 const script = `import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';
 import {ToolActivityList} from '/src/tool-activity.tsx';import {translator} from '/src/i18n.ts';import '/src/style.css';
-function Scene(){const [parts,setParts]=useState([]);window.bind=parts=>flushSync(()=>setParts(parts));
-return <div style={{padding:24}}><ToolActivityList parts={parts} live={true} backend="codex" t={translator('en')} summary="Working"/></div>}
+function Scene(){const [parts,setParts]=useState([]),[language,setLanguage]=useState('en');window.bind=(parts,language='en')=>flushSync(()=>{setParts(parts);setLanguage(language)});
+return <div style={{padding:24}}><ToolActivityList parts={parts} live={true} backend="codex" t={translator(language)} summary="Working"/></div>}
 createRoot(document.getElementById('root')).render(<Scene/>);`;
 let server, browser, apiRequests = 0;
 const plugin = {
@@ -141,21 +141,38 @@ try {
   assert.equal(await page.locator(".tool-activity-stats").count(), 0);
   await page.screenshot({ path: path.join(output, "outcomes-mobile.png") });
   // Summary counts keep their diff colors and precede the disclosure arrow,
-  // including grouped edits, narrow labels and counts updated in place.
+  // including matching positive/negative baselines, grouped edits and live counts.
   const edit = (id, additions, deletions) => ({ id, role: "assistant", kind: "tool_use", name: "fileChange", text: "", tool: {
     kind: "write", status: "completed", path: `${id}-long-file-name-for-a-narrow-summary.ts`, changes: { additions, deletions },
   } });
+  const headerCases = [["single.txt", 1, 1], ["unequal.txt", 23, 12], ["added.txt", 46, 0], ["removed.txt", 0, 8]];
+  const patch = headerCases.map(([name, additions, deletions]) => [
+    `diff --git a/${name} b/${name}`, `--- a/${name}`, `+++ b/${name}`,
+    `@@ -${deletions ? 1 : 0},${deletions} +${additions ? 1 : 0},${additions} @@`,
+    ...Array.from({ length: deletions }, (_, i) => `-old line ${i}`),
+    ...Array.from({ length: additions }, (_, i) => `+new line ${i}`), "",
+  ].join("\n")).join("");
   let statsScenes = 0;
-  for (const theme of ["light", "dark"]) for (const width of [1100, 390]) {
+  for (const language of ["en", "zh-CN"]) for (const theme of ["light", "dark"]) for (const width of [1100, 390]) {
     await page.setViewportSize({ width, height: 700 });
+    await page.emulateMedia({ colorScheme: theme });
     await page.evaluate(theme => { document.documentElement.dataset.theme = theme; window.bind([]); }, theme);
-    await page.evaluate(parts => window.bind(parts), [edit("one", 3, 1), edit("two", 2, 0)]);
+    await page.evaluate(({ parts, language }) => window.bind(parts, language), { parts: [edit("one", 43, 7), edit("two", 3, 1)], language });
     await page.waitForFunction(() => document.querySelectorAll(".tool-activity-stats").length === 3);
-    for (const counts of [["+5 -1", "+3 -1", "+2 -0"], ["+2 -4", "+0 -4", "+2 -0"]]) {
+    for (const counts of [["+46 −8", "+43 −7", "+3 −1"], ["+2 −4", "+0 −4", "+2 −0"]]) {
       const rows = await page.locator(".tool-activity-stats").evaluateAll(nodes => nodes.map(stats => {
         const row = stats.parentElement, label = row.children[1], caret = row.querySelector(".tool-activity-caret");
         const addition = stats.firstElementChild, deletion = stats.lastElementChild;
+        const baseline = element => {
+          const marker = document.createElement("span");
+          marker.style.cssText = "display:inline-block;width:0;height:0;vertical-align:baseline";
+          element.append(marker);
+          const y = marker.getBoundingClientRect().top;
+          marker.remove();
+          return y;
+        };
         return { text: stats.textContent, addition: getComputedStyle(addition).color, deletion: getComputedStyle(deletion).color,
+          baselineOffset: Math.abs(baseline(addition) - baseline(deletion)),
           ordered: label.getBoundingClientRect().right <= stats.getBoundingClientRect().left && stats.getBoundingClientRect().right <= caret.getBoundingClientRect().left,
           fits: caret.getBoundingClientRect().right <= row.getBoundingClientRect().right };
       }));
@@ -163,11 +180,35 @@ try {
       for (const row of rows) {
         assert.equal(row.addition, theme === "dark" ? "rgb(7, 196, 128)" : "rgb(24, 164, 108)");
         assert.equal(row.deletion, theme === "dark" ? "rgb(255, 46, 63)" : "rgb(213, 44, 54)");
+        assert.ok(row.baselineOffset <= 0.5, `${language}/${theme}/${width}: positive and negative counts share a baseline (${row.baselineOffset}px)`);
         assert.ok(row.ordered && row.fits, `${theme}/${width}: statistics precede the caret within the summary`);
       }
-      await page.evaluate(parts => window.bind(parts), [edit("one", 0, 4), edit("two", 2, 0)]);
+      await page.evaluate(({ parts, language }) => window.bind(parts, language), { parts: [edit("one", 0, 4), edit("two", 2, 0)], language });
     }
-    await page.screenshot({ path: path.join(output, `diff-stats-${width}-${theme}.png`) });
+    await page.screenshot({ path: path.join(output, `diff-stats-${language}-${width}-${theme}.png`) });
+    await page.evaluate(({ patch, language }) => window.bind([
+      { id: "patch-counts", role: "assistant", kind: "tool_use", name: "fileChange", text: "" },
+      { id: "patch-counts", role: "tool", kind: "tool_result", text: patch },
+    ], language), { patch, language });
+    const patchRow = page.locator("button.tool-activity-item-summary");
+    if (await patchRow.getAttribute("aria-expanded") === "false") await patchRow.click();
+    await page.locator(".tool-diff [data-diffs-header]").last().waitFor();
+    const headerStats = page.locator(".tool-diff .tool-activity-stats");
+    assert.deepEqual(await headerStats.allTextContents(), ["+1 −1", "+23 −12", "+46 −0", "+0 −8"]);
+    const headerOffsets = await headerStats.evaluateAll(nodes => nodes.map(stats => {
+      const baseline = element => {
+        const marker = document.createElement("span");
+        marker.style.cssText = "display:inline-block;width:0;height:0;vertical-align:baseline";
+        element.append(marker);
+        const y = marker.getBoundingClientRect().top;
+        marker.remove();
+        return y;
+      };
+      return Math.abs(baseline(stats.firstElementChild) - baseline(stats.lastElementChild));
+    }));
+    assert.ok(headerOffsets.every(offset => offset <= 0.5), `${language}/${theme}/${width}: diff header counts share a baseline (${headerOffsets})`);
+    assert.equal(await page.locator(".tool-diff [data-additions-count]:visible, .tool-diff [data-deletions-count]:visible").count(), 0, "Each diff has one visible set of counters");
+    await page.locator(".tool-diff").first().screenshot({ path: path.join(output, `diff-header-${language}-${width}-${theme}.png`) });
     statsScenes++;
   }
   assert.equal(apiRequests, 0);

@@ -515,7 +515,16 @@ export class ToolDiffBoundary extends Component<
   }
 }
 
-const contextPatchOptions = { disableLineNumbers: true, hunkSeparators: "simple" } as const;
+// The header metadata slot adds to the built-in counters. Hide those counters
+// inside the diff's shadow root so all tool stats use the same baseline layout.
+const patchOptions = { unsafeCSS: "[data-metadata] > [data-additions-count], [data-metadata] > [data-deletions-count] { display: none; }" } as const;
+const contextPatchOptions = { ...patchOptions, disableLineNumbers: true, hunkSeparators: "simple" } as const;
+
+function patchHeaderStats(file: ReturnType<typeof toolResultDiffs>[number]) {
+  const additions = file.hunks.reduce((sum, hunk) => sum + hunk.additionLines, 0);
+  const deletions = file.hunks.reduce((sum, hunk) => sum + hunk.deletionLines, 0);
+  return <ActivityChangeStats stats={`+${additions} -${deletions}`} />;
+}
 
 function ToolPatch({ text, t, input = false }: { text: string; t: Translator; input?: boolean }) {
   const files = useMemo(() => toolResultDiffs(text), [text]);
@@ -526,7 +535,8 @@ function ToolPatch({ text, t, input = false }: { text: string; t: Translator; in
         <div className="tool-diff" key={`${index}:${file.name}`}>
           <FileDiff
             fileDiff={file}
-            options={file.lineNumbersUnavailable ? contextPatchOptions : undefined}
+            options={file.lineNumbersUnavailable ? contextPatchOptions : patchOptions}
+            renderHeaderMetadata={patchHeaderStats}
             disableWorkerPool
           />
           {file.contentsUnavailable && <p className="tool-diff-note">{t("File contents are not included in this patch.")}</p>}
@@ -576,7 +586,7 @@ function ActivityChangeStats({ stats }: { stats: string }) {
   const [additions, deletions] = stats.split(" ");
   return <span className="tool-activity-stats">
     <span className="tool-activity-additions">{additions}</span>{" "}
-    <span className="tool-activity-deletions">{deletions}</span>
+    <span className="tool-activity-deletions">−{deletions.slice(1)}</span>
   </span>;
 }
 

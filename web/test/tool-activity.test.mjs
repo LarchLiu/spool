@@ -138,7 +138,7 @@ test("failed and declined calls say so and do not count as changes", () => {
   const group = [edit("one", "completed"), edit("two", "failed"), edit("three", "completed")];
   const html = renderToStaticMarkup(createElement(ToolActivityList, { parts: group, backend: "codex", t, live: true }));
   assert.match(html, /Edited files<\/span><span class="tool-activity-outcome">1 failed</);
-  assert.match(html, /class="tool-activity-stats"><span class="tool-activity-additions">\+6<\/span> <span class="tool-activity-deletions">-2<\/span><\/span><span class="tool-activity-caret">/);
+  assert.match(html, /class="tool-activity-stats"><span class="tool-activity-additions">\+6<\/span> <span class="tool-activity-deletions">−2<\/span><\/span><span class="tool-activity-caret">/);
   const rejected = [edit("one", "failed"), edit("two", "declined")];
   assert.match(renderToStaticMarkup(createElement(ToolActivityList, { parts: rejected, backend: "codex", t, live: true })), /Edit files<\/span>/);
 });
@@ -523,6 +523,7 @@ test("multi-file tool results render every parsed file instead of crashing Patch
   }
   const html = renderResult(patch);
   assert.equal((html.match(/class="tool-diff"/g) || []).length, 3);
+  assert.equal((html.match(/class="tool-activity-additions">\+1<\/span> <span class="tool-activity-deletions">−1<\/span>/g) || []).length, 3);
   assert.match(html, /<summary>Raw output<\/summary>/);
   assert.ok(html.includes(`<pre>${patch}</pre>`));
 });
@@ -637,7 +638,7 @@ test("converted patch input and result remain in expandable tool details in full
   );
   assert.match(list, /Created pong\.html/);
   assert.match(list, /title="apply_patch"/);
-  assert.match(list, /class="tool-activity-additions">\+25000<\/span> <span class="tool-activity-deletions">-0<\/span>/);
+  assert.match(list, /class="tool-activity-additions">\+25000<\/span> <span class="tool-activity-deletions">−0<\/span>/);
 });
 
 test("parallel live subagents stay visible after the main final reply and keep separate progress", () => {
