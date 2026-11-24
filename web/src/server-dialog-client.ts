@@ -10,6 +10,7 @@ export type DesktopServerProfile = {
   mode: ConnectionMode;
   enabled: boolean;
   automatic: boolean;
+  federation_relay?: boolean;
 };
 export type ServerDialogSnapshot = {
   server: DesktopServerProfile;

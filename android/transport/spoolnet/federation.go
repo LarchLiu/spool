@@ -10,11 +10,60 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"spool/relay"
 )
 
 const federationResponseLimit = 128 << 10
 
 var errFederation = errors.New("federated sign-in was not available")
+
+// FederationRelayRoute obtains tunnel routing only for this source account's
+// currently authorized target. The server's private key never leaves it.
+func (c *Client) FederationRelayRoute(target, account, language string) (string, error) {
+	if !federationID(target) || account == "" {
+		return "", errFederation
+	}
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
+	var source struct {
+		User struct {
+			ID     string
+			Source string `json:"source_server_id"`
+		} `json:"user"`
+		CSRF    string `json:"csrf"`
+		Targets []struct {
+			ID   string
+			Mode string `json:"client_mode"`
+		} `json:"federation_targets"`
+	}
+	response, err := c.request(ctx, http.MethodGet, "/api/me", nil, "", "", language)
+	if err != nil || !federationJSON(response, &source) || source.User.ID != account || source.User.Source != "" || source.CSRF == "" {
+		return "", errFederation
+	}
+	allowed := false
+	for _, peer := range source.Targets {
+		if peer.ID == target && peer.Mode == "relay" {
+			allowed = true
+		}
+	}
+	if !allowed {
+		return "", errFederation
+	}
+	payload, _ := json.Marshal(map[string]string{"target": target})
+	response, err = c.request(ctx, http.MethodPost, "/api/federation/relay-route", bytes.NewReader(payload), "application/json", source.CSRF, language)
+	var result struct {
+		Code string `json:"relay_code"`
+	}
+	if err != nil || !federationJSON(response, &result) {
+		return "", errFederation
+	}
+	route, err := relay.ParsePairing(result.Code)
+	if err != nil || route.ID() != target || route.Invitation != "" || len(route.LAN) != 0 {
+		return "", errFederation
+	}
+	return result.Code, nil
+}
 
 // FederationSession keeps the target's session cookie inside Go until the
 // Activity confirms that the source and destination are still current.

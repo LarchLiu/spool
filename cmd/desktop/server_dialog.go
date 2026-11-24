@@ -253,6 +253,12 @@ func (s *desktopServerSettings) Save(ctx context.Context, server desktopServer, 
 			server.Enabled = true
 		}
 		previous, _ := p.servers.find(server.ID)
+		if previous.FederationRelay {
+			server.FederationRelay = true
+			server.FederationSource, server.FederationTarget = previous.FederationSource, previous.FederationTarget
+			server.FederationAccount, server.ConnectionID = previous.FederationAccount, previous.ConnectionID
+			server.Direct, server.Tailscale, server.Relay, server.Mode = previous.Direct, previous.Tailscale, previous.Relay, previous.Mode
+		}
 		next, err := p.servers.save(server)
 		if err != nil {
 			return desktopServerSnapshot{}, err
@@ -376,7 +382,7 @@ func (s *desktopServerSettings) PairRelay(ctx context.Context) (desktopPairingSt
 	}
 	value, err := serverDialogUI(ctx, p, func() (source, error) {
 		server, ok := p.servers.find(p.serverDialogID)
-		if !p.serverDialogRequested || !ok || !server.Enabled || server.Relay == "" {
+		if !p.serverDialogRequested || !ok || !server.Enabled || server.Relay == "" || server.FederationRelay {
 			return source{}, errors.New("Configure the selected connection before connecting.")
 		}
 		return source{server, p.serverPairing}, nil

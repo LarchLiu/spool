@@ -229,8 +229,8 @@ func TestFederationRelayUsesControlOnlyAdmission(t *testing.T) {
 	if err := source.CheckFederationTrust(t.Context(), pending.Requests[0].ID); err != nil {
 		t.Fatal(err)
 	}
-	if saved, err := federationPeer(otherStore.db, local.ID()); err != nil || saved.Transport != "relay" || saved.RelayCode != relayCode || saved.ClientURL != "" {
-		t.Fatalf("Relay trust did not retain a distinct control route: %v", err)
+	if saved, err := federationPeer(otherStore.db, local.ID()); err != nil || saved.Transport != "relay" || saved.RelayCode != relayCode || saved.ClientRelayCode != relayCode || saved.ClientMode != FederationClientModeRelay || saved.ClientURL != relay.Origin(local.ID())+"/" {
+		t.Fatalf("Relay trust did not retain independent control and client routes: %v", err)
 	}
 }
 

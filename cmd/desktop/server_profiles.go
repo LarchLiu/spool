@@ -37,6 +37,7 @@ type desktopServer struct {
 	FederationTarget  string `json:"federation_target,omitempty"`
 	FederationAccount string `json:"federation_account,omitempty"`
 	ConnectionID      string `json:"connection_id,omitempty"`
+	FederationRelay   bool   `json:"federation_relay,omitempty"`
 }
 
 type desktopServers struct {
@@ -164,6 +165,12 @@ func validateDesktopServer(server desktopServer) (desktopServer, error) {
 		if err != nil {
 			return server, err
 		}
+		if server.FederationRelay && (server.FederationTarget != p.ID() || p.Invitation != "" || len(p.LAN) != 0 || server.ConnectionID != "") {
+			return server, errors.New("Invalid trusted server profile.")
+		}
+	}
+	if server.FederationRelay && (server.Mode != "relay" || server.Relay == "") {
+		return server, errors.New("Invalid trusted server profile.")
 	}
 	if server.Mode == "" {
 		server.Mode = "direct"

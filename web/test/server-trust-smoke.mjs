@@ -34,18 +34,23 @@ const plugin = {
     function Fixture() {
       const [TSNet, setTSNet] = useState({ State: 'Disabled' });
       const [language, setLanguage] = useState('en');
+      const [settings, setSettings] = useState({web_enabled: true, public_url: 'https://source.example.test', relay_enabled: true});
       useEffect(() => {
         const listener = (event) => setTSNet(event.detail);
         const translate = (event) => setLanguage(event.detail);
+        const configure = (event) => setSettings(event.detail);
         window.addEventListener('test:tailnet', listener);
         window.addEventListener('test:language', translate);
+        window.addEventListener('test:settings', configure);
         return () => {
           window.removeEventListener('test:tailnet', listener);
           window.removeEventListener('test:language', translate);
+          window.removeEventListener('test:settings', configure);
         };
       }, []);
       const data = {
-        status: { TSNet, TSNetOutboundReady: TSNet.State === 'Registered' },
+        settings,
+        status: { TSNet, TSNetOutboundReady: TSNet.State === 'Registered', Relay: { State: 'connected' } },
         projects: [{id: 'alpha', name: 'Alpha'}, {id: 'beta', name: 'Beta'}, {id: 'archive', name: 'Archived', archived: true}],
         users: [
           {id: 'alice', username: 'alice', nickname: 'Alice'},
@@ -77,7 +82,7 @@ const server = await createServer({
   configFile: false,
   cacheDir: join(requireRunTemp(), "vite-cache"),
   plugins: [plugin, react()],
-  server: { host: "127.0.0.1", port: 0, strictPort: true },
+  server: { host: "127.0.0.1", port: 0, strictPort: false },
 });
 async function assertDirectionLayout(controls, revokeLabel = "Revoke trust") {
   const left = controls.locator(".settings-trust-details");
@@ -140,6 +145,7 @@ try {
         peer_name: "Source",
         outgoing: false,
         status: "pending",
+        return_transport: "relay",
         expires_at,
       },
     ];
@@ -169,6 +175,7 @@ try {
             name: "Source",
             incoming: true,
             outgoing: false,
+            accept: true,
           });
         }
         if (args[0] === "check") {
@@ -241,37 +248,112 @@ try {
   await page.getByRole("button", { name: "Copy server ID" }).click();
   const tabs = page.getByRole("tablist", { name: "Connection method" });
   const publicTab = tabs.getByRole("tab", { name: "Public HTTPS" });
-  const tailscaleTab = tabs.getByRole("tab", { name: "Tailscale" });
+  const relayTab = tabs.getByRole("tab", { name: "Spool Relay" });
+  assert.equal(await page.getByRole("tab", { name: "Tailscale" }).count(), 0);
+  assert.equal(
+    await page.getByRole("button", { name: "Sign in to Tailscale" }).count(),
+    0,
+  );
   assert.equal(await publicTab.getAttribute("aria-selected"), "true");
   await publicTab.press("ArrowRight");
-  assert.equal(await tailscaleTab.getAttribute("aria-selected"), "true");
-  const address = page.getByRole("textbox", {
-    name: "Tailscale HTTPS address",
-  });
-  await address.fill("https://destination.example.ts.net");
-  await tabs.getByRole("tab", { name: "Spool Relay" }).click();
+  assert.equal(await relayTab.getAttribute("aria-selected"), "true");
   assert.equal(
     await page
       .locator('input[aria-label="Trust Relay route"]')
       .getAttribute("type"),
     "password",
   );
-  await tailscaleTab.click();
+  await page
+    .locator('input[aria-label="Trust Relay route"]')
+    .fill("spool-pair:destination");
+  const reverse = page.getByRole("group", {
+    name: "Return connection",
+    exact: true,
+  });
   assert.equal(
-    await address.inputValue(),
-    "https://destination.example.ts.net",
+    await reverse
+      .getByRole("tab", { name: "Public HTTPS" })
+      .getAttribute("aria-selected"),
+    "true",
   );
+  assert.equal(await reverse.getByRole("textbox").count(), 0);
+  for (const [web_enabled, public_url, relay_enabled, methods] of [
+    [true, "https://source.example.test", false, ["Public HTTPS"]],
+    [false, "https://source.example.test", true, ["Spool Relay"]],
+    [true, "", true, ["Spool Relay"]],
+    [true, "http://source.example.test", true, ["Spool Relay"]],
+    [false, "", false, []],
+    [
+      true,
+      "https://source.example.test",
+      true,
+      ["Public HTTPS", "Spool Relay"],
+    ],
+  ]) {
+    await page.evaluate(
+      (detail) =>
+        window.dispatchEvent(new CustomEvent("test:settings", { detail })),
+      { web_enabled, public_url, relay_enabled },
+    );
+    await page.waitForFunction(
+      (expected) =>
+        [
+          ...document
+            .querySelector('[role="group"][aria-label="Return connection"]')
+            .querySelectorAll('[role="tab"]'),
+        ]
+          .map((tab) => tab.textContent.trim())
+          .join("|") === expected.join("|"),
+      methods,
+    );
+    if (methods.length) {
+      assert.equal(
+        await reverse
+          .getByRole("tab", { name: methods[0] })
+          .getAttribute("aria-selected"),
+        "true",
+      );
+    }
+    assert.equal(await reverse.getByRole("textbox").count(), 0);
+  }
+  await reverse.getByRole("tab", { name: "Spool Relay" }).click();
+  await page
+    .locator('input[aria-label="Trust Relay route"]')
+    .fill("spool-pair:destination-updated");
+  assert.equal(
+    await reverse
+      .getByRole("tab", { name: "Spool Relay" })
+      .getAttribute("aria-selected"),
+    "true",
+  );
+  await page
+    .locator('input[aria-label="Trust Relay route"]')
+    .fill("spool-pair:destination");
+  await reverse.getByRole("tab", { name: "Public HTTPS" }).click();
+  await reverse
+    .getByText("https://source.example.test", { exact: true })
+    .waitFor();
+  await mkdir(output, { recursive: true });
+  for (const width of [960, 390]) {
+    await page.setViewportSize({ width, height: 850 });
+    assert.ok(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    );
+    await page
+      .locator("form")
+      .first()
+      .screenshot({
+        path: join(output, `request-return-route-${width}.png`),
+        animations: "disabled",
+      });
+  }
+  await page.setViewportSize({ width: 960, height: 850 });
   const connect = page.getByRole("button", {
     name: "Connect and verify server",
   });
-  assert.ok(await connect.isDisabled());
-  await page.getByRole("button", { name: "Sign in to Tailscale" }).click();
-  await page.evaluate(() =>
-    window.dispatchEvent(
-      new CustomEvent("test:tailnet", { detail: { State: "Registered" } }),
-    ),
-  );
-  await page.getByRole("status").filter({ hasText: "Connected" }).waitFor();
+  assert.ok(!(await connect.isDisabled()));
   await connect.click();
   await page
     .getByText("Verify this server ID before sending the request.")
@@ -289,6 +371,17 @@ try {
     0,
   );
   await page.getByRole("button", { name: "Review trust request" }).click();
+  await page
+    .getByText(
+      "The request includes a verified return route. Approval saves it automatically.",
+    )
+    .waitFor();
+  assert.equal(
+    await page
+      .getByRole("tab", { name: "Use requester’s return route" })
+      .getAttribute("aria-selected"),
+    "true",
+  );
   const alpha = page.getByRole("switch", { name: "Alpha", exact: true });
   const beta = page.getByRole("switch", { name: "Beta", exact: true });
   assert.ok(!(await alpha.isChecked()));
@@ -383,15 +476,15 @@ try {
     await page.getByRole("button", { name: "Manage allowed users" }).count(),
     0,
   );
-  await page.getByText("Return route not configured").waitFor();
+  await page.getByText("Cross-server sign-in enabled").waitFor();
   assert.equal(
     await page
       .getByRole("button", { name: "Revoke trust", exact: true })
       .count(),
     1,
-    "Approval can be revoked before a return route is configured",
+    "Approval can be revoked after the signed return route is installed",
   );
-  await page.getByRole("button", { name: "Configure return route" }).click();
+  await page.getByRole("button", { name: "Change return route" }).click();
   const back = page.getByRole("tablist", {
     name: "Route back to the requesting server",
   });
@@ -399,6 +492,8 @@ try {
   assert.ok(await saveRoute.isDisabled());
   await back.getByRole("tab", { name: "Public HTTPS" }).click();
   await page
+    .locator("form")
+    .filter({ has: saveRoute })
     .getByRole("textbox", { name: "Public HTTPS address" })
     .fill("https://source.example.test");
   await saveRoute.click();
@@ -523,17 +618,17 @@ try {
     [
       ["DesktopSettings.FederationTrust", "list", ""],
       ["DesktopSettings.Action", { kind: "copy-server-trust-id" }],
-      ["DesktopSettings.TSNetLogin"],
       [
         "DesktopSettings.PreviewFederationTrust",
-        "tailscale",
-        "https://destination.example.ts.net",
+        "relay",
+        "spool-pair:destination",
       ],
       [
         "DesktopSettings.SubmitFederationTrust",
-        "tailscale",
-        "https://destination.example.ts.net",
+        "relay",
+        "spool-pair:destination",
         "c".repeat(52),
+        { transport: "https", address: "" },
       ],
       [
         "DesktopSettings.ApproveFederationTrust",
@@ -1104,7 +1199,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "Server trust tabs, Tailscale sign-in, project approval, allowed users, and authorization revocation passed",
+    "Server trust routes, independent return connection, project approval, allowed users, and authorization revocation passed",
   );
 } finally {
   await browser?.close();

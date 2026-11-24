@@ -55,6 +55,7 @@ public class MainActivityGoalTest {
         String healthResponse = "{state:'Running',https:'Verified'}";
         java.util.function.Function<List<String>, String> responses;
         FederationPreparation federationPreparation;
+        java.util.function.Function<String, String> federationRoute;
         interface FederationPreparation {
             spoolnet.FederationSession prepare(Client destination, String target, String account, String language);
         }
@@ -72,6 +73,10 @@ public class MainActivityGoalTest {
         @Implementation protected spoolnet.FederationSession prepareFederatedSession(Client destination, String target, String account, String language) {
             if (federationPreparation == null) throw new AssertionError("Unexpected federated sign-in");
             return federationPreparation.prepare(destination, target, account, language);
+        }
+        @Implementation protected String federationRelayRoute(String target, String account, String language) {
+            if (federationRoute == null) throw new AssertionError("Unexpected Relay route request");
+            return federationRoute.apply(target);
         }
         @Implementation protected void close() { closes++; }
         @Implementation protected Client newSessionClient(String directory, String direct, String tailscale, String code) {

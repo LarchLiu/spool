@@ -209,6 +209,10 @@ func (s *Service) PreviewFederationTrust(ctx context.Context, transport, address
 }
 
 func (s *Service) SubmitFederationTrust(ctx context.Context, transport, address, expected string) error {
+	return s.SubmitFederationTrustWithReturnRoute(ctx, transport, address, expected, nil)
+}
+
+func (s *Service) SubmitFederationTrustWithReturnRoute(ctx context.Context, transport, address, expected string, reverse *FederationTrustReturnRoute) error {
 	if !federationTrustServerID(expected) {
 		return errFederationTrustPeer
 	}
@@ -227,7 +231,7 @@ func (s *Service) SubmitFederationTrust(ctx context.Context, transport, address,
 		if !preview.Accepting {
 			return errFederationTrustClosed
 		}
-		return a.submitFederationTrust(ctx, route)
+		return a.submitFederationTrustWithReturnRoute(ctx, route, reverse)
 	})
 }
 
@@ -269,7 +273,11 @@ func (a *App) previewFederationTrust(ctx context.Context, route FederationPeer) 
 }
 
 func (a *App) submitFederationTrust(ctx context.Context, route FederationPeer) error {
-	code, err := a.store.requestFederationTrust(route)
+	return a.submitFederationTrustWithReturnRoute(ctx, route, nil)
+}
+
+func (a *App) submitFederationTrustWithReturnRoute(ctx context.Context, route FederationPeer, reverse *FederationTrustReturnRoute) error {
+	code, err := a.store.requestFederationTrust(route, reverse)
 	if err != nil {
 		return err
 	}

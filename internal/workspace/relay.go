@@ -94,6 +94,7 @@ func (s *Service) startRelayLocked(settings Settings) error {
 	ingress.server.Handler = devices.HandlerWithFederation(s.app, id.ID(), webAllowed, federation)
 	runtime := &relayRuntime{ingress: ingress, cancel: cancel, host: host, lan: listener, devices: devices, status: RelayStatus{State: "connecting", ServerID: id.ID(), LANAddress: listener.Addr().String(), RegistrationTokenSet: token != ""}}
 	host.WebEnabled = settings.RelayWebEnabled
+	host.FederationEnabled = true
 	host.OnWebURL = func(address string) {
 		s.mu.Lock()
 		defer s.mu.Unlock()

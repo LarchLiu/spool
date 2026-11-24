@@ -262,7 +262,8 @@ func (s *Server) rejectPair(h *registeredHost, id string) {
 // connection may only ever widen or narrow its own admission, and every token
 // arrives on the control connection that proved the host's identity.
 func (s *Server) setAdmission(h *registeredHost, tokens []string) {
-	if len(tokens) == 0 || len(tokens) > 1+maxRetiredTokens {
+	// Current device token, independent federation token, and retired devices.
+	if len(tokens) == 0 || len(tokens) > 2+maxRetiredTokens {
 		return
 	}
 	for _, token := range tokens {

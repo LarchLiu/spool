@@ -2,6 +2,7 @@ package spoolnet
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"net/http"
 	"net/url"
@@ -30,6 +31,17 @@ func PairingServerID(code string) (string, error) {
 // NewRelayClient uses one identity and HTTPS origin for both LAN and relay.
 // The outer relay HTTP client has no Spool cookie jar and never inherits proxies.
 func NewRelayClient(dataDir, code string) (*Client, error) {
+	return newRelayClient(dataDir, code, false)
+}
+
+// NewFederationRelayClient proves a private client key without a device
+// invitation. Business access still requires a session obtained by a successful
+// one-time federation exchange on this exact TLS identity.
+func NewFederationRelayClient(dataDir, code string) (*Client, error) {
+	return newRelayClient(dataDir, code, true)
+}
+
+func newRelayClient(dataDir, code string, federated bool) (*Client, error) {
 	if !filepath.IsAbs(dataDir) {
 		return nil, errors.New("native state directory must be absolute")
 	}
@@ -37,11 +49,27 @@ func NewRelayClient(dataDir, code string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	device, err := loadDevice(dataDir, p.ID())
-	if err != nil || !device.Approved {
-		return nil, errors.New("This phone is not paired. Scan a new code in Spool Desktop.")
+	var device savedDevice
+	if federated {
+		if p.Invitation != "" || len(p.LAN) != 0 {
+			return nil, errors.New("invalid federated Relay route")
+		}
+		identity, err := relay.LoadIdentity(filepath.Join(dataDir, "federation-client"))
+		if err != nil {
+			return nil, err
+		}
+		device.Seed = identity.Seed
+	} else {
+		device, err = loadDevice(dataDir, p.ID())
+		if err != nil || !device.Approved {
+			return nil, errors.New("This phone is not paired. Scan a new code in Spool Desktop.")
+		}
 	}
-	cfg, err := relay.DeviceTLSConfig(p, device.Seed, false)
+	makeTLS := func() (*tls.Config, error) { return relay.DeviceTLSConfig(p, device.Seed, false) }
+	if federated {
+		makeTLS = func() (*tls.Config, error) { return relay.FederationClientTLSConfig(p, device.Seed) }
+	}
+	cfg, err := makeTLS()
 	if err != nil {
 		return nil, err
 	}
@@ -73,8 +101,12 @@ func NewRelayClient(dataDir, code string) (*Client, error) {
 	}
 	c := &Client{direct: true, origin: origin, ctx: ctx, cancel: cancel, transport: transport, http: httpClient, relay: dialer, relayHTTP: outerTransport,
 		admissionSync: make(chan struct{}, 1), admissionDone: make(chan struct{})}
-	go c.keepAdmissionCurrent(dataDir, p, device.Seed)
-	c.requestAdmissionSync()
+	if federated {
+		close(c.admissionDone)
+	} else {
+		go c.keepAdmissionCurrent(dataDir, p, device.Seed)
+		c.requestAdmissionSync()
+	}
 	return c, nil
 }
 

@@ -175,6 +175,22 @@ try {
           await page.screenshot({ path: path.join(output, `${engine}-server-${width}-${theme}.png`), animations: "disabled" });
         }
       }
+      await page.evaluate(() => {
+        const next = structuredClone(window.fixtureServer);
+        Object.assign(next.server, { id: "trusted-relay", name: "Trusted Relay", mode: "relay", direct: "", tailscale: "", relay: "spool-pair:fixture", federation_relay: true });
+        next.active = false; next.status = "disconnected";
+        window.fixtureServer = next;
+        window.dispatchEvent(new CustomEvent("spool:server-dialog", { detail: next }));
+      });
+      await page.getByRole("heading", { name: "Trusted Relay · Settings", exact: true }).waitFor();
+      const modes = page.getByRole("tablist", { name: "Connection mode", exact: true });
+      assert.equal(await modes.getByRole("tab").count(), 1);
+      assert.equal(await modes.getByRole("tab", { name: /Spool Relay/ }).getAttribute("aria-selected"), "true");
+      assert.equal(await page.locator('[data-server-field="relay"]').isEnabled(), false);
+      assert.equal(await page.getByRole("button", { name: "Scan pairing QR code", exact: true }).count(), 0);
+      await name.fill("Renamed trusted Relay"); await name.press("Enter");
+      await page.waitForFunction(() => window.fixtureServer.server.name === "Renamed trusted Relay");
+      assert.equal(await page.evaluate(() => window.fixtureServer.server.federation_relay), true);
       assert.deepEqual(errors, []);
       console.log(`${engine}: remote server autosave, retry, isolation, Android layout and sizing checks passed`);
     } catch (error) {

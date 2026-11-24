@@ -16,6 +16,7 @@ final class ServerProfiles {
         ConnectionPlan plan;
         JSONObject account = new JSONObject();
         boolean enabled = true;
+        boolean federationRelay;
         String federationSource = "", federationTarget = "", federationAccount = "", connectionID = "";
         boolean trusted() { return !federationTarget.isEmpty(); }
         String connectionID() { return connectionID.isEmpty() ? id : connectionID; }
@@ -27,7 +28,8 @@ final class ServerProfiles {
         }
         String directory(File root, ConnectionMode mode) {
             String device = connectionID();
-            return new File(device.equals("legacy") ? root : new File(new File(root, "servers"), device), mode.directory).getAbsolutePath();
+            File directory = new File(device.equals("legacy") ? root : new File(new File(root, "servers"), device), mode.directory);
+            return (federationRelay && mode == ConnectionMode.RELAY ? new File(directory, "federation-" + federationAccount) : directory).getAbsolutePath();
         }
     }
     final List<Server> entries = new ArrayList<>();
@@ -52,10 +54,13 @@ final class ServerProfiles {
                 Server server = new Server(id, name, plan); server.enabled = value.optBoolean("enabled", true);
                 server.federationSource = value.optString("federation_source"); server.federationTarget = value.optString("federation_target");
                 server.federationAccount = value.optString("federation_account"); server.connectionID = value.optString("connection_id");
+                server.federationRelay = value.optBoolean("federation_relay");
                 if (server.trusted() || !server.federationSource.isEmpty() || !server.federationAccount.isEmpty() || !server.connectionID.isEmpty()) {
                     if (!server.federationSource.matches("[A-Za-z0-9_-]{1,64}") || !NativeFederation.validID(server.federationTarget)
                             || !server.federationAccount.matches("[A-Za-z0-9_-]{43}") || !server.connectionID.matches("[A-Za-z0-9_-]{1,64}")) continue;
                 }
+                if (server.federationRelay && (!server.trusted() || !server.connectionID.equals(id) || plan.selected != ConnectionMode.RELAY
+                        || !new RelayPairing(plan.relay).id.equals(server.federationTarget))) continue;
                 server.serverName = serverName(value.optString("server_name"));
                 server.account = displayAccount(value.optJSONObject("account")); restored.add(server);
             }
@@ -82,6 +87,7 @@ final class ServerProfiles {
         if (server == null) { server = add(route.name); server.enabled = false; }
         if (!server.federationAccount.equals(account)) server.account = new JSONObject();
         server.plan = route.plan; server.serverName = route.serverName;
+        server.federationRelay = route.federationRelay;
         server.federationSource = source.id; server.federationTarget = target; server.federationAccount = account;
         server.connectionID = entries.contains(route) ? route.connectionID() : server.id;
         return server;
@@ -101,7 +107,7 @@ final class ServerProfiles {
         JSONArray array = new JSONArray();
         try { for (Server server : entries) array.put(new JSONObject().put("id", server.id).put("name", server.name).put("server_name", server.serverName)
                 .put("direct", server.plan.direct).put("tailscale", server.plan.tailscale).put("relay", server.plan.relay).put("selectedNetwork", server.plan.selected.value).put("automatic", server.plan.autoSwitch).put("enabled", server.enabled).put("account", displayAccount(server.account))
-                .put("federation_source", server.federationSource).put("federation_target", server.federationTarget).put("federation_account", server.federationAccount).put("connection_id", server.connectionID)); }
+                .put("federation_source", server.federationSource).put("federation_target", server.federationTarget).put("federation_account", server.federationAccount).put("connection_id", server.connectionID).put("federation_relay", server.federationRelay)); }
         catch (Exception error) { throw new IllegalArgumentException(error); }
         return array.toString();
     }

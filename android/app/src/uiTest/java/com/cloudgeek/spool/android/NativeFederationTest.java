@@ -74,6 +74,18 @@ public class NativeFederationTest {
         assertNull(NativeFederation.route(paired, new NativeFederation.Target(B, "Other", ""), null));
     }
 
+    @Test public void relayTargetsRequireRelayEvenWhenAPublicAddressWasPreviouslyPublished() throws Exception {
+        String code = RelayPairingTest.code("https://relay.example.com"), id = new RelayPairing(code).id;
+        NativeFederation.Target target = NativeFederation.parse(new JSONArray("[{id:'" + id
+                + "',client_url:'https://office.example.com:8443',client_mode:'relay'}]")).get(0);
+        assertNull(target.newPlan());
+        assertFalse(NativeFederation.allows(target, ConnectionMode.DIRECT, target.origin));
+        ServerProfiles profiles = profiles();
+        assertNull(NativeFederation.route(profiles.entries.get(1), target, null));
+        assertTrue(NativeFederation.tabs(profiles, profiles.active(), List.of(target)).get(0).reachable());
+        assertTrue(NativeFederation.allows(target, ConnectionMode.RELAY, code));
+    }
+
     @Test public void everyAuthorizedTargetIsListedEvenWithoutARoute() {
         ServerProfiles profiles = profiles();
         List<NativeFederation.Tab> tabs = NativeFederation.tabs(profiles, profiles.entries.get(0), List.of(

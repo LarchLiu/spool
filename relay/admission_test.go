@@ -48,9 +48,14 @@ func TestAccessTokenRotationKeepsIdentityAndBoundsRetiredTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 	tokens := []string{id.AccessToken}
+	federationToken := id.FederationAccessToken()
+	other, err := NewIdentity()
+	if err != nil || !validToken(federationToken) || federationToken == id.AccessToken || federationToken == other.FederationAccessToken() {
+		t.Fatal("federation admission did not use a separate identity-specific token", err)
+	}
 	for range maxRetiredTokens + 2 {
 		next, err := RotateAccessToken(directory)
-		if err != nil || next.ID() != id.ID() || slices.Contains(tokens, next.AccessToken) {
+		if err != nil || next.ID() != id.ID() || slices.Contains(tokens, next.AccessToken) || next.FederationAccessToken() != federationToken {
 			t.Fatal("rotation changed the identity or reused a token", err)
 		}
 		tokens = append(tokens, next.AccessToken)
@@ -78,6 +83,8 @@ func TestAccessTokenRotationKeepsIdentityAndBoundsRetiredTokens(t *testing.T) {
 	}
 	if reloaded, err := LoadIdentity(directory); err != nil || len(reloaded.Retired) != 0 {
 		t.Fatal("dropped tokens were not saved", err)
+	} else if reloaded.FederationAccessToken() != federationToken {
+		t.Fatal("dropping retired device tokens changed federation admission")
 	}
 	invalid := &Identity{Seed: id.Seed, AccessToken: id.AccessToken, Retired: []RetiredToken{{Token: "not a token", ExpiresAt: time.Now().Add(time.Hour).Unix()}}}
 	if err := saveIdentity(directory, invalid); err != nil {
@@ -117,6 +124,7 @@ func newAdmissionNetwork(t *testing.T) *admissionNetwork {
 	if err != nil {
 		t.Fatal(err)
 	}
+	host.FederationEnabled = true
 	ready := make(chan struct{}, 1)
 	host.OnStatus = func(state string) {
 		if state == "connected" {
@@ -285,6 +293,37 @@ func TestRevokedDeviceLosesRelayAdmissionOnceOthersHoldTheNewToken(t *testing.T)
 	reopened, err := OpenDevices(n.directory)
 	if err != nil || !reopened.AdmissionSettled(token) {
 		t.Fatal("confirmation was not saved", err)
+	}
+}
+
+func TestFederationAdmissionSurvivesDeviceTokenRetirement(t *testing.T) {
+	n := newAdmissionNetwork(t)
+	token := n.id.FederationAccessToken()
+	waitRelayAdmission(t, n.public.URL, n.id.ID(), token, true)
+	for range maxRetiredTokens + 1 {
+		rotated, err := RotateAccessToken(n.directory)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n.host.SetAdmission(rotated)
+		waitRelayAdmission(t, n.public.URL, n.id.ID(), rotated.AccessToken, true)
+		if !relayAdmits(t, n.public.URL, n.id.ID(), token) {
+			t.Fatal("device rotation removed federation admission")
+		}
+	}
+	n.host.ExpireAdmission(time.Now().Add(AdmissionGrace + time.Minute))
+	waitRelayAdmission(t, n.public.URL, n.id.ID(), n.id.AccessToken, false)
+	if !relayAdmits(t, n.public.URL, n.id.ID(), token) {
+		t.Fatal("device token expiry removed federation admission")
+	}
+	settled, err := DropRetiredTokens(n.directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n.host.SetAdmission(settled)
+	waitRelayAdmission(t, n.public.URL, n.id.ID(), settled.AccessToken, true)
+	if !relayAdmits(t, n.public.URL, n.id.ID(), token) {
+		t.Fatal("settling device admission removed federation admission")
 	}
 }
 

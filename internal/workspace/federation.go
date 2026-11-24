@@ -217,7 +217,13 @@ func (s *Store) federationTargets(id authIdentity) ([]federationTarget, error) {
 	}
 	for _, peer := range peers {
 		if peer.allows(id.User.ID) {
-			targets = append(targets, federationTarget{ID: peer.ID, Name: peer.Name, ClientURL: peer.ClientURL, ClientMode: peer.ClientMode})
+			target := federationTarget{ID: peer.ID, Name: peer.Name, ClientURL: peer.ClientURL, ClientMode: peer.ClientMode}
+			if peer.ClientMode == FederationClientModeRelay || peer.Transport == "relay" {
+				if _, err := federationRelayClientRoute(peer); err == nil {
+					target.ClientURL, target.ClientMode = relay.Origin(peer.ID)+"/", FederationClientModeRelay
+				}
+			}
+			targets = append(targets, target)
 		}
 	}
 	return targets, nil
@@ -296,7 +302,16 @@ func (a *App) federationExchange(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusServiceUnavailable, "Federation source unavailable")
 		return
 	}
-	token, expires, err := a.store.federationLogin(peer, *answer.Subject, checked)
+	var clientKey []ed25519.PublicKey
+	local, keyErr := a.store.federationKey()
+	if keyErr != nil {
+		apiError(w, http.StatusServiceUnavailable, "Federation source unavailable")
+		return
+	}
+	if key, ok := relay.FederationClientKey(r, local.ID()); ok {
+		clientKey = append(clientKey, key)
+	}
+	token, expires, err := a.store.federationLogin(peer, *answer.Subject, checked, clientKey...)
 	if errors.Is(err, errFederationDenied) {
 		apiError(w, http.StatusUnauthorized, "Federated login was not permitted")
 		return

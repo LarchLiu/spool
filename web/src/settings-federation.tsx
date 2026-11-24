@@ -1,4 +1,3 @@
-import { ArrowUpRight } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { Translator } from "./i18n";
 import { SegmentedTabs } from "./segmented-tabs";
@@ -54,6 +53,7 @@ type TrustRequest = {
   peer_name?: string;
   outgoing: boolean;
   network?: boolean;
+  return_transport?: string;
   expires_at: number;
   status: "pending" | "approved" | "rejected";
 };
@@ -79,7 +79,7 @@ export function ServerTrustPage({
   data: local,
 }: {
   t: Translator;
-  data?: Pick<SettingsSnapshot, "projects" | "users" | "status">;
+  data?: Pick<SettingsSnapshot, "projects" | "users" | "status" | "settings">;
 }) {
   const [data, setData] = useState<TrustSnapshot>();
   const [route, setRoute] = useState<Route>({
@@ -87,8 +87,20 @@ export function ServerTrustPage({
     address: "",
   });
   const [preview, setPreview] = useState<Preview>();
-  const [requestingLogin, setRequestingLogin] = useState(false);
-  const [loginError, setLoginError] = useState("");
+  const [reverse, setReverse] = useState<"https" | "relay" | "">("");
+  const publicReturnURL = configuredPublicReturnURL(local?.settings);
+  const relayReturn = !!local?.settings.relay_enabled;
+  const reverseKinds = (["https", "relay"] as const).filter((kind) =>
+    kind === "https" ? !!publicReturnURL : relayReturn,
+  );
+  const reverseKind =
+    reverse && reverseKinds.includes(reverse)
+      ? reverse
+      : publicReturnURL
+        ? "https"
+        : relayReturn
+          ? "relay"
+          : "";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const operation = useRef(false);
@@ -156,19 +168,6 @@ export function ServerTrustPage({
     data?.peers.filter(
       (peer) => peer.revoked && !peer.incoming && !peer.outgoing,
     ) ?? [];
-  const tailnet = local?.status.TSNet;
-  const tailnetReady = !!local?.status.TSNetOutboundReady;
-  const signIn = async () => {
-    setRequestingLogin(true);
-    setLoginError("");
-    try {
-      await settingsCall<boolean>("TSNetLogin");
-    } catch (e) {
-      setLoginError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setRequestingLogin(false);
-    }
-  };
   const renderPeer = (peer: TrustPeer) => (
     <TrustedServer
       key={peer.id}
@@ -239,8 +238,7 @@ export function ServerTrustPage({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (preview || (route.transport === "tailscale" && !tailnetReady))
-                return;
+              if (preview) return;
               void run(async () =>
                 setPreview(
                   await settingsCall<Preview>(
@@ -260,57 +258,51 @@ export function ServerTrustPage({
                   setRoute(v);
                   setPreview(undefined);
                 }}
-              >
-                {route.transport === "tailscale" && (
+              />
+              <div role="group" aria-label={t("Return connection")}>
+                <Hint>
+                  {t(
+                    "Choose how the destination connects back to this server. Approval saves this return route automatically.",
+                  )}
+                </Hint>
+                {reverseKinds.length ? (
                   <>
-                    <Row
-                      title={t("Local Tailscale node")}
-                      help={t(
-                        "Sign in to connect this server to the tailnet. This does not sign you in to the destination Spool server.",
-                      )}
-                      wide
-                    >
-                      {tailnetReady ? (
-                        <span role="status" className="settings-state online">
-                          <span className="settings-status-dot" />
-                          {t("Connected")}
-                        </span>
-                      ) : tailnet?.State === "NeedsMachineAuth" ? (
-                        <span role="status">
-                          {t("Waiting for device approval")}
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={requestingLogin}
-                          onClick={() => void signIn()}
-                        >
-                          {t(
-                            requestingLogin
-                              ? "Getting login link..."
-                              : "Sign in to Tailscale",
-                          )}
-                          <ArrowUpRight size={14} aria-hidden="true" />
-                        </button>
-                      )}
-                    </Row>
-                    <SettingsError
-                      message={loginError}
-                      t={t}
-                      onDismiss={() => setLoginError("")}
+                    <SegmentedTabs
+                      className="server-connection-tabs"
+                      label={t("Return connection")}
+                      value={reverseKind}
+                      onChange={setReverse}
+                      options={reverseKinds.map((kind) => ({
+                        value: kind,
+                        label: t(routeLabels[kind]),
+                      }))}
                     />
+                    {reverseKind === "https" ? (
+                      <Row title={t("Public HTTPS address")} wide>
+                        <code>{publicReturnURL}</code>
+                      </Row>
+                    ) : (
+                      <Hint>
+                        {t(
+                          "This server’s trust Relay route will be included automatically.",
+                        )}
+                      </Hint>
+                    )}
                   </>
+                ) : (
+                  <Hint>
+                    {t(
+                      "Configure a Public HTTPS address or enable Relay in Service settings to include a return connection.",
+                    )}
+                  </Hint>
                 )}
-              </RouteFields>
+              </div>
               {!preview && (
                 <div className="settings-card-actions">
                   <button
                     type="submit"
                     className="settings-primary"
-                    disabled={
-                      !route.address.trim() ||
-                      (route.transport === "tailscale" && !tailnetReady)
-                    }
+                    disabled={!route.address.trim()}
                   >
                     {t("Connect and verify server")}
                   </button>
@@ -341,10 +333,7 @@ export function ServerTrustPage({
                     <button
                       type="button"
                       className="settings-primary"
-                      disabled={
-                        !preview.accepting ||
-                        (route.transport === "tailscale" && !tailnetReady)
-                      }
+                      disabled={!preview.accepting}
                       onClick={() =>
                         void run(async () => {
                           setData(
@@ -353,6 +342,7 @@ export function ServerTrustPage({
                               route.transport,
                               route.address,
                               preview.id,
+                              { transport: reverseKind, address: "" },
                             ),
                           );
                           setPreview(undefined);
@@ -473,12 +463,32 @@ export function ServerTrustPage({
   );
 }
 
+function configuredPublicReturnURL(
+  settings?: SettingsSnapshot["settings"],
+): string {
+  if (!settings?.web_enabled || !settings.public_url) return "";
+  try {
+    const url = new URL(settings.public_url);
+    return url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      url.pathname === "/"
+      ? url.origin
+      : "";
+  } catch {
+    return "";
+  }
+}
+
 function RouteFields({
   t,
   route,
   onChange,
   optional,
   returnRoute,
+  automaticRoute,
   children,
 }: {
   t: Translator;
@@ -486,6 +496,7 @@ function RouteFields({
   onChange: (v: Route) => void;
   optional?: boolean;
   returnRoute?: boolean;
+  automaticRoute?: boolean;
   children?: ReactNode;
 }) {
   const id = useId();
@@ -495,7 +506,7 @@ function RouteFields({
       ? "Route back to the requesting server"
       : "Connection method",
   );
-  const kinds: Route["transport"][] = ["https", "tailscale", "relay"];
+  const kinds: Route["transport"][] = ["https", "relay"];
   if (optional) kinds.push("");
   return (
     <>
@@ -513,7 +524,13 @@ function RouteFields({
         }}
         options={kinds.map((kind) => ({
           value: kind,
-          label: t(kind ? routeLabels[kind] : "Configure later"),
+          label: t(
+            kind
+              ? routeLabels[kind]
+              : automaticRoute
+                ? "Use requester’s return route"
+                : "Configure later",
+          ),
           id: `${id}-tab-${kind}`,
           controls: `${id}-panel-${kind}`,
         }))}
@@ -1049,10 +1066,18 @@ function IncomingRequest({
           })}
           <Hint>
             {t(
-              "To accept sign-ins now, provide a route back to the requesting server. Otherwise configure it later.",
+              request.return_transport
+                ? "The request includes a verified return route. Approval saves it automatically."
+                : "To accept sign-ins now, provide a route back to the requesting server. Otherwise configure it later.",
             )}
           </Hint>
-          <RouteFields t={t} route={route} optional onChange={setRoute} />
+          <RouteFields
+            t={t}
+            route={route}
+            optional
+            automaticRoute={!!request.return_transport}
+            onChange={setRoute}
+          />
           <div className="settings-card-actions">
             <button className="settings-primary" type="submit">
               {t("Approve trust")}

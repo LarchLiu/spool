@@ -39,7 +39,7 @@ type controlMessage struct {
 	// Sent with ready: this relay applies admission messages on a live control
 	// connection, so a rotation does not need the host to register again.
 	AdmissionUpdates bool `json:"admission_updates,omitempty"`
-	// Sent with admission: the current admission token, then retired ones.
+	// Sent with admission: current device, optional federation, and retired tokens.
 	Tokens []string `json:"tokens,omitempty"`
 }
 

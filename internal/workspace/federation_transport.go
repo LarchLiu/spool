@@ -119,7 +119,7 @@ func (a *App) dialFederationPath(ctx context.Context, peer FederationPeer, path 
 }
 
 func (s *Store) federationRelayAdmission() relay.FederationAdmission {
-	return relay.FederationAdmission{Path: FederationControlPath, TrustPath: FederationTrustPath, Allow: func(key ed25519.PublicKey) bool {
+	return relay.FederationAdmission{Path: FederationControlPath, TrustPath: FederationTrustPath, AllowClient: s.allowFederationRelayClient, Allow: func(key ed25519.PublicKey) bool {
 		peer, err := federationPeer(s.db, relay.ServerID(key))
 		if errors.Is(err, sql.ErrNoRows) {
 			peer, err = s.pendingFederationTrustPeer(relay.ServerID(key))

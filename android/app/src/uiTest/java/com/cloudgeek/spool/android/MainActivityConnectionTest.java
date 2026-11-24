@@ -53,6 +53,11 @@ public class MainActivityConnectionTest {
             mode = "relay"; directory = data; origin = code;
             return new Client("unused", "https://" + new RelayPairing(code).id + ".spool.invalid");
         }
+        @Implementation protected static Client newFederationRelayClient(String data, String code) {
+            Client client = newRelayClient(data, code);
+            mode = "federation-relay";
+            return client;
+        }
         @Implementation protected static Client newClientForDevice(String data, String address, String model) {
             mode = "tailscale"; directory = data; origin = address; deviceModel = model;
             Client client = new Client("unused", address);

@@ -42,7 +42,11 @@ func (n *desktopServerNetworks) run(fn func(context.Context)) {
 }
 
 func desktopNetworkKey(server desktopServer) string {
-	return server.connectionID() + "\x00" + server.Mode + "\x00" + server.Address + "\x00" + server.Relay
+	key := server.connectionID() + "\x00" + server.Mode + "\x00" + server.Address + "\x00" + server.Relay
+	if server.FederationRelay {
+		key += "\x00federation-relay\x00" + server.FederationAccount
+	}
+	return key
 }
 
 func (server desktopServer) connectionID() string {
@@ -78,7 +82,11 @@ func (n *desktopServerNetworks) client(server desktopServer) (*spoolnet.Client, 
 	case "tailscale":
 		client, err = spoolnet.NewClientForDevice(n.directory(server.connectionID(), "tailscale"), server.Address, "Desktop")
 	case "relay":
-		client, err = spoolnet.NewRelayClient(n.directory(server.connectionID(), "relay"), server.Relay)
+		if server.FederationRelay {
+			client, err = spoolnet.NewFederationRelayClient(filepath.Join(n.directory(server.ID, "federation-relay"), server.FederationAccount), server.Relay)
+		} else {
+			client, err = spoolnet.NewRelayClient(n.directory(server.connectionID(), "relay"), server.Relay)
+		}
 	default:
 		return nil, errors.New("native transport is only used for Tailscale and Relay")
 	}

@@ -65,6 +65,7 @@ func (a *desktopFederationAttempt) destinationSignedIn() bool {
 }
 
 type desktopFederationResolution struct {
+	reason        string
 	server        desktopServer
 	found         bool
 	address       string
@@ -664,11 +665,11 @@ func (p *panel) startDesktopFederationFrom(origin string, page *desktopServerCha
 				p.resolveDesktopFederationAttempt(a, site, current, candidates)
 			}
 		}
-		_, peer, reason := site.authorization(ctx, desktopFederationClient(), account, target)
+		csrf, peer, reason := site.authorization(ctx, desktopFederationClient(), account, target)
 		if reason != "" {
 			return func() { p.failDesktopFederationResolution(a, reason) }
 		}
-		resolution := p.resolveDesktopFederation(ctx, candidates, peer)
+		resolution := p.resolveAuthorizedDesktopFederation(ctx, candidates, site, account, csrf, peer)
 		return func() {
 			a.sourceFingerprint = current
 			p.applyDesktopFederationResolution(a, resolution)
@@ -686,11 +687,11 @@ func (p *panel) resolveDesktopFederationAttempt(a *desktopFederationAttempt, sit
 		if err != nil || desktopFederationFingerprint(account) != fingerprint {
 			return func() { p.failDesktopFederationResolution(a, "source") }
 		}
-		_, peer, reason := site.authorization(ctx, desktopFederationClient(), account, a.target)
+		csrf, peer, reason := site.authorization(ctx, desktopFederationClient(), account, a.target)
 		if reason != "" {
 			return func() { p.failDesktopFederationResolution(a, reason) }
 		}
-		resolution := p.resolveDesktopFederation(ctx, candidates, peer)
+		resolution := p.resolveAuthorizedDesktopFederation(ctx, candidates, site, account, csrf, peer)
 		return func() {
 			a.sourceFingerprint = fingerprint
 			p.applyDesktopFederationResolution(a, resolution)
@@ -779,7 +780,7 @@ func (p *panel) resolveDesktopFederation(ctx context.Context, candidates []deskt
 			continue
 		}
 		pinned := desktopRelayServerID(server) == target
-		published := address != "" && (server.Mode == "direct" || server.Mode == "tailscale") && desktopFederationClientAddress(server.Address) == address
+		published := peer.ClientMode != "relay" && address != "" && (server.Mode == "direct" || server.Mode == "tailscale") && desktopFederationClientAddress(server.Address) == address
 		if (pinned || published) && (!resolution.found || server.Enabled && !resolution.server.Enabled) {
 			resolution.server, resolution.found, resolution.address = server, true, ""
 			if !pinned {
@@ -820,12 +821,42 @@ func (p *panel) resolveDesktopFederation(ctx context.Context, candidates []deskt
 	return resolution
 }
 
+// Fetch a client route only with the chosen source account. The public target
+// list carries no tunnel token, and the route's pinned key must derive target.
+func (p *panel) resolveAuthorizedDesktopFederation(ctx context.Context, candidates []desktopServer, site desktopFederationSite, account []mygo.Cookie, csrf string, peer desktopFederationTarget) desktopFederationResolution {
+	resolution := p.resolveDesktopFederation(ctx, candidates, peer)
+	if peer.ClientMode != "relay" || resolution.found && resolution.server.Mode == "relay" && !resolution.server.FederationRelay {
+		return resolution
+	}
+	response, err := site.do(ctx, desktopFederationClient(), "POST", "/api/federation/relay-route", map[string]string{"target": peer.ID}, account, csrf)
+	var route struct {
+		Code string `json:"relay_code"`
+	}
+	if err != nil || !desktopFederationJSON(response, &route) {
+		return desktopFederationResolution{reason: "unreachable"}
+	}
+	pairing, err := relay.ParsePairing(route.Code)
+	if err != nil || pairing.ID() != peer.ID || pairing.Invitation != "" || len(pairing.LAN) != 0 {
+		return desktopFederationResolution{reason: "identity"}
+	}
+	server, err := validateDesktopServer(desktopServer{Mode: "relay", Relay: route.Code})
+	if err != nil {
+		return desktopFederationResolution{reason: "unconfigured"}
+	}
+	server.FederationRelay = true
+	return desktopFederationResolution{proposed: server, address: desktopFederationClientAddress(peer.ClientURL), publishedMode: "relay"}
+}
+
 func (p *panel) applyDesktopFederationResolution(a *desktopFederationAttempt, resolution desktopFederationResolution) {
 	if p.quitting || p.federation.attempt != a || a.phase != "resolving" {
 		return
 	}
 	if !p.desktopFederationSourceCurrent(a) {
 		p.failDesktopFederation("source")
+		return
+	}
+	if resolution.reason != "" {
+		p.failDesktopFederation(resolution.reason)
 		return
 	}
 	if resolution.found {
@@ -869,7 +900,7 @@ func (p *panel) applyDesktopFederationResolution(a *desktopFederationAttempt, re
 		return
 	}
 	a.phase = "confirming"
-	confirmed := p.confirmDesktopFederationServer(resolution.proposed.Address)
+	confirmed := resolution.proposed.FederationRelay || p.confirmDesktopFederationServer(resolution.proposed.Address)
 	// A native dialog runs a nested event loop; the request may have ended.
 	if p.quitting || p.federation.attempt != a {
 		return
@@ -885,7 +916,7 @@ func (p *panel) applyDesktopFederationResolution(a *desktopFederationAttempt, re
 	var next desktopServers
 	var server desktopServer
 	var err error
-	if a.grouped {
+	if a.grouped || resolution.proposed.FederationRelay {
 		next, server, err = p.servers.trustedProfile(resolution.proposed, a.source, a.target, a.sourceFingerprint)
 	} else {
 		next, err = p.servers.save(resolution.proposed)
@@ -908,12 +939,15 @@ func (profiles desktopServers) trustedProfile(route desktopServer, source, targe
 	server.ID, server.Enabled = "", false
 	server.FederationSource, server.FederationTarget, server.FederationAccount = source, target, account
 	server.ConnectionID = route.connectionID()
+	if route.FederationRelay {
+		server.ConnectionID = ""
+	}
 	for _, saved := range profiles.Entries {
 		if saved.FederationSource == source && saved.FederationTarget == target {
 			server.ID = saved.ID
 			server.Enabled = saved.Enabled
 			// An automatically added route has no separate device profile.
-			if server.ConnectionID == "" {
+			if server.ConnectionID == "" && !route.FederationRelay {
 				server.ConnectionID = saved.ConnectionID
 			}
 			break

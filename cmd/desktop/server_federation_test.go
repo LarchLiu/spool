@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo"
+	"spool/relay"
 )
 
 var testFederationTarget = strings.Repeat("b", 52)
@@ -153,6 +154,60 @@ func TestDesktopFederationNeverChoosesADestinationByItsOwnClaim(t *testing.T) {
 	}
 	if asked != 0 {
 		t.Fatalf("identity requests = %d", asked)
+	}
+}
+
+func TestDesktopFederationAutomaticallyObtainsAPinnedRelayRoute(t *testing.T) {
+	key, err := relay.NewIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := (relay.Pairing{Version: 2, RelayURL: "https://relay.example.test", PublicKey: key.PublicKey(), AccessToken: key.AccessToken}).Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := desktopFederationTarget{ID: key.ID(), ClientMode: "relay", ClientURL: "https://old-public.example.test/"}
+	var requested int
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested++
+		cookie, _ := r.Cookie("spool_session")
+		var input map[string]string
+		if r.Method != "POST" || r.URL.Path != "/api/federation/relay-route" || cookie == nil || cookie.Value != "source-session" ||
+			r.Header.Get("X-CSRF-Token") != "csrf" || json.NewDecoder(r.Body).Decode(&input) != nil || input["target"] != target.ID {
+			t.Error("route fetch lost its source authorization")
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"relay_code": code})
+	}))
+	t.Cleanup(source.Close)
+	p := &panel{servers: defaultDesktopServers()}
+	p.federation.identify = func(context.Context, desktopServer) string { return target.ID }
+	public, err := validateDesktopServer(desktopServer{Direct: target.ClientURL, Mode: "direct", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolve := func() desktopFederationResolution {
+		return p.resolveAuthorizedDesktopFederation(t.Context(), []desktopServer{public, {ID: localDesktopServer, Mode: "direct"}}, desktopFederationSite{base: source.URL + "/"}, []mygo.Cookie{{Name: "spool_session", Value: "source-session"}}, "csrf", target)
+	}
+	got := resolve()
+	if got.reason != "" || got.found || !got.proposed.FederationRelay || got.proposed.Mode != "relay" || got.proposed.Direct != "" || got.proposed.Relay != code || requested != 1 {
+		t.Fatalf("automatic route = %+v, requests = %d", got, requested)
+	}
+	profiles, alice, err := p.servers.trustedProfile(got.proposed, localDesktopServer, target.ID, "a"+strings.Repeat("b", 42))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alice.ConnectionID != "" || !alice.FederationRelay || alice.FederationTarget != target.ID {
+		t.Fatal("automatic route inherited an ordinary device connection")
+	}
+	_, bob, err := profiles.trustedProfile(got.proposed, localDesktopServer, target.ID, "c"+strings.Repeat("d", 42))
+	if err != nil || alice.ID != bob.ID || desktopNetworkKey(alice) == desktopNetworkKey(bob) || desktopServerMount(alice) == desktopServerMount(bob) {
+		t.Fatal("source account change did not isolate the Relay key and session", err)
+	}
+	target.ID = strings.Repeat("b", 52)
+	if got := resolve(); got.reason != "identity" || got.proposed.Address != "" {
+		t.Fatalf("accepted a mismatched Relay key: %+v", got)
 	}
 }
 

@@ -15,6 +15,22 @@ import org.robolectric.annotation.Config;
 @RunWith(org.robolectric.RobolectricTestRunner.class)
 @Config(sdk = {26, 35})
 public class ServerProfilesTest {
+    @Test public void automaticRelayProfilesKeepClientKeysAndSessionsSeparateForEachSourceAccount() throws Exception {
+        ServerProfiles profiles = new ServerProfiles(new ConnectionPlan("https://home.example.com", "", ConnectionMode.DIRECT));
+        String code = RelayPairingTest.code("https://relay.example.com"), id = new RelayPairing(code).id;
+        ServerProfiles.Server route = new ServerProfiles.Server("route", "Lab", new ConnectionPlan("", "", code, ConnectionMode.RELAY, false));
+        route.federationRelay = true;
+        ServerProfiles.Server home = profiles.active();
+        ServerProfiles.Server lab = profiles.trustedProfile(route, home, id, NativeFederation.accountKey("alice", "csrf-a"));
+        File root = new File("/private/profile-fixture");
+        String directory = lab.directory(root, ConnectionMode.RELAY);
+        assertEquals(lab.id, lab.connectionID());
+        ServerProfiles restored = ServerProfiles.restore(profiles.encode(), lab.id, home.plan);
+        assertTrue(restored.active().federationRelay); assertEquals(directory, restored.active().directory(root, ConnectionMode.RELAY));
+        profiles.trustedProfile(route, home, id, NativeFederation.accountKey("bob", "csrf-b"));
+        assertNotEquals(directory, lab.directory(root, ConnectionMode.RELAY));
+    }
+
     @Test public void trustedProfilesPersistIndependentSessionsWhileSharingTheirDeviceDirectories() throws Exception {
         ServerProfiles profiles = new ServerProfiles(new ConnectionPlan("https://home.example.com", "", ConnectionMode.DIRECT));
         ServerProfiles.Server home = profiles.active(), office = profiles.add("Office"), studio = profiles.add("Studio");

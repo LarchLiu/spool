@@ -26,9 +26,10 @@ const (
 )
 
 var (
-	errFederationTrustCode    = errors.New("Invalid or expired server trust message")
-	errFederationTrustRequest = errors.New("No matching server trust request")
-	errFederationTrustDecided = errors.New("This server trust request already has a decision")
+	errFederationTrustCode               = errors.New("Invalid or expired server trust message")
+	errFederationTrustRequest            = errors.New("No matching server trust request")
+	errFederationTrustDecided            = errors.New("This server trust request already has a decision")
+	errFederationTrustReturnRouteChanged = errors.New("A pending trust request uses a different return route. Check its result first, then change the return route after approval.")
 )
 
 type FederationTrustIdentity struct {
@@ -42,13 +43,14 @@ func (p FederationTrustIdentity) peer() FederationPeer {
 }
 
 type federationTrustMessage struct {
-	ID          string                  `json:"id"`
-	Sender      FederationTrustIdentity `json:"sender"`
-	Target      string                  `json:"target"`
-	Expires     int64                   `json:"expires_at"`
-	Decision    string                  `json:"decision,omitempty"`
-	RequestHash string                  `json:"request_hash,omitempty"`
-	Signature   string                  `json:"signature,omitempty"`
+	ID          string                      `json:"id"`
+	Sender      FederationTrustIdentity     `json:"sender"`
+	Target      string                      `json:"target"`
+	Expires     int64                       `json:"expires_at"`
+	Decision    string                      `json:"decision,omitempty"`
+	RequestHash string                      `json:"request_hash,omitempty"`
+	ReturnRoute *FederationTrustReturnRoute `json:"return_route,omitempty"`
+	Signature   string                      `json:"signature,omitempty"`
 }
 
 func (m federationTrustMessage) bytes() []byte {
@@ -98,17 +100,24 @@ func parseFederationTrustCode(code string, now time.Time) (federationTrustMessag
 	if !ok || err != nil || !ed25519.Verify(key, m.signingBytes(), sig) {
 		return m, errFederationTrustCode
 	}
+	if m.ReturnRoute != nil {
+		route, err := federationTrustRoute(m.ReturnRoute.Transport, m.ReturnRoute.Address)
+		if err != nil || m.Decision != "" || route.ID != "" && (route.ID != m.Sender.ID || route.PublicKey != m.Sender.PublicKey) {
+			return m, errFederationTrustCode
+		}
+	}
 	return m, nil
 }
 
 type FederationTrustRequest struct {
-	ID        string `json:"id"`
-	PeerID    string `json:"peer_id"`
-	PeerName  string `json:"peer_name,omitempty"`
-	Outgoing  bool   `json:"outgoing"`
-	ExpiresAt int64  `json:"expires_at"`
-	Status    string `json:"status"`
-	Network   bool   `json:"network,omitempty"`
+	ID              string `json:"id"`
+	PeerID          string `json:"peer_id"`
+	PeerName        string `json:"peer_name,omitempty"`
+	Outgoing        bool   `json:"outgoing"`
+	ExpiresAt       int64  `json:"expires_at"`
+	Status          string `json:"status"`
+	Network         bool   `json:"network,omitempty"`
+	ReturnTransport string `json:"return_transport,omitempty"`
 }
 
 type FederationTrustPeer struct {
@@ -227,6 +236,11 @@ func setFederationTrustReturnRoute(p *FederationPeer, transport, address string)
 		return errFederationTrustPeer
 	}
 	if !p.Accept || p.Transport != route.Transport || p.Address != route.Address || p.RelayCode != route.RelayCode {
+		// Preserve older approved Relay client routing before changing the
+		// return control route; new approvals already save it independently.
+		if p.Transport == "relay" && p.ClientRelayCode == "" && (route.Transport != "relay" || p.RelayCode != route.RelayCode) {
+			p.ClientRelayCode, p.ClientMode, p.ClientURL = p.RelayCode, FederationClientModeRelay, relay.Origin(p.ID)+"/"
+		}
 		p.Transport, p.Address, p.RelayCode, p.Accept = route.Transport, route.Address, route.RelayCode, true
 		p.generation = randomToken()
 	}
@@ -279,19 +293,25 @@ func (s *Store) FederationTrustSnapshot() (FederationTrustSnapshot, error) {
 	if v.InboxOpen, err = federationTrustInbox(tx); err != nil {
 		return v, err
 	}
-	rows, err := tx.Query(`SELECT r.id,r.peer_id,r.peer_name,r.outgoing,r.expires_at,r.decision,p.request_id IS NOT NULL
+	rows, err := tx.Query(`SELECT r.id,r.peer_id,r.peer_name,r.outgoing,r.expires_at,r.decision,p.request_id IS NOT NULL,r.request
 		FROM federation_trust_requests r LEFT JOIN federation_trust_routes p ON p.request_id=r.id WHERE r.expires_at>? ORDER BY r.expires_at DESC,r.id`, time.Now().Unix())
 	if err != nil {
 		return v, err
 	}
 	for rows.Next() {
 		var r FederationTrustRequest
-		if err := rows.Scan(&r.ID, &r.PeerID, &r.PeerName, &r.Outgoing, &r.ExpiresAt, &r.Status, &r.Network); err != nil {
+		var request string
+		if err := rows.Scan(&r.ID, &r.PeerID, &r.PeerName, &r.Outgoing, &r.ExpiresAt, &r.Status, &r.Network, &request); err != nil {
 			rows.Close()
 			return v, err
 		}
 		if r.Status == "" {
 			r.Status = federationTrustPending
+		}
+		if message, err := parseFederationTrustCode(request, time.Now()); err == nil {
+			if message.ReturnRoute != nil {
+				r.ReturnTransport = message.ReturnRoute.Transport
+			}
 		}
 		v.Requests = append(v.Requests, r)
 	}
@@ -357,7 +377,7 @@ func (s *Store) FederationTrustSnapshot() (FederationTrustSnapshot, error) {
 	return v, rows.Err()
 }
 
-func (s *Store) requestFederationTrust(route FederationPeer) (string, error) {
+func (s *Store) requestFederationTrust(route FederationPeer, returns ...*FederationTrustReturnRoute) (string, error) {
 	local, sender, err := s.federationTrustIdentity()
 	if err != nil {
 		return "", err
@@ -365,6 +385,50 @@ func (s *Store) requestFederationTrust(route FederationPeer) (string, error) {
 	target := route.ID
 	if !federationTrustServerID(target) || target == sender.ID {
 		return "", errors.New("Enter a valid ID for a different server")
+	}
+	var reverse *FederationTrustReturnRoute
+	if len(returns) > 0 {
+		reverse = returns[0]
+	}
+	if reverse == nil && route.Transport == "relay" {
+		settings, err := s.Settings()
+		if err != nil {
+			return "", err
+		}
+		if settings.RelayEnabled {
+			reverse = &FederationTrustReturnRoute{Transport: "relay"}
+		}
+	}
+	if reverse != nil {
+		copy := *reverse
+		reverse = &copy
+		if reverse.Transport == "" && reverse.Address == "" {
+			reverse = nil
+		} else {
+			if reverse.Transport == "https" && strings.TrimSpace(reverse.Address) == "" {
+				settings, err := s.Settings()
+				if err != nil {
+					return "", err
+				}
+				if !settings.WebEnabled || strings.TrimSpace(settings.PublicURL) == "" {
+					return "", errors.New("Configure a Public HTTPS address before including a return route")
+				}
+				reverse.Address = settings.PublicURL
+			}
+			if reverse.Transport == "relay" && strings.TrimSpace(reverse.Address) == "" {
+				reverse.Address, err = s.FederationRelayRoute()
+				if err != nil {
+					return "", err
+				}
+			}
+			verified, err := federationTrustRoute(reverse.Transport, reverse.Address)
+			if err != nil {
+				return "", err
+			}
+			if verified.ID != "" && (verified.ID != sender.ID || verified.PublicKey != sender.PublicKey) {
+				return "", errFederationTrustPeer
+			}
+		}
 	}
 	now := time.Now()
 	tx, err := s.db.Begin()
@@ -377,9 +441,24 @@ func (s *Store) requestFederationTrust(route FederationPeer) (string, error) {
 	}
 	var id, code string
 	err = tx.QueryRow(`SELECT id,request FROM federation_trust_requests WHERE peer_id=? AND outgoing=1 AND decision='' ORDER BY expires_at DESC LIMIT 1`, target).Scan(&id, &code)
+	if err == nil {
+		pending, parseErr := parseFederationTrustCode(code, now)
+		if parseErr != nil {
+			return "", parseErr
+		}
+		// A request may already be awaiting approval remotely, even if the
+		// original submission timed out. Keep its signed message and receipt
+		// binding intact, and never silently reuse a different return route.
+		if !sameFederationTrustReturnRoute(pending.ReturnRoute, reverse) {
+			return "", errFederationTrustReturnRouteChanged
+		}
+	}
 	if errors.Is(err, sql.ErrNoRows) {
-		m := (federationTrustMessage{ID: randomToken(), Sender: sender, Target: target, Expires: now.Add(federationTrustTTL).Unix()}).sign(local)
+		m := (federationTrustMessage{ID: randomToken(), Sender: sender, Target: target, Expires: now.Add(federationTrustTTL).Unix(), ReturnRoute: reverse}).sign(local)
 		id, code = m.ID, m.code()
+		if len(code) > federationTrustCodeLimit {
+			return "", errFederationTrustCode
+		}
 		_, err = tx.Exec(`INSERT INTO federation_trust_requests(id,peer_id,peer_name,outgoing,expires_at,request) VALUES(?,?,'',1,?,?)`, id, target, m.Expires, code)
 	}
 	if err != nil {
@@ -402,6 +481,34 @@ type FederationTrustApproval struct {
 	Projects  []FederationProject `json:"projects"`
 	Transport string              `json:"transport"`
 	Address   string              `json:"address"`
+}
+
+type FederationTrustReturnRoute struct {
+	Transport string `json:"transport"`
+	Address   string `json:"address"`
+}
+
+func sameFederationTrustReturnRoute(a, b *FederationTrustReturnRoute) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	left, err := federationTrustRoute(a.Transport, a.Address)
+	if err != nil {
+		return false
+	}
+	right, err := federationTrustRoute(b.Transport, b.Address)
+	if err != nil || left.Transport != right.Transport || left.Address != right.Address {
+		return false
+	}
+	if left.Transport != "relay" {
+		return true
+	}
+	// Whitespace and the JSON spelling of a pairing code do not change its route.
+	lp, _ := relay.ParsePairing(left.RelayCode)
+	rp, _ := relay.ParsePairing(right.RelayCode)
+	lc, _ := lp.Encode()
+	rc, _ := rp.Encode()
+	return lc == rc
 }
 
 func (s *Store) DecideFederationTrust(requestID string, approve bool, settings FederationTrustApproval) error {
@@ -444,12 +551,16 @@ func (s *Store) DecideFederationTrust(requestID string, approve bool, settings F
 		if err := saveFederationTrustGrant(tx, identity, false, m.ID); err != nil {
 			return err
 		}
-		if settings.Projects != nil || settings.Transport != "" || settings.Address != "" {
+		if settings.Projects != nil || settings.Transport != "" || settings.Address != "" || m.ReturnRoute != nil {
 			peer, err := federationPeer(tx, identity.ID)
 			if err != nil {
 				return err
 			}
 			generation := peer.generation
+			// The destination may override the applicant's signed return route.
+			if settings.Transport == "" && settings.Address == "" && m.ReturnRoute != nil {
+				settings.Transport, settings.Address = m.ReturnRoute.Transport, m.ReturnRoute.Address
+			}
 			if settings.Projects != nil {
 				peer.Projects = settings.Projects
 				peer.generation = randomToken()
@@ -520,6 +631,8 @@ func (s *Store) confirmFederationTrust(code string) (FederationTrustRequest, err
 				if route.Transport == "tailscale" {
 					peer.ClientMode = FederationClientModeTailscale
 				}
+			} else if route.Transport == "relay" {
+				peer.ClientRelayCode, peer.ClientMode, peer.ClientURL = route.RelayCode, FederationClientModeRelay, relay.Origin(peer.ID)+"/"
 			}
 		}
 		if err := saveFederationTrustGrant(tx, peer, true, m.ID); err != nil {
@@ -565,6 +678,9 @@ func saveFederationTrustGrant(tx *sql.Tx, p FederationPeer, outgoing bool, reque
 		}
 		if outgoing && current.ClientURL == "" && current.ClientMode == "" && p.ClientURL != "" {
 			current.ClientURL, current.ClientMode = p.ClientURL, p.ClientMode
+		}
+		if outgoing && p.ClientRelayCode != "" {
+			current.ClientRelayCode, current.ClientMode, current.ClientURL = p.ClientRelayCode, FederationClientModeRelay, p.ClientURL
 		}
 		if err := updateFederationPeerConfig(tx, current); err != nil {
 			return err

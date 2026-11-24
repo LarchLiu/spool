@@ -90,6 +90,9 @@ export function ServerDialog() {
   const pairingImage = useRef<HTMLInputElement>(null);
   const connectionActive = !!snapshot?.active || pairing === "pending";
   const currentMode = pairing === "pending" ? "relay" : snapshot?.server.mode;
+  const connectionModes: ConnectionMode[] = draft?.federation_relay
+    ? ["relay"]
+    : ["direct", "tailscale", "relay"];
   const displayName =
     draft?.name.trim() || snapshot?.server.server_name || "Home";
   const saveProfile = useRef(
@@ -389,9 +392,7 @@ export function ServerDialog() {
       <div ref={content} className="server-dialog-content">
         <header className="server-dialog-header">
           <h1>
-            {draft?.id
-              ? `${displayName} · ${t("Settings")}`
-              : t("Add server")}
+            {draft?.id ? `${displayName} · ${t("Settings")}` : t("Add server")}
           </h1>
           <span className="settings-sr-only" role="status">
             {t(
@@ -482,28 +483,26 @@ export function ServerDialog() {
                   label={t("Connection mode")}
                   value={visible}
                   onChange={setVisible}
-                  options={(["direct", "tailscale", "relay"] as const).map(
-                    (mode) => ({
-                      value: mode,
-                      label: t(names[mode]),
-                      id: `connection-${mode}`,
-                      controls: `connection-panel-${mode}`,
-                      title: `${t(names[mode])} · ${t(statuses[mode === snapshot?.server.mode ? snapshot.status : "disconnected"] || "Disconnected")}`,
-                      icon: (
-                        <span
-                          className="server-status-dot"
-                          data-state={
-                            mode === snapshot?.server.mode
-                              ? snapshot.status
-                              : "disconnected"
-                          }
-                          aria-hidden="true"
-                        />
-                      ),
-                    }),
-                  )}
+                  options={connectionModes.map((mode) => ({
+                    value: mode,
+                    label: t(names[mode]),
+                    id: `connection-${mode}`,
+                    controls: `connection-panel-${mode}`,
+                    title: `${t(names[mode])} · ${t(statuses[mode === snapshot?.server.mode ? snapshot.status : "disconnected"] || "Disconnected")}`,
+                    icon: (
+                      <span
+                        className="server-status-dot"
+                        data-state={
+                          mode === snapshot?.server.mode
+                            ? snapshot.status
+                            : "disconnected"
+                        }
+                        aria-hidden="true"
+                      />
+                    ),
+                  }))}
                 />
-                {(["direct", "tailscale", "relay"] as const).map((mode) => (
+                {connectionModes.map((mode) => (
                   <section
                     key={mode}
                     role="tabpanel"
@@ -535,7 +534,7 @@ export function ServerDialog() {
                         onKeyDown={(event) => commitInput(event, mode)}
                         autoComplete="off"
                         spellCheck={false}
-                        disabled={busy}
+                        disabled={busy || draft.federation_relay}
                       />
                     </label>
                     <div className="server-connection-actions">
@@ -609,7 +608,7 @@ export function ServerDialog() {
                             <KeyRound size={17} aria-hidden="true" />
                           </button>
                         )}
-                        {mode === "relay" && (
+                        {mode === "relay" && !draft.federation_relay && (
                           <button
                             className="icon"
                             type="button"

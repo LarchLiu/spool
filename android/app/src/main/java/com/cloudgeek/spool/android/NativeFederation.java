@@ -26,7 +26,7 @@ final class NativeFederation {
         }
 
         ConnectionPlan newPlan() {
-            if (origin.isEmpty() || clientMode == null) return null;
+            if (origin.isEmpty() || clientMode == null || clientMode == ConnectionMode.RELAY) return null;
             return clientMode == ConnectionMode.TAILSCALE ? new ConnectionPlan("", origin, clientMode)
                     : new ConnectionPlan(origin, "", clientMode);
         }
@@ -43,7 +43,7 @@ final class NativeFederation {
             this.source = source; this.target = target; this.server = server; this.route = route;
         }
         String key() { return tabKey(source.id, target.id); }
-        boolean reachable() { return route != null || target.newPlan() != null; }
+        boolean reachable() { return route != null || target.clientMode == ConnectionMode.RELAY || target.newPlan() != null; }
     }
 
     private NativeFederation() {}
@@ -75,6 +75,7 @@ final class NativeFederation {
 
     private static ConnectionMode clientMode(Object mode) {
         if (mode == null || "".equals(mode)) return ConnectionMode.DIRECT;
+        if (ConnectionMode.RELAY.value.equals(mode)) return ConnectionMode.RELAY;
         return ConnectionMode.TAILSCALE.value.equals(mode) ? ConnectionMode.TAILSCALE : null;
     }
 
@@ -92,7 +93,7 @@ final class NativeFederation {
                     || url != null && !(url instanceof String) || advertised != null && !(advertised instanceof String))
                 throw new JSONException("Invalid trusted server list");
             if (id.equals(key)) authorized = (!requirePublishedMode || clientMode(advertised) == mode)
-                    && allows(new Target(id, "", origin((String) url)), mode, address);
+                    && allows(new Target(id, "", origin((String) url), clientMode(advertised)), mode, address);
         }
         return authorized;
     }
@@ -118,6 +119,7 @@ final class NativeFederation {
 
     static boolean allows(Target target, ConnectionMode mode, String address) {
         if (address == null || address.isEmpty()) return false;
+        if (target.clientMode == ConnectionMode.RELAY && mode != ConnectionMode.RELAY) return false;
         if (mode == ConnectionMode.RELAY) {
             try { return new RelayPairing(address).id.equals(target.id); } catch (RuntimeException invalid) { return false; }
         }

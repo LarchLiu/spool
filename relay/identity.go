@@ -3,6 +3,7 @@ package relay
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
@@ -175,6 +176,14 @@ func ServerID(key []byte) string {
 }
 func (i *Identity) ID() string { return ServerID(i.PublicKey()) }
 func Origin(id string) string  { return "https://" + id + ".spool.invalid" }
+
+// FederationAccessToken admits federation tunnels independently of rotating
+// device credentials. TLS and the federated session still authorize requests.
+func (i *Identity) FederationAccessToken() string {
+	mac := hmac.New(sha256.New, i.Seed)
+	_, _ = mac.Write([]byte("Spool Relay federation admission v1\x00"))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+}
 
 func (i *Identity) TLSConfig() (*tls.Config, error) {
 	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))

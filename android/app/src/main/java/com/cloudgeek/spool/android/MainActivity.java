@@ -249,6 +249,7 @@ public final class MainActivity extends Activity {
     private int federationAttempt;
     private ServerRuntime federationRuntime;
     private FederationEnrollment federationEnrollment;
+    private boolean federationRelayLoading;
     private String selectedFederationTab = "";
     private String restoringTrustedServer = "";
     private final Runnable serverRefresh = this::refreshServerConnections;
@@ -1041,7 +1042,8 @@ public final class MainActivity extends Activity {
                         Client candidate;
                         if (endpoint.mode == ConnectionMode.DIRECT) candidate = Spoolnet.newDirectClient(directory, endpoint.origin);
                         else if (endpoint.mode == ConnectionMode.RELAY) {
-                            candidate = Spoolnet.newRelayClient(directory, endpoint.origin);
+                            candidate = owner.federationRelay ? Spoolnet.newFederationRelayClient(directory, endpoint.origin)
+                                    : Spoolnet.newRelayClient(directory, endpoint.origin);
                             if (relayDiscovery != null) {
                                 String local = relayDiscovery.addresses(new RelayPairing(endpoint.origin).id);
                                 if (!local.isEmpty()) candidate.setLANAddresses(local);
@@ -1848,6 +1850,7 @@ public final class MainActivity extends Activity {
             serverSettings.commitName();
             enrollTailscale();
         }, this::scanPairing);
+        if (server.federationRelay) connectionSettings.useFederationRelay();
         for (ConnectionMode mode : ConnectionMode.values()) connectionSettings.input(mode).setOnFocusChangeListener((view, focused) -> {
             if (!focused && settingsOpen && !destroyed && newServer == server && !connectionSettings.input(mode).getText().toString().trim().isEmpty())
                 persistNewServer(connectionSettings.plan());
@@ -2133,6 +2136,10 @@ public final class MainActivity extends Activity {
         if (tab == null) { if (!key.startsWith(NativeFederation.PREFIX)) selectServer(key); return; }
         AutomaticFederationSource owner = federationSource(tab.source);
         if (owner == null || !owner.offers(tab.target.id)) return;
+        if (tab.target.clientMode == ConnectionMode.RELAY && (tab.route == null || tab.route.federationRelay)) {
+            openFederationRelay(owner, tab.target, key);
+            return;
+        }
         if (tab.route != null) { openFederatedServer(owner, tab.target, tab.route, false); return; }
         if (federationRuntime != null) return;
         ConnectionPlan newPlan = tab.target.newPlan();
@@ -2157,6 +2164,35 @@ public final class MainActivity extends Activity {
             openFederatedServer(owner, latest.target, server, true);
         }));
         confirm.show();
+    }
+
+    private void openFederationRelay(AutomaticFederationSource owner, NativeFederation.Target target, String key) {
+        if (federationRelayLoading || federationRuntime != null) return;
+        federationRelayLoading = true;
+        final int auth = authEpoch, view = generation;
+        final String language = locale();
+        io.execute(() -> {
+            try {
+                String code = owner.client.federationRelayRoute(target.id, owner.account, language);
+                main.post(() -> {
+                    federationRelayLoading = false;
+                    NativeFederation.Tab latest = NativeFederation.find(federationTabs(), key);
+                    if (destroyed || !foreground || auth != authEpoch || view != generation || !federationOwnerCurrent(owner, target.id)
+                            || latest == null || latest.target.clientMode != ConnectionMode.RELAY) return;
+                    ServerProfiles.Server route = new ServerProfiles.Server(UUID.randomUUID().toString(), "",
+                            new ConnectionPlan("", "", code, ConnectionMode.RELAY, false));
+                    route.serverName = latest.target.name;
+                    route.federationRelay = true;
+                    openFederatedServer(owner, latest.target, route, true);
+                });
+            } catch (Exception error) {
+                main.post(() -> {
+                    federationRelayLoading = false;
+                    if (!destroyed && foreground && auth == authEpoch && view == generation)
+                        Toast.makeText(this, ui.t("Could not sign in. Try again."), Toast.LENGTH_LONG).show();
+                });
+            }
+        });
     }
 
     private void openFederatedServer(AutomaticFederationSource owner, NativeFederation.Target target, ServerProfiles.Server route, boolean requirePublishedMode) {

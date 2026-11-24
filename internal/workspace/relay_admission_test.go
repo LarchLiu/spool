@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"spool/android/transport/spoolnet"
 	"spool/relay"
 )
 
@@ -93,6 +94,36 @@ func TestRelayDeviceRevocationRotatesAdmissionToken(t *testing.T) {
 			time.Sleep(20 * time.Millisecond)
 		}
 	}
+	federationCode, err := service.Store.FederationRelayRoute()
+	if err != nil {
+		t.Fatal(err)
+	}
+	federationRoute, err := relay.ParsePairing(federationCode)
+	if err != nil || federationRoute.AccessToken == original {
+		t.Fatal("federation route reused a device credential", err)
+	}
+	eventually("relay did not publish federation admission", func() bool { return admitted(federationRoute.AccessToken) })
+	federationRoot := t.TempDir()
+	checkFederation := func() {
+		t.Helper()
+		if code, err := service.Store.FederationRelayRoute(); err != nil || code != federationCode {
+			t.Fatal("device revocation changed the exported federation route", err)
+		}
+		client, err := spoolnet.NewFederationRelayClient(federationRoot, federationCode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer client.Close()
+		response, err := (&http.Client{Transport: client, Timeout: 5 * time.Second}).Get(relay.Origin(p.ID()) + "/healthz")
+		if err != nil {
+			t.Fatal("federation client could not reconnect", err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatal("federation client could not reach the workspace", response.Status)
+		}
+	}
+	checkFederation()
 
 	if err := service.RevokeRelayDevice(lostID); err != nil {
 		t.Fatal(err)
@@ -132,6 +163,7 @@ func TestRelayDeviceRevocationRotatesAdmissionToken(t *testing.T) {
 		return err == nil && len(id.Retired) == 0 && id.AccessToken == token
 	})
 	eventually("relay still admits the revoked device's token", func() bool { return !admitted(original) })
+	checkFederation()
 	response, err := kept.Get(relay.Origin(p.ID()) + "/healthz")
 	if err != nil {
 		t.Fatal("remaining device lost relay access", err)
@@ -147,4 +179,5 @@ func TestRelayDeviceRevocationRotatesAdmissionToken(t *testing.T) {
 		t.Fatal("last revocation kept a token no device needs", err)
 	}
 	eventually("relay still admits a token after its last device was revoked", func() bool { return !admitted(token) })
+	checkFederation()
 }

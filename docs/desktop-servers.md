@@ -78,7 +78,13 @@ the profile file stores neither account passwords nor session cookies.
 Trusted entries follow their source server and use a key icon. Ordinary B,
 B through A, and B through D keep separate login sessions. Changing the source
 account also starts a separate destination session. They can reuse an existing
-Tailscale node or Relay device connection. Selecting a signed-in trusted entry
+Tailscale node or Relay device connection. Relay trust automatically obtains the
+target route and exchanges a login ticket using an independent client key, without
+another pairing code, device approval, or target account registration. An older
+public address does not replace the Relay route. Applicants can independently
+choose Public HTTPS or Relay for the destination's return connection; approval
+saves that route automatically. Tailscale is temporarily hidden in trust settings;
+ordinary Tailscale connections remain available. Selecting a signed-in trusted entry
 restores its cached page directly. On first sign-in or session expiry, its spinner
 indicates source authorization, destination identity checks, a one-time ticket
 exchange and session storage. Ordinary tabs use their own login and do not

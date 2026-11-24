@@ -31,6 +31,7 @@ final class NativeConnectionSettings extends LinearLayout {
     private boolean selecting;
     private ConnectionMode current;
     private boolean active;
+    private boolean federationRelay;
 
     NativeConnectionSettings(NativeUi ui, ConnectionPlan plan, Consumer<ConnectionPlan> changed,
             BiConsumer<ConnectionPlan, ConnectionMode> connect, Runnable stop, Runnable signIn, Runnable scanPairing) {
@@ -87,6 +88,7 @@ final class NativeConnectionSettings extends LinearLayout {
     }
 
     void show(ConnectionMode mode) {
+        if (federationRelay && mode != ConnectionMode.RELAY) return;
         if (visible == mode) return;
         ui.dismissMenus();
         if (visible != null) rows.get(visible).server.clearFocus();
@@ -96,6 +98,16 @@ final class NativeConnectionSettings extends LinearLayout {
     }
     ConnectionPlan plan() { return new ConnectionPlan(input(ConnectionMode.DIRECT).getText().toString(), input(ConnectionMode.TAILSCALE).getText().toString(), input(ConnectionMode.RELAY).getText().toString(), selected, automatic.isChecked()); }
     EditText input(ConnectionMode mode) { return rows.get(mode).server; }
+
+    void useFederationRelay() {
+        federationRelay = true;
+        for (ConnectionMode mode : ConnectionMode.values()) {
+            tabs.button(mode.value).setVisibility(mode == ConnectionMode.RELAY ? VISIBLE : GONE);
+            input(mode).setEnabled(false);
+        }
+        scan.setVisibility(GONE);
+        show(ConnectionMode.RELAY);
+    }
 
     void bind(ConnectionMode current, boolean connected, boolean active, boolean selecting, boolean canSignIn,
             Map<ConnectionMode, String> states, String summary) {
@@ -108,11 +120,11 @@ final class NativeConnectionSettings extends LinearLayout {
         this.current = current; this.active = active;
         automatic.setEnabled(!selecting);
         login.setEnabled(canSignIn && !selecting);
-        scan.setEnabled(!selecting);
+        scan.setEnabled(!selecting && !federationRelay);
         diagnostics.setText(summary);
         details.put(current, summary + (current == ConnectionMode.TAILSCALE || note.getText().length() == 0 ? "" : "\n\n" + note.getText()));
         for (Row row : rows.values()) {
-            row.server.setEnabled(!selecting);
+            row.server.setEnabled(!selecting && !federationRelay);
             row.status.setText(states.getOrDefault(row.mode, ""));
             tabStatus(row.mode, row.mode == current ? connectionState : "disconnected");
             boolean selected = active && row.mode == current;

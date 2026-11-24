@@ -269,11 +269,11 @@ func (s *desktopSettings) PreviewFederationTrust(ctx context.Context, transport,
 	return s.panel.service.PreviewFederationTrust(ctx, transport, address)
 }
 
-func (s *desktopSettings) SubmitFederationTrust(ctx context.Context, transport, address, expected string) (workspace.FederationTrustSnapshot, error) {
+func (s *desktopSettings) SubmitFederationTrust(ctx context.Context, transport, address, expected string, reverse *workspace.FederationTrustReturnRoute) (workspace.FederationTrustSnapshot, error) {
 	if _, err := settingsUI(ctx, s.panel, func() (bool, error) { return true, nil }); err != nil {
 		return workspace.FederationTrustSnapshot{}, err
 	}
-	if err := s.panel.service.SubmitFederationTrust(ctx, transport, address, expected); err != nil {
+	if err := s.panel.service.SubmitFederationTrustWithReturnRoute(ctx, transport, address, expected, reverse); err != nil {
 		return workspace.FederationTrustSnapshot{}, err
 	}
 	return s.panel.service.Store.FederationTrustSnapshot()

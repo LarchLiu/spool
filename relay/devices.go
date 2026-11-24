@@ -299,7 +299,8 @@ func (l *deviceListener) Accept() (net.Conn, error) {
 		if name == l.serverID+".spool.invalid" && l.web && l.webAllowed() {
 			return selected, nil
 		}
-		if name == federationTrustServerName(l.serverID) && l.federation.TrustPath != "" {
+		if name == federationTrustServerName(l.serverID) && l.federation.TrustPath != "" ||
+			name == federationClientServerName(l.serverID) && l.federation.AllowClient != nil {
 			selected.ClientAuth = tls.RequireAnyClientCert
 			selected.VerifyConnection = func(state tls.ConnectionState) error {
 				_, err := DevicePublicKey(state)
@@ -356,6 +357,8 @@ func (d *Devices) HandlerWithFederation(next http.Handler, serverID string, webA
 			return
 		}
 		switch r.TLS.ServerName {
+		case federationClientServerName(serverID):
+			federation.serveClient(w, r, next)
 		case federationServerName(serverID):
 			federation.serve(w, r, next)
 		case federationTrustServerName(serverID):

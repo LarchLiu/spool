@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS federation_sources(ref TEXT PRIMARY KEY, peer_id TEXT
 CREATE UNIQUE INDEX IF NOT EXISTS federation_source_active ON federation_sources(peer_id,session_hash) WHERE revoked=0;
 CREATE TABLE IF NOT EXISTS federation_tickets(hash TEXT PRIMARY KEY, source_ref TEXT NOT NULL REFERENCES federation_sources(ref) ON DELETE CASCADE, expires_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS federation_sessions(session_hash TEXT PRIMARY KEY REFERENCES auth_sessions(token_hash) ON DELETE CASCADE, peer_id TEXT NOT NULL, source_ref TEXT NOT NULL, checked_at INTEGER NOT NULL, retry_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS federation_relay_sessions(session_hash TEXT PRIMARY KEY REFERENCES auth_sessions(token_hash) ON DELETE CASCADE, client_key TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS federation_sessions_source ON federation_sessions(peer_id,source_ref);
 CREATE TABLE IF NOT EXISTS federation_revocations(peer_id TEXT NOT NULL, source_ref TEXT NOT NULL, expires_at INTEGER NOT NULL, PRIMARY KEY(peer_id,source_ref));
 CREATE TABLE IF NOT EXISTS federation_user_checks(user_id TEXT PRIMARY KEY REFERENCES users(id),retry_at INTEGER NOT NULL);
@@ -69,6 +70,7 @@ const (
 
 // FederationClientModeTailscale identifies a client URL that needs a tailnet connection.
 const FederationClientModeTailscale = "tailscale"
+const FederationClientModeRelay = "relay"
 
 var errFederationDenied = errors.New("federated login was not permitted")
 
@@ -79,18 +81,20 @@ type FederationProject struct {
 }
 
 type FederationPeer struct {
-	ID         string              `json:"id"`
-	PublicKey  string              `json:"public_key"`
-	Name       string              `json:"name"`
-	Transport  string              `json:"transport"`
-	Address    string              `json:"address,omitempty"`
-	RelayCode  string              `json:"relay_code,omitempty"`
-	ClientURL  string              `json:"client_url,omitempty"`
-	ClientMode string              `json:"client_mode,omitempty"`
-	Accept     bool                `json:"accept"`
-	AllUsers   bool                `json:"all_users"`
-	Users      []string            `json:"users,omitempty"`
-	Projects   []FederationProject `json:"projects,omitempty"`
+	ID         string `json:"id"`
+	PublicKey  string `json:"public_key"`
+	Name       string `json:"name"`
+	Transport  string `json:"transport"`
+	Address    string `json:"address,omitempty"`
+	RelayCode  string `json:"relay_code,omitempty"`
+	ClientURL  string `json:"client_url,omitempty"`
+	ClientMode string `json:"client_mode,omitempty"`
+	// The approved outgoing Relay route is independent of the control return route.
+	ClientRelayCode string              `json:"client_relay_code,omitempty"`
+	Accept          bool                `json:"accept"`
+	AllUsers        bool                `json:"all_users"`
+	Users           []string            `json:"users,omitempty"`
+	Projects        []FederationProject `json:"projects,omitempty"`
 
 	generation string
 }
@@ -137,7 +141,7 @@ func (s *Store) FederationRelayRoute() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return (relay.Pairing{Version: 2, RelayURL: relayOrigin(settings.RelayURL), PublicKey: id.PublicKey(), AccessToken: id.AccessToken}).Encode()
+	return (relay.Pairing{Version: 2, RelayURL: relayOrigin(settings.RelayURL), PublicKey: id.PublicKey(), AccessToken: id.FederationAccessToken()}).Encode()
 }
 
 type federationQuery interface {
@@ -233,8 +237,19 @@ func (s *Store) UpdateFederationPeer(p FederationPeer) error {
 	if p.Name == "" || len(p.Name) > 128 {
 		return errors.New("federation peer name is required (128 byte maximum)")
 	}
-	if p.ClientMode != "" && p.ClientMode != FederationClientModeTailscale {
+	if p.ClientMode != "" && p.ClientMode != FederationClientModeTailscale && p.ClientMode != FederationClientModeRelay {
 		return errors.New("unknown federation client mode")
+	}
+	if p.ClientRelayCode != "" || p.ClientMode == FederationClientModeRelay {
+		route, err := relay.ParsePairing(p.ClientRelayCode)
+		if err != nil || route.ID() != p.ID || p.ClientMode != FederationClientModeRelay || route.Invitation != "" || len(route.LAN) != 0 {
+			return errors.New("federation client Relay route must match the paired server")
+		}
+		p.ClientRelayCode, err = route.Encode()
+		if err != nil {
+			return err
+		}
+		p.ClientURL = relay.Origin(p.ID) + "/"
 	}
 	p.ClientURL = strings.TrimSpace(p.ClientURL)
 	if p.ClientURL != "" || p.ClientMode != "" {
@@ -476,7 +491,7 @@ func (s *Store) federationVerify(peer FederationPeer, value string, consume bool
 	return subject, tx.Commit()
 }
 
-func (s *Store) federationLogin(peer FederationPeer, person federationSubject, checked time.Time) (string, time.Time, error) {
+func (s *Store) federationLogin(peer FederationPeer, person federationSubject, checked time.Time, clientKey ...ed25519.PublicKey) (string, time.Time, error) {
 	now := time.Now()
 	if !person.valid() {
 		return "", time.Time{}, errFederationDenied
@@ -556,6 +571,14 @@ func (s *Store) federationLogin(peer FederationPeer, person federationSubject, c
 	}
 	if _, err = tx.Exec(`INSERT INTO federation_sessions VALUES(?,?,?,?,?)`, hash, peer.ID, person.SourceRef, checked.UnixMilli(), checked.Add(federationRecheck).UnixMilli()); err != nil {
 		return "", time.Time{}, err
+	}
+	if len(clientKey) != 0 {
+		if len(clientKey) != 1 || len(clientKey[0]) != ed25519.PublicKeySize {
+			return "", time.Time{}, errFederationDenied
+		}
+		if _, err = tx.Exec(`INSERT INTO federation_relay_sessions VALUES(?,?)`, hash, relay.DeviceFingerprint(clientKey[0])); err != nil {
+			return "", time.Time{}, err
+		}
 	}
 	if _, err = tx.Exec(`INSERT INTO federation_user_checks VALUES(?,?) ON CONFLICT(user_id) DO NOTHING`, user, checked.Add(federationRecheck).UnixMilli()); err != nil {
 		return "", time.Time{}, err

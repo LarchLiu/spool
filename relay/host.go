@@ -42,6 +42,8 @@ type Host struct {
 	// Set before Run. Opts into a public Web route for this host connection.
 	WebEnabled bool
 	OnWebURL   func(string)
+	// Set before Run. Federation routes use a separate stable admission token.
+	FederationEnabled bool
 	// Set before Run. Automatically issued credentials must be saved before
 	// accepting traffic; returning an error causes enrollment to retry.
 	OnRegistrationToken func(string) error
@@ -128,6 +130,9 @@ func (h *Host) admissionTokens() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	tokens := []string{h.access}
+	if h.FederationEnabled {
+		tokens = append(tokens, h.Identity.FederationAccessToken())
+	}
 	for _, retired := range h.retired {
 		tokens = append(tokens, retired.Token)
 	}

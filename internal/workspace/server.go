@@ -295,6 +295,8 @@ func (a *App) api(w http.ResponseWriter, r *http.Request) {
 		a.federationTargets(w, id)
 	case path == "/api/federation/issue" && r.Method == http.MethodPost:
 		a.federationIssue(w, r, id)
+	case path == "/api/federation/relay-route" && r.Method == http.MethodPost:
+		a.federationRelayRoute(w, r, id)
 	case path == "/api/desktop" && r.Method == http.MethodGet:
 		apiJSON(w, http.StatusOK, map[string]bool{"available": a.remoteDesktopViewAvailable(id, r.URL.Query().Get("token"))})
 	case path == "/api/desktop/connect" && r.Method == http.MethodPost:

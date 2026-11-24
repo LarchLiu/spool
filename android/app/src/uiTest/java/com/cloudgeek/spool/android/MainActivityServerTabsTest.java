@@ -174,6 +174,47 @@ public class MainActivityServerTabsTest {
         }
     }
 
+    @Test public void relayTrustCreatesItsOwnConnectionWithoutPairingOrConfirmation() throws Exception {
+        String code = RelayPairingTest.code("https://relay.example.com"), id = new RelayPairing(code).id;
+        JSONArray allowed = target(id, "Relay lab", "https://old-public.example.com");
+        allowed.getJSONObject(0).put("client_mode", "relay");
+        try (Fixture f = new Fixture(true, allowed)) {
+            clientShadow(f.homeClient).responses = call -> reply(200, call.get(1).equals("/api/me")
+                    ? "{user:{id:'alice'},csrf:'shared-csrf',federation_targets:" + allowed + "}" : allowed);
+            clientShadow(f.homeClient).federationRoute = target -> { assertEquals(id, target); return code; };
+            clientShadow(f.homeClient).federationPreparation = (destination, target, account, language) -> {
+                assertEquals(id, target); assertEquals("alice", account);
+                assertEquals(code, clientShadow(destination).relayCode);
+                assertEquals("federation-relay", MainActivityConnectionTest.ShadowSpoolnet.mode);
+                return Shadow.newInstanceOf(spoolnet.FederationSession.class);
+            };
+            f.tabs().button(NativeFederation.tabKey(f.home, id)).performClick();
+            f.drain(); f.drainConnections(); f.drain();
+            ServerProfiles.Server lab = f.servers.active();
+            assertTrue(lab.trusted()); assertTrue(lab.federationRelay);
+            assertEquals(lab.id, lab.connectionID()); assertSame(ConnectionMode.RELAY, lab.plan.selected);
+            assertEquals("", lab.plan.direct); assertEquals("external-office", f.h.<JSONObject>get("user").getString("id"));
+            assertEquals(3, f.servers.entries.size());
+            f.h.call("openSettings");
+            NativeConnectionSettings settings = f.h.get("connectionSettings");
+            assertEquals(View.GONE, settings.tabs.button(ConnectionMode.DIRECT.value).getVisibility());
+            assertFalse(settings.input(ConnectionMode.RELAY).isEnabled());
+            assertEquals(View.GONE, settings.scan.getVisibility());
+        }
+    }
+
+    @Test public void relayRouteCompletionCannotOpenATargetAfterSourceLogout() throws Exception {
+        String code = RelayPairingTest.code("https://relay.example.com"), id = new RelayPairing(code).id;
+        JSONArray allowed = target(id, "Relay lab", ""); allowed.getJSONObject(0).put("client_mode", "relay");
+        try (Fixture f = new Fixture(true, allowed)) {
+            clientShadow(f.homeClient).federationRoute = target -> code;
+            f.tabs().button(NativeFederation.tabKey(f.home, id)).performClick();
+            f.push(f.homeClient, "auth_expired", "{}");
+            f.drain(); f.drainConnections(); f.drain();
+            assertEquals(2, f.servers.entries.size()); assertEquals(f.home, f.servers.selected);
+        }
+    }
+
     @Implements(value = spoolnet.FederationSession.class, isInAndroidSdk = false)
     public static class ShadowFederationSession {
         int activations;

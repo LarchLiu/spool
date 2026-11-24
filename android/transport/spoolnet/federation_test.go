@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"spool/relay"
 )
 
 type federationRoundTrip func(*http.Request) *http.Response
@@ -18,6 +20,70 @@ func (f federationRoundTrip) RoundTrip(req *http.Request) (*http.Response, error
 	res := f(req)
 	res.Request = req
 	return res, nil
+}
+
+func TestFederationRelayRouteRequiresCurrentLocalAccountAndPinnedTarget(t *testing.T) {
+	key, err := relay.NewIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := (relay.Pairing{Version: 2, RelayURL: "https://relay.example.test", PublicKey: key.PublicKey(), AccessToken: key.AccessToken}).Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"authorized", "changed account", "external account", "changed method", "wrong pin", "denied"} {
+		t.Run(name, func(t *testing.T) {
+			c, err := NewDirectClient(t.TempDir(), "https://source.example.test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { c.Close() })
+			requested := 0
+			c.http.Transport = federationRoundTrip(func(r *http.Request) *http.Response {
+				status, body := 200, ""
+				if r.URL.Path == "/api/me" {
+					account, source, mode := "alice", "", "relay"
+					if name == "changed account" {
+						account = "bob"
+					}
+					if name == "external account" {
+						source = "external"
+					}
+					if name == "changed method" {
+						mode = ""
+					}
+					body = fmt.Sprintf(`{"user":{"id":%q,"source_server_id":%q},"csrf":"csrf","federation_targets":[{"id":%q,"client_mode":%q}]}`, account, source, key.ID(), mode)
+				} else if r.Method == "POST" && r.URL.Path == "/api/federation/relay-route" {
+					requested++
+					if r.Header.Get("X-CSRF-Token") != "csrf" {
+						t.Error("route request omitted CSRF")
+					}
+					returned := code
+					if name == "wrong pin" {
+						returned = "spool-pair:invalid"
+					}
+					if name == "denied" {
+						status = 403
+					}
+					body = fmt.Sprintf(`{"relay_code":%q}`, returned)
+				} else {
+					t.Error("unexpected route request", r.URL.Path)
+				}
+				return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}
+			})
+			got, err := c.FederationRelayRoute(key.ID(), "alice", "en")
+			if name == "authorized" {
+				if err != nil || got != code || requested != 1 {
+					t.Fatal("authorized route unavailable", err)
+				}
+			} else if err == nil || got != "" {
+				t.Fatal("unapproved route accepted")
+			}
+			if (name == "changed account" || name == "external account" || name == "changed method") && requested != 0 {
+				t.Fatal("requested a route without current source authorization")
+			}
+		})
+	}
 }
 
 func TestFederatedSessionKeepsCredentialsOnTheirOwnTransport(t *testing.T) {
