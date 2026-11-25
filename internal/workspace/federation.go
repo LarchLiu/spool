@@ -21,11 +21,11 @@ const FederationControlPath = "/api/federation/control"
 const (
 	federationVersion = 1
 	federationWindow  = 90 * time.Second
-	federationTimeout = 8 * time.Second
+	federationTimeout = 30 * time.Second
 	// Delegation and permission discovery probe the native CLI on the target
 	// (up to 20 seconds) after it has redeemed the ticket. The caller must
 	// outlast that work, or it loses the task the target went on to start.
-	federationAgentSlowTimeout = 28 * time.Second
+	federationAgentSlowTimeout = 30 * time.Second
 	// A task query may stay open on the target for this many seconds.
 	federationAgentWaitSeconds = 5
 	federationMaxBody          = 8 << 10
