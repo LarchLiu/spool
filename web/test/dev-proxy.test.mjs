@@ -56,6 +56,9 @@ test("the Vite API proxy preserves the dev origin and CSRF credentials", async (
     configFile: false,
     root: fileURLToPath(new URL("..", import.meta.url)),
     logLevel: "silent",
+    // This fixture only proxies API requests. Avoid a background browser
+    // dependency build that can outlive server.close() and cache cleanup.
+    optimizeDeps: { noDiscovery: true, include: [] },
     server: {
       ...config.server,
       middlewareMode: true,
